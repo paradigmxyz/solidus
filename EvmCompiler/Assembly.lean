@@ -7,3 +7,4 @@ import EvmCompiler.Assembly.Preservation
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.TopLevel
 import EvmCompiler.Assembly.GasAware
+import EvmCompiler.Assembly.Observer

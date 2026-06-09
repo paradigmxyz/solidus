@@ -1209,6 +1209,7 @@ theorem evmOpenCall?_resume_pc
       rfl
 
 def basicOpSourceBridgeSafe? : Structured.BasicOp → Bool
+  | .gas => false
   | .msize => false
   | .dup1 | .dup2 | .dup3 | .dup4
   | .dup5 | .dup6 | .dup7 | .dup8

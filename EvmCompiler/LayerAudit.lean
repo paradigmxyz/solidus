@@ -2,6 +2,7 @@ import EvmCompiler.Yul.NoCallRuntime
 import EvmCompiler.Yul.OpenLowering
 import EvmCompiler.Yul.OpenGasAware
 import EvmCompiler.Yul.OpenRuntime
+import EvmCompiler.Yul.ObserverOracle
 import EvmCompiler.Functions.LiveLayout
 import EvmCompiler.Functions.LiveLayoutBridge
 import EvmCompiler.Functions.LiveLayoutPreservation
@@ -40,6 +41,1156 @@ abbrev sourceOpenTargetCommittedObservationRelTransactionReceiptsEq :=
 
 abbrev sourceOpenTargetCommittedObservationRelSubstateEq :=
   @Yul.Program.SourceOpenTargetCommittedObservationRel.substate_eq
+
+namespace ImportedYulResourceObserverBoundary
+
+/-!
+Audit pins for the explicit `gas()`/`msize()` dry-run oracle route.
+
+This is intentionally not the ordinary checked imported-Yul theorem surface:
+it exposes a replay oracle boundary for values observed by an unchecked target
+run, and the ordinary exact-preservation theorems may continue to reject visible
+resource observers.
+-/
+
+abbrev targetDryRun :=
+  Yul.ObserverOracle.TargetDryRun
+
+abbrev targetDryRunOrdinaryRun :=
+  @Yul.ObserverOracle.TargetDryRun.ordinary_run
+
+abbrev targetDryRunOracleRun :=
+  @Yul.ObserverOracle.TargetDryRun.oracle_run
+
+abbrev targetDryRunOracleRunEmpty :=
+  @Yul.ObserverOracle.TargetDryRun.oracle_run_empty
+
+  abbrev targetDryRunResultEqOfTargetOracleRun :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_targetOracle_run
+
+  abbrev targetDryRunResultEqOfHaltedTargetOracleRunLe :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_targetOracle_run_le
+
+  abbrev targetDryRunResultEqOfHaltedTargetOracleRunOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_targetOracle_run_of_dryRun_halted
+
+  abbrev targetDryRunResultEqOfHaltedSourceOracleRunOfCompileByteLengthLt :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceOracle_run_of_compile_byteLength_lt
+
+  abbrev targetDryRunResultEqOfHaltedSourceOracleRunOfCompileByteLengthLtOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+
+  abbrev targetDryRunResultEqOfHaltedSourceOracleRunEmptyOfCompileByteLengthLtOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceOracle_run_empty_of_compile_byteLength_lt_of_dryRun_halted
+
+  abbrev targetDryRunResultEqOfHaltedSourceObserverRunOfCompileByteLengthLtOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceObserver_run_of_compile_byteLength_lt_of_dryRun_halted
+
+  abbrev targetDryRunResultEqOfHaltedStructuredMainOracleRunOfCompileByteLengthLtOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+
+  abbrev targetDryRunSourceOracleRunMatchesTargetOracleOfCompile :=
+    @Yul.ObserverOracle.TargetDryRun.sourceOracle_run_matches_targetOracle_of_compile
+
+abbrev targetDryRunSourceOracleRunEmptyMatchesTargetOracleOfCompile :=
+  @Yul.ObserverOracle.TargetDryRun.sourceOracle_run_empty_matches_targetOracle_of_compile
+
+abbrev observerAssemblyOracleSourceRunPreservedByCompile :=
+  @Yul.ObserverOracle.AssemblyOracle.source_run_preserved_by_compile
+
+abbrev observerAssemblyOracleTargetRunResultUnique :=
+  @Yul.ObserverOracle.AssemblyOracle.target_run_result_unique
+
+  abbrev observerAssemblyOracleSourceRunMatchesTargetRunOfCompile :=
+    @Yul.ObserverOracle.AssemblyOracle.source_run_matches_target_run_of_compile
+
+  abbrev observerAssemblyOracleBlockTraceInducesTargetRunExistsOfCompile :=
+    @Yul.ObserverOracle.AssemblyOracle.block_trace_induces_target_run_exists_of_compile
+
+  abbrev observerAssemblyOracleBlockTraceInducesTargetRunExistsOfCompileByteLengthLt :=
+    @Yul.ObserverOracle.AssemblyOracle.block_trace_induces_target_run_exists_of_compile_byteLength_lt
+
+  abbrev observerAssemblyOracleSourceRunInducesTargetRunExistsOfCompileByteLengthLt :=
+    @Yul.ObserverOracle.AssemblyOracle.source_run_induces_target_run_exists_of_compile_byteLength_lt
+
+abbrev assemblySourceRunNResultWithObservers :=
+  @Assembly.Source.runNResultWithObservers
+
+abbrev assemblySourceRunNResultWithObserversSound :=
+  @Assembly.Source.runNResultWithObservers_sound
+
+abbrev assemblySourceRunNResultWithOracle :=
+  @Assembly.Source.runNResultWithOracle
+
+abbrev assemblySourceRunNResultWithOracleOfWithObservers :=
+  @Assembly.Source.runNResultWithOracle_of_withObservers
+
+abbrev assemblySourceRunNResultWithOracleRunningBind :=
+  @Assembly.Source.runNResultWithOracle_running_bind
+
+abbrev assemblySourceStepResultWithOracleOfStepResultObserverNone :=
+  @Assembly.Source.stepResultWithOracle_of_stepResult_observer_none
+
+abbrev assemblyCompiledRunNResultWithObserversSound :=
+  @Assembly.Compiled.runNResultWithObservers_sound
+
+abbrev assemblySourceCompiledRunNResultWithObserversSound :=
+  @Assembly.Preservation.source_compiled_runN_result_withObservers_sound
+
+abbrev assemblySourceCompiledRunNResultWithOracleSound :=
+  @Assembly.Preservation.source_compiled_runN_result_withOracle_sound
+
+abbrev assemblySourceCompiledRunNResultWithOracleSoundOfSourceOracle :=
+  @Assembly.Preservation.source_compiled_runN_result_withOracle_sound_of_sourceOracle
+
+abbrev assemblyBlockTraceResultWithOracle :=
+  Assembly.Preservation.BlockTraceResultWithOracle
+
+abbrev assemblyAssembleSourceStepCurrentResultWithOracleSound :=
+  @Assembly.Preservation.assemble_source_step_current_result_withOracle_sound
+
+abbrev assemblyAssembleRunNResultBlockTraceWithOracleSound :=
+  @Assembly.Preservation.assemble_runN_result_block_trace_withOracle_sound
+
+abbrev assemblyCompileRunNResultBlockTraceWithOracleSound :=
+  @Assembly.Preservation.compile_runN_result_block_trace_withOracle_sound
+
+abbrev assemblyTargetRunNResultWithOracle :=
+  @Assembly.Target.runNResultWithOracle
+
+abbrev assemblyTargetRunNResultWithOracleOfWithObservers :=
+  @Assembly.Target.runNResultWithOracle_of_withObservers
+
+abbrev assemblyCompiledRunNResultWithOracle :=
+  @Assembly.Compiled.runNResultWithOracle
+
+abbrev assemblyCompiledRunNResultWithOracleOfWithObservers :=
+  @Assembly.Compiled.runNResultWithOracle_of_withObservers
+
+abbrev assemblyResourceObserverOverwriteTopPC :=
+  @Assembly.ResourceObserver.overwriteTop_pc
+
+abbrev assemblyResourceObserverApplyOracleFromPostStatePC :=
+  @Assembly.ResourceObserver.applyOracleFromPostState_pc
+
+abbrev assemblyInstrAtPcFromPCEq :=
+  @Assembly.Program.instrAtPcFrom_pc_eq
+
+abbrev assemblyInstrAtPcFromBaseLeQuery :=
+  @Assembly.Program.instrAtPcFrom_base_le_query
+
+abbrev assemblyInstrAtPcFromEndLeBaseByteLength :=
+  @Assembly.Program.instrAtPcFrom_end_le_base_byteLength
+
+abbrev assemblyInstrAtPcPCEq :=
+  @Assembly.Program.instrAtPc_pc_eq
+
+abbrev assemblyInstrAtPcEndLeByteLength :=
+  @Assembly.Program.instrAtPc_end_le_byteLength
+
+abbrev assemblyEmitInstrFirst :=
+  @Assembly.emitInstr?_first
+
+abbrev assemblyEmitInstrFindNoneOfByteSizeLe :=
+  @Assembly.emitInstr?_find?_none_of_byteSize_le
+
+abbrev assemblyTargetProgramFetchConsSame :=
+  @Assembly.TargetProgram.fetch_cons_same
+
+abbrev assemblyTargetProgramFetchAppendOfFetchLeft :=
+  @Assembly.TargetProgram.fetch_append_of_fetch_left
+
+abbrev assemblyEmitFromFetchSomeOfInstrAtPcFrom :=
+  @Assembly.emitFrom?_fetch_some_of_instrAtPcFrom
+
+abbrev assemblyEmitFromFetchFirstOfInstrAtPcFrom :=
+  @Assembly.emitFrom?_fetch_first_of_instrAtPcFrom
+
+abbrev assemblyAssembleFetchFirstOfInstrAtPc :=
+  @Assembly.assemble?_fetch_first_of_instrAtPc
+
+abbrev assemblyEmitFromFetchOfInstrAtPcFromEmittedFetch :=
+  @Assembly.emitFrom?_fetch_of_instrAtPcFrom_emitted_fetch
+
+abbrev assemblyAssembleFetchOfInstrAtPcEmittedFetch :=
+  @Assembly.assemble?_fetch_of_instrAtPc_emitted_fetch
+
+abbrev assemblyEmitInstrFetchJumpSecond :=
+  @Assembly.emitInstr?_fetch_jump_second
+
+abbrev assemblyEmitInstrFetchJumpiSecond :=
+  @Assembly.emitInstr?_fetch_jumpi_second
+
+abbrev assemblyAssembleFetchJumpSecondOfInstrAtPc :=
+  @Assembly.assemble?_fetch_jump_second_of_instrAtPc
+
+  abbrev assemblyAssembleFetchJumpiSecondOfInstrAtPc :=
+    @Assembly.assemble?_fetch_jumpi_second_of_instrAtPc
+
+  abbrev assemblyTargetRunNResultWithOracleRunningBind :=
+    @Assembly.Target.runNResultWithOracle_running_bind
+
+  abbrev assemblyTargetRunNResultWithOracleHaltedAdd :=
+    @Assembly.Target.runNResultWithOracle_halted_add
+
+  abbrev assemblyReplaceStackAndIncrPCPCToNatOfNoOverflow :=
+    @Assembly.Preservation.replaceStackAndIncrPC_pc_toNat_of_no_overflow
+
+  abbrev assemblyTargetRunNResultWithOracleSingleOfFetch :=
+    @Assembly.Preservation.target_runNResultWithOracle_single_of_fetch
+
+  abbrev assemblyTargetRunNResultWithOraclePushJumpOfFetch :=
+    @Assembly.Preservation.target_runNResultWithOracle_push_jump_of_fetch
+
+  abbrev assemblyTargetRunNResultWithOraclePushJumpiOfFetch :=
+    @Assembly.Preservation.target_runNResultWithOracle_push_jumpi_of_fetch
+
+  abbrev assemblyTargetBlockPcSafe :=
+    @Assembly.Preservation.TargetBlockPcSafe
+
+  abbrev assemblyTargetBlockPcSafeOfInstrAtPcOfByteLengthLt :=
+    @Assembly.Preservation.targetBlockPcSafe_of_instrAtPc_of_byteLength_lt
+
+  abbrev assemblyTargetRunNResultWithOracleOfEmitInstrRunList :=
+    @Assembly.Preservation.target_runNResultWithOracle_of_emitInstr?_runList
+
+  abbrev assemblyBlockTraceResultWithOracleTargetPcSafe :=
+    @Assembly.Preservation.BlockTraceResultWithOracle.TargetPcSafe
+
+  abbrev assemblyBlockTraceResultWithOracleTargetPcSafeOfByteLengthLt :=
+    @Assembly.Preservation.BlockTraceResultWithOracle.targetPcSafe_of_byteLength_lt
+
+  abbrev assemblyBlockTraceResultWithOracleTargetRunNResultWithOracleExists :=
+    @Assembly.Preservation.BlockTraceResultWithOracle.target_runNResultWithOracle_exists
+
+  abbrev assemblyBlockTraceResultWithOracleTargetRunNResultWithOracleExistsOfByteLengthLt :=
+    @Assembly.Preservation.BlockTraceResultWithOracle.target_runNResultWithOracle_exists_of_byteLength_lt
+
+  abbrev replayEvalGasCons :=
+    @Yul.ObserverOracle.replay_eval_gas_cons
+
+abbrev replayEvalMsizeCons :=
+  @Yul.ObserverOracle.replay_eval_msize_cons
+
+abbrev replayEvalNonObserverPreservesTrace :=
+  @Yul.ObserverOracle.replay_eval_nonObserver_preserves_trace
+
+abbrev replayTerminalPreservesTrace :=
+  @Yul.ObserverOracle.replay_terminal_preserves_trace
+
+abbrev replayEvalLength :=
+  @Yul.ObserverOracle.replay_eval_length
+
+abbrev replayPrimitiveStepTrace :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.stepTrace
+
+abbrev replayPrimitiveStepNonObserverSound :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.eval_step_nonObserver_sound
+
+abbrev replayPrimitiveStepGasSound :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.eval_step_gas_sound
+
+abbrev replayPrimitiveStepMsizeSound :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.eval_step_msize_sound
+
+abbrev replayPrimitiveStepTraceSound :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.eval_step_trace_sound
+
+abbrev replayPrimitiveAssemblyStepExists :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.eval_assembly_prim_step_exists
+
+abbrev replayPrimitiveTerminalAssemblyStepExists :=
+  @Yul.ObserverOracle.ReplayPrimitiveStep.terminal_assembly_step_exists
+
+abbrev primitiveAssemblyOracleSound :=
+  @Yul.ObserverOracle.PrimitiveAssemblyOracleSound
+
+abbrev replayPrimitiveAssemblySound :=
+  @Yul.ObserverOracle.replayPrimitiveAssemblySound
+
+abbrev structuredReplayBasicInstrStepWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle
+
+abbrev structuredReplayBasicInstrStepWithOraclePush :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_push
+
+abbrev structuredReplayBasicInstrStepWithOracleOpOfReplay :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_of_replay
+
+abbrev structuredReplayBasicInstrStepWithOracleOpNonObserverOfStep :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_nonObserver_of_step
+
+abbrev structuredReplayBasicInstrStepWithOracleOpNonObserver :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_nonObserver
+
+abbrev structuredReplayBasicInstrOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.OracleStepPC
+
+abbrev structuredReplayBasicInstrStepWithOraclePCOfStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_pc_of_stepPC
+
+abbrev structuredReplayBasicInstrOracleStepPCOfRunnerSafe :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.oracleStepPC_of_runnerSafe
+
+abbrev structuredReplayBasicInstrSourceStepResultWithOracleOfSegmentStepWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.source_stepResultWithOracle_of_segment_stepWithOracle
+
+abbrev structuredReplayARunResultWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle
+
+abbrev structuredReplayARunResultWithOracleExact :=
+  @Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle.exact
+
+abbrev structuredReplayARunResultWithOraclePure :=
+  @Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle.pure
+
+abbrev structuredReplayARunResultWithOracleBindRunning :=
+  @Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle.bind_running
+
+abbrev structuredReplayARunResultWithOracleMono :=
+  @Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle.mono
+
+abbrev structuredReplayFrameStateRelOfSameDataTarget :=
+  @Yul.ObserverOracle.StructuredReplay.Frame.StateRel.of_sameData_target
+
+abbrev structuredReplayFrameStateRelLabelRunResultWithOracleAt :=
+  @Yul.ObserverOracle.StructuredReplay.Frame.StateRel.label_runResultWithOracle_at
+
+abbrev structuredReplayFrameStateRelJumpThenLabelRunResultWithOracleAt :=
+  @Yul.ObserverOracle.StructuredReplay.Frame.StateRel.jump_then_label_runResultWithOracle_at
+
+abbrev structuredReplayFrameStateRelPopRunResultWithOracleAt :=
+  @Yul.ObserverOracle.StructuredReplay.Frame.StateRel.pop_runResultWithOracle_at
+
+abbrev structuredReplayFrameStateRelRunConditionWithOracleJumpiResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.Frame.StateRel.runConditionWithOracle_jumpi_result_ctx
+
+abbrev structuredReplayCodeOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Code.OracleStepPC
+
+abbrev structuredReplayCodeOracleStepPCOfRunnerSafe :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_of_runnerSafe
+
+abbrev structuredReplayCodeOracleStepPCNil :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_nil
+
+abbrev structuredReplayCodeOracleStepPCAppend :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_append
+
+abbrev structuredReplayCodeOracleStepPCCons :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_cons
+
+abbrev structuredReplayCodeRunWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle
+
+abbrev structuredReplayCodeRunStateWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle
+
+abbrev structuredReplayCodeRunConditionWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle
+
+abbrev structuredReplayCodeRunConditionWithOracleOracleFrameSafeHiddenPopExists :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_pop_exists
+
+abbrev structuredReplayCodeRunConditionWithOracleOracleFrameSafeHiddenExists :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_exists
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment_of_oracleStepPC
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleSegmentOfRunnerSafe :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment_of_runnerSafe
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleSegmentOfCodeSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment_of_codeSegment
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleSegmentOfCodeSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment_of_codeSegment_of_oracleStepPC
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleBindOfCodeSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_bind_of_codeSegment
+
+abbrev structuredReplayCodeRunWithOracleSourceRunNResultWithOracleBindOfCodeSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_bind_of_codeSegment_of_oracleStepPC
+
+abbrev structuredReplayCodeRunStateWithOracleSourceRunNResultWithOracleSegmentOfCodeSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_source_runNResultWithOracle_segment_of_codeSegment
+
+abbrev structuredReplayCodeRunStateWithOracleSourceRunNResultWithOracleSegmentOfCodeSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_source_runNResultWithOracle_segment_of_codeSegment_of_oracleStepPC
+
+abbrev structuredReplayCodeOracleFrameSafe :=
+  @Yul.ObserverOracle.StructuredReplay.Code.OracleFrameSafe
+
+abbrev structuredReplayCodeRunWithOracleHiddenSuffixOfOracleFrameSafe :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_hidden_suffix_of_oracleFrameSafe
+
+abbrev structuredReplayCodeRunStateWithOracleHiddenSuffixOfOracleFrameSafe :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_hidden_suffix_of_oracleFrameSafe
+
+abbrev structuredReplayCodeRunStateWithOracleOracleFrameSafeHiddenExists :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_oracleFrameSafe_hidden_exists
+
+abbrev structuredReplayCodeRunWithOracleAppend :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_append
+
+abbrev structuredReplayCodeOracleFrameSafeNil :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_nil
+
+abbrev structuredReplayCodeOracleFrameSafeAppend :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_append
+
+abbrev structuredReplayCodeOracleFrameSafeCons :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_cons
+
+abbrev structuredReplayCodeRunWithOracleSingletonPush :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_push
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonPush :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_push
+
+abbrev structuredReplayCodeOracleStepPCSingletonPush :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_push
+
+abbrev structuredReplayCodeRunWithOracleSingletonOpOfReplay :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_op_of_replay
+
+abbrev structuredReplayCodeRunWithOracleSingletonOpNonObserverOfStep :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_op_nonObserver_of_step
+
+abbrev structuredReplayCodeRunWithOracleSingletonOpNonObserver :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_op_nonObserver
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonOpNonObserver :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_op_nonObserver
+
+abbrev structuredReplayCodeFrameSafeSingletonOpOfSourceContinuingStep :=
+  @Yul.ObserverOracle.StructuredReplay.Code.frameSafe_singleton_op_of_sourceContinuingStep
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonOpNonObserverOfSourceContinuingStep :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_op_nonObserver_of_sourceContinuingStep
+
+abbrev structuredReplayCodeStepPCOpOfSourceContinuingStep :=
+  @Yul.ObserverOracle.StructuredReplay.Code.stepPC_op_of_sourceContinuingStep
+
+abbrev structuredReplayCodeOracleStepPCSingletonOpOfSourceContinuingStep :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_op_of_sourceContinuingStep
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonOpOfReplay :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_op_of_replay
+
+abbrev structuredReplayCodeOracleStepPCSingletonOpOfReplay :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_op_of_replay
+
+abbrev structuredReplayCodeStepWithOracleGas :=
+  @Yul.ObserverOracle.StructuredReplay.Code.stepWithOracle_gas
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonGas :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_gas
+
+abbrev structuredReplayCodeOracleStepPCSingletonGas :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_gas
+
+abbrev structuredReplayCodeStepWithOracleMsize :=
+  @Yul.ObserverOracle.StructuredReplay.Code.stepWithOracle_msize
+
+abbrev structuredReplayCodeOracleFrameSafeSingletonMsize :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_msize
+
+abbrev structuredReplayCodeOracleStepPCSingletonMsize :=
+  @Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_msize
+
+abbrev structuredReplayCodeRunWithOracleReplicatePopExists :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_replicate_pop_exists
+
+abbrev structuredReplayBlockRunWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Block.runWithOracle
+
+abbrev structuredReplayStmtRunForLoopWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle
+
+abbrev structuredReplayStmtRunWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle
+
+abbrev structuredReplayStmtRunWithOracleCodeSourceRunNResultWithOracleSegmentOfCodeSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment
+
+abbrev structuredReplayStmtRunWithOracleCodeSourceRunNResultWithOracleBindOfCodeSegment :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_bind_of_codeSegment
+
+abbrev structuredReplayStmtRunWithOracleCodeSourceRunNResultWithOracleSegmentOfCodeSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment_of_oracleStepPC
+
+abbrev structuredReplayStmtRunWithOracleCodeSourceRunNResultWithOracleBindOfCodeSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_bind_of_codeSegment_of_oracleStepPC
+
+abbrev structuredReplayCodeRunWithOracleOfObserverFree :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_of_observer_free
+
+abbrev structuredReplayCodeRunConditionWithOracleOfObserverFree :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_of_observer_free
+
+abbrev structuredReplaySwitchPreservationWithOracleCasesPreservesWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.CasesPreservesWithOracle
+
+abbrev structuredReplaySwitchPreservationWithOracleDefaultPreservesWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.DefaultPreservesWithOracle
+
+abbrev structuredReplaySwitchPreservationWithOracleCasesPreservesWithOracleHead :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.casesPreservesWithOracle_head
+
+abbrev structuredReplaySwitchPreservationWithOracleCasesPreservesWithOracleTail :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.casesPreservesWithOracle_tail
+
+abbrev structuredReplaySwitchPreservationWithOracleDefaultPreservesWithOracleSome :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.defaultPreservesWithOracle_some
+
+abbrev structuredReplaySwitchPreservationWithOracleSwitchTestCodeObserverFree :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switchTestCode_observer_free
+
+abbrev structuredReplaySwitchPreservationWithOracleSwitchTestCodeOracleRelSafe :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switchTestCode_oracleRelSafe
+
+abbrev structuredReplaySwitchPreservationWithOracleFrameSafeSingletonEq :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.frameSafe_singleton_eq
+
+abbrev structuredReplaySwitchPreservationWithOracleSwitchTestCodeOracleFrameSafe :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switchTestCode_oracleFrameSafe
+
+abbrev structuredReplaySwitchPreservationWithOracleSwitchTestCodeRunConditionWithOracle :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switchTestCode_runConditionWithOracle
+
+abbrev structuredReplaySwitchPreservationWithOracleTestJumpiResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.test_jumpi_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleTestTrueResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.test_true_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleTestFalseResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.test_false_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleTestsFallthroughResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.tests_fallthrough_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleDefaultNoneTailResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.default_none_tail_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleDefaultSomeTailResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.default_some_tail_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleDefaultSelectedTailResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.default_selected_tail_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleLabeledBodyTailResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.labeled_body_tail_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleHeadCaseFromTestsResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.head_case_from_tests_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleSelectedCasesResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.selected_cases_result_ctx
+
+abbrev structuredReplaySwitchPreservationWithOracleSwitchNoneResultCtx :=
+  @Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switch_none_result_ctx
+
+abbrev structuredReplayForLoopPreservationWithOraclePreservesRun :=
+  @Yul.ObserverOracle.StructuredReplay.ForLoopPreservationWithOracle.preserves_run
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesCode :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_code
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesBrk :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_brk
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesCont :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_cont
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesLeave :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_leave
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesTerminal :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_terminal
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesIf :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesSwitch :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_switch
+
+abbrev structuredReplayStmtPreservationWithOraclePreservesFor :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_for
+
+abbrev structuredReplayBlockPreservationWithOraclePreservesNil :=
+  @Yul.ObserverOracle.StructuredReplay.BlockPreservationWithOracle.preserves_nil
+
+abbrev structuredReplayBlockPreservationWithOracleCons :=
+  @Yul.ObserverOracle.StructuredReplay.BlockPreservationWithOracle.cons
+
+abbrev structuredReplayProgramPreservationWithOracleHaltedSourceOracleRunOfMainBlockPreserves :=
+  @Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_block_preserves
+
+abbrev expressionsReplayExprCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.ExprCodeShaped
+
+abbrev expressionsReplayBlockCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.BlockCodeShaped
+
+abbrev expressionsReplayStmtCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtCodeShaped
+
+abbrev expressionsReplayStmtListCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtListCodeShaped
+
+abbrev expressionsReplayCaseListCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped
+
+abbrev expressionsReplayDefaultCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.DefaultCodeShaped
+
+abbrev expressionsReplayProcCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.ProcCodeShaped
+
+abbrev expressionsReplayProcListCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped
+
+abbrev expressionsReplayProgramCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.ProgramCodeShaped
+
+abbrev expressionsReplayProcListCodeShapedOfLookup :=
+  @Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped.of_lookup?
+
+abbrev expressionsReplayCaseListCodeShapedOfSelect :=
+  @Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped.of_select
+
+abbrev expressionsReplayExprRunCodeExprWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle
+
+abbrev expressionsReplayExprRunCodeConditionWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeConditionWithOracle
+
+abbrev expressionsReplayExprRunCodeExprWithOracleCodeEqStructured :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle_code_eq_structured
+
+abbrev expressionsReplayExprRunCodeConditionWithOracleCodeEqStructured :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeConditionWithOracle_code_eq_structured
+
+abbrev expressionsReplayExprRunCodeExprWithOracleEqCompileOfCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle_eq_compile_of_codeShaped
+
+abbrev expressionsReplayExprRunCodeConditionWithOracleEqCompileOfCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeConditionWithOracle_eq_compile_of_codeShaped
+
+abbrev expressionsReplayBlockRunWithOracleToStructuredOfCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_toStructured_of_codeShaped
+
+abbrev expressionsReplayStmtRunForLoopWithOracleToStructuredOfCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_toStructured_of_codeShaped
+
+abbrev expressionsReplayStmtRunWithOracleToStructuredOfCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_toStructured_of_codeShaped
+
+abbrev expressionsReplayExprRunCodeExprWithOracleCodeOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle_code_of_run
+
+abbrev expressionsReplayExprRunCodeConditionWithOracleCodeOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeConditionWithOracle_code_of_run
+
+abbrev expressionsReplayStmtRunCodeStmtWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runCodeStmtWithOracle
+
+abbrev expressionsReplayStmtRunCodeStmtWithOracleCodeOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runCodeStmtWithOracle_code_of_run
+
+abbrev expressionsReplayStmtListRunCodeWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle
+
+abbrev expressionsReplayStmtListByteLength :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.byteLength
+
+abbrev expressionsReplayStmtListByteLengthAppend :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.byteLength_append
+
+abbrev expressionsReplayStmtListByteLengthCodeStmt :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.byteLength_codeStmt
+
+abbrev expressionsReplayStmtListRunCodeWithOracleNil :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_nil
+
+abbrev expressionsReplayStmtListRunCodeWithOracleAppend :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_append
+
+abbrev expressionsReplayStmtListRunCodeWithOracleAppendRegularOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_append_regular_of_run
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_of_run
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtSourceRunNResultWithOracleSegmentOfRunnerSafe :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_source_runNResultWithOracle_segment_of_runnerSafe
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtSourceRunNResultWithOracleSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_source_runNResultWithOracle_segment_of_oracleStepPC
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtSourceRunNResultWithOracleBindOfRunnerSafe :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_source_runNResultWithOracle_bind_of_runnerSafe
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtSourceRunNResultWithOracleBindOfOracleStepPC :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_source_runNResultWithOracle_bind_of_oracleStepPC
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCodeStmtAppendOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_append_of_run
+
+abbrev expressionsReplayStmtListRunCodeWithOracleCleanupToScopeExists :=
+  @Yul.ObserverOracle.ExpressionsReplay.StmtList.runCodeWithOracle_cleanupTo_scope_exists
+
+abbrev expressionsReplayBlockRunWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle
+
+abbrev expressionsReplayBlockRunWithOracleNil :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_nil
+
+abbrev expressionsReplayBlockRunWithOracleConsRegularOfRuns :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_cons_regular_of_runs
+
+abbrev expressionsReplayBlockRunWithOracleConsCodeStmtAppendRegularOfRuns :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_cons_codeStmt_append_regular_of_runs
+
+abbrev expressionsReplayBlockRunWithOracleConsCodeStmtAppendRegularOfRunsSlack :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_cons_codeStmt_append_regular_of_runs_slack
+
+abbrev expressionsReplayBlockRunWithOracleConsCodeStmtAppendRegularOfRunsRestSlack :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_cons_codeStmt_append_regular_of_runs_restSlack
+
+abbrev expressionsReplayBlockRunWithOracleCodeStmtOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_codeStmt_of_run
+
+abbrev expressionsReplayBlockRunWithOracleCodeStmtSourceRunNResultWithOracleSegmentOfRunnerSafe :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_codeStmt_source_runNResultWithOracle_segment_of_runnerSafe
+
+abbrev expressionsReplayBlockRunWithOracleCodeStmtSourceRunNResultWithOracleSegmentOfOracleStepPC :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_codeStmt_source_runNResultWithOracle_segment_of_oracleStepPC
+
+abbrev expressionsReplayBlockRunWithOracleCodeStmtSourceRunNResultWithOracleBindOfRunnerSafe :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_codeStmt_source_runNResultWithOracle_bind_of_runnerSafe
+
+abbrev expressionsReplayBlockRunWithOracleCodeStmtSourceRunNResultWithOracleBindOfOracleStepPC :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_codeStmt_source_runNResultWithOracle_bind_of_oracleStepPC
+
+abbrev expressionsReplayBlockRunWithOracleCleanupToScopeExists :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_cleanupTo_scope_exists
+
+abbrev expressionsReplayStmtRunWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle
+
+abbrev expressionsReplayStmtRunForLoopWithOracle :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle
+
+abbrev expressionsReplayStmtRunWithOracleCodeOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_code_of_run
+
+abbrev expressionsReplayStmtRunWithOracleExprCodeOfRun :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_expr_code_of_run
+
+abbrev expressionsReplayStmtRunWithOracleIfFalseOfCondition :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_if_false_of_condition
+
+abbrev expressionsReplayStmtRunWithOracleIfTrueOfConditionBody :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_if_true_of_condition_body
+
+abbrev expressionsReplayStmtRunWithOracleSwitchNoneOfScrutinee :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_switch_none_of_scrutinee
+
+abbrev expressionsReplayStmtRunWithOracleSwitchSomeOfScrutineeBody :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_switch_some_of_scrutinee_body
+
+abbrev expressionsReplayStmtRunWithOracleForRegularOfInitLoop :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_for_regular_of_init_loop
+
+abbrev expressionsReplayStmtRunForLoopWithOracleFalseOfCondition :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_false_of_condition
+
+abbrev expressionsReplayStmtRunForLoopWithOracleTrueBrkOfBody :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_brk_of_body
+
+abbrev expressionsReplayStmtRunForLoopWithOracleTrueContOfBodyPostLoop :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_cont_of_body_post_loop
+
+abbrev expressionsReplayStmtRunForLoopWithOracleTrueRegularOfBodyPostLoop :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_regular_of_body_post_loop
+
+abbrev expressionsReplayBlockRunWithOracleMono :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_mono
+
+abbrev expressionsReplayStmtRunForLoopWithOracleMono :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_mono
+
+abbrev expressionsReplayStmtRunWithOracleMono :=
+  @Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_mono
+
+abbrev sourceReplayRun :=
+  @Yul.ObserverOracle.SourceReplay.Program.run
+
+abbrev sourceReplayEvalGasCons :=
+  @Yul.ObserverOracle.SourceReplay.Expr.eval_gas_cons
+
+abbrev sourceReplayEvalMsizeCons :=
+  @Yul.ObserverOracle.SourceReplay.Expr.eval_msize_cons
+
+abbrev sourceReplayExprEvalLength :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_length
+
+abbrev sourceReplayExprSeqEvalLength :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.ExprSeq.eval_length
+
+abbrev stackOpDupObserverNone :=
+  @EvmCompiler.Yul.ObserverOracle.stackOp_dup?_observer_none
+
+abbrev stackOpSwapObserverNone :=
+  @EvmCompiler.Yul.ObserverOracle.stackOp_swap?_observer_none
+
+abbrev sourceReplayExprRunCompiledCodeWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayExprSeqRunCompiledCodeWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledSeqCodeWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayExprOracleFrameSafeCompileCodeOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
+
+abbrev sourceReplayExprOracleFrameSafeCompileSeqCodeOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
+
+abbrev sourceReplayExprOracleStepPCCompileCodeOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileCode_of_eval_sourceOwned
+
+abbrev sourceReplayExprOracleStepPCCompileSeqCodeOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileSeqCode_of_eval_sourceOwned
+
+abbrev sourceReplayExprEvalOfEvalOne :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_of_evalOne
+
+abbrev sourceReplayExprRunCompiledCodeWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayExprRunCompiledConditionWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledConditionWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayExprRunCompiledExpressionsConditionWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledExpressionsConditionWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplaySwitchCompileSelectNone :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Switch.compile_select_none
+
+abbrev sourceReplaySwitchCompileSelectSome :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Switch.compile_select_some
+
+abbrev sourceReplaySwitchCompileSelectedOpenFinish :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Switch.compile_selected_open_finish
+
+abbrev sourceReplayStmtCompileExprWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileExprWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayStmtCompileLetWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileLetWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtCompileAssignWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileAssignWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtCompileIfFalseWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfFalseWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayStmtCompileIfTrueWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfTrueWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayStmtCompileSwitchNoneWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchNoneWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtCompileIfTrueAtomicPrefixWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayStmtCompileSwitchSomeAtomicPrefixWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchSomeAtomicPrefixWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtRunForLoopFalseWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoopFalseWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayStmtRunForLoopTrueRegularWithOracleOfEvalConditionBodyPostLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoopTrueRegularWithOracle_of_evalCondition_body_post_loop
+
+abbrev sourceReplayStmtRunForLoopTrueBrkWithOracleOfEvalConditionBody :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoopTrueBrkWithOracle_of_evalCondition_body
+
+abbrev sourceReplayStmtRunForLoopTrueContWithOracleOfEvalConditionBodyPostLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoopTrueContWithOracle_of_evalCondition_body_post_loop
+
+abbrev sourceReplayStmtRunForLoopRegularWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoopRegularWithOracle_of_runForLoop
+
+abbrev sourceReplayStmtRunForRegularWithOracleCleanupToScope :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForRegularWithOracle_cleanupTo_scope
+
+abbrev sourceReplayStmtCompileForRegularWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileForRegularWithOracle_of_runForLoop
+
+abbrev sourceReplayStmtCompileForRegularWithOracleAtomicSwitchInitOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileForRegularWithOracle_atomicSwitchInit_of_runForLoop
+
+abbrev sourceReplayStmtCompileForRegularWithOracleAtomicSwitchBlocksOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileForRegularWithOracle_atomicSwitchBlocks_of_runForLoop
+
+abbrev sourceReplayBlockCompileOpenConsForRegularAtomicSwitchBlocksWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_forRegularAtomicSwitchBlocksWithOracle_of_runForLoop
+
+abbrev sourceReplayBlockCompileOpenConsForRegularAtomicSwitchBlocksSlackWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_forRegularAtomicSwitchBlocksSlackWithOracle_of_runForLoop
+
+abbrev sourceReplayBlockCompileOpenConsForRegularAtomicSwitchBlocksRestSlackWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_forRegularAtomicSwitchBlocksRestSlackWithOracle_of_runForLoop
+
+abbrev sourceReplayBlockCompileOpenSingletonForRegularAtomicSwitchBlocksWithOracleOfRunForLoop :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_forRegularAtomicSwitchBlocksWithOracle_of_runForLoop
+
+abbrev sourceReplayStmtCompileExprStmtListWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileExprStmtListWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayStmtCompileLetStmtListWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileLetStmtListWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtCompileAssignStmtListWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileAssignStmtListWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayStmtRunRegularScope :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.run_regular_scope
+
+abbrev sourceReplayBlockRunOpenRegularScope :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_scope
+
+abbrev sourceReplayBlockRunOpenRegularCleanupScopeRel :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_cleanupScopeRel
+
+abbrev sourceReplayBlockCompileOpenNilWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_nilWithOracle
+
+abbrev sourceReplayBlockCompileOpenConsRegularWithOracleOfRuns :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularWithOracle_of_runs
+
+abbrev sourceReplayBlockCompileOpenConsRegularBlockWithOracleOfRuns :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs
+
+abbrev sourceReplayBlockCompileOpenConsRegularBlockWithOracleOfRunsTargetFuel :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs_targetFuel
+
+abbrev sourceReplayBlockCompileOpenConsExprWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_exprWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsExprBlockWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_exprBlockWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsExprBlockRestSlackWithOracleOfEvalSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_exprBlockRestSlackWithOracle_of_eval_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsLetWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_letWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsLetBlockWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_letBlockWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsLetBlockRestSlackWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_letBlockRestSlackWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsAssignWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_assignWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsAssignBlockWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_assignBlockWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsAssignBlockRestSlackWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_assignBlockRestSlackWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockAtomicPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicPrefix
+
+abbrev sourceReplayBlockRunOpenAtomicPrefixModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicPrefix_mode_regular
+
+abbrev sourceReplayBlockRunScopedAtomicPrefixModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_atomicPrefix_mode_regular
+
+abbrev sourceReplayBlockCompileOpenAtomicPrefixWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixWithOracle
+
+abbrev sourceReplayBlockCompileOpenAtomicPrefixBlockWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithOracle
+
+abbrev sourceReplayBlockCompileOpenAtomicPrefixBlockWithCleanupWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithCleanupWithOracle
+
+abbrev sourceReplayBlockCompileScopedAtomicPrefixBlockWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixBlockWithOracle
+
+abbrev sourceReplayBlockCompileScopedAtomicPrefixWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixWithOracle
+
+abbrev sourceReplayStmtCompileBlockStmtListWithOracleOfRunScopedAtomicPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileBlockStmtListWithOracle_of_runScoped_atomicPrefix
+
+abbrev sourceReplayBlockCompileOpenConsBlockWithOracleOfRunScopedAtomicPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_blockWithOracle_of_runScoped_atomicPrefix
+
+abbrev sourceReplayBlockCompileOpenConsIfFalseWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsIfFalseSlackWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseSlackWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsIfFalseRestSlackWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseRestSlackWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsIfTrueRegularWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifTrueRegularWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsIfTrueAtomicPrefixWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsIfTrueAtomicPrefixRestSlackWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifTrueAtomicPrefixRestSlackWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsSwitchNoneSlackWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchNoneSlackWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsSwitchNoneRestSlackWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchNoneRestSlackWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsSwitchSomeAtomicPrefixWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchSomeAtomicPrefixWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsSwitchSomeAtomicPrefixRestSlackWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchSomeAtomicPrefixRestSlackWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenConsSwitchAtomicPrefixWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchAtomicPrefixWithOracle_of_evalOne_sourceOwned
+
+abbrev sourceReplayBlockCompileOpenSingletonIfTrueAtomicPrefixWithOracleOfEvalConditionSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_ifTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
+
+abbrev sourceReplayBlockAtomicIfPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefix
+
+abbrev sourceReplayBlockCompileOpenAtomicIfPrefixBlockWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixBlockWithOracle
+
+abbrev sourceReplayBlockAtomicSwitchCases :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases
+
+abbrev sourceReplayBlockAtomicSwitchDefault :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchDefault
+
+abbrev sourceReplayBlockAtomicPrefixOfSwitchSelect :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicPrefix_of_switch_select
+
+abbrev sourceReplayBlockAtomicSwitchPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchPrefix
+
+abbrev sourceReplayBlockAtomicSwitchForPrefixSlack :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchForPrefixSlack
+
+abbrev sourceReplayBlockAtomicSwitchForPrefixSlackPos :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicSwitchForPrefixSlack_pos
+
+abbrev sourceReplayBlockRunOpenAtomicSwitchPrefixModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular
+
+abbrev sourceReplayBlockRunOpenAtomicSwitchPrefixModeRegularOfBlock :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular_of_block
+
+abbrev sourceReplayBlockRunScopedAtomicSwitchPrefixModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_atomicSwitchPrefix_mode_regular
+
+abbrev sourceReplayBlockRunScopedAtomicSwitchPrefixModeRegularOfBlock :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_atomicSwitchPrefix_mode_regular_of_block
+
+abbrev sourceReplayBlockRunForLoopAtomicSwitchPrefixModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runForLoop_atomicSwitchPrefix_mode_regular
+
+abbrev sourceReplayBlockRunOpenAtomicSwitchForPrefixSlackModeRegular :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchForPrefixSlack_mode_regular
+
+abbrev sourceReplayBlockCompileOpenAtomicSwitchForPrefixSlackBlockWithOracleOfRun :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle_of_run
+
+abbrev sourceReplayBlockCompileOpenAtomicSwitchForPrefixSlackBlockWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
+
+abbrev sourceReplayBlockCompileOpenAtomicSwitchPrefixBlockWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithOracle
+
+abbrev sourceReplayBlockCompileOpenAtomicSwitchPrefixBlockWithCleanupWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithCleanupWithOracle
+
+abbrev sourceReplayBlockCompileScopedAtomicSwitchPrefixBlockRegularWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchPrefixBlockRegularWithOracle
+
+abbrev sourceReplayBlockCompileScopedAtomicSwitchPrefixBlockRegularWithOracleOfBlock :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchPrefixBlockRegularWithOracle_of_block
+
+abbrev sourceReplayBlockAtomicBlockPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicBlockPrefix
+
+abbrev sourceReplayBlockCompileOpenAtomicBlockPrefixWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicBlockPrefixWithOracle
+
+abbrev exprObserverFree :=
+  @Yul.ObserverOracle.ExprObserverFree
+
+abbrev exprSeqObserverFree :=
+  @Yul.ObserverOracle.ExprSeqObserverFree
+
+abbrev blockObserverFree :=
+  @Yul.ObserverOracle.BlockObserverFree
+
+abbrev stmtObserverFree :=
+  @Yul.ObserverOracle.StmtObserverFree
+
+abbrev stmtListObserverFree :=
+  @Yul.ObserverOracle.StmtListObserverFree
+
+abbrev blockObserverFreeOfSelect :=
+  @Yul.ObserverOracle.blockObserverFree_of_select
+
+abbrev sourceReplayExprObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Expr.eval_observerFree_matches_source
+
+abbrev sourceReplayExprSeqObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.ExprSeq.eval_observerFree_matches_source
+
+abbrev sourceReplayEvalOneObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Expr.evalOne_observerFree_matches_source
+
+abbrev sourceReplayEvalConditionObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Expr.evalCondition_observerFree_matches_source
+
+abbrev sourceReplayBlockOpenObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Block.runOpen_observerFree_matches_source
+
+abbrev sourceReplayBlockScopedObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Block.runScoped_observerFree_matches_source
+
+abbrev sourceReplayStmtForLoopObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Stmt.runForLoop_observerFree_matches_source
+
+abbrev sourceReplayStmtObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Stmt.run_observerFree_matches_source
+
+abbrev sourceReplayProgramRunStateObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Program.runState_observerFree_matches_source
+
+abbrev sourceReplayProgramRunObserverFreeMatchesSource :=
+  @Yul.ObserverOracle.SourceReplay.Program.run_observerFree_matches_source
+
+end ImportedYulResourceObserverBoundary
 
 namespace FunctionsOpenCALLBoundary
 

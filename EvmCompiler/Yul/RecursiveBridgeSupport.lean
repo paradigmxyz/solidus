@@ -3274,13 +3274,23 @@ mutual
                                 | some exprResult =>
                                     rcases exprResult with
                                       ⟨preValue, lowerValue, stateAfterExpr⟩
-                                    simp [Stmt.toFunctionsListFuel?,
-                                      hLowerExpr] at hLower
-                                    rcases hLower with ⟨_hLower, hState⟩
-                                    cases hState
-                                    exact
-                                      freshCoversLayout_lower1?_of_some
-                                        hCovers hLowerExpr
+                                    cases preValue with
+                                    | nil =>
+                                        simp [Stmt.toFunctionsListFuel?,
+                                          hLowerExpr] at hLower
+                                        rcases hLower with ⟨_hLower, hState⟩
+                                        cases hState
+                                        exact
+                                          freshCoversLayout_lower1?_of_some
+                                            hCovers hLowerExpr
+                                    | cons head tail =>
+                                        simp [Stmt.toFunctionsListFuel?,
+                                          hLowerExpr] at hLower
+                                        rcases hLower with ⟨_hLower, hState⟩
+                                        cases hState
+                                        exact
+                                          freshCoversLayout_lower1?_of_some
+                                            hCovers hLowerExpr
                     | inr functionName =>
                         exact
                           freshCoversLayout_toFunctionsListFuel?_let_user_call_of_some
@@ -3301,13 +3311,23 @@ mutual
                             | some exprResult =>
                                 rcases exprResult with
                                   ⟨preValue, lowerValue, stateAfterExpr⟩
-                                simp [Stmt.toFunctionsListFuel?, hLowerExpr]
-                                  at hLower
-                                rcases hLower with ⟨_hLower, hState⟩
-                                cases hState
-                                exact
-                                  freshCoversLayout_lower1?_of_some hCovers
-                                    hLowerExpr
+                                cases preValue with
+                                | nil =>
+                                    simp [Stmt.toFunctionsListFuel?, hLowerExpr]
+                                      at hLower
+                                    rcases hLower with ⟨_hLower, hState⟩
+                                    cases hState
+                                    exact
+                                      freshCoversLayout_lower1?_of_some hCovers
+                                        hLowerExpr
+                                | cons head tail =>
+                                    simp [Stmt.toFunctionsListFuel?, hLowerExpr]
+                                      at hLower
+                                    rcases hLower with ⟨_hLower, hState⟩
+                                    cases hState
+                                    exact
+                                      freshCoversLayout_lower1?_of_some hCovers
+                                        hLowerExpr
                 | Var name =>
                     cases names with
                     | nil =>
@@ -3324,13 +3344,23 @@ mutual
                             | some exprResult =>
                                 rcases exprResult with
                                   ⟨preValue, lowerValue, stateAfterExpr⟩
-                                simp [Stmt.toFunctionsListFuel?, hLowerExpr]
-                                  at hLower
-                                rcases hLower with ⟨_hLower, hState⟩
-                                cases hState
-                                exact
-                                  freshCoversLayout_lower1?_of_some hCovers
-                                    hLowerExpr
+                                cases preValue with
+                                | nil =>
+                                    simp [Stmt.toFunctionsListFuel?, hLowerExpr]
+                                      at hLower
+                                    rcases hLower with ⟨_hLower, hState⟩
+                                    cases hState
+                                    exact
+                                      freshCoversLayout_lower1?_of_some hCovers
+                                        hLowerExpr
+                                | cons head tail =>
+                                    simp [Stmt.toFunctionsListFuel?, hLowerExpr]
+                                      at hLower
+                                    rcases hLower with ⟨_hLower, hState⟩
+                                    cases hState
+                                    exact
+                                      freshCoversLayout_lower1?_of_some hCovers
+                                        hLowerExpr
         | Assign names value =>
             cases value with
             | Call callee args =>

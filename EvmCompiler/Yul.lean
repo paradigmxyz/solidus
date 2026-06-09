@@ -13,5 +13,6 @@ import EvmCompiler.Yul.ObjectRuntime
 import EvmCompiler.Yul.OpenExternal
 import EvmCompiler.Yul.OpenAssembly
 import EvmCompiler.Yul.OpenLowering
+import EvmCompiler.Yul.ObserverOracle
 import EvmCompiler.Yul.NoCallCreate
 import EvmCompiler.Yul.NoCallRuntime

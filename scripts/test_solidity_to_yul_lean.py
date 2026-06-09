@@ -8614,6 +8614,96 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertEqual(compatibility["unsupportedPrimitiveNames"], [])
         self.assertEqual(compatibility["objectBuiltinNames"], [])
 
+    def test_compile_contract_artifact_defaults_unresolved_linker_symbols_to_zero(self):
+        old_compile_frontend_object_image = bridge.compile_frontend_object_image
+        calls = []
+        try:
+            def fake_compile_frontend_object_image(
+                obj,
+                source_name,
+                contract_name,
+                definition,
+                namespace,
+                object_layout,
+                local_data_base,
+                linker_symbols,
+                lake,
+                lake_cwd,
+            ):
+                calls.append(
+                    (
+                        definition,
+                        {entry.name: entry.value for entry in linker_symbols},
+                    )
+                )
+                return bridge.CompiledObjectImage(bytecode="0x00")
+
+            bridge.compile_frontend_object_image = fake_compile_frontend_object_image
+            root = bridge.YulObject(
+                "UsesLibraries_1",
+                [
+                    bridge.Let(
+                        ["creationLib"],
+                        bridge.Call(
+                            "linkersymbol",
+                            [bridge.StringLit("CreationLib.sol:CreationLib")],
+                            bridge.CALL_OBJECT_BUILTIN,
+                        ),
+                    )
+                ],
+                [],
+                [],
+                [
+                    bridge.YulObject(
+                        "UsesLibraries_1_deployed",
+                        [
+                            bridge.Let(
+                                ["runtimeLib"],
+                                bridge.Call(
+                                    "linkersymbol",
+                                    [bridge.StringLit("RuntimeLib.sol:RuntimeLib")],
+                                    bridge.CALL_OBJECT_BUILTIN,
+                                ),
+                            )
+                        ],
+                        [],
+                        [],
+                        [],
+                    )
+                ],
+            )
+            bridge.compile_contract_bytecode_artifact(
+                root,
+                "UsesLibraries.sol",
+                "UsesLibraries",
+                "UsesLibraries",
+                None,
+                [],
+                None,
+                [bridge.LinkerSymbolEntry("RuntimeLib.sol:RuntimeLib", 42)],
+                "lake",
+                Path("."),
+            )
+        finally:
+            bridge.compile_frontend_object_image = old_compile_frontend_object_image
+
+        self.assertEqual(len(calls), 2)
+        creation_symbols = calls[0][1]
+        runtime_symbols = calls[1][1]
+        self.assertEqual(
+            creation_symbols["CreationLib.sol:CreationLib"],
+            0,
+        )
+        self.assertEqual(
+            creation_symbols["RuntimeLib.sol:RuntimeLib"],
+            42,
+        )
+        self.assertEqual(
+            runtime_symbols["RuntimeLib.sol:RuntimeLib"],
+            42,
+        )
+        self.assertNotIn("CreationLib.sol:CreationLib", runtime_symbols)
+
     def test_parser_accepts_artifact_formats(self):
         args = bridge.build_arg_parser().parse_args(
             [

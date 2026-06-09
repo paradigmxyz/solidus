@@ -3262,6 +3262,21 @@ def evictTopStackLayout? (range : ScratchRange)
       else
         none
 
+def dropDeadTopStackLayout? (range : ScratchRange)
+    (sourceScope stackLayout : List Name) (layout : Layout) :
+    Option Layout :=
+  match stackLayout with
+  | [] => none
+  | top :: restStack =>
+      if _hTop : (top, LocalLocation.stack 0) ∈ layout then
+        none
+      else
+        let nextLayout := evictTopStackLayout 0 layout
+        if checked? range sourceScope restStack nextLayout then
+          some nextLayout
+        else
+          none
+
 theorem evictTopStackLayout?_sound {range : ScratchRange}
     {sourceScope stackLayout : List Name} {layout : Layout}
     {slot : Nat} {nextLayout : Layout}
@@ -3298,6 +3313,34 @@ theorem evictTopStackLayout?_sound {range : ScratchRange}
                 exact
                   ⟨top, restStack, rfl, hTop, by simpa [hSlot], rfl, hCheck⟩
       · simp [hTop] at hEvict
+
+theorem dropDeadTopStackLayout?_sound {range : ScratchRange}
+    {sourceScope stackLayout : List Name} {layout nextLayout : Layout}
+    (hDrop :
+      dropDeadTopStackLayout? range sourceScope stackLayout layout =
+        some nextLayout) :
+    ∃ top restStack,
+      stackLayout = top :: restStack ∧
+        (top, LocalLocation.stack 0) ∉ layout ∧
+        nextLayout = evictTopStackLayout 0 layout ∧
+        checked? range sourceScope restStack nextLayout = true := by
+  cases stackLayout with
+  | nil =>
+      simp [dropDeadTopStackLayout?] at hDrop
+  | cons top restStack =>
+      unfold dropDeadTopStackLayout? at hDrop
+      by_cases hTop : (top, LocalLocation.stack 0) ∈ layout
+      · simp [hTop] at hDrop
+      · simp [hTop] at hDrop
+        cases hCheck :
+            checked? range sourceScope restStack
+              (evictTopStackLayout 0 layout) with
+        | false =>
+            simp [hCheck] at hDrop
+        | true =>
+            simp [hCheck] at hDrop
+            cases hDrop
+            exact ⟨top, restStack, rfl, hTop, rfl, hCheck⟩
 
 theorem evictTopStackLayout?_slot {range : ScratchRange}
     {sourceScope stackLayout : List Name} {layout : Layout}
@@ -6521,6 +6564,41 @@ theorem evictTopStack_mstore
       exact BindingValueRel.scratch_preserved_mstore_other
         hSpec hWordBytes hReady hSlot hOldSlot hNe
         (hValues (name, LocalLocation.scratch oldSlot) hOldMem)
+
+theorem dropDeadTopStack
+    {range : ScratchRange} {sourceScope : List Name}
+    {top : Name} {restStack : List Name}
+    {layout nextLayout : Layout} {store : Source.Store}
+    {machine : EvmYul.MachineState} {topValue : Word}
+    {baseStack : EvmYul.Stack Word}
+    (hLayout : WellFormed range sourceScope (top :: restStack) layout)
+    (hValues : ValueRel range store machine (topValue :: baseStack) layout)
+    (hDead : (top, LocalLocation.stack 0) ∉ layout)
+    (hNext : nextLayout = evictTopStackLayout 0 layout) :
+    ValueRel range store machine baseStack nextLayout := by
+  subst nextLayout
+  intro binding hMem
+  change binding ∈ layout.map (evictTopStackBinding 0) at hMem
+  rw [List.mem_map] at hMem
+  rcases hMem with ⟨oldBinding, hOldMem, hEq⟩
+  rcases oldBinding with ⟨name, location⟩
+  cases location with
+  | stack depth =>
+      cases depth with
+      | zero =>
+          cases hEq
+          have hName : name = top := by
+            have hStack := hLayout.stack_binding hOldMem
+            simpa using hStack.symm
+          subst name
+          exact False.elim (hDead hOldMem)
+      | succ depth =>
+          cases hEq
+          simpa [BindingValueRel] using
+            hValues (name, LocalLocation.stack (depth + 1)) hOldMem
+  | scratch oldSlot =>
+      cases hEq
+      exact hValues (name, LocalLocation.scratch oldSlot) hOldMem
 
 end ValueRel
 
@@ -9881,6 +9959,123 @@ theorem run_spillStoreTopCode_evictTopStackLayout?_of_storeDefined
       hSpec hWordBytes hEvict hRel hStackLayout hTopValue with
     ⟨final, hRun, hFinalRel⟩
   exact ⟨top, restStack, final, hStackLayout, hRun, hFinalRel⟩
+
+theorem run_pop_dropDeadTopStackLayout?_of_exact_length
+    {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout nextLayout : SpillLayout.Layout}
+    {source : Source.State} {target : EVMState}
+    (hDrop :
+      SpillLayout.dropDeadTopStackLayout? range sourceScope stackLayout
+          layout =
+        some nextLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target)
+    (hLength : target.stack.length = stackLayout.length) :
+    ∃ top restStack final,
+      stackLayout = top :: restStack ∧
+        Structured.Code.run [Structured.BasicInstr.op .pop] target =
+          .ok final ∧
+        SpillStateRel range sourceScope restStack nextLayout source final ∧
+        final.stack.length = restStack.length := by
+  rcases SpillLayout.dropDeadTopStackLayout?_sound hDrop with
+    ⟨top, restStack, hStackLayout, hDead, hNext, hCheck⟩
+  subst stackLayout
+  cases hTargetStack : target.stack with
+  | nil =>
+      simp [hTargetStack] at hLength
+  | cons topValue baseStack =>
+      let final : EVMState := target.replaceStackAndIncrPC baseStack
+      have hRun :
+          Structured.Code.run [Structured.BasicInstr.op .pop] target =
+            .ok final := by
+        simp [final, Structured.Code.run,
+          Structured.BasicInstr.step, Structured.BasicOp.step,
+          Structured.BasicOp.toPrimOp, Assembly.Target.stepInstr,
+          Assembly.PrimOp.step, Assembly.PrimStep.run,
+          Assembly.PrimOp.continuingStep?, EvmYul.Stack.pop,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, hTargetStack]
+      have hValuesStart :
+          SpillLayout.ValueRel range source.vars target.toMachineState
+            (topValue :: baseStack) layout := by
+        simpa [hTargetStack] using hRel.values
+      have hValuesDropped :
+          SpillLayout.ValueRel range source.vars target.toMachineState
+            baseStack nextLayout :=
+        SpillLayout.ValueRel.dropDeadTopStack hRel.layoutWellFormed
+          hValuesStart hDead hNext
+      have hBaseLen : baseStack.length = restStack.length := by
+        simpa [hTargetStack] using hLength
+      exact
+        ⟨top, restStack, final, rfl, hRun,
+          { shared := by
+              simpa [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC] using hRel.shared
+            scratchReady := by
+              simpa [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC] using hRel.scratchReady
+            layoutWellFormed := SpillLayout.checked?_sound hCheck
+            values := by
+              simpa [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC] using hValuesDropped },
+          by
+            simpa [final, EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC] using hBaseLen⟩
+
+theorem run_spillStoreTopCode_evictTopStackLayout?_of_storeDefined_exact_length
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout nextLayout : SpillLayout.Layout}
+    {source : Source.State} {target : EVMState}
+    {slot : Nat}
+    (hEvict :
+      SpillLayout.evictTopStackLayout? range sourceScope stackLayout layout =
+        some (slot, nextLayout))
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.stack.length = stackLayout.length) :
+    ∃ top restStack final,
+      stackLayout = top :: restStack ∧
+        Structured.Code.run (spillStoreTopCode (range.word slot)) target =
+          .ok final ∧
+        SpillStateRel range sourceScope restStack nextLayout source final ∧
+        final.stack.length = restStack.length := by
+  rcases
+      run_spillStoreTopCode_evictTopStackLayout?_of_storeDefined
+        hSpec hWordBytes hEvict hRel hDefined with
+    ⟨top, restStack, final, hStackLayout, hRun, hFinalRel⟩
+  subst stackLayout
+  cases hTargetStack : target.stack with
+  | nil =>
+      simp [hTargetStack] at hLength
+  | cons head baseStack =>
+      have hStartEq :
+          ({ target with stack := head :: baseStack } : EVMState) =
+            target := by
+        cases target
+        simpa using hTargetStack.symm
+      rcases run_spillStoreTopCode_shared target baseStack
+          (range.word slot) head with
+        ⟨directFinal, hDirectRun, hDirectStack, _hDirectMachine,
+          _hDirectShared⟩
+      have hDirectRunTarget :
+          Structured.Code.run (spillStoreTopCode (range.word slot)) target =
+            .ok directFinal := by
+        simpa [hStartEq] using hDirectRun
+      have hDirectEq : directFinal = final := by
+        rw [hRun] at hDirectRunTarget
+        cases hDirectRunTarget
+        rfl
+      have hBaseLen : baseStack.length = restStack.length := by
+        simpa [hTargetStack] using hLength
+      exact
+        ⟨top, restStack, final, rfl, hRun, hFinalRel, by
+          rw [← hDirectEq, hDirectStack]
+          exact hBaseLen⟩
 
 theorem mstore_scratch_reserved {machine : EvmYul.MachineState}
     {offset value : Word}
@@ -16849,6 +17044,44 @@ def spillAllStack? (range : ScratchRange)
               (.Code (spillStoreTopCode (range.word evicted.1)))
               tail.code }
 
+def spillOrDropAllStack? (range : ScratchRange)
+    (sourceScope stackLayout : List Name)
+    (layout : SpillLayout.Layout) : Option SpillPlan :=
+  match stackLayout with
+  | [] =>
+      some
+        { sourceScope := sourceScope
+          stackLayout := []
+          layout := layout
+          code := SpillStmtCode.skip }
+  | _top :: restStack =>
+      match
+          SpillLayout.evictTopStackLayout? range sourceScope stackLayout layout
+      with
+      | some evicted => do
+          let tail ← spillOrDropAllStack? range sourceScope restStack evicted.2
+          some
+            { sourceScope := tail.sourceScope
+              stackLayout := tail.stackLayout
+              layout := tail.layout
+              code :=
+                SpillStmtCode.seq
+                  (.Code (spillStoreTopCode (range.word evicted.1)))
+                  tail.code }
+      | none => do
+          let nextLayout ←
+            SpillLayout.dropDeadTopStackLayout? range sourceScope stackLayout
+              layout
+          let tail ← spillOrDropAllStack? range sourceScope restStack nextLayout
+          some
+            { sourceScope := tail.sourceScope
+              stackLayout := tail.stackLayout
+              layout := tail.layout
+              code :=
+                SpillStmtCode.seq
+                  (.Code [Structured.BasicInstr.op .pop])
+                  tail.code }
+
 def compileFreshAtomWithSpill? (range : ScratchRange)
     (sourceScope stackLayout : List Name)
     (layout : SpillLayout.Layout) (stmt : Stmt) : Option SpillPlan := do
@@ -17619,6 +17852,75 @@ theorem spillAllStack?_noCallCreate {range : ScratchRange}
                   hHeadNo
                   (ih (layout := nextLayout) (plan := tail) hTail)
 
+theorem spillOrDropAllStack?_noCallCreate {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    (hPlan :
+      spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan) :
+    plan.code.usesCallCreate = false := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [spillOrDropAllStack?, SpillStmtCode.skip,
+        SpillStmtCode.usesCallCreate, Structured.Code.usesCallCreate]
+        at hPlan ⊢
+      cases hPlan
+      simp [SpillStmtCode.skip, SpillStmtCode.usesCallCreate,
+        Structured.Code.usesCallCreate]
+  | cons top restStack ih =>
+      unfold spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨slot, nextLayout⟩
+          cases hTail :
+              spillOrDropAllStack? range sourceScope restStack nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              have hHeadNo :
+                  (SpillStmtCode.Code
+                    (spillStoreTopCode (range.word slot))).usesCallCreate =
+                    false := by
+                simpa [SpillStmtCode.usesCallCreate] using
+                  spillStoreTopCode_noCallCreate (range.word slot)
+              exact
+                SpillStmtCode.usesCallCreate_seq_eq_false
+                  hHeadNo
+                  (ih (layout := nextLayout) (plan := tail) hTail)
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  have hHeadNo :
+                      (SpillStmtCode.Code
+                        [Structured.BasicInstr.op .pop]).usesCallCreate =
+                        false := by
+                    simp [SpillStmtCode.usesCallCreate,
+                      Structured.Code.usesCallCreate,
+                      Structured.BasicInstr.usesCallCreate,
+                      Structured.BasicOp.toPrimOp,
+                      Assembly.PrimOp.isCallCreate]
+                  exact
+                    SpillStmtCode.usesCallCreate_seq_eq_false
+                      hHeadNo
+                      (ih (layout := nextLayout) (plan := tail) hTail)
+
 theorem spillAllStack?_backendSafe {range : ScratchRange}
     {sourceScope stackLayout : List Name}
     {layout : SpillLayout.Layout} {plan : SpillPlan}
@@ -18203,6 +18505,51 @@ theorem spillAllStack?_sourceScope {range : ScratchRange}
               cases hPlan
               exact ih (layout := nextLayout) (plan := tail) hTail
 
+theorem spillOrDropAllStack?_sourceScope {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    (hPlan :
+      spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan) :
+    plan.sourceScope = sourceScope := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [spillOrDropAllStack?] at hPlan
+      cases hPlan
+      rfl
+  | cons top restStack ih =>
+      unfold spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨_slot, nextLayout⟩
+          cases hTail :
+              spillOrDropAllStack? range sourceScope restStack nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              exact ih (layout := nextLayout) (plan := tail) hTail
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  exact ih (layout := nextLayout) (plan := tail) hTail
+
 theorem spillAllStack?_storeDefined {range : ScratchRange}
     {sourceScope stackLayout : List Name}
     {layout : SpillLayout.Layout} {plan : SpillPlan}
@@ -18246,6 +18593,79 @@ theorem spillAllStack?_storeDefined {range : ScratchRange}
                   exact
                     ih (layout := nextLayout) (plan := tail) hTail
                       hDefinedNext
+
+theorem spillOrDropAllStack?_storeDefined {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    {store : Source.Store}
+    (hPlan :
+      spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan)
+    (hDefined : SpillLayout.StoreDefined store layout) :
+    SpillLayout.StoreDefined store plan.layout := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [spillOrDropAllStack?] at hPlan
+      cases hPlan
+      exact hDefined
+  | cons top restStack ih =>
+      unfold spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨_slot, nextLayout⟩
+          cases hTail :
+              spillOrDropAllStack? range sourceScope restStack nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              have hDefinedNext :
+                  SpillLayout.StoreDefined store nextLayout := by
+                rcases SpillLayout.evictTopStackLayout?_sound hEvict with
+                  ⟨_soundTop, _soundRest, _hSoundStack, _hTopBinding,
+                    _hSlotChoose, hNext, _hCheck⟩
+                rw [hNext]
+                exact SpillLayout.StoreDefined.evictTopStackLayout hDefined
+              exact
+                by
+                  change SpillLayout.StoreDefined store tail.layout
+                  exact
+                    ih (layout := nextLayout) (plan := tail) hTail
+                      hDefinedNext
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  have hDefinedNext :
+                      SpillLayout.StoreDefined store nextLayout := by
+                    rcases
+                        SpillLayout.dropDeadTopStackLayout?_sound hDrop with
+                      ⟨_soundTop, _soundRest, _hSoundStack, _hDead, hNext,
+                        _hCheck⟩
+                    rw [hNext]
+                    exact SpillLayout.StoreDefined.evictTopStackLayout
+                      hDefined
+                  exact
+                    by
+                      change SpillLayout.StoreDefined store tail.layout
+                      exact
+                        ih (layout := nextLayout) (plan := tail) hTail
+                          hDefinedNext
 
 theorem compileFreshAtomWithSpill?_noCallCreate {range : ScratchRange}
     {sourceScope stackLayout : List Name}
@@ -20163,6 +20583,127 @@ theorem spillAllStack?_sound
                   SpillStmtCode.run_seq_regular hHeadRun hTailRun,
                   hFinalRel, hFinalScope, hFinalStack, hFinalDefined⟩
 
+theorem spillOrDropAllStack?_sound_exact_empty
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    {source : Source.State} {target : EVMState}
+    (hPlan :
+      spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.stack.length = stackLayout.length) :
+    ∃ final,
+      SpillStmtCode.run plan.code target = .ok (.regular final) ∧
+        SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+          source final ∧
+        plan.sourceScope = sourceScope ∧
+        plan.stackLayout = [] ∧
+        SpillLayout.StoreDefined source.vars plan.layout ∧
+        final.stack = [] := by
+  induction stackLayout generalizing layout plan target with
+  | nil =>
+      simp [spillOrDropAllStack?] at hPlan
+      cases hPlan
+      have hStackNil : target.stack = [] :=
+        List.eq_nil_of_length_eq_zero hLength
+      exact
+        ⟨target, SpillStmtCode.run_skip target, hRel, rfl, rfl, hDefined,
+          hStackNil⟩
+  | cons top restStack ih =>
+      unfold spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨slot, nextLayout⟩
+          cases hTail :
+              spillOrDropAllStack? range sourceScope restStack nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              rcases
+                  run_spillStoreTopCode_evictTopStackLayout?_of_storeDefined_exact_length
+                    hSpec hWordBytes hEvict hRel hDefined hLength with
+                ⟨_evictTop, _evictRest, targetMid, hStackLayout,
+                  hHeadRunCode, hMidRel, hMidLength⟩
+              cases hStackLayout
+              have hHeadRun :
+                  SpillStmtCode.run
+                    (.Code (spillStoreTopCode (range.word slot))) target =
+                    .ok (.regular targetMid) := by
+                simp [SpillStmtCode.run, hHeadRunCode]
+              have hDefinedNext :
+                  SpillLayout.StoreDefined source.vars nextLayout := by
+                rcases SpillLayout.evictTopStackLayout?_sound hEvict with
+                  ⟨_soundTop, _soundRest, hSoundStack, _hTopBinding,
+                    _hSlotChoose, hNext, _hCheck⟩
+                cases hSoundStack
+                rw [hNext]
+                exact SpillLayout.StoreDefined.evictTopStackLayout hDefined
+              rcases ih (layout := nextLayout) (plan := tail)
+                  (target := targetMid) hTail hMidRel hDefinedNext
+                  hMidLength with
+                ⟨targetFinal, hTailRun, hFinalRel, hFinalScope,
+                  hFinalStack, hFinalDefined, hFinalStackExact⟩
+              exact
+                ⟨targetFinal,
+                  SpillStmtCode.run_seq_regular hHeadRun hTailRun,
+                  hFinalRel, hFinalScope, hFinalStack, hFinalDefined,
+                  hFinalStackExact⟩
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  rcases
+                      run_pop_dropDeadTopStackLayout?_of_exact_length
+                        hDrop hRel hLength with
+                    ⟨_dropTop, _dropRest, targetMid, hStackLayout,
+                      hHeadRunCode, hMidRel, hMidLength⟩
+                  cases hStackLayout
+                  have hHeadRun :
+                      SpillStmtCode.run
+                        (.Code [Structured.BasicInstr.op .pop]) target =
+                      .ok (.regular targetMid) := by
+                    simp [SpillStmtCode.run, hHeadRunCode]
+                  have hDefinedNext :
+                      SpillLayout.StoreDefined source.vars nextLayout := by
+                    rcases SpillLayout.dropDeadTopStackLayout?_sound hDrop with
+                      ⟨_soundTop, _soundRest, hSoundStack, _hDead, hNext,
+                        _hCheck⟩
+                    cases hSoundStack
+                    rw [hNext]
+                    exact SpillLayout.StoreDefined.evictTopStackLayout
+                      hDefined
+                  rcases ih (layout := nextLayout) (plan := tail)
+                      (target := targetMid) hTail hMidRel hDefinedNext
+                      hMidLength with
+                    ⟨targetFinal, hTailRun, hFinalRel, hFinalScope,
+                      hFinalStack, hFinalDefined, hFinalStackExact⟩
+                  exact
+                    ⟨targetFinal,
+                      SpillStmtCode.run_seq_regular hHeadRun hTailRun,
+                      hFinalRel, hFinalScope, hFinalStack, hFinalDefined,
+                      hFinalStackExact⟩
+
 theorem spillAllStack?_wellFormed
     {range : ScratchRange}
     {sourceScope stackLayout : List Name}
@@ -20199,6 +20740,64 @@ theorem spillAllStack?_wellFormed
               cases hStackLayout
               exact ih (layout := nextLayout) (plan := tail) hTail
                 hNextLayout
+
+theorem spillOrDropAllStack?_wellFormed
+    {range : ScratchRange}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    (hPlan :
+      spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan)
+    (hLayout :
+      SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.WellFormed range plan.sourceScope plan.stackLayout
+      plan.layout := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [spillOrDropAllStack?] at hPlan
+      cases hPlan
+      exact hLayout
+  | cons top restStack ih =>
+      unfold spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨_slot, nextLayout⟩
+          cases hTail :
+              spillOrDropAllStack? range sourceScope restStack nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              rcases SpillLayout.evictTopStackLayout?_wellFormed hEvict with
+                ⟨_top, _restStack, hStackLayout, hNextLayout⟩
+              cases hStackLayout
+              exact ih (layout := nextLayout) (plan := tail) hTail
+                hNextLayout
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  rcases SpillLayout.dropDeadTopStackLayout?_sound hDrop with
+                    ⟨_top, _restStack, hStackLayout, _hDead, _hNext,
+                      hCheck⟩
+                  cases hStackLayout
+                  exact ih (layout := nextLayout) (plan := tail) hTail
+                    (SpillLayout.checked?_sound hCheck)
 
 theorem compileFreshAtom?_wellFormed
     {range : ScratchRange} {sourceScope stackLayout : List Name}

@@ -1,0 +1,705 @@
+timing	decode	4
+timing	to_yul_contract	0
+timing	lower_code_unchecked	0
+timing	functions_compile	0
+timing	functions_source_accepted	0
+timing	functions_to_locals	0
+timing	locals_to_expressions	0
+timing	locals_compile	0
+timing	expressions_compile	0
+timing	live_layout_to_locals	0
+timing	live_layout_to_expressions	0
+timing	live_layout_compile	0
+timing	locals_adaptive_spill_to_expressions	0
+timing	locals_adaptive_spill_compile	0
+timing	call_aware_spill_to_expressions	0
+timing	call_aware_spill_compile	0
+timing	call_aware_switch_spill_to_expressions	0
+timing	call_aware_switch_spill_compile	0
+timing	scratch_frame_spill_to_expressions	0
+timing	scratch_frame_spill_compile	0
+timing	child_images	0
+timing	payload_items	0
+timing	data_sizes	0
+timing	layout0	0
+timing	data_offsets0	0
+timing	payload	0
+timing	placeholder_context	0
+timing	placeholder_resolved_object	0
+timing	placeholder_lower_unchecked	0
+timing	placeholder_functions_compile	0
+timing	placeholder_functions_to_locals	0
+timing	placeholder_locals_to_expressions	0
+timing	placeholder_locals_compile	0
+timing	placeholder_expressions_compile	0
+timing	placeholder_live_layout_compile	0
+timing	placeholder_scratch_frame_spill_to_expressions	0
+timing	placeholder_scratch_names_nodup	0
+timing	placeholder_scratch_signatures	0
+timing	placeholder_scratch_probe_functions	0
+timing	placeholder_scratch_main_probe	0
+timing	placeholder_scratch_frame_budget	0
+timing	placeholder_scratch_frame_functions	0
+timing	placeholder_scratch_frame_main	0
+timing	placeholder_scratch_frame_spill_compile	0
+timing	placeholder_code	0
+timing	layout	0
+timing	data_offsets	0
+timing	code_context	0
+timing	code_resolved_object	0
+timing	code_lower_unchecked	0
+timing	code_functions_compile	0
+timing	code_functions_to_locals	0
+timing	code_locals_to_expressions	0
+timing	code_locals_compile	0
+timing	code_expressions_compile	0
+timing	code_live_layout_compile	0
+timing	code_scratch_frame_spill_to_expressions	0
+timing	code_scratch_frame_spill_compile	0
+timing	code	0
+timing	marker_code	0
+timing	object_image	0
+timing	computed_object_data	0
+timing	resolved_object_data	0
+timing	solc_validation	0
+lean_backend_check=pass
+source=AaveV3InterestFallback.sol
+contract=AaveV3InterestFallback
+object=AaveV3InterestFallback_47_deployed
+stage	to_yul_contract	some
+stage	lower_code_unchecked	some
+stage	functions_source_accepted	some
+stage	functions_to_locals	some
+stage	locals_to_expressions	none
+stage	locals_compile	none
+stage	expressions_compile	none
+stage	functions_compile	none
+stage	live_layout_to_locals	none
+stage	live_layout_to_expressions	none
+stage	live_layout_compile	none
+stage	locals_adaptive_spill_to_expressions	none
+stage	locals_adaptive_spill_compile	none
+stage	call_aware_spill_to_expressions	none
+stage	call_aware_spill_compile	none
+stage	call_aware_switch_spill_to_expressions	some
+stage	call_aware_switch_spill_compile	some
+stage	scratch_frame_spill_to_expressions	some
+stage	scratch_frame_spill_compile	some
+stage	child_images	some
+stage	payload_items	some
+stage	data_sizes	some
+stage	layout0	some
+stage	data_offsets0	some
+stage	payload	some
+stage	placeholder_context	some
+stage	placeholder_resolved_object	some
+stage	placeholder_lower_unchecked	some
+stage	placeholder_functions_to_locals	some
+stage	placeholder_locals_to_expressions	none
+stage	placeholder_locals_compile	none
+stage	placeholder_expressions_compile	none
+stage	placeholder_functions_compile	none
+stage	placeholder_live_layout_compile	none
+stage	placeholder_scratch_names_nodup	some
+stage	placeholder_scratch_signatures	some
+stage	placeholder_scratch_probe_functions	some
+stage	placeholder_scratch_main_probe	some
+stage	placeholder_scratch_frame_budget	some
+stage	placeholder_scratch_frame_functions	some
+stage	placeholder_scratch_frame_main	some
+stage	placeholder_scratch_frame_spill_to_expressions	some
+stage	placeholder_scratch_frame_spill_compile	some
+stage	placeholder_code	some
+stage	layout	some
+stage	data_offsets	some
+stage	code_context	some
+stage	code_resolved_object	some
+stage	code_lower_unchecked	some
+stage	code_functions_to_locals	some
+stage	code_locals_to_expressions	none
+stage	code_locals_compile	none
+stage	code_expressions_compile	none
+stage	code_functions_compile	none
+stage	code_live_layout_compile	none
+stage	code_scratch_frame_spill_to_expressions	some
+stage	code_scratch_frame_spill_compile	some
+stage	code	some
+stage	marker_code	some
+stage	computed_object_data	some
+stage	resolved_object_data	some
+stage	solc_validation	some
+stage	object_image	some
+call_aware_switch_body	main	some
+call_aware_switch_stmt	main	0	block	some
+call_aware_switch_proc	panic_error_0x11	some
+call_aware_switch_proc_component	panic_error_0x11	return_some
+call_aware_switch_stmt	panic_error_0x11	0	expr	some
+call_aware_switch_stmt	panic_error_0x11	1	expr	some
+call_aware_switch_stmt	panic_error_0x11	2	terminalArgs	some
+call_aware_switch_proc	wrapping_div_uint256_389	some
+call_aware_switch_proc_component	wrapping_div_uint256_389	return_some
+call_aware_switch_stmt	wrapping_div_uint256_389	0	block	some
+call_aware_switch_stmt	wrapping_div_uint256_389	1	assign:r	some
+call_aware_switch_proc	wrapping_div_uint256	some
+call_aware_switch_proc_component	wrapping_div_uint256	return_some
+call_aware_switch_stmt	wrapping_div_uint256	0	block	some
+call_aware_switch_stmt	wrapping_div_uint256	1	assign:r	some
+call_aware_switch_proc	wrapping_div_uint256_391	some
+call_aware_switch_proc_component	wrapping_div_uint256_391	return_some
+call_aware_switch_stmt	wrapping_div_uint256_391	0	block	some
+call_aware_switch_stmt	wrapping_div_uint256_391	1	assign:r	some
+call_aware_switch_proc	checked_mul_uint256	some
+call_aware_switch_proc_component	checked_mul_uint256	return_some
+call_aware_switch_stmt	checked_mul_uint256	0	assign:product	some
+call_aware_switch_stmt	checked_mul_uint256	1	if	some
+call_aware_switch_proc	checked_add_uint256_392	some
+call_aware_switch_proc_component	checked_add_uint256_392	return_some
+call_aware_switch_stmt	checked_add_uint256_392	0	assign:sum	some
+call_aware_switch_stmt	checked_add_uint256_392	1	if	some
+call_aware_switch_proc	checked_add_uint256	some
+call_aware_switch_proc_component	checked_add_uint256	return_some
+call_aware_switch_stmt	checked_add_uint256	0	assign:sum	some
+call_aware_switch_stmt	checked_add_uint256	1	if	some
+call_aware_switch_proc	fun_calculateCompoundedInterest	some
+call_aware_switch_proc_component	fun_calculateCompoundedInterest	return_some
+call_aware_switch_stmt	fun_calculateCompoundedInterest	0	assign:var_	some
+call_aware_switch_stmt	fun_calculateCompoundedInterest	1	if	some
+call_aware_switch_stmt	fun_calculateCompoundedInterest	2	if	some
+call_aware_switch_stmt	fun_calculateCompoundedInterest	3	block	some
+call_aware_switch_proc	fun_rayMul	some
+call_aware_switch_proc_component	fun_rayMul	return_some
+call_aware_switch_stmt	fun_rayMul	0	if	some
+call_aware_switch_stmt	fun_rayMul	1	assign:var_c	some
+placeholder_scratch_frame_words=84
+locals_body	main	none
+locals_stmt	main	0	block	none
+locals_layout	main	0	0	[]
+locals_stmt	main/0.block	0	expr	some
+locals_stmt	main/0.block	1	if	some
+locals_stmt	main/0.block	2	block	none
+locals_layout	main/0.block	2	0	[]
+locals_stmt	main/0.block/2.block	0	block	none
+locals_layout	main/0.block/2.block	0	0	[]
+locals_stmt	main/0.block/2.block/0.block	0	let:_1	some
+locals_stmt	main/0.block/2.block/0.block	1	block	none
+locals_layout	main/0.block/2.block/0.block	1	1	[_1]
+locals_stmt	main/0.block/2.block/0.block/1.block	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block	0	1	[_1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block	0	let:var_result	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block	1	2	[var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block	0	let:__evm_compiler_tmp_0	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block	1	3	[__evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	0	let:__evm_compiler_tmp_1	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	1	switch	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	1	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.switch	0	block	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default	0	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block	0	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	0	let:var	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	1	block	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	2	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	2	5	[var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block	0	5	[var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	0	let:expr	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	1	assign:expr	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	2	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	2	6	[expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	0	let:expr_1	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	2	call:fun_rayMul	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	3	assignTopWithOffset:0:expr_1	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	4	7	[expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	0	let:r	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	1	block	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	2	assign:r	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	3	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	3	8	[r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block	0	8	[r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	0	let:__evm_compiler_tmp_3	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	2	call:fun_rayMul	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	3	assignTopWithOffset:0:__evm_compiler_tmp_3	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	4	9	[__evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	0	let:__evm_compiler_tmp_4	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	1	10	[__evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	0	let:r_1	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	11	[r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	let:product	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	1	assign:product	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	2	assign:_1	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	3	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	3	12	[product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block	0	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block	0	12	[product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	0	let:expr_2	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	1	block	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	2	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	2	13	[expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	0	let:__evm_compiler_tmp_7	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	2	call:checked_mul_uint256	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	3	assignTopWithOffset:0:__evm_compiler_tmp_7	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	4	14	[__evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	0	let:__evm_compiler_tmp_8	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	1	15	[__evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	0	let:__evm_compiler_tmp_9	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_9	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	4	16	[__evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_10	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	1	17	[__evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_11	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_11	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	4	18	[__evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_12	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	19	[__evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_13	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_13	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	20	[__evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_14	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	21	[__evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_15	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_15	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	22	[__evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_16	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	23	[__evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_17	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256_391	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_17	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	24	[__evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_18	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	25	[__evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_19	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:checked_add_uint256_392	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_19	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	26	[__evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_20	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	27	[__evm_compiler_tmp_20, __evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_21	some
+locals_stmt	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	none
+locals_layout	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	28	[__evm_compiler_tmp_21, __evm_compiler_tmp_20, __evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_var	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	__evm_compiler_tmp_20	2
+locals_var	main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	expr_2	16
+locals_proc	panic_error_0x11	some
+locals_stmt	panic_error_0x11	0	expr	some
+locals_stmt	panic_error_0x11	1	expr	some
+locals_stmt	panic_error_0x11	2	terminalArgs	some
+locals_proc	wrapping_div_uint256_389	some
+locals_stmt	wrapping_div_uint256_389	0	let:r	some
+locals_stmt	wrapping_div_uint256_389	1	block	some
+locals_stmt	wrapping_div_uint256_389	2	assign:r	some
+locals_stmt	wrapping_div_uint256_389	3	exprs	some
+locals_proc	wrapping_div_uint256	some
+locals_stmt	wrapping_div_uint256	0	let:r	some
+locals_stmt	wrapping_div_uint256	1	block	some
+locals_stmt	wrapping_div_uint256	2	assign:r	some
+locals_stmt	wrapping_div_uint256	3	exprs	some
+locals_proc	wrapping_div_uint256_391	some
+locals_stmt	wrapping_div_uint256_391	0	let:r	some
+locals_stmt	wrapping_div_uint256_391	1	block	some
+locals_stmt	wrapping_div_uint256_391	2	assign:r	some
+locals_stmt	wrapping_div_uint256_391	3	exprs	some
+locals_proc	checked_mul_uint256	some
+locals_stmt	checked_mul_uint256	0	let:product	some
+locals_stmt	checked_mul_uint256	1	assign:product	some
+locals_stmt	checked_mul_uint256	2	if	some
+locals_stmt	checked_mul_uint256	3	exprs	some
+locals_proc	checked_add_uint256_392	some
+locals_stmt	checked_add_uint256_392	0	let:sum	some
+locals_stmt	checked_add_uint256_392	1	assign:sum	some
+locals_stmt	checked_add_uint256_392	2	if	some
+locals_stmt	checked_add_uint256_392	3	exprs	some
+locals_proc	checked_add_uint256	some
+locals_stmt	checked_add_uint256	0	let:sum	some
+locals_stmt	checked_add_uint256	1	assign:sum	some
+locals_stmt	checked_add_uint256	2	if	some
+locals_stmt	checked_add_uint256	3	exprs	some
+locals_proc	fun_calculateCompoundedInterest	none
+locals_stmt	fun_calculateCompoundedInterest	0	let:var_	some
+locals_stmt	fun_calculateCompoundedInterest	1	assign:var_	some
+locals_stmt	fun_calculateCompoundedInterest	2	if	some
+locals_stmt	fun_calculateCompoundedInterest	3	if	some
+locals_stmt	fun_calculateCompoundedInterest	4	block	none
+locals_layout	fun_calculateCompoundedInterest	4	2	[var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block	0	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block	0	2	[var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block	0	let:expr_1	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block	1	switch	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block	2	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block	2	3	[expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block	0	let:x	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block	2	call:fun_rayMul	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block	3	assignTopWithOffset:0:x	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block	4	4	[x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	0	let:r	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	1	block	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	2	assign:r	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	3	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	3	5	[r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block	0	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block	0	5	[r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	0	let:__evm_compiler_tmp_23	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	2	call:fun_rayMul	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	3	assignTopWithOffset:0:__evm_compiler_tmp_23	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	4	6	[__evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	0	let:__evm_compiler_tmp_24	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	1	7	[__evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	0	let:r_1	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	8	[r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	8	[r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	0	let:expr_2	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	1	block	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	2	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	2	9	[expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	0	let:__evm_compiler_tmp_29	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	2	call:checked_mul_uint256	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	3	assignTopWithOffset:0:__evm_compiler_tmp_29	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	4	10	[__evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	0	let:__evm_compiler_tmp_30	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	1	11	[__evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	0	let:__evm_compiler_tmp_31	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_31	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	4	12	[__evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_32	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	1	13	[__evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_33	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_33	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	4	14	[__evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_34	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	15	[__evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_35	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_35	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	16	[__evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_36	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	17	[__evm_compiler_tmp_36, __evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_37	some
+locals_stmt	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	none
+locals_layout	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	18	[__evm_compiler_tmp_37, __evm_compiler_tmp_36, __evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_var	fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	var_currentTimestamp	18
+locals_proc	fun_rayMul	some
+locals_stmt	fun_rayMul	0	let:var_c	some
+locals_stmt	fun_rayMul	1	if	some
+locals_stmt	fun_rayMul	2	assign:var_c	some
+locals_stmt	fun_rayMul	3	exprs	some
+locals_body	placeholder_main	none
+locals_stmt	placeholder_main	0	block	none
+locals_layout	placeholder_main	0	0	[]
+locals_stmt	placeholder_main/0.block	0	expr	some
+locals_stmt	placeholder_main/0.block	1	if	some
+locals_stmt	placeholder_main/0.block	2	block	none
+locals_layout	placeholder_main/0.block	2	0	[]
+locals_stmt	placeholder_main/0.block/2.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block	0	0	[]
+locals_stmt	placeholder_main/0.block/2.block/0.block	0	let:_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block	1	1	[_1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block	0	1	[_1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block	0	let:var_result	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block	1	2	[var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block	0	let:__evm_compiler_tmp_0	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block	1	3	[__evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	0	let:__evm_compiler_tmp_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	1	switch	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block	1	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.switch	0	block	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default	0	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block	0	4	[__evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	0	let:var	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	1	block	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	2	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block	2	5	[var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block	0	5	[var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	0	let:expr	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	1	assign:expr	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	2	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block	2	6	[expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	0	let:expr_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	2	call:fun_rayMul	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	3	assignTopWithOffset:0:expr_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block	4	7	[expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	0	let:r	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	1	block	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	2	assign:r	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	3	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block	3	8	[r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block	0	8	[r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	0	let:__evm_compiler_tmp_3	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	2	call:fun_rayMul	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	3	assignTopWithOffset:0:__evm_compiler_tmp_3	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block	4	9	[__evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	0	let:__evm_compiler_tmp_4	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block	1	10	[__evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	0	let:r_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	11	[r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	let:product	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	1	assign:product	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	2	assign:_1	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	3	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	3	12	[product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block	0	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block	0	12	[product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	0	let:expr_2	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	1	block	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	2	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block	2	13	[expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	0	let:__evm_compiler_tmp_7	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	3	assignTopWithOffset:0:__evm_compiler_tmp_7	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block	4	14	[__evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	0	let:__evm_compiler_tmp_8	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block	1	15	[__evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	0	let:__evm_compiler_tmp_9	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_9	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block	4	16	[__evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_10	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block	1	17	[__evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_11	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_11	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block	4	18	[__evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_12	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	19	[__evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_13	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_13	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	20	[__evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_14	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	21	[__evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_15	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_15	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	22	[__evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_16	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	23	[__evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_17	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256_391	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_17	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	24	[__evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_18	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	25	[__evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_19	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:checked_add_uint256_392	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_19	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	4	26	[__evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_20	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	27	[__evm_compiler_tmp_20, __evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_21	some
+locals_stmt	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	none
+locals_layout	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	28	[__evm_compiler_tmp_21, __evm_compiler_tmp_20, __evm_compiler_tmp_19, __evm_compiler_tmp_18, __evm_compiler_tmp_17, __evm_compiler_tmp_16, __evm_compiler_tmp_15, __evm_compiler_tmp_14, __evm_compiler_tmp_13, __evm_compiler_tmp_12, __evm_compiler_tmp_11, __evm_compiler_tmp_10, __evm_compiler_tmp_9, __evm_compiler_tmp_8, __evm_compiler_tmp_7, expr_2, product, r_1, __evm_compiler_tmp_4, __evm_compiler_tmp_3, r, expr_1, expr, var, __evm_compiler_tmp_1, __evm_compiler_tmp_0, var_result, _1]
+locals_var	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	__evm_compiler_tmp_20	2
+locals_var	placeholder_main/0.block/2.block/0.block/1.block/0.block/1.block/1.block/1.default/0.block/0.block/2.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/3.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	expr_2	16
+locals_proc	placeholder:panic_error_0x11	some
+locals_stmt	placeholder:panic_error_0x11	0	expr	some
+locals_stmt	placeholder:panic_error_0x11	1	expr	some
+locals_stmt	placeholder:panic_error_0x11	2	terminalArgs	some
+locals_proc	placeholder:wrapping_div_uint256_389	some
+locals_stmt	placeholder:wrapping_div_uint256_389	0	let:r	some
+locals_stmt	placeholder:wrapping_div_uint256_389	1	block	some
+locals_stmt	placeholder:wrapping_div_uint256_389	2	assign:r	some
+locals_stmt	placeholder:wrapping_div_uint256_389	3	exprs	some
+locals_proc	placeholder:wrapping_div_uint256	some
+locals_stmt	placeholder:wrapping_div_uint256	0	let:r	some
+locals_stmt	placeholder:wrapping_div_uint256	1	block	some
+locals_stmt	placeholder:wrapping_div_uint256	2	assign:r	some
+locals_stmt	placeholder:wrapping_div_uint256	3	exprs	some
+locals_proc	placeholder:wrapping_div_uint256_391	some
+locals_stmt	placeholder:wrapping_div_uint256_391	0	let:r	some
+locals_stmt	placeholder:wrapping_div_uint256_391	1	block	some
+locals_stmt	placeholder:wrapping_div_uint256_391	2	assign:r	some
+locals_stmt	placeholder:wrapping_div_uint256_391	3	exprs	some
+locals_proc	placeholder:checked_mul_uint256	some
+locals_stmt	placeholder:checked_mul_uint256	0	let:product	some
+locals_stmt	placeholder:checked_mul_uint256	1	assign:product	some
+locals_stmt	placeholder:checked_mul_uint256	2	if	some
+locals_stmt	placeholder:checked_mul_uint256	3	exprs	some
+locals_proc	placeholder:checked_add_uint256_392	some
+locals_stmt	placeholder:checked_add_uint256_392	0	let:sum	some
+locals_stmt	placeholder:checked_add_uint256_392	1	assign:sum	some
+locals_stmt	placeholder:checked_add_uint256_392	2	if	some
+locals_stmt	placeholder:checked_add_uint256_392	3	exprs	some
+locals_proc	placeholder:checked_add_uint256	some
+locals_stmt	placeholder:checked_add_uint256	0	let:sum	some
+locals_stmt	placeholder:checked_add_uint256	1	assign:sum	some
+locals_stmt	placeholder:checked_add_uint256	2	if	some
+locals_stmt	placeholder:checked_add_uint256	3	exprs	some
+locals_proc	placeholder:fun_calculateCompoundedInterest	none
+locals_stmt	placeholder:fun_calculateCompoundedInterest	0	let:var_	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest	1	assign:var_	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest	2	if	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest	3	if	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest	4	2	[var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block	0	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block	0	2	[var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block	0	let:expr_1	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block	1	switch	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block	2	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block	2	3	[expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	0	let:x	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	2	call:fun_rayMul	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	3	assignTopWithOffset:0:x	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block	4	4	[x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	0	let:r	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	1	block	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	2	assign:r	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	3	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block	3	5	[r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block	0	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block	0	5	[r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	0	let:__evm_compiler_tmp_23	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	2	call:fun_rayMul	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	3	assignTopWithOffset:0:__evm_compiler_tmp_23	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block	4	6	[__evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	0	let:__evm_compiler_tmp_24	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block	1	7	[__evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	0	let:r_1	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block	1	8	[r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block	0	8	[r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	0	let:expr_2	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	1	block	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	2	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block	2	9	[expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	0	let:__evm_compiler_tmp_29	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	3	assignTopWithOffset:0:__evm_compiler_tmp_29	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block	4	10	[__evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	0	let:__evm_compiler_tmp_30	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block	1	11	[__evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	0	let:__evm_compiler_tmp_31	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_31	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block	4	12	[__evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_32	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block	1	13	[__evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_33	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	2	call:checked_mul_uint256	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_33	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block	4	14	[__evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_34	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block	1	15	[__evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_35	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	2	call:wrapping_div_uint256	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	3	assignTopWithOffset:0:__evm_compiler_tmp_35	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block	4	16	[__evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	0	let:__evm_compiler_tmp_36	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	block	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block	1	17	[__evm_compiler_tmp_36, __evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	0	let:__evm_compiler_tmp_37	some
+locals_stmt	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	exprs	none
+locals_layout	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	18	[__evm_compiler_tmp_37, __evm_compiler_tmp_36, __evm_compiler_tmp_35, __evm_compiler_tmp_34, __evm_compiler_tmp_33, __evm_compiler_tmp_32, __evm_compiler_tmp_31, __evm_compiler_tmp_30, __evm_compiler_tmp_29, expr_2, r_1, __evm_compiler_tmp_24, __evm_compiler_tmp_23, r, x, expr_1, var_, var_currentTimestamp]
+locals_var	placeholder:fun_calculateCompoundedInterest/4.block/0.block/2.block/4.block/3.block/0.block/4.block/1.block/1.block/0.block/2.block/4.block/1.block/4.block/1.block/4.block/1.block/4.block/1.block	1	var_currentTimestamp	18
+locals_proc	placeholder:fun_rayMul	some
+locals_stmt	placeholder:fun_rayMul	0	let:var_c	some
+locals_stmt	placeholder:fun_rayMul	1	if	some
+locals_stmt	placeholder:fun_rayMul	2	assign:var_c	some
+locals_stmt	placeholder:fun_rayMul	3	exprs	some
+first_none=none
+bytecode_bytes=46757
