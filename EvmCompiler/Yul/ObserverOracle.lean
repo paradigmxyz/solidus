@@ -12719,6 +12719,454 @@ theorem head_case_from_tests_result_ctx {program : Structured.Program}
   simpa [caseLabel, testCode, restTests, compiledBody, compiledTail,
     compiledDefault, preCase, List.append_assoc] using hTail
 
+theorem selected_cases_result_ctx_of_body_tail_run
+    {ctx : Structured.CompileContext}
+    {base supply : Structured.LabelSupply} {idx : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {selected : Structured.Block}
+    {pre casePrefix post : Assembly.Program}
+    {defaultLabel endLabel : Assembly.Label}
+    {source : Structured.RunState}
+    {outcome : Structured.Outcome}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceOut : Trace}
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.switchTests base idx cases ++
+          [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+            supply idx).code ++
+          (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+            defaultLabel
+            (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+              supply idx).next).code ++
+          [Assembly.Instr.label endLabel]))
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (Structured.Stmt.switchTests base idx cases ++
+            [Assembly.Instr.jump defaultLabel] ++
+            casePrefix ++
+            (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+              supply idx).code ++
+            (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+              defaultLabel
+              (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+                supply idx).next).code ++
+            [Assembly.Instr.label endLabel]) ++ post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody = some selected)
+    (hBodyTail :
+      ∀ {bodySupply : Structured.LabelSupply}
+        {selectedBody : Structured.Block}
+        {bodyPrefix bodySuffix : Assembly.Program},
+        selectedBody = selected →
+        ∀ targetAfterPop,
+          Structured.Preservation.Frame.StateRel
+            (source.withEVM { source.evm with stack := stack })
+            targetAfterPop tokens →
+          targetAfterPop.pc =
+            Assembly.Program.pcAfter
+              (bodyPrefix ++ [Assembly.Instr.prim .pop]) →
+          ARunResultWithOracle
+            (bodyPrefix ++ [Assembly.Instr.prim .pop] ++
+              (Structured.Block.compileFromCtx selectedBody ctx
+                bodySupply).code ++
+              bodySuffix ++ post)
+            targetAfterPop trace
+            (fun result traceFinal =>
+              traceFinal = traceOut ∧
+                Structured.Preservation.CompiledOutcomeRel
+                  (bodyPrefix ++ [Assembly.Instr.prim .pop] ++
+                    (Structured.Block.compileFromCtx selectedBody ctx
+                      bodySupply).code ++
+                    bodySuffix ++ post)
+                  ctx
+                  (Assembly.Program.pcAfter
+                    (bodyPrefix ++ [Assembly.Instr.prim .pop] ++
+                      (Structured.Block.compileFromCtx selectedBody ctx
+                        bodySupply).code ++
+                      bodySuffix))
+                  outcome result tokens)) :
+    ARunResultWithOracle
+      (pre ++
+        (Structured.Stmt.switchTests base idx cases ++
+          [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+            supply idx).code ++
+          (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+            defaultLabel
+            (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+              supply idx).next).code ++
+          [Assembly.Instr.label endLabel]) ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceOut ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              (Structured.Stmt.switchTests base idx cases ++
+                [Assembly.Instr.jump defaultLabel] ++
+                casePrefix ++
+                (Structured.SwitchCases.compileFromCtx cases ctx endLabel base
+                  supply idx).code ++
+                (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                  endLabel defaultLabel
+                  (Structured.SwitchCases.compileFromCtx cases ctx endLabel
+                    base supply idx).next).code ++
+                [Assembly.Instr.label endLabel]) ++ post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                (Structured.Stmt.switchTests base idx cases ++
+                  [Assembly.Instr.jump defaultLabel] ++
+                  casePrefix ++
+                  (Structured.SwitchCases.compileFromCtx cases ctx endLabel
+                    base supply idx).code ++
+                  (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                    endLabel defaultLabel
+                    (Structured.SwitchCases.compileFromCtx cases ctx endLabel
+                      base supply idx).next).code ++
+                  [Assembly.Instr.label endLabel])))
+            outcome result tokens) := by
+  induction cases generalizing pre supply idx casePrefix target selected trace with
+  | nil =>
+      cases defaultBody with
+      | none =>
+          simp [Structured.Switch.select] at hSelect
+      | some defaultBlock =>
+          have hSelected : selected = defaultBlock := by
+            simpa [Structured.Switch.select] using hSelect.symm
+          subst selected
+          have hDefaultTail :
+              ∀ targetAfterPop,
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens →
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter
+                    (pre ++ [Assembly.Instr.jump defaultLabel] ++
+                      casePrefix ++
+                      [ Assembly.Instr.label defaultLabel
+                      , Assembly.Instr.prim .pop ]) →
+                ARunResultWithOracle
+                  (pre ++
+                    ([Assembly.Instr.jump defaultLabel] ++ casePrefix ++
+                      [ Assembly.Instr.label defaultLabel
+                      , Assembly.Instr.prim .pop ] ++
+                      (Structured.Block.compileFromCtx defaultBlock ctx
+                        supply).code ++
+                      [ Assembly.Instr.jump endLabel
+                      , Assembly.Instr.label endLabel ]) ++
+                    post)
+                  targetAfterPop trace
+                  (fun result traceFinal =>
+                    traceFinal = traceOut ∧
+                      Structured.Preservation.CompiledOutcomeRel
+                        (pre ++
+                          ([Assembly.Instr.jump defaultLabel] ++
+                            casePrefix ++
+                            [ Assembly.Instr.label defaultLabel
+                            , Assembly.Instr.prim .pop ] ++
+                            (Structured.Block.compileFromCtx defaultBlock ctx
+                              supply).code ++
+                            [ Assembly.Instr.jump endLabel
+                            , Assembly.Instr.label endLabel ]) ++
+                          post)
+                        ctx
+                        (Assembly.Program.pcAfter
+                          (pre ++
+                            ([Assembly.Instr.jump defaultLabel] ++
+                              casePrefix ++
+                              [ Assembly.Instr.label defaultLabel
+                              , Assembly.Instr.prim .pop ] ++
+                              (Structured.Block.compileFromCtx defaultBlock
+                                ctx supply).code ++
+                              [ Assembly.Instr.jump endLabel
+                              , Assembly.Instr.label endLabel ])))
+                        outcome result tokens) := by
+            intro targetAfterPop hRelAfterPop hPcAfterPop
+            have hSelectedEq : defaultBlock = defaultBlock := rfl
+            let hBody :=
+              hBodyTail (bodySupply := supply)
+                (selectedBody := defaultBlock)
+                (bodyPrefix :=
+                  pre ++ [Assembly.Instr.jump defaultLabel] ++
+                    casePrefix ++ [Assembly.Instr.label defaultLabel])
+                (bodySuffix :=
+                  [Assembly.Instr.jump endLabel,
+                    Assembly.Instr.label endLabel])
+                hSelectedEq
+            have hPcAfterPop' :
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter
+                    ((pre ++ [Assembly.Instr.jump defaultLabel] ++
+                      casePrefix ++ [Assembly.Instr.label defaultLabel]) ++
+                      [Assembly.Instr.prim .pop]) := by
+              simpa [List.append_assoc] using hPcAfterPop
+            have hBodyRun :=
+              hBody targetAfterPop hRelAfterPop hPcAfterPop'
+            convert hBodyRun using 1 <;>
+              simp [List.append_assoc]
+          have hRun :=
+            default_selected_tail_result_ctx_of_body_tail_run
+              (ctx := ctx) (bodySupply := supply) (body := defaultBlock)
+              (pre := pre) (between := casePrefix) (post := post)
+              (defaultLabel := defaultLabel) (endLabel := endLabel)
+              (source := source) (outcome := outcome)
+              (target := target) (tokens := tokens)
+              (stack := stack) (value := value)
+              (trace := trace) (traceOut := traceOut)
+              (by
+                simpa [Structured.Stmt.switchTests,
+                  Structured.SwitchCases.compileFromCtx,
+                  Structured.SwitchDefault.compileFromCtx,
+                  List.append_assoc] using hFits)
+              (by
+                simpa [Structured.Stmt.switchTests,
+                  Structured.SwitchCases.compileFromCtx,
+                  Structured.SwitchDefault.compileFromCtx,
+                  List.append_assoc] using hExact)
+              hPc hRel hPop hDefaultTail
+          simpa [Structured.Stmt.switchTests,
+            Structured.SwitchCases.compileFromCtx,
+            Structured.SwitchDefault.compileFromCtx, List.append_assoc]
+            using hRun
+  | cons head rest ih =>
+      rcases head with ⟨probe, headBody⟩
+      let caseLabel := Structured.LabelSupply.label base (idx + 2)
+      let testCode := Structured.Stmt.switchTest base idx probe
+      let restTests := Structured.Stmt.switchTests base (idx + 1) rest
+      let compiledBody := Structured.Block.compileFromCtx headBody ctx supply
+      let headCode : Assembly.Program :=
+        [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++ [Assembly.Instr.jump endLabel]
+      let compiledTail :=
+        Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+          compiledBody.next (idx + 1)
+      let compiledDefault :=
+        Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+          defaultLabel compiledTail.next
+      have hFitsCons :
+          Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+            (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+              casePrefix ++ headCode ++ compiledTail.code ++
+              compiledDefault.code ++ [Assembly.Instr.label endLabel]) := by
+        simpa [Structured.Stmt.switchTests, Structured.Stmt.switchTest,
+          Structured.SwitchCases.compileFromCtx,
+          Structured.CompileResult.append, caseLabel, testCode, restTests,
+          compiledBody, compiledTail, compiledDefault, headCode,
+          List.append_assoc] using hFits
+      have hExactCons :
+          Structured.Preservation.ExactLabels
+            (pre ++
+              (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                casePrefix ++ headCode ++ compiledTail.code ++
+                compiledDefault.code ++ [Assembly.Instr.label endLabel]) ++
+              post) := by
+        simpa [Structured.Stmt.switchTests, Structured.Stmt.switchTest,
+          Structured.SwitchCases.compileFromCtx,
+          Structured.CompileResult.append, caseLabel, testCode, restTests,
+          compiledBody, compiledTail, compiledDefault, headCode,
+          List.append_assoc] using hExact
+      let preCase : Assembly.Program :=
+        pre ++ testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+          casePrefix
+      have hFitCaseLabel : Structured.Preservation.PCFits preCase := by
+        have hPrefix :
+            Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+              (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                casePrefix) :=
+          Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+            (first :=
+              testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                casePrefix)
+            (second :=
+              [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+                compiledBody.code ++ [Assembly.Instr.jump endLabel] ++
+                compiledTail.code ++ compiledDefault.code ++
+                [Assembly.Instr.label endLabel])
+            (by simpa [headCode, List.append_assoc] using hFitsCons)
+        simpa [preCase, List.append_assoc] using
+          Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+      have hFitPop :
+          Structured.Preservation.PCFits
+            (preCase ++ [Assembly.Instr.label caseLabel]) := by
+        have hPrefix :
+            Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+              (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                casePrefix ++ [Assembly.Instr.label caseLabel]) :=
+          Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+            (first :=
+              testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                casePrefix ++ [Assembly.Instr.label caseLabel])
+            (second :=
+              [Assembly.Instr.prim .pop] ++ compiledBody.code ++
+                [Assembly.Instr.jump endLabel] ++ compiledTail.code ++
+                compiledDefault.code ++ [Assembly.Instr.label endLabel])
+            (by simpa [headCode, List.append_assoc] using hFitsCons)
+        simpa [preCase, List.append_assoc] using
+          Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+      by_cases hEq : probe = value
+      · have hSelected : selected = headBody :=
+          Structured.Preservation.SwitchPreservation.select_head_body_of_head_eq
+            (value := value) (probe := probe) (headBody := headBody)
+            (body := selected) (rest := rest) (defaultBody := defaultBody)
+            hEq hSelect
+        subst selected
+        have hHeadTail :=
+          fun targetAtCase hRelAtCase hPcAtCase =>
+            let hInnerTail :=
+              fun targetAfterPop hRelAfterPop hPcAfterPop =>
+                by
+                  have hPcAfterPop' :
+                      targetAfterPop.pc =
+                        Assembly.Program.pcAfter
+                          ((preCase ++ [Assembly.Instr.label caseLabel]) ++
+                            [Assembly.Instr.prim .pop]) := by
+                    simpa [preCase, List.append_assoc] using hPcAfterPop
+                  have hSelectedEq : headBody = headBody := rfl
+                  let hBody :=
+                    hBodyTail (bodySupply := supply)
+                      (selectedBody := headBody)
+                      (bodyPrefix :=
+                        preCase ++ [Assembly.Instr.label caseLabel])
+                      (bodySuffix :=
+                        [Assembly.Instr.jump endLabel] ++
+                          compiledTail.code ++ compiledDefault.code ++
+                          [Assembly.Instr.label endLabel])
+                      hSelectedEq
+                  have hBodyRun :=
+                    hBody targetAfterPop hRelAfterPop hPcAfterPop'
+                  convert hBodyRun using 1
+                  all_goals simp [preCase, compiledBody, List.append_assoc]
+            labeled_body_tail_result_ctx_of_body_tail_run
+              (ctx := ctx) (bodySupply := supply) (body := headBody)
+              (pre := preCase)
+              (betweenEnd := compiledTail.code ++ compiledDefault.code)
+              (post := post) (caseLabel := caseLabel)
+              (endLabel := endLabel) (source := source)
+              (outcome := outcome) (target := targetAtCase)
+              (tokens := tokens) (stack := stack) (value := value)
+              (trace := trace) (traceOut := traceOut)
+              hFitCaseLabel hFitPop hPcAtCase hRelAtCase hPop hInnerTail
+        have hRun :=
+          head_case_from_tests_result_ctx_of_tail_run
+            (ctx := ctx) (base := base) (supply := supply)
+            (idx := idx) (probe := probe) (body := headBody)
+            (rest := rest) (defaultBody := defaultBody)
+            (pre := pre) (casePrefix := casePrefix) (post := post)
+            (defaultLabel := defaultLabel) (endLabel := endLabel)
+            (source := source) (outcome := outcome)
+            (target := target) (tokens := tokens) (stack := stack)
+            (value := value)
+            (trace := trace) (traceOut := traceOut)
+            hEq
+            (by
+              simpa [Structured.Stmt.switchTests,
+                Structured.Stmt.switchTest,
+                Structured.SwitchCases.compileFromCtx,
+                Structured.CompileResult.append, caseLabel, testCode,
+                restTests, compiledBody, compiledTail, compiledDefault,
+                headCode, List.append_assoc] using hFits)
+            (by
+              simpa [Structured.Stmt.switchTests,
+                Structured.Stmt.switchTest,
+                Structured.SwitchCases.compileFromCtx,
+                Structured.CompileResult.append, caseLabel, testCode,
+                restTests, compiledBody, compiledTail, compiledDefault,
+                headCode, List.append_assoc] using hExact)
+            hPc hRel hPop
+            (by
+              intro targetAtCase hRelAtCase hPcAtCase
+              simpa [caseLabel, testCode, restTests, compiledBody,
+                compiledTail, compiledDefault, preCase, List.append_assoc]
+                using
+                  hHeadTail targetAtCase hRelAtCase
+                    (by
+                      simpa [preCase, testCode, restTests, List.append_assoc]
+                        using hPcAtCase))
+        simpa [Structured.Stmt.switchTests, Structured.Stmt.switchTest,
+          Structured.SwitchCases.compileFromCtx,
+          Structured.CompileResult.append, caseLabel, testCode, restTests,
+          compiledBody, compiledTail, compiledDefault, headCode,
+          List.append_assoc] using hRun
+      · have hTailSelect :
+            Structured.Switch.select value rest defaultBody = some selected :=
+          Structured.Preservation.SwitchPreservation.select_tail_of_head_ne
+            (value := value) (probe := probe) (headBody := headBody)
+            (body := selected) (rest := rest) (defaultBody := defaultBody)
+            hEq hSelect
+        have hRun :=
+          tail_case_from_tests_result_ctx_of_tail_run
+            (ctx := ctx) (base := base) (supply := supply)
+            (idx := idx) (probe := probe) (headBody := headBody)
+            (rest := rest) (defaultBody := defaultBody)
+            (pre := pre) (casePrefix := casePrefix) (post := post)
+            (defaultLabel := defaultLabel) (endLabel := endLabel)
+            (source := source) (outcome := outcome)
+            (target := target) (tokens := tokens) (stack := stack)
+            (value := value)
+            (trace := trace) (traceOut := traceOut)
+            hEq
+            (by
+              simpa [Structured.Stmt.switchTests,
+                Structured.Stmt.switchTest,
+                Structured.SwitchCases.compileFromCtx,
+                Structured.CompileResult.append, caseLabel, testCode,
+                restTests, compiledBody, compiledTail, compiledDefault,
+                headCode, List.append_assoc] using hFits)
+            (by
+              simpa [Structured.Stmt.switchTests,
+                Structured.Stmt.switchTest,
+                Structured.SwitchCases.compileFromCtx,
+                Structured.CompileResult.append, caseLabel, testCode,
+                restTests, compiledBody, compiledTail, compiledDefault,
+                headCode, List.append_assoc] using hExact)
+            hPc hRel hPop
+            (by
+              intro targetAfterTest hRelAfterTest hPcAfterTest
+              have hRec :=
+                ih (supply := compiledBody.next) (idx := idx + 1)
+                  (pre := pre ++ testCode)
+                  (casePrefix := casePrefix ++ headCode)
+                  (target := targetAfterTest)
+                  (selected := selected)
+                  (trace := trace)
+                  (by
+                    simpa [testCode, restTests, compiledBody, compiledTail,
+                      compiledDefault, headCode, List.append_assoc] using
+                      (Structured.Preservation.AssemblyProgram.PCFitsFrom.right
+                        (pre := pre) (first := testCode)
+                        (second :=
+                          restTests ++ [Assembly.Instr.jump defaultLabel] ++
+                            casePrefix ++ headCode ++ compiledTail.code ++
+                            compiledDefault.code ++
+                            [Assembly.Instr.label endLabel])
+                        hFitsCons))
+                  (by
+                    simpa [testCode, restTests, compiledBody, compiledTail,
+                      compiledDefault, headCode, List.append_assoc]
+                      using hExactCons)
+                  hPcAfterTest hRelAfterTest hTailSelect hBodyTail
+              simpa [Structured.Stmt.switchTests, Structured.Stmt.switchTest,
+                Structured.SwitchCases.compileFromCtx,
+                Structured.CompileResult.append, caseLabel, testCode,
+                restTests, compiledBody, compiledTail, compiledDefault,
+                headCode, List.append_assoc] using hRec)
+        simpa [Structured.Stmt.switchTests, Structured.Stmt.switchTest,
+          Structured.SwitchCases.compileFromCtx,
+          Structured.CompileResult.append, caseLabel, testCode, restTests,
+          compiledBody, compiledTail, compiledDefault, headCode,
+          List.append_assoc] using hRun
+
 theorem selected_cases_result_ctx {program : Structured.Program}
     {ctx : Structured.CompileContext}
     {base supply : Structured.LabelSupply} {idx : Nat}
