@@ -18316,6 +18316,76 @@ theorem block_append {canBreak canContinue canLeave : Bool}
           simpa using
             Block.cons hStmt (ih hRest)
 
+theorem block_of_select {canBreak canContinue canLeave : Bool}
+    {scrutinee : Word} {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block} {selected : Structured.Block}
+    (hCases :
+      ∀ value body, (value, body) ∈ cases →
+        Block canBreak canContinue canLeave body)
+    (hDefault :
+      ∀ body, defaultBody = some body →
+        Block canBreak canContinue canLeave body)
+    (hSelect :
+      Structured.Switch.select scrutinee cases defaultBody = some selected) :
+    Block canBreak canContinue canLeave selected := by
+  induction cases with
+  | nil =>
+      simp [Structured.Switch.select] at hSelect
+      exact hDefault selected hSelect
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBlock⟩
+      by_cases hMatch : caseValue = scrutinee
+      · simp [Structured.Switch.select, hMatch] at hSelect
+        cases hSelect
+        exact hCases caseValue selected (by simp)
+      · simp [Structured.Switch.select, hMatch] at hSelect
+        exact ih
+          (by
+            intro restValue restBody hMem
+            exact hCases restValue restBody (by simp [hMem]))
+          hSelect
+
+theorem select_mem_or_default
+    {scrutinee : Word} {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block} {selected : Structured.Block}
+    (hSelect :
+      Structured.Switch.select scrutinee cases defaultBody = some selected) :
+    (∃ value, (value, selected) ∈ cases) ∨
+      defaultBody = some selected := by
+  induction cases with
+  | nil =>
+      right
+      simpa [Structured.Switch.select] using hSelect
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBlock⟩
+      by_cases hMatch : caseValue = scrutinee
+      · simp [Structured.Switch.select, hMatch] at hSelect
+        cases hSelect
+        left
+        exact ⟨caseValue, by simp⟩
+      · simp [Structured.Switch.select, hMatch] at hSelect
+        rcases ih hSelect with hMem | hDefault
+        · rcases hMem with ⟨selectedValue, hMem⟩
+          left
+          exact ⟨selectedValue, by simp [hMem]⟩
+        · right
+          exact hDefault
+
+theorem sizeOf_lt_switch_of_default_eq_some
+    {scrutinee : Structured.Code} {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block} {selected : Structured.Block}
+    (hDefault : defaultBody = some selected) :
+    sizeOf selected <
+      sizeOf (Structured.Stmt.switch scrutinee cases defaultBody) := by
+  cases defaultBody with
+  | none =>
+      simp at hDefault
+  | some body =>
+      simp at hDefault
+      subst selected
+      simp
+      omega
+
 set_option maxHeartbeats 800000 in
 set_option maxRecDepth 2000 in
 mutual
@@ -18368,46 +18438,103 @@ mutual
               (supply := Structured.LabelSupply.next supply) hBody hCtx)
     | switch hScrutineeRel hScrutineeFrame hCases hDefault =>
         rename_i scrutinee cases defaultBody
-        have hCasesPreserves :
-            SwitchPreservationWithOracle.CasesPreservesWithOracle program ctx
-              (Structured.LabelSupply.label supply 0) supply
-              (Structured.LabelSupply.next supply) 0 cases :=
-          SwitchPreservationWithOracle.casesPreservesWithOracle_of_all
-            (program := program) (ctx := ctx)
-            (endLabel := Structured.LabelSupply.label supply 0)
-            (base := supply) (supply := Structured.LabelSupply.next supply)
-            (idx := 0) (cases := cases)
-            (hAll := by
-              intro bodySupply value body hMem
-              exact
-                blockPreserves (program := program) (ctx := ctx)
-                  (supply := bodySupply)
-                  (hCases value body hMem) hCtx)
-        have hDefaultPreserves :
-            SwitchPreservationWithOracle.DefaultPreservesWithOracle program ctx
-              (Structured.SwitchCases.compileFromCtx cases ctx
-                (Structured.LabelSupply.label supply 0) supply
-                (Structured.LabelSupply.next supply) 0).next defaultBody := by
-          cases hDefaultBody : defaultBody with
-          | none =>
-              trivial
-          | some defaultBody =>
-              exact
-                blockPreserves (program := program) (ctx := ctx)
-                  (supply :=
-                    (Structured.SwitchCases.compileFromCtx cases ctx
-                      (Structured.LabelSupply.label supply 0) supply
-                      (Structured.LabelSupply.next supply) 0).next)
-                  (hDefault defaultBody hDefaultBody) hCtx
-        exact
-          (StmtPreservationWithOracle.preserves_switch
-            (program := program) (ctx := ctx) (supply := supply)
-            (scrutinee := scrutinee) (cases := cases)
-            (defaultBody := defaultBody)
-            hScrutineeRel hScrutineeFrame hCasesPreserves
-            hDefaultPreserves :
-            StmtPreservesWithOracle program ctx supply
-              (.switch scrutinee cases defaultBody))
+        intro pre post fuel source outcome target tokens trace traceOut
+          replayPc hFits hResolve hExact hPc hRel hRun
+        cases fuel with
+        | zero =>
+            simp [Stmt.runWithOracle, Structured.invalid] at hRun
+        | succ fuel =>
+            cases hScrutineeRun :
+                Code.runWithOracle
+                  (pre ++
+                    ((Structured.Stmt.compileFromCtxCore
+                      (.switch scrutinee cases defaultBody) ctx supply).code ++
+                      post))
+                  replayPc scrutinee source.evm trace with
+            | error err =>
+                simp [Stmt.runWithOracle, hScrutineeRun] at hRun
+            | ok scrutineePair =>
+                rcases scrutineePair with
+                  ⟨evmAfterScrutinee, traceAfterScrutinee⟩
+                simp [Stmt.runWithOracle, hScrutineeRun] at hRun
+                cases hPop : evmAfterScrutinee.stack.pop with
+                | none =>
+                    simp [hPop] at hRun
+                | some popPair =>
+                    rcases popPair with ⟨stack, value⟩
+                    simp [hPop] at hRun
+                    cases hSelect :
+                        Structured.Switch.select value cases defaultBody with
+                    | none =>
+                        simp [hSelect, Structured.Outcome.regular] at hRun
+                        rcases hRun with ⟨hOutcome, hTraceOut⟩
+                        subst outcome
+                        subst traceOut
+                        have hNone :=
+                          StmtPreservationWithOracle.preserves_switch_none_of_scrutinee
+                            (program := program) (ctx := ctx)
+                            (supply := supply) (scrutinee := scrutinee)
+                            (cases := cases)
+                            (defaultBody := defaultBody) (pre := pre)
+                            (post := post) (source := source)
+                            (evmAfterScrutinee := evmAfterScrutinee)
+                            (target := target) (tokens := tokens)
+                            (stack := stack) (value := value)
+                            (trace := trace)
+                            (traceAfterScrutinee := traceAfterScrutinee)
+                            (replayPc := replayPc)
+                            hScrutineeRel hScrutineeFrame hFits hExact
+                            hPc hRel hScrutineeRun hPop hSelect
+                        simpa [Structured.Outcome.regular] using hNone
+                    | some selected =>
+                        simp [hSelect] at hRun
+                        have hSelectedPreserves :
+                            ∀ bodySupply,
+                              BlockPreservesWithOracle program ctx bodySupply
+                                selected := by
+                          intro bodySupply
+                          rcases select_mem_or_default hSelect with
+                            hSelectedCase | hSelectedDefault
+                          · rcases hSelectedCase with
+                              ⟨selectedValue, hSelectedMem⟩
+                            exact
+                              blockPreserves (program := program)
+                                (ctx := ctx) (supply := bodySupply)
+                                (hCases selectedValue selected hSelectedMem)
+                                hCtx
+                          · cases hDefaultBody : defaultBody with
+                            | none =>
+                                simp [hDefaultBody] at hSelectedDefault
+                            | some defaultBlock =>
+                                have hSelectedEq : selected = defaultBlock := by
+                                  simpa [hDefaultBody] using
+                                    hSelectedDefault.symm
+                                subst selected
+                                exact
+                                  (blockPreserves (program := program)
+                                    (ctx := ctx) (supply := bodySupply)
+                                    (hDefault defaultBlock hDefaultBody) hCtx :
+                                    BlockPreservesWithOracle program ctx
+                                      bodySupply defaultBlock)
+                        exact
+                          StmtPreservationWithOracle.preserves_switch_selected_of_scrutinee_selected_body_preserves
+                            (program := program) (ctx := ctx)
+                            (supply := supply) (scrutinee := scrutinee)
+                            (cases := cases)
+                            (defaultBody := defaultBody)
+                            (selected := selected) (pre := pre)
+                            (post := post) (fuel := fuel)
+                            (source := source) (outcome := outcome)
+                            (evmAfterScrutinee := evmAfterScrutinee)
+                            (target := target) (tokens := tokens)
+                            (stack := stack) (value := value)
+                            (trace := trace)
+                            (traceAfterScrutinee := traceAfterScrutinee)
+                            (traceOut := traceOut) (replayPc := replayPc)
+                            hScrutineeRel hScrutineeFrame hSelectedPreserves
+                            hFits hResolve hExact hPc hRel hScrutineeRun
+                            hPop hSelect
+                            (by simpa using hRun)
     | for_ hInit hCondRel hCondFrame hPost hBody =>
         rename_i init post body cond
         let loopOuterCtx : Structured.CompileContext :=
@@ -18466,7 +18593,15 @@ mutual
             (lt_trans
               (Structured.Preservation.list_sizeOf_lt_sizeOf_of_mem hMem)
               (by simp; omega))
+      | exact
+          lt_trans (by simp)
+            (lt_trans
+              (Structured.Preservation.list_sizeOf_lt_sizeOf_of_mem
+                hSelectedMem)
+              (by simp; omega))
+      | exact sizeOf_lt_switch_of_default_eq_some hSelectedDefault
       | omega
+
 end
 
 theorem mainBlockPreserves {program : Structured.Program}

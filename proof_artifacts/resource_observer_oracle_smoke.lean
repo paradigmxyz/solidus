@@ -235,6 +235,9 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.Block
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.Stmt
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_append
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_of_select
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.select_mem_or_default
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.sizeOf_lt_switch_of_default_eq_some
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.blockPreserves
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.stmtPreserves
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.mainBlockPreserves
@@ -716,6 +719,9 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_block_preserves
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_oracleSafe
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_append
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_of_select
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.select_mem_or_default
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.sizeOf_lt_switch_of_default_eq_some
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.blockPreserves
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.stmtPreserves
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.mainBlockPreserves

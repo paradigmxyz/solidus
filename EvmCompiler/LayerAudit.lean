@@ -794,6 +794,15 @@ abbrev structuredReplayOracleSafeStmt :=
 abbrev structuredReplayOracleSafeBlockAppend :=
   @Yul.ObserverOracle.StructuredReplay.OracleSafe.block_append
 
+abbrev structuredReplayOracleSafeBlockOfSelect :=
+  @Yul.ObserverOracle.StructuredReplay.OracleSafe.block_of_select
+
+abbrev structuredReplayOracleSafeSelectMemOrDefault :=
+  @Yul.ObserverOracle.StructuredReplay.OracleSafe.select_mem_or_default
+
+abbrev structuredReplayOracleSafeSizeOfLtSwitchOfDefaultEqSome :=
+  @Yul.ObserverOracle.StructuredReplay.OracleSafe.sizeOf_lt_switch_of_default_eq_some
+
 abbrev structuredReplayOracleSafeBlockPreserves :=
   @Yul.ObserverOracle.StructuredReplay.OracleSafe.blockPreserves
 
