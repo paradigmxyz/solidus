@@ -12246,6 +12246,121 @@ theorem expressions_switch_select_none_of_source_select_none :
                       simp [Expressions.Switch.select, hValue, hTailNone]
               · simp [hOk] at hCases
 
+theorem compileSwitchDefaultBodyWithSwitchFallback?_some_of_default_some
+    {range : ScratchRange} {program : Program} {returns : List Name}
+    {handlers : FallbackHandlers} {sourceScope : List Name}
+    {layout : SpillLayout.Layout} {defaultBody : Option Block}
+    {selectedBody : Block} {compiledDefault : Option Expressions.Block}
+    (hDefaultBody : defaultBody = some selectedBody)
+    (hCompile :
+      compileSwitchDefaultBodyWithSwitchFallback? range program returns
+          handlers sourceScope layout defaultBody =
+        some compiledDefault) :
+    ∃ compiledBody, compiledDefault = some compiledBody := by
+  subst defaultBody
+  unfold compileSwitchDefaultBodyWithSwitchFallback? at hCompile
+  cases hBodyPlan :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+        sourceScope [] layout selectedBody with
+  | none =>
+      simp [hBodyPlan] at hCompile
+  | some bodyPlan =>
+      simp [hBodyPlan] at hCompile
+      cases hNormalized : normalizePlanStack? range bodyPlan with
+      | none =>
+          simp [hNormalized] at hCompile
+      | some normalized =>
+          simp [hNormalized] at hCompile
+          by_cases hOk :
+              normalized.sourceScope = sourceScope ∧
+                normalized.stackLayout = [] ∧
+                normalized.layout = layout
+          · simp [hOk] at hCompile
+            cases hCompile
+            exact ⟨normalized.block, rfl⟩
+          · simp [hOk] at hCompile
+
+theorem expressions_switch_select_some_of_source_select_some :
+    ∀ {range : ScratchRange} {program : Program}
+      {returns : List Name} {handlers : FallbackHandlers}
+      {sourceScope : List Name} {layout : SpillLayout.Layout}
+      {scrutinee : Word} {cases : List (Word × Block)}
+      {defaultBody : Option Block} {selectedBody : Block}
+      {compiledCases : List (Word × Expressions.Block)}
+      {compiledDefault : Option Expressions.Block},
+      Source.Switch.select scrutinee cases defaultBody = some selectedBody →
+      compileSwitchCaseBodiesWithSwitchFallback? range program returns
+          handlers sourceScope layout cases =
+        some compiledCases →
+      compileSwitchDefaultBodyWithSwitchFallback? range program returns
+          handlers sourceScope layout defaultBody =
+        some compiledDefault →
+      ∃ compiledBody,
+        Expressions.Switch.select scrutinee compiledCases compiledDefault =
+          some compiledBody
+  | _range, _program, _returns, _handlers, _sourceScope, _layout,
+      _scrutinee, [], defaultBody, selectedBody, compiledCases,
+      compiledDefault, hSelect, hCases, hDefault => by
+      have hCasesNil :
+          compiledCases = [] := by
+        simpa [compileSwitchCaseBodiesWithSwitchFallback?] using hCases
+      subst compiledCases
+      have hDefaultBody : defaultBody = some selectedBody := by
+        simpa [Source.Switch.select] using hSelect
+      rcases
+          compileSwitchDefaultBodyWithSwitchFallback?_some_of_default_some
+            hDefaultBody hDefault with
+        ⟨compiledBody, hCompiledDefault⟩
+      subst compiledDefault
+      exact ⟨compiledBody, by simp [Expressions.Switch.select]⟩
+  | range, program, returns, handlers, sourceScope, layout, scrutinee,
+      (head :: rest), defaultBody, selectedBody, compiledCases,
+      compiledDefault, hSelect, hCases, hDefault => by
+      rcases head with ⟨value, body⟩
+      unfold compileSwitchCaseBodiesWithSwitchFallback? at hCases
+      cases hBodyPlan :
+          compileBlockStmtWithSwitchFallback? range program handlers returns
+            sourceScope [] layout body with
+      | none =>
+          simp [hBodyPlan] at hCases
+      | some bodyPlan =>
+          simp [hBodyPlan] at hCases
+          cases hNormalized : normalizePlanStack? range bodyPlan with
+          | none =>
+              simp [hNormalized] at hCases
+          | some normalized =>
+              simp [hNormalized] at hCases
+              by_cases hOk :
+                  normalized.sourceScope = sourceScope ∧
+                    normalized.stackLayout = [] ∧
+                    normalized.layout = layout
+              · simp [hOk] at hCases
+                cases hTail :
+                    compileSwitchCaseBodiesWithSwitchFallback? range program
+                      returns handlers sourceScope layout rest with
+                | none =>
+                    simp [hTail] at hCases
+                | some compiledTail =>
+                    simp [hTail] at hCases
+                    subst compiledCases
+                    unfold Source.Switch.select at hSelect
+                    by_cases hValue : value = scrutinee
+                    · simp [hValue] at hSelect
+                      exact
+                        ⟨normalized.block,
+                          by simp [Expressions.Switch.select, hValue]⟩
+                    · simp [hValue] at hSelect
+                      rcases
+                          expressions_switch_select_some_of_source_select_some
+                            hSelect hTail hDefault with
+                        ⟨compiledBody, hCompiledSelect⟩
+                      exact
+                        ⟨compiledBody,
+                          by
+                            simp [Expressions.Switch.select, hValue,
+                              hCompiledSelect]⟩
+              · simp [hOk] at hCases
+
 theorem spillStackPrefixRel_singleton_empty_to_spillStateRel
     {range : ScratchRange} {sourceScope : List Name}
     {layout : SpillLayout.Layout}
@@ -12388,6 +12503,132 @@ theorem compileSwitchFallbackWithSwitchFallback?_regular_sound_meta_exact_of_sel
             (by simpa [hEntryStack] using hMem)
         simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue,
       by simp [afterPop]⟩
+
+theorem compileSwitchFallbackWithSwitchFallback?_selected_dispatch_of_select_some
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {selectedBody : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {source sourceAfterScrutinee : Source.State}
+    {target : Expressions.RunState} {value : Word}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selectedBody) :
+    ∃ afterPop selectedBlock,
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfterScrutinee afterPop ∧
+      SpillLayout.StoreDefined sourceAfterScrutinee.vars plan.layout ∧
+      afterPop.stack.length = plan.stackLayout.length ∧
+      (∀ {outcome : Expressions.Outcome},
+        (∃ selectedFuel,
+          Expressions.Block.run exprProgram selectedFuel selectedBlock
+              (target.withEVM afterPop) =
+            .ok outcome) →
+        ∃ exprFuel,
+          Expressions.Block.run exprProgram exprFuel plan.block target =
+            .ok outcome) := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, scrutineeCode, compiledCases, compiledDefault, hEntry,
+      hEntryStack, hScrutineeSafe, hScrutineeCode, hCases, hDefault,
+      hPlan⟩
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact
+        hSpec hWordBytes hEntry hEmptyRun hRel hDefined hLength with
+    ⟨entryFinal, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      hEntryStackLayout, hEntryFinalStack⟩
+  have hExprEval :
+      Source.Expr.eval Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, [value]) :=
+    expr_eval_of_evalOne hEval
+  rcases
+      compileCode_exact_prefix_structured
+        (expr := scrutinee)
+        (range := range) (sourceScope := entry.sourceScope)
+        (stackLayout := entry.stackLayout)
+        (layout := entry.layout) (source := source)
+        (source' := sourceAfterScrutinee) (target := entryFinal)
+        (stackPrefix := []) (baseStack := []) (offset := 0)
+        (values := [value]) (code := scrutineeCode)
+        (SourceNoMemoryTouch.expr?_sound hScrutineeSafe)
+        (SpillStackPrefixRel.of_spillStateRel hEntryRel)
+        (by simpa using hEntryFinalStack)
+        rfl hScrutineeCode hExprEval with
+    ⟨afterScrutinee, hScrutineeRun, hScrutineeStack, hScrutineeRel⟩
+  have hAfterScrutineeStack : afterScrutinee.stack = [value] := by
+    simpa using hScrutineeStack
+  let afterPop : EVMState := { afterScrutinee with stack := [] }
+  have hAfterPopRel :
+      SpillStateRel range entry.sourceScope [] entry.layout
+        sourceAfterScrutinee afterPop := by
+    have hRel' :
+        SpillStateRel range entry.sourceScope [] entry.layout
+          sourceAfterScrutinee
+          ({ afterScrutinee with stack := [] } : EVMState) :=
+      spillStackPrefixRel_singleton_empty_to_spillStateRel
+        (by simpa [hEntryStack] using hScrutineeRel)
+        hAfterScrutineeStack
+    simpa [afterPop] using hRel'
+  rcases
+      expressions_switch_select_some_of_source_select_some
+        hSelect hCases hDefault with
+    ⟨selectedBlock, hSwitchSelect⟩
+  subst plan
+  refine
+    ⟨afterPop, selectedBlock,
+      by simpa [hEntryStack] using hAfterPopRel,
+      ?_, by simp [afterPop], ?_⟩
+  · intro name location hMem
+    have hValue :=
+      hEntryDefined (name := name) (location := location)
+        (by simpa [hEntryStack] using hMem)
+    simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue
+  · intro outcome hSelectedRun
+    rcases hSelectedRun with ⟨selectedFuel, hSelectedRun⟩
+    have hSwitchStmt :
+        ∃ switchFuel,
+          Expressions.Stmt.run exprProgram switchFuel
+              (Expressions.Stmt.switch (.code scrutineeCode) compiledCases
+                compiledDefault)
+              (target.withEVM entryFinal) =
+            .ok outcome := by
+      refine ⟨selectedFuel + 1, ?_⟩
+      simp [Expressions.Stmt.run, Expressions.Expr.run,
+        Structured.Code.runState, EvmYul.Stack.pop, hScrutineeRun,
+        hAfterScrutineeStack, hSwitchSelect, afterPop,
+        Expressions.RunState.withEVM_withEVM, hSelectedRun]
+    rcases
+        Expressions.Block.run_single_exists exprProgram hSwitchStmt with
+      ⟨switchFuel, hSwitchRun⟩
+    rcases
+        expressionsBlock_append_regular_exists exprProgram
+          ⟨entryFuel, hEntryRun⟩ ⟨switchFuel, hSwitchRun⟩ with
+      ⟨exprFuel, hRun⟩
+    exact ⟨exprFuel, hRun⟩
 
 mutual
 
