@@ -10799,6 +10799,253 @@ theorem default_selected_tail_result_ctx {program : Structured.Program}
       (by simpa [compiledBody, List.append_assoc] using hBodyRun)
   simpa [compiledBody, List.append_assoc] using hTail
 
+theorem labeled_body_tail_result_ctx_of_body_tail_run
+    {ctx : Structured.CompileContext}
+    {bodySupply : Structured.LabelSupply} {body : Structured.Block}
+    {pre betweenEnd post : Assembly.Program}
+    {caseLabel endLabel : Assembly.Label}
+    {source : Structured.RunState}
+    {outcome : Structured.Outcome}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceOut : Trace}
+    (hFitLabel : Structured.Preservation.PCFits pre)
+    (hFitPop :
+      Structured.Preservation.PCFits
+        (pre ++ [Assembly.Instr.label caseLabel]))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hTail :
+      ∀ targetAfterPop,
+        Structured.Preservation.Frame.StateRel
+          (source.withEVM { source.evm with stack := stack })
+          targetAfterPop tokens →
+        targetAfterPop.pc =
+          Assembly.Program.pcAfter
+            (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop]) →
+        ARunResultWithOracle
+          (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+            (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+            [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+            [Assembly.Instr.label endLabel] ++ post)
+          targetAfterPop trace
+          (fun result traceFinal =>
+            traceFinal = traceOut ∧
+              Structured.Preservation.CompiledOutcomeRel
+                (pre ++
+                  [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+                  (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+                  [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+                  [Assembly.Instr.label endLabel] ++ post)
+                ctx
+                (Assembly.Program.pcAfter
+                  (pre ++
+                    [ Assembly.Instr.label caseLabel
+                    , Assembly.Instr.prim .pop ] ++
+                    (Structured.Block.compileFromCtx body ctx
+                      bodySupply).code ++
+                    [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+                    [Assembly.Instr.label endLabel]))
+                outcome result tokens)) :
+    ARunResultWithOracle
+      (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+        (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+        [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+        [Assembly.Instr.label endLabel] ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceOut ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+              (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+              [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+              [Assembly.Instr.label endLabel] ++ post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                [ Assembly.Instr.label caseLabel
+                , Assembly.Instr.prim .pop ] ++
+                (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+                [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+                [Assembly.Instr.label endLabel]))
+            outcome result tokens) := by
+  let preAfterLabel : Assembly.Program :=
+    pre ++ [Assembly.Instr.label caseLabel]
+  let preBody : Assembly.Program :=
+    preAfterLabel ++ [Assembly.Instr.prim .pop]
+  let compiledBody := Structured.Block.compileFromCtx body ctx bodySupply
+  have hLabelRun :=
+    Frame.StateRel.label_runResultWithOracle_at
+      (label := caseLabel) (pre := pre)
+      (post :=
+        [Assembly.Instr.prim .pop] ++ compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+      (trace := trace)
+      hFitLabel hPc hRel
+  have hLabelRunBind :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+        target trace
+        (fun result traceAfterLabel =>
+          match result with
+          | .running targetAfterLabel =>
+              traceAfterLabel = trace ∧
+                Structured.Preservation.Frame.StateRel source
+                  targetAfterLabel tokens ∧
+                targetAfterLabel.pc =
+                  Assembly.Program.pcAfter preAfterLabel
+          | .halted _ => False) := by
+    refine
+      ARunResultWithOracle.mono
+        (post₁ := fun result traceFinal =>
+          traceFinal = trace ∧
+            match result with
+            | .running targetAfterLabel =>
+                Structured.Preservation.Frame.StateRel source
+                  targetAfterLabel tokens ∧
+                targetAfterLabel.pc =
+                  Assembly.Program.pcAfter preAfterLabel
+            | .halted _ => False)
+        (post₂ := fun result traceAfterLabel =>
+          match result with
+          | .running targetAfterLabel =>
+              traceAfterLabel = trace ∧
+                Structured.Preservation.Frame.StateRel source
+                  targetAfterLabel tokens ∧
+                targetAfterLabel.pc =
+                  Assembly.Program.pcAfter preAfterLabel
+          | .halted _ => False)
+        ?_ ?_
+    · simpa [preAfterLabel, compiledBody, List.append_assoc]
+        using hLabelRun
+    · intro result traceAfterLabel hResult
+      rcases hResult with ⟨hTraceAfterLabel, hResult⟩
+      cases result with
+      | halted halt =>
+          exact hResult
+      | running targetAfterLabel =>
+          exact ⟨hTraceAfterLabel, hResult⟩
+  suffices hMain :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+        target trace
+        (fun result traceFinal =>
+          traceFinal = traceOut ∧
+            Structured.Preservation.CompiledOutcomeRel
+              (pre ++
+                [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+                compiledBody.code ++
+                [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+                [Assembly.Instr.label endLabel] ++ post)
+              ctx
+              (Assembly.Program.pcAfter
+                (pre ++
+                  [ Assembly.Instr.label caseLabel
+                  , Assembly.Instr.prim .pop ] ++
+                  compiledBody.code ++
+                  [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+                  [Assembly.Instr.label endLabel]))
+              outcome result tokens) by
+    simpa [compiledBody, List.append_assoc] using hMain
+  refine
+    ARunResultWithOracle.bind_running
+      (program :=
+        pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+      hLabelRunBind ?_
+  intro targetAfterLabel traceAfterLabel hAfterLabel
+  rcases hAfterLabel with
+    ⟨hTraceAfterLabel, hRelAfterLabel, hPcAfterLabel⟩
+  subst traceAfterLabel
+  have hPopRun :=
+    Frame.StateRel.pop_runResultWithOracle_at
+      (pre := preAfterLabel)
+      (post :=
+        compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+      (source := source) (target := targetAfterLabel) (tokens := tokens)
+      (stack := stack) (value := value) (trace := trace)
+      hFitPop hPcAfterLabel hRelAfterLabel hPop
+  have hPopRunBind :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+        targetAfterLabel trace
+        (fun result traceAfterPop =>
+          match result with
+          | .running targetAfterPop =>
+              traceAfterPop = trace ∧
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+          | .halted _ => False) := by
+    refine
+      ARunResultWithOracle.mono
+        (post₁ := fun result traceFinal =>
+          traceFinal = trace ∧
+            match result with
+            | .running targetAfterPop =>
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+            | .halted _ => False)
+        (post₂ := fun result traceAfterPop =>
+          match result with
+          | .running targetAfterPop =>
+              traceAfterPop = trace ∧
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+          | .halted _ => False)
+        ?_ ?_
+    · simpa [preAfterLabel, preBody, compiledBody, List.append_assoc]
+        using hPopRun
+    · intro result traceAfterPop hResult
+      rcases hResult with ⟨hTraceAfterPop, hResult⟩
+      cases result with
+      | halted halt =>
+          exact hResult
+      | running targetAfterPop =>
+          exact ⟨hTraceAfterPop, hResult⟩
+  refine
+    ARunResultWithOracle.bind_running
+      (program :=
+        pre ++ [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ betweenEnd ++
+          [Assembly.Instr.label endLabel] ++ post)
+      hPopRunBind ?_
+  intro targetAfterPop traceAfterPop hAfterPop
+  rcases hAfterPop with
+    ⟨hTraceAfterPop, hRelAfterPop, hPcAfterPop⟩
+  subst traceAfterPop
+  simpa [compiledBody, List.append_assoc] using
+    hTail targetAfterPop hRelAfterPop
+      (by
+        simpa [preAfterLabel, preBody, List.append_assoc]
+          using hPcAfterPop)
+
 theorem labeled_body_tail_result_ctx {program : Structured.Program}
     {ctx : Structured.CompileContext}
     {bodySupply : Structured.LabelSupply} {body : Structured.Block}
