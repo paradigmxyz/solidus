@@ -35137,6 +35137,93 @@ theorem compileOpen_atomicSwitchPrefixBlockWithOracle
                               | ok evalResult =>
                                   rcases evalResult with
                                     ⟨stateAfterScrutinee, value⟩
+                                  have hSelectedReplay :
+                                      ∀ (selected : Locals.Block)
+                                        (bodyCode : List Expressions.Stmt)
+                                        (bodyCtx : Locals.Ctx)
+                                        (lowerBody : Expressions.Block)
+                                        (stateAfterBody : State),
+                                        Locals.Source.Switch.select value
+                                            cases defaultBody =
+                                          some selected →
+                                        Locals.Block.compileOpen targetCtx
+                                            selected =
+                                          some (bodyCode, bodyCtx) →
+                                        Locals.finishScoped targetCtx bodyCtx
+                                            bodyCode =
+                                          some lowerBody →
+                                        Block.runScoped program sourceCtx
+                                            selected fuel
+                                            stateAfterScrutinee =
+                                          .ok
+                                            (Outcome.regular
+                                              stateAfterBody) →
+                                        ∀ evmAfterPop,
+                                          Locals.SourceLowering.StateRel
+                                              sourceCtx.scope
+                                              stateAfterScrutinee.source
+                                              (target.withEVM evmAfterPop) →
+                                          ∃ targetAfterBody,
+                                            ExpressionsReplay.Block.runWithOracle
+                                                asmProgram pc exprProgram
+                                                (fuel + 1) lowerBody
+                                                (target.withEVM evmAfterPop)
+                                                stateAfterScrutinee.trace =
+                                              .ok
+                                                (Expressions.Outcome.regular
+                                                  targetAfterBody,
+                                                  stateAfterBody.trace) ∧
+                                            Locals.SourceLowering.StateRel
+                                              sourceCtx.scope
+                                              stateAfterBody.source
+                                              targetAfterBody := by
+                                    intro selected bodyCode bodyCtx lowerBody
+                                      stateAfterBody hSelectSelected
+                                      hCompileBody hFinishBody
+                                      hBodyRunRegular evmAfterPop
+                                      hSelectedRel
+                                    cases selected with
+                                    | mk selectedStmts =>
+                                        have hBodyPrefix :
+                                            AtomicPrefix sourceCtx
+                                              selectedStmts := by
+                                          exact
+                                            atomicPrefix_of_switch_select
+                                              hCases hDefault
+                                              hSelectSelected
+                                        rcases
+                                            compileScoped_atomicPrefixBlockWithOracle
+                                              (asmProgram := asmProgram)
+                                              (program := program)
+                                              (exprProgram := exprProgram)
+                                              (sourceCtx := sourceCtx)
+                                              (targetCtx := targetCtx)
+                                              (targetCtxOut := bodyCtx)
+                                              (fuel := fuel) (pc := pc)
+                                              (stmts := selectedStmts)
+                                              (state :=
+                                                stateAfterScrutinee)
+                                              (target :=
+                                                target.withEVM evmAfterPop)
+                                              (code := bodyCode)
+                                              (lowerBody := lowerBody)
+                                              (outcome :=
+                                                Outcome.regular
+                                                  stateAfterBody)
+                                              hBodyPrefix hCtx hNoDup
+                                              hSelectedRel hCompileBody
+                                              hFinishBody hBodyRunRegular with
+                                          ⟨targetAfterBody, hBodyReplay,
+                                            hBodyMode, hBodyRel, _hBodyCtx⟩
+                                        cases hBodyMode
+                                        exact
+                                          ⟨targetAfterBody,
+                                            by
+                                              simpa [Outcome.regular] using
+                                                hBodyReplay,
+                                            by
+                                              simpa [Outcome.regular] using
+                                                hBodyRel⟩
                                   cases hSelect :
                                       Locals.Source.Switch.select value cases
                                         defaultBody with
@@ -35161,7 +35248,7 @@ theorem compileOpen_atomicSwitchPrefixBlockWithOracle
                                         simpa [Block.runOpen, Stmt.run,
                                           hEvalOne, hSelect] using hRun
                                       rcases
-                                          compileOpen_cons_switchAtomicPrefixWithOracle_of_evalOne_sourceOwned
+                                          compileOpen_cons_switchWithOracle_of_evalOne_sourceOwned
                                             (asmProgram := asmProgram)
                                             (program := program)
                                             (exprProgram := exprProgram)
@@ -35187,11 +35274,11 @@ theorem compileOpen_atomicSwitchPrefixBlockWithOracle
                                             (restCode := restCode)
                                             (outcome :=
                                               Outcome.regular openState)
-                                            hCases hDefault hCtx hNoDup hOwned
-                                            hAccess hRel hScrutineeCode
+                                            hCtx hNoDup hOwned hAccess hRel
+                                            hScrutineeCode
                                             hCompileCases hCompileDefault
                                             hRestCompile hEvalOne hStmtRun
-                                            hRestRun
+                                            hSelectedReplay hRestRun
                                             (by
                                               intro targetAfterSwitch
                                                 hSwitchRel
@@ -35279,7 +35366,7 @@ theorem compileOpen_atomicSwitchPrefixBlockWithOracle
                                                 hBodyRun, Outcome.regular]
                                                 using hRun
                                             rcases
-                                                compileOpen_cons_switchAtomicPrefixWithOracle_of_evalOne_sourceOwned
+                                                compileOpen_cons_switchWithOracle_of_evalOne_sourceOwned
                                                   (asmProgram := asmProgram)
                                                   (program := program)
                                                   (exprProgram := exprProgram)
@@ -35308,11 +35395,12 @@ theorem compileOpen_atomicSwitchPrefixBlockWithOracle
                                                   (restCode := restCode)
                                                   (outcome :=
                                                     Outcome.regular openState)
-                                                  hCases hDefault hCtx hNoDup
-                                                  hOwned hAccess hRel
-                                                  hScrutineeCode hCompileCases
+                                                  hCtx hNoDup hOwned hAccess
+                                                  hRel hScrutineeCode
+                                                  hCompileCases
                                                   hCompileDefault hRestCompile
-                                                  hEvalOne hStmtRun hRestRun
+                                                  hEvalOne hStmtRun
+                                                  hSelectedReplay hRestRun
                                                   (by
                                                     intro targetAfterSwitch
                                                       hSwitchRel
