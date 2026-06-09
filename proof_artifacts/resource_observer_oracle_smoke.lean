@@ -95,6 +95,8 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_nonObserver
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.OracleStepPC
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_pc_of_stepPC
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_program_irrel
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_context_irrel
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.oracleStepPC_of_runnerSafe
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.source_stepResultWithOracle_of_segment_stepWithOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle
@@ -115,6 +117,10 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_program_irrel
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_context_irrel
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_program_irrel
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_program_irrel
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_pop_exists
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_exists
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment
@@ -184,8 +190,11 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_msize
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_replicate_pop_exists
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Block.runWithOracle
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Block.runWithOracle_program_irrel
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle_program_irrel
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_program_irrel
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_bind_of_codeSegment
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment_of_oracleStepPC
@@ -577,6 +586,8 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_nonObserver_of_step
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_op_nonObserver
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_pc_of_stepPC
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_program_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_context_irrel
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.oracleStepPC_of_runnerSafe
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BasicInstr.source_stepResultWithOracle_of_segment_stepWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ARunResultWithOracle.exact
@@ -589,6 +600,10 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Frame.StateRel.pop_runResultWithOracle_at
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Frame.StateRel.runConditionWithOracle_jumpi_result_ctx
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_of_runnerSafe
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_program_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_context_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_program_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_program_irrel
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_pop_exists
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_exists
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_source_runNResultWithOracle_segment
@@ -658,6 +673,9 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_msize
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_singleton_msize
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_replicate_pop_exists
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Block.runWithOracle_program_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle_program_irrel
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_program_irrel
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_bind_of_codeSegment
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment_of_oracleStepPC

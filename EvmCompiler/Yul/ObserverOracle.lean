@@ -1535,6 +1535,33 @@ theorem stepWithOracle_pc_irrel (program : Assembly.Program)
         Assembly.Source.stepAtResultWithOracle,
         Assembly.Source.stepAtResult, Assembly.Source.stepAt]
 
+theorem stepWithOracle_program_irrel
+    (program program' : Assembly.Program) (pc : Nat)
+    (instr : Structured.BasicInstr) (state : EVMState) (trace : Trace) :
+    stepWithOracle program pc instr state trace =
+      stepWithOracle program' pc instr state trace := by
+  cases instr with
+  | push value =>
+      simp [stepWithOracle, Structured.BasicInstr.toAssembly,
+        Assembly.Source.stepAtResultWithOracle,
+        Assembly.Source.stepAtResult, Assembly.Source.stepAt]
+  | op op =>
+      simp [stepWithOracle, Structured.BasicInstr.toAssembly,
+        Assembly.Source.stepAtResultWithOracle,
+        Assembly.Source.stepAtResult, Assembly.Source.stepAt]
+
+theorem stepWithOracle_context_irrel
+    (program program' : Assembly.Program) (pc pc' : Nat)
+    (instr : Structured.BasicInstr) (state : EVMState) (trace : Trace) :
+    stepWithOracle program pc instr state trace =
+      stepWithOracle program' pc' instr state trace := by
+  calc
+    stepWithOracle program pc instr state trace =
+        stepWithOracle program' pc instr state trace :=
+      stepWithOracle_program_irrel program program' pc instr state trace
+    _ = stepWithOracle program' pc' instr state trace :=
+      stepWithOracle_pc_irrel program' pc pc' instr state trace
+
 end BasicInstr
 
 namespace Code
@@ -1895,6 +1922,60 @@ theorem runWithOracle_pc_irrel (program : Assembly.Program) :
           exact
             ih (pc + instr.toAssembly.byteSize)
               (pc' + instr.toAssembly.byteSize) state' trace'
+
+theorem runWithOracle_program_irrel
+    (program program' : Assembly.Program) :
+    ∀ (pc : Nat) (code : Structured.Code)
+      (state : EVMState) (trace : Trace),
+      runWithOracle program pc code state trace =
+        runWithOracle program' pc code state trace := by
+  intro pc code
+  induction code generalizing pc with
+  | nil =>
+      intro state trace
+      simp [runWithOracle]
+  | cons instr rest ih =>
+      intro state trace
+      unfold runWithOracle
+      rw [
+        BasicInstr.stepWithOracle_program_irrel
+          program program' pc instr state trace]
+      cases hStep :
+          BasicInstr.stepWithOracle program' pc instr state trace with
+      | error err =>
+          simp [hStep]
+      | ok stepResult =>
+          rcases stepResult with ⟨state', trace'⟩
+          simp [hStep]
+          exact ih (pc + instr.toAssembly.byteSize) state' trace'
+
+theorem runWithOracle_context_irrel
+    (program program' : Assembly.Program) (pc pc' : Nat)
+    (code : Structured.Code) (state : EVMState) (trace : Trace) :
+    runWithOracle program pc code state trace =
+      runWithOracle program' pc' code state trace := by
+  calc
+    runWithOracle program pc code state trace =
+        runWithOracle program' pc code state trace :=
+      runWithOracle_program_irrel program program' pc code state trace
+    _ = runWithOracle program' pc' code state trace :=
+      runWithOracle_pc_irrel program' pc pc' code state trace
+
+theorem runStateWithOracle_program_irrel
+    (program program' : Assembly.Program) (pc : Nat)
+    (code : Structured.Code) (state : Structured.RunState) (trace : Trace) :
+    runStateWithOracle program pc code state trace =
+      runStateWithOracle program' pc code state trace := by
+  unfold runStateWithOracle
+  rw [runWithOracle_program_irrel program program' pc code state.evm trace]
+
+theorem runConditionWithOracle_program_irrel
+    (program program' : Assembly.Program) (pc : Nat)
+    (code : Structured.Code) (state : Structured.RunState) (trace : Trace) :
+    runConditionWithOracle program pc code state trace =
+      runConditionWithOracle program' pc code state trace := by
+  unfold runConditionWithOracle
+  rw [runWithOracle_program_irrel program program' pc code state.evm trace]
 
 theorem runConditionWithOracle_pc_irrel (program : Assembly.Program)
     (pc pc' : Nat) (code : Structured.Code)
@@ -4125,6 +4206,270 @@ mutual
     | _fuel, .terminal kind, state, trace => do
         let evm ← Structured.Terminal.step kind state.evm
         .ok (Structured.Outcome.halt kind (state.withEVM evm), trace)
+  termination_by fuel stmt _state _trace => (fuel, 3, sizeOf stmt)
+
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | exact Prod.Lex.right _
+          (Prod.Lex.left _ _ (by omega))
+end
+
+set_option maxHeartbeats 600000 in
+set_option linter.unusedSimpArgs false in
+set_option linter.unusedTactic false in
+set_option linter.unreachableTactic false in
+mutual
+  theorem Block.runWithOracle_program_irrel
+      (asmProgram asmProgram' : Assembly.Program) (pc : Nat)
+      (program : Structured.Program) :
+      ∀ (fuel : Nat) (block : Structured.Block)
+        (state : Structured.RunState) (trace : Trace),
+        Block.runWithOracle asmProgram pc program fuel block state trace =
+          Block.runWithOracle asmProgram' pc program fuel block state trace := by
+    intro fuel block state trace
+    cases fuel with
+    | zero =>
+        simp [Block.runWithOracle]
+    | succ fuel =>
+        rcases block with ⟨stmts⟩
+        cases stmts with
+        | nil =>
+            simp [Block.runWithOracle]
+        | cons stmt rest =>
+            unfold Block.runWithOracle
+            rw [
+              Stmt.runWithOracle_program_irrel asmProgram asmProgram' pc
+                program fuel stmt state trace]
+            cases hStmt :
+                Stmt.runWithOracle asmProgram' pc program fuel stmt state
+                  trace with
+            | error err =>
+                simp [hStmt]
+            | ok stmtPair =>
+                rcases stmtPair with ⟨outcome, traceAfterStmt⟩
+                rcases outcome with ⟨stmtState, stmtMode⟩
+                cases stmtMode <;>
+                  simp [hStmt,
+                    Block.runWithOracle_program_irrel asmProgram
+                      asmProgram' pc program fuel ⟨rest⟩ stmtState
+                      traceAfterStmt]
+  termination_by fuel block _state _trace => (fuel, 0, sizeOf block)
+
+  theorem Stmt.runForLoopWithOracle_program_irrel
+      (asmProgram asmProgram' : Assembly.Program) (pc : Nat)
+      (program : Structured.Program) :
+      ∀ (fuel : Nat) (cond : Structured.Code)
+        (post body : Structured.Block)
+        (state : Structured.RunState) (trace : Trace),
+        Stmt.runForLoopWithOracle asmProgram pc program fuel cond post body
+            state trace =
+          Stmt.runForLoopWithOracle asmProgram' pc program fuel cond post body
+            state trace := by
+    intro fuel cond post body state trace
+    cases fuel with
+    | zero =>
+        simp [Stmt.runForLoopWithOracle]
+    | succ fuel =>
+        unfold Stmt.runForLoopWithOracle
+        rw [
+          Code.runConditionWithOracle_program_irrel asmProgram asmProgram'
+            pc cond state trace]
+        cases hCond :
+            Code.runConditionWithOracle asmProgram' pc cond state trace with
+        | error err =>
+            simp [hCond]
+        | ok condResult =>
+            rcases condResult with
+              ⟨stateAfterCond, condTrue, traceAfterCond⟩
+            cases condTrue with
+            | false =>
+                simp [hCond]
+            | true =>
+                simp [hCond]
+                rw [
+                  Block.runWithOracle_program_irrel asmProgram asmProgram'
+                    pc program fuel body stateAfterCond traceAfterCond]
+                cases hBody :
+                    Block.runWithOracle asmProgram' pc program fuel body
+                      stateAfterCond traceAfterCond with
+                | error err =>
+                    simp [hBody]
+                | ok bodyPair =>
+                    rcases bodyPair with ⟨bodyOutcome, traceAfterBody⟩
+                    rcases bodyOutcome with ⟨bodyState, bodyMode⟩
+                    cases bodyMode with
+                    | brk =>
+                        simp [hBody, Structured.Outcome.brk]
+                    | regular =>
+                        simp [hBody, Structured.Outcome.regular]
+                        rw [
+                          Block.runWithOracle_program_irrel asmProgram
+                            asmProgram' pc program fuel post bodyState
+                            traceAfterBody]
+                        cases hPost :
+                            Block.runWithOracle asmProgram' pc program fuel
+                              post bodyState traceAfterBody with
+                        | error err =>
+                            simp [hPost]
+                        | ok postPair =>
+                            rcases postPair with
+                              ⟨postOutcome, traceAfterPost⟩
+                            rcases postOutcome with
+                              ⟨postState, postMode⟩
+                            cases postMode <;>
+                              simp [hPost,
+                                Stmt.runForLoopWithOracle_program_irrel
+                                  asmProgram asmProgram' pc program fuel cond
+                                  post body postState traceAfterPost]
+                    | cont =>
+                        simp [hBody, Structured.Outcome.cont]
+                        rw [
+                          Block.runWithOracle_program_irrel asmProgram
+                            asmProgram' pc program fuel post bodyState
+                            traceAfterBody]
+                        cases hPost :
+                            Block.runWithOracle asmProgram' pc program fuel
+                              post bodyState traceAfterBody with
+                        | error err =>
+                            simp [hPost]
+                        | ok postPair =>
+                            rcases postPair with
+                              ⟨postOutcome, traceAfterPost⟩
+                            rcases postOutcome with
+                              ⟨postState, postMode⟩
+                            cases postMode <;>
+                              simp [hPost,
+                                Stmt.runForLoopWithOracle_program_irrel
+                                  asmProgram asmProgram' pc program fuel cond
+                                  post body postState traceAfterPost]
+                    | leave =>
+                        simp [hBody, Structured.Outcome.leave]
+                    | halt kind =>
+                        simp [hBody, Structured.Outcome.halt]
+  termination_by fuel _cond _post _body _state _trace => (fuel, 2, 0)
+
+  theorem Stmt.runWithOracle_program_irrel
+      (asmProgram asmProgram' : Assembly.Program) (pc : Nat)
+      (program : Structured.Program) :
+      ∀ (fuel : Nat) (stmt : Structured.Stmt)
+        (state : Structured.RunState) (trace : Trace),
+        Stmt.runWithOracle asmProgram pc program fuel stmt state trace =
+          Stmt.runWithOracle asmProgram' pc program fuel stmt state trace := by
+    intro fuel stmt state trace
+    cases stmt with
+    | code code =>
+        simp [Stmt.runWithOracle,
+          Code.runWithOracle_program_irrel asmProgram asmProgram' pc code
+            state.evm trace]
+    | if_ cond body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.runWithOracle]
+        | succ fuel =>
+            unfold Stmt.runWithOracle
+            rw [
+              Code.runConditionWithOracle_program_irrel asmProgram
+                asmProgram' pc cond state trace]
+            cases hCond :
+                Code.runConditionWithOracle asmProgram' pc cond state trace with
+            | error err =>
+                simp [hCond]
+            | ok condResult =>
+                rcases condResult with
+                  ⟨stateAfterCond, condTrue, traceAfterCond⟩
+                cases condTrue <;>
+                  simp [hCond,
+                    Block.runWithOracle_program_irrel asmProgram
+                      asmProgram' pc program fuel body stateAfterCond
+                      traceAfterCond]
+    | switch scrutinee cases defaultBody =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.runWithOracle]
+        | succ fuel =>
+            unfold Stmt.runWithOracle
+            rw [
+              Code.runWithOracle_program_irrel asmProgram asmProgram' pc
+                scrutinee state.evm trace]
+            cases hScrutinee :
+                Code.runWithOracle asmProgram' pc scrutinee state.evm trace with
+            | error err =>
+                simp [hScrutinee]
+            | ok scrutineePair =>
+                rcases scrutineePair with
+                  ⟨evmAfterScrutinee, traceAfterScrutinee⟩
+                cases hPop : evmAfterScrutinee.stack.pop with
+                | none =>
+                    simp [hScrutinee, hPop]
+                | some popPair =>
+                    rcases popPair with ⟨stack, value⟩
+                    cases hSelect :
+                        Structured.Switch.select value cases defaultBody with
+                    | none =>
+                        simp [hScrutinee, hPop, hSelect]
+                    | some selected =>
+                        simp [hScrutinee, hPop, hSelect,
+                          Block.runWithOracle_program_irrel asmProgram
+                            asmProgram' pc program fuel selected
+                            (state.withEVM
+                              { evmAfterScrutinee with stack := stack })
+                            traceAfterScrutinee]
+    | for_ init cond post body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.runWithOracle]
+        | succ fuel =>
+            unfold Stmt.runWithOracle
+            rw [
+              Block.runWithOracle_program_irrel asmProgram asmProgram'
+                pc program fuel init state trace]
+            cases hInit :
+                Block.runWithOracle asmProgram' pc program fuel init state
+                  trace with
+            | error err =>
+                simp [hInit]
+            | ok initPair =>
+                rcases initPair with ⟨initOutcome, traceAfterInit⟩
+                rcases initOutcome with ⟨initState, initMode⟩
+                cases initMode <;>
+                  simp [hInit,
+                    Stmt.runForLoopWithOracle_program_irrel asmProgram
+                      asmProgram' pc program fuel cond post body initState
+                      traceAfterInit]
+    | brk =>
+        simp [Stmt.runWithOracle]
+    | cont =>
+        simp [Stmt.runWithOracle]
+    | leave =>
+        simp [Stmt.runWithOracle]
+    | call name =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.runWithOracle]
+        | succ fuel =>
+            unfold Stmt.runWithOracle
+            cases hLookup :
+                Structured.ProcList.lookup? name program.procs with
+            | none =>
+                simp [hLookup]
+            | some proc =>
+                cases hSplit :
+                    Structured.StackFrame.splitArgs? proc.argc state.evm.stack with
+                | none =>
+                    simp [hLookup, hSplit]
+                | some splitPair =>
+                    rcases splitPair with ⟨args, callerStack⟩
+                    let callEVM := { state.evm with stack := args }
+                    let callState :=
+                      (state.withEVM callEVM).pushReturn callerStack proc.retc
+                    simp [hLookup, hSplit, callEVM, callState,
+                      Block.runWithOracle_program_irrel asmProgram
+                        asmProgram' pc program fuel proc.body callState trace]
+    | terminal kind =>
+        simp [Stmt.runWithOracle]
   termination_by fuel stmt _state _trace => (fuel, 3, sizeOf stmt)
 
   decreasing_by

@@ -335,6 +335,12 @@ abbrev structuredReplayBasicInstrOracleStepPC :=
 abbrev structuredReplayBasicInstrStepWithOraclePCOfStepPC :=
   @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_pc_of_stepPC
 
+abbrev structuredReplayBasicInstrStepWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_program_irrel
+
+abbrev structuredReplayBasicInstrStepWithOracleContextIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.BasicInstr.stepWithOracle_context_irrel
+
 abbrev structuredReplayBasicInstrOracleStepPCOfRunnerSafe :=
   @Yul.ObserverOracle.StructuredReplay.BasicInstr.oracleStepPC_of_runnerSafe
 
@@ -394,6 +400,18 @@ abbrev structuredReplayCodeRunStateWithOracle :=
 
 abbrev structuredReplayCodeRunConditionWithOracle :=
   @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle
+
+abbrev structuredReplayCodeRunWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_program_irrel
+
+abbrev structuredReplayCodeRunWithOracleContextIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_context_irrel
+
+abbrev structuredReplayCodeRunStateWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runStateWithOracle_program_irrel
+
+abbrev structuredReplayCodeRunConditionWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_program_irrel
 
 abbrev structuredReplayCodeRunConditionWithOracleOracleFrameSafeHiddenPopExists :=
   @Yul.ObserverOracle.StructuredReplay.Code.runConditionWithOracle_oracleFrameSafe_hidden_pop_exists
@@ -602,11 +620,20 @@ abbrev structuredReplayCodeRunWithOracleReplicatePopExists :=
 abbrev structuredReplayBlockRunWithOracle :=
   @Yul.ObserverOracle.StructuredReplay.Block.runWithOracle
 
+abbrev structuredReplayBlockRunWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Block.runWithOracle_program_irrel
+
 abbrev structuredReplayStmtRunForLoopWithOracle :=
   @Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle
 
+abbrev structuredReplayStmtRunForLoopWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runForLoopWithOracle_program_irrel
+
 abbrev structuredReplayStmtRunWithOracle :=
   @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle
+
+abbrev structuredReplayStmtRunWithOracleProgramIrrel :=
+  @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_program_irrel
 
 abbrev structuredReplayStmtRunWithOracleCodeSourceRunNResultWithOracleSegmentOfCodeSegment :=
   @Yul.ObserverOracle.StructuredReplay.Stmt.runWithOracle_code_source_runNResultWithOracle_segment_of_codeSegment
