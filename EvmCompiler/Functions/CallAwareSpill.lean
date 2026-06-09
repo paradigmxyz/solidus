@@ -1904,6 +1904,69 @@ theorem normalizePlanStack?_regular_sound_exact
         by simpa [appendSpillPlan] using hSpillStack,
         hAfterStack⟩
 
+theorem normalizePlanStack?_regular_sound_exact_runState
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {plan full : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceAfter : Source.State}
+    {target finalRunState : Expressions.RunState}
+    (hNormalize : normalizePlanStack? range plan = some full)
+    (hPlanRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel plan.block target =
+          .ok (Expressions.Outcome.regular finalRunState))
+    (hRel :
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm)
+    (hDefined : SpillLayout.StoreDefined sourceAfter.vars plan.layout)
+    (hLength : finalRunState.evm.stack.length = plan.stackLayout.length) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel full.block target =
+        .ok (Expressions.Outcome.regular (finalRunState.withEVM final)) ∧
+        SpillStateRel range full.sourceScope full.stackLayout full.layout
+          sourceAfter final ∧
+        SpillLayout.StoreDefined sourceAfter.vars full.layout ∧
+        full.stackLayout = [] ∧
+        final.stack = [] := by
+  rcases normalizePlanStack?_eq_some hNormalize with
+    ⟨spill, hSpill, hFull⟩
+  subst full
+  rcases
+      SpillPlan.spillOrDropAllStack?_sound_exact_empty
+        hSpec hWordBytes hSpill hRel hDefined hLength with
+    ⟨afterSpill, hSpillRun, hSpillRel, _hSpillScope, hSpillStack,
+      hSpillDefined, hAfterStack⟩
+  have hSpillBlock :
+      ∃ fuel,
+        Expressions.Block.run exprProgram fuel
+          (SpillStmtCode.toExpressionsBlock spill.code)
+          finalRunState =
+        .ok
+          (Expressions.Outcome.regular
+            (finalRunState.withEVM afterSpill)) := by
+    rcases
+        SpillStmtCode.run_toExpressionsBlock_exists exprProgram
+          (initial := finalRunState) hSpillRun with
+      ⟨fuel, hRun⟩
+    exact
+      ⟨fuel, by
+        simpa [SpillStmtCode.toExpressionsOutcome,
+          Expressions.RunState.withEVM_withEVM] using hRun⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram hPlanRun hSpillBlock
+    with
+    ⟨exprFuel, hRun⟩
+  exact
+      ⟨afterSpill, exprFuel,
+        by simpa [appendSpillPlan] using hRun,
+        by simpa [appendSpillPlan] using hSpillRel,
+        by
+          change SpillLayout.StoreDefined sourceAfter.vars spill.layout
+          exact hSpillDefined,
+        by simpa [appendSpillPlan] using hSpillStack,
+        hAfterStack⟩
+
 theorem normalizePlanStack?_nonregular_passthrough
     {range : ScratchRange} {plan full : Plan}
     {exprProgram : Expressions.Program}
@@ -22137,6 +22200,372 @@ theorem compileBlockOpenWithSwitchFallback?_cont_sound_meta_of_atomicTerminalOrL
           (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
           (by simpa [BlockAtomicTerminalOrLoopControlSafe] using hSafe)
           hHandlers hScope hRel hDefined hLength hSourceRun
+
+theorem source_block_runScoped_halt_eq_open
+    {prim : Source.PrimitiveSemantics}
+    {program : Program} {ctx : Source.Ctx} {block : Block} {fuel : Nat}
+    {state stateAfter : Source.State} {kind : Assembly.HaltKind}
+    (hRun :
+      Source.Block.runScoped prim program ctx block fuel state =
+        .ok (Source.Outcome.halt kind stateAfter)) :
+    ∃ ctxAfter,
+      Source.Block.runOpen prim program ctx fuel block state =
+        .ok (Source.Outcome.halt kind stateAfter, ctxAfter) := by
+  unfold Source.Block.runScoped at hRun
+  cases hOpen :
+      Source.Block.runOpen prim program ctx fuel block state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok result =>
+      rcases result with ⟨outcome, ctxAfter⟩
+      cases outcome with
+      | mk outcomeState mode =>
+          cases mode with
+          | regular =>
+              simp [hOpen, Source.Outcome.regular, Source.Outcome.halt,
+                Locals.Source.Outcome.regular, Locals.Source.Outcome.halt]
+                at hRun
+          | brk =>
+              simp [hOpen, Source.Outcome.brk, Source.Outcome.halt,
+                Locals.Source.Outcome.brk, Locals.Source.Outcome.halt]
+                at hRun
+          | cont =>
+              simp [hOpen, Source.Outcome.cont, Source.Outcome.halt,
+                Locals.Source.Outcome.cont, Locals.Source.Outcome.halt]
+                at hRun
+          | leave =>
+              simp [hOpen, Source.Outcome.leave, Source.Outcome.halt,
+                Locals.Source.Outcome.leave, Locals.Source.Outcome.halt]
+                at hRun
+          | halt headKind =>
+              simp [hOpen, Source.Outcome.halt,
+                Locals.Source.Outcome.halt] at hRun
+              rcases hRun with ⟨hState, hKind⟩
+              subst outcomeState
+              subst headKind
+              exact
+                ⟨ctxAfter, by
+                  simpa [Source.Outcome.halt,
+                    Locals.Source.Outcome.halt] using hOpen⟩
+
+theorem source_block_runScoped_brk_eq_open
+    {prim : Source.PrimitiveSemantics}
+    {program : Program} {ctx : Source.Ctx} {block : Block} {fuel : Nat}
+    {state stateAfter : Source.State}
+    (hRun :
+      Source.Block.runScoped prim program ctx block fuel state =
+        .ok (Source.Outcome.brk stateAfter)) :
+    ∃ ctxAfter,
+      Source.Block.runOpen prim program ctx fuel block state =
+        .ok (Source.Outcome.brk stateAfter, ctxAfter) := by
+  unfold Source.Block.runScoped at hRun
+  cases hOpen :
+      Source.Block.runOpen prim program ctx fuel block state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok result =>
+      rcases result with ⟨outcome, ctxAfter⟩
+      cases outcome with
+      | mk outcomeState mode =>
+          cases mode with
+          | regular =>
+              simp [hOpen, Source.Outcome.regular, Source.Outcome.brk,
+                Locals.Source.Outcome.regular, Locals.Source.Outcome.brk]
+                at hRun
+          | brk =>
+              simp [hOpen, Source.Outcome.brk,
+                Locals.Source.Outcome.brk] at hRun
+              cases hRun
+              exact
+                ⟨ctxAfter, by
+                  simpa [Source.Outcome.brk,
+                    Locals.Source.Outcome.brk] using hOpen⟩
+          | cont =>
+              simp [hOpen, Source.Outcome.cont, Source.Outcome.brk,
+                Locals.Source.Outcome.cont, Locals.Source.Outcome.brk]
+                at hRun
+          | leave =>
+              simp [hOpen, Source.Outcome.leave, Source.Outcome.brk,
+                Locals.Source.Outcome.leave, Locals.Source.Outcome.brk]
+                at hRun
+          | halt headKind =>
+              simp [hOpen, Source.Outcome.halt, Source.Outcome.brk,
+                Locals.Source.Outcome.halt, Locals.Source.Outcome.brk]
+                at hRun
+
+theorem source_block_runScoped_cont_eq_open
+    {prim : Source.PrimitiveSemantics}
+    {program : Program} {ctx : Source.Ctx} {block : Block} {fuel : Nat}
+    {state stateAfter : Source.State}
+    (hRun :
+      Source.Block.runScoped prim program ctx block fuel state =
+        .ok (Source.Outcome.cont stateAfter)) :
+    ∃ ctxAfter,
+      Source.Block.runOpen prim program ctx fuel block state =
+        .ok (Source.Outcome.cont stateAfter, ctxAfter) := by
+  unfold Source.Block.runScoped at hRun
+  cases hOpen :
+      Source.Block.runOpen prim program ctx fuel block state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok result =>
+      rcases result with ⟨outcome, ctxAfter⟩
+      cases outcome with
+      | mk outcomeState mode =>
+          cases mode with
+          | regular =>
+              simp [hOpen, Source.Outcome.regular, Source.Outcome.cont,
+                Locals.Source.Outcome.regular, Locals.Source.Outcome.cont]
+                at hRun
+          | brk =>
+              simp [hOpen, Source.Outcome.brk, Source.Outcome.cont,
+                Locals.Source.Outcome.brk, Locals.Source.Outcome.cont]
+                at hRun
+          | cont =>
+              simp [hOpen, Source.Outcome.cont,
+                Locals.Source.Outcome.cont] at hRun
+              cases hRun
+              exact
+                ⟨ctxAfter, by
+                  simpa [Source.Outcome.cont,
+                    Locals.Source.Outcome.cont] using hOpen⟩
+          | leave =>
+              simp [hOpen, Source.Outcome.leave, Source.Outcome.cont,
+                Locals.Source.Outcome.leave, Locals.Source.Outcome.cont]
+                at hRun
+          | halt headKind =>
+              simp [hOpen, Source.Outcome.halt, Source.Outcome.cont,
+                Locals.Source.Outcome.halt, Locals.Source.Outcome.cont]
+                at hRun
+
+theorem compileBlockStmtWithSwitchFallback?_regular_sound_meta_exact_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.regular sourceAfter)) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtx.scope = plan.sourceScope := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, restrictedLayout, hBodyCompile, hNormalize,
+      hRestricted, hCheck, hPlan⟩
+  rcases Source.Block.runScoped_regular_eq_restrict hSourceRun with
+    ⟨inner, sourceCtxAfter, hOpen, hRestrict⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes hBodyCompile hSafe hScope hRel hDefined hLength
+        hOpen with
+    ⟨bodyRunState, bodyFuel, hBodyRun, hBodyRel, hBodyDefined, hBodyLength,
+      _hBodyScope⟩
+  rcases
+      normalizePlanStack?_regular_sound_exact_runState
+        hSpec hWordBytes hNormalize
+        (target := target) (finalRunState := bodyRunState)
+        ⟨bodyFuel, hBodyRun⟩ hBodyRel hBodyDefined hBodyLength with
+    ⟨final, exprFuel, hRun, hNormRel, hNormDefined, hNormStackLayout,
+      hFinalStack⟩
+  subst plan
+  refine
+    ⟨bodyRunState.withEVM final, exprFuel, hRun, ?_, ?_, ?_, hScope⟩
+  · have hRestrictedRel :
+        SpillStateRel range sourceScope normalized.stackLayout
+          restrictedLayout (inner.restrictTo sourceScope) final :=
+      SpillStateRel.restrictToScope hRestricted hCheck hNormRel
+    simpa [hScope, hRestrict] using hRestrictedRel
+  · have hRestrictedDefined :
+        SpillLayout.StoreDefined
+          (Locals.Source.Store.restrictTo sourceScope inner.vars)
+          (SpillLayout.restrictToScope sourceScope normalized.layout) :=
+      SpillLayout.StoreDefined.restrictToScope
+        (scope := sourceScope) hNormDefined
+    intro name location hMem
+    have hValue :=
+      hRestrictedDefined (name := name) (location := location)
+        (by simpa [hRestricted] using hMem)
+    simpa [Locals.Source.State.restrictTo, hScope, hRestrict] using hValue
+  · simpa [Structured.RunState.withEVM, hFinalStack, hNormStackLayout]
+
+theorem compileBlockStmtWithSwitchFallback?_halt_sound_meta_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState} {kind : Assembly.HaltKind}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.halt kind sourceAfter)) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        haltTarget.evm.toSharedState := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
+      _hRestricted, _hCheck, hPlan⟩
+  rcases source_block_runScoped_halt_eq_open hSourceRun with
+    ⟨sourceCtxAfter, hOpen⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_halt_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes hBodyCompile hSafe hScope hRel hDefined hLength
+        hOpen with
+    ⟨haltTarget, bodyFuel, hBodyRun, hShared⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target)
+        (outcome := Expressions.Outcome.halt kind haltTarget)
+        hNormalize ⟨bodyFuel, hBodyRun⟩
+        (by simp [Expressions.Outcome.halt]) with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact ⟨haltTarget, exprFuel, hRun, hShared⟩
+
+theorem compileBlockStmtWithSwitchFallback?_brk_sound_meta_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.brk sourceAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.brk brkTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        brkTarget.evm.toSharedState ∧
+      brkTarget.evm.stack = [] := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
+      _hRestricted, _hCheck, hPlan⟩
+  rcases source_block_runScoped_brk_eq_open hSourceRun with
+    ⟨sourceCtxAfter, hOpen⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_brk_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes hBodyCompile hSafe hHandlers hScope hRel hDefined
+        hLength hOpen with
+    ⟨brkTarget, bodyFuel, hBodyRun, hShared, hStack⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target)
+        (outcome := Expressions.Outcome.brk brkTarget)
+        hNormalize ⟨bodyFuel, hBodyRun⟩
+        (by simp [Expressions.Outcome.brk]) with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact ⟨brkTarget, exprFuel, hRun, hShared, hStack⟩
+
+theorem compileBlockStmtWithSwitchFallback?_cont_sound_meta_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.cont sourceAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.cont contTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        contTarget.evm.toSharedState ∧
+      contTarget.evm.stack = [] := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
+      _hRestricted, _hCheck, hPlan⟩
+  rcases source_block_runScoped_cont_eq_open hSourceRun with
+    ⟨sourceCtxAfter, hOpen⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_cont_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes hBodyCompile hSafe hHandlers hScope hRel hDefined
+        hLength hOpen with
+    ⟨contTarget, bodyFuel, hBodyRun, hShared, hStack⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target)
+        (outcome := Expressions.Outcome.cont contTarget)
+        hNormalize ⟨bodyFuel, hBodyRun⟩
+        (by simp [Expressions.Outcome.cont]) with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact ⟨contTarget, exprFuel, hRun, hShared, hStack⟩
 
 mutual
 
