@@ -10899,6 +10899,372 @@ theorem labeled_body_tail_result_ctx {program : Structured.Program}
                           Structured.Outcome.halt, List.append_assoc]
                           using hCompiled⟩)
 
+theorem head_case_from_tests_result_ctx_of_tail_run
+    {ctx : Structured.CompileContext}
+    {base supply : Structured.LabelSupply} {idx : Nat}
+    {probe : Word} {body : Structured.Block}
+    {rest : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {pre casePrefix post : Assembly.Program}
+    {defaultLabel endLabel : Assembly.Label}
+    {source : Structured.RunState} {outcome : Structured.Outcome}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceOut : Trace}
+    (hEq : probe = value)
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.switchTest base idx probe ++
+          Structured.Stmt.switchTests base (idx + 1) rest ++
+          [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          [ Assembly.Instr.label
+              (Structured.LabelSupply.label base (idx + 2))
+          , Assembly.Instr.prim .pop ] ++
+          (Structured.Block.compileFromCtx body ctx supply).code ++
+          [Assembly.Instr.jump endLabel] ++
+          (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+            (Structured.Block.compileFromCtx body ctx supply).next
+            (idx + 1)).code ++
+          (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+            defaultLabel
+            (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+              (Structured.Block.compileFromCtx body ctx supply).next
+              (idx + 1)).next).code ++
+          [Assembly.Instr.label endLabel]))
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (Structured.Stmt.switchTest base idx probe ++
+            Structured.Stmt.switchTests base (idx + 1) rest ++
+            [Assembly.Instr.jump defaultLabel] ++
+            casePrefix ++
+            [ Assembly.Instr.label
+                (Structured.LabelSupply.label base (idx + 2))
+            , Assembly.Instr.prim .pop ] ++
+            (Structured.Block.compileFromCtx body ctx supply).code ++
+            [Assembly.Instr.jump endLabel] ++
+            (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+              (Structured.Block.compileFromCtx body ctx supply).next
+              (idx + 1)).code ++
+            (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+              defaultLabel
+              (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+                (Structured.Block.compileFromCtx body ctx supply).next
+                (idx + 1)).next).code ++
+            [Assembly.Instr.label endLabel]) ++ post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hTail :
+      ∀ targetAtCase,
+        Structured.Preservation.Frame.StateRel source targetAtCase tokens →
+        targetAtCase.pc =
+          Assembly.Program.pcAfter
+            (pre ++
+              Structured.Stmt.switchTest base idx probe ++
+              Structured.Stmt.switchTests base (idx + 1) rest ++
+              [Assembly.Instr.jump defaultLabel] ++ casePrefix) →
+        ARunResultWithOracle
+          (pre ++
+            (Structured.Stmt.switchTest base idx probe ++
+              Structured.Stmt.switchTests base (idx + 1) rest ++
+              [Assembly.Instr.jump defaultLabel] ++
+              casePrefix ++
+              [ Assembly.Instr.label
+                  (Structured.LabelSupply.label base (idx + 2))
+              , Assembly.Instr.prim .pop ] ++
+              (Structured.Block.compileFromCtx body ctx supply).code ++
+              [Assembly.Instr.jump endLabel] ++
+              (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+                (Structured.Block.compileFromCtx body ctx supply).next
+                (idx + 1)).code ++
+              (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                endLabel defaultLabel
+                (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+                  (Structured.Block.compileFromCtx body ctx supply).next
+                  (idx + 1)).next).code ++
+              [Assembly.Instr.label endLabel]) ++ post)
+          targetAtCase trace
+          (fun result traceFinal =>
+            traceFinal = traceOut ∧
+              Structured.Preservation.CompiledOutcomeRel
+                (pre ++
+                  (Structured.Stmt.switchTest base idx probe ++
+                    Structured.Stmt.switchTests base (idx + 1) rest ++
+                    [Assembly.Instr.jump defaultLabel] ++
+                    casePrefix ++
+                    [ Assembly.Instr.label
+                        (Structured.LabelSupply.label base (idx + 2))
+                    , Assembly.Instr.prim .pop ] ++
+                    (Structured.Block.compileFromCtx body ctx supply).code ++
+                    [Assembly.Instr.jump endLabel] ++
+                    (Structured.SwitchCases.compileFromCtx rest ctx endLabel
+                      base
+                      (Structured.Block.compileFromCtx body ctx supply).next
+                      (idx + 1)).code ++
+                    (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                      endLabel defaultLabel
+                      (Structured.SwitchCases.compileFromCtx rest ctx endLabel
+                        base
+                        (Structured.Block.compileFromCtx body ctx
+                          supply).next
+                        (idx + 1)).next).code ++
+                    [Assembly.Instr.label endLabel]) ++ post)
+                ctx
+                (Assembly.Program.pcAfter
+                  (pre ++
+                    (Structured.Stmt.switchTest base idx probe ++
+                      Structured.Stmt.switchTests base (idx + 1) rest ++
+                      [Assembly.Instr.jump defaultLabel] ++
+                      casePrefix ++
+                      [ Assembly.Instr.label
+                          (Structured.LabelSupply.label base (idx + 2))
+                      , Assembly.Instr.prim .pop ] ++
+                      (Structured.Block.compileFromCtx body ctx supply).code ++
+                      [Assembly.Instr.jump endLabel] ++
+                      (Structured.SwitchCases.compileFromCtx rest ctx endLabel
+                        base
+                        (Structured.Block.compileFromCtx body ctx
+                          supply).next
+                        (idx + 1)).code ++
+                      (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                        endLabel defaultLabel
+                        (Structured.SwitchCases.compileFromCtx rest ctx
+                          endLabel base
+                          (Structured.Block.compileFromCtx body ctx
+                            supply).next
+                          (idx + 1)).next).code ++
+                      [Assembly.Instr.label endLabel])))
+                outcome result tokens)) :
+    ARunResultWithOracle
+      (pre ++
+        (Structured.Stmt.switchTest base idx probe ++
+          Structured.Stmt.switchTests base (idx + 1) rest ++
+          [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          [ Assembly.Instr.label
+              (Structured.LabelSupply.label base (idx + 2))
+          , Assembly.Instr.prim .pop ] ++
+          (Structured.Block.compileFromCtx body ctx supply).code ++
+          [Assembly.Instr.jump endLabel] ++
+          (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+            (Structured.Block.compileFromCtx body ctx supply).next
+            (idx + 1)).code ++
+          (Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+            defaultLabel
+            (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+              (Structured.Block.compileFromCtx body ctx supply).next
+              (idx + 1)).next).code ++
+          [Assembly.Instr.label endLabel]) ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceOut ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              (Structured.Stmt.switchTest base idx probe ++
+                Structured.Stmt.switchTests base (idx + 1) rest ++
+                [Assembly.Instr.jump defaultLabel] ++
+                casePrefix ++
+                [ Assembly.Instr.label
+                    (Structured.LabelSupply.label base (idx + 2))
+                , Assembly.Instr.prim .pop ] ++
+                (Structured.Block.compileFromCtx body ctx supply).code ++
+                [Assembly.Instr.jump endLabel] ++
+                (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+                  (Structured.Block.compileFromCtx body ctx supply).next
+                  (idx + 1)).code ++
+                (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                  endLabel defaultLabel
+                  (Structured.SwitchCases.compileFromCtx rest ctx endLabel
+                    base
+                    (Structured.Block.compileFromCtx body ctx supply).next
+                    (idx + 1)).next).code ++
+                [Assembly.Instr.label endLabel]) ++ post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                (Structured.Stmt.switchTest base idx probe ++
+                  Structured.Stmt.switchTests base (idx + 1) rest ++
+                  [Assembly.Instr.jump defaultLabel] ++
+                  casePrefix ++
+                  [ Assembly.Instr.label
+                      (Structured.LabelSupply.label base (idx + 2))
+                  , Assembly.Instr.prim .pop ] ++
+                  (Structured.Block.compileFromCtx body ctx supply).code ++
+                  [Assembly.Instr.jump endLabel] ++
+                  (Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+                    (Structured.Block.compileFromCtx body ctx supply).next
+                    (idx + 1)).code ++
+                  (Structured.SwitchDefault.compileFromCtx defaultBody ctx
+                    endLabel defaultLabel
+                    (Structured.SwitchCases.compileFromCtx rest ctx endLabel
+                      base
+                      (Structured.Block.compileFromCtx body ctx supply).next
+                      (idx + 1)).next).code ++
+                  [Assembly.Instr.label endLabel])))
+            outcome result tokens) := by
+  let caseLabel := Structured.LabelSupply.label base (idx + 2)
+  let testCode := Structured.Stmt.switchTest base idx probe
+  let restTests := Structured.Stmt.switchTests base (idx + 1) rest
+  let compiledBody := Structured.Block.compileFromCtx body ctx supply
+  let compiledTail :=
+    Structured.SwitchCases.compileFromCtx rest ctx endLabel base
+      compiledBody.next (idx + 1)
+  let compiledDefault :=
+    Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+      defaultLabel compiledTail.next
+  let preCase : Assembly.Program :=
+    pre ++ testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+      casePrefix
+  have hFitsHead :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++
+          compiledTail.code ++ compiledDefault.code ++
+          [Assembly.Instr.label endLabel]) := by
+    simpa [caseLabel, testCode, restTests, compiledBody, compiledTail,
+      compiledDefault, List.append_assoc] using hFits
+  have hExactHead :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (testCode ++ restTests ++ [Assembly.Instr.jump defaultLabel] ++
+            casePrefix ++
+            [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+            compiledBody.code ++
+            [Assembly.Instr.jump endLabel] ++
+            compiledTail.code ++ compiledDefault.code ++
+            [Assembly.Instr.label endLabel]) ++ post) := by
+    simpa [caseLabel, testCode, restTests, compiledBody, compiledTail,
+      compiledDefault, List.append_assoc] using hExact
+  have hTestFitsAsm :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre testCode :=
+    Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+      (first := testCode)
+      (second :=
+        restTests ++ [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ compiledTail.code ++
+          compiledDefault.code ++ [Assembly.Instr.label endLabel])
+      (by simpa [List.append_assoc] using hFitsHead)
+  have hCondFitsAsm :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.switchTestCode probe).toAssembly :=
+    Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+      (first := (Structured.Stmt.switchTestCode probe).toAssembly)
+      (second := [Assembly.Instr.jumpi caseLabel])
+      (by
+        simpa [Structured.Stmt.switchTest, caseLabel, testCode]
+          using hTestFitsAsm)
+  have hCondFits :
+      Structured.Preservation.Code.PCFitsFrom pre
+        (Structured.Stmt.switchTestCode probe) :=
+    Structured.Preservation.Code.PCFitsFrom.of_assembly hCondFitsAsm
+  have hCaseLabel :
+      Assembly.Program.labelPc
+          (pre ++ (Structured.Stmt.switchTestCode probe).toAssembly ++
+            [Assembly.Instr.jumpi caseLabel] ++
+            (restTests ++ [Assembly.Instr.jump defaultLabel] ++
+              casePrefix ++
+              [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+              compiledBody.code ++ [Assembly.Instr.jump endLabel] ++
+              compiledTail.code ++ compiledDefault.code ++
+              [Assembly.Instr.label endLabel] ++ post))
+          caseLabel =
+        some (Assembly.Program.byteLength preCase) := by
+    have hHere :=
+      hExactHead.labelPc_at preCase caseLabel
+        ([Assembly.Instr.prim .pop] ++ compiledBody.code ++
+          [Assembly.Instr.jump endLabel] ++ compiledTail.code ++
+          compiledDefault.code ++ [Assembly.Instr.label endLabel] ++ post)
+        (by
+          simp [preCase, testCode, Structured.Stmt.switchTest, caseLabel,
+            List.append_assoc])
+    simpa [preCase, testCode, Structured.Stmt.switchTest, caseLabel,
+      List.append_assoc] using hHere
+  have hTestRun :=
+    test_true_result_ctx
+      (pre := pre)
+      (post :=
+        restTests ++ [Assembly.Instr.jump defaultLabel] ++
+          casePrefix ++
+          [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++ [Assembly.Instr.jump endLabel] ++
+          compiledTail.code ++ compiledDefault.code ++
+          [Assembly.Instr.label endLabel] ++ post)
+      (label := caseLabel)
+      (dest := Assembly.Program.byteLength preCase)
+      (source := source) (target := target) (tokens := tokens)
+      (stack := stack) (value := value) (probe := probe)
+      (trace := trace)
+      hEq hCondFits hPc hRel
+      (by simpa [List.append_assoc] using hCaseLabel) hPop
+  have hTestToCase :
+      ARunResultWithOracle
+        (pre ++
+          (Structured.Stmt.switchTest base idx probe ++
+            Structured.Stmt.switchTests base (idx + 1) rest ++
+            [Assembly.Instr.jump defaultLabel] ++
+            casePrefix ++
+            [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+            compiledBody.code ++
+            [Assembly.Instr.jump endLabel] ++ compiledTail.code ++
+            compiledDefault.code ++ [Assembly.Instr.label endLabel]) ++ post)
+        target trace
+        (fun result traceMid =>
+          match result with
+          | .running targetAtCase =>
+              traceMid = trace ∧
+                Structured.Preservation.Frame.StateRel source targetAtCase
+                  tokens ∧
+                targetAtCase.pc = Assembly.Program.pcAfter preCase
+          | .halted _ => False) := by
+    refine
+      ARunResultWithOracle.mono
+        (by
+          simpa [testCode, restTests, caseLabel, List.append_assoc]
+            using hTestRun)
+        ?_
+    intro result traceMid hResult
+    rcases hResult with ⟨hTraceMid, hResult⟩
+    cases result with
+    | halted halt =>
+        exact hResult
+    | running targetAtCase =>
+        exact
+          ⟨hTraceMid, hResult.1,
+            by simpa [Assembly.Program.pcAfter] using hResult.2⟩
+  refine
+    ARunResultWithOracle.bind_running
+      (program :=
+        pre ++
+          (Structured.Stmt.switchTest base idx probe ++
+            Structured.Stmt.switchTests base (idx + 1) rest ++
+            [Assembly.Instr.jump defaultLabel] ++
+            casePrefix ++
+            [Assembly.Instr.label caseLabel, Assembly.Instr.prim .pop] ++
+            compiledBody.code ++
+            [Assembly.Instr.jump endLabel] ++ compiledTail.code ++
+            compiledDefault.code ++ [Assembly.Instr.label endLabel]) ++ post)
+      (middle := fun targetAtCase traceMid =>
+        traceMid = trace ∧
+          Structured.Preservation.Frame.StateRel source targetAtCase tokens ∧
+          targetAtCase.pc = Assembly.Program.pcAfter preCase)
+      hTestToCase ?_
+  intro targetAtCase traceMid hAtCase
+  rcases hAtCase with ⟨hTraceMid, hRelAtCase, hPcAtCase⟩
+  subst traceMid
+  exact
+    hTail targetAtCase hRelAtCase
+      (by simpa [preCase, testCode, restTests, List.append_assoc]
+        using hPcAtCase)
+
 theorem head_case_from_tests_result_ctx {program : Structured.Program}
     {ctx : Structured.CompileContext}
     {base supply : Structured.LabelSupply} {idx : Nat}
