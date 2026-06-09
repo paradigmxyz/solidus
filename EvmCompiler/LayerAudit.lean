@@ -1271,6 +1271,9 @@ abbrev sourceReplayStmtCompileIfTrueWithOracleOfEvalConditionSourceOwned :=
 abbrev sourceReplayStmtCompileSwitchNoneWithOracleOfEvalOneSourceOwned :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchNoneWithOracle_of_evalOne_sourceOwned
 
+abbrev sourceReplayStmtCompileSwitchSomeWithOracleOfEvalOneSourceOwned :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchSomeWithOracle_of_evalOne_sourceOwned
+
 abbrev sourceReplayStmtCompileIfTrueAtomicPrefixWithOracleOfEvalConditionSourceOwned :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
 

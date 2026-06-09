@@ -24894,7 +24894,145 @@ theorem compileSwitchNoneWithOracle_of_evalOne_sourceOwned
         (traceAfterScrutinee := stateAfterScrutinee.trace)
         (ExpressionsReplay.Expr.runCodeExprWithOracle_code_of_run
           hScrutineeRun)
-        hPop hLowerSelect
+      hPop hLowerSelect
+
+theorem compileSwitchSomeWithOracle_of_evalOne_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Ctx} {targetCtx bodyCtx : Locals.Ctx}
+    {fuel bodyFuel pc : Nat}
+    {scrutinee : Locals.Expr 1}
+    {cases : List (Word × Locals.Block)}
+    {defaultBody : Option Locals.Block}
+    {selected : Locals.Block}
+    {state stateAfterScrutinee : State} {value : Word}
+    {target : Locals.RunState} {scrutineeCode : Structured.Code}
+    {bodyCode : List Expressions.Stmt}
+    {lowerCases : List (Word × Expressions.Block)}
+    {lowerDefault : Option Expressions.Block}
+    {lowerBody : Expressions.Block}
+    {bodyOutcome : Outcome} {exprResult : Expressions.Outcome × Trace}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned scrutinee)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 scrutinee)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileScrutinee :
+      Locals.Expr.compileCode targetCtx 0 scrutinee = some scrutineeCode)
+    (hCompileCases :
+      Locals.CaseList.compile targetCtx cases = some lowerCases)
+    (hCompileDefault :
+      Locals.Default.compile targetCtx defaultBody = some lowerDefault)
+    (hCompileBody :
+      Locals.Block.compileOpen targetCtx selected = some (bodyCode, bodyCtx))
+    (hFinishBody :
+      Locals.finishScoped targetCtx bodyCtx bodyCode = some lowerBody)
+    (hEvalOne :
+      Expr.evalOne scrutinee state = .ok (stateAfterScrutinee, value))
+    (hSelect :
+      Locals.Source.Switch.select value cases defaultBody = some selected)
+    (hBodyRun :
+      Block.runScoped program sourceCtx selected fuel stateAfterScrutinee =
+        .ok bodyOutcome)
+    (hBodyReplay :
+      ∀ evmAfterPop,
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterScrutinee.source (target.withEVM evmAfterPop) →
+        ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          bodyFuel lowerBody (target.withEVM evmAfterPop)
+          stateAfterScrutinee.trace =
+          .ok exprResult) :
+    ∃ (evmAfterScrutinee : EVMState) (baseStack : EvmYul.Stack Word),
+      Locals.Stmt.compile targetCtx (.switch scrutinee cases defaultBody) =
+        some
+          ([Expressions.Stmt.switch
+            (Expressions.Expr.code (results := 1) scrutineeCode)
+            lowerCases lowerDefault],
+            targetCtx) ∧
+      Stmt.run program sourceCtx (fuel + 1)
+          (.switch scrutinee cases defaultBody) state =
+        .ok (bodyOutcome, sourceCtx) ∧
+      ExpressionsReplay.Stmt.runWithOracle asmProgram pc exprProgram
+          (bodyFuel + 1)
+          (Expressions.Stmt.switch
+            (Expressions.Expr.code (results := 1) scrutineeCode)
+            lowerCases lowerDefault)
+          target state.trace =
+        .ok exprResult ∧
+      Locals.SourceLowering.StateRel sourceCtx.scope
+        stateAfterScrutinee.source
+        (target.withEVM { evmAfterScrutinee with stack := baseStack }) ∧
+      Locals.SourceLowering.CtxRel sourceCtx targetCtx := by
+  rcases hCtx with ⟨hLayout, hBreak, hContinue, hLeave, hRetc⟩
+  have hCtxRel : Locals.SourceLowering.CtxRel sourceCtx targetCtx :=
+    ⟨hLayout, hBreak, hContinue, hLeave, hRetc⟩
+  rcases
+      Expr.runCompiledCodeWithOracle_of_evalOne_sourceOwned
+        (program := asmProgram) (expr := scrutinee)
+        (layout := sourceCtx.scope) (ctx := targetCtx)
+        (pc := pc) (state := state)
+        (state' := stateAfterScrutinee) (value := value)
+        (target := target) (code := scrutineeCode)
+        hLayout hNoDup hOwned hAccess hRel hCompileScrutinee hEvalOne with
+    ⟨evmAfterScrutinee, hScrutineeRun, hExprRel⟩
+  rcases hExprRel with ⟨hShared, baseStack, hStack, hStackRel⟩
+  have hStackEVM :
+      evmAfterScrutinee.stack = [value] ++ baseStack := by
+    simpa [Structured.RunState.withEVM] using hStack
+  let evmAfterPop : EVMState :=
+    { evmAfterScrutinee with stack := baseStack }
+  have hPop :
+      evmAfterScrutinee.stack.pop = some (baseStack, value) := by
+    simp [hStackEVM, EvmYul.Stack.pop]
+  have hStateRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope
+        stateAfterScrutinee.source (target.withEVM evmAfterPop) := by
+    exact
+      ⟨by simpa [evmAfterPop, Structured.RunState.withEVM] using hShared,
+        by simpa [evmAfterPop, Structured.RunState.withEVM] using hStackRel⟩
+  have hBodyReplay' :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          bodyFuel lowerBody (target.withEVM evmAfterPop)
+          stateAfterScrutinee.trace =
+        .ok exprResult :=
+    hBodyReplay evmAfterPop hStateRel
+  have hCompileScrutineeExpr :
+      Locals.Expr.compile targetCtx scrutinee =
+        some (Expressions.Expr.code (results := 1) scrutineeCode) := by
+    simp [Locals.Expr.compile, hCompileScrutinee]
+  have hLowerSelect :
+      Expressions.Switch.select value lowerCases lowerDefault =
+        some lowerBody :=
+    Switch.compile_select_some
+      (ctx := targetCtx) (value := value)
+      (cases := cases) (defaultBody := defaultBody)
+      (selected := selected)
+      (selectedCode := bodyCode) (selectedCtx := bodyCtx)
+      (lowerCases := lowerCases) (lowerDefault := lowerDefault)
+      (lowerSelected := lowerBody)
+      hCompileCases hCompileDefault hCompileBody hFinishBody hSelect
+  refine ⟨evmAfterScrutinee, baseStack, ?_, ?_, ?_, hStateRel, hCtxRel⟩
+  · simp [Locals.Stmt.compile, hCompileScrutineeExpr, hCompileCases,
+      hCompileDefault]
+  · simp [Stmt.run, hEvalOne, hSelect, hBodyRun]
+  · exact
+      ExpressionsReplay.Stmt.runWithOracle_switch_some_of_scrutinee_body
+        (asmProgram := asmProgram) (pc := pc) (fuel := bodyFuel)
+        (program := exprProgram)
+        (scrutinee := Expressions.Expr.code (results := 1) scrutineeCode)
+        (cases := lowerCases) (defaultBody := lowerDefault)
+        (selected := lowerBody)
+        (state := target)
+        (evmAfterScrutinee := evmAfterScrutinee)
+        (stack := baseStack) (value := value)
+        (trace := state.trace)
+        (traceAfterScrutinee := stateAfterScrutinee.trace)
+        (result := exprResult)
+        (ExpressionsReplay.Expr.runCodeExprWithOracle_code_of_run
+          hScrutineeRun)
+        hPop hLowerSelect hBodyReplay'
 
 theorem compileExprStmtListWithOracle_of_eval_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
