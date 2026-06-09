@@ -12771,6 +12771,152 @@ theorem compileSwitchFallbackWithSwitchFallback?_selected_dispatch_of_select_som
       ⟨exprFuel, hRun⟩
     exact ⟨exprFuel, hRun⟩
 
+theorem compileSwitchFallbackWithSwitchFallback?_selected_body_dispatch_components_of_select_some
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {selectedBody : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {source sourceAfterScrutinee : Source.State}
+    {target : Expressions.RunState} {value : Word}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selectedBody) :
+    ∃ afterPop selectedBlock bodyPlan normalized,
+      SpillStateRel range plan.sourceScope [] plan.layout
+        sourceAfterScrutinee afterPop ∧
+      SpillLayout.StoreDefined sourceAfterScrutinee.vars plan.layout ∧
+      afterPop.stack.length = ([] : List Name).length ∧
+      plan.sourceScope = sourceScope ∧
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          plan.sourceScope [] plan.layout selectedBody =
+        some bodyPlan ∧
+      normalizePlanStack? range bodyPlan = some normalized ∧
+      normalized.sourceScope = plan.sourceScope ∧
+      normalized.stackLayout = [] ∧
+      normalized.layout = plan.layout ∧
+      selectedBlock = normalized.block ∧
+      (∀ {outcome : Expressions.Outcome},
+        (∃ selectedFuel,
+          Expressions.Block.run exprProgram selectedFuel selectedBlock
+              (target.withEVM afterPop) =
+            .ok outcome) →
+        ∃ exprFuel,
+          Expressions.Block.run exprProgram exprFuel plan.block target =
+            .ok outcome) := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, scrutineeCode, compiledCases, compiledDefault, hEntry,
+      hEntryStack, hScrutineeSafe, hScrutineeCode, hCases, hDefault,
+      hPlan⟩
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact
+        hSpec hWordBytes hEntry hEmptyRun hRel hDefined hLength with
+    ⟨entryFinal, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      _hEntryStackLayout, hEntryFinalStack⟩
+  have hExprEval :
+      Source.Expr.eval Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, [value]) :=
+    expr_eval_of_evalOne hEval
+  rcases
+      compileCode_exact_prefix_structured
+        (expr := scrutinee)
+        (range := range) (sourceScope := entry.sourceScope)
+        (stackLayout := entry.stackLayout)
+        (layout := entry.layout) (source := source)
+        (source' := sourceAfterScrutinee) (target := entryFinal)
+        (stackPrefix := []) (baseStack := []) (offset := 0)
+        (values := [value]) (code := scrutineeCode)
+        (SourceNoMemoryTouch.expr?_sound hScrutineeSafe)
+        (SpillStackPrefixRel.of_spillStateRel hEntryRel)
+        (by simpa using hEntryFinalStack)
+        rfl hScrutineeCode hExprEval with
+    ⟨afterScrutinee, hScrutineeRun, hScrutineeStack, hScrutineeRel⟩
+  have hAfterScrutineeStack : afterScrutinee.stack = [value] := by
+    simpa using hScrutineeStack
+  let afterPop : EVMState := { afterScrutinee with stack := [] }
+  have hAfterPopRel :
+      SpillStateRel range entry.sourceScope [] entry.layout
+        sourceAfterScrutinee afterPop := by
+    have hRel' :
+        SpillStateRel range entry.sourceScope [] entry.layout
+          sourceAfterScrutinee
+          ({ afterScrutinee with stack := [] } : EVMState) :=
+      spillStackPrefixRel_singleton_empty_to_spillStateRel
+        (by simpa [hEntryStack] using hScrutineeRel)
+        hAfterScrutineeStack
+    simpa [afterPop] using hRel'
+  have hAfterPopDefined :
+      SpillLayout.StoreDefined sourceAfterScrutinee.vars entry.layout := by
+    intro name location hMem
+    have hValue :=
+      hEntryDefined (name := name) (location := location)
+        (by simpa [hEntryStack] using hMem)
+    simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue
+  rcases
+      expressions_switch_select_some_of_source_select_some
+        hSelect hCases hDefault with
+    ⟨selectedBlock, hSwitchSelect⟩
+  rcases
+      compileSwitchSelectedBodyWithSwitchFallback?_components_of_select_some
+        hSelect hCases hDefault hSwitchSelect with
+    ⟨bodyPlan, normalized, hBodyCompile, hBodyNormalize, hSelectedScope,
+      hSelectedStack, hSelectedLayout, hSelectedBlock⟩
+  have hEntryScope : entry.sourceScope = sourceScope :=
+    normalizePlanStack?_sourceScope hEntry
+  subst plan
+  refine
+    ⟨afterPop, selectedBlock, bodyPlan, normalized,
+      by simpa [hEntryStack] using hAfterPopRel,
+      hAfterPopDefined, by simp [afterPop], hEntryScope, hBodyCompile,
+      hBodyNormalize, hSelectedScope, hSelectedStack, hSelectedLayout,
+      hSelectedBlock, ?_⟩
+  intro outcome hSelectedRun
+  rcases hSelectedRun with ⟨selectedFuel, hSelectedRun⟩
+  have hSwitchStmt :
+      ∃ switchFuel,
+        Expressions.Stmt.run exprProgram switchFuel
+            (Expressions.Stmt.switch (.code scrutineeCode) compiledCases
+              compiledDefault)
+            (target.withEVM entryFinal) =
+          .ok outcome := by
+    refine ⟨selectedFuel + 1, ?_⟩
+    simp [Expressions.Stmt.run, Expressions.Expr.run,
+      Structured.Code.runState, EvmYul.Stack.pop, hScrutineeRun,
+      hAfterScrutineeStack, hSwitchSelect, afterPop,
+      Expressions.RunState.withEVM_withEVM, hSelectedRun]
+  rcases
+      Expressions.Block.run_single_exists exprProgram hSwitchStmt with
+    ⟨switchFuel, hSwitchRun⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram
+        ⟨entryFuel, hEntryRun⟩ ⟨switchFuel, hSwitchRun⟩ with
+    ⟨exprFuel, hRun⟩
+  exact ⟨exprFuel, hRun⟩
+
 mutual
 
 inductive StmtRegularOpenSupported (returns : List Name) : Stmt → Prop
@@ -23619,6 +23765,224 @@ theorem compileSwitchFallbackWithSwitchFallback?_regular_sound_meta_exact_of_sel
         (by simpa [hSelectedLayout] using hMem)
   · simp [Structured.RunState.withEVM, hFinalStack]
   · exact hBodyScope
+
+theorem compileSwitchFallbackWithSwitchFallback?_halt_sound_meta_of_select_some_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {selectedBody : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {bodyFuel : Nat}
+    {source sourceAfterScrutinee sourceAfter : Source.State}
+    {target : Expressions.RunState} {value : Word}
+    {kind : Assembly.HaltKind}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hBodySafe : BlockAtomicTerminalOrLoopControlSafe selectedBody)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selectedBody)
+    (hBodyRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx selectedBody bodyFuel sourceAfterScrutinee =
+        .ok (Source.Outcome.halt kind sourceAfter)) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        haltTarget.evm.toSharedState := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_selected_body_dispatch_components_of_select_some
+        hSpec hWordBytes hCompile hRel hDefined hLength hEval hSelect with
+    ⟨afterPop, selectedBlock, bodyPlan, normalized, hAfterPopRel,
+      hAfterPopDefined, hAfterPopLength, hPlanScope, hBodyCompile,
+      hBodyNormalize, _hSelectedScope, _hSelectedStack, _hSelectedLayout,
+      hSelectedBlock, hDispatch⟩
+  have hBodyScope : sourceCtx.scope = plan.sourceScope :=
+    hScope.trans hPlanScope.symm
+  rcases
+      compileBlockStmtWithSwitchFallback?_halt_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes
+        (plan := bodyPlan) (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (fuel := bodyFuel)
+        (source := sourceAfterScrutinee) (sourceAfter := sourceAfter)
+        (target := target.withEVM afterPop)
+        hBodyCompile hBodySafe hBodyScope hAfterPopRel hAfterPopDefined
+        hAfterPopLength hBodyRun with
+    ⟨haltTarget, bodyExprFuel, hBodyTargetRun, hShared⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target.withEVM afterPop)
+        (outcome := Expressions.Outcome.halt kind haltTarget)
+        hBodyNormalize ⟨bodyExprFuel, hBodyTargetRun⟩
+        (by simp [Expressions.Outcome.halt]) with
+    ⟨selectedFuel, hSelectedRun⟩
+  subst selectedBlock
+  rcases hDispatch ⟨selectedFuel, hSelectedRun⟩ with
+    ⟨exprFuel, hRun⟩
+  exact ⟨haltTarget, exprFuel, hRun, hShared⟩
+
+theorem compileSwitchFallbackWithSwitchFallback?_brk_sound_meta_of_select_some_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {selectedBody : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {bodyFuel : Nat}
+    {source sourceAfterScrutinee sourceAfter : Source.State}
+    {target : Expressions.RunState} {value : Word}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hBodySafe : BlockAtomicTerminalOrLoopControlSafe selectedBody)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selectedBody)
+    (hBodyRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx selectedBody bodyFuel sourceAfterScrutinee =
+        .ok (Source.Outcome.brk sourceAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.brk brkTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        brkTarget.evm.toSharedState ∧
+      brkTarget.evm.stack = [] := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_selected_body_dispatch_components_of_select_some
+        hSpec hWordBytes hCompile hRel hDefined hLength hEval hSelect with
+    ⟨afterPop, selectedBlock, bodyPlan, normalized, hAfterPopRel,
+      hAfterPopDefined, hAfterPopLength, hPlanScope, hBodyCompile,
+      hBodyNormalize, _hSelectedScope, _hSelectedStack, _hSelectedLayout,
+      hSelectedBlock, hDispatch⟩
+  have hBodyScope : sourceCtx.scope = plan.sourceScope :=
+    hScope.trans hPlanScope.symm
+  rcases
+      compileBlockStmtWithSwitchFallback?_brk_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes
+        (plan := bodyPlan) (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (fuel := bodyFuel)
+        (source := sourceAfterScrutinee) (sourceAfter := sourceAfter)
+        (target := target.withEVM afterPop)
+        hBodyCompile hBodySafe hHandlers hBodyScope hAfterPopRel
+        hAfterPopDefined hAfterPopLength hBodyRun with
+    ⟨brkTarget, bodyExprFuel, hBodyTargetRun, hShared, hStack⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target.withEVM afterPop)
+        (outcome := Expressions.Outcome.brk brkTarget)
+        hBodyNormalize ⟨bodyExprFuel, hBodyTargetRun⟩
+        (by simp [Expressions.Outcome.brk]) with
+    ⟨selectedFuel, hSelectedRun⟩
+  subst selectedBlock
+  rcases hDispatch ⟨selectedFuel, hSelectedRun⟩ with
+    ⟨exprFuel, hRun⟩
+  exact ⟨brkTarget, exprFuel, hRun, hShared, hStack⟩
+
+theorem compileSwitchFallbackWithSwitchFallback?_cont_sound_meta_of_select_some_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {selectedBody : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {bodyFuel : Nat}
+    {source sourceAfterScrutinee sourceAfter : Source.State}
+    {target : Expressions.RunState} {value : Word}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hBodySafe : BlockAtomicTerminalOrLoopControlSafe selectedBody)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+          scrutinee source =
+        .ok (sourceAfterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selectedBody)
+    (hBodyRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx selectedBody bodyFuel sourceAfterScrutinee =
+        .ok (Source.Outcome.cont sourceAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.cont contTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        contTarget.evm.toSharedState ∧
+      contTarget.evm.stack = [] := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_selected_body_dispatch_components_of_select_some
+        hSpec hWordBytes hCompile hRel hDefined hLength hEval hSelect with
+    ⟨afterPop, selectedBlock, bodyPlan, normalized, hAfterPopRel,
+      hAfterPopDefined, hAfterPopLength, hPlanScope, hBodyCompile,
+      hBodyNormalize, _hSelectedScope, _hSelectedStack, _hSelectedLayout,
+      hSelectedBlock, hDispatch⟩
+  have hBodyScope : sourceCtx.scope = plan.sourceScope :=
+    hScope.trans hPlanScope.symm
+  rcases
+      compileBlockStmtWithSwitchFallback?_cont_sound_meta_of_atomicTerminalOrLoopControl_safe
+        hSpec hWordBytes
+        (plan := bodyPlan) (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (fuel := bodyFuel)
+        (source := sourceAfterScrutinee) (sourceAfter := sourceAfter)
+        (target := target.withEVM afterPop)
+        hBodyCompile hBodySafe hHandlers hBodyScope hAfterPopRel
+        hAfterPopDefined hAfterPopLength hBodyRun with
+    ⟨contTarget, bodyExprFuel, hBodyTargetRun, hShared, hStack⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target.withEVM afterPop)
+        (outcome := Expressions.Outcome.cont contTarget)
+        hBodyNormalize ⟨bodyExprFuel, hBodyTargetRun⟩
+        (by simp [Expressions.Outcome.cont]) with
+    ⟨selectedFuel, hSelectedRun⟩
+  subst selectedBlock
+  rcases hDispatch ⟨selectedFuel, hSelectedRun⟩ with
+    ⟨exprFuel, hRun⟩
+  exact ⟨contTarget, exprFuel, hRun, hShared, hStack⟩
 
 mutual
 
