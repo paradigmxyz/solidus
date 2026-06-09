@@ -229,6 +229,7 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_leave
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_terminal
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if_false_of_condition
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if_true_of_condition_body_run
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_switch
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_for
@@ -691,6 +692,7 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_leave
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_terminal
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if_false_of_condition
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if_true_of_condition_body_run
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_switch
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_for
