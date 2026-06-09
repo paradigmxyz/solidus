@@ -20096,6 +20096,171 @@ def StmtListAtomicTerminalOrLoopControlSafe : List Stmt → Prop
 def BlockAtomicTerminalOrLoopControlSafe : Block → Prop
   | ⟨stmts⟩ => StmtListAtomicTerminalOrLoopControlSafe stmts
 
+def SwitchCaseBodiesAtomicTerminalOrLoopControlSafe :
+    List (Word × Block) → Prop
+  | [] => True
+  | (_value, body) :: rest =>
+      BlockAtomicTerminalOrLoopControlSafe body ∧
+        SwitchCaseBodiesAtomicTerminalOrLoopControlSafe rest
+
+def SwitchDefaultBodyAtomicTerminalOrLoopControlSafe :
+    Option Block → Prop
+  | none => True
+  | some body => BlockAtomicTerminalOrLoopControlSafe body
+
+theorem switchDefaultBodyAtomicTerminalOrLoopControlSafe_select_some
+    {defaultBody : Option Block} {selectedBody : Block}
+    (hSafe :
+      SwitchDefaultBodyAtomicTerminalOrLoopControlSafe defaultBody)
+    (hSelect : defaultBody = some selectedBody) :
+    BlockAtomicTerminalOrLoopControlSafe selectedBody := by
+  subst defaultBody
+  simpa [SwitchDefaultBodyAtomicTerminalOrLoopControlSafe] using hSafe
+
+theorem switchCaseBodiesAtomicTerminalOrLoopControlSafe_select_some :
+    ∀ {scrutinee : Word} {cases : List (Word × Block)}
+      {defaultBody : Option Block} {selectedBody : Block},
+      SwitchCaseBodiesAtomicTerminalOrLoopControlSafe cases →
+      SwitchDefaultBodyAtomicTerminalOrLoopControlSafe defaultBody →
+      Source.Switch.select scrutinee cases defaultBody = some selectedBody →
+      BlockAtomicTerminalOrLoopControlSafe selectedBody
+  | _scrutinee, [], defaultBody, selectedBody, _hCases, hDefault,
+      hSelect => by
+      have hDefaultBody : defaultBody = some selectedBody := by
+        simpa [Source.Switch.select] using hSelect
+      exact
+        switchDefaultBodyAtomicTerminalOrLoopControlSafe_select_some
+          hDefault hDefaultBody
+  | scrutinee, head :: rest, defaultBody, selectedBody, hCases, hDefault,
+      hSelect => by
+      rcases head with ⟨value, body⟩
+      have hParts :
+          BlockAtomicTerminalOrLoopControlSafe body ∧
+            SwitchCaseBodiesAtomicTerminalOrLoopControlSafe rest := by
+        simpa [SwitchCaseBodiesAtomicTerminalOrLoopControlSafe] using hCases
+      unfold Source.Switch.select at hSelect
+      by_cases hValue : value = scrutinee
+      · simp [hValue] at hSelect
+        cases hSelect
+        exact hParts.1
+      · simp [hValue] at hSelect
+        exact
+          switchCaseBodiesAtomicTerminalOrLoopControlSafe_select_some
+            hParts.2 hDefault hSelect
+
+theorem stmtAtomicTerminalOrLoopControlSafe_sourceOwned
+    {returns : List Name} {stmt : Stmt}
+    (hSafe : StmtAtomicTerminalOrLoopControlSafe stmt) :
+    SourceLowering.SourceToLocals.Stmt.SourceOwned returns stmt := by
+  cases stmt with
+  | expr expr =>
+      exact
+        SourceNoMemoryTouch.exprSafe_sourceOwned
+          (by
+            simpa [StmtAtomicTerminalOrLoopControlSafe] using hSafe)
+  | let_ name valueExpr =>
+      exact
+        SourceNoMemoryTouch.exprSafe_sourceOwned
+          (by
+            simpa [StmtAtomicTerminalOrLoopControlSafe] using hSafe)
+  | assign name valueExpr =>
+      exact
+        SourceNoMemoryTouch.exprSafe_sourceOwned
+          (by
+            simpa [StmtAtomicTerminalOrLoopControlSafe] using hSafe)
+  | terminal kind =>
+      simp [SourceLowering.SourceToLocals.Stmt.SourceOwned]
+  | terminalArgs kind args =>
+      have hArgs : SourceNoMemoryTouch.ExprSeqSafe args := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe] using hSafe.2
+      exact SourceNoMemoryTouch.exprSeqSafe_sourceOwned hArgs
+  | brk =>
+      simp [SourceLowering.SourceToLocals.Stmt.SourceOwned]
+  | cont =>
+      simp [SourceLowering.SourceToLocals.Stmt.SourceOwned]
+  | block body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | if_ cond body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | switch scrutinee cases defaultBody =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | for_ init cond post body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | leave =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | call targets functionName args =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+
+theorem stmtListAtomicTerminalOrLoopControlSafe_sourceOwned :
+    ∀ {returns : List Name} {stmts : List Stmt},
+      StmtListAtomicTerminalOrLoopControlSafe stmts →
+      SourceLowering.SourceToLocals.StmtList.SourceOwned returns stmts
+  | _returns, [], _hSafe => by
+      simp [SourceLowering.SourceToLocals.StmtList.SourceOwned]
+  | returns, stmt :: rest, hSafe => by
+      have hParts :
+          StmtAtomicTerminalOrLoopControlSafe stmt ∧
+            StmtListAtomicTerminalOrLoopControlSafe rest := by
+        simpa [StmtListAtomicTerminalOrLoopControlSafe] using hSafe
+      exact
+        ⟨stmtAtomicTerminalOrLoopControlSafe_sourceOwned hParts.1,
+          stmtListAtomicTerminalOrLoopControlSafe_sourceOwned hParts.2⟩
+
+theorem blockAtomicTerminalOrLoopControlSafe_sourceOwned
+    {returns : List Name} {block : Block}
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block) :
+    SourceLowering.SourceToLocals.Block.SourceOwned returns block := by
+  cases block with
+  | mk stmts =>
+      exact
+        stmtListAtomicTerminalOrLoopControlSafe_sourceOwned
+          (by simpa [BlockAtomicTerminalOrLoopControlSafe] using hSafe)
+
+theorem switchCaseBodiesAtomicTerminalOrLoopControlSafe_sourceOwned :
+    ∀ {returns : List Name} {cases : List (Word × Block)},
+      SwitchCaseBodiesAtomicTerminalOrLoopControlSafe cases →
+      SourceLowering.SourceToLocals.CaseList.SourceOwned returns cases
+  | _returns, [], _hSafe => by
+      simp [SourceLowering.SourceToLocals.CaseList.SourceOwned]
+  | returns, head :: rest, hSafe => by
+      rcases head with ⟨value, body⟩
+      have hParts :
+          BlockAtomicTerminalOrLoopControlSafe body ∧
+            SwitchCaseBodiesAtomicTerminalOrLoopControlSafe rest := by
+        simpa [SwitchCaseBodiesAtomicTerminalOrLoopControlSafe] using hSafe
+      exact
+        ⟨blockAtomicTerminalOrLoopControlSafe_sourceOwned hParts.1,
+          switchCaseBodiesAtomicTerminalOrLoopControlSafe_sourceOwned hParts.2⟩
+
+theorem switchDefaultBodyAtomicTerminalOrLoopControlSafe_sourceOwned
+    {returns : List Name} {defaultBody : Option Block}
+    (hSafe :
+      SwitchDefaultBodyAtomicTerminalOrLoopControlSafe defaultBody) :
+    SourceLowering.SourceToLocals.Default.SourceOwned returns defaultBody := by
+  cases defaultBody with
+  | none =>
+      simp [SourceLowering.SourceToLocals.Default.SourceOwned]
+  | some body =>
+      exact
+        blockAtomicTerminalOrLoopControlSafe_sourceOwned
+          (by
+            simpa [SwitchDefaultBodyAtomicTerminalOrLoopControlSafe]
+              using hSafe)
+
+theorem switchAtomicTerminalOrLoopControlSafe_sourceOwned
+    {returns : List Name} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    (hScrutinee : SourceNoMemoryTouch.ExprSafe scrutinee)
+    (hCases : SwitchCaseBodiesAtomicTerminalOrLoopControlSafe cases)
+    (hDefault :
+      SwitchDefaultBodyAtomicTerminalOrLoopControlSafe defaultBody) :
+    SourceLowering.SourceToLocals.Stmt.SourceOwned returns
+      (.switch scrutinee cases defaultBody) := by
+  exact
+    ⟨SourceNoMemoryTouch.exprSafe_sourceOwned hScrutinee,
+      switchCaseBodiesAtomicTerminalOrLoopControlSafe_sourceOwned hCases,
+      switchDefaultBodyAtomicTerminalOrLoopControlSafe_sourceOwned hDefault⟩
+
 theorem compileStmtWithSwitchFallback?_atomicOrTerminal_regular_sound_meta_exact_of_safe
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
