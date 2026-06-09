@@ -12,6 +12,8 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceOracle_run_empty_of_compile_byteLength_lt_of_dryRun_halted
 #check EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceObserver_run_of_compile_byteLength_lt_of_dryRun_halted
 #check EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+#check EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+#check EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
 #check EvmCompiler.Yul.ObserverOracle.TargetDryRun.sourceOracle_run_matches_targetOracle_of_compile
 #check EvmCompiler.Yul.ObserverOracle.TargetDryRun.sourceOracle_run_empty_matches_targetOracle_of_compile
 #check EvmCompiler.Yul.ObserverOracle.AssemblyOracle.target_run_result_unique
@@ -131,6 +133,35 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_append
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_nil
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_append
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_of_frameSafe_observer_free
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.ObserverFree
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_append
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_singleton_pop
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_singleton_stackSwap?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_replicate_pop
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_replicate_pop
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_nil
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_replicate_pop
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_singleton_stackSwap?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_singleton_stackSwap?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_swapRestoreUpTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_swapRestoreUpTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_swapRestoreUpTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupOnePreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupOnePreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupOnePreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupManyPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupManyPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupManyPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupTo?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupToPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupToPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupToPreserving?
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupAll
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupAll
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupAll
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_cons
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_push
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_push
@@ -182,8 +213,16 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.head_case_from_tests_result_ctx
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.selected_cases_result_ctx
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switch_none_result_ctx
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.casesPreservesWithOracle_of_all
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.ForLoopPreservationWithOracle.preserves_run
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_block_preserves
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_oracleSafe
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.Block
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.Stmt
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_append
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.blockPreserves
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.stmtPreserves
+#check EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.mainBlockPreserves
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_code
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_brk
 #check EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_cont
@@ -198,11 +237,56 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.BlockCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.StmtCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.StmtListCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.StmtListCodeShaped_append
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.stmtList_toStructured_append
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.DefaultCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProcCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProgramCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.Expr
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.Block
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.Stmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.Proc
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.ProcList
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.Program
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.exprCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.blockCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.procCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.procListCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.programCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.blockToStructured
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtToStructured
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.programBodyToStructured
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.block_append
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBlock_of_runnerFrame_observer_free
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.exprStmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.exprBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.brkStmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.contStmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.leaveStmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.terminalStmt
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.brkBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.contBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.leaveBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.terminalBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBrkBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtContBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtLeaveBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtTerminalBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToPreservingBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupAllBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToBrkBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToContBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToPreservingLeaveBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupAllTerminalBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToPreservingBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishScopedBlock
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped.of_lookup?
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped.of_select
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle
@@ -267,12 +351,17 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.ExprSeq.eval_length
 #check EvmCompiler.Yul.ObserverOracle.stackOp_dup?_observer_none
 #check EvmCompiler.Yul.ObserverOracle.stackOp_swap?_observer_none
+#check EvmCompiler.Yul.ObserverOracle.stackOp_swap?_continuingStep
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledSeqCodeWithOracle_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileCode_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileSeqCode_of_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeExpr_of_compileCode_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeStmt_of_compileCode_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeExpr_of_compileSeqCode_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeStmt_of_compileSeqCode_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_of_evalOne
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_evalOne_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledConditionWithOracle_of_evalCondition_sourceOwned
@@ -283,6 +372,15 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileExprWithOracle_of_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileLetWithOracle_of_evalOne_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileAssignWithOracle_of_evalOne_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_exprsBlock_of_compileSeqCode_eval_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_letBlock_of_compileCode_evalOne_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_assignBlock_of_compileCode_evalOne_sourceOwned
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_brkBlock_of_cleanup
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_contBlock_of_cleanup
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_leaveBlock_of_cleanup
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_terminalBlock_of_relSafe
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_terminalArgsBlock_of_compileSeqCode_eval_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfFalseWithOracle_of_evalCondition_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfTrueWithOracle_of_evalCondition_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchNoneWithOracle_of_evalOne_sourceOwned
@@ -308,6 +406,8 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_scope
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_cleanupScopeRel
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_nilWithOracle
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_nil
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_cons_of_stmtBlock
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularWithOracle_of_runs
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs_targetFuel
@@ -323,13 +423,16 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicPrefix_mode_regular
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_atomicPrefix_mode_regular
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_atomicPrefix_of_run
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithCleanupWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixBlockWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileBlockStmtListWithOracle_of_runScoped_atomicPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_blockStmt_of_runScoped_atomicPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_blockWithOracle_of_runScoped_atomicPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_cons_block_of_runScoped_atomicPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseWithOracle_of_evalCondition_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseSlackWithOracle_of_evalCondition_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseRestSlackWithOracle_of_evalCondition_sourceOwned
@@ -392,6 +495,8 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceOracle_run_empty_of_compile_byteLength_lt_of_dryRun_halted
 #print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_sourceObserver_run_of_compile_byteLength_lt_of_dryRun_halted
 #print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+#print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+#print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
 #print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.sourceOracle_run_matches_targetOracle_of_compile
 #print axioms EvmCompiler.Yul.ObserverOracle.TargetDryRun.sourceOracle_run_empty_matches_targetOracle_of_compile
 #print axioms EvmCompiler.Yul.ObserverOracle.AssemblyOracle.target_run_result_unique
@@ -495,6 +600,34 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleStepPC_cons
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_nil
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_append
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_of_frameSafe_observer_free
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_append
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_singleton_pop
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_singleton_stackSwap?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_replicate_pop
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_replicate_pop
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_nil
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_replicate_pop
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_singleton_stackSwap?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_singleton_stackSwap?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_swapRestoreUpTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_swapRestoreUpTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_swapRestoreUpTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupOnePreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupOnePreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupOnePreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupManyPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupManyPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupManyPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupTo?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupToPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupToPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupToPreserving?
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runnerSafe_cleanupAll
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.frameSafe_cleanupAll
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.observerFree_cleanupAll
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_cons
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.runWithOracle_singleton_push
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.Code.oracleFrameSafe_singleton_push
@@ -543,8 +676,14 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.head_case_from_tests_result_ctx
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.selected_cases_result_ctx
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.switch_none_result_ctx
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.SwitchPreservationWithOracle.casesPreservesWithOracle_of_all
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ForLoopPreservationWithOracle.preserves_run
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_block_preserves
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_oracleSafe
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.block_append
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.blockPreserves
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.stmtPreserves
+#print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.OracleSafe.mainBlockPreserves
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_code
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_brk
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_cont
@@ -555,6 +694,40 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_for
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BlockPreservationWithOracle.preserves_nil
 #print axioms EvmCompiler.Yul.ObserverOracle.StructuredReplay.BlockPreservationWithOracle.cons
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.StmtListCodeShaped_append
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.stmtList_toStructured_append
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.block_append
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBlock_of_runnerFrame_observer_free
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.exprStmt
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.exprBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.brkStmt
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.contStmt
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.leaveStmt
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.terminalStmt
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.brkBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.contBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.leaveBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.terminalBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtBrkBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtContBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtLeaveBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.codeStmtTerminalBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToPreservingBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupAllBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToBrkBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToContBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupToPreservingLeaveBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.cleanupAllTerminalBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToPreservingBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishScopedBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.programCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.blockToStructured
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtToStructured
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.programBodyToStructured
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped.of_lookup?
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped.of_select
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle_code_eq_structured
@@ -610,12 +783,17 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.ExprSeq.eval_length
 #print axioms EvmCompiler.Yul.ObserverOracle.stackOp_dup?_observer_none
 #print axioms EvmCompiler.Yul.ObserverOracle.stackOp_swap?_observer_none
+#print axioms EvmCompiler.Yul.ObserverOracle.stackOp_swap?_continuingStep
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledSeqCodeWithOracle_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileCode_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleStepPC_compileSeqCode_of_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeExpr_of_compileCode_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeStmt_of_compileCode_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeExpr_of_compileSeqCode_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.oracleSafe_codeStmt_of_compileSeqCode_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_of_evalOne
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledCodeWithOracle_of_evalOne_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.runCompiledConditionWithOracle_of_evalCondition_sourceOwned
@@ -626,6 +804,15 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileExprWithOracle_of_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileLetWithOracle_of_evalOne_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileAssignWithOracle_of_evalOne_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_exprsBlock_of_compileSeqCode_eval_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_letBlock_of_compileCode_evalOne_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_assignBlock_of_compileCode_evalOne_sourceOwned
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_brkBlock_of_cleanup
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_contBlock_of_cleanup
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_leaveBlock_of_cleanup
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_terminalBlock_of_relSafe
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_terminalArgsBlock_of_compileSeqCode_eval_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfFalseWithOracle_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileIfTrueWithOracle_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileSwitchNoneWithOracle_of_evalOne_sourceOwned
@@ -651,6 +838,8 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_scope
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_regular_cleanupScopeRel
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_nilWithOracle
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_nil
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_cons_of_stmtBlock
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularWithOracle_of_runs
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_regularBlockWithOracle_of_runs_targetFuel
@@ -665,13 +854,16 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_assignBlockRestSlackWithOracle_of_evalOne_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicPrefix_mode_regular
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_atomicPrefix_mode_regular
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_atomicPrefix_of_run
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicPrefixBlockWithCleanupWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixBlockWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicPrefixWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.compileBlockStmtListWithOracle_of_runScoped_atomicPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.oracleSafe_blockStmt_of_runScoped_atomicPrefix
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_blockWithOracle_of_runScoped_atomicPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_cons_block_of_runScoped_atomicPrefix
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseWithOracle_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseSlackWithOracle_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifFalseRestSlackWithOracle_of_evalCondition_sourceOwned

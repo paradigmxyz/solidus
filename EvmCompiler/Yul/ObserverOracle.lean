@@ -224,6 +224,79 @@ theorem stackOp_swap?_observer_none :
   | n + 17, _op, hSwap => by
       simp [Locals.StackOp.swap?] at hSwap
 
+theorem stackOp_swap?_continuingStep :
+    ∀ {n : Nat} {op : Structured.BasicOp},
+      Locals.StackOp.swap? n = some op →
+        op.toPrimOp.continuingStep? = some (.swap n)
+  | 0, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+  | 1, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 2, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 3, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 4, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 5, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 6, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 7, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 8, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 9, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 10, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 11, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 12, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 13, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 14, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 15, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | 16, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+      cases hSwap
+      rfl
+  | n + 17, _op, hSwap => by
+      simp [Locals.StackOp.swap?] at hSwap
+
 @[simp] theorem haltKind_toPrimOp_observer_none
     (kind : Assembly.HaltKind) :
     Assembly.ResourceObserver.ofPrimOp? kind.toPrimOp = none := by
@@ -2488,6 +2561,474 @@ theorem oracleFrameSafe_append
           cases hFinal
           cases hTrace
           simpa [hLeftHidden] using hRightHidden
+
+theorem oracleFrameSafe_of_frameSafe_observer_free
+    {code : Structured.Code}
+    (hFrame : Structured.Code.FrameSafe code)
+    (hNoObservers :
+      ∀ instr ∈ code,
+        Assembly.ResourceObserver.ofInstr? instr.toAssembly = none) :
+    OracleFrameSafe code := by
+  intro program pc state final trace trace' hidden hRun
+  rw [runWithOracle_of_observer_free hNoObservers program pc state trace]
+    at hRun
+  cases hCodeRun : Structured.Code.run code state with
+  | error err =>
+      simp [hCodeRun] at hRun
+  | ok mid =>
+      simp [hCodeRun] at hRun
+      rcases hRun with ⟨hFinal, hTrace⟩
+      subst mid
+      subst trace'
+      have hHiddenRun :
+          Structured.Code.run code
+              { state with stack := state.stack ++ hidden } =
+            .ok { final with stack := final.stack ++ hidden } :=
+        hFrame state final hidden hCodeRun
+      rw [runWithOracle_of_observer_free hNoObservers program pc
+        { state with stack := state.stack ++ hidden } trace]
+      simp [hHiddenRun]
+
+def ObserverFree (code : Structured.Code) : Prop :=
+  ∀ instr ∈ code,
+    Assembly.ResourceObserver.ofInstr? instr.toAssembly = none
+
+theorem observerFree_append {left right : Structured.Code}
+    (hLeft : ObserverFree left) (hRight : ObserverFree right) :
+    ObserverFree (left ++ right) := by
+  intro instr hMem
+  cases List.mem_append.mp hMem with
+  | inl hInLeft => exact hLeft instr hInLeft
+  | inr hInRight => exact hRight instr hInRight
+
+theorem observerFree_singleton_pop :
+    ObserverFree [Structured.BasicInstr.op .pop] := by
+  intro instr hMem
+  simp at hMem
+  cases hMem
+  rfl
+
+theorem observerFree_singleton_stackSwap?
+    {depth : Nat} {op : Structured.BasicOp}
+    (hSwap : Locals.StackOp.swap? depth = some op) :
+    ObserverFree [Structured.BasicInstr.op op] := by
+  intro instr hMem
+  simp at hMem
+  cases hMem
+  have hObserver := stackOp_swap?_observer_none hSwap
+  simpa [Structured.BasicInstr.toAssembly, Assembly.ResourceObserver.ofInstr?,
+    basicOp_toPrimOp_observer] using hObserver
+
+theorem observerFree_replicate_pop (n : Nat) :
+    ObserverFree
+      (List.replicate n (Structured.BasicInstr.op .pop)) := by
+  intro instr hMem
+  simp at hMem
+  rcases hMem with ⟨_hNonzero, hInstr⟩
+  cases hInstr
+  rfl
+
+theorem runnerSafe_replicate_pop (n : Nat) :
+    Structured.Preservation.Code.RunnerSafe
+      (List.replicate n (Structured.BasicInstr.op .pop)) := by
+  induction n with
+  | zero =>
+      exact Structured.Preservation.Code.RunnerSafe.nil
+  | succ n ih =>
+      simpa [List.replicate_succ] using
+        Structured.Preservation.Code.RunnerSafe.cons
+          Structured.Preservation.BasicInstr.pop_runnerSafe ih
+
+theorem frameSafe_nil :
+    Structured.Code.FrameSafe [] := by
+  intro state final hidden hRun
+  simp [Structured.Code.run] at hRun ⊢
+  cases hRun
+  simp
+
+theorem frameSafe_replicate_pop (n : Nat) :
+    Structured.Code.FrameSafe
+      (List.replicate n (Structured.BasicInstr.op .pop)) := by
+  induction n with
+  | zero =>
+      simpa using frameSafe_nil
+  | succ n ih =>
+      simpa [List.replicate_succ] using
+        Structured.Preservation.Code.FrameSafe.append
+          Structured.Preservation.Code.pop_frameSafe ih
+
+theorem runnerSafe_singleton_stackSwap?
+    {depth : Nat} {op : Structured.BasicOp}
+    (hSwap : Locals.StackOp.swap? depth = some op) :
+    Structured.Preservation.Code.RunnerSafe
+      [Structured.BasicInstr.op op] :=
+  Structured.Preservation.Code.RunnerSafe.cons
+    (Structured.Preservation.BasicInstr.basicOp_swap_runnerSafe
+      (stackOp_swap?_continuingStep hSwap))
+    Structured.Preservation.Code.RunnerSafe.nil
+
+theorem frameSafe_singleton_stackSwap?
+    {depth : Nat} {op : Structured.BasicOp}
+    (hSwap : Locals.StackOp.swap? depth = some op) :
+    Structured.Code.FrameSafe [Structured.BasicInstr.op op] :=
+  Structured.Preservation.Code.frameSafe_basicOp_swap
+    (stackOp_swap?_continuingStep hSwap)
+
+theorem runnerSafe_swapRestoreUpTo? :
+    ∀ {depth : Nat} {code : Structured.Code},
+      Locals.Ctx.swapRestoreUpTo? depth = some code →
+        Structured.Preservation.Code.RunnerSafe code := by
+  intro depth
+  induction depth with
+  | zero =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hCode
+      exact Structured.Preservation.Code.RunnerSafe.nil
+  | succ depth ih =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hRest : Locals.Ctx.swapRestoreUpTo? depth with
+      | none =>
+          simp [hRest] at hCode
+      | some rest =>
+          cases hOp : Locals.StackOp.swap? (depth + 1) with
+          | none =>
+              simp [hRest, hOp] at hCode
+          | some op =>
+              simp [hRest, hOp] at hCode
+              cases hCode
+              exact
+                Structured.Preservation.Code.RunnerSafe.append
+                  (ih hRest) (runnerSafe_singleton_stackSwap? hOp)
+
+theorem frameSafe_swapRestoreUpTo? :
+    ∀ {depth : Nat} {code : Structured.Code},
+      Locals.Ctx.swapRestoreUpTo? depth = some code →
+        Structured.Code.FrameSafe code := by
+  intro depth
+  induction depth with
+  | zero =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hCode
+      exact frameSafe_nil
+  | succ depth ih =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hRest : Locals.Ctx.swapRestoreUpTo? depth with
+      | none =>
+          simp [hRest] at hCode
+      | some rest =>
+          cases hOp : Locals.StackOp.swap? (depth + 1) with
+          | none =>
+              simp [hRest, hOp] at hCode
+          | some op =>
+              simp [hRest, hOp] at hCode
+              cases hCode
+              exact
+                Structured.Preservation.Code.FrameSafe.append
+                  (ih hRest) (frameSafe_singleton_stackSwap? hOp)
+
+theorem observerFree_swapRestoreUpTo? :
+    ∀ {depth : Nat} {code : Structured.Code},
+      Locals.Ctx.swapRestoreUpTo? depth = some code →
+        ObserverFree code := by
+  intro depth
+  induction depth with
+  | zero =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hCode
+      intro instr hMem
+      simp at hMem
+  | succ depth ih =>
+      intro code hCode
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hRest : Locals.Ctx.swapRestoreUpTo? depth with
+      | none =>
+          simp [hRest] at hCode
+      | some rest =>
+          cases hOp : Locals.StackOp.swap? (depth + 1) with
+          | none =>
+              simp [hRest, hOp] at hCode
+          | some op =>
+              simp [hRest, hOp] at hCode
+              cases hCode
+              exact
+                observerFree_append (ih hRest)
+                  (observerFree_singleton_stackSwap? hOp)
+
+theorem runnerSafe_cleanupOnePreserving?
+    {temps : Nat} {code : Structured.Code}
+    (hCleanup : Locals.Ctx.cleanupOnePreserving? temps = some code) :
+    Structured.Preservation.Code.RunnerSafe code := by
+  cases temps with
+  | zero =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hCleanup
+      exact Structured.Preservation.Code.pop_runnerSafe
+  | succ temps =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hOp : Locals.StackOp.swap? (temps + 1) with
+      | none =>
+          simp [hOp] at hCleanup
+      | some op =>
+          cases hRestore : Locals.Ctx.swapRestoreUpTo? temps with
+          | none =>
+              simp [hOp, hRestore] at hCleanup
+          | some restore =>
+              simp [hOp, hRestore] at hCleanup
+              cases hCleanup
+              have hPrefix :
+                  Structured.Preservation.Code.RunnerSafe
+                    ([Structured.BasicInstr.op op,
+                      Structured.BasicInstr.op .pop]) :=
+                Structured.Preservation.Code.RunnerSafe.append
+                  (runnerSafe_singleton_stackSwap? hOp)
+                  Structured.Preservation.Code.pop_runnerSafe
+              exact
+                Structured.Preservation.Code.RunnerSafe.append hPrefix
+                  (runnerSafe_swapRestoreUpTo? hRestore)
+
+theorem frameSafe_cleanupOnePreserving?
+    {temps : Nat} {code : Structured.Code}
+    (hCleanup : Locals.Ctx.cleanupOnePreserving? temps = some code) :
+    Structured.Code.FrameSafe code := by
+  cases temps with
+  | zero =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hCleanup
+      exact Structured.Preservation.Code.pop_frameSafe
+  | succ temps =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hOp : Locals.StackOp.swap? (temps + 1) with
+      | none =>
+          simp [hOp] at hCleanup
+      | some op =>
+          cases hRestore : Locals.Ctx.swapRestoreUpTo? temps with
+          | none =>
+              simp [hOp, hRestore] at hCleanup
+          | some restore =>
+              simp [hOp, hRestore] at hCleanup
+              cases hCleanup
+              have hPrefix :
+                  Structured.Code.FrameSafe
+                    ([Structured.BasicInstr.op op,
+                      Structured.BasicInstr.op .pop]) :=
+                Structured.Preservation.Code.FrameSafe.append
+                  (frameSafe_singleton_stackSwap? hOp)
+                  Structured.Preservation.Code.pop_frameSafe
+              exact
+                Structured.Preservation.Code.FrameSafe.append hPrefix
+                  (frameSafe_swapRestoreUpTo? hRestore)
+
+theorem observerFree_cleanupOnePreserving?
+    {temps : Nat} {code : Structured.Code}
+    (hCleanup : Locals.Ctx.cleanupOnePreserving? temps = some code) :
+    ObserverFree code := by
+  cases temps with
+  | zero =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hCleanup
+      exact observerFree_singleton_pop
+  | succ temps =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCleanup
+      cases hOp : Locals.StackOp.swap? (temps + 1) with
+      | none =>
+          simp [hOp] at hCleanup
+      | some op =>
+          cases hRestore : Locals.Ctx.swapRestoreUpTo? temps with
+          | none =>
+              simp [hOp, hRestore] at hCleanup
+          | some restore =>
+              simp [hOp, hRestore] at hCleanup
+              cases hCleanup
+              have hPrefix :
+                  ObserverFree
+                    ([Structured.BasicInstr.op op,
+                      Structured.BasicInstr.op .pop]) :=
+                observerFree_append
+                  (observerFree_singleton_stackSwap? hOp)
+                  observerFree_singleton_pop
+              exact
+                observerFree_append hPrefix
+                  (observerFree_swapRestoreUpTo? hRestore)
+
+theorem runnerSafe_cleanupManyPreserving? :
+    ∀ {count temps : Nat} {code : Structured.Code},
+      Locals.Ctx.cleanupManyPreserving? count temps = some code →
+        Structured.Preservation.Code.RunnerSafe code := by
+  intro count
+  induction count with
+  | zero =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hCode
+      exact Structured.Preservation.Code.RunnerSafe.nil
+  | succ count ih =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hHead : Locals.Ctx.cleanupOnePreserving? temps with
+      | none =>
+          simp [hHead] at hCode
+      | some head =>
+          cases hTail :
+              Locals.Ctx.cleanupManyPreserving? count temps with
+          | none =>
+              simp [hHead, hTail] at hCode
+          | some tail =>
+              simp [hHead, hTail] at hCode
+              cases hCode
+              exact
+                Structured.Preservation.Code.RunnerSafe.append
+                  (runnerSafe_cleanupOnePreserving? hHead)
+                  (ih hTail)
+
+theorem frameSafe_cleanupManyPreserving? :
+    ∀ {count temps : Nat} {code : Structured.Code},
+      Locals.Ctx.cleanupManyPreserving? count temps = some code →
+        Structured.Code.FrameSafe code := by
+  intro count
+  induction count with
+  | zero =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hCode
+      exact frameSafe_nil
+  | succ count ih =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hHead : Locals.Ctx.cleanupOnePreserving? temps with
+      | none =>
+          simp [hHead] at hCode
+      | some head =>
+          cases hTail :
+              Locals.Ctx.cleanupManyPreserving? count temps with
+          | none =>
+              simp [hHead, hTail] at hCode
+          | some tail =>
+              simp [hHead, hTail] at hCode
+              cases hCode
+              exact
+                Structured.Preservation.Code.FrameSafe.append
+                  (frameSafe_cleanupOnePreserving? hHead)
+                  (ih hTail)
+
+theorem observerFree_cleanupManyPreserving? :
+    ∀ {count temps : Nat} {code : Structured.Code},
+      Locals.Ctx.cleanupManyPreserving? count temps = some code →
+        ObserverFree code := by
+  intro count
+  induction count with
+  | zero =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hCode
+      intro instr hMem
+      simp at hMem
+  | succ count ih =>
+      intro temps code hCode
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hHead : Locals.Ctx.cleanupOnePreserving? temps with
+      | none =>
+          simp [hHead] at hCode
+      | some head =>
+          cases hTail :
+              Locals.Ctx.cleanupManyPreserving? count temps with
+          | none =>
+              simp [hHead, hTail] at hCode
+          | some tail =>
+              simp [hHead, hTail] at hCode
+              cases hCode
+              exact
+                observerFree_append
+                  (observerFree_cleanupOnePreserving? hHead)
+                  (ih hTail)
+
+theorem runnerSafe_cleanupTo?
+    {ctx : Locals.Ctx} {targetDepth : Nat} {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    Structured.Preservation.Code.RunnerSafe code := by
+  unfold Locals.Ctx.cleanupTo? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    cases hCleanup
+    exact runnerSafe_replicate_pop (ctx.layout.length - targetDepth)
+  · simp [hDepth] at hCleanup
+
+theorem frameSafe_cleanupTo?
+    {ctx : Locals.Ctx} {targetDepth : Nat} {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    Structured.Code.FrameSafe code := by
+  unfold Locals.Ctx.cleanupTo? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    cases hCleanup
+    exact frameSafe_replicate_pop (ctx.layout.length - targetDepth)
+  · simp [hDepth] at hCleanup
+
+theorem observerFree_cleanupTo?
+    {ctx : Locals.Ctx} {targetDepth : Nat} {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    ObserverFree code := by
+  unfold Locals.Ctx.cleanupTo? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    cases hCleanup
+    exact observerFree_replicate_pop (ctx.layout.length - targetDepth)
+  · simp [hDepth] at hCleanup
+
+theorem runnerSafe_cleanupToPreserving?
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    Structured.Preservation.Code.RunnerSafe code := by
+  unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    exact runnerSafe_cleanupManyPreserving? hCleanup
+  · simp [hDepth] at hCleanup
+
+theorem frameSafe_cleanupToPreserving?
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    Structured.Code.FrameSafe code := by
+  unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    exact frameSafe_cleanupManyPreserving? hCleanup
+  · simp [hDepth] at hCleanup
+
+theorem observerFree_cleanupToPreserving?
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    ObserverFree code := by
+  unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp [hDepth] at hCleanup
+    exact observerFree_cleanupManyPreserving? hCleanup
+  · simp [hDepth] at hCleanup
+
+theorem runnerSafe_cleanupAll (ctx : Locals.Ctx) :
+    Structured.Preservation.Code.RunnerSafe ctx.cleanupAll := by
+  simpa [Locals.Ctx.cleanupAll] using
+    runnerSafe_replicate_pop ctx.layout.length
+
+theorem frameSafe_cleanupAll (ctx : Locals.Ctx) :
+    Structured.Code.FrameSafe ctx.cleanupAll := by
+  simpa [Locals.Ctx.cleanupAll] using
+    frameSafe_replicate_pop ctx.layout.length
+
+theorem observerFree_cleanupAll (ctx : Locals.Ctx) :
+    ObserverFree ctx.cleanupAll := by
+  simpa [Locals.Ctx.cleanupAll] using
+    observerFree_replicate_pop ctx.layout.length
 
 theorem oracleFrameSafe_cons
     {instr : Structured.BasicInstr} {rest : Structured.Code}
@@ -8480,6 +9021,30 @@ theorem defaultPreservesWithOracle_some {program : Structured.Program}
     BlockPreservesWithOracle program ctx supply body := by
   exact hDefault
 
+theorem casesPreservesWithOracle_of_all {program : Structured.Program}
+    {ctx : Structured.CompileContext}
+    {endLabel : Assembly.Label} {base supply : Structured.LabelSupply}
+    {idx : Nat} {cases : List (Word × Structured.Block)}
+    (hAll :
+      ∀ bodySupply value body, (value, body) ∈ cases →
+        BlockPreservesWithOracle program ctx bodySupply body) :
+    CasesPreservesWithOracle program ctx endLabel base supply idx cases := by
+  induction cases generalizing supply idx with
+  | nil =>
+      trivial
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      refine ⟨hAll supply value body ?_, ?_⟩
+      · simp
+      · exact
+          ih
+            (supply :=
+              (Structured.Block.compileFromCtx body ctx supply).next)
+            (idx := idx + 1)
+            (by
+              intro bodySupply value' body' hMem
+              exact hAll bodySupply value' body' (by simp [hMem]))
+
 theorem switchTestCode_observer_free (probe : Word) :
     ∀ instr ∈ Structured.Stmt.switchTestCode probe,
       Assembly.ResourceObserver.ofInstr? instr.toAssembly = none := by
@@ -13751,6 +14316,253 @@ theorem cons {program : Structured.Program}
 
 end BlockPreservationWithOracle
 
+namespace OracleSafe
+
+mutual
+  inductive Block :
+      Bool → Bool → Bool → Structured.Block → Prop where
+    | nil {canBreak canContinue canLeave : Bool} :
+        Block canBreak canContinue canLeave { stmts := [] }
+    | cons {canBreak canContinue canLeave : Bool}
+        {stmt : Structured.Stmt} {rest : List Structured.Stmt}
+        (hStmt : Stmt canBreak canContinue canLeave stmt)
+        (hRest : Block canBreak canContinue canLeave { stmts := rest }) :
+        Block canBreak canContinue canLeave { stmts := stmt :: rest }
+
+  inductive Stmt :
+      Bool → Bool → Bool → Structured.Stmt → Prop where
+    | code {canBreak canContinue canLeave : Bool}
+        {code : Structured.Code}
+        (hRel : Code.OracleRelSafe code)
+        (hFrame : Code.OracleFrameSafe code) :
+        Stmt canBreak canContinue canLeave (.code code)
+    | if_ {canBreak canContinue canLeave : Bool}
+        {cond : Structured.Code} {body : Structured.Block}
+        (hCondRel : Code.OracleRelSafe cond)
+        (hCondFrame : Code.OracleFrameSafe cond)
+        (hBody : Block canBreak canContinue canLeave body) :
+        Stmt canBreak canContinue canLeave (.if_ cond body)
+    | switch {canBreak canContinue canLeave : Bool}
+        {scrutinee : Structured.Code}
+        {cases : List (Word × Structured.Block)}
+        {defaultBody : Option Structured.Block}
+        (hScrutineeRel : Code.OracleRelSafe scrutinee)
+        (hScrutineeFrame : Code.OracleFrameSafe scrutinee)
+        (hCases :
+          ∀ value body, (value, body) ∈ cases →
+            Block canBreak canContinue canLeave body)
+        (hDefault :
+          ∀ body, defaultBody = some body →
+            Block canBreak canContinue canLeave body) :
+        Stmt canBreak canContinue canLeave
+          (.switch scrutinee cases defaultBody)
+    | for_ {canBreak canContinue canLeave : Bool}
+        {init post body : Structured.Block} {cond : Structured.Code}
+        (hInit : Block false false canLeave init)
+        (hCondRel : Code.OracleRelSafe cond)
+        (hCondFrame : Code.OracleFrameSafe cond)
+        (hPost : Block false false canLeave post)
+        (hBody : Block true true canLeave body) :
+        Stmt canBreak canContinue canLeave (.for_ init cond post body)
+    | brk {canBreak canContinue canLeave : Bool}
+        (hAllowed : canBreak = true) :
+        Stmt canBreak canContinue canLeave .brk
+    | cont {canBreak canContinue canLeave : Bool}
+        (hAllowed : canContinue = true) :
+        Stmt canBreak canContinue canLeave .cont
+    | leave {canBreak canContinue canLeave : Bool}
+        (hAllowed : canLeave = true) :
+        Stmt canBreak canContinue canLeave .leave
+    | terminal {canBreak canContinue canLeave : Bool}
+        {kind : Assembly.HaltKind}
+        (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+        Stmt canBreak canContinue canLeave (.terminal kind)
+end
+
+theorem block_append {canBreak canContinue canLeave : Bool}
+    {left right : List Structured.Stmt}
+    (hLeft : Block canBreak canContinue canLeave { stmts := left })
+    (hRight : Block canBreak canContinue canLeave { stmts := right }) :
+    Block canBreak canContinue canLeave { stmts := left ++ right } := by
+  induction left with
+  | nil =>
+      simpa using hRight
+  | cons stmt rest ih =>
+      cases hLeft with
+      | cons hStmt hRest =>
+          simpa using
+            Block.cons hStmt (ih hRest)
+
+set_option maxHeartbeats 800000 in
+set_option maxRecDepth 2000 in
+mutual
+  theorem blockPreserves {program : Structured.Program}
+      {ctx : Structured.CompileContext}
+      {supply : Structured.LabelSupply} {block : Structured.Block}
+      {canBreak canContinue canLeave : Bool}
+      (hSafe : Block canBreak canContinue canLeave block)
+      (hCtx :
+        Structured.Preservation.ControlContextSupports
+          canBreak canContinue canLeave ctx) :
+      BlockPreservesWithOracle program ctx supply block := by
+    cases hSafe with
+    | nil =>
+        exact BlockPreservationWithOracle.preserves_nil
+    | cons hStmt hRest =>
+        rename_i headStmt rest
+        exact
+          BlockPreservationWithOracle.cons
+            (stmtPreserves (program := program) (ctx := ctx)
+              (supply := supply) hStmt hCtx)
+            (blockPreserves (program := program) (ctx := ctx)
+              (supply :=
+                (Structured.Stmt.compileFromCtxCore headStmt ctx supply).next)
+              hRest hCtx)
+  termination_by sizeOf block
+  decreasing_by
+    all_goals
+      simp_wf
+      subst_vars
+      simp
+      all_goals omega
+
+  theorem stmtPreserves {program : Structured.Program}
+      {ctx : Structured.CompileContext}
+      {supply : Structured.LabelSupply} {stmt : Structured.Stmt}
+      {canBreak canContinue canLeave : Bool}
+      (hSafe : Stmt canBreak canContinue canLeave stmt)
+      (hCtx :
+        Structured.Preservation.ControlContextSupports
+          canBreak canContinue canLeave ctx) :
+      StmtPreservesWithOracle program ctx supply stmt := by
+    cases hSafe with
+    | code hRel hFrame =>
+        exact StmtPreservationWithOracle.preserves_code hRel hFrame
+    | if_ hCondRel hCondFrame hBody =>
+        exact
+          StmtPreservationWithOracle.preserves_if hCondRel hCondFrame
+            (blockPreserves (program := program) (ctx := ctx)
+              (supply := Structured.LabelSupply.next supply) hBody hCtx)
+    | switch hScrutineeRel hScrutineeFrame hCases hDefault =>
+        rename_i scrutinee cases defaultBody
+        have hCasesPreserves :
+            SwitchPreservationWithOracle.CasesPreservesWithOracle program ctx
+              (Structured.LabelSupply.label supply 0) supply
+              (Structured.LabelSupply.next supply) 0 cases :=
+          SwitchPreservationWithOracle.casesPreservesWithOracle_of_all
+            (program := program) (ctx := ctx)
+            (endLabel := Structured.LabelSupply.label supply 0)
+            (base := supply) (supply := Structured.LabelSupply.next supply)
+            (idx := 0) (cases := cases)
+            (hAll := by
+              intro bodySupply value body hMem
+              exact
+                blockPreserves (program := program) (ctx := ctx)
+                  (supply := bodySupply)
+                  (hCases value body hMem) hCtx)
+        have hDefaultPreserves :
+            SwitchPreservationWithOracle.DefaultPreservesWithOracle program ctx
+              (Structured.SwitchCases.compileFromCtx cases ctx
+                (Structured.LabelSupply.label supply 0) supply
+                (Structured.LabelSupply.next supply) 0).next defaultBody := by
+          cases hDefaultBody : defaultBody with
+          | none =>
+              trivial
+          | some defaultBody =>
+              exact
+                blockPreserves (program := program) (ctx := ctx)
+                  (supply :=
+                    (Structured.SwitchCases.compileFromCtx cases ctx
+                      (Structured.LabelSupply.label supply 0) supply
+                      (Structured.LabelSupply.next supply) 0).next)
+                  (hDefault defaultBody hDefaultBody) hCtx
+        exact
+          (StmtPreservationWithOracle.preserves_switch
+            (program := program) (ctx := ctx) (supply := supply)
+            (scrutinee := scrutinee) (cases := cases)
+            (defaultBody := defaultBody)
+            hScrutineeRel hScrutineeFrame hCasesPreserves
+            hDefaultPreserves :
+            StmtPreservesWithOracle program ctx supply
+              (.switch scrutinee cases defaultBody))
+    | for_ hInit hCondRel hCondFrame hPost hBody =>
+        rename_i init post body cond
+        let loopOuterCtx : Structured.CompileContext :=
+          { ctx with breakLabel? := none, continueLabel? := none }
+        let bodyCtx : Structured.CompileContext :=
+          { ctx with
+            breakLabel? := some (Structured.LabelSupply.label supply 3)
+            continueLabel? := some (Structured.LabelSupply.label supply 2) }
+        exact
+          (StmtPreservationWithOracle.preserves_for
+            (program := program) (ctx := ctx) (supply := supply)
+            (init := init) (cond := cond) (post := post) (body := body)
+            hCondRel hCondFrame
+            (blockPreserves (program := program) (ctx := loopOuterCtx)
+              (supply := Structured.LabelSupply.next supply)
+              hInit
+              (Structured.Preservation.ControlContextSupports.loopOuter hCtx))
+            (blockPreserves (program := program) (ctx := bodyCtx)
+              (supply :=
+                (Structured.Block.compileFromCtx init loopOuterCtx
+                  (Structured.LabelSupply.next supply)).next)
+              hBody
+              (Structured.Preservation.ControlContextSupports.loopBody hCtx))
+            (blockPreserves (program := program) (ctx := loopOuterCtx)
+              (supply :=
+                (Structured.Block.compileFromCtx body bodyCtx
+                  (Structured.Block.compileFromCtx init loopOuterCtx
+                    (Structured.LabelSupply.next supply)).next).next)
+              hPost
+              (Structured.Preservation.ControlContextSupports.loopOuter hCtx)) :
+            StmtPreservesWithOracle program ctx supply
+              (.for_ init cond post body))
+    | brk hAllowed =>
+        rcases hCtx.brk hAllowed with ⟨label, hLabel⟩
+        exact StmtPreservationWithOracle.preserves_brk hLabel
+    | cont hAllowed =>
+        rcases hCtx.cont hAllowed with ⟨label, hLabel⟩
+        exact StmtPreservationWithOracle.preserves_cont hLabel
+    | leave hAllowed =>
+        rcases hCtx.leave hAllowed with ⟨label, hLabel⟩
+        exact StmtPreservationWithOracle.preserves_leave hLabel
+    | terminal hSafe =>
+        exact StmtPreservationWithOracle.preserves_terminal hSafe
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals
+      simp_wf
+      subst_vars
+      first
+      | simp
+        all_goals omega
+      | exact
+          Nat.lt_trans (by simp) (by omega)
+      | exact
+          lt_trans (by simp)
+            (lt_trans
+              (Structured.Preservation.list_sizeOf_lt_sizeOf_of_mem hMem)
+              (by simp; omega))
+      | omega
+end
+
+theorem mainBlockPreserves {program : Structured.Program}
+    (hSafe : Block false false false program.body) :
+    BlockPreservesWithOracle program
+      (Structured.Preservation.CompiledProgram.mainCtx program) 0
+      program.body :=
+  blockPreserves hSafe
+    (by
+      refine ⟨?_, ?_, ?_⟩
+      · intro hFalse
+        cases hFalse
+      · intro hFalse
+        cases hFalse
+      · intro hFalse
+        cases hFalse)
+
+end OracleSafe
+
 namespace ProgramPreservationWithOracle
 
 theorem halted_sourceOracle_run_of_main_block_preserves
@@ -13847,6 +14659,28 @@ theorem halted_sourceOracle_run_of_main_block_preserves
       refine ⟨assemblyFuel, halt, ?_, hCompiledHalt.1⟩
       simpa [hSegmentAsm] using hAssemblyRun
 
+theorem halted_sourceOracle_run_of_main_oracleSafe
+    {program : Structured.Program} {sourceFuel : Nat} {initial : EVMState}
+    {sourceOut : Structured.RunState} {trace traceOut : Trace}
+    {kind : Assembly.HaltKind}
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program)
+    (hSafe : OracleSafe.Block false false false program.body)
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hRun :
+      Block.runWithOracle program.compile (Assembly.Program.byteLength [])
+          program sourceFuel program.body
+          (Structured.Program.initialState initial) trace =
+        .ok (Structured.Outcome.halt kind sourceOut, traceOut)) :
+    ∃ assemblyFuel halt,
+      Assembly.Source.runNResultWithOracle program.compile assemblyFuel
+          initial trace =
+        .ok (.halted halt, traceOut) ∧
+      kind = halt.kind :=
+  halted_sourceOracle_run_of_main_block_preserves
+    hBounds (OracleSafe.mainBlockPreserves hSafe) hInitialPc hRun
+
 end ProgramPreservationWithOracle
 
 end StructuredReplay
@@ -13896,6 +14730,382 @@ def ProcListCodeShaped : List Expressions.Proc → Prop
 
 def ProgramCodeShaped (program : Expressions.Program) : Prop :=
   ProcListCodeShaped program.procs ∧ BlockCodeShaped program.body
+
+theorem StmtListCodeShaped_append {left right : List Expressions.Stmt}
+    (hLeft : StmtListCodeShaped left)
+    (hRight : StmtListCodeShaped right) :
+    StmtListCodeShaped (left ++ right) := by
+  induction left with
+  | nil =>
+      simpa using hRight
+  | cons stmt rest ih =>
+      rcases hLeft with ⟨hStmt, hRest⟩
+      exact ⟨hStmt, ih hRest⟩
+
+theorem stmtList_toStructured_append
+    (left right : List Expressions.Stmt) :
+    Expressions.StmtList.toStructured (left ++ right) =
+      Expressions.StmtList.toStructured left ++
+        Expressions.StmtList.toStructured right := by
+  induction left with
+  | nil =>
+      simp [Expressions.StmtList.toStructured]
+  | cons stmt rest ih =>
+      simp [Expressions.StmtList.toStructured, ih]
+
+namespace OracleSafe
+
+structure Expr {results : Nat} (expr : Expressions.Expr results) : Prop where
+  codeShaped : ExprCodeShaped expr
+  rel : StructuredReplay.Code.OracleRelSafe expr.compile
+  frame : StructuredReplay.Code.OracleFrameSafe expr.compile
+
+structure Block (canBreak canContinue canLeave : Bool)
+    (block : Expressions.Block) : Prop where
+  codeShaped : BlockCodeShaped block
+  structured :
+    StructuredReplay.OracleSafe.Block canBreak canContinue canLeave
+      block.toStructured
+
+structure Stmt (canBreak canContinue canLeave : Bool)
+    (stmt : Expressions.Stmt) : Prop where
+  codeShaped : StmtCodeShaped stmt
+  structured :
+    StructuredReplay.OracleSafe.Stmt canBreak canContinue canLeave
+      stmt.toStructured
+
+def Proc (proc : Expressions.Proc) : Prop :=
+  Block false false true proc.body
+
+def ProcList (procs : List Expressions.Proc) : Prop :=
+  ProcListCodeShaped procs
+
+structure Program (program : Expressions.Program) : Prop where
+  procs : ProcList program.procs
+  body : Block false false false program.body
+
+theorem exprCodeShaped {results : Nat} {expr : Expressions.Expr results}
+    (hSafe : Expr expr) :
+    ExprCodeShaped expr :=
+  hSafe.codeShaped
+
+theorem blockCodeShaped {canBreak canContinue canLeave : Bool}
+    {block : Expressions.Block}
+    (hSafe : Block canBreak canContinue canLeave block) :
+    BlockCodeShaped block :=
+  hSafe.codeShaped
+
+theorem stmtCodeShaped {canBreak canContinue canLeave : Bool}
+    {stmt : Expressions.Stmt}
+    (hSafe : Stmt canBreak canContinue canLeave stmt) :
+    StmtCodeShaped stmt :=
+  hSafe.codeShaped
+
+theorem procCodeShaped {proc : Expressions.Proc}
+    (hSafe : Proc proc) :
+    ProcCodeShaped proc :=
+  blockCodeShaped hSafe
+
+theorem procListCodeShaped {procs : List Expressions.Proc}
+    (hSafe : ProcList procs) :
+    ProcListCodeShaped procs :=
+  hSafe
+
+theorem programCodeShaped {program : Expressions.Program}
+    (hSafe : Program program) :
+    ProgramCodeShaped program :=
+  ⟨procListCodeShaped hSafe.procs, blockCodeShaped hSafe.body⟩
+
+theorem blockToStructured {canBreak canContinue canLeave : Bool}
+    {block : Expressions.Block}
+    (hSafe : Block canBreak canContinue canLeave block) :
+    StructuredReplay.OracleSafe.Block canBreak canContinue canLeave
+      block.toStructured :=
+  hSafe.structured
+
+theorem stmtToStructured {canBreak canContinue canLeave : Bool}
+    {stmt : Expressions.Stmt}
+    (hSafe : Stmt canBreak canContinue canLeave stmt) :
+    StructuredReplay.OracleSafe.Stmt canBreak canContinue canLeave
+      stmt.toStructured :=
+  hSafe.structured
+
+theorem programBodyToStructured {program : Expressions.Program}
+    (hSafe : Program program) :
+    StructuredReplay.OracleSafe.Block false false false
+      program.toStructured.body := by
+  simpa [Expressions.Program.toStructured] using
+    blockToStructured hSafe.body
+
+theorem block_append {canBreak canContinue canLeave : Bool}
+    {left right : List Expressions.Stmt}
+    (hLeft :
+      Block canBreak canContinue canLeave { stmts := left })
+    (hRight :
+      Block canBreak canContinue canLeave { stmts := right }) :
+    Block canBreak canContinue canLeave { stmts := left ++ right } := by
+  refine ⟨StmtListCodeShaped_append hLeft.codeShaped hRight.codeShaped, ?_⟩
+  have hLeftStructured :
+      StructuredReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := Expressions.StmtList.toStructured left } := by
+    simpa [Expressions.Block.toStructured] using hLeft.structured
+  have hRightStructured :
+      StructuredReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := Expressions.StmtList.toStructured right } := by
+    simpa [Expressions.Block.toStructured] using hRight.structured
+  have hStructured :=
+    StructuredReplay.OracleSafe.block_append hLeftStructured hRightStructured
+  simpa [Expressions.Block.toStructured, stmtList_toStructured_append]
+    using hStructured
+
+theorem codeStmtBlock {canBreak canContinue canLeave : Bool}
+    {code : Structured.Code}
+    (hRel : StructuredReplay.Code.OracleRelSafe code)
+    (hFrame : StructuredReplay.Code.OracleFrameSafe code) :
+    Block canBreak canContinue canLeave
+      { stmts := Locals.codeStmt code } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.codeStmt, BlockCodeShaped, StmtListCodeShaped,
+      StmtCodeShaped]
+  · simpa [Locals.codeStmt, Expressions.Block.toStructured,
+      Expressions.StmtList.toStructured, Expressions.Stmt.toStructured] using
+      StructuredReplay.OracleSafe.Block.cons
+        (StructuredReplay.OracleSafe.Stmt.code hRel hFrame)
+        StructuredReplay.OracleSafe.Block.nil
+
+theorem codeStmtBlock_of_runnerFrame_observer_free
+    {canBreak canContinue canLeave : Bool}
+    {code : Structured.Code}
+    (hRunner : Structured.Preservation.Code.RunnerSafe code)
+    (hFrame : Structured.Code.FrameSafe code)
+    (hNoObservers :
+      ∀ instr ∈ code,
+        Assembly.ResourceObserver.ofInstr? instr.toAssembly = none) :
+    Block canBreak canContinue canLeave
+      { stmts := Locals.codeStmt code } :=
+  codeStmtBlock
+    (StructuredReplay.Code.oracleRelSafe_of_runnerSafe_nonObserver
+      hRunner hNoObservers)
+    (StructuredReplay.Code.oracleFrameSafe_of_frameSafe_observer_free
+      hFrame hNoObservers)
+
+theorem stmtBlock {canBreak canContinue canLeave : Bool}
+    {stmt : Expressions.Stmt}
+    (hStmt : Stmt canBreak canContinue canLeave stmt) :
+    Block canBreak canContinue canLeave { stmts := [stmt] } := by
+  refine ⟨?_, ?_⟩
+  · simpa [BlockCodeShaped, StmtListCodeShaped] using hStmt.codeShaped
+  · simpa [Expressions.Block.toStructured,
+      Expressions.StmtList.toStructured] using
+      StructuredReplay.OracleSafe.Block.cons hStmt.structured
+        StructuredReplay.OracleSafe.Block.nil
+
+theorem exprStmt {canBreak canContinue canLeave : Bool}
+    {results : Nat} {expr : Expressions.Expr results}
+    (hExpr : Expr expr) :
+    Stmt canBreak canContinue canLeave (.expr expr) := by
+  refine ⟨?_, ?_⟩
+  · simpa [StmtCodeShaped] using hExpr.codeShaped
+  · simpa [Expressions.Stmt.toStructured, Expressions.Expr.compile] using
+      StructuredReplay.OracleSafe.Stmt.code hExpr.rel hExpr.frame
+
+theorem exprBlock {canBreak canContinue canLeave : Bool}
+    {results : Nat} {expr : Expressions.Expr results}
+    (hExpr : Expr expr) :
+    Block canBreak canContinue canLeave { stmts := [.expr expr] } :=
+  stmtBlock (exprStmt hExpr)
+
+theorem brkStmt {canContinue canLeave : Bool} :
+    Stmt true canContinue canLeave .brk := by
+  refine ⟨?_, ?_⟩
+  · simp [StmtCodeShaped]
+  · simpa [Expressions.Stmt.toStructured] using
+      StructuredReplay.OracleSafe.Stmt.brk rfl
+
+theorem contStmt {canBreak canLeave : Bool} :
+    Stmt canBreak true canLeave .cont := by
+  refine ⟨?_, ?_⟩
+  · simp [StmtCodeShaped]
+  · simpa [Expressions.Stmt.toStructured] using
+      StructuredReplay.OracleSafe.Stmt.cont rfl
+
+theorem leaveStmt {canBreak canContinue : Bool} :
+    Stmt canBreak canContinue true .leave := by
+  refine ⟨?_, ?_⟩
+  · simp [StmtCodeShaped]
+  · simpa [Expressions.Stmt.toStructured] using
+      StructuredReplay.OracleSafe.Stmt.leave rfl
+
+theorem terminalStmt {canBreak canContinue canLeave : Bool}
+    {kind : Assembly.HaltKind}
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Stmt canBreak canContinue canLeave (.terminal kind) := by
+  refine ⟨?_, ?_⟩
+  · simp [StmtCodeShaped]
+  · simpa [Expressions.Stmt.toStructured] using
+      StructuredReplay.OracleSafe.Stmt.terminal hSafe
+
+theorem brkBlock {canContinue canLeave : Bool} :
+    Block true canContinue canLeave { stmts := [.brk] } :=
+  stmtBlock brkStmt
+
+theorem contBlock {canBreak canLeave : Bool} :
+    Block canBreak true canLeave { stmts := [.cont] } :=
+  stmtBlock contStmt
+
+theorem leaveBlock {canBreak canContinue : Bool} :
+    Block canBreak canContinue true { stmts := [.leave] } :=
+  stmtBlock leaveStmt
+
+theorem terminalBlock {canBreak canContinue canLeave : Bool}
+    {kind : Assembly.HaltKind}
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Block canBreak canContinue canLeave { stmts := [.terminal kind] } :=
+  stmtBlock (terminalStmt hSafe)
+
+theorem codeStmtBrkBlock {canContinue canLeave : Bool}
+    {code : Structured.Code}
+    (hRel : StructuredReplay.Code.OracleRelSafe code)
+    (hFrame : StructuredReplay.Code.OracleFrameSafe code) :
+    Block true canContinue canLeave
+      { stmts := Locals.codeStmt code ++ [.brk] } :=
+  block_append (codeStmtBlock hRel hFrame) brkBlock
+
+theorem codeStmtContBlock {canBreak canLeave : Bool}
+    {code : Structured.Code}
+    (hRel : StructuredReplay.Code.OracleRelSafe code)
+    (hFrame : StructuredReplay.Code.OracleFrameSafe code) :
+    Block canBreak true canLeave
+      { stmts := Locals.codeStmt code ++ [.cont] } :=
+  block_append (codeStmtBlock hRel hFrame) contBlock
+
+theorem codeStmtLeaveBlock {canBreak canContinue : Bool}
+    {code : Structured.Code}
+    (hRel : StructuredReplay.Code.OracleRelSafe code)
+    (hFrame : StructuredReplay.Code.OracleFrameSafe code) :
+    Block canBreak canContinue true
+      { stmts := Locals.codeStmt code ++ [.leave] } :=
+  block_append (codeStmtBlock hRel hFrame) leaveBlock
+
+theorem codeStmtTerminalBlock {canBreak canContinue canLeave : Bool}
+    {code : Structured.Code} {kind : Assembly.HaltKind}
+    (hRel : StructuredReplay.Code.OracleRelSafe code)
+    (hFrame : StructuredReplay.Code.OracleFrameSafe code)
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Block canBreak canContinue canLeave
+      { stmts := Locals.codeStmt code ++ [.terminal kind] } :=
+  block_append (codeStmtBlock hRel hFrame) (terminalBlock hSafe)
+
+theorem cleanupToBlock {canBreak canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    Block canBreak canContinue canLeave { stmts := Locals.codeStmt code } :=
+  codeStmtBlock_of_runnerFrame_observer_free
+    (StructuredReplay.Code.runnerSafe_cleanupTo? hCleanup)
+    (StructuredReplay.Code.frameSafe_cleanupTo? hCleanup)
+    (StructuredReplay.Code.observerFree_cleanupTo? hCleanup)
+
+theorem cleanupToPreservingBlock {canBreak canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    Block canBreak canContinue canLeave { stmts := Locals.codeStmt code } :=
+  codeStmtBlock_of_runnerFrame_observer_free
+    (StructuredReplay.Code.runnerSafe_cleanupToPreserving? hCleanup)
+    (StructuredReplay.Code.frameSafe_cleanupToPreserving? hCleanup)
+    (StructuredReplay.Code.observerFree_cleanupToPreserving? hCleanup)
+
+theorem cleanupAllBlock {canBreak canContinue canLeave : Bool}
+    (ctx : Locals.Ctx) :
+    Block canBreak canContinue canLeave
+      { stmts := Locals.codeStmt ctx.cleanupAll } :=
+  codeStmtBlock_of_runnerFrame_observer_free
+    (StructuredReplay.Code.runnerSafe_cleanupAll ctx)
+    (StructuredReplay.Code.frameSafe_cleanupAll ctx)
+    (StructuredReplay.Code.observerFree_cleanupAll ctx)
+
+theorem cleanupToBrkBlock {canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    Block true canContinue canLeave
+      { stmts := Locals.codeStmt code ++ [.brk] } :=
+  block_append (cleanupToBlock hCleanup) brkBlock
+
+theorem cleanupToContBlock {canBreak canLeave : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    Block canBreak true canLeave
+      { stmts := Locals.codeStmt code ++ [.cont] } :=
+  block_append (cleanupToBlock hCleanup) contBlock
+
+theorem cleanupToPreservingLeaveBlock {canBreak canContinue : Bool}
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    Block canBreak canContinue true
+      { stmts := Locals.codeStmt code ++ [.leave] } :=
+  block_append (cleanupToPreservingBlock hCleanup) leaveBlock
+
+theorem cleanupAllTerminalBlock {canBreak canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {kind : Assembly.HaltKind}
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Block canBreak canContinue canLeave
+      { stmts := Locals.codeStmt ctx.cleanupAll ++ [.terminal kind] } :=
+  block_append (cleanupAllBlock ctx) (terminalBlock hSafe)
+
+theorem finishToBlock {canBreak canContinue canLeave : Bool}
+    {final : Locals.Ctx} {targetDepth : Nat}
+    {stmts : List Expressions.Stmt} {lower : Expressions.Block}
+    (hBlock : Block canBreak canContinue canLeave { stmts := stmts })
+    (hFinish : Locals.finishTo final targetDepth stmts = some lower) :
+    Block canBreak canContinue canLeave lower := by
+  unfold Locals.finishTo at hFinish
+  cases hCleanup : final.cleanupTo? targetDepth with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      cases hFinish
+      exact block_append hBlock (cleanupToBlock hCleanup)
+
+theorem finishToPreservingBlock {canBreak canContinue canLeave : Bool}
+    {final : Locals.Ctx} {preserve targetDepth : Nat}
+    {stmts : List Expressions.Stmt} {lower : Expressions.Block}
+    (hBlock : Block canBreak canContinue canLeave { stmts := stmts })
+    (hFinish :
+      Locals.finishToPreserving final preserve targetDepth stmts =
+        some lower) :
+    Block canBreak canContinue canLeave lower := by
+  unfold Locals.finishToPreserving at hFinish
+  cases hCleanup : final.cleanupToPreserving? preserve targetDepth with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      cases hFinish
+      exact block_append hBlock (cleanupToPreservingBlock hCleanup)
+
+theorem finishScopedBlock {canBreak canContinue canLeave : Bool}
+    {outer final : Locals.Ctx}
+    {stmts : List Expressions.Stmt} {lower : Expressions.Block}
+    (hBlock : Block canBreak canContinue canLeave { stmts := stmts })
+    (hFinish : Locals.finishScoped outer final stmts = some lower) :
+    Block canBreak canContinue canLeave lower := by
+  unfold Locals.finishScoped at hFinish
+  cases hCleanup : final.cleanupTo? outer.layout.length with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      cases hFinish
+      exact block_append hBlock (cleanupToBlock hCleanup)
+
+end OracleSafe
 
 theorem ProcListCodeShaped.of_lookup?
     {name : Name} {procs : List Expressions.Proc} {proc : Expressions.Proc}
@@ -16895,6 +18105,84 @@ mutual
                             hHeadRel hTailRel
 end
 
+theorem oracleSafe_codeExpr_of_compileCode_eval_sourceOwned
+    {results : Nat} {expr : Locals.Expr results}
+    {ctx : Locals.Ctx} {offset : Nat}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hCompile : Locals.Expr.compileCode ctx offset expr = some code)
+    (hEval : Expr.eval expr state = .ok (state', values)) :
+    ExpressionsReplay.OracleSafe.Expr
+      (Expressions.Expr.code (results := results) code) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simp [ExpressionsReplay.ExprCodeShaped]
+  · simpa [Expressions.Expr.compile] using
+      oracleRelSafe_compileCode_of_eval_sourceOwned
+        hOwned hCompile hEval
+  · simpa [Expressions.Expr.compile] using
+      oracleFrameSafe_compileCode_of_eval_sourceOwned
+        hOwned hCompile hEval
+
+theorem oracleSafe_codeStmt_of_compileCode_eval_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {results : Nat} {expr : Locals.Expr results}
+    {ctx : Locals.Ctx} {offset : Nat}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hCompile : Locals.Expr.compileCode ctx offset expr = some code)
+    (hEval : Expr.eval expr state = .ok (state', values)) :
+    ExpressionsReplay.OracleSafe.Stmt canBreak canContinue canLeave
+      (Expressions.Stmt.code code) := by
+  refine ⟨?_, ?_⟩
+  · simp [ExpressionsReplay.StmtCodeShaped]
+  · exact
+      StructuredReplay.OracleSafe.Stmt.code
+        (oracleRelSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        (oracleFrameSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+
+theorem oracleSafe_codeExpr_of_compileSeqCode_eval_sourceOwned
+    {results : Nat} {exprs : Locals.ExprSeq results}
+    {ctx : Locals.Ctx} {offset : Nat}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.ExprSeq.SourceOwned exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx offset exprs = some code)
+    (hEval : Expr.ExprSeq.eval exprs state = .ok (state', values)) :
+    ExpressionsReplay.OracleSafe.Expr
+      (Expressions.Expr.code (results := results) code) := by
+  refine ⟨?_, ?_, ?_⟩
+  · simp [ExpressionsReplay.ExprCodeShaped]
+  · simpa [Expressions.Expr.compile] using
+      oracleRelSafe_compileSeqCode_of_eval_sourceOwned
+        hOwned hCompile hEval
+  · simpa [Expressions.Expr.compile] using
+      oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
+        hOwned hCompile hEval
+
+theorem oracleSafe_codeStmt_of_compileSeqCode_eval_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {results : Nat} {exprs : Locals.ExprSeq results}
+    {ctx : Locals.Ctx} {offset : Nat}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.ExprSeq.SourceOwned exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx offset exprs = some code)
+    (hEval : Expr.ExprSeq.eval exprs state = .ok (state', values)) :
+    ExpressionsReplay.OracleSafe.Stmt canBreak canContinue canLeave
+      (Expressions.Stmt.code code) := by
+  refine ⟨?_, ?_⟩
+  · simp [ExpressionsReplay.StmtCodeShaped]
+  · exact
+      StructuredReplay.OracleSafe.Stmt.code
+        (oracleRelSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        (oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+
 mutual
   theorem runCompiledCodeWithOracle_of_eval_sourceOwned
       {program : Assembly.Program} :
@@ -19701,6 +20989,233 @@ theorem compileAssignStmtListWithOracle_of_evalOne_sourceOwned
       ExpressionsReplay.StmtList.runCodeWithOracle_codeStmt_of_run hRunCode,
       hStateRel, hCtxOut⟩
 
+theorem oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {expr : Locals.Expr 0} {ctx : Locals.Ctx}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hCompile : Locals.Expr.compileCode ctx 0 expr = some code)
+    (hEval : Expr.eval expr state = .ok (state', values)) :
+    Locals.Stmt.compile ctx (.expr expr) =
+        some (Locals.codeStmt code, ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := Locals.codeStmt code } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hCompile]
+  · exact
+      ExpressionsReplay.OracleSafe.codeStmtBlock
+        (Expr.oracleRelSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        (Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+
+theorem oracleSafe_exprsBlock_of_compileSeqCode_eval_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {results : Nat} {exprs : Locals.ExprSeq results} {ctx : Locals.Ctx}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.ExprSeq.SourceOwned exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx 0 exprs = some code)
+    (hEval : Expr.ExprSeq.eval exprs state = .ok (state', values)) :
+    Locals.Stmt.compile ctx (.exprs exprs) =
+        some (Locals.codeStmt code, ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := Locals.codeStmt code } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hCompile]
+  · exact
+      ExpressionsReplay.OracleSafe.codeStmtBlock
+        (Expr.oracleRelSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        (Expr.oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+
+theorem oracleSafe_letBlock_of_compileCode_evalOne_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {name : Name} {expr : Locals.Expr 1} {ctx : Locals.Ctx}
+    {state state' : State} {value : Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hCompile : Locals.Expr.compileCode ctx 0 expr = some code)
+    (hEvalOne : Expr.evalOne expr state = .ok (state', value)) :
+    Locals.Stmt.compile ctx (.let_ name expr) =
+        some (Locals.codeStmt code,
+          ctx.withLayout (name :: ctx.layout)) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := Locals.codeStmt code } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hCompile]
+  · exact
+      ExpressionsReplay.OracleSafe.codeStmtBlock
+        (Expr.oracleRelSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile (Expr.eval_of_evalOne hEvalOne))
+        (Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
+          hOwned hCompile (Expr.eval_of_evalOne hEvalOne))
+
+theorem oracleSafe_assignBlock_of_compileCode_evalOne_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {name : Name} {expr : Locals.Expr 1} {ctx : Locals.Ctx}
+    {depth : Nat} {swapOp : Structured.BasicOp}
+    {state state' : State} {value : Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hDepth : Locals.Layout.lookupDepth? name ctx.layout = some depth)
+    (hCompile : Locals.Expr.compileCode ctx 0 expr = some code)
+    (hSwap : Locals.StackOp.swap? depth = some swapOp)
+    (hEvalOne : Expr.evalOne expr state = .ok (state', value)) :
+    Locals.Stmt.compile ctx (.assign name expr) =
+        some
+          (Locals.codeStmt
+            (code ++
+              [Structured.BasicInstr.op swapOp,
+                Structured.BasicInstr.op .pop]),
+            ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts :=
+            Locals.codeStmt
+              (code ++
+                [Structured.BasicInstr.op swapOp,
+                  Structured.BasicInstr.op .pop]) } := by
+  have hEval := Expr.eval_of_evalOne hEvalOne
+  have hValueRel :
+      StructuredReplay.Code.OracleRelSafe code :=
+    Expr.oracleRelSafe_compileCode_of_eval_sourceOwned
+      hOwned hCompile hEval
+  have hValueFrame :
+      StructuredReplay.Code.OracleFrameSafe code :=
+    Expr.oracleFrameSafe_compileCode_of_eval_sourceOwned
+      hOwned hCompile hEval
+  have hSuffixRunner :
+      Structured.Preservation.Code.RunnerSafe
+        [Structured.BasicInstr.op swapOp,
+          Structured.BasicInstr.op .pop] :=
+    Structured.Preservation.Code.RunnerSafe.append
+      (StructuredReplay.Code.runnerSafe_singleton_stackSwap? hSwap)
+      Structured.Preservation.Code.pop_runnerSafe
+  have hSuffixFrameSafe :
+      Structured.Code.FrameSafe
+        [Structured.BasicInstr.op swapOp,
+          Structured.BasicInstr.op .pop] :=
+    Structured.Preservation.Code.FrameSafe.append
+      (StructuredReplay.Code.frameSafe_singleton_stackSwap? hSwap)
+      Structured.Preservation.Code.pop_frameSafe
+  have hSuffixObserverFree :
+      StructuredReplay.Code.ObserverFree
+        [Structured.BasicInstr.op swapOp,
+          Structured.BasicInstr.op .pop] :=
+    StructuredReplay.Code.observerFree_append
+      (StructuredReplay.Code.observerFree_singleton_stackSwap? hSwap)
+      StructuredReplay.Code.observerFree_singleton_pop
+  have hSuffixRel :
+      StructuredReplay.Code.OracleRelSafe
+        [Structured.BasicInstr.op swapOp,
+          Structured.BasicInstr.op .pop] :=
+    StructuredReplay.Code.oracleRelSafe_of_runnerSafe_nonObserver
+      hSuffixRunner hSuffixObserverFree
+  have hSuffixFrame :
+      StructuredReplay.Code.OracleFrameSafe
+        [Structured.BasicInstr.op swapOp,
+          Structured.BasicInstr.op .pop] :=
+    StructuredReplay.Code.oracleFrameSafe_of_frameSafe_observer_free
+      hSuffixFrameSafe hSuffixObserverFree
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hDepth, hCompile, hSwap]
+  · simpa using
+      ExpressionsReplay.OracleSafe.codeStmtBlock
+        (StructuredReplay.Code.oracleRelSafe_append hValueRel hSuffixRel)
+        (StructuredReplay.Code.oracleFrameSafe_append
+          hValueFrame hSuffixFrame)
+
+theorem oracleSafe_brkBlock_of_cleanup
+    {canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {cleanup : Structured.Code}
+    (hBreak : ctx.breakDepth? = some targetDepth)
+    (hCleanup : ctx.cleanupTo? targetDepth = some cleanup) :
+    Locals.Stmt.compile ctx .brk =
+        some (Locals.codeStmt cleanup ++ [.brk], ctx) ∧
+      ExpressionsReplay.OracleSafe.Block true canContinue canLeave
+        { stmts := Locals.codeStmt cleanup ++ [.brk] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hBreak, hCleanup]
+  · exact ExpressionsReplay.OracleSafe.cleanupToBrkBlock hCleanup
+
+theorem oracleSafe_contBlock_of_cleanup
+    {canBreak canLeave : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {cleanup : Structured.Code}
+    (hContinue : ctx.continueDepth? = some targetDepth)
+    (hCleanup : ctx.cleanupTo? targetDepth = some cleanup) :
+    Locals.Stmt.compile ctx .cont =
+        some (Locals.codeStmt cleanup ++ [.cont], ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak true canLeave
+        { stmts := Locals.codeStmt cleanup ++ [.cont] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hContinue, hCleanup]
+  · exact ExpressionsReplay.OracleSafe.cleanupToContBlock hCleanup
+
+theorem oracleSafe_leaveBlock_of_cleanup
+    {canBreak canContinue : Bool}
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {cleanup : Structured.Code}
+    (hLeave : ctx.leaveDepth? = some targetDepth)
+    (hCleanup :
+      ctx.cleanupToPreserving? ctx.leaveRetc targetDepth = some cleanup) :
+    Locals.Stmt.compile ctx .leave =
+        some (Locals.codeStmt cleanup ++ [.leave], ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue true
+        { stmts := Locals.codeStmt cleanup ++ [.leave] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hLeave, hCleanup]
+  · exact
+      ExpressionsReplay.OracleSafe.cleanupToPreservingLeaveBlock
+        hCleanup
+
+theorem oracleSafe_terminalBlock_of_relSafe
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Locals.Ctx} {kind : Assembly.HaltKind}
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Locals.Stmt.compile ctx (.terminal kind) =
+        some
+          (Locals.codeStmt ctx.cleanupAll ++
+            [Expressions.Stmt.terminal kind],
+            ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts :=
+            Locals.codeStmt ctx.cleanupAll ++
+              [Expressions.Stmt.terminal kind] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile]
+  · exact ExpressionsReplay.OracleSafe.cleanupAllTerminalBlock hSafe
+
+theorem oracleSafe_terminalArgsBlock_of_compileSeqCode_eval_sourceOwned
+    {canBreak canContinue canLeave : Bool}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount} {ctx : Locals.Ctx}
+    {state state' : State} {values : List Word}
+    {code : Structured.Code}
+    (hOwned : Locals.Source.ExprSeq.SourceOwned args)
+    (hCompile : Locals.ExprSeq.compileCode ctx 0 args = some code)
+    (hEval : Expr.ExprSeq.eval args state = .ok (state', values))
+    (hSafe : Structured.Preservation.Terminal.RelSafe kind) :
+    Locals.Stmt.compile ctx (.terminalArgs kind args) =
+        some
+          (Locals.codeStmt code ++ [Expressions.Stmt.terminal kind],
+            ctx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts :=
+            Locals.codeStmt code ++ [Expressions.Stmt.terminal kind] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Stmt.compile, hCompile]
+  · exact
+      ExpressionsReplay.OracleSafe.codeStmtTerminalBlock
+        (Expr.oracleRelSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        (Expr.oracleFrameSafe_compileSeqCode_of_eval_sourceOwned
+          hOwned hCompile hEval)
+        hSafe
+
 end Stmt
 
 namespace Block
@@ -19718,6 +21233,48 @@ theorem compileOpen_nilWithOracle
         .ok (Expressions.Outcome.regular target, state.trace) := by
   simp [Locals.Block.compileOpen, Block.runOpen,
     ExpressionsReplay.StmtList.runCodeWithOracle]
+
+theorem oracleSafe_compileOpen_nil
+    {canBreak canContinue canLeave : Bool}
+    {targetCtx : Locals.Ctx} :
+    Locals.Block.compileOpen targetCtx { stmts := [] } =
+        some ([], targetCtx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := [] } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Block.compileOpen]
+  · refine ⟨?_, ?_⟩
+    · simp [ExpressionsReplay.BlockCodeShaped,
+        ExpressionsReplay.StmtListCodeShaped]
+    · simpa [Expressions.Block.toStructured,
+        Expressions.StmtList.toStructured] using
+        StructuredReplay.OracleSafe.Block.nil
+
+theorem oracleSafe_compileOpen_cons_of_stmtBlock
+    {canBreak canContinue canLeave : Bool}
+    {targetCtx targetCtxAfter targetCtxOut : Locals.Ctx}
+    {stmt : Locals.Stmt} {rest : List Locals.Stmt}
+    {stmtCode restCode : List Expressions.Stmt}
+    (hCompileStmt :
+      Locals.Stmt.compile targetCtx stmt =
+        some (stmtCode, targetCtxAfter))
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtxAfter { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hStmtSafe :
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := stmtCode })
+    (hRestSafe :
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := restCode }) :
+    Locals.Block.compileOpen targetCtx { stmts := stmt :: rest } =
+        some (stmtCode ++ restCode, targetCtxOut) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := stmtCode ++ restCode } := by
+  refine ⟨?_, ?_⟩
+  · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
+  · exact
+      ExpressionsReplay.OracleSafe.block_append hStmtSafe hRestSafe
 
 theorem compileOpen_cons_regularWithOracle_of_runs
     {asmProgram : Assembly.Program} {program : Locals.Program}
@@ -21084,6 +22641,311 @@ theorem runScoped_atomicPrefix_mode_regular
           simp [hOpen, Outcome.regular] at hRun
           cases hRun
           rfl
+
+theorem oracleSafe_compileOpen_atomicPrefix_of_run
+    {canBreak canContinue canLeave : Bool}
+    {program : Locals.Program} :
+    ∀ {sourceCtx : Ctx} {targetCtx : Locals.Ctx}
+      {fuel : Nat} {stmts : List Locals.Stmt}
+      {state : State} {outcome : Outcome} {sourceCtxOut : Ctx}
+      {code : List Expressions.Stmt} {targetCtxOut : Locals.Ctx},
+      AtomicPrefix sourceCtx stmts →
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut) →
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+        .ok (outcome, sourceCtxOut) →
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := code } := by
+  intro sourceCtx targetCtx fuel stmts state outcome sourceCtxOut code
+    targetCtxOut hPrefix hCompile hRun
+  induction hPrefix generalizing targetCtx fuel state outcome sourceCtxOut
+      code targetCtxOut
+  case nil sourceCtx =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          simp [Locals.Block.compileOpen] at hCompile
+          rcases hCompile with ⟨hCode, _hTargetCtxOut⟩
+          subst code
+          exact (oracleSafe_compileOpen_nil
+            (canBreak := canBreak) (canContinue := canContinue)
+            (canLeave := canLeave) (targetCtx := targetCtx)).2
+  case expr sourceCtx expr rest hOwned hAccess hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              cases hRestCompile :
+                  Locals.Block.compileOpen targetCtx { stmts := rest } with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hRestCompile] at hCompile
+              | some restResult =>
+                  rcases restResult with ⟨restCode, restTargetCtxOut⟩
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hRestCompile] at hCompile
+                  rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                  subst code
+                  subst targetCtxOut
+                  simp [Block.runOpen] at hRun
+                  cases hEval : Expr.eval expr state with
+                  | error err =>
+                      simp [Stmt.run, hEval] at hRun
+                  | ok evalResult =>
+                      rcases evalResult with ⟨stateAfterExpr, values⟩
+                      simp [Stmt.run, hEval] at hRun
+                      cases hRestRun :
+                          Block.runOpen program sourceCtx fuel
+                            { stmts := rest } stateAfterExpr with
+                      | error err =>
+                          rw [hRestRun] at hRun
+                          simp at hRun
+                      | ok restRunResult =>
+                          rcases restRunResult with
+                            ⟨restOutcome, restSourceCtxOut⟩
+                          rw [hRestRun] at hRun
+                          simp at hRun
+                          rcases hRun with
+                            ⟨hOutcome, hSourceCtxOut⟩
+                          subst outcome
+                          subst sourceCtxOut
+                          have hStmtSafe :=
+                            (Stmt.oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (expr := expr) (ctx := targetCtx)
+                              (state := state)
+                              (state' := stateAfterExpr)
+                              (values := values) (code := headCode)
+                              hOwned hHeadCode hEval).2
+                          have hRestSafe :=
+                            ih hRestCompile hRestRun
+                          exact
+                            (oracleSafe_compileOpen_cons_of_stmtBlock
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (stmt := Locals.Stmt.expr expr)
+                              (rest := rest)
+                              (stmtCode := Locals.codeStmt headCode)
+                              (restCode := restCode)
+                              (targetCtx := targetCtx)
+                              (targetCtxAfter := targetCtx)
+                              (targetCtxOut := restTargetCtxOut)
+                              (Stmt.oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+                                (canBreak := canBreak)
+                                (canContinue := canContinue)
+                                (canLeave := canLeave)
+                                (expr := expr) (ctx := targetCtx)
+                                (state := state)
+                                (state' := stateAfterExpr)
+                                (values := values) (code := headCode)
+                                hOwned hHeadCode hEval).1
+                              hRestCompile hStmtSafe hRestSafe).2
+  case let_ sourceCtx name expr rest hOwned hAccess hFresh hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              let sourceCtxAfter : Ctx :=
+                { sourceCtx with scope := name :: sourceCtx.scope }
+              let targetCtxAfter : Locals.Ctx :=
+                targetCtx.withLayout (name :: targetCtx.layout)
+              cases hRestCompile :
+                  Locals.Block.compileOpen targetCtxAfter
+                    { stmts := rest } with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, sourceCtxAfter, targetCtxAfter,
+                    hRestCompile] at hCompile
+              | some restResult =>
+                  rcases restResult with ⟨restCode, restTargetCtxOut⟩
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, sourceCtxAfter, targetCtxAfter,
+                    hRestCompile] at hCompile
+                  rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                  subst code
+                  subst targetCtxOut
+                  simp [Block.runOpen] at hRun
+                  cases hEvalOne : Expr.evalOne expr state with
+                  | error err =>
+                      simp [Stmt.run, hEvalOne] at hRun
+                  | ok evalResult =>
+                      rcases evalResult with ⟨stateAfterValue, value⟩
+                      simp [Stmt.run, hEvalOne, sourceCtxAfter] at hRun
+                      cases hRestRun :
+                          Block.runOpen program sourceCtxAfter fuel
+                            { stmts := rest }
+                            (stateAfterValue.insert name value) with
+                      | error err =>
+                          rw [hRestRun] at hRun
+                          simp [sourceCtxAfter] at hRun
+                      | ok restRunResult =>
+                          rcases restRunResult with
+                            ⟨restOutcome, restSourceCtxOut⟩
+                          rw [hRestRun] at hRun
+                          simp [sourceCtxAfter] at hRun
+                          rcases hRun with
+                            ⟨hOutcome, hSourceCtxOut⟩
+                          subst outcome
+                          subst sourceCtxOut
+                          have hStmt :=
+                            Stmt.oracleSafe_letBlock_of_compileCode_evalOne_sourceOwned
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (name := name) (expr := expr)
+                              (ctx := targetCtx) (state := state)
+                              (state' := stateAfterValue)
+                              (value := value) (code := headCode)
+                              hOwned hHeadCode hEvalOne
+                          have hRestSafe :=
+                            ih hRestCompile hRestRun
+                          exact
+                            (oracleSafe_compileOpen_cons_of_stmtBlock
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (stmt := Locals.Stmt.let_ name expr)
+                              (rest := rest)
+                              (stmtCode := Locals.codeStmt headCode)
+                              (restCode := restCode)
+                              (targetCtx := targetCtx)
+                              (targetCtxAfter := targetCtxAfter)
+                              (targetCtxOut := restTargetCtxOut)
+                              hStmt.1 hRestCompile hStmt.2
+                              hRestSafe).2
+  case assign sourceCtx name idx expr rest hName hBound hOwned hAccess hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              cases hDepth :
+                  Locals.Layout.lookupDepth? name targetCtx.layout with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hDepth] at hCompile
+              | some depth =>
+                  cases hSwap :
+                      Locals.StackOp.swap? depth with
+                  | none =>
+                      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                        hHeadCode, hDepth, hSwap] at hCompile
+                  | some swapOp =>
+                      cases hRestCompile :
+                          Locals.Block.compileOpen targetCtx
+                            { stmts := rest } with
+                      | none =>
+                          simp [Locals.Block.compileOpen,
+                            Locals.Stmt.compile, hHeadCode, hDepth, hSwap,
+                            hRestCompile] at hCompile
+                      | some restResult =>
+                          rcases restResult with
+                            ⟨restCode, restTargetCtxOut⟩
+                          simp [Locals.Block.compileOpen,
+                            Locals.Stmt.compile, hHeadCode, hDepth, hSwap,
+                            hRestCompile] at hCompile
+                          rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                          subst code
+                          subst targetCtxOut
+                          simp [Block.runOpen] at hRun
+                          by_cases hContains :
+                              Locals.Source.Store.contains state.vars name =
+                                true
+                          · simp [Stmt.run, hContains] at hRun
+                            cases hEvalOne : Expr.evalOne expr state with
+                            | error err =>
+                                simp [hContains, hEvalOne] at hRun
+                            | ok evalResult =>
+                                rcases evalResult with
+                                  ⟨stateAfterValue, value⟩
+                                simp [hContains, hEvalOne] at hRun
+                                let stateAfterAssign :=
+                                  stateAfterValue.withVars
+                                    (Locals.Source.Store.insert
+                                      stateAfterValue.vars name value)
+                                cases hRestRun :
+                                    Block.runOpen program sourceCtx fuel
+                                      { stmts := rest }
+                                      stateAfterAssign with
+                                | error err =>
+                                    rw [hRestRun] at hRun
+                                    simp [stateAfterAssign] at hRun
+                                | ok restRunResult =>
+                                    rcases restRunResult with
+                                      ⟨restOutcome, restSourceCtxOut⟩
+                                    rw [hRestRun] at hRun
+                                    simp [stateAfterAssign] at hRun
+                                    rcases hRun with
+                                      ⟨hOutcome, hSourceCtxOut⟩
+                                    subst outcome
+                                    subst sourceCtxOut
+                                    have hStmt :=
+                                      Stmt.oracleSafe_assignBlock_of_compileCode_evalOne_sourceOwned
+                                        (canBreak := canBreak)
+                                        (canContinue := canContinue)
+                                        (canLeave := canLeave)
+                                        (name := name) (expr := expr)
+                                        (ctx := targetCtx)
+                                        (depth := depth)
+                                        (swapOp := swapOp)
+                                        (state := state)
+                                        (state' := stateAfterValue)
+                                        (value := value)
+                                        (code := headCode)
+                                        hOwned hDepth hHeadCode hSwap
+                                        hEvalOne
+                                    have hRestSafe :=
+                                      ih hRestCompile hRestRun
+                                    exact
+                                      (oracleSafe_compileOpen_cons_of_stmtBlock
+                                        (canBreak := canBreak)
+                                        (canContinue := canContinue)
+                                        (canLeave := canLeave)
+                                        (stmt :=
+                                          Locals.Stmt.assign name expr)
+                                        (rest := rest)
+                                        (stmtCode :=
+                                          Locals.codeStmt
+                                            (headCode ++
+                                              [Structured.BasicInstr.op
+                                                swapOp,
+                                                Structured.BasicInstr.op
+                                                  .pop]))
+                                        (restCode := restCode)
+                                        (targetCtx := targetCtx)
+                                        (targetCtxAfter := targetCtx)
+                                        (targetCtxOut := restTargetCtxOut)
+                                        hStmt.1 hRestCompile hStmt.2
+                                        hRestSafe).2
+                          · have hContainsFalse :
+                                Locals.Source.Store.contains state.vars name =
+                                  false := by
+                              cases hValue :
+                                  Locals.Source.Store.contains state.vars name <;>
+                                simp [hValue] at hContains ⊢
+                            simp [Stmt.run, hContainsFalse, invalid,
+                              Structured.invalid] at hRun
 
 theorem compileOpen_atomicPrefixWithOracle
     {asmProgram : Assembly.Program} {program : Locals.Program} :
@@ -24070,6 +25932,43 @@ theorem compileBlockStmtListWithOracle_of_runScoped_atomicPrefix
   · simp [Locals.Stmt.compile, hCompileOpen, hFinish]
   · simp [Stmt.run, hRun]
 
+theorem oracleSafe_blockStmt_of_runScoped_atomicPrefix
+    {canBreak canContinue canLeave : Bool}
+    {program : Locals.Program}
+    {sourceCtx : Ctx} {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel : Nat} {stmts : List Locals.Stmt}
+    {state : State} {outcome : Outcome}
+    {code : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    (hPrefix : Block.AtomicPrefix sourceCtx stmts)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx targetCtxOut code = some lowerBody)
+    (hRun :
+      Block.runScoped program sourceCtx { stmts := stmts } fuel state =
+        .ok outcome) :
+    Locals.Stmt.compile targetCtx (.block { stmts := stmts }) =
+        some (lowerBody.stmts, targetCtx) ∧
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        lowerBody := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, sourceCtxAfter⟩
+      have hCodeSafe :
+          ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+            { stmts := code } :=
+        Block.oracleSafe_compileOpen_atomicPrefix_of_run
+          (program := program) hPrefix hCompileOpen hOpen
+      exact
+        ⟨by simp [Locals.Stmt.compile, hCompileOpen, hFinish],
+          ExpressionsReplay.OracleSafe.finishScopedBlock hCodeSafe
+            hFinish⟩
+
 end Stmt
 
 namespace Block
@@ -24178,6 +26077,59 @@ theorem compileOpen_cons_blockWithOracle_of_runScoped_atomicPrefix
       exact
         ⟨targetAfterBody, hCompileOpen, hRunOpen, hReplayOpen, rfl,
           hBodyRel⟩
+
+theorem oracleSafe_compileOpen_cons_block_of_runScoped_atomicPrefix
+    {canBreak canContinue canLeave : Bool}
+    {program : Locals.Program}
+    {sourceCtx : Ctx}
+    {targetCtx bodyTargetCtxOut targetCtxOut : Locals.Ctx}
+    {fuel : Nat} {bodyStmts rest : List Locals.Stmt}
+    {state : State} {bodyOutcome : Outcome}
+    {bodyCode restCode : List Expressions.Stmt}
+    {lowerBody : Expressions.Block}
+    (hPrefix : AtomicPrefix sourceCtx bodyStmts)
+    (hCompileBodyOpen :
+      Locals.Block.compileOpen targetCtx { stmts := bodyStmts } =
+        some (bodyCode, bodyTargetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx bodyTargetCtxOut bodyCode =
+        some lowerBody)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hBodyRun :
+      Block.runScoped program sourceCtx { stmts := bodyStmts } fuel state =
+        .ok bodyOutcome)
+    (hRestSafe :
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := restCode }) :
+    Locals.Block.compileOpen targetCtx
+        { stmts := Locals.Stmt.block { stmts := bodyStmts } :: rest } =
+      some (lowerBody.stmts ++ restCode, targetCtxOut) ∧
+    ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+      { stmts := lowerBody.stmts ++ restCode } := by
+  have hStmt :=
+    Stmt.oracleSafe_blockStmt_of_runScoped_atomicPrefix
+      (canBreak := canBreak) (canContinue := canContinue)
+      (canLeave := canLeave) (program := program)
+      (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+      (targetCtxOut := bodyTargetCtxOut) (fuel := fuel)
+      (stmts := bodyStmts) (state := state)
+      (outcome := bodyOutcome) (code := bodyCode)
+      (lowerBody := lowerBody)
+      hPrefix hCompileBodyOpen hFinish hBodyRun
+  cases lowerBody with
+  | mk lowerStmts =>
+      exact
+        oracleSafe_compileOpen_cons_of_stmtBlock
+          (canBreak := canBreak) (canContinue := canContinue)
+          (canLeave := canLeave)
+          (targetCtx := targetCtx) (targetCtxAfter := targetCtx)
+          (targetCtxOut := targetCtxOut)
+          (stmt := Locals.Stmt.block { stmts := bodyStmts })
+          (rest := rest) (stmtCode := lowerStmts)
+          (restCode := restCode)
+          hStmt.1 hCompileRest hStmt.2 hRestSafe
 
 theorem compileOpen_cons_ifFalseWithOracle_of_evalCondition_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
@@ -33526,6 +35478,104 @@ theorem result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of
     ⟨hAccepted, hTrace, hCompiled, hResult⟩
   exact
     ⟨assemblyFuel, halt, hAccepted, hTrace, hCompiled, hResult, hKind⟩
+
+theorem result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+    {program : Structured.Program} (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : Structured.RunState}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? program.compile = some dryRun.target)
+    (hRun :
+      StructuredReplay.Block.runWithOracle program.compile
+          (Assembly.Program.byteLength []) program sourceFuel program.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Structured.Outcome.halt kind sourceOut, []))
+    (hLen : Assembly.Program.byteLength program.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program)
+    (hSafe :
+      StructuredReplay.OracleSafe.Block false false false program.body)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted program.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle program.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace []
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle program.compile assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, []) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind :=
+  result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+    (program := program) dryRun (sourceFuel := sourceFuel)
+    (sourceOut := sourceOut) (kind := kind) (dryHalt := dryHalt)
+    hDryHalt hCompile hRun hLen hBounds
+    (StructuredReplay.OracleSafe.mainBlockPreserves hSafe) hInitialPc
+
+theorem result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+    {program : Expressions.Program} (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : Expressions.RunState}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? program.compile = some dryRun.target)
+    (hRun :
+      ExpressionsReplay.Block.runWithOracle program.compile
+          (Assembly.Program.byteLength []) program sourceFuel program.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Expressions.Outcome.halt kind sourceOut, []))
+    (hLen : Assembly.Program.byteLength program.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program.toStructured)
+    (hSafe : ExpressionsReplay.OracleSafe.Program program)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted program.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle program.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace []
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle program.compile assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, []) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind := by
+  have hCodeShaped : ExpressionsReplay.ProgramCodeShaped program :=
+    ExpressionsReplay.OracleSafe.programCodeShaped hSafe
+  have hStructuredRun :
+      StructuredReplay.Block.runWithOracle program.toStructured.compile
+          (Assembly.Program.byteLength []) program.toStructured sourceFuel
+          program.toStructured.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Structured.Outcome.halt kind sourceOut, []) := by
+    have hToStructured :=
+      ExpressionsReplay.Block.runWithOracle_toStructured_of_codeShaped
+        (asmProgram := program.compile)
+        (pc := Assembly.Program.byteLength []) (program := program)
+        hCodeShaped sourceFuel program.body
+        (Structured.Program.initialState dryRun.initial) dryRun.trace
+        hCodeShaped.2
+    rw [hToStructured] at hRun
+    simpa [Expressions.Program.compile] using hRun
+  rcases
+      result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+        (program := program.toStructured) dryRun
+        (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+        (kind := kind) (dryHalt := dryHalt)
+        hDryHalt
+        (by simpa [Expressions.Program.compile] using hCompile)
+        hStructuredRun
+        (by simpa [Expressions.Program.compile] using hLen)
+        hBounds
+        (ExpressionsReplay.OracleSafe.programBodyToStructured hSafe)
+        hInitialPc with
+    ⟨assemblyFuel, halt, hAccepted, hTrace, hCompiled, hResult, hKind⟩
+  exact
+    ⟨assemblyFuel, halt,
+      by simpa [Expressions.Program.compile] using hAccepted,
+      by simpa [Expressions.Program.compile] using hTrace,
+      by simpa [Expressions.Program.compile] using hCompiled,
+      hResult, hKind⟩
 
 end TargetDryRun
 
