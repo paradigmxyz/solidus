@@ -11881,6 +11881,265 @@ theorem compileBlockStmtWithSwitchFallback?_eq_some
                   SpillLayout.restrictToScope sourceScope normalized.layout,
                   rfl, hNormalized, rfl, hCheck, rfl⟩
 
+theorem compileSwitchFallbackWithSwitchFallback?_eq_some_components
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {plan : Plan}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan) :
+    ∃ entry scrutineeCode compiledCases compiledDefault,
+      normalizePlanStack? range
+          { sourceScope := sourceScope
+            stackLayout := stackLayout
+            layout := layout
+            block := { stmts := [] } } =
+        some entry ∧
+      entry.stackLayout = [] ∧
+      SourceNoMemoryTouch.expr? scrutinee = true ∧
+      SpillExpr.compileCode? range 0 entry.layout scrutinee =
+        some scrutineeCode ∧
+      compileSwitchCaseBodiesWithSwitchFallback? range program returns
+          handlers entry.sourceScope entry.layout cases =
+        some compiledCases ∧
+      compileSwitchDefaultBodyWithSwitchFallback? range program returns
+          handlers entry.sourceScope entry.layout defaultBody =
+        some compiledDefault ∧
+      plan =
+        { sourceScope := entry.sourceScope
+          stackLayout := []
+          layout := entry.layout
+          block :=
+            ExpressionsBlock.append entry.block
+              { stmts :=
+                  [Expressions.Stmt.switch (.code scrutineeCode)
+                    compiledCases compiledDefault] } } := by
+  unfold compileSwitchFallbackWithSwitchFallback? at hCompile
+  cases hEntry :
+      normalizePlanStack? range
+        { sourceScope := sourceScope
+          stackLayout := stackLayout
+          layout := layout
+          block := { stmts := [] } } with
+  | none =>
+      simp [hEntry] at hCompile
+  | some entry =>
+      simp [hEntry] at hCompile
+      by_cases hStack : entry.stackLayout = []
+      · simp [hStack] at hCompile
+        cases hSafe : SourceNoMemoryTouch.expr? scrutinee with
+        | false =>
+            simp [hSafe] at hCompile
+        | true =>
+            simp [hSafe] at hCompile
+            cases hScrutineeCode :
+                SpillExpr.compileCode? range 0 entry.layout scrutinee with
+            | none =>
+                simp [hScrutineeCode] at hCompile
+            | some scrutineeCode =>
+                simp [hScrutineeCode] at hCompile
+                cases hCases :
+                    compileSwitchCaseBodiesWithSwitchFallback? range program
+                      returns handlers entry.sourceScope entry.layout cases with
+                | none =>
+                    simp [hCases] at hCompile
+                | some compiledCases =>
+                    simp [hCases] at hCompile
+                    cases hDefault :
+                        compileSwitchDefaultBodyWithSwitchFallback? range
+                          program returns handlers entry.sourceScope
+                          entry.layout defaultBody with
+                    | none =>
+                        simp [hDefault] at hCompile
+                    | some compiledDefault =>
+                        simp [hDefault] at hCompile
+                        cases hCompile
+                        exact
+                          ⟨entry, scrutineeCode, compiledCases,
+                            compiledDefault, rfl, hStack, rfl,
+                            hScrutineeCode, hCases, hDefault, rfl⟩
+      · simp [hStack] at hCompile
+
+theorem compileForFallbackWithSwitchFallback?_eq_some_components
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {plan : Plan}
+    (hCompile :
+      compileForFallbackWithSwitchFallback? range program handlers returns
+        sourceScope stackLayout layout init cond post body =
+        some plan) :
+    ∃ entry initOpen initPlan condCode postRaw postPlan bodyRaw bodyPlan
+        finalLayout,
+      normalizePlanStack? range
+          { sourceScope := sourceScope
+            stackLayout := stackLayout
+            layout := layout
+            block := { stmts := [] } } =
+        some entry ∧
+      entry.stackLayout = [] ∧
+      compileBlockOpenWithSwitchFallback? range program
+          handlers.withoutLoopControl returns entry.sourceScope []
+          entry.layout init =
+        some initOpen ∧
+      normalizePlanStack? range initOpen = some initPlan ∧
+      initPlan.stackLayout = [] ∧
+      SourceNoMemoryTouch.expr? cond = true ∧
+      SpillExpr.compileCode? range 0 initPlan.layout cond =
+        some condCode ∧
+      compileBlockStmtWithSwitchFallback? range program
+          handlers.withoutLoopControl returns initPlan.sourceScope []
+          initPlan.layout post =
+        some postRaw ∧
+      normalizePlanStack? range postRaw = some postPlan ∧
+      (postPlan.sourceScope = initPlan.sourceScope ∧
+        postPlan.stackLayout = [] ∧
+        postPlan.layout = initPlan.layout) ∧
+      compileBlockStmtWithSwitchFallback? range program
+          (handlers.withLoopControl initPlan.sourceScope) returns
+          initPlan.sourceScope [] initPlan.layout body =
+        some bodyRaw ∧
+      normalizePlanStack? range bodyRaw = some bodyPlan ∧
+      (bodyPlan.sourceScope = initPlan.sourceScope ∧
+        bodyPlan.stackLayout = [] ∧
+        bodyPlan.layout = initPlan.layout) ∧
+      finalLayout = SpillLayout.restrictToScope entry.sourceScope
+        initPlan.layout ∧
+      SpillLayout.checked? range entry.sourceScope [] finalLayout = true ∧
+      plan =
+        { sourceScope := entry.sourceScope
+          stackLayout := []
+          layout := finalLayout
+          block :=
+            ExpressionsBlock.append entry.block
+              { stmts :=
+                  [Expressions.Stmt.for_ initPlan.block (.code condCode)
+                    postPlan.block bodyPlan.block] } } := by
+  unfold compileForFallbackWithSwitchFallback? at hCompile
+  cases hEntry :
+      normalizePlanStack? range
+        { sourceScope := sourceScope
+          stackLayout := stackLayout
+          layout := layout
+          block := { stmts := [] } } with
+  | none =>
+      simp [hEntry] at hCompile
+  | some entry =>
+      simp [hEntry] at hCompile
+      by_cases hEntryStack : entry.stackLayout = []
+      · simp [hEntryStack] at hCompile
+        cases hInitOpen :
+            compileBlockOpenWithSwitchFallback? range program
+              handlers.withoutLoopControl returns entry.sourceScope []
+              entry.layout init with
+        | none =>
+            simp [hInitOpen] at hCompile
+        | some initOpen =>
+            simp [hInitOpen] at hCompile
+            cases hInitNorm :
+                normalizePlanStack? range initOpen with
+            | none =>
+                simp [hInitNorm] at hCompile
+            | some initPlan =>
+                simp [hInitNorm] at hCompile
+                by_cases hInitStack : initPlan.stackLayout = []
+                · simp [hInitStack] at hCompile
+                  cases hCondSafe : SourceNoMemoryTouch.expr? cond with
+                  | false =>
+                      simp [hCondSafe] at hCompile
+                  | true =>
+                      simp [hCondSafe] at hCompile
+                      cases hCondCode :
+                          SpillExpr.compileCode? range 0 initPlan.layout cond
+                      with
+                      | none =>
+                          simp [hCondCode] at hCompile
+                      | some condCode =>
+                          simp [hCondCode] at hCompile
+                          cases hPostCompile :
+                              compileBlockStmtWithSwitchFallback? range program
+                                handlers.withoutLoopControl returns
+                                initPlan.sourceScope [] initPlan.layout
+                                post with
+                          | none =>
+                              simp [hPostCompile] at hCompile
+                          | some postRaw =>
+                              simp [hPostCompile] at hCompile
+                              cases hPostNorm :
+                                  normalizePlanStack? range postRaw with
+                              | none =>
+                                  simp [hPostNorm] at hCompile
+                              | some postPlan =>
+                                  simp [hPostNorm] at hCompile
+                                  by_cases hPostOk :
+                                      postPlan.sourceScope =
+                                          initPlan.sourceScope ∧
+                                        postPlan.stackLayout = [] ∧
+                                        postPlan.layout = initPlan.layout
+                                  · simp [hPostOk] at hCompile
+                                    cases hBodyCompile :
+                                        compileBlockStmtWithSwitchFallback?
+                                          range program
+                                          (handlers.withLoopControl
+                                            initPlan.sourceScope)
+                                          returns initPlan.sourceScope []
+                                          initPlan.layout body with
+                                    | none =>
+                                        simp [hBodyCompile] at hCompile
+                                    | some bodyRaw =>
+                                        simp [hBodyCompile] at hCompile
+                                        cases hBodyNorm :
+                                            normalizePlanStack? range bodyRaw
+                                        with
+                                        | none =>
+                                            simp [hBodyNorm] at hCompile
+                                        | some bodyPlan =>
+                                            simp [hBodyNorm] at hCompile
+                                            by_cases hBodyOk :
+                                                bodyPlan.sourceScope =
+                                                    initPlan.sourceScope ∧
+                                                  bodyPlan.stackLayout = [] ∧
+                                                  bodyPlan.layout =
+                                                    initPlan.layout
+                                            · simp [hBodyOk] at hCompile
+                                              let finalLayout :=
+                                                SpillLayout.restrictToScope
+                                                  entry.sourceScope
+                                                  initPlan.layout
+                                              cases hCheck :
+                                                  SpillLayout.checked? range
+                                                    entry.sourceScope []
+                                                    finalLayout with
+                                              | false =>
+                                                  simp [finalLayout, hCheck]
+                                                    at hCompile
+                                              | true =>
+                                                  simp [finalLayout, hCheck]
+                                                    at hCompile
+                                                  cases hCompile
+                                                  exact
+                                                    ⟨entry, initOpen, initPlan,
+                                                      condCode, postRaw,
+                                                      postPlan, bodyRaw,
+                                                      bodyPlan, finalLayout,
+                                                      rfl, hEntryStack,
+                                                      hInitOpen, hInitNorm,
+                                                      hInitStack, rfl,
+                                                      hCondCode, hPostCompile,
+                                                      hPostNorm, hPostOk,
+                                                      hBodyCompile, hBodyNorm,
+                                                      hBodyOk, rfl, hCheck,
+                                                      rfl⟩
+                                            · simp [hBodyOk] at hCompile
+                                  · simp [hPostOk] at hCompile
+                · simp [hInitStack] at hCompile
+      · simp [hEntryStack] at hCompile
+
 mutual
 
 inductive StmtRegularOpenSupported (returns : List Name) : Stmt → Prop
