@@ -17019,6 +17019,297 @@ theorem preserves_switch_selected_of_scrutinee_body_tail_run
     compiledCases, compiledDefault, preTests, List.append_assoc] using
     hSelected
 
+theorem preserves_switch_selected_of_scrutinee_selected_body_preserves
+    {program : Structured.Program}
+    {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {selected : Structured.Block}
+    {pre post : Assembly.Program}
+    {fuel : Nat} {source : Structured.RunState}
+    {outcome : Structured.Outcome}
+    {evmAfterScrutinee : EVMState}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceAfterScrutinee traceOut : Trace} {replayPc : Nat}
+    (hScrutineeRelSafe : Code.OracleRelSafe scrutinee)
+    (hScrutineeFrame : Code.OracleFrameSafe scrutinee)
+    (hSelectedPreserves :
+      ∀ bodySupply,
+        BlockPreservesWithOracle program ctx bodySupply selected)
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code)
+    (hResolve :
+      Structured.Preservation.ContextLabelsResolve
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+          post)
+        ctx)
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+          post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hScrutinee :
+      Code.runWithOracle
+        (pre ++
+          ((Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+            post))
+        replayPc scrutinee source.evm trace =
+          .ok (evmAfterScrutinee, traceAfterScrutinee))
+    (hPop : evmAfterScrutinee.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody = some selected)
+    (hBodyRun :
+      Block.runWithOracle
+        (pre ++
+          ((Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+            post))
+        replayPc program fuel selected
+        (source.withEVM { evmAfterScrutinee with stack := stack })
+        traceAfterScrutinee =
+          .ok (outcome, traceOut)) :
+    ARunResultWithOracle
+      (pre ++
+        (Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceOut ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              (Structured.Stmt.compileFromCtxCore
+                (.switch scrutinee cases defaultBody) ctx supply).code ++
+              post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                (Structured.Stmt.compileFromCtxCore
+                  (.switch scrutinee cases defaultBody) ctx supply).code))
+            outcome result tokens) := by
+  let endLabel := Structured.LabelSupply.label supply 0
+  let defaultLabel := Structured.LabelSupply.label supply 1
+  let compiledCases :=
+    Structured.SwitchCases.compileFromCtx cases ctx endLabel supply
+      (Structured.LabelSupply.next supply) 0
+  let compiledDefault :=
+    Structured.SwitchDefault.compileFromCtx defaultBody ctx endLabel
+      defaultLabel compiledCases.next
+  let preTests : Assembly.Program := pre ++ scrutinee.toAssembly
+  let sourceAfterScrutinee : Structured.RunState :=
+    source.withEVM evmAfterScrutinee
+  have hFitsSwitch :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (scrutinee.toAssembly ++
+          Structured.Stmt.switchTests supply 0 cases ++
+          [Assembly.Instr.jump defaultLabel] ++
+          compiledCases.code ++ compiledDefault.code ++
+          [Assembly.Instr.label endLabel]) := by
+    simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+      compiledCases, compiledDefault, List.append_assoc] using hFits
+  have hScrutineeFitsAsm :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        scrutinee.toAssembly :=
+    Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+      (first := scrutinee.toAssembly)
+      (second :=
+        Structured.Stmt.switchTests supply 0 cases ++
+          [Assembly.Instr.jump defaultLabel] ++
+          compiledCases.code ++ compiledDefault.code ++
+          [Assembly.Instr.label endLabel])
+      (by simpa [List.append_assoc] using hFitsSwitch)
+  have hScrutineeFits :
+      Structured.Preservation.Code.PCFitsFrom pre scrutinee :=
+    Structured.Preservation.Code.PCFitsFrom.of_assembly hScrutineeFitsAsm
+  have hAfterScrutineeFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom preTests
+        (Structured.Stmt.switchTests supply 0 cases ++
+          [Assembly.Instr.jump defaultLabel] ++
+          compiledCases.code ++ compiledDefault.code ++
+          [Assembly.Instr.label endLabel]) := by
+    simpa [preTests, List.append_assoc] using
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.right (pre := pre)
+        (first := scrutinee.toAssembly)
+        (second :=
+          Structured.Stmt.switchTests supply 0 cases ++
+            [Assembly.Instr.jump defaultLabel] ++
+            compiledCases.code ++ compiledDefault.code ++
+            [Assembly.Instr.label endLabel])
+        (by simpa [List.append_assoc] using hFitsSwitch)
+  have hAfterScrutineeResolve :
+      Structured.Preservation.ContextLabelsResolve
+        (preTests ++
+          (Structured.Stmt.switchTests supply 0 cases ++
+            [Assembly.Instr.jump defaultLabel] ++
+            compiledCases.code ++ compiledDefault.code ++
+            [Assembly.Instr.label endLabel]) ++ post)
+        ctx := by
+    simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+      compiledCases, compiledDefault, preTests, List.append_assoc] using
+        hResolve
+  have hAfterScrutineeExact :
+      Structured.Preservation.ExactLabels
+        (preTests ++
+          (Structured.Stmt.switchTests supply 0 cases ++
+            [Assembly.Instr.jump defaultLabel] ++
+            compiledCases.code ++ compiledDefault.code ++
+            [Assembly.Instr.label endLabel]) ++ post) := by
+    simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+      compiledCases, compiledDefault, preTests, List.append_assoc] using
+        hExact
+  have hScrutineeBase :
+      Code.runWithOracle
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+        (Assembly.Program.byteLength pre) scrutinee source.evm trace =
+          .ok (evmAfterScrutinee, traceAfterScrutinee) := by
+    let asm :=
+      pre ++
+        ((Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+    have hPcIrrel :=
+      Code.runWithOracle_pc_irrel asm
+        (Assembly.Program.byteLength pre) replayPc scrutinee source.evm
+        trace
+    have hScrutineeBaseNested :
+        Code.runWithOracle asm
+          (Assembly.Program.byteLength pre) scrutinee source.evm trace =
+            .ok (evmAfterScrutinee, traceAfterScrutinee) := by
+      rw [hPcIrrel]
+      exact hScrutinee
+    simpa [asm, List.append_assoc] using hScrutineeBaseNested
+  have hStateRun :
+      Code.runStateWithOracle
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+        (Assembly.Program.byteLength pre) scrutinee source trace =
+          .ok (sourceAfterScrutinee, traceAfterScrutinee) := by
+    unfold Code.runStateWithOracle
+    rw [hScrutineeBase]
+    simp [sourceAfterScrutinee]
+  have hScrutineeRunTarget :
+      ARunResultWithOracle
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+        target trace
+        (fun result traceMid =>
+          match result with
+          | .running targetAfterScrutinee =>
+              traceMid = traceAfterScrutinee ∧
+                Structured.Preservation.Frame.StateRel
+                  sourceAfterScrutinee targetAfterScrutinee tokens ∧
+                targetAfterScrutinee.pc =
+                  Assembly.Program.pcAfter preTests
+          | .halted _ => False) := by
+    rcases
+        Code.runStateWithOracle_oracleFrameSafe_hidden_exists
+          (source := source) (final := sourceAfterScrutinee)
+          (target := target) (tokens := tokens) (code := scrutinee)
+          (asm :=
+            pre ++
+              (Structured.Stmt.compileFromCtxCore
+                (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+          (pc := Assembly.Program.byteLength pre)
+          (trace := trace) (trace' := traceAfterScrutinee)
+          hRel hScrutineeFrame hStateRun with
+      ⟨hiddenAfterScrutinee, hHiddenRun, hHiddenRel⟩
+    have hHiddenRun' :
+        Code.runWithOracle
+          (pre ++ scrutinee.toAssembly ++
+            (Structured.Stmt.switchTests supply 0 cases ++
+              [Assembly.Instr.jump defaultLabel] ++
+              compiledCases.code ++ compiledDefault.code ++
+              [Assembly.Instr.label endLabel] ++ post))
+          (Assembly.Program.byteLength pre) scrutinee
+          { source.evm with stack := target.stack } trace =
+            .ok (hiddenAfterScrutinee, traceAfterScrutinee) := by
+      simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+        compiledCases, compiledDefault, List.append_assoc] using hHiddenRun
+    have hData :
+        Structured.Preservation.SameData target
+          { source.evm with stack := target.stack } :=
+      hRel.dataRel
+    rcases
+        Code.runWithOracle_source_runNResultWithOracle_rel_segment
+          (pre := pre)
+          (post :=
+            Structured.Stmt.switchTests supply 0 cases ++
+              [Assembly.Instr.jump defaultLabel] ++
+              compiledCases.code ++ compiledDefault.code ++
+              [Assembly.Instr.label endLabel] ++ post)
+          (code := scrutinee)
+          (source := { source.evm with stack := target.stack })
+          (target := target) (source' := hiddenAfterScrutinee)
+          (trace := trace) (trace' := traceAfterScrutinee)
+          hScrutineeRelSafe hScrutineeFits hPc hData hHiddenRun' with
+      ⟨targetAfterScrutinee, hTargetRun, hFinalData,
+        hPcAfterScrutinee⟩
+    refine
+      ARunResultWithOracle.exact
+        (fuel := scrutinee.length) (state := target)
+        (trace := trace) (trace' := traceAfterScrutinee)
+        (result := .running targetAfterScrutinee)
+        ?_ ?_
+    · simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+        compiledCases, compiledDefault, List.append_assoc] using hTargetRun
+    · exact
+        ⟨rfl,
+          Frame.StateRel.of_sameData_target hHiddenRel hFinalData,
+          by
+            simpa [preTests, List.append_assoc] using
+              hPcAfterScrutinee⟩
+  refine
+    ARunResultWithOracle.bind_running
+      hScrutineeRunTarget ?_
+  intro targetAfterScrutinee traceMid hAfterScrutinee
+  rcases hAfterScrutinee with
+    ⟨hTraceMid, hRelAfterScrutinee, hPcAfterScrutinee⟩
+  subst traceMid
+  have hSelected :=
+    SwitchPreservationWithOracle.selected_cases_result_ctx_of_selected_body_preserves
+      (program := program) (ctx := ctx) (base := supply)
+      (supply := Structured.LabelSupply.next supply)
+      (idx := 0) (cases := cases)
+      (defaultBody := defaultBody) (selected := selected)
+      (pre := preTests) (casePrefix := []) (post := post)
+      (defaultLabel := defaultLabel) (endLabel := endLabel)
+      (fuel := fuel) (source := sourceAfterScrutinee)
+      (outcome := outcome)
+      (target := targetAfterScrutinee)
+      (tokens := tokens) (stack := stack) (value := value)
+      (trace := traceAfterScrutinee)
+      (traceOut := traceOut) (replayPc := replayPc)
+      hSelectedPreserves
+      (by simpa [compiledCases, compiledDefault, List.append_assoc]
+        using hAfterScrutineeFits)
+      (by simpa [compiledCases, compiledDefault, List.append_assoc]
+        using hAfterScrutineeResolve)
+      (by simpa [compiledCases, compiledDefault, List.append_assoc]
+        using hAfterScrutineeExact)
+      hPcAfterScrutinee hRelAfterScrutinee
+      (by simpa [sourceAfterScrutinee] using hPop)
+      hSelect
+      (by
+        simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+          compiledCases, compiledDefault, preTests, sourceAfterScrutinee,
+          List.append_assoc] using hBodyRun)
+  simpa [Structured.Stmt.compileFromCtxCore, endLabel, defaultLabel,
+    compiledCases, compiledDefault, preTests, List.append_assoc] using
+    hSelected
+
 theorem preserves_switch {program : Structured.Program}
     {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
     {scrutinee : Structured.Code}
