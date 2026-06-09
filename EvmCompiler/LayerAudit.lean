@@ -707,6 +707,9 @@ abbrev structuredReplayStmtPreservationWithOraclePreservesLeave :=
 abbrev structuredReplayStmtPreservationWithOraclePreservesTerminal :=
   @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_terminal
 
+abbrev structuredReplayStmtPreservationWithOraclePreservesIfFalseOfCondition :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if_false_of_condition
+
 abbrev structuredReplayStmtPreservationWithOraclePreservesIf :=
   @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if
 

@@ -12819,6 +12819,258 @@ theorem preserves_terminal {program : Structured.Program}
               ⟨rfl, tokens, by
                 simpa [Structured.RunState.withEVM] using hTargetRel⟩⟩
 
+theorem preserves_if_false_of_condition {program : Structured.Program}
+    {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
+    {cond : Structured.Code} {body : Structured.Block}
+    {pre post : Assembly.Program} {source stateAfterCond : Structured.RunState}
+    {target : EVMState} {tokens : List Word}
+    {trace traceAfterCond : Trace} {replayPc : Nat}
+    (hCondRelSafe : Code.OracleRelSafe cond)
+    (hCondFrame : Code.OracleFrameSafe cond)
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+          supply).code)
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+            supply).code ++ post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hCondRun :
+      Code.runConditionWithOracle
+          (pre ++
+            ((Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+              supply).code ++ post))
+          replayPc cond source trace =
+        .ok (stateAfterCond, false, traceAfterCond)) :
+    ARunResultWithOracle
+      (pre ++
+        (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+          supply).code ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceAfterCond ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+                supply).code ++ post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+                  supply).code))
+            (Structured.Outcome.regular stateAfterCond) result tokens) := by
+  let bodyLabel := Structured.LabelSupply.label supply 0
+  let endLabel := Structured.LabelSupply.label supply 1
+  let compiledBody :=
+    Structured.Block.compileFromCtx body ctx
+      (Structured.LabelSupply.next supply)
+  let preAfterJumpi : Assembly.Program :=
+    pre ++ cond.toAssembly ++ [Assembly.Instr.jumpi bodyLabel]
+  let preBodyLabel : Assembly.Program :=
+    pre ++ cond.toAssembly ++
+      [Assembly.Instr.jumpi bodyLabel, Assembly.Instr.jump endLabel]
+  let preEndLabel : Assembly.Program :=
+    pre ++ cond.toAssembly ++
+      [ Assembly.Instr.jumpi bodyLabel
+      , Assembly.Instr.jump endLabel
+      , Assembly.Instr.label bodyLabel
+      ] ++
+      compiledBody.code
+  have hFitsIf :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (cond.toAssembly ++
+          [ Assembly.Instr.jumpi bodyLabel
+          , Assembly.Instr.jump endLabel
+          , Assembly.Instr.label bodyLabel
+          ] ++
+          compiledBody.code ++ [Assembly.Instr.label endLabel]) := by
+    simpa [Structured.Stmt.compileFromCtxCore, bodyLabel, endLabel,
+      compiledBody] using hFits
+  have hCondAsmFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        cond.toAssembly :=
+    Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+      (first := cond.toAssembly)
+      (second :=
+        [ Assembly.Instr.jumpi bodyLabel
+        , Assembly.Instr.jump endLabel
+        , Assembly.Instr.label bodyLabel
+        ] ++ compiledBody.code ++ [Assembly.Instr.label endLabel])
+      (by simpa [List.append_assoc] using hFitsIf)
+  have hCondFits :
+      Structured.Preservation.Code.PCFitsFrom pre cond :=
+    Structured.Preservation.Code.PCFitsFrom.of_assembly hCondAsmFits
+  have hJumpEndFit : Structured.Preservation.PCFits preAfterJumpi := by
+    have hPrefix :
+        Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+          (cond.toAssembly ++ [Assembly.Instr.jumpi bodyLabel]) :=
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+        (first := cond.toAssembly ++ [Assembly.Instr.jumpi bodyLabel])
+        (second :=
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label bodyLabel] ++
+            compiledBody.code ++ [Assembly.Instr.label endLabel])
+        (by simpa [List.append_assoc] using hFitsIf)
+    simpa [preAfterJumpi, List.append_assoc] using
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+  have hEndLabelFit : Structured.Preservation.PCFits preEndLabel := by
+    have hPrefix :
+        Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+          (cond.toAssembly ++
+            [ Assembly.Instr.jumpi bodyLabel
+            , Assembly.Instr.jump endLabel
+            , Assembly.Instr.label bodyLabel
+            ] ++ compiledBody.code) :=
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+        (first :=
+          cond.toAssembly ++
+            [ Assembly.Instr.jumpi bodyLabel
+            , Assembly.Instr.jump endLabel
+            , Assembly.Instr.label bodyLabel
+            ] ++ compiledBody.code)
+        (second := [Assembly.Instr.label endLabel])
+        (by simpa [List.append_assoc] using hFitsIf)
+    simpa [preEndLabel, List.append_assoc] using
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+  have hExactIf :
+      Structured.Preservation.ExactLabels
+        (pre ++ cond.toAssembly ++
+          [ Assembly.Instr.jumpi bodyLabel
+          , Assembly.Instr.jump endLabel
+          , Assembly.Instr.label bodyLabel
+          ] ++
+          compiledBody.code ++ [Assembly.Instr.label endLabel] ++ post) := by
+    simpa [Structured.Stmt.compileFromCtxCore, bodyLabel, endLabel,
+      compiledBody, List.append_assoc] using hExact
+  have hBodyLabel :
+      Assembly.Program.labelPc
+          (pre ++ cond.toAssembly ++
+            [Assembly.Instr.jumpi bodyLabel] ++
+            ([Assembly.Instr.jump endLabel, Assembly.Instr.label bodyLabel] ++
+              compiledBody.code ++ [Assembly.Instr.label endLabel] ++ post))
+          bodyLabel =
+        some (Assembly.Program.byteLength preBodyLabel) := by
+    have hHere :=
+      hExactIf.labelPc_at preBodyLabel bodyLabel
+        (compiledBody.code ++ [Assembly.Instr.label endLabel] ++ post)
+        (by simp [preBodyLabel, List.append_assoc])
+    simpa [preBodyLabel, List.append_assoc] using hHere
+  have hEndLabel :
+      Assembly.Program.labelPc
+          (preAfterJumpi ++ [Assembly.Instr.jump endLabel] ++
+            ([Assembly.Instr.label bodyLabel] ++ compiledBody.code) ++
+            [Assembly.Instr.label endLabel] ++ post)
+          endLabel =
+        some (Assembly.Program.byteLength preEndLabel) := by
+    have hHere :=
+      hExactIf.labelPc_at preEndLabel endLabel post
+        (by simp [preEndLabel, List.append_assoc])
+    simpa [preAfterJumpi, preEndLabel, List.append_assoc] using hHere
+  have hCondRunBase :
+      Code.runConditionWithOracle
+        (pre ++ cond.toAssembly ++ [Assembly.Instr.jumpi bodyLabel] ++
+          ([Assembly.Instr.jump endLabel, Assembly.Instr.label bodyLabel] ++
+            compiledBody.code ++ [Assembly.Instr.label endLabel] ++ post))
+        (Assembly.Program.byteLength pre) cond source trace =
+        .ok (stateAfterCond, false, traceAfterCond) := by
+    let asm :=
+      pre ++
+        ((Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+          supply).code ++ post)
+    have hPcIrrel :=
+      Code.runConditionWithOracle_pc_irrel asm
+        (Assembly.Program.byteLength pre) replayPc cond source trace
+    have hCondRunAsmBase :
+        Code.runConditionWithOracle asm
+          (Assembly.Program.byteLength pre) cond source trace =
+        .ok (stateAfterCond, false, traceAfterCond) := by
+      rw [hPcIrrel]
+      exact hCondRun
+    simpa [asm, Structured.Stmt.compileFromCtxCore, bodyLabel, endLabel,
+      compiledBody, List.append_assoc] using hCondRunAsmBase
+  have hCondJump :=
+    Frame.StateRel.runConditionWithOracle_jumpi_result_ctx
+      (code := cond) (label := bodyLabel)
+      (dest := Assembly.Program.byteLength preBodyLabel)
+      (pre := pre)
+      (post :=
+        [Assembly.Instr.jump endLabel, Assembly.Instr.label bodyLabel] ++
+          compiledBody.code ++ [Assembly.Instr.label endLabel] ++ post)
+      hCondRelSafe hCondFrame hCondFits hPc hRel hBodyLabel
+      (by simpa using hCondRunBase)
+  have hCondFalse :
+      ARunResultWithOracle
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore (.if_ cond body) ctx
+            supply).code ++ post)
+        target trace
+        (fun result traceMid =>
+          match result with
+          | .running targetAfterCond =>
+              traceMid = traceAfterCond ∧
+                Structured.Preservation.Frame.StateRel
+                  stateAfterCond targetAfterCond tokens ∧
+                targetAfterCond.pc =
+                  Assembly.Program.pcAfter preAfterJumpi
+          | .halted _ => False) := by
+    exact ARunResultWithOracle.mono
+      (by
+        simpa [Structured.Stmt.compileFromCtxCore, bodyLabel,
+          endLabel, compiledBody, preAfterJumpi, List.append_assoc]
+          using hCondJump)
+      (by
+        intro result traceMid hResult
+        rcases hResult with ⟨hTraceEq, hResult⟩
+        cases result with
+        | halted halt =>
+            exact hResult
+        | running targetAfterCond =>
+            exact
+              ⟨hTraceEq, by simpa [preAfterJumpi] using hResult⟩)
+  refine ARunResultWithOracle.bind_running hCondFalse ?_
+  intro targetAfterCond traceMid hAfterCond
+  rcases hAfterCond with
+    ⟨hTraceMid, hRelAfterCond, hPcAfterCond⟩
+  subst traceMid
+  have hJumpEnd :=
+    Frame.StateRel.jump_then_label_runResultWithOracle_at
+      (label := endLabel) (pre := preAfterJumpi)
+      (between :=
+        [Assembly.Instr.label bodyLabel] ++ compiledBody.code)
+      (post := post) (source := stateAfterCond)
+      (target := targetAfterCond) (tokens := tokens)
+      (trace := traceAfterCond)
+      hJumpEndFit
+      (by simpa [preAfterJumpi, preEndLabel, List.append_assoc]
+        using hEndLabelFit)
+      hPcAfterCond hRelAfterCond
+      (by simpa [preAfterJumpi, preEndLabel, List.append_assoc]
+        using hEndLabel)
+  exact ARunResultWithOracle.mono
+    (by
+      simpa [Structured.Stmt.compileFromCtxCore, bodyLabel,
+        endLabel, compiledBody, preAfterJumpi, preEndLabel,
+        List.append_assoc] using hJumpEnd)
+    (by
+      intro result traceFinal hResult
+      rcases hResult with ⟨hTraceFinal, hResult⟩
+      exact
+        ⟨hTraceFinal,
+          by
+            cases result with
+            | halted halt =>
+                exact hResult
+            | running targetFinal =>
+                simpa [Structured.Stmt.compileFromCtxCore,
+                  bodyLabel, endLabel, compiledBody,
+                  preAfterJumpi, preEndLabel,
+                  Structured.Preservation.CompiledOutcomeRel,
+                  Structured.Outcome.regular, List.append_assoc]
+                  using hResult⟩)
+
 theorem preserves_if {program : Structured.Program}
     {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
     {cond : Structured.Code} {body : Structured.Block}
