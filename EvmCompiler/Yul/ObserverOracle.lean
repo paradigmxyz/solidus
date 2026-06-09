@@ -14086,6 +14086,95 @@ theorem preserves_if {program : Structured.Program}
                                   Structured.Outcome.halt,
                                     List.append_assoc] using hCompiled⟩)
 
+theorem preserves_switch_none_of_scrutinee {program : Structured.Program}
+    {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {pre post : Assembly.Program}
+    {source : Structured.RunState} {evmAfterScrutinee : EVMState}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceAfterScrutinee : Trace} {replayPc : Nat}
+    (hScrutineeRelSafe : Code.OracleRelSafe scrutinee)
+    (hScrutineeFrame : Code.OracleFrameSafe scrutinee)
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        (Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code)
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+          post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hScrutinee :
+      Code.runWithOracle
+        (pre ++
+          ((Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++
+            post))
+        replayPc scrutinee source.evm trace =
+          .ok (evmAfterScrutinee, traceAfterScrutinee))
+    (hPop : evmAfterScrutinee.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody = none) :
+    ARunResultWithOracle
+      (pre ++
+        (Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceAfterScrutinee ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              (Structured.Stmt.compileFromCtxCore
+                (.switch scrutinee cases defaultBody) ctx supply).code ++
+              post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                (Structured.Stmt.compileFromCtxCore
+                  (.switch scrutinee cases defaultBody) ctx supply).code))
+            (Structured.Outcome.regular
+              (source.withEVM { evmAfterScrutinee with stack := stack }))
+            result tokens) := by
+  have hScrutineeBase :
+      Code.runWithOracle
+        (pre ++
+          (Structured.Stmt.compileFromCtxCore
+            (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+        (Assembly.Program.byteLength pre) scrutinee source.evm trace =
+          .ok (evmAfterScrutinee, traceAfterScrutinee) := by
+    let asm :=
+      pre ++
+        ((Structured.Stmt.compileFromCtxCore
+          (.switch scrutinee cases defaultBody) ctx supply).code ++ post)
+    have hPcIrrel :=
+      Code.runWithOracle_pc_irrel asm
+        (Assembly.Program.byteLength pre) replayPc scrutinee source.evm
+        trace
+    have hScrutineeBaseNested :
+        Code.runWithOracle asm
+          (Assembly.Program.byteLength pre) scrutinee source.evm trace =
+            .ok (evmAfterScrutinee, traceAfterScrutinee) := by
+      rw [hPcIrrel]
+      exact hScrutinee
+    simpa [asm, List.append_assoc] using hScrutineeBaseNested
+  exact
+    SwitchPreservationWithOracle.switch_none_result_ctx
+      (ctx := ctx) (supply := supply) (scrutinee := scrutinee)
+      (cases := cases) (defaultBody := defaultBody) (source := source)
+      (evmAfterScrutinee := evmAfterScrutinee) (target := target)
+      (tokens := tokens) (stack := stack) (value := value)
+      (pre := pre) (post := post) (trace := trace)
+      (traceAfterScrutinee := traceAfterScrutinee)
+      hScrutineeRelSafe hScrutineeFrame hFits hExact hPc hRel
+      hScrutineeBase hPop hSelect
+
 theorem preserves_switch {program : Structured.Program}
     {ctx : Structured.CompileContext} {supply : Structured.LabelSupply}
     {scrutinee : Structured.Code}

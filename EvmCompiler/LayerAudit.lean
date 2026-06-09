@@ -716,6 +716,9 @@ abbrev structuredReplayStmtPreservationWithOraclePreservesIfTrueOfConditionBodyR
 abbrev structuredReplayStmtPreservationWithOraclePreservesIf :=
   @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_if
 
+abbrev structuredReplayStmtPreservationWithOraclePreservesSwitchNoneOfScrutinee :=
+  @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_switch_none_of_scrutinee
+
 abbrev structuredReplayStmtPreservationWithOraclePreservesSwitch :=
   @Yul.ObserverOracle.StructuredReplay.StmtPreservationWithOracle.preserves_switch
 
