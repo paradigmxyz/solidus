@@ -10227,6 +10227,335 @@ theorem default_some_tail_result_ctx {program : Structured.Program}
                           Structured.Outcome.halt, List.append_assoc]
                           using hCompiled⟩)
 
+theorem default_selected_tail_result_ctx_of_body_tail_run
+    {ctx : Structured.CompileContext}
+    {bodySupply : Structured.LabelSupply} {body : Structured.Block}
+    {pre between post : Assembly.Program}
+    {defaultLabel endLabel : Assembly.Label}
+    {source : Structured.RunState}
+    {outcome : Structured.Outcome}
+    {target : EVMState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    {trace traceOut : Trace}
+    (hFits :
+      Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+        ([Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel]))
+    (hExact :
+      Structured.Preservation.ExactLabels
+        (pre ++
+          ([Assembly.Instr.jump defaultLabel] ++ between ++
+            [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+            (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+            [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel]) ++
+          post))
+    (hPc : target.pc = Assembly.Program.pcAfter pre)
+    (hRel :
+      Structured.Preservation.Frame.StateRel source target tokens)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hTail :
+      ∀ targetAfterPop,
+        Structured.Preservation.Frame.StateRel
+          (source.withEVM { source.evm with stack := stack })
+          targetAfterPop tokens →
+        targetAfterPop.pc =
+          Assembly.Program.pcAfter
+            (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+              [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop]) →
+        ARunResultWithOracle
+          (pre ++
+            ([Assembly.Instr.jump defaultLabel] ++ between ++
+              [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+              (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+              [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel]) ++
+            post)
+          targetAfterPop trace
+          (fun result traceFinal =>
+            traceFinal = traceOut ∧
+              Structured.Preservation.CompiledOutcomeRel
+                (pre ++
+                  ([Assembly.Instr.jump defaultLabel] ++ between ++
+                    [ Assembly.Instr.label defaultLabel
+                    , Assembly.Instr.prim .pop ] ++
+                    (Structured.Block.compileFromCtx body ctx
+                      bodySupply).code ++
+                    [ Assembly.Instr.jump endLabel
+                    , Assembly.Instr.label endLabel ]) ++
+                  post)
+                ctx
+                (Assembly.Program.pcAfter
+                  (pre ++
+                    ([Assembly.Instr.jump defaultLabel] ++ between ++
+                      [ Assembly.Instr.label defaultLabel
+                      , Assembly.Instr.prim .pop ] ++
+                      (Structured.Block.compileFromCtx body ctx
+                        bodySupply).code ++
+                      [ Assembly.Instr.jump endLabel
+                      , Assembly.Instr.label endLabel ])))
+                outcome result tokens)) :
+    ARunResultWithOracle
+      (pre ++
+        ([Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel]) ++
+        post)
+      target trace
+      (fun result traceFinal =>
+        traceFinal = traceOut ∧
+          Structured.Preservation.CompiledOutcomeRel
+            (pre ++
+              ([Assembly.Instr.jump defaultLabel] ++ between ++
+                [ Assembly.Instr.label defaultLabel
+                , Assembly.Instr.prim .pop ] ++
+                (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+                [ Assembly.Instr.jump endLabel
+                , Assembly.Instr.label endLabel ]) ++
+              post)
+            ctx
+            (Assembly.Program.pcAfter
+              (pre ++
+                ([Assembly.Instr.jump defaultLabel] ++ between ++
+                  [ Assembly.Instr.label defaultLabel
+                  , Assembly.Instr.prim .pop ] ++
+                  (Structured.Block.compileFromCtx body ctx bodySupply).code ++
+                  [ Assembly.Instr.jump endLabel
+                  , Assembly.Instr.label endLabel ])))
+            outcome result tokens) := by
+  let compiledBody := Structured.Block.compileFromCtx body ctx bodySupply
+  let preDefault : Assembly.Program :=
+    pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+      [Assembly.Instr.label defaultLabel]
+  let preBody : Assembly.Program :=
+    preDefault ++ [Assembly.Instr.prim .pop]
+  have hFitJumpDefault : Structured.Preservation.PCFits pre :=
+    Structured.Preservation.AssemblyProgram.PCFitsFrom.start hFits
+  have hFitDefaultLabel :
+      Structured.Preservation.PCFits
+        (pre ++ [Assembly.Instr.jump defaultLabel] ++ between) := by
+    have hPrefix :
+        Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+          ([Assembly.Instr.jump defaultLabel] ++ between) :=
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+        (first := [Assembly.Instr.jump defaultLabel] ++ between)
+        (second :=
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+            compiledBody.code ++
+            [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel])
+        (by simpa [compiledBody, List.append_assoc] using hFits)
+    simpa [List.append_assoc] using
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+  have hFitPop :
+      Structured.Preservation.PCFits preDefault := by
+    have hPrefix :
+        Structured.Preservation.AssemblyProgram.PCFitsFrom pre
+          ([Assembly.Instr.jump defaultLabel] ++ between ++
+            [Assembly.Instr.label defaultLabel]) :=
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.left (pre := pre)
+        (first :=
+          [Assembly.Instr.jump defaultLabel] ++ between ++
+            [Assembly.Instr.label defaultLabel])
+        (second :=
+          [Assembly.Instr.prim .pop] ++ compiledBody.code ++
+            [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel])
+        (by simpa [compiledBody, List.append_assoc] using hFits)
+    simpa [preDefault, List.append_assoc] using
+      Structured.Preservation.AssemblyProgram.PCFitsFrom.end hPrefix
+  have hDefaultLabel :
+      Assembly.Program.labelPc
+          (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+            [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+            compiledBody.code ++
+            [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+            post)
+          defaultLabel =
+        some
+          (Assembly.Program.byteLength
+            (pre ++ [Assembly.Instr.jump defaultLabel] ++ between)) := by
+    have hHere :=
+      hExact.labelPc_at
+        (pre ++ [Assembly.Instr.jump defaultLabel] ++ between)
+        defaultLabel
+        ([Assembly.Instr.prim .pop] ++ compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+        (by simp [compiledBody, List.append_assoc])
+    simpa [compiledBody, List.append_assoc] using hHere
+  have hDefaultRun :=
+    Frame.StateRel.jump_then_label_runResultWithOracle_at
+      (label := defaultLabel) (pre := pre) (between := between)
+      (post :=
+        [Assembly.Instr.prim .pop] ++ compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+      (trace := trace)
+      hFitJumpDefault
+      (by simpa [List.append_assoc] using hFitDefaultLabel)
+      hPc hRel
+      (by simpa [compiledBody, List.append_assoc] using hDefaultLabel)
+  have hDefaultRunBind :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+        target trace
+        (fun result traceMid =>
+          match result with
+          | .running targetAtDefault =>
+              traceMid = trace ∧
+                Structured.Preservation.Frame.StateRel source
+                  targetAtDefault tokens ∧
+                targetAtDefault.pc =
+                  Assembly.Program.pcAfter preDefault
+          | .halted _ => False) := by
+    refine
+      ARunResultWithOracle.mono
+        (post₁ := fun result traceFinal =>
+          traceFinal = trace ∧
+            match result with
+            | .running targetAtDefault =>
+                Structured.Preservation.Frame.StateRel source
+                  targetAtDefault tokens ∧
+                targetAtDefault.pc =
+                  Assembly.Program.pcAfter preDefault
+            | .halted _ => False)
+        (post₂ := fun result traceMid =>
+          match result with
+          | .running targetAtDefault =>
+              traceMid = trace ∧
+                Structured.Preservation.Frame.StateRel source
+                  targetAtDefault tokens ∧
+                targetAtDefault.pc =
+                  Assembly.Program.pcAfter preDefault
+          | .halted _ => False)
+        ?_ ?_
+    · simpa [preDefault, compiledBody, List.append_assoc]
+        using hDefaultRun
+    · intro result traceMid hResult
+      rcases hResult with ⟨hTraceMid, hResult⟩
+      cases result with
+      | halted halt =>
+          exact hResult
+      | running targetAtDefault =>
+          exact ⟨hTraceMid, hResult⟩
+  suffices hMain :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+        target trace
+        (fun result traceFinal =>
+          traceFinal = traceOut ∧
+            Structured.Preservation.CompiledOutcomeRel
+              (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+                [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+                compiledBody.code ++
+                [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+                post)
+              ctx
+              (Assembly.Program.pcAfter
+                (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+                  [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+                  compiledBody.code ++
+                  [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel]))
+              outcome result tokens) by
+    simpa [compiledBody, List.append_assoc] using hMain
+  refine
+    ARunResultWithOracle.bind_running
+      (program :=
+        pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+      hDefaultRunBind ?_
+  intro targetAtDefault traceMid hAtDefault
+  rcases hAtDefault with ⟨hTraceMid, hRelAtDefault, hPcAtDefault⟩
+  subst traceMid
+  have hPopRun :=
+    Frame.StateRel.pop_runResultWithOracle_at
+      (pre := preDefault)
+      (post :=
+        compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+      (source := source) (target := targetAtDefault) (tokens := tokens)
+      (stack := stack) (value := value) (trace := trace)
+      hFitPop hPcAtDefault hRelAtDefault hPop
+  have hPopRunBind :
+      ARunResultWithOracle
+        (pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+        targetAtDefault trace
+        (fun result traceAfterPop =>
+          match result with
+          | .running targetAfterPop =>
+              traceAfterPop = trace ∧
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+          | .halted _ => False) := by
+    refine
+      ARunResultWithOracle.mono
+        (post₁ := fun result traceFinal =>
+          traceFinal = trace ∧
+            match result with
+            | .running targetAfterPop =>
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+            | .halted _ => False)
+        (post₂ := fun result traceAfterPop =>
+          match result with
+          | .running targetAfterPop =>
+              traceAfterPop = trace ∧
+                Structured.Preservation.Frame.StateRel
+                  (source.withEVM { source.evm with stack := stack })
+                  targetAfterPop tokens ∧
+                targetAfterPop.pc =
+                  Assembly.Program.pcAfter preBody
+          | .halted _ => False)
+        ?_ ?_
+    · simpa [preDefault, preBody, compiledBody, List.append_assoc]
+        using hPopRun
+    · intro result traceAfterPop hResult
+      rcases hResult with ⟨hTraceAfterPop, hResult⟩
+      cases result with
+      | halted halt =>
+          exact hResult
+      | running targetAfterPop =>
+          exact ⟨hTraceAfterPop, hResult⟩
+  refine
+    ARunResultWithOracle.bind_running
+      (program :=
+        pre ++ [Assembly.Instr.jump defaultLabel] ++ between ++
+          [Assembly.Instr.label defaultLabel, Assembly.Instr.prim .pop] ++
+          compiledBody.code ++
+          [Assembly.Instr.jump endLabel, Assembly.Instr.label endLabel] ++
+          post)
+      hPopRunBind ?_
+  intro targetAfterPop traceAfterPop hAfterPop
+  rcases hAfterPop with ⟨hTraceAfterPop, hRelAfterPop, hPcAfterPop⟩
+  subst traceAfterPop
+  simpa [compiledBody, List.append_assoc] using
+    hTail targetAfterPop hRelAfterPop
+      (by
+        simpa [preDefault, preBody, List.append_assoc]
+          using hPcAfterPop)
+
 theorem default_selected_tail_result_ctx {program : Structured.Program}
     {ctx : Structured.CompileContext}
     {bodySupply : Structured.LabelSupply} {body : Structured.Block}
