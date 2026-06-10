@@ -14455,6 +14455,68 @@ theorem compileSwitchFallbackWithSwitchFallback?_eq_some_components
                             hScrutineeCode, hCases, hDefault, rfl⟩
       · simp [hStack] at hCompile
 
+theorem compileIfFallbackWithSwitchFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {cond : Expr 1} {body : Block} {plan : Plan}
+    (hCompile :
+      compileIfFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout cond body =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  rcases compileIfFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, condCode, bodyRaw, bodyPlan, hEntry, _hEntryStack,
+      _hCondSafe, _hCondCode, _hBodyCompile, _hBodyNorm, _hBodyOk,
+      hPlan⟩
+  have hInitialReferenceWF :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout) := by
+    simpa [hReference] using hReferenceLayout
+  have hEntryReference :
+      SpillLayout.restrictToScope scope entry.layout = referenceLayout :=
+    (normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+      hEntry hInitialReferenceWF).trans hReference.symm
+  subst plan
+  exact hEntryReference
+
+theorem compileSwitchFallbackWithSwitchFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {scrutinee : Expr 1} {cases : List (Word × Block)}
+    {defaultBody : Option Block} {plan : Plan}
+    (hCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  rcases
+      compileSwitchFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, scrutineeCode, compiledCases, compiledDefault, hEntry,
+      _hEntryStack, _hScrutineeSafe, _hScrutineeCode, _hCases,
+      _hDefault, hPlan⟩
+  have hInitialReferenceWF :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout) := by
+    simpa [hReference] using hReferenceLayout
+  have hEntryReference :
+      SpillLayout.restrictToScope scope entry.layout = referenceLayout :=
+    (normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+      hEntry hInitialReferenceWF).trans hReference.symm
+  subst plan
+  exact hEntryReference
+
 theorem compileForFallbackWithSwitchFallback?_eq_some_components
     {range : ScratchRange} {program : Program}
     {handlers : FallbackHandlers} {returns : List Name}
@@ -47021,6 +47083,72 @@ theorem compileStmtWithSwitchFallback?_if_regular_sound_meta_exact_of_fallback_d
                         Source.Outcome.regular] at hSourceRun
                       cases hSourceRun.1
 
+theorem compileStmtWithSwitchFallback?_if_regular_sound_meta_exact_reference_of_fallback_dispatcher_inputs_pred
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {handlerScope : List Name} {cond : Expr 1} {body : Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {bodyFuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.if_ cond body) =
+        some plan)
+    (hFallback :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+          (.if_ cond body) =
+        none)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx (bodyFuel + 1) (.if_ cond body) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow bodyFuel range program returns
+        exprProgram) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+  have hFallbackCompile :
+      compileIfFallbackWithSwitchFallback? range program returns handlers
+          sourceScope stackLayout layout cond body =
+        some plan := by
+    simpa [compileStmtWithSwitchFallback?, hFallback] using hCompile
+  have hPlanReference :
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout :=
+    compileIfFallbackWithSwitchFallback?_restrictToScope_eq_of_reference_wf
+      hFallbackCompile hReference hReferenceLayout
+  rcases
+      compileStmtWithSwitchFallback?_if_regular_sound_meta_exact_of_fallback_dispatcher_inputs_pred
+        hSpec hWordBytes hCompile hFallback hScope hRel hDefined hLength
+        hSourceRun hInputs with
+    ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+      hFinalLength, hScopeAfter⟩
+  exact
+    ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+      hFinalLength, hScopeAfter, hPlanReference⟩
+
 theorem compileStmtWithSwitchFallback?_if_regular_sound_meta_exact_of_fallback_regular_sound_below
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -50321,6 +50449,74 @@ theorem compileStmtWithSwitchFallback?_switch_regular_sound_meta_exact_of_fallba
                       simp [hEval, hSelect, hScoped, Source.Outcome.halt,
                         Source.Outcome.regular] at hSourceRun
                       cases hSourceRun.1
+
+theorem compileStmtWithSwitchFallback?_switch_regular_sound_meta_exact_reference_of_fallback_dispatcher_inputs_pred
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {handlerScope : List Name} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {bodyFuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.switch scrutinee cases defaultBody) =
+        some plan)
+    (hFallback :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+          (.switch scrutinee cases defaultBody) =
+        none)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx (bodyFuel + 1) (.switch scrutinee cases defaultBody)
+          source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow bodyFuel range program returns
+        exprProgram) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+  have hFallbackCompile :
+      compileSwitchFallbackWithSwitchFallback? range program returns handlers
+          sourceScope stackLayout layout scrutinee cases defaultBody =
+        some plan := by
+    simpa [compileStmtWithSwitchFallback?, hFallback] using hCompile
+  have hPlanReference :
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout :=
+    compileSwitchFallbackWithSwitchFallback?_restrictToScope_eq_of_reference_wf
+      hFallbackCompile hReference hReferenceLayout
+  rcases
+      compileStmtWithSwitchFallback?_switch_regular_sound_meta_exact_of_fallback_dispatcher_inputs_pred
+        hSpec hWordBytes hCompile hFallback hScope hRel hDefined hLength
+        hSourceRun hInputs with
+    ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+      hFinalLength, hScopeAfter⟩
+  exact
+    ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+      hFinalLength, hScopeAfter, hPlanReference⟩
 
 theorem compileStmtWithSwitchFallback?_switch_regular_sound_meta_exact_of_fallback_regular_sound_below
     (hSpec : ZeroPaddingSpec)
