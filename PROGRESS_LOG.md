@@ -27475,3 +27475,38 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - 2026-06-10 14:23 PDT - compaction-resume/allocated-typedcfg-verification: resumed after introducing scoped ProgramPlan allocation, the generic allocation lowerer, mandatory LoweredFrom certificates, and the AllocatedTypedCfg certified pass; polling the full build, layer verification, contract smokes, and Python regression suite before updating roadmap completion.
 - 2026-06-10 14:27 PDT - architecture-refactor/allocated-typedcfg-checkpoint - completed and verified the scoped allocation/public lowering checkpoint: `PlannedProgram` now carries Functions source plus `ProgramPlan`; the generic allocation lowerer and mandatory `LoweredFrom` relation certify plan consumption; successful metadata carries allocation, TypedCfg, and combined allocated-CFG certificates; and the public path runs through the checked `AllocatedTypedCfg` pass. Verification passed: architecture checks, the 1,153-job full Lean build, the 1,115-job TypedCfg layer, 244 Python tests, Aave v3 smoke, Permit2 smoke and call comparisons, and `git diff --check` at the pre-documentation checkpoint. Remaining architecture gaps are pure planner-before-emission internals, plan-derived CFG locations/shapes, semantic preservation, generic effect/outcome completion, and legacy deletion.
 - 2026-06-10 14:38 PDT - architecture-refactor/scratch-frame-plan-first - extracted a code-free scratch-frame allocation traversal that computes exact global frame size and main/function/nested lexical slot bindings, exposed it through the shared `Allocation.Planner`, and added a shared-interface lowerer that consumes the source-derived canonical plan, emits functions/main once, checks resulting allocation states against the recipe, and rejects altered allocation. Rewired the public Objects scratch fallback away from the historical probe/recompile compiler and added architecture guards against restoring it. Added lexical `ScopeId` ownership and a checked fixture proving a nested block local is published at `.lexical .main 0` with its exact scratch slot. Executable Lean regressions also cover exact four-word planning, insufficient-frame rejection, successful planned lowering, and allocation-drift rejection. Focused ScratchFrameSpill, allocator (1,146 jobs), and public (1,153 jobs) builds, architecture/diff checks, Aave v3 smoke, and Permit2 smoke/call comparisons passed with the known legacy SignatureVerification `live_layout_to_locals` diagnostic unchanged. Remaining allocator gaps are the emitter-derived call-aware planner and the ordinary/live family migration.
+## 2026-06-10 - Compaction resume: TypedCfg preservation audit
+
+- Resumed from checkpoint `57b0bece3` after the plan-first scratch-frame cutover.
+- Continuing the active goal with the TypedCfg-to-Assembly semantic preservation corridor: audit target PC/label semantics, state the narrowest true adjacent theorem, then connect it to generated certificates before returning to call-aware allocation and legacy deletion.
+
+## 2026-06-10 15:12 PDT - TypedCfg executable invariants and instruction preservation
+
+- theorem-boundary: audited the real Assembly fetch/PC semantics before stating
+  preservation. Raw CFG/Assembly state equality is only meaningful when the
+  lowered prefix fits in 256-bit PC space and execution starts at that prefix's
+  `pcAfter`.
+- correctness: `Program.lower?` now extracts and emits the declared entry block
+  first instead of silently treating list order as the executable entry.
+- correctness: return-dispatch sites now carry explicit case labels. Structured
+  CFG generation allocates those labels from the unwrapped label supply, and
+  `WellTyped` rejects collisions across block labels and internal dispatch
+  labels.
+- correctness: CFG `unwind` now executes repeated `POP` semantics and reports
+  runtime stack underflow exactly like its lowered Assembly, rather than
+  silently truncating a short stack.
+- certificate: successful TypedCfg certification now checks Assembly
+  acceptedness and `Program.PCFits`, with generated theorems exposing both
+  facts from `compileCertified?`.
+- proof: added `TypedCfg.Preservation.Instr.lowerAt_source_runN`, covering
+  pushes, return tokens, all primitives, pop, all 16 DUP/SWAP depths, and
+  arbitrary unwind counts against fetched `Assembly.Source.runN`.
+- regression: added `proof_artifacts/typedcfg_lowering_invariants_smoke.lean`
+  for entry reordering, valid dispatch certification, dispatch-label collision
+  rejection, and target acceptedness/PC-fit projections.
+- verification: focused `EvmCompiler.TypedCfg.Preservation`, the 1,117-job
+  TypedCfg layer, the 1,155-job public spine, the 1,195-job legacy aggregate,
+  architecture checks, proof-hole search, and `git diff --check` pass.
+- next theorem boundary: compose instruction runs into block bodies after
+  proving the successful typeable-primitive PC advancement law, then prove
+  terminator outcome simulation.

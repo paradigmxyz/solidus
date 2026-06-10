@@ -112,7 +112,7 @@ def certificate (term : Terminator) (shape : Shape) : FragmentCert where
     | .jumpi _ _ => 0
     | .returnDispatch _ _ => 2
     | _ => 0
-  definedLabels := []
+  definedLabels := term.definedLabels
   referencedLabels := term.targets
   mayHalt :=
     match term with
@@ -136,7 +136,9 @@ def certificate? (block : Block) : Option FragmentCert := do
   if body.exit = block.output then
     let term := block.term.certificate block.output
     let cert ← body.seq? term
-    some { cert with definedLabels := [block.label] }
+    some
+      { cert with
+        definedLabels := block.label :: cert.definedLabels }
   else
     none
 
@@ -187,6 +189,11 @@ def compileCertified? (program : Program) : Option CertifiedArtifact := do
   if program.wellTyped? then pure () else none
   let metadata ← program.certificate?
   let target ← program.lower?
+  if target.accepted then pure () else none
+  if decide target.PCFits then
+    pure ()
+  else
+    none
   some { target := target, metadata := metadata }
 
 def compilePass :
@@ -215,9 +222,14 @@ theorem compileCertified?_target {program : Program}
         | none =>
             simp [hCert, hLower] at hCompile
         | some target =>
-            simp [hCert, hLower] at hCompile
-            cases hCompile
-            simpa using hLower
+            by_cases hAccepted : target.accepted = true
+            · by_cases hFits :
+                  target.PCFits
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+                cases hCompile
+                simpa using hLower
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+            · simp [hCert, hLower, hAccepted] at hCompile
   · simp [hTyped] at hCompile
 
 theorem compileCertified?_wellTyped {program : Program}
@@ -244,9 +256,64 @@ theorem compileCertified?_certificate {program : Program}
         | none =>
             simp [hCert, hLower] at hCompile
         | some target =>
+            by_cases hAccepted : target.accepted = true
+            · by_cases hFits :
+                  target.PCFits
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+                cases hCompile
+                simpa using hCert
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+            · simp [hCert, hLower, hAccepted] at hCompile
+  · simp [hTyped] at hCompile
+
+theorem compileCertified?_targetAccepted {program : Program}
+    {artifact : CertifiedArtifact}
+    (hCompile : program.compileCertified? = some artifact) :
+    artifact.target.accepted = true := by
+  unfold compileCertified? at hCompile
+  by_cases hTyped : program.wellTyped? = true
+  · simp [hTyped] at hCompile
+    cases hCert : program.certificate? with
+    | none =>
+        simp [hCert] at hCompile
+    | some cert =>
+        cases hLower : program.lower? with
+        | none =>
             simp [hCert, hLower] at hCompile
-            cases hCompile
-            simpa using hCert
+        | some target =>
+            by_cases hAccepted : target.accepted = true
+            · by_cases hFits :
+                  target.PCFits
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+                cases hCompile
+                exact hAccepted
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+            · simp [hCert, hLower, hAccepted] at hCompile
+  · simp [hTyped] at hCompile
+
+theorem compileCertified?_pcFits {program : Program}
+    {artifact : CertifiedArtifact}
+    (hCompile : program.compileCertified? = some artifact) :
+    artifact.target.PCFits := by
+  unfold compileCertified? at hCompile
+  by_cases hTyped : program.wellTyped? = true
+  · simp [hTyped] at hCompile
+    cases hCert : program.certificate? with
+    | none =>
+        simp [hCert] at hCompile
+    | some cert =>
+        cases hLower : program.lower? with
+        | none =>
+            simp [hCert, hLower] at hCompile
+        | some target =>
+            by_cases hAccepted : target.accepted = true
+            · by_cases hFits :
+                  target.PCFits
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+                cases hCompile
+                exact hFits
+              · simp [hCert, hLower, hAccepted, hFits] at hCompile
+            · simp [hCert, hLower, hAccepted] at hCompile
   · simp [hTyped] at hCompile
 
 theorem compileCertified?_checked {program : Program}

@@ -270,6 +270,14 @@ theorem byteLength_pos_of_cons (instr : Instr) (rest : Program) :
 def pcAfter (program : Program) : Word :=
   EvmYul.UInt256.ofNat (byteLength program)
 
+def PCFits (program : Program) : Prop :=
+  program.pcAfter.toNat = program.byteLength
+
+def PCFitsFrom : Program → Program → Prop
+  | pre, [] => pre.PCFits
+  | pre, instr :: rest =>
+      pre.PCFits ∧ PCFitsFrom (pre ++ [instr]) rest
+
 def usesCallCreate (program : Program) : Bool :=
   program.any Instr.usesCallCreate
 
@@ -298,6 +306,25 @@ theorem pcAfter_snoc (program : Program) (instr : Instr) :
     pcAfter (program ++ [instr]) =
       pcAfter program + EvmYul.UInt256.ofNat instr.byteSize := by
   simpa [byteLength] using pcAfter_append program [instr]
+
+instance pcFitsDecidable (program : Program) :
+    Decidable program.PCFits := by
+  unfold PCFits
+  infer_instance
+
+def pcFitsFromDecidable (pre code : Program) :
+    Decidable (PCFitsFrom pre code) :=
+  match code with
+  | [] => pcFitsDecidable pre
+  | instr :: rest =>
+      @instDecidableAnd pre.PCFits
+        (PCFitsFrom (pre ++ [instr]) rest)
+        (pcFitsDecidable pre)
+        (pcFitsFromDecidable (pre ++ [instr]) rest)
+
+instance (pre code : Program) :
+    Decidable (PCFitsFrom pre code) :=
+  pcFitsFromDecidable pre code
 
 end Program
 

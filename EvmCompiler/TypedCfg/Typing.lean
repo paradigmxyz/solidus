@@ -79,6 +79,10 @@ def targets : Terminator → List Label
   | .halt _ => []
   | .invalid => []
 
+def definedLabels : Terminator → List Label
+  | .returnDispatch _returnCount sites => sites.map ReturnSite.caseLabel
+  | _ => []
+
 def targetsHaveShape? (program : Program) (shape : Shape) :
     List ReturnSite → Bool
   | [] => true
@@ -135,11 +139,19 @@ namespace Program
 def LabelsUnique (program : Program) : Prop :=
   program.blocks.Pairwise (fun left right => left.label ≠ right.label)
 
+def EmittedLabels (program : Program) : List Label :=
+  program.blocks.flatMap fun block =>
+    block.label :: block.term.definedLabels
+
+def EmittedLabelsUnique (program : Program) : Prop :=
+  program.EmittedLabels.Nodup
+
 def AllBlocksTyped (program : Program) : Prop :=
   program.blocks.Forall (fun block => block.WellTyped program)
 
 def WellTyped (program : Program) : Prop :=
-  program.LabelsUnique ∧ program.AllBlocksTyped ∧ program.findBlock? program.entry ≠ none
+  program.LabelsUnique ∧ program.AllBlocksTyped ∧
+    program.findBlock? program.entry ≠ none ∧ program.EmittedLabelsUnique
 
 instance labelsUniqueDecidable (program : Program) :
     Decidable program.LabelsUnique := by
@@ -154,6 +166,11 @@ instance blockWellTypedDecidable (program : Program) (block : Block) :
 instance allBlocksTypedDecidable (program : Program) :
     Decidable program.AllBlocksTyped := by
   unfold AllBlocksTyped
+  infer_instance
+
+instance emittedLabelsUniqueDecidable (program : Program) :
+    Decidable program.EmittedLabelsUnique := by
+  unfold EmittedLabelsUnique
   infer_instance
 
 instance wellTypedDecidable (program : Program) :
@@ -173,6 +190,11 @@ theorem wellTyped_allBlocksTyped {program : Program}
     (h : program.WellTyped) :
     program.AllBlocksTyped :=
   h.2.1
+
+theorem wellTyped_emittedLabelsUnique {program : Program}
+    (h : program.WellTyped) :
+    program.EmittedLabelsUnique :=
+  h.2.2.2
 
 end Program
 

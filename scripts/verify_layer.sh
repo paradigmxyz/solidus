@@ -28,6 +28,7 @@ case "$layer" in
   typedcfg)
     modules=(
       EvmCompiler.TypedCfg
+      EvmCompiler.TypedCfg.Preservation
       EvmCompiler.Compiler.AllocatedTypedCfg
       EvmCompiler.Structured.TypedCfgBridge
       EvmCompiler.Structured.TypedCfgCompiler
@@ -71,4 +72,8 @@ if [[ "$layer" == "all" ]]; then
   scripts/verify.sh
 else
   scripts/verify.sh "${modules[@]}"
+fi
+
+if [[ "$layer" == "typedcfg" || "$layer" == "all" ]]; then
+  lake env lean proof_artifacts/typedcfg_lowering_invariants_smoke.lean
 fi

@@ -17,19 +17,23 @@ def restLabel (supply : LabelSupply) : Assembly.Label :=
 def switchTestLabel (base idx : Nat) : Assembly.Label :=
   .generated base (1000 + idx)
 
-def dispatchCaseLabel (token : Word) : Assembly.Label :=
-  .generated token.toNat 10000
-
 structure Context where
   procs : List Proc
   breakLabel? : Option Assembly.Label := none
   continueLabel? : Option Assembly.Label := none
   leaveLabel? : Option Assembly.Label := none
 
+structure DispatchSite where
+  procName : Name
+  token : Word
+  returnLabel : Assembly.Label
+  caseLabel : Assembly.Label
+  deriving DecidableEq, Repr
+
 structure Result where
   blocks : List CfgBlock
   next : LabelSupply
-  calls : List CallSite
+  calls : List DispatchSite
   fallthrough? : Option Shape
 
 namespace Result
@@ -288,7 +292,8 @@ mutual
               calls :=
                 [{ procName := name
                    token := token
-                   returnLabel := regular }]
+                   returnLabel := regular
+                   caseLabel := .generated supply 10000 }]
               fallthrough? := some returnShape }
       | .terminal kind => do
           let block ← mkBlock? entry input [] (.halt kind)
@@ -374,7 +379,8 @@ def compileBlock? (block : Block) (ctx : Context)
   compileBlockFuel? (blockFuel block + 1) block ctx supply entry input regular
 
 def compileProcBodies? (allProcs : List Proc) :
-    List Proc → LabelSupply → Option (List CfgBlock × LabelSupply × List CallSite)
+    List Proc → LabelSupply →
+      Option (List CfgBlock × LabelSupply × List DispatchSite)
   | [], supply => some ([], supply, [])
   | proc :: rest, supply => do
       let ctx : Context :=
@@ -387,15 +393,18 @@ def compileProcBodies? (allProcs : List Proc) :
         compileProcBodies? allProcs rest body.next
       some (body.blocks ++ tailBlocks, next, body.calls ++ tailCalls)
 
-def returnSitesFor (name : Name) (calls : List CallSite) :
+def returnSitesFor (name : Name) (calls : List DispatchSite) :
     List TypedCfg.ReturnSite :=
   calls.filterMap fun site =>
     if site.procName = name then
-      some { token := site.token, target := site.returnLabel }
+      some
+        { token := site.token
+          target := site.returnLabel
+          caseLabel := site.caseLabel }
     else
       none
 
-def dispatchBlock (proc : Proc) (calls : List CallSite) : CfgBlock :=
+def dispatchBlock (proc : Proc) (calls : List DispatchSite) : CfgBlock :=
   let sites := returnSitesFor proc.name calls
   let term :=
     if sites.isEmpty then
@@ -408,7 +417,7 @@ def dispatchBlock (proc : Proc) (calls : List CallSite) : CfgBlock :=
     output := Shape.procExit proc
     term := term }
 
-def dispatchBlocks (procs : List Proc) (calls : List CallSite) :
+def dispatchBlocks (procs : List Proc) (calls : List DispatchSite) :
     List CfgBlock :=
   procs.map fun proc => dispatchBlock proc calls
 

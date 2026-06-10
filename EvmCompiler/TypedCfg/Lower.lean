@@ -89,7 +89,7 @@ def returnDispatchTests? (depth : Nat) :
       some
         (duplicate ++
           [.push site.token, .prim .eq,
-            .jumpi (.generated site.token.toNat 10000)] ++ tail)
+            .jumpi site.caseLabel] ++ tail)
 
 def returnDispatchCases? (depth : Nat) :
     List ReturnSite → Option Assembly.Program
@@ -98,7 +98,7 @@ def returnDispatchCases? (depth : Nat) :
       let cleanup ← removeBuriedUnder? depth
       let tail ← returnDispatchCases? depth rest
       some
-        (.label (.generated site.token.toNat 10000) ::
+        (.label site.caseLabel ::
           cleanup ++ [.jump site.target] ++ tail)
 
 def returnDispatchCode? (depth : Nat) (sites : List ReturnSite) :
@@ -155,7 +155,7 @@ def lowerBlocks? : List Block → Option Assembly.Program
       some (head ++ tail)
 
 def lower? (program : Program) : Option Assembly.Program :=
-  lowerBlocks? program.blocks
+  program.blocksInLoweringOrder? >>= lowerBlocks?
 
 def Lowerable (program : Program) : Prop :=
   ∃ asm, program.lower? = some asm

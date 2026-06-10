@@ -40,6 +40,9 @@ Implemented in this migration:
   shared-interface lowerer that emits once and rejects allocation drift;
 - explicit TypedCfg block outputs, unwind, fallthrough, return dispatch,
   caller-frame rows, typing, lowering, and generated certificates;
+- entry-directed TypedCfg block ordering, explicit return-dispatch case labels,
+  emitted-label uniqueness, checked Assembly acceptedness/PC bounds, and a
+  proved per-instruction lowering theorem against fetched Assembly execution;
 - an `AllocatedTypedCfg` checked pass that pairs scoped allocation with the
   generated CFG and makes both allocation and CFG certificates mandatory
   successful-artifact metadata;
@@ -389,8 +392,15 @@ Goal: make stack/control invariants explicit before Assembly.
   canonical allocation rather than pairing the plan with a separately
   generated CFG.
 - [ ] Prove TypedCfg step preservation.
+  The complete instruction slice now proves every push, primitive, pop,
+  DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block and
+  terminator composition remain.
 - [ ] Prove TypedCfg-to-Assembly lowering preservation.
 - [ ] Prove label uniqueness and PC bounds from the artifact certificate.
+  Certification now rejects duplicate/unresolved emitted labels and PC
+  wraparound and exposes checked target-acceptedness/`PCFits` theorems; these
+  facts still need to be projected through the compositional program
+  certificate and whole-program preservation theorem.
 
 Cutover gate:
 
@@ -532,7 +542,8 @@ Latest verified checkpoint:
 
 - stable/default build: pass (1,153 jobs);
 - allocator layer after code-free scratch-frame cutover: pass (1,146 jobs);
-- allocated TypedCfg focused layer: pass (1,115 jobs);
+- allocated TypedCfg focused layer: pass (1,117 jobs), including direct
+  instruction-lowering preservation and lowering-invariant regressions;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - `EvmCompiler.Legacy`: pass;
 - resource-observer proof artifact and axiom print: pass;

@@ -115,6 +115,7 @@ end Shape
 structure ReturnSite where
   token : Word
   target : Label
+  caseLabel : Label
   deriving DecidableEq, Repr
 
 /--
@@ -162,6 +163,19 @@ def findBlock? (program : Program) (label : Label) : Option Block :=
 
 def labelShape? (program : Program) (label : Label) : Option Shape :=
   (program.findBlock? label).map (fun block => block.input)
+
+def extractBlock? : List Block → Label → Option (Block × List Block)
+  | [], _ => none
+  | block :: rest, label =>
+      if block.label = label then
+        some (block, rest)
+      else do
+        let (entry, remaining) ← extractBlock? rest label
+        some (entry, block :: remaining)
+
+def blocksInLoweringOrder? (program : Program) : Option (List Block) := do
+  let (entry, remaining) ← extractBlock? program.blocks program.entry
+  some (entry :: remaining)
 
 end Program
 
