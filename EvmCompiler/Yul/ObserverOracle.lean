@@ -32005,6 +32005,136 @@ theorem compileOpen_cons_ifTrueRegularWithOracle_of_evalCondition_sourceOwned
   · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
   · simp [Block.runOpen, hStmtRun, hRestRun]
 
+theorem compileOpen_cons_ifTrueHaltWithOracle_of_evalCondition_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx bodyCtx targetCtxOut : Locals.Ctx}
+    {fuel bodyFuel pc : Nat} {cond : Locals.Expr 1} {body : Locals.Block}
+    {rest : List Locals.Stmt}
+    {state stateAfterCond outState : State}
+    {target : Locals.RunState} {condCode : Structured.Code}
+    {bodyCode : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    {restCode : List Expressions.Stmt} {kind : Assembly.HaltKind}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned cond)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 cond)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileCond :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hCompileBody :
+      Locals.Block.compileOpen targetCtx body = some (bodyCode, bodyCtx))
+    (hFinishBody :
+      Locals.finishScoped targetCtx bodyCtx bodyCode = some lowerBody)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hEvalCond :
+      Expr.evalCondition cond state = .ok (stateAfterCond, true))
+    (hBodyRun :
+      Block.runScoped program sourceCtx body fuel stateAfterCond =
+        .ok (Outcome.halt kind outState))
+    (hBodyReplay :
+      ∀ evmAfterPop,
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterCond.source (target.withEVM evmAfterPop) →
+        ∃ targetOut,
+          ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+              bodyFuel lowerBody (target.withEVM evmAfterPop)
+              stateAfterCond.trace =
+            .ok (Expressions.Outcome.halt kind targetOut, outState.trace)) :
+    ∃ targetOut,
+      Locals.Block.compileOpen targetCtx
+          { stmts := Locals.Stmt.if_ cond body :: rest } =
+        some
+          (Expressions.Stmt.if_
+              (Expressions.Expr.code (results := 1) condCode)
+              lowerBody :: restCode,
+            targetCtxOut) ∧
+      Block.runOpen program sourceCtx ((fuel + 1) + 1)
+          { stmts := Locals.Stmt.if_ cond body :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtx) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  rcases hCtx with ⟨hLayout, hBreak, hContinue, hLeave, hRetc⟩
+  rcases
+      Expr.runCompiledExpressionsConditionWithOracle_of_evalCondition_sourceOwned
+        (program := asmProgram) (expr := cond)
+        (layout := sourceCtx.scope) (ctx := targetCtx)
+        (pc := pc) (state := state) (state' := stateAfterCond)
+        (cond := true) (target := target) (code := condCode)
+        hLayout hNoDup hOwned hAccess hRel hCompileCond hEvalCond with
+    ⟨evmAfterPop, _value, hCompileCondExpr, _hEvalOne,
+      hCondReplay, hStateRel⟩
+  rcases hBodyReplay evmAfterPop hStateRel with
+    ⟨targetOut, hReplayBody⟩
+  have hCompileStmt :
+      Locals.Stmt.compile targetCtx (.if_ cond body) =
+        some
+          ([Expressions.Stmt.if_
+            (Expressions.Expr.code (results := 1) condCode)
+            lowerBody],
+            targetCtx) := by
+    simp [Locals.Stmt.compile, hCompileCondExpr, hCompileBody,
+      hFinishBody]
+  have hStmtRun :
+      Stmt.run program sourceCtx (fuel + 1) (.if_ cond body) state =
+        .ok (Outcome.halt kind outState, sourceCtx) := by
+    simp [Stmt.run, hEvalCond, hBodyRun]
+  have hStmtReplay :
+      ExpressionsReplay.Stmt.runWithOracle asmProgram pc exprProgram
+          (bodyFuel + 1)
+          (Expressions.Stmt.if_
+            (Expressions.Expr.code (results := 1) condCode)
+            lowerBody)
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) :=
+    ExpressionsReplay.Stmt.runWithOracle_if_true_of_condition_body
+      (asmProgram := asmProgram) (pc := pc) (fuel := bodyFuel)
+      (program := exprProgram)
+      (cond := Expressions.Expr.code (results := 1) condCode)
+      (body := lowerBody) hCondReplay hReplayBody
+  have hReplayHead :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              [Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody] }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simp [ExpressionsReplay.Block.runWithOracle, hStmtReplay,
+      Expressions.Outcome.halt]
+  have hReplayFull :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simpa using
+      ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        [Expressions.Stmt.if_
+          (Expressions.Expr.code (results := 1) condCode)
+          lowerBody]
+        restCode hReplayHead
+  refine ⟨targetOut, ?_, ?_, hReplayFull⟩
+  · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
+  · simp [Block.runOpen, hStmtRun, Outcome.halt]
+
 theorem compileOpen_cons_ifTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
