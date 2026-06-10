@@ -896,7 +896,7 @@ theorem exec_assign_msize_cons (fuel : Nat)
         codeOverride
         { source := source,
           trace := { kind := .msize, value := value } :: trace } =
-	      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
   simp [exec, hAssign, evalValues, evalArgs, primCall, consume, multifill]
 
 theorem execSeq_singleton_let_gas_cons (fuel : Nat)
@@ -53312,6 +53312,314 @@ theorem assign_msize_cons
           SourceReplay.Expr.evalOne, hLocals]⟩
 
 end YulToLocalsStmtReplayBridge
+
+namespace YulToLocalsBlockReplayBridge
+
+theorem singleton_let_gas_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl :
+      EvmYul.Yul.checkDeclaration (.Ok shared store) [name] = .ok ()) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.let_ (identName name)
+            (.prim .gas .nil : Locals.Expr 1)) =
+        [Locals.Stmt.let_ (identName name)
+          (.prim .gas .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.execSeq yulFuel.succ.succ.succ.succ
+          [(.Let [name]
+            (some
+              (.Call (.inl
+                ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])))]
+          codeOverride
+          { source := .Ok shared store,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] (.Ok shared store))
+            trace) ∧
+      SourceReplay.Block.runOpen program ctx localsFuel.succ.succ
+          { stmts :=
+              [Locals.Stmt.let_ (identName name)
+                (.prim .gas .nil : Locals.Expr 1)] }
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+  rcases
+      YulToLocalsStmtReplayBridge.let_gas_cons
+        lowerFuel yulFuel localsFuel.succ fresh program ctx codeOverride
+        (.Ok shared store) localsState name value trace hDecl with
+    ⟨hLower, hToLocals, _hYulStmt, hLocalsStmt⟩
+  have hYulSeq :=
+    YulSourceReplay.execSeq_singleton_let_gas_cons yulFuel codeOverride
+      shared store name value trace hDecl
+  have hTail :
+      SourceReplay.Block.runOpen program
+          { ctx with scope := (identName name :: ctx.scope) }
+          localsFuel.succ { stmts := [] }
+          (({ localsState with trace := trace } :
+            SourceReplay.State).insert (identName name) value) =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+    simp [SourceReplay.Block.runOpen]
+  exact
+    ⟨hLower, hToLocals, hYulSeq,
+      by simp [SourceReplay.Block.runOpen, hLocalsStmt, hTail]⟩
+
+theorem singleton_let_msize_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl :
+      EvmYul.Yul.checkDeclaration (.Ok shared store) [name] = .ok ()) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.let_ (identName name)
+            (.prim .msize .nil : Locals.Expr 1)) =
+        [Locals.Stmt.let_ (identName name)
+          (.prim .msize .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.execSeq yulFuel.succ.succ.succ.succ
+          [(.Let [name]
+            (some
+              (.Call (.inl
+                ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])))]
+          codeOverride
+          { source := .Ok shared store,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] (.Ok shared store))
+            trace) ∧
+      SourceReplay.Block.runOpen program ctx localsFuel.succ.succ
+          { stmts :=
+              [Locals.Stmt.let_ (identName name)
+                (.prim .msize .nil : Locals.Expr 1)] }
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+  rcases
+      YulToLocalsStmtReplayBridge.let_msize_cons
+        lowerFuel yulFuel localsFuel.succ fresh program ctx codeOverride
+        (.Ok shared store) localsState name value trace hDecl with
+    ⟨hLower, hToLocals, _hYulStmt, hLocalsStmt⟩
+  have hYulSeq :=
+    YulSourceReplay.execSeq_singleton_let_msize_cons yulFuel codeOverride
+      shared store name value trace hDecl
+  have hTail :
+      SourceReplay.Block.runOpen program
+          { ctx with scope := (identName name :: ctx.scope) }
+          localsFuel.succ { stmts := [] }
+          (({ localsState with trace := trace } :
+            SourceReplay.State).insert (identName name) value) =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+    simp [SourceReplay.Block.runOpen]
+  exact
+    ⟨hLower, hToLocals, hYulSeq,
+      by simp [SourceReplay.Block.runOpen, hLocalsStmt, hTail]⟩
+
+theorem singleton_assign_gas_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign :
+      EvmYul.Yul.checkAssignment (.Ok shared store) [name] = .ok ())
+    (hContains : localsState.vars.contains (identName name) = true) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.assign (identName name)
+            (.prim .gas .nil : Locals.Expr 1)) =
+        [Locals.Stmt.assign (identName name)
+          (.prim .gas .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.execSeq yulFuel.succ.succ.succ.succ
+          [(.Assign [name]
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))]
+          codeOverride
+          { source := .Ok shared store,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] (.Ok shared store))
+            trace) ∧
+      SourceReplay.Block.runOpen program ctx localsFuel.succ.succ
+          { stmts :=
+              [Locals.Stmt.assign (identName name)
+                (.prim .gas .nil : Locals.Expr 1)] }
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+  rcases
+      YulToLocalsStmtReplayBridge.assign_gas_cons
+        lowerFuel yulFuel localsFuel.succ fresh program ctx codeOverride
+        (.Ok shared store) localsState name value trace hAssign
+        hContains with
+    ⟨hLower, hToLocals, _hYulStmt, hLocalsStmt⟩
+  have hYulSeq :=
+    YulSourceReplay.execSeq_singleton_assign_gas_cons yulFuel codeOverride
+      shared store name value trace hAssign
+  have hTail :
+      SourceReplay.Block.runOpen program ctx localsFuel.succ { stmts := [] }
+          (({ localsState with trace := trace } :
+            SourceReplay.State).withVars
+            (Locals.Source.Store.insert
+              (({ localsState with trace := trace } :
+                SourceReplay.State).vars)
+              (identName name) value)) =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+    simp [SourceReplay.Block.runOpen]
+  exact
+    ⟨hLower, hToLocals, hYulSeq,
+      by simp [SourceReplay.Block.runOpen, hLocalsStmt, hTail]⟩
+
+theorem singleton_assign_msize_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign :
+      EvmYul.Yul.checkAssignment (.Ok shared store) [name] = .ok ())
+    (hContains : localsState.vars.contains (identName name) = true) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.assign (identName name)
+            (.prim .msize .nil : Locals.Expr 1)) =
+        [Locals.Stmt.assign (identName name)
+          (.prim .msize .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.execSeq yulFuel.succ.succ.succ.succ
+          [(.Assign [name]
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))]
+          codeOverride
+          { source := .Ok shared store,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] (.Ok shared store))
+            trace) ∧
+      SourceReplay.Block.runOpen program ctx localsFuel.succ.succ
+          { stmts :=
+              [Locals.Stmt.assign (identName name)
+                (.prim .msize .nil : Locals.Expr 1)] }
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+  rcases
+      YulToLocalsStmtReplayBridge.assign_msize_cons
+        lowerFuel yulFuel localsFuel.succ fresh program ctx codeOverride
+        (.Ok shared store) localsState name value trace hAssign
+        hContains with
+    ⟨hLower, hToLocals, _hYulStmt, hLocalsStmt⟩
+  have hYulSeq :=
+    YulSourceReplay.execSeq_singleton_assign_msize_cons yulFuel codeOverride
+      shared store name value trace hAssign
+  have hTail :
+      SourceReplay.Block.runOpen program ctx localsFuel.succ { stmts := [] }
+          (({ localsState with trace := trace } :
+            SourceReplay.State).withVars
+            (Locals.Source.Store.insert
+              (({ localsState with trace := trace } :
+                SourceReplay.State).vars)
+              (identName name) value)) =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+    simp [SourceReplay.Block.runOpen]
+  exact
+    ⟨hLower, hToLocals, hYulSeq,
+      by simp [SourceReplay.Block.runOpen, hLocalsStmt, hTail]⟩
+
+end YulToLocalsBlockReplayBridge
 
 namespace AssemblyOracle
 
