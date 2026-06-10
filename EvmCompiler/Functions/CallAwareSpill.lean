@@ -3456,6 +3456,26 @@ theorem expr_evalCondition_false_inv
       subst sourceAfter
       exact ⟨value, by simpa using hOne, hValue⟩
 
+theorem expr_evalCondition_true_inv
+    {prim : Source.PrimitiveSemantics} {expr : Expr 1}
+    {source sourceAfter : Source.State}
+    (hEval :
+      Source.Expr.evalCondition prim expr source = .ok (sourceAfter, true)) :
+    ∃ value,
+      Source.Expr.evalOne prim expr source = .ok (sourceAfter, value) ∧
+      (value != EvmYul.UInt256.ofNat 0) = true := by
+  rw [Source.Expr.evalCondition.eq_def] at hEval
+  unfold EvmCompiler.Locals.Source.Expr.evalCondition at hEval
+  cases hOne : EvmCompiler.Locals.Source.Expr.evalOne prim expr source with
+  | error err =>
+      simp [hOne] at hEval
+  | ok result =>
+      rcases result with ⟨state', value⟩
+      simp [hOne] at hEval
+      rcases hEval with ⟨hState, hValue⟩
+      subst sourceAfter
+      exact ⟨value, by simpa using hOne, hValue⟩
+
 @[simp] theorem exprSeq_eval_eq_mpr_congrArg
     {prim : Source.PrimitiveSemantics}
     {m n : Nat} (h : m = n) (exprs : Locals.ExprSeq n)
@@ -12380,6 +12400,135 @@ theorem compileIfFallbackWithSwitchFallback?_regular_sound_meta_exact_of_cond_fa
             (by simpa [hEntryStack] using hMem)
         simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue,
       by simp [afterPop]⟩
+
+theorem compileIfFallbackWithSwitchFallback?_body_dispatch_of_cond_true
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {cond : Expr 1} {body : Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {source sourceAfterCond : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileIfFallbackWithSwitchFallback? range program returns handlers
+        sourceScope stackLayout layout cond body =
+        some plan)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hEval :
+      Source.Expr.evalCondition Locals.Source.PrimitiveSemantics.structured
+          cond source =
+        .ok (sourceAfterCond, true)) :
+    ∃ afterPop bodyBlock bodyRaw normalized,
+      SpillStateRel range plan.sourceScope [] plan.layout
+        sourceAfterCond afterPop ∧
+      SpillLayout.StoreDefined sourceAfterCond.vars plan.layout ∧
+      afterPop.stack.length = ([] : List Name).length ∧
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          plan.sourceScope [] plan.layout body =
+        some bodyRaw ∧
+      normalizePlanStack? range bodyRaw = some normalized ∧
+      normalized.sourceScope = plan.sourceScope ∧
+      normalized.stackLayout = [] ∧
+      normalized.layout = plan.layout ∧
+      bodyBlock = normalized.block ∧
+      (∀ {outcome : Expressions.Outcome},
+        (∃ bodyFuel,
+          Expressions.Block.run exprProgram bodyFuel bodyBlock
+              (target.withEVM afterPop) =
+            .ok outcome) →
+        ∃ exprFuel,
+          Expressions.Block.run exprProgram exprFuel plan.block target =
+            .ok outcome) := by
+  rcases
+      compileIfFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, condCode, bodyRaw, bodyPlan, hEntry, hEntryStack, hCondSafe,
+      hCondCode, hBodyCompile, hBodyNorm, hBodyOk, hPlan⟩
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact
+        hSpec hWordBytes hEntry hEmptyRun hRel hDefined hLength with
+    ⟨entryFinal, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      _hEntryStackLayout, hEntryFinalStack⟩
+  rcases expr_evalCondition_true_inv hEval with
+    ⟨value, hEvalOne, hValueTrue⟩
+  have hExprEval :
+      Source.Expr.eval Locals.Source.PrimitiveSemantics.structured cond source =
+        .ok (sourceAfterCond, [value]) :=
+    expr_eval_of_evalOne hEvalOne
+  rcases
+      compileCode_exact_prefix_structured
+        (expr := cond)
+        (range := range) (sourceScope := entry.sourceScope)
+        (stackLayout := entry.stackLayout)
+        (layout := entry.layout) (source := source)
+        (source' := sourceAfterCond) (target := entryFinal)
+        (stackPrefix := []) (baseStack := []) (offset := 0)
+        (values := [value]) (code := condCode)
+        (SourceNoMemoryTouch.expr?_sound hCondSafe)
+        (SpillStackPrefixRel.of_spillStateRel hEntryRel)
+        (by simpa using hEntryFinalStack)
+        rfl hCondCode hExprEval with
+    ⟨afterCondEval, hCondRun, hCondStack, hCondRel⟩
+  have hAfterCondStack : afterCondEval.stack = [value] := by
+    simpa using hCondStack
+  let afterPop : EVMState := { afterCondEval with stack := [] }
+  have hAfterPopRel :
+      SpillStateRel range entry.sourceScope [] entry.layout
+        sourceAfterCond afterPop := by
+    have hRel' :
+        SpillStateRel range entry.sourceScope [] entry.layout
+          sourceAfterCond
+          ({ afterCondEval with stack := [] } : EVMState) :=
+      spillStackPrefixRel_singleton_empty_to_spillStateRel
+        (by simpa [hEntryStack] using hCondRel)
+        hAfterCondStack
+    simpa [afterPop] using hRel'
+  have hAfterPopDefined :
+      SpillLayout.StoreDefined sourceAfterCond.vars entry.layout := by
+    intro name location hMem
+    have hValue :=
+      hEntryDefined (name := name) (location := location)
+        (by simpa [hEntryStack] using hMem)
+    simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue
+  subst plan
+  refine
+    ⟨afterPop, bodyPlan.block, bodyRaw, bodyPlan,
+      by simpa [hEntryStack] using hAfterPopRel,
+      hAfterPopDefined, by simp [afterPop], hBodyCompile, hBodyNorm,
+      hBodyOk.1, hBodyOk.2.1, hBodyOk.2.2, rfl, ?_⟩
+  intro outcome hBodyRun
+  rcases hBodyRun with ⟨bodyFuel, hBodyRun⟩
+  have hIfStmt :
+      ∃ ifFuel,
+        Expressions.Stmt.run exprProgram ifFuel
+            (Expressions.Stmt.if_ (.code condCode) bodyPlan.block)
+            (target.withEVM entryFinal) =
+          .ok outcome := by
+    refine ⟨bodyFuel + 1, ?_⟩
+    simp [Expressions.Stmt.run, Expressions.Expr.runConditionState,
+      Expressions.Expr.runCondition, Expressions.Expr.run,
+      Structured.Code.runState, Structured.Code.popCondition,
+      EvmYul.Stack.pop, hCondRun, hAfterCondStack, hValueTrue, afterPop,
+      Expressions.RunState.withEVM_withEVM, hBodyRun]
+  rcases
+      Expressions.Block.run_single_exists exprProgram hIfStmt with
+    ⟨ifFuel, hIfRun⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram
+        ⟨entryFuel, hEntryRun⟩ ⟨ifFuel, hIfRun⟩ with
+    ⟨exprFuel, hRun⟩
+  exact ⟨exprFuel, hRun⟩
 
 theorem source_switch_select_none_default_none :
     ∀ {scrutinee : Word} {cases : List (Word × Block)}
