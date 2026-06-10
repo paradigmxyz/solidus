@@ -31315,6 +31315,23 @@ theorem SwitchFallbackStmtRegularSoundBelow.of_regular_sound
     stmtTarget hCompile hScope hRel hDefined hLength hSourceRun _hFuelBound
   exact hSound hCompile hScope hRel hDefined hLength hSourceRun
 
+theorem SwitchFallbackStmtRegularSoundBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtRegularSoundBelow larger range program handlers returns
+        exprProgram) :
+    SwitchFallbackStmtRegularSoundBelow smaller range program handlers returns
+      exprProgram := by
+  intro currentScope currentStackLayout currentLayout stmt stmtPlan
+    stmtSourceCtx stmtSourceCtxAfter stmtFuel stmtSource stmtSourceAfter
+    stmtTarget hCompile hScope hRel hDefined hLength hSourceRun hFuelBound
+  exact
+    hSound hCompile hScope hRel hDefined hLength hSourceRun
+      (Nat.le_trans hFuelBound hFuelLe)
+
 abbrev SwitchFallbackStmtRegularReferenceSound
     (range : ScratchRange) (program : Program)
     (handlers : FallbackHandlers) (returns : List Name)
@@ -31402,6 +31419,24 @@ theorem SwitchFallbackStmtRegularReferenceSoundBelow.of_reference_sound
   exact
     hSound hCompile hScope hReference hReferenceWF hRel hDefined hLength
       hSourceRun
+
+theorem SwitchFallbackStmtRegularReferenceSoundBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtRegularReferenceSoundBelow larger range program handlers
+        returns exprProgram) :
+    SwitchFallbackStmtRegularReferenceSoundBelow smaller range program handlers
+      returns exprProgram := by
+  intro currentScope currentStackLayout currentLayout stmt stmtPlan
+    stmtSourceCtx stmtSourceCtxAfter stmtFuel stmtSource stmtSourceAfter
+    stmtTarget stmtHandlerScope stmtReferenceLayout hCompile hScope
+    hReference hReferenceWF hRel hDefined hLength hSourceRun hFuelBound
+  exact
+    hSound hCompile hScope hReference hReferenceWF hRel hDefined hLength
+      hSourceRun (Nat.le_trans hFuelBound hFuelLe)
 
 abbrev SwitchFallbackStmtBrkReferenceSound
     (range : ScratchRange) (program : Program)
@@ -31494,6 +31529,26 @@ theorem SwitchFallbackStmtBrkReferenceSoundBelow.of_reference_sound
     hSound hCompile hHandlers hBreakScope hCleanup hScope hReference
       hReferenceWF hRel hDefined hLength hSourceRun
 
+theorem SwitchFallbackStmtBrkReferenceSoundBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtBrkReferenceSoundBelow larger range program handlers
+        returns exprProgram) :
+    SwitchFallbackStmtBrkReferenceSoundBelow smaller range program handlers
+      returns exprProgram := by
+  intro currentScope currentStackLayout currentLayout stmt stmtPlan
+    stmtSourceCtx stmtSourceCtxAfter stmtFuel stmtSource stmtSourceAfter
+    stmtTarget stmtHandlerScope stmtReferenceLayout hCompile hHandlers
+    hBreakScope hCleanup hScope hReference hReferenceWF hRel hDefined
+    hLength hSourceRun hFuelBound
+  exact
+    hSound hCompile hHandlers hBreakScope hCleanup hScope hReference
+      hReferenceWF hRel hDefined hLength hSourceRun
+      (Nat.le_trans hFuelBound hFuelLe)
+
 abbrev SwitchFallbackStmtContReferenceSound
     (range : ScratchRange) (program : Program)
     (handlers : FallbackHandlers) (returns : List Name)
@@ -31585,6 +31640,26 @@ theorem SwitchFallbackStmtContReferenceSoundBelow.of_reference_sound
     hSound hCompile hHandlers hContinueScope hCleanup hScope hReference
       hReferenceWF hRel hDefined hLength hSourceRun
 
+theorem SwitchFallbackStmtContReferenceSoundBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtContReferenceSoundBelow larger range program handlers
+        returns exprProgram) :
+    SwitchFallbackStmtContReferenceSoundBelow smaller range program handlers
+      returns exprProgram := by
+  intro currentScope currentStackLayout currentLayout stmt stmtPlan
+    stmtSourceCtx stmtSourceCtxAfter stmtFuel stmtSource stmtSourceAfter
+    stmtTarget stmtHandlerScope stmtReferenceLayout hCompile hHandlers
+    hContinueScope hCleanup hScope hReference hReferenceWF hRel hDefined
+    hLength hSourceRun hFuelBound
+  exact
+    hSound hCompile hHandlers hContinueScope hCleanup hScope hReference
+      hReferenceWF hRel hDefined hLength hSourceRun
+      (Nat.le_trans hFuelBound hFuelLe)
+
 structure SwitchFallbackLoopStmtSound
     (range : ScratchRange) (program : Program)
     (handlers : FallbackHandlers) (returns : List Name)
@@ -31663,6 +31738,40 @@ theorem SwitchFallbackLoopStmtSoundBelow.of_loop_stmt_sound
     intro bodyHandlerScope
     exact
       SwitchFallbackStmtContReferenceSoundBelow.of_reference_sound
+        hSound.bodyContReference
+
+theorem SwitchFallbackLoopStmtSoundBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackLoopStmtSoundBelow larger range program handlers returns
+        exprProgram) :
+    SwitchFallbackLoopStmtSoundBelow smaller range program handlers returns
+      exprProgram where
+  looplessRegular :=
+    SwitchFallbackStmtRegularSoundBelow.of_le hFuelLe
+      hSound.looplessRegular
+  bodyRegular := by
+    intro bodyHandlerScope
+    exact
+      SwitchFallbackStmtRegularSoundBelow.of_le hFuelLe
+        hSound.bodyRegular
+  bodyRegularReference := by
+    intro bodyHandlerScope
+    exact
+      SwitchFallbackStmtRegularReferenceSoundBelow.of_le hFuelLe
+        hSound.bodyRegularReference
+  bodyBrkReference := by
+    intro bodyHandlerScope
+    exact
+      SwitchFallbackStmtBrkReferenceSoundBelow.of_le hFuelLe
+        hSound.bodyBrkReference
+  bodyContReference := by
+    intro bodyHandlerScope
+    exact
+      SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
         hSound.bodyContReference
 
 theorem compileStmtListWithSwitchFallback?_brk_sound_meta_exact_handler_scope_reference_of_stmt_sound_below
