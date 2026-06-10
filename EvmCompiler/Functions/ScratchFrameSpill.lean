@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.Compiler
+import EvmCompiler.Locals.Allocation
 import EvmCompiler.Expressions.Preservation
 
 /-!
@@ -22,10 +23,12 @@ structure FunSlots where
   name : Name
   params : List (Name × Nat)
   returns : List (Name × Nat)
+  deriving DecidableEq, Repr
 
 structure CompileState where
   env : SlotEnv
   nextSlot : Nat
+  deriving DecidableEq, Repr
 
 structure CompileCtx where
   functions : List FunSlots
@@ -34,6 +37,22 @@ structure CompileCtx where
 structure Plan where
   state : CompileState
   block : Expressions.Block
+
+namespace Plan
+
+def toAllocationPlan (frameWords : Nat) (plan : Plan) :
+    Locals.Allocation.Plan where
+  sourceScope := plan.state.env.map Prod.fst
+  stackOrder := []
+  bindings :=
+    plan.state.env.map fun binding =>
+      (binding.1, .scratch binding.2)
+  scratchRegion? :=
+    some
+      { base := .freeMemoryPointer
+        words := frameWords }
+
+end Plan
 
 def word (n : Nat) : Word :=
   EvmYul.UInt256.ofNat n
@@ -129,6 +148,207 @@ def allocateFunctionSignatures : List FunDef → CompileState →
         { name := fn.name, params := params, returns := returns }
       let (tail, state) := allocateFunctionSignatures rest state
       (slots :: tail, state)
+
+/-!
+The allocation recipe is deliberately code-free. It mirrors only lexical
+scope and slot-allocation transitions, so planning no longer needs to emit an
+Expressions program merely to discover the required frame size.
+-/
+
+structure ScopedAllocation where
+  scope : Locals.Allocation.ScopeId
+  state : CompileState
+  deriving DecidableEq, Repr
+
+structure PlanningState where
+  allocation : CompileState
+  nextScope : Nat
+  scopes : List ScopedAllocation
+  deriving DecidableEq, Repr
+
+mutual
+  def planBlockOpen (current : Locals.Allocation.ScopeId)
+      (state : PlanningState) (block : Block) : PlanningState :=
+    match block with
+    | ⟨stmts⟩ => planStmtList current state stmts
+
+  def planBlockScoped (parent : Locals.Allocation.ScopeId)
+      (state : PlanningState) (block : Block) : PlanningState :=
+    let scope := Locals.Allocation.ScopeId.lexical parent state.nextScope
+    let entered := { state with nextScope := state.nextScope + 1 }
+    let planned := planBlockOpen scope entered block
+    { allocation :=
+        { env := state.allocation.env
+          nextSlot := planned.allocation.nextSlot }
+      nextScope := planned.nextScope
+      scopes := { scope := scope, state := planned.allocation } :: planned.scopes }
+
+  def planStmtList (current : Locals.Allocation.ScopeId) :
+      PlanningState → List Stmt → PlanningState
+    | state, [] => state
+    | state, stmt :: rest =>
+        planStmtList current (planStmt current state stmt) rest
+
+  def planCases (current : Locals.Allocation.ScopeId) :
+      PlanningState → List (Word × Block) → PlanningState
+    | state, [] => state
+    | state, (_, body) :: rest =>
+        planCases current (planBlockScoped current state body) rest
+
+  def planDefault (current : Locals.Allocation.ScopeId)
+      (state : PlanningState) : Option Block → PlanningState
+    | none => state
+    | some body => planBlockScoped current state body
+
+  def planStmt (current : Locals.Allocation.ScopeId)
+      (state : PlanningState) : Stmt → PlanningState
+    | .let_ name _ =>
+        { state with allocation := (allocateName name state.allocation).2 }
+    | .block body =>
+        planBlockScoped current state body
+    | .if_ _ body =>
+        planBlockScoped current state body
+    | .switch _ cases defaultBody =>
+        planDefault current (planCases current state cases) defaultBody
+    | .for_ init _ post body =>
+        let loopScope :=
+          Locals.Allocation.ScopeId.lexical current state.nextScope
+        let entered := { state with nextScope := state.nextScope + 1 }
+        let initState := planBlockOpen loopScope entered init
+        let postState := planBlockScoped loopScope initState post
+        let bodyState := planBlockScoped loopScope postState body
+        { allocation :=
+            { env := state.allocation.env
+              nextSlot := bodyState.allocation.nextSlot }
+          nextScope := bodyState.nextScope
+          scopes :=
+            { scope := loopScope, state := bodyState.allocation } ::
+              bodyState.scopes }
+    | _ => state
+end
+
+structure FunctionPlanResult where
+  functions : List ScopedAllocation
+  lexicalScopes : List ScopedAllocation
+  state : CompileState
+  deriving DecidableEq, Repr
+
+structure AllocationRecipe where
+  functionSlots : List FunSlots
+  stateAfterSignatures : CompileState
+  stateAfterFunctions : CompileState
+  functions : List ScopedAllocation
+  lexicalScopes : List ScopedAllocation
+  main : CompileState
+  frameWords : Nat
+  deriving DecidableEq, Repr
+
+def planFunctions (functionSlots : List FunSlots) :
+    CompileState → List FunDef →
+      Option FunctionPlanResult
+  | state, [] =>
+      some { functions := [], lexicalScopes := [], state := state }
+  | state, fn :: rest => do
+      if (fn.returns ++ fn.params).Nodup then pure () else none
+      if fn.returns.length < 16 then pure () else none
+      let slots ← lookupFun? fn.name functionSlots
+      let bodyStart : CompileState :=
+        { env := functionEnv slots, nextSlot := state.nextSlot }
+      let bodyPlan :=
+        planBlockOpen (.function fn.name)
+          { allocation := bodyStart, nextScope := 0, scopes := [] }
+          fn.body
+      let stateAfter : CompileState :=
+        { env := state.env, nextSlot := bodyPlan.allocation.nextSlot }
+      let tail ← planFunctions functionSlots stateAfter rest
+      some
+        { functions :=
+            { scope := .function fn.name, state := bodyPlan.allocation } ::
+              tail.functions
+          lexicalScopes := bodyPlan.scopes ++ tail.lexicalScopes
+          state := tail.state }
+
+def planRecipe? (maxFrameWords : Nat) (program : Program) :
+    Option AllocationRecipe := do
+  if (program.functions.map FunDef.name).Nodup then pure () else none
+  let initial : CompileState := { env := [], nextSlot := 0 }
+  let (functionSlots, stateAfterSignatures) :=
+    allocateFunctionSignatures program.functions initial
+  let functionPlan ←
+    planFunctions functionSlots stateAfterSignatures program.functions
+  let mainStart : CompileState :=
+    { env := [], nextSlot := functionPlan.state.nextSlot }
+  let mainPlan :=
+    planBlockOpen .main
+      { allocation := mainStart, nextScope := 0, scopes := [] }
+      program.body
+  if mainPlan.allocation.nextSlot ≤ maxFrameWords then
+    some
+      { functionSlots := functionSlots
+        stateAfterSignatures := stateAfterSignatures
+        stateAfterFunctions := functionPlan.state
+        functions := functionPlan.functions
+        lexicalScopes := mainPlan.scopes ++ functionPlan.lexicalScopes
+        main := mainPlan.allocation
+        frameWords := mainPlan.allocation.nextSlot }
+  else
+    none
+
+def allocationOfState (frameWords : Nat) (state : CompileState) :
+    Locals.Allocation.Plan where
+  sourceScope := state.env.map Prod.fst
+  stackOrder := []
+  bindings :=
+    state.env.map fun binding =>
+      (binding.1, .scratch binding.2)
+  scratchRegion? :=
+    some
+      { base := .freeMemoryPointer
+        words := frameWords }
+
+namespace AllocationRecipe
+
+def toProgramPlan (recipe : AllocationRecipe) :
+    Locals.Allocation.ProgramPlan :=
+  { scopes :=
+      [{ scope := .main
+         allocation := allocationOfState recipe.frameWords recipe.main }] ++
+      (recipe.functions.map fun fn =>
+        { scope := fn.scope
+          allocation := allocationOfState recipe.frameWords fn.state }) ++
+      (recipe.lexicalScopes.map fun entry =>
+        { scope := entry.scope
+          allocation := allocationOfState recipe.frameWords entry.state }) }
+
+end AllocationRecipe
+
+def planAllocation? (maxFrameWords : Nat) (program : Program) :
+    Option Locals.Allocation.ProgramPlan := do
+  let recipe ← planRecipe? maxFrameWords program
+  let allocation := recipe.toProgramPlan
+  if allocation.wellFormed? then some allocation else none
+
+theorem planAllocation?_wellFormed
+    {maxFrameWords : Nat} {program : Program}
+    {allocation : Locals.Allocation.ProgramPlan}
+    (hPlan :
+      planAllocation? maxFrameWords program = some allocation) :
+    allocation.WellFormed := by
+  unfold planAllocation? at hPlan
+  cases hRecipe : planRecipe? maxFrameWords program with
+  | none =>
+      simp [hRecipe] at hPlan
+  | some recipe =>
+      by_cases hWF : recipe.toProgramPlan.wellFormed? = true
+      · have hEq : recipe.toProgramPlan = allocation := by
+          simpa [hRecipe, hWF] using hPlan
+        rw [← hEq]
+        exact Locals.Allocation.ProgramPlan.wellFormed_of_check hWF
+      · simp [hRecipe, hWF] at hPlan
+
+def allocationPlanner (maxFrameWords : Nat) :
+    Locals.Allocation.Planner Program where
+  plan? := planAllocation? maxFrameWords
 
 theorem lookupSlot?_some_mem {name : Name} {slot : Nat}
     {env : SlotEnv}
@@ -3833,6 +4053,73 @@ def compileMain? (ctx : CompileCtx) (frameWords : Nat)
         { state := plan.state
           block := { stmts := prelude ++ init :: plan.block.stmts } }
 
+def lowerRecipe? (recipe : AllocationRecipe) (program : Program) :
+    Option Expressions.Program := do
+  let ctx : CompileCtx :=
+    { functions := recipe.functionSlots
+      frameWords := recipe.frameWords }
+  let (procs, stateAfterFunctions) ←
+    compileFunctions? ctx recipe.stateAfterSignatures program.functions
+  if stateAfterFunctions = recipe.stateAfterFunctions then pure () else none
+  let mainStart : CompileState :=
+    { env := [], nextSlot := stateAfterFunctions.nextSlot }
+  let main ← compileMain? ctx recipe.frameWords mainStart program.body
+  if main.state = recipe.main then
+    some { procs := procs, body := main.block }
+  else
+    none
+
+def frameWordsOfAllocation?
+    (allocation : Locals.Allocation.ProgramPlan) : Option Nat := do
+  let main ← allocation.find? .main
+  let region ← main.scratchRegion?
+  match region.base with
+  | .freeMemoryPointer => some region.words
+  | .absolute _ => none
+
+def compileExpressionsProgramFromAllocation?
+    (allocation : Locals.Allocation.ProgramPlan) (program : Program) :
+    Option Expressions.Program := do
+  let frameWords ← frameWordsOfAllocation? allocation
+  let recipe ← planRecipe? frameWords program
+  if recipe.toProgramPlan = allocation then
+    lowerRecipe? recipe program
+  else
+    none
+
+def allocationLowerer :
+    Locals.Allocation.Lowerer Program Expressions.Program where
+  lower? program allocation :=
+    compileExpressionsProgramFromAllocation? allocation program
+
+theorem compileExpressionsProgramFromAllocation?_eq_some_components
+    {allocation : Locals.Allocation.ProgramPlan} {program : Program}
+    {expressions : Expressions.Program}
+    (hCompile :
+      compileExpressionsProgramFromAllocation? allocation program =
+        some expressions) :
+    ∃ frameWords recipe,
+      frameWordsOfAllocation? allocation = some frameWords ∧
+        planRecipe? frameWords program = some recipe ∧
+        recipe.toProgramPlan = allocation ∧
+        lowerRecipe? recipe program = some expressions := by
+  unfold compileExpressionsProgramFromAllocation? at hCompile
+  cases hWords : frameWordsOfAllocation? allocation with
+  | none =>
+      simp [hWords] at hCompile
+  | some frameWords =>
+      simp [hWords] at hCompile
+      cases hRecipe : planRecipe? frameWords program with
+      | none =>
+          simp [hRecipe] at hCompile
+      | some recipe =>
+          simp [hRecipe] at hCompile
+          by_cases hAllocation : recipe.toProgramPlan = allocation
+          · simp [hAllocation] at hCompile
+            exact
+              ⟨frameWords, recipe, rfl, hRecipe, hAllocation, hCompile⟩
+          · simp [hAllocation] at hCompile
+
 def compileExpressionsProgram? (maxFrameWords : Nat)
     (program : Program) : Option Expressions.Program := do
   if (program.functions.map FunDef.name).Nodup then pure () else none
@@ -5657,6 +5944,100 @@ theorem compileTarget?_eq_standard (maxFrameWords : Nat)
       simp [hExpr]
   | some exprProgram =>
       simp [hExpr, Expressions.Program.compileExecutable?_eq_compile?]
+
+namespace AllocationExamples
+
+def function : FunDef :=
+  { name := "f"
+    params := ["p"]
+    returns := ["r"]
+    body :=
+      { stmts :=
+          [.let_ "x" (.lit (word 1)),
+           .assign "r" (.var "x")] } }
+
+def program : Program :=
+  { functions := [function]
+    body := { stmts := [.let_ "m" (.lit (word 2))] } }
+
+def nestedProgram : Program :=
+  { functions := []
+    body :=
+      { stmts :=
+          [.block
+            { stmts := [.let_ "nested" (.lit (word 3))] }] } }
+
+def nestedAllocationExpected : Locals.Allocation.Plan :=
+  { sourceScope := ["nested"]
+    stackOrder := []
+    bindings := [("nested", .scratch 0)]
+    scratchRegion? :=
+      some
+        { base := .freeMemoryPointer
+          words := 1 } }
+
+def nestedAllocationRecorded : Bool :=
+  match planAllocation? 1 nestedProgram with
+  | none => false
+  | some allocation =>
+      decide
+        (allocation.find? (.lexical .main 0) =
+          some nestedAllocationExpected)
+
+def nestedCompilationSucceeds : Bool :=
+  match planAllocation? 1 nestedProgram with
+  | none => false
+  | some allocation =>
+      (compileExpressionsProgramFromAllocation?
+        allocation nestedProgram).isSome
+
+def alterMainRegion (allocation : Locals.Allocation.ProgramPlan) :
+    Locals.Allocation.ProgramPlan :=
+  { scopes :=
+      allocation.scopes.map fun scope =>
+        if scope.scope = .main then
+          { scope with
+            allocation :=
+              { scope.allocation with
+                scratchRegion? :=
+                  some
+                    { base := .freeMemoryPointer
+                      words := 5 } } }
+        else
+          scope }
+
+example : (planAllocation? 4 program).isSome = true := by
+  native_decide
+
+example : planAllocation? 3 program = none := by
+  native_decide
+
+example : nestedAllocationRecorded = true := by
+  native_decide
+
+example : nestedCompilationSucceeds = true := by
+  native_decide
+
+def plannedCompilationSucceeds : Bool :=
+  match planAllocation? 4 program with
+  | none => false
+  | some allocation =>
+      (compileExpressionsProgramFromAllocation? allocation program).isSome
+
+def alteredCompilationFails : Bool :=
+  match planAllocation? 4 program with
+  | none => false
+  | some allocation =>
+      (compileExpressionsProgramFromAllocation?
+        (alterMainRegion allocation) program).isNone
+
+example : plannedCompilationSucceeds = true := by
+  native_decide
+
+example : alteredCompilationFails = true := by
+  native_decide
+
+end AllocationExamples
 
 end ScratchFrameSpill
 end Functions

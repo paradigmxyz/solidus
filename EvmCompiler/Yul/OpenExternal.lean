@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.PrimSemantics
+import EvmCompiler.Yul.Primitive
 
 namespace EvmCompiler
 namespace Yul

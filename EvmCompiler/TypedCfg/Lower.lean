@@ -7,6 +7,7 @@ namespace Instr
 
 def lower? : Instr → Option Assembly.Program
   | .push value => some [.push value]
+  | .returnToken value => some [.push value]
   | .prim op => some [.prim op]
   | .pop => some [.prim .pop]
   | .dup depth =>
@@ -49,15 +50,71 @@ def lower? : Instr → Option Assembly.Program
       | _ => none
   | .unwind _target => none
 
+def lowerAt? (instr : Instr) (shape : Shape) :
+    Option (Assembly.Program × Shape) := do
+  let output ← instr.type? shape
+  match instr with
+  | .unwind target =>
+      some
+        (List.replicate (shape.length - target.length) (.prim .pop),
+          output)
+  | _ =>
+      let code ← instr.lower?
+      some (code, output)
+
 end Instr
 
 namespace Terminator
 
-def lower? : Terminator → Option Assembly.Program
-  | .fallthrough => some []
+def swapAt? (depth : Nat) : Option Assembly.Instr :=
+  (Instr.lower? (.swap (depth - 1))).bind List.head?
+
+def liftBuriedToTop? : Nat → Option Assembly.Program
+  | 0 => some []
+  | depth + 1 => do
+      let lifted ← liftBuriedToTop? depth
+      let swap ← swapAt? (depth + 1)
+      some (lifted ++ [swap])
+
+def removeBuriedUnder? (depth : Nat) : Option Assembly.Program := do
+  let lifted ← liftBuriedToTop? depth
+  some (lifted ++ [.prim .pop])
+
+def returnDispatchTests? (depth : Nat) :
+    List ReturnSite → Option Assembly.Program
+  | [] => some [.prim .invalid]
+  | site :: rest => do
+      let duplicate ← Instr.lower? (.dup depth)
+      let tail ← returnDispatchTests? depth rest
+      some
+        (duplicate ++
+          [.push site.token, .prim .eq,
+            .jumpi (.generated site.token.toNat 10000)] ++ tail)
+
+def returnDispatchCases? (depth : Nat) :
+    List ReturnSite → Option Assembly.Program
+  | [] => some []
+  | site :: rest => do
+      let cleanup ← removeBuriedUnder? depth
+      let tail ← returnDispatchCases? depth rest
+      some
+        (.label (.generated site.token.toNat 10000) ::
+          cleanup ++ [.jump site.target] ++ tail)
+
+def returnDispatchCode? (depth : Nat) (sites : List ReturnSite) :
+    Option Assembly.Program := do
+  let tests ← returnDispatchTests? depth sites
+  let cases ← returnDispatchCases? depth sites
+  some (tests ++ cases)
+
+def lowerAt? (shape : Shape) : Terminator → Option Assembly.Program
+  | .fallthrough next => some [.jump next]
   | .jump target => some [.jump target]
   | .jumpi target next => some [.jumpi target, .jump next]
-  | .returnDispatch _ => none
+  | .returnDispatch returnCount sites => do
+      let depth ← shape.returnTokenDepth?
+      if sites.isEmpty ∨ depth ≠ returnCount then none
+      else returnDispatchCode? depth sites
   | .halt kind =>
       match kind with
       | .stop => some [.prim .stop]
@@ -70,17 +127,21 @@ end Terminator
 
 namespace Block
 
-def lowerBody? : List Instr → Option Assembly.Program
-  | [] => some []
-  | instr :: rest => do
-      let head ← instr.lower?
-      let tail ← lowerBody? rest
-      some (head ++ tail)
+def lowerBodyFrom? : List Instr → Shape →
+    Option (Assembly.Program × Shape)
+  | [], shape => some ([], shape)
+  | instr :: rest, shape => do
+      let (head, shape') ← instr.lowerAt? shape
+      let (tail, output) ← lowerBodyFrom? rest shape'
+      some (head ++ tail, output)
 
 def lower? (block : Block) : Option Assembly.Program := do
-  let body ← lowerBody? block.body
-  let term ← block.term.lower?
-  some (.label block.label :: body ++ term)
+  let (body, output) ← lowerBodyFrom? block.body block.input
+  if output = block.output then
+    let term ← block.term.lowerAt? output
+    some (.label block.label :: body ++ term)
+  else
+    none
 
 end Block
 

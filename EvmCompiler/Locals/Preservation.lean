@@ -1,3 +1,4 @@
+import EvmCompiler.Locals.Compiler
 import EvmCompiler.Locals.Semantics
 import EvmCompiler.Expressions.Preservation
 

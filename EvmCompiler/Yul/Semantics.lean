@@ -8,6 +8,7 @@ namespace Yul
 
 abbrev ReferenceState := EvmYul.Yul.State
 abbrev ReferenceException := EvmYul.Yul.Exception
+abbrev Outcome := Objects.Outcome
 
 inductive ReferenceResult where
   | regular (state : ReferenceState)

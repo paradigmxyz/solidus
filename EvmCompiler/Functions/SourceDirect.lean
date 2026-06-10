@@ -7285,16 +7285,55 @@ def ModeRel : Source.Mode → Structured.Mode → Prop
   | .halt sourceKind, .halt targetKind => sourceKind = targetKind
   | _, _ => False
 
+def sourceOutcomeView :
+    Simulation.OutcomeView Source.Outcome Source.State Source.Mode where
+  state := fun outcome => outcome.state
+  mode := fun outcome => outcome.mode
+
+def targetOutcomeView :
+    Simulation.OutcomeView Locals.Outcome Locals.RunState Structured.Mode where
+  state := Structured.Outcome.state
+  mode := Structured.Outcome.mode
+
+def outcomeContract (layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest) :
+    Simulation.OutcomeContract
+      Source.Mode Structured.Mode Source.State Locals.RunState where
+  relate sourceMode targetMode sourceState targetState :=
+    match sourceMode, targetMode with
+    | .halt sourceKind, .halt targetKind =>
+        sourceKind = targetKind ∧
+          sourceState.shared = targetState.evm.toSharedState
+    | _, _ =>
+        StateRel layout hiddenReturns sourceState targetState ∧
+          ModeRel sourceMode targetMode
+
+@[simp] theorem outcomeContract_relate (layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest)
+    (sourceMode : Source.Mode) (targetMode : Structured.Mode)
+    (sourceState : Source.State) (targetState : Locals.RunState) :
+    (outcomeContract layout hiddenReturns).relate
+        sourceMode targetMode sourceState targetState =
+      match sourceMode, targetMode with
+      | .halt sourceKind, .halt targetKind =>
+          sourceKind = targetKind ∧
+            sourceState.shared = targetState.evm.toSharedState
+      | _, _ =>
+          StateRel layout hiddenReturns sourceState targetState ∧
+            ModeRel sourceMode targetMode := rfl
+
 def OutcomeRel (layout : List Name)
     (hiddenReturns : List Structured.ReturnDest)
     (source : Source.Outcome) (target : Locals.Outcome) : Prop :=
-  match source.mode, target.mode with
-  | .halt sourceKind, .halt targetKind =>
-      sourceKind = targetKind ∧
-        source.state.shared = target.state.evm.toSharedState
-  | _, _ =>
-      StateRel layout hiddenReturns source.state target.state ∧
-        ModeRel source.mode target.mode
+  (outcomeContract layout hiddenReturns).relate
+    source.mode target.mode source.state target.state
+
+theorem outcomeRel_eq_simulation (layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest)
+    (source : Source.Outcome) (target : Locals.Outcome) :
+    OutcomeRel layout hiddenReturns source target =
+      Simulation.OutcomeRel sourceOutcomeView targetOutcomeView
+        (outcomeContract layout hiddenReturns) source target := rfl
 
 /--
 Outcome relation for the function source-to-direct boundary.
@@ -7304,22 +7343,59 @@ is the exception owned by this layer: the direct backend has already pushed the
 function return variables and cleaned the frame, so the observable relation is
 `ReturnedStackRel`, not a live-locals layout relation.
 -/
+def stmtOutcomeContract (returns : List Name) (layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest) :
+    Simulation.OutcomeContract
+      Source.Mode Structured.Mode Source.State Locals.RunState where
+  relate sourceMode targetMode sourceState targetState :=
+    match sourceMode, targetMode with
+    | .regular, .regular
+    | .brk, .brk
+    | .cont, .cont =>
+        StateRel layout hiddenReturns sourceState targetState
+    | .leave, .leave =>
+        ∃ values,
+          Source.Store.lookupMany returns sourceState.vars = some values ∧
+            ReturnedStackRel hiddenReturns sourceState values targetState
+    | .halt sourceKind, .halt targetKind =>
+        sourceKind = targetKind ∧
+          sourceState.shared = targetState.evm.toSharedState
+    | _, _ => False
+
+@[simp] theorem stmtOutcomeContract_relate
+    (returns layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest)
+    (sourceMode : Source.Mode) (targetMode : Structured.Mode)
+    (sourceState : Source.State) (targetState : Locals.RunState) :
+    (stmtOutcomeContract returns layout hiddenReturns).relate
+        sourceMode targetMode sourceState targetState =
+      match sourceMode, targetMode with
+      | .regular, .regular
+      | .brk, .brk
+      | .cont, .cont =>
+          StateRel layout hiddenReturns sourceState targetState
+      | .leave, .leave =>
+          ∃ values,
+            Source.Store.lookupMany returns sourceState.vars = some values ∧
+              ReturnedStackRel hiddenReturns sourceState values targetState
+      | .halt sourceKind, .halt targetKind =>
+          sourceKind = targetKind ∧
+            sourceState.shared = targetState.evm.toSharedState
+      | _, _ => False := rfl
+
 def StmtOutcomeRel (returns : List Name) (layout : List Name)
     (hiddenReturns : List Structured.ReturnDest)
     (source : Source.Outcome) (target : Locals.Outcome) : Prop :=
-  match source.mode, target.mode with
-  | .regular, .regular
-  | .brk, .brk
-  | .cont, .cont =>
-      StateRel layout hiddenReturns source.state target.state
-  | .leave, .leave =>
-      ∃ values,
-        Source.Store.lookupMany returns source.state.vars = some values ∧
-          ReturnedStackRel hiddenReturns source.state values target.state
-  | .halt sourceKind, .halt targetKind =>
-      sourceKind = targetKind ∧
-        source.state.shared = target.state.evm.toSharedState
-  | _, _ => False
+  (stmtOutcomeContract returns layout hiddenReturns).relate
+    source.mode target.mode source.state target.state
+
+theorem stmtOutcomeRel_eq_simulation
+    (returns layout : List Name)
+    (hiddenReturns : List Structured.ReturnDest)
+    (source : Source.Outcome) (target : Locals.Outcome) :
+    StmtOutcomeRel returns layout hiddenReturns source target =
+      Simulation.OutcomeRel sourceOutcomeView targetOutcomeView
+        (stmtOutcomeContract returns layout hiddenReturns) source target := rfl
 
 namespace OutcomeRel
 

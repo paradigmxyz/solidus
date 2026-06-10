@@ -1,4 +1,4 @@
-import EvmCompiler.Expressions
+import EvmCompiler.Expressions.Syntax
 
 namespace EvmCompiler
 namespace Locals

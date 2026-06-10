@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.Semantics
+import EvmCompiler.Functions.Syntax
 
 namespace EvmCompiler
 namespace Objects
@@ -7,7 +7,6 @@ abbrev Word := Functions.Word
 abbrev EVMState := Functions.EVMState
 abbrev EVMException := Functions.EVMException
 abbrev Name := Functions.Name
-abbrev Outcome := EvmCompiler.Functions.Outcome
 
 structure DataSection where
   name? : Option Name
@@ -31,6 +30,9 @@ def data : Object → List DataSection
 def objects : Object → List Object
   | .mk _name _code _data objects => objects
 
+def toFunctions (object : Object) : Functions.Program :=
+  object.code
+
 end Object
 
 mutual
@@ -48,6 +50,9 @@ structure Program where
   root : Object
 
 namespace Program
+
+def toFunctions (program : Program) : Functions.Program :=
+  program.root.toFunctions
 
 def WF (program : Program) : Prop :=
   program.root.WF

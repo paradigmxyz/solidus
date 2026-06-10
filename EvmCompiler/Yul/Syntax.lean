@@ -8,7 +8,6 @@ abbrev Word := Objects.Word
 abbrev EVMState := Objects.EVMState
 abbrev EVMException := Objects.EVMException
 abbrev Name := Objects.Name
-abbrev Outcome := Objects.Outcome
 abbrev AstExpr := EvmYul.Yul.Ast.Expr
 abbrev AstStmt := EvmYul.Yul.Ast.Stmt
 abbrev AstFunctionDefinition := EvmYul.Yul.Ast.FunctionDefinition

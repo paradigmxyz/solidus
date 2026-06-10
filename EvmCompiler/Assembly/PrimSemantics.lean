@@ -1752,6 +1752,23 @@ end PrimStep
 namespace PrimOp
 
 /--
+The stack transition of any nonterminal primitive.
+
+This is deliberately broader than `continuingStep?`: the latter is the
+historical closed-world proof whitelist and excludes resource observers,
+PC-dependent instructions, and call/create operations. Typed CFG validation
+only needs the EVM stack contract, so those effects remain admissible while
+terminal instructions must be represented by CFG terminators.
+-/
+def stackArity? (op : PrimOp) : Option (Nat × Nat) :=
+  match op with
+  | .stop | .return | .revert | .selfdestruct | .invalid => none
+  | _ =>
+      some
+        ((EvmYul.EVM.δ op.toEVM).getD 0,
+          (EvmYul.EVM.α op.toEVM).getD 0)
+
+/--
 Continuing primitives admitted by structured control as ordinary statements.
 
 Excluded here: `STOP`, `RETURN`, `REVERT`, `SELFDESTRUCT`, the call/create

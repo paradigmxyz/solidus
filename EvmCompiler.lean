@@ -1,10 +1,12 @@
-import EvmCompiler.Assembly
+import EvmCompiler.Compiler
+import EvmCompiler.Simulation.Outcome
 import EvmCompiler.TypedCfg
-import EvmCompiler.Structured
-import EvmCompiler.Expressions
-import EvmCompiler.Locals
-import EvmCompiler.Functions
-import EvmCompiler.Objects
-import EvmCompiler.Yul
-import EvmCompiler.Solidity
-import EvmCompiler.LayerAudit
+import EvmCompiler.Public
+
+/-!
+Stable compiler API.
+
+Historical theorem corridors and runtime-specific audit aliases are available
+through `EvmCompiler.Legacy`; importing the root compiler no longer pulls those
+large compatibility modules into downstream builds.
+-/

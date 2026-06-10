@@ -1,3 +1,4 @@
+import EvmCompiler.Objects.Compiler
 import EvmCompiler.Objects.Semantics
 import EvmCompiler.Objects.SourceSemantics
 import EvmCompiler.Functions.Preservation

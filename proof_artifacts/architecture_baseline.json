@@ -1,0 +1,749 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-10T19:52:12Z",
+  "git": {
+    "commit": "448eaa408b76674f23e05c30635567bb1b54c13b",
+    "branch": "codex/architecture-migration"
+  },
+  "totals": {
+    "module_count": 104,
+    "source_lines": 1021199,
+    "direct_imports": 312,
+    "declarations": 18491,
+    "compiler_variant_declarations": 145,
+    "outcome_relation_declarations": 43,
+    "layer_audit_abbrevs": 613,
+    "layer_audit_examples": 425
+  },
+  "modules": [
+    {
+      "path": "EvmCompiler/Assembly.lean",
+      "module": "EvmCompiler.Assembly",
+      "source_lines": 10,
+      "direct_imports": 10,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Assembly/Accepted.lean",
+      "module": "EvmCompiler.Assembly.Accepted",
+      "source_lines": 279,
+      "direct_imports": 2,
+      "declarations": 24
+    },
+    {
+      "path": "EvmCompiler/Assembly/Assembler.lean",
+      "module": "EvmCompiler.Assembly.Assembler",
+      "source_lines": 673,
+      "direct_imports": 1,
+      "declarations": 42
+    },
+    {
+      "path": "EvmCompiler/Assembly/Bytecode.lean",
+      "module": "EvmCompiler.Assembly.Bytecode",
+      "source_lines": 979,
+      "direct_imports": 2,
+      "declarations": 73
+    },
+    {
+      "path": "EvmCompiler/Assembly/GasAware.lean",
+      "module": "EvmCompiler.Assembly.GasAware",
+      "source_lines": 15515,
+      "direct_imports": 1,
+      "declarations": 563
+    },
+    {
+      "path": "EvmCompiler/Assembly/Observer.lean",
+      "module": "EvmCompiler.Assembly.Observer",
+      "source_lines": 2286,
+      "direct_imports": 1,
+      "declarations": 83
+    },
+    {
+      "path": "EvmCompiler/Assembly/Preservation.lean",
+      "module": "EvmCompiler.Assembly.Preservation",
+      "source_lines": 824,
+      "direct_imports": 2,
+      "declarations": 40
+    },
+    {
+      "path": "EvmCompiler/Assembly/PrimSemantics.lean",
+      "module": "EvmCompiler.Assembly.PrimSemantics",
+      "source_lines": 1928,
+      "direct_imports": 4,
+      "declarations": 35
+    },
+    {
+      "path": "EvmCompiler/Assembly/Semantics.lean",
+      "module": "EvmCompiler.Assembly.Semantics",
+      "source_lines": 256,
+      "direct_imports": 4,
+      "declarations": 31
+    },
+    {
+      "path": "EvmCompiler/Assembly/Syntax.lean",
+      "module": "EvmCompiler.Assembly.Syntax",
+      "source_lines": 305,
+      "direct_imports": 2,
+      "declarations": 30
+    },
+    {
+      "path": "EvmCompiler/Assembly/TopLevel.lean",
+      "module": "EvmCompiler.Assembly.TopLevel",
+      "source_lines": 109,
+      "direct_imports": 1,
+      "declarations": 4
+    },
+    {
+      "path": "EvmCompiler/Compiler.lean",
+      "module": "EvmCompiler.Compiler",
+      "source_lines": 1,
+      "direct_imports": 1,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Compiler/Artifact.lean",
+      "module": "EvmCompiler.Compiler.Artifact",
+      "source_lines": 125,
+      "direct_imports": 1,
+      "declarations": 14
+    },
+    {
+      "path": "EvmCompiler/Core/Except.lean",
+      "module": "EvmCompiler.Core.Except",
+      "source_lines": 13,
+      "direct_imports": 1,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Expressions.lean",
+      "module": "EvmCompiler.Expressions",
+      "source_lines": 4,
+      "direct_imports": 4,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Expressions/Compiler.lean",
+      "module": "EvmCompiler.Expressions.Compiler",
+      "source_lines": 359,
+      "direct_imports": 4,
+      "declarations": 20
+    },
+    {
+      "path": "EvmCompiler/Expressions/Preservation.lean",
+      "module": "EvmCompiler.Expressions.Preservation",
+      "source_lines": 501,
+      "direct_imports": 4,
+      "declarations": 17
+    },
+    {
+      "path": "EvmCompiler/Expressions/Semantics.lean",
+      "module": "EvmCompiler.Expressions.Semantics",
+      "source_lines": 245,
+      "direct_imports": 2,
+      "declarations": 16
+    },
+    {
+      "path": "EvmCompiler/Expressions/Syntax.lean",
+      "module": "EvmCompiler.Expressions.Syntax",
+      "source_lines": 307,
+      "direct_imports": 1,
+      "declarations": 15
+    },
+    {
+      "path": "EvmCompiler/Functions.lean",
+      "module": "EvmCompiler.Functions",
+      "source_lines": 15,
+      "direct_imports": 15,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Functions/CallAwareSpill.lean",
+      "module": "EvmCompiler.Functions.CallAwareSpill",
+      "source_lines": 65075,
+      "direct_imports": 2,
+      "declarations": 926
+    },
+    {
+      "path": "EvmCompiler/Functions/CallDepth.lean",
+      "module": "EvmCompiler.Functions.CallDepth",
+      "source_lines": 3953,
+      "direct_imports": 3,
+      "declarations": 215
+    },
+    {
+      "path": "EvmCompiler/Functions/CallDepthExamples.lean",
+      "module": "EvmCompiler.Functions.CallDepthExamples",
+      "source_lines": 134,
+      "direct_imports": 1,
+      "declarations": 14
+    },
+    {
+      "path": "EvmCompiler/Functions/CallDepthRanked.lean",
+      "module": "EvmCompiler.Functions.CallDepthRanked",
+      "source_lines": 6334,
+      "direct_imports": 1,
+      "declarations": 422
+    },
+    {
+      "path": "EvmCompiler/Functions/Compiler.lean",
+      "module": "EvmCompiler.Functions.Compiler",
+      "source_lines": 1106,
+      "direct_imports": 3,
+      "declarations": 59
+    },
+    {
+      "path": "EvmCompiler/Functions/LiveLayout.lean",
+      "module": "EvmCompiler.Functions.LiveLayout",
+      "source_lines": 5466,
+      "direct_imports": 2,
+      "declarations": 188
+    },
+    {
+      "path": "EvmCompiler/Functions/LiveLayoutBridge.lean",
+      "module": "EvmCompiler.Functions.LiveLayoutBridge",
+      "source_lines": 4949,
+      "direct_imports": 2,
+      "declarations": 217
+    },
+    {
+      "path": "EvmCompiler/Functions/LiveLayoutPreservation.lean",
+      "module": "EvmCompiler.Functions.LiveLayoutPreservation",
+      "source_lines": 49938,
+      "direct_imports": 2,
+      "declarations": 411
+    },
+    {
+      "path": "EvmCompiler/Functions/LoweringCore.lean",
+      "module": "EvmCompiler.Functions.LoweringCore",
+      "source_lines": 63,
+      "direct_imports": 2,
+      "declarations": 9
+    },
+    {
+      "path": "EvmCompiler/Functions/Preservation.lean",
+      "module": "EvmCompiler.Functions.Preservation",
+      "source_lines": 5414,
+      "direct_imports": 5,
+      "declarations": 106
+    },
+    {
+      "path": "EvmCompiler/Functions/ScratchFrameMemory.lean",
+      "module": "EvmCompiler.Functions.ScratchFrameMemory",
+      "source_lines": 18681,
+      "direct_imports": 3,
+      "declarations": 254
+    },
+    {
+      "path": "EvmCompiler/Functions/ScratchFrameSpill.lean",
+      "module": "EvmCompiler.Functions.ScratchFrameSpill",
+      "source_lines": 5680,
+      "direct_imports": 3,
+      "declarations": 160
+    },
+    {
+      "path": "EvmCompiler/Functions/Semantics.lean",
+      "module": "EvmCompiler.Functions.Semantics",
+      "source_lines": 373,
+      "direct_imports": 2,
+      "declarations": 18
+    },
+    {
+      "path": "EvmCompiler/Functions/SourceDirect.lean",
+      "module": "EvmCompiler.Functions.SourceDirect",
+      "source_lines": 30362,
+      "direct_imports": 3,
+      "declarations": 514
+    },
+    {
+      "path": "EvmCompiler/Functions/SourceLowering.lean",
+      "module": "EvmCompiler.Functions.SourceLowering",
+      "source_lines": 2438,
+      "direct_imports": 3,
+      "declarations": 50
+    },
+    {
+      "path": "EvmCompiler/Functions/SourceSemantics.lean",
+      "module": "EvmCompiler.Functions.SourceSemantics",
+      "source_lines": 2494,
+      "direct_imports": 2,
+      "declarations": 67
+    },
+    {
+      "path": "EvmCompiler/Functions/Syntax.lean",
+      "module": "EvmCompiler.Functions.Syntax",
+      "source_lines": 275,
+      "direct_imports": 1,
+      "declarations": 18
+    },
+    {
+      "path": "EvmCompiler/LayerAudit.lean",
+      "module": "EvmCompiler.LayerAudit",
+      "source_lines": 10604,
+      "direct_imports": 8,
+      "declarations": 618
+    },
+    {
+      "path": "EvmCompiler/Legacy.lean",
+      "module": "EvmCompiler.Legacy",
+      "source_lines": 10,
+      "direct_imports": 3,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Locals.lean",
+      "module": "EvmCompiler.Locals",
+      "source_lines": 10,
+      "direct_imports": 10,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Locals/Allocation.lean",
+      "module": "EvmCompiler.Locals.Allocation",
+      "source_lines": 225,
+      "direct_imports": 1,
+      "declarations": 30
+    },
+    {
+      "path": "EvmCompiler/Locals/Compiler.lean",
+      "module": "EvmCompiler.Locals.Compiler",
+      "source_lines": 1423,
+      "direct_imports": 3,
+      "declarations": 45
+    },
+    {
+      "path": "EvmCompiler/Locals/EffectSemantics.lean",
+      "module": "EvmCompiler.Locals.EffectSemantics",
+      "source_lines": 441,
+      "direct_imports": 1,
+      "declarations": 22
+    },
+    {
+      "path": "EvmCompiler/Locals/Preservation.lean",
+      "module": "EvmCompiler.Locals.Preservation",
+      "source_lines": 3211,
+      "direct_imports": 3,
+      "declarations": 37
+    },
+    {
+      "path": "EvmCompiler/Locals/Semantics.lean",
+      "module": "EvmCompiler.Locals.Semantics",
+      "source_lines": 560,
+      "direct_imports": 2,
+      "declarations": 24
+    },
+    {
+      "path": "EvmCompiler/Locals/SourceLowering.lean",
+      "module": "EvmCompiler.Locals.SourceLowering",
+      "source_lines": 32926,
+      "direct_imports": 7,
+      "declarations": 1151
+    },
+    {
+      "path": "EvmCompiler/Locals/SourceSemantics.lean",
+      "module": "EvmCompiler.Locals.SourceSemantics",
+      "source_lines": 1034,
+      "direct_imports": 4,
+      "declarations": 50
+    },
+    {
+      "path": "EvmCompiler/Locals/StackLowering.lean",
+      "module": "EvmCompiler.Locals.StackLowering",
+      "source_lines": 194,
+      "direct_imports": 1,
+      "declarations": 10
+    },
+    {
+      "path": "EvmCompiler/Locals/StackModel.lean",
+      "module": "EvmCompiler.Locals.StackModel",
+      "source_lines": 155,
+      "direct_imports": 1,
+      "declarations": 20
+    },
+    {
+      "path": "EvmCompiler/Locals/Syntax.lean",
+      "module": "EvmCompiler.Locals.Syntax",
+      "source_lines": 376,
+      "direct_imports": 1,
+      "declarations": 18
+    },
+    {
+      "path": "EvmCompiler/Objects.lean",
+      "module": "EvmCompiler.Objects",
+      "source_lines": 6,
+      "direct_imports": 6,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Objects/Compiler.lean",
+      "module": "EvmCompiler.Objects.Compiler",
+      "source_lines": 439,
+      "direct_imports": 5,
+      "declarations": 39
+    },
+    {
+      "path": "EvmCompiler/Objects/Layout.lean",
+      "module": "EvmCompiler.Objects.Layout",
+      "source_lines": 223,
+      "direct_imports": 2,
+      "declarations": 31
+    },
+    {
+      "path": "EvmCompiler/Objects/Preservation.lean",
+      "module": "EvmCompiler.Objects.Preservation",
+      "source_lines": 3353,
+      "direct_imports": 7,
+      "declarations": 79
+    },
+    {
+      "path": "EvmCompiler/Objects/Semantics.lean",
+      "module": "EvmCompiler.Objects.Semantics",
+      "source_lines": 52,
+      "direct_imports": 2,
+      "declarations": 7
+    },
+    {
+      "path": "EvmCompiler/Objects/SourceSemantics.lean",
+      "module": "EvmCompiler.Objects.SourceSemantics",
+      "source_lines": 109,
+      "direct_imports": 2,
+      "declarations": 15
+    },
+    {
+      "path": "EvmCompiler/Objects/Syntax.lean",
+      "module": "EvmCompiler.Objects.Syntax",
+      "source_lines": 63,
+      "direct_imports": 1,
+      "declarations": 14
+    },
+    {
+      "path": "EvmCompiler/Public.lean",
+      "module": "EvmCompiler.Public",
+      "source_lines": 75,
+      "direct_imports": 2,
+      "declarations": 11
+    },
+    {
+      "path": "EvmCompiler/Simulation/Outcome.lean",
+      "module": "EvmCompiler.Simulation.Outcome",
+      "source_lines": 87,
+      "direct_imports": 1,
+      "declarations": 6
+    },
+    {
+      "path": "EvmCompiler/Solidity.lean",
+      "module": "EvmCompiler.Solidity",
+      "source_lines": 2,
+      "direct_imports": 2,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Solidity/BridgeJson.lean",
+      "module": "EvmCompiler.Solidity.BridgeJson",
+      "source_lines": 273,
+      "direct_imports": 2,
+      "declarations": 20
+    },
+    {
+      "path": "EvmCompiler/Solidity/Frontend.lean",
+      "module": "EvmCompiler.Solidity.Frontend",
+      "source_lines": 3181,
+      "direct_imports": 5,
+      "declarations": 237
+    },
+    {
+      "path": "EvmCompiler/StackGuardAudit.lean",
+      "module": "EvmCompiler.StackGuardAudit",
+      "source_lines": 1980,
+      "direct_imports": 5,
+      "declarations": 18
+    },
+    {
+      "path": "EvmCompiler/Structured.lean",
+      "module": "EvmCompiler.Structured",
+      "source_lines": 7,
+      "direct_imports": 7,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Structured/Compiler.lean",
+      "module": "EvmCompiler.Structured.Compiler",
+      "source_lines": 979,
+      "direct_imports": 1,
+      "declarations": 51
+    },
+    {
+      "path": "EvmCompiler/Structured/Preservation.lean",
+      "module": "EvmCompiler.Structured.Preservation",
+      "source_lines": 26691,
+      "direct_imports": 3,
+      "declarations": 567
+    },
+    {
+      "path": "EvmCompiler/Structured/Semantics.lean",
+      "module": "EvmCompiler.Structured.Semantics",
+      "source_lines": 1097,
+      "direct_imports": 2,
+      "declarations": 24
+    },
+    {
+      "path": "EvmCompiler/Structured/StackResource.lean",
+      "module": "EvmCompiler.Structured.StackResource",
+      "source_lines": 2089,
+      "direct_imports": 3,
+      "declarations": 101
+    },
+    {
+      "path": "EvmCompiler/Structured/Syntax.lean",
+      "module": "EvmCompiler.Structured.Syntax",
+      "source_lines": 603,
+      "direct_imports": 3,
+      "declarations": 45
+    },
+    {
+      "path": "EvmCompiler/Structured/TypedCfgBridge.lean",
+      "module": "EvmCompiler.Structured.TypedCfgBridge",
+      "source_lines": 92,
+      "direct_imports": 2,
+      "declarations": 6
+    },
+    {
+      "path": "EvmCompiler/Structured/TypedContinuations.lean",
+      "module": "EvmCompiler.Structured.TypedContinuations",
+      "source_lines": 785,
+      "direct_imports": 1,
+      "declarations": 62
+    },
+    {
+      "path": "EvmCompiler/TypedCfg.lean",
+      "module": "EvmCompiler.TypedCfg",
+      "source_lines": 5,
+      "direct_imports": 5,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Certificate.lean",
+      "module": "EvmCompiler.TypedCfg.Certificate",
+      "source_lines": 266,
+      "direct_imports": 3,
+      "declarations": 24
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Lower.lean",
+      "module": "EvmCompiler.TypedCfg.Lower",
+      "source_lines": 134,
+      "direct_imports": 1,
+      "declarations": 9
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Semantics.lean",
+      "module": "EvmCompiler.TypedCfg.Semantics",
+      "source_lines": 130,
+      "direct_imports": 2,
+      "declarations": 9
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Syntax.lean",
+      "module": "EvmCompiler.TypedCfg.Syntax",
+      "source_lines": 108,
+      "direct_imports": 1,
+      "declarations": 15
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Typing.lean",
+      "module": "EvmCompiler.TypedCfg.Typing",
+      "source_lines": 163,
+      "direct_imports": 2,
+      "declarations": 17
+    },
+    {
+      "path": "EvmCompiler/Yul.lean",
+      "module": "EvmCompiler.Yul",
+      "source_lines": 18,
+      "direct_imports": 18,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Yul/ArgSlots.lean",
+      "module": "EvmCompiler.Yul.ArgSlots",
+      "source_lines": 243,
+      "direct_imports": 2,
+      "declarations": 12
+    },
+    {
+      "path": "EvmCompiler/Yul/Compiler.lean",
+      "module": "EvmCompiler.Yul.Compiler",
+      "source_lines": 2874,
+      "direct_imports": 2,
+      "declarations": 152
+    },
+    {
+      "path": "EvmCompiler/Yul/CompilerOpen.lean",
+      "module": "EvmCompiler.Yul.CompilerOpen",
+      "source_lines": 1458,
+      "direct_imports": 1,
+      "declarations": 44
+    },
+    {
+      "path": "EvmCompiler/Yul/NoCallCreate.lean",
+      "module": "EvmCompiler.Yul.NoCallCreate",
+      "source_lines": 1483,
+      "direct_imports": 1,
+      "declarations": 29
+    },
+    {
+      "path": "EvmCompiler/Yul/NoCallRuntime.lean",
+      "module": "EvmCompiler.Yul.NoCallRuntime",
+      "source_lines": 24486,
+      "direct_imports": 7,
+      "declarations": 339
+    },
+    {
+      "path": "EvmCompiler/Yul/ObjectModel.lean",
+      "module": "EvmCompiler.Yul.ObjectModel",
+      "source_lines": 766,
+      "direct_imports": 2,
+      "declarations": 61
+    },
+    {
+      "path": "EvmCompiler/Yul/ObjectPreservation.lean",
+      "module": "EvmCompiler.Yul.ObjectPreservation",
+      "source_lines": 3611,
+      "direct_imports": 1,
+      "declarations": 111
+    },
+    {
+      "path": "EvmCompiler/Yul/ObjectRuntime.lean",
+      "module": "EvmCompiler.Yul.ObjectRuntime",
+      "source_lines": 640,
+      "direct_imports": 2,
+      "declarations": 16
+    },
+    {
+      "path": "EvmCompiler/Yul/ObjectSemantics.lean",
+      "module": "EvmCompiler.Yul.ObjectSemantics",
+      "source_lines": 589,
+      "direct_imports": 1,
+      "declarations": 31
+    },
+    {
+      "path": "EvmCompiler/Yul/ObserverOracle.lean",
+      "module": "EvmCompiler.Yul.ObserverOracle",
+      "source_lines": 55329,
+      "direct_imports": 7,
+      "declarations": 662
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenAssembly.lean",
+      "module": "EvmCompiler.Yul.OpenAssembly",
+      "source_lines": 2502,
+      "direct_imports": 4,
+      "declarations": 136
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenExternal.lean",
+      "module": "EvmCompiler.Yul.OpenExternal",
+      "source_lines": 4834,
+      "direct_imports": 1,
+      "declarations": 229
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenFuelAdequacy.lean",
+      "module": "EvmCompiler.Yul.OpenFuelAdequacy",
+      "source_lines": 178,
+      "direct_imports": 1,
+      "declarations": 1
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenGasAware.lean",
+      "module": "EvmCompiler.Yul.OpenGasAware",
+      "source_lines": 14883,
+      "direct_imports": 2,
+      "declarations": 418
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenLowering.lean",
+      "module": "EvmCompiler.Yul.OpenLowering",
+      "source_lines": 98007,
+      "direct_imports": 3,
+      "declarations": 898
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenRuntime.lean",
+      "module": "EvmCompiler.Yul.OpenRuntime",
+      "source_lines": 28598,
+      "direct_imports": 5,
+      "declarations": 357
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenStackResource.lean",
+      "module": "EvmCompiler.Yul.OpenStackResource",
+      "source_lines": 1117,
+      "direct_imports": 2,
+      "declarations": 54
+    },
+    {
+      "path": "EvmCompiler/Yul/OpenTargetFuel.lean",
+      "module": "EvmCompiler.Yul.OpenTargetFuel",
+      "source_lines": 462,
+      "direct_imports": 1,
+      "declarations": 0
+    },
+    {
+      "path": "EvmCompiler/Yul/Preservation.lean",
+      "module": "EvmCompiler.Yul.Preservation",
+      "source_lines": 1366,
+      "direct_imports": 3,
+      "declarations": 58
+    },
+    {
+      "path": "EvmCompiler/Yul/PrimSemantics.lean",
+      "module": "EvmCompiler.Yul.PrimSemantics",
+      "source_lines": 7285,
+      "direct_imports": 3,
+      "declarations": 245
+    },
+    {
+      "path": "EvmCompiler/Yul/RecursiveBridge.lean",
+      "module": "EvmCompiler.Yul.RecursiveBridge",
+      "source_lines": 3317,
+      "direct_imports": 1,
+      "declarations": 132
+    },
+    {
+      "path": "EvmCompiler/Yul/RecursiveBridgeSupport.lean",
+      "module": "EvmCompiler.Yul.RecursiveBridgeSupport",
+      "source_lines": 360235,
+      "direct_imports": 2,
+      "declarations": 4159
+    },
+    {
+      "path": "EvmCompiler/Yul/Reference.lean",
+      "module": "EvmCompiler.Yul.Reference",
+      "source_lines": 84694,
+      "direct_imports": 7,
+      "declarations": 2196
+    },
+    {
+      "path": "EvmCompiler/Yul/Semantics.lean",
+      "module": "EvmCompiler.Yul.Semantics",
+      "source_lines": 161,
+      "direct_imports": 4,
+      "declarations": 18
+    },
+    {
+      "path": "EvmCompiler/Yul/SolcValidation.lean",
+      "module": "EvmCompiler.Yul.SolcValidation",
+      "source_lines": 413,
+      "direct_imports": 1,
+      "declarations": 37
+    },
+    {
+      "path": "EvmCompiler/Yul/Syntax.lean",
+      "module": "EvmCompiler.Yul.Syntax",
+      "source_lines": 20,
+      "direct_imports": 2,
+      "declarations": 9
+    }
+  ],
+  "build_measurements": []
+}

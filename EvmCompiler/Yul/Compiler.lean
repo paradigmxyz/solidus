@@ -1,121 +1,9 @@
 import EvmCompiler.Yul.Syntax
+import EvmCompiler.Yul.Primitive
 import EvmCompiler.Objects.Compiler
 
 namespace EvmCompiler
 namespace Yul
-
-namespace Prim
-
-def toBasicOp? : EvmYul.Operation .Yul → Option Structured.BasicOp
-  | .StopArith .STOP => none
-  | .StopArith .ADD => some .add
-  | .StopArith .MUL => some .mul
-  | .StopArith .SUB => some .sub
-  | .StopArith .DIV => some .div
-  | .StopArith .SDIV => some .sdiv
-  | .StopArith .MOD => some .mod
-  | .StopArith .SMOD => some .smod
-  | .StopArith .ADDMOD => some .addmod
-  | .StopArith .MULMOD => some .mulmod
-  | .StopArith .EXP => some .exp
-  | .StopArith .SIGNEXTEND => some .signextend
-  | .CompBit .LT => some .lt
-  | .CompBit .GT => some .gt
-  | .CompBit .SLT => some .slt
-  | .CompBit .SGT => some .sgt
-  | .CompBit .EQ => some .eq
-  | .CompBit .ISZERO => some .iszero
-  | .CompBit .AND => some .and
-  | .CompBit .OR => some .or
-  | .CompBit .XOR => some .xor
-  | .CompBit .NOT => some .not
-  | .CompBit .BYTE => some .byte
-  | .CompBit .SHL => some .shl
-  | .CompBit .SHR => some .shr
-  | .CompBit .SAR => some .sar
-  | .Keccak .KECCAK256 => some .keccak256
-  | .Env .ADDRESS => some .address
-  | .Env .BALANCE => some .balance
-  | .Env .ORIGIN => some .origin
-  | .Env .CALLER => some .caller
-  | .Env .CALLVALUE => some .callvalue
-  | .Env .CALLDATALOAD => some .calldataload
-  | .Env .CALLDATASIZE => some .calldatasize
-  | .Env .CALLDATACOPY => some .calldatacopy
-  | .Env .CODESIZE => some .codesize
-  | .Env .GASPRICE => some .gasprice
-  | .Env .CODECOPY => some .codecopy
-  | .Env .EXTCODESIZE => some .extcodesize
-  | .Env .EXTCODECOPY => some .extcodecopy
-  | .Env .RETURNDATASIZE => some .returndatasize
-  | .Env .RETURNDATACOPY => some .returndatacopy
-  | .Env .EXTCODEHASH => some .extcodehash
-  | .Block .BLOCKHASH => some .blockhash
-  | .Block .COINBASE => some .coinbase
-  | .Block .TIMESTAMP => some .timestamp
-  | .Block .NUMBER => some .number
-  | .Block .PREVRANDAO => some .prevrandao
-  | .Block .GASLIMIT => some .gaslimit
-  | .Block .CHAINID => some .chainid
-  | .Block .SELFBALANCE => some .selfbalance
-  | .Block .BASEFEE => some .basefee
-  | .Block .BLOBHASH => some .blobhash
-  | .Block .BLOBBASEFEE => some .blobbasefee
-  | .StackMemFlow .POP => some .pop
-  | .StackMemFlow .MLOAD => some .mload
-  | .StackMemFlow .MSTORE => some .mstore
-  | .StackMemFlow .SLOAD => some .sload
-  | .StackMemFlow .SSTORE => some .sstore
-  | .StackMemFlow .MSTORE8 => some .mstore8
-  -- Imported-Yul `msize()` observes `activeWords`, which private-scratch
-  -- preallocation changes. Like `pc()` and `gas()`, it is recognized by the
-  -- source semantics but not accepted by this verified compiler surface.
-  | .StackMemFlow .MSIZE => none
-  | .StackMemFlow .GAS => none
-  | .StackMemFlow .TLOAD => some .tload
-  | .StackMemFlow .TSTORE => some .tstore
-  | .StackMemFlow .MCOPY => some .mcopy
-  | .Log .LOG0 => some .log0
-  | .Log .LOG1 => some .log1
-  | .Log .LOG2 => some .log2
-  | .Log .LOG3 => some .log3
-  | .Log .LOG4 => some .log4
-  | .System .CREATE => some .create
-  | .System .CALL => some .call
-  | .System .CALLCODE => some .callcode
-  | .System .RETURN => none
-  | .System .DELEGATECALL => some .delegatecall
-  | .System .CREATE2 => some .create2
-  | .System .STATICCALL => some .staticcall
-  | .System .REVERT => none
-  | .System .INVALID => some .invalid
-  | .System .SELFDESTRUCT => none
-
-@[simp] theorem toBasicOp?_gas :
-    toBasicOp? ((.StackMemFlow .GAS : EvmYul.Operation .Yul)) = none := rfl
-
-@[simp] theorem toBasicOp?_msize :
-    toBasicOp? ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul)) = none := rfl
-
-def toUncheckedBasicOp? (prim : EvmYul.Operation .Yul) :
-    Option Structured.BasicOp :=
-  match prim with
-  | .StackMemFlow .MSIZE => some .msize
-  | .StackMemFlow .GAS => some .gas
-  | _ => toBasicOp? prim
-
-def stop? : EvmYul.Operation .Yul → Option Assembly.HaltKind
-  | .StopArith .STOP => some .stop
-  | _ => none
-
-def terminal? : EvmYul.Operation .Yul → Option Assembly.HaltKind
-  | .StopArith .STOP => some .stop
-  | .System .RETURN => some .return
-  | .System .REVERT => some .revert
-  | .System .SELFDESTRUCT => some .selfdestruct
-  | _ => none
-
-end Prim
 
 namespace ObjectBuiltin
 
@@ -2759,10 +2647,22 @@ noncomputable def toExpressions? (program : Program) : Option Expressions.Progra
   let lower ← toObjects? program
   Objects.Program.toExpressions? lower
 
+abbrev CompileArtifact := Objects.Program.CompileArtifact
+
+noncomputable def compileArtifactWithPolicy?
+    (policy : Objects.Program.BackendPolicy) (program : Program) :
+    Option CompileArtifact := do
+  let lower ← toObjects? program
+  Objects.Program.compileArtifactWithPolicy? policy lower
+
+noncomputable def compileArtifact? (program : Program) :
+    Option CompileArtifact :=
+  compileArtifactWithPolicy? Objects.Program.defaultBackendPolicy program
+
 noncomputable def compile? (program : Program) :
     Option Assembly.TargetProgram := do
-  let lower ← toObjects? program
-  Objects.Program.compile? lower
+  let artifact ← compileArtifact? program
+  some artifact.target
 
 noncomputable def toObjectsWithObservers? (program : Program) :
     Option Objects.Program :=
@@ -2771,7 +2671,8 @@ noncomputable def toObjectsWithObservers? (program : Program) :
 noncomputable def compileWithObservers? (program : Program) :
     Option Assembly.TargetProgram := do
   let lower ← toObjectsWithObservers? program
-  Objects.Program.compile? lower
+  let artifact ← Objects.Program.compileArtifact? lower
+  some artifact.target
 
 def WF (program : Program) : Prop :=
   ∀ lower : Objects.Program, toObjects? program = some lower → lower.WF

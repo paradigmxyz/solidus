@@ -1,4 +1,4 @@
-import EvmCompiler.Objects.Compiler
+import EvmCompiler.Objects.Syntax
 import EvmCompiler.Functions.SourceSemantics
 
 namespace EvmCompiler

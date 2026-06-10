@@ -1,4 +1,5 @@
-import EvmCompiler.Expressions.Compiler
+import EvmCompiler.Expressions.Syntax
+import EvmCompiler.Structured.Semantics
 
 namespace EvmCompiler
 namespace Expressions

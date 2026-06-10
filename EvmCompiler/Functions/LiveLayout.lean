@@ -1,3 +1,4 @@
+import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.Semantics
 import EvmCompiler.Locals.SourceLowering
 

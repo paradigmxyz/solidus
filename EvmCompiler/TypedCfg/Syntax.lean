@@ -1,11 +1,9 @@
-import EvmCompiler.Assembly
+import EvmCompiler.Assembly.Syntax
 
 namespace EvmCompiler
 namespace TypedCfg
 
 abbrev Word := Assembly.Word
-abbrev EVMState := Assembly.EVMState
-abbrev EVMException := Assembly.EVMException
 abbrev Label := Assembly.Label
 
 /--
@@ -20,25 +18,85 @@ inductive Slot where
   | literal (value : Word)
   | local (name : String)
   | temp (scope : Nat) (index : Nat)
+  | returnToken
   | returnPC (site : Nat)
   | returnValue (name : String) (index : Nat)
   deriving DecidableEq, Repr
 
-abbrev Shape := List Slot
+inductive FrameTail where
+  | closed
+  | caller
+  deriving DecidableEq, Repr
+
+/--
+A symbolic stack prefix together with the part of the caller stack that the
+current procedure is not allowed to inspect.
+
+The opaque `caller` tail is the row variable for procedure typing: the same
+procedure body is valid for callers with any hidden stack depth, while every
+instruction must still find all operands in `slots`.
+-/
+structure Shape where
+  slots : List Slot
+  tail : FrameTail := .closed
+  deriving DecidableEq, Repr
 
 namespace Shape
 
+def closed (slots : List Slot := []) : Shape :=
+  { slots := slots, tail := .closed }
+
+def caller (slots : List Slot := []) : Shape :=
+  { slots := slots, tail := .caller }
+
+instance : Coe (List Slot) Shape where
+  coe := fun slots => closed slots
+
+def length (shape : Shape) : Nat :=
+  shape.slots.length
+
+def get? (shape : Shape) (depth : Nat) : Option Slot :=
+  shape.slots[depth]?
+
+def erase (depth : Nat) (shape : Shape) : Shape :=
+  { shape with slots := shape.slots.eraseIdx depth }
+
 def pop (n : Nat) (shape : Shape) : Shape :=
-  shape.drop n
+  { shape with slots := shape.slots.drop n }
 
 def pushWords (n : Nat) (shape : Shape) : Shape :=
-  List.replicate n Slot.word ++ shape
+  { shape with slots := List.replicate n Slot.word ++ shape.slots }
 
 def hasPrefix (prefixShape shape : Shape) : Prop :=
-  ∃ suffix, shape = prefixShape ++ suffix
+  prefixShape.tail = shape.tail ∧
+    ∃ suffix, shape.slots = prefixShape.slots ++ suffix
+
+def slotsAgree : List Slot → List Slot → Bool
+  | [], _ => true
+  | _, [] => true
+  | left :: leftRest, right :: rightRest =>
+      (decide (left = .word) || decide (right = .word) ||
+        decide (left = right)) &&
+          slotsAgree leftRest rightRest
+
+/--
+Row-style stack compatibility. Closed rows must have exactly the same length.
+An opaque caller row may instantiate to additional hidden slots, provided the
+known prefixes agree.
+-/
+def compatible (left right : Shape) : Bool :=
+  slotsAgree left.slots right.slots &&
+    if left.length = right.length then
+      true
+    else if left.length < right.length then
+      decide (left.tail = .caller)
+    else
+      decide (right.tail = .caller)
 
 def unwindTo (target current : Shape) : Option Shape :=
-  if target.length ≤ current.length ∧ current.drop (current.length - target.length) = target then
+  if target.tail = current.tail ∧
+      target.length ≤ current.length ∧
+      current.slots.drop (current.length - target.length) = target.slots then
     some target
   else
     none
@@ -49,9 +107,15 @@ def unwindTo (target current : Shape) : Option Shape :=
 
 @[simp] theorem pop_zero (shape : Shape) :
     pop 0 shape = shape := by
+  cases shape
   simp [pop]
 
 end Shape
+
+structure ReturnSite where
+  token : Word
+  target : Label
+  deriving DecidableEq, Repr
 
 /--
 Primitive instructions in the typed CFG.
@@ -61,6 +125,7 @@ Transfers are terminators whose targets have declared stack shapes.
 -/
 inductive Instr where
   | push (value : Word)
+  | returnToken (value : Word)
   | prim (op : Assembly.PrimOp)
   | pop
   | dup (depth : Nat)
@@ -69,10 +134,10 @@ inductive Instr where
   deriving DecidableEq, Repr
 
 inductive Terminator where
-  | fallthrough
+  | fallthrough (next : Label)
   | jump (target : Label)
   | jumpi (target : Label) (fallthrough : Label)
-  | returnDispatch (siteShape : Shape)
+  | returnDispatch (returnCount : Nat) (sites : List ReturnSite)
   | halt (kind : Assembly.HaltKind)
   | invalid
   deriving DecidableEq, Repr
@@ -81,13 +146,14 @@ structure Block where
   label : Label
   input : Shape
   body : List Instr
+  output : Shape
   term : Terminator
-  deriving Repr
+  deriving DecidableEq, Repr
 
 structure Program where
   entry : Label
   blocks : List Block
-  deriving Repr
+  deriving DecidableEq, Repr
 
 namespace Program
 

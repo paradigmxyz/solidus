@@ -1,14 +1,5 @@
 import EvmCompiler.Functions.Syntax
-import EvmCompiler.Functions.LiveLayout
+import EvmCompiler.Functions.LoweringCore
 import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.SourceSemantics
-import EvmCompiler.Functions.SourceLowering
-import EvmCompiler.Functions.SourceDirect
-import EvmCompiler.Functions.LiveLayoutBridge
 import EvmCompiler.Functions.Semantics
-import EvmCompiler.Functions.Preservation
-import EvmCompiler.Functions.LiveLayoutPreservation
-import EvmCompiler.Functions.CallAwareSpill
-import EvmCompiler.Functions.ScratchFrameMemory
-import EvmCompiler.Functions.CallDepth
-import EvmCompiler.Functions.CallDepthRanked

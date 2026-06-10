@@ -2,6 +2,7 @@ import EvmCompiler.Locals.SourceSemantics
 import EvmCompiler.Locals.Semantics
 import EvmCompiler.Locals.StackLowering
 import EvmCompiler.Locals.Preservation
+import EvmCompiler.Simulation.Outcome
 import EvmYul.Semantics
 import Mathlib.Data.Array.Extract
 
@@ -5203,17 +5204,78 @@ theorem run_toExpressionsBlock_exists
 
 end SpillStmtCode
 
+def sourceOutcomeView :
+    Simulation.OutcomeView Source.Outcome Source.State Source.Mode where
+  state := Source.Outcome.state
+  mode := Source.Outcome.mode
+
+def spillStmtResultView :
+    Simulation.OutcomeView SpillStmtResult EVMState Source.Mode where
+  state
+    | .regular state => state
+    | .halt _ state => state
+  mode
+    | .regular _ => .regular
+    | .halt kind _ => .halt kind
+
+@[simp] theorem spillStmtResultView_state_regular (state : EVMState) :
+    spillStmtResultView.state (.regular state) = state := rfl
+
+@[simp] theorem spillStmtResultView_state_halt
+    (kind : Assembly.HaltKind) (state : EVMState) :
+    spillStmtResultView.state (.halt kind state) = state := rfl
+
+@[simp] theorem spillStmtResultView_mode_regular (state : EVMState) :
+    spillStmtResultView.mode (.regular state) = .regular := rfl
+
+@[simp] theorem spillStmtResultView_mode_halt
+    (kind : Assembly.HaltKind) (state : EVMState) :
+    spillStmtResultView.mode (.halt kind state) = .halt kind := rfl
+
+def spillOutcomeContract (range : ScratchRange)
+    (sourceScope stackLayout : List Name)
+    (layout : SpillLayout.Layout) :
+    Simulation.OutcomeContract
+      Source.Mode Source.Mode Source.State EVMState where
+  relate sourceMode targetMode sourceState targetState :=
+    match sourceMode, targetMode with
+  | .regular, .regular =>
+      SpillStateRel range sourceScope stackLayout layout sourceState
+        targetState
+  | .halt sourceKind, .halt targetKind =>
+      sourceKind = targetKind ∧ SpillHaltRel range sourceState targetState
+  | _, _ => False
+
+@[simp] theorem spillOutcomeContract_relate
+    (range : ScratchRange) (sourceScope stackLayout : List Name)
+    (layout : SpillLayout.Layout) (sourceMode targetMode : Source.Mode)
+    (sourceState : Source.State) (targetState : EVMState) :
+    (spillOutcomeContract range sourceScope stackLayout layout).relate
+        sourceMode targetMode sourceState targetState =
+      match sourceMode, targetMode with
+      | .regular, .regular =>
+          SpillStateRel range sourceScope stackLayout layout sourceState
+            targetState
+      | .halt sourceKind, .halt targetKind =>
+          sourceKind = targetKind ∧ SpillHaltRel range sourceState targetState
+      | _, _ => False := rfl
+
 def SpillOutcomeRel (range : ScratchRange)
     (sourceScope stackLayout : List Name)
     (layout : SpillLayout.Layout)
     (source : Source.Outcome) (target : SpillStmtResult) : Prop :=
-  match source.mode, target with
-  | .regular, .regular targetState =>
-      SpillStateRel range sourceScope stackLayout layout source.state
-        targetState
-  | .halt sourceKind, .halt targetKind targetState =>
-      sourceKind = targetKind ∧ SpillHaltRel range source.state targetState
-  | _, _ => False
+  (spillOutcomeContract range sourceScope stackLayout layout).relate
+    source.mode (spillStmtResultView.mode target)
+    source.state (spillStmtResultView.state target)
+
+theorem spillOutcomeRel_eq_simulation (range : ScratchRange)
+    (sourceScope stackLayout : List Name)
+    (layout : SpillLayout.Layout)
+    (source : Source.Outcome) (target : SpillStmtResult) :
+    SpillOutcomeRel range sourceScope stackLayout layout source target =
+      Simulation.OutcomeRel sourceOutcomeView spillStmtResultView
+        (spillOutcomeContract range sourceScope stackLayout layout)
+        source target := rfl
 
 namespace SpillOutcomeRel
 

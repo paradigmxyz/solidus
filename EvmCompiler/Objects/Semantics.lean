@@ -1,7 +1,10 @@
-import EvmCompiler.Objects.Compiler
+import EvmCompiler.Objects.Syntax
+import EvmCompiler.Functions.Semantics
 
 namespace EvmCompiler
 namespace Objects
+
+abbrev Outcome := Functions.Outcome
 
 namespace Object
 

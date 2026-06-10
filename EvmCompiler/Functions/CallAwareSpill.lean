@@ -1,4 +1,6 @@
 import EvmCompiler.Functions.Preservation
+import EvmCompiler.Locals.Allocation
+import EvmCompiler.Simulation.Outcome
 
 /-!
 Checked, fail-closed spill compilation for the function layer with explicit
@@ -26,6 +28,27 @@ structure Plan where
   stackLayout : List Name
   layout : SpillLayout.Layout
   block : Expressions.Block
+
+namespace Plan
+
+def toAllocationLocation :
+    SpillLayout.LocalLocation → Locals.Allocation.LocalLocation
+  | .stack depth => .stack depth
+  | .scratch slot => .scratch slot
+
+def toAllocationPlan (range : ScratchRange) (plan : Plan) :
+    Locals.Allocation.Plan where
+  sourceScope := plan.sourceScope
+  stackOrder := plan.stackLayout
+  bindings :=
+    plan.layout.map fun binding =>
+      (binding.1, toAllocationLocation binding.2)
+  scratchRegion? :=
+    some
+      { base := .absolute range.base
+        words := range.words }
+
+end Plan
 
 namespace ExpressionsBlock
 
@@ -32142,25 +32165,87 @@ theorem SwitchFallbackLoopStmtSoundBelow.of_le
       SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
         hSound.bodyContReference
 
-structure SwitchFallbackStmtPackagesBelow
+inductive SwitchFallbackStmtOutcome where
+  | regular
+  | regularReference
+  | brkReference
+  | contReference
+  deriving DecidableEq, Repr
+
+def SwitchFallbackStmtSoundBelow
+    (outcome : SwitchFallbackStmtOutcome)
     (maxFuel : Nat) (range : ScratchRange) (program : Program)
-    (returns : List Name) (exprProgram : Expressions.Program) : Prop where
-  regular :
-    ∀ {handlers : FallbackHandlers},
+    (handlers : FallbackHandlers) (returns : List Name)
+    (exprProgram : Expressions.Program) : Prop :=
+  match outcome with
+  | .regular =>
       SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
         returns exprProgram
-  regularReference :
-    ∀ {handlers : FallbackHandlers},
+  | .regularReference =>
       SwitchFallbackStmtRegularReferenceSoundBelow maxFuel range program
         handlers returns exprProgram
-  brkReference :
-    ∀ {handlers : FallbackHandlers},
+  | .brkReference =>
       SwitchFallbackStmtBrkReferenceSoundBelow maxFuel range program handlers
         returns exprProgram
-  contReference :
-    ∀ {handlers : FallbackHandlers},
+  | .contReference =>
       SwitchFallbackStmtContReferenceSoundBelow maxFuel range program handlers
         returns exprProgram
+
+abbrev SwitchFallbackStmtPackagesBelow
+    (maxFuel : Nat) (range : ScratchRange) (program : Program)
+    (returns : List Name) (exprProgram : Expressions.Program) : Prop :=
+  Simulation.OutcomePackage SwitchFallbackStmtOutcome fun outcome =>
+    ∀ {handlers : FallbackHandlers},
+      SwitchFallbackStmtSoundBelow outcome maxFuel range program handlers
+        returns exprProgram
+
+namespace SwitchFallbackStmtPackagesBelow
+
+def regular
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (packages :
+      SwitchFallbackStmtPackagesBelow maxFuel range program returns
+        exprProgram)
+    {handlers : FallbackHandlers} :
+    SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
+      returns exprProgram :=
+  packages.sound .regular
+
+def regularReference
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (packages :
+      SwitchFallbackStmtPackagesBelow maxFuel range program returns
+        exprProgram)
+    {handlers : FallbackHandlers} :
+    SwitchFallbackStmtRegularReferenceSoundBelow maxFuel range program
+      handlers returns exprProgram :=
+  packages.sound .regularReference
+
+def brkReference
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (packages :
+      SwitchFallbackStmtPackagesBelow maxFuel range program returns
+        exprProgram)
+    {handlers : FallbackHandlers} :
+    SwitchFallbackStmtBrkReferenceSoundBelow maxFuel range program handlers
+      returns exprProgram :=
+  packages.sound .brkReference
+
+def contReference
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (packages :
+      SwitchFallbackStmtPackagesBelow maxFuel range program returns
+        exprProgram)
+    {handlers : FallbackHandlers} :
+    SwitchFallbackStmtContReferenceSoundBelow maxFuel range program handlers
+      returns exprProgram :=
+  packages.sound .contReference
+
+end SwitchFallbackStmtPackagesBelow
 
 theorem SwitchFallbackStmtPackagesBelow.of_le
     {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
@@ -32171,25 +32256,24 @@ theorem SwitchFallbackStmtPackagesBelow.of_le
         exprProgram) :
     SwitchFallbackStmtPackagesBelow smaller range program returns
       exprProgram where
-  regular := by
-    intro handlers
-    exact
-      SwitchFallbackStmtRegularSoundBelow.of_le hFuelLe hSound.regular
-  regularReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtRegularReferenceSoundBelow.of_le hFuelLe
-        hSound.regularReference
-  brkReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtBrkReferenceSoundBelow.of_le hFuelLe
-        hSound.brkReference
-  contReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
-        hSound.contReference
+  sound := by
+    intro outcome handlers
+    cases outcome with
+    | regular =>
+        exact
+          SwitchFallbackStmtRegularSoundBelow.of_le hFuelLe hSound.regular
+    | regularReference =>
+        exact
+          SwitchFallbackStmtRegularReferenceSoundBelow.of_le hFuelLe
+            hSound.regularReference
+    | brkReference =>
+        exact
+          SwitchFallbackStmtBrkReferenceSoundBelow.of_le hFuelLe
+            hSound.brkReference
+    | contReference =>
+        exact
+          SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
+            hSound.contReference
 
 theorem SwitchFallbackStmtPackagesBelow.loopSound
     {maxFuel : Nat} {range : ScratchRange} {program : Program}
@@ -57081,26 +57165,25 @@ theorem SwitchFallbackStmtPackagesBelow.of_step_inputs_supported
         exprProgram) :
     SwitchFallbackStmtPackagesBelow maxFuel range program returns
       exprProgram where
-  regular := by
-    intro handlers
-    exact
-      SwitchFallbackStmtRegularSoundBelow.of_step_inputs_supported
-        hSpec hWordBytes hRegularSupported hInputs
-  regularReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtRegularReferenceSoundBelow.of_step_inputs_supported
-        hSpec hWordBytes hRegularSupported hInputs
-  brkReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtBrkReferenceSoundBelow.of_step_inputs_supported
-        hSpec hWordBytes hBrkSupported hInputs
-  contReference := by
-    intro handlers
-    exact
-      SwitchFallbackStmtContReferenceSoundBelow.of_step_inputs_supported
-        hSpec hWordBytes hContSupported hInputs
+  sound := by
+    intro outcome handlers
+    cases outcome with
+    | regular =>
+        exact
+          SwitchFallbackStmtRegularSoundBelow.of_step_inputs_supported
+            hSpec hWordBytes hRegularSupported hInputs
+    | regularReference =>
+        exact
+          SwitchFallbackStmtRegularReferenceSoundBelow.of_step_inputs_supported
+            hSpec hWordBytes hRegularSupported hInputs
+    | brkReference =>
+        exact
+          SwitchFallbackStmtBrkReferenceSoundBelow.of_step_inputs_supported
+            hSpec hWordBytes hBrkSupported hInputs
+    | contReference =>
+        exact
+          SwitchFallbackStmtContReferenceSoundBelow.of_step_inputs_supported
+            hSpec hWordBytes hContSupported hInputs
 
 theorem SwitchFallbackStmtPackagesBelow.of_supported_call_replay_below
     (hSpec : ZeroPaddingSpec)

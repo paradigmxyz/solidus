@@ -1,5 +1,69 @@
 # Progress Log
 
+- 2026-06-10 14:02 PDT - validation/post-cutover-full-gates - repaired the
+  layered verification script's empty-array `all` case and completed the broad
+  post-cutover validation. The default 1152-job Lake build passed; focused
+  `EvmCompiler.Yul.ObserverOracle`, `EvmCompiler.Legacy`,
+  `EvmCompiler.Public`, and `EvmCompiler.Solidity.Public` builds passed; the
+  resource-observer proof artifact completed its theorem/axiom audit; migrated
+  and public modules have no `sorry`, `admit`, or `sorryAx`; `git diff --check`
+  passed; and the bundled-Python importer/schema suite passed all 244 tests.
+  Updated the legacy observer compatibility theorem to require the public
+  target equality explicitly because the new TypedCfg route is not
+  definitionally equal to the old Locals-emitted Assembly route. This keeps the
+  remaining semantic preservation cutover visible instead of proving a false
+  byte-for-byte identity.
+
+- 2026-06-10 13:54 PDT - architecture/typedcfg-effect-stack-contract - the
+  post-cutover Permit2 smoke exposed a real CFG rejection at `GAS`: TypedCfg
+  typing had reused `Assembly.PrimOp.continuingStep?`, which is a historical
+  proof whitelist that intentionally excludes gas, PC-dependent operations,
+  and call/create. Added the separate nonterminal `PrimOp.stackArity?`
+  interface and migrated TypedCfg typing to it, keeping terminal operations as
+  terminators while admitting gas/msize and external calls through one CFG
+  path. Added certified resource-observer and `STATICCALL` smokes. The
+  preserved Permit2 signature fixture then generated a 160-block well-typed
+  CFG and bytecode successfully. Real-contract verification passed:
+  Aave v3 math and interest runtime backend checks both passed with
+  `first_none=none`; Permit2 hash passed both objects; and the full Permit2
+  smoke passed 3 SafeCast, 5 NonceBitmap, and 3 SignatureVerification call
+  comparisons. The remaining SignatureVerification backend-report failure is
+  the existing `solc_validation` proof boundary for gas, not bytecode
+  generation. Generated `proof_artifacts/architecture_current.json` for the
+  post-cutover metrics comparison.
+
+- 2026-06-10 13:30 PDT - architecture/public-typedcfg-cutover - cut the Objects
+  public backend policy over to a single checked lowerer that compiles planned
+  Expressions through direct Structured-to-TypedCfg generation, certified
+  TypedCfg-to-Assembly lowering, and executable Assembly validation. Added
+  caller-frame-polymorphic stack shapes, proof-carrying successful CFG
+  artifacts, typed return tokens and return dispatch cleanup, and direct CFG
+  smokes for branches, switches, loops, break, leaf calls, and nonzero-arity
+  argument/return calls. The loop smoke exposed and fixed an undefined loop-exit
+  label by routing condition-false and break edges directly to the statement
+  continuation. Removed unused Objects compatibility target emitters and added
+  an architecture guard against restoring direct legacy emission. Verification
+  passed for the focused direct compiler check, architecture check,
+  `git diff --check`, and the full downstream public aggregate build. Remaining
+  migration work is semantic preservation, genuinely allocation-driven local
+  placement, real-contract output comparison, and legacy proof/compiler
+  deletion.
+
+- 2026-06-10 12:49 PDT - architecture/deep-migration-checkpoint - introduced
+  composable compiler artifacts/passes, checked Objects backend metadata and
+  policy selection, a canonical allocation plan with checked well-formedness,
+  reusable effectful Locals semantics, a shared outcome-indexed simulation
+  interface, completed TypedCfg block outputs/unwind/return dispatch/typing,
+  generated fragment certificates, and a stable `EvmCompiler.Public` root.
+  Extracted compiler-independent Locals stack and Functions lowering cores,
+  removed compiler/proof and aggregate imports from semantic/syntax modules,
+  moved pure Assembly control/classification declarations into syntax, added
+  architecture/layer verification scripts and a shared Lake package cache, and
+  recorded architecture metrics in
+  `proof_artifacts/architecture_baseline.json`. Remaining cutover gates are the
+  single allocation-plan-consuming lowerer, Structured-to-TypedCfg generation
+  plus preservation, and deletion of the corresponding legacy proof corridors.
+
 - 2026-06-10 08:47 PDT - compaction-resume/resource-observer-sibling-audit - resumed under `$verifiable-compiler`; current checkpoint is auditing the sibling no-gas-accepted-yul worktree read-only to see whether its refactor closes the gas/msize observer-oracle proof gap.
 
 - 2026-06-09 23:02 PDT - compaction-resume/call-aware-for-cond-false-wrapper - resumed under `$verifiable-compiler` with the executable call-aware spill route already validated on Aave/Permit2; current checkpoint is Lean-checking the source-facing `for` cond-false fallback wrapper before moving to recursive post-regular loop preservation.
@@ -27405,3 +27469,9 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - 2026-06-10 10:47 PDT - compaction-resume/resource-observer-goal-distance-status - resumed `$verifiable-compiler` status check; checked gas/msize expression and statement bridge leaves are in place, while the full `YulToLocalsHaltReplayBridge` still needs list/block/function/program composition plus terminal/revert trace-boundary decisions.
 - 2026-06-10 10:55 PDT - compaction-resume/call-aware-full-proof - resumed `$verifiable-compiler` work on the spill-aware main-spine fallback proof; current target is the recursive switch-aware `for` halt helper, then threading `halt` into `SwitchFallbackStmtPackagesBelow` and the with-switch planned-prealloc preservation route.
 - 2026-06-10 10:58 PDT - compaction-resume/commit-all-current-tree - resumed under `$verifiable-compiler` for a user-requested full-tree checkpoint commit, including unrelated and potentially non-building changes exactly as currently present.
+- 2026-06-10 11:00 PDT - compaction-resume/architecture-refactor - resumed under `$verifiable-compiler` to implement the audit's first structural repair: factor the duplicated Locals observer replay evaluator through a reusable effect-carrying source semantics while preserving the verified public route.
+- 2026-06-10 11:42 PDT - architecture-refactor/effects-outcomes - added reusable effect semantics, migrated observer expression replay without changing its public proof surface, introduced generic outcome views/contracts, and cut Locals spill plus Functions source-direct outcome relations over to the shared contract. Verified `EvmCompiler.Yul.ObserverOracle`, `EvmCompiler.Locals.SourceLowering`, and `EvmCompiler.Functions.CallAwareSpill`.
+- 2026-06-10 14:03 PDT - compaction-resume/allocation-driven-lowering - resumed under `$verifiable-compiler` after the public TypedCfg cutover; current checkpoint is replacing `PlannedProgram`'s post-hoc allocation metadata with a checked source-plus-plan contract that actually selects and drives lowering before completing preservation and deleting legacy backend corridors.
+- 2026-06-10 14:23 PDT - compaction-resume/allocated-typedcfg-verification: resumed after introducing scoped ProgramPlan allocation, the generic allocation lowerer, mandatory LoweredFrom certificates, and the AllocatedTypedCfg certified pass; polling the full build, layer verification, contract smokes, and Python regression suite before updating roadmap completion.
+- 2026-06-10 14:27 PDT - architecture-refactor/allocated-typedcfg-checkpoint - completed and verified the scoped allocation/public lowering checkpoint: `PlannedProgram` now carries Functions source plus `ProgramPlan`; the generic allocation lowerer and mandatory `LoweredFrom` relation certify plan consumption; successful metadata carries allocation, TypedCfg, and combined allocated-CFG certificates; and the public path runs through the checked `AllocatedTypedCfg` pass. Verification passed: architecture checks, the 1,153-job full Lean build, the 1,115-job TypedCfg layer, 244 Python tests, Aave v3 smoke, Permit2 smoke and call comparisons, and `git diff --check` at the pre-documentation checkpoint. Remaining architecture gaps are pure planner-before-emission internals, plan-derived CFG locations/shapes, semantic preservation, generic effect/outcome completion, and legacy deletion.
+- 2026-06-10 14:38 PDT - architecture-refactor/scratch-frame-plan-first - extracted a code-free scratch-frame allocation traversal that computes exact global frame size and main/function/nested lexical slot bindings, exposed it through the shared `Allocation.Planner`, and added a shared-interface lowerer that consumes the source-derived canonical plan, emits functions/main once, checks resulting allocation states against the recipe, and rejects altered allocation. Rewired the public Objects scratch fallback away from the historical probe/recompile compiler and added architecture guards against restoring it. Added lexical `ScopeId` ownership and a checked fixture proving a nested block local is published at `.lexical .main 0` with its exact scratch slot. Executable Lean regressions also cover exact four-word planning, insufficient-frame rejection, successful planned lowering, and allocation-drift rejection. Focused ScratchFrameSpill, allocator (1,146 jobs), and public (1,153 jobs) builds, architecture/diff checks, Aave v3 smoke, and Permit2 smoke/call comparisons passed with the known legacy SignatureVerification `live_layout_to_locals` diagnostic unchanged. Remaining allocator gaps are the emitter-derived call-aware planner and the ordinary/live family migration.

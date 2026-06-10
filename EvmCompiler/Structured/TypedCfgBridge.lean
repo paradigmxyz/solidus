@@ -20,27 +20,34 @@ lowering proof.
 namespace Shape
 
 def toCfg : Shape → TypedCfg.Shape
-  | .any => []
-  | .unreachable => []
-  | .named name => [.local name]
-  | .join scope tag => [.temp scope tag]
-  | .loop scope tag => [.temp scope tag]
-  | .afterCode input _code => .word :: input.toCfg
-  | .afterCondition input _cond => .word :: input.toCfg
+  | .any => .caller
+  | .unreachable => .caller
+  | .named name => .caller [.local name]
+  | .join scope tag => .caller [.temp scope tag]
+  | .loop scope tag => .caller [.temp scope tag]
+  | .afterCode input _code =>
+      { input.toCfg with slots := .word :: input.toCfg.slots }
+  | .afterCondition input _cond =>
+      { input.toCfg with slots := .word :: input.toCfg.slots }
   | .afterSwitchPop input _scrutinee => input.toCfg
   | .procEntry name argc =>
-      (List.range argc).map (fun idx => .local ("arg:" ++ name ++ ":" ++ toString idx))
+      .caller
+        ((List.range argc).map
+          (fun idx => .local ("arg:" ++ name ++ ":" ++ toString idx)))
   | .procExit name retc =>
-      (List.range retc).map (fun idx => .returnValue name idx)
+      .caller
+        ((List.range retc).map (fun idx => .returnValue name idx))
   | .callReturn name token =>
-      [.returnPC token.toNat, .local ("call:" ++ name)]
-  | .programEnd => []
+      .caller [.returnPC token.toNat, .local ("call:" ++ name)]
+  | .programEnd => .caller
 
 @[simp] theorem toCfg_mainEntry :
-    Shape.mainEntry.toCfg = [.local "structured:main:entry"] := rfl
+    Shape.mainEntry.toCfg =
+      TypedCfg.Shape.caller [.local "structured:main:entry"] := rfl
 
 @[simp] theorem toCfg_switchValue (input : Shape) (scrutinee : Code) :
-    (Shape.switchValue input scrutinee).toCfg = .word :: input.toCfg := rfl
+    (Shape.switchValue input scrutinee).toCfg =
+      { input.toCfg with slots := .word :: input.toCfg.slots } := rfl
 
 end Shape
 
@@ -60,6 +67,7 @@ def toCfgBlock (decl : LabelDecl) : TypedCfg.Block where
   label := decl.label
   input := decl.shape.toCfg
   body := []
+  output := decl.shape.toCfg
   term := .invalid
 
 @[simp] theorem toCfgBlock_label (decl : LabelDecl) :

@@ -11,6 +11,13 @@ inductive Label where
 abbrev Word := EvmYul.UInt256
 abbrev EVMOp := EvmYul.Operation EvmYul.OperationType.EVM
 
+inductive HaltKind where
+  | stop
+  | return
+  | revert
+  | selfdestruct
+  deriving DecidableEq, Repr
+
 theorem UInt256_ofNat_add (left right : Nat) :
     EvmYul.UInt256.ofNat left + EvmYul.UInt256.ofNat right =
       EvmYul.UInt256.ofNat (left + right) := by
@@ -57,7 +64,30 @@ inductive PrimOp where
   | gas
   deriving DecidableEq, Repr
 
+namespace HaltKind
+
+def argCount : HaltKind → Nat
+  | .stop => 0
+  | .return => 2
+  | .revert => 2
+  | .selfdestruct => 1
+
+def toPrimOp : HaltKind → PrimOp
+  | .stop => .stop
+  | .return => .return
+  | .revert => .revert
+  | .selfdestruct => .selfdestruct
+
+end HaltKind
+
 namespace PrimOp
+
+def isCallCreate : PrimOp → Bool
+  | .create | .call | .callcode | .delegatecall | .create2 | .staticcall
+  | .gas =>
+      true
+  | _ =>
+      false
 
 def toEVM : PrimOp → EVMOp
   | .stop => EvmYul.Operation.STOP
@@ -206,6 +236,10 @@ def targets : Instr → List Label
   | .jumpi target => [target]
   | _ => []
 
+def usesCallCreate : Instr → Bool
+  | .prim op => op.isCallCreate
+  | .label _ | .push _ | .jump _ | .jumpi _ => false
+
 end Instr
 
 namespace Program
@@ -235,6 +269,20 @@ theorem byteLength_pos_of_cons (instr : Instr) (rest : Program) :
 
 def pcAfter (program : Program) : Word :=
   EvmYul.UInt256.ofNat (byteLength program)
+
+def usesCallCreate (program : Program) : Bool :=
+  program.any Instr.usesCallCreate
+
+theorem usesCallCreate_append (left right : Program) :
+    usesCallCreate (left ++ right) =
+      (usesCallCreate left || usesCallCreate right) := by
+  simp [usesCallCreate]
+
+theorem usesCallCreate_append_eq_false {left right : Program}
+    (hLeft : usesCallCreate left = false)
+    (hRight : usesCallCreate right = false) :
+    usesCallCreate (left ++ right) = false := by
+  simp [usesCallCreate_append, hLeft, hRight]
 
 @[simp]
 theorem pcAfter_nil : pcAfter ([] : Program) = EvmYul.UInt256.ofNat 0 := rfl

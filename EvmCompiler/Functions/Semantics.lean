@@ -1,4 +1,4 @@
-import EvmCompiler.Functions.Compiler
+import EvmCompiler.Functions.LoweringCore
 import EvmCompiler.Locals.Semantics
 
 namespace EvmCompiler

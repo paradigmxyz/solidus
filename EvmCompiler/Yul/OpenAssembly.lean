@@ -1,3 +1,4 @@
+import EvmCompiler.Core.Except
 import EvmCompiler.Yul.OpenExternal
 import EvmCompiler.Assembly.Accepted
 import EvmCompiler.Assembly.Preservation

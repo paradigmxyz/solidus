@@ -3,8 +3,5 @@ import EvmCompiler.Assembly.Assembler
 import EvmCompiler.Assembly.Accepted
 import EvmCompiler.Assembly.PrimSemantics
 import EvmCompiler.Assembly.Semantics
-import EvmCompiler.Assembly.Preservation
 import EvmCompiler.Assembly.Bytecode
 import EvmCompiler.Assembly.TopLevel
-import EvmCompiler.Assembly.GasAware
-import EvmCompiler.Assembly.Observer

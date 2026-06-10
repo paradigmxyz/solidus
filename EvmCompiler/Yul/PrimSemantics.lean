@@ -1,4 +1,5 @@
-import EvmCompiler.Yul.Compiler
+import EvmCompiler.Yul.Syntax
+import EvmCompiler.Structured.Semantics
 import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler

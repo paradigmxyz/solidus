@@ -1,5 +1,6 @@
 import EvmCompiler.Expressions.Syntax
 import EvmCompiler.Structured.Compiler
+import EvmCompiler.Structured.TypedCfgCompiler
 import EvmCompiler.Structured.Preservation
 import EvmCompiler.Assembly.Accepted
 
@@ -146,6 +147,56 @@ def compile? (program : Program) : Option Assembly.TargetProgram :=
 
 def compileExecutable? (program : Program) : Option Assembly.TargetProgram :=
   Assembly.compileExecutable? program.compile
+
+structure TypedCompileArtifact where
+  cfg : TypedCfg.Program
+  assembly : Assembly.Program
+  target : Assembly.TargetProgram
+  certificate : TypedCfg.ProgramCert
+
+def compileTypedArtifact? (program : Program) :
+    Option TypedCompileArtifact := do
+  let cfg ←
+    Structured.TypedCfgCompiler.compile? program.toStructured
+  let certified ← cfg.compileCertified?
+  let target ← Assembly.compileExecutable? certified.target
+  some
+    { cfg := cfg
+      assembly := certified.target
+      target := target
+      certificate := certified.metadata }
+
+def compileTypedExecutable? (program : Program) :
+    Option Assembly.TargetProgram :=
+  (compileTypedArtifact? program).map TypedCompileArtifact.target
+
+theorem compileTypedArtifact?_certificateValid
+    {program : Program} {artifact : TypedCompileArtifact}
+    (hCompile : compileTypedArtifact? program = some artifact) :
+    TypedCfg.Program.ProgramCert.ValidFor artifact.certificate
+      artifact.cfg := by
+  unfold compileTypedArtifact? at hCompile
+  cases hCfg :
+      Structured.TypedCfgCompiler.compile? program.toStructured with
+  | none =>
+      simp [hCfg] at hCompile
+  | some cfg =>
+      simp [hCfg] at hCompile
+      cases hCertified : cfg.compileCertified? with
+      | none =>
+          simp [hCertified] at hCompile
+      | some certified =>
+          simp [hCertified] at hCompile
+          cases hTarget :
+              Assembly.compileExecutable? certified.target with
+          | none =>
+              simp [hTarget] at hCompile
+          | some target =>
+              simp [hTarget] at hCompile
+              cases hCompile
+              exact
+                ⟨TypedCfg.Program.compileCertified?_wellTyped hCertified,
+                  TypedCfg.Program.compileCertified?_certificate hCertified⟩
 
 theorem compileExecutable?_eq_compile? (program : Program) :
     compileExecutable? program = compile? program := by

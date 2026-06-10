@@ -1,4 +1,5 @@
-import EvmCompiler.Locals.Compiler
+import EvmCompiler.Locals.StackModel
+import EvmCompiler.Structured.Semantics
 
 namespace EvmCompiler
 namespace Locals
@@ -141,6 +142,7 @@ theorem run_replicate_pop_ok (state : EVMState) :
                 Assembly.Target.stepInstr, Assembly.PrimOp.step,
                 Assembly.PrimStep.run, Assembly.PrimOp.continuingStep?,
                 EvmYul.Stack.pop, List.replicate_succ] at hRun
+              cases hRun
           | cons top rest =>
               let state0 : EVMState :=
                 { toSharedState := shared, pc := pc, stack := top :: rest,
@@ -192,6 +194,7 @@ theorem runCleanupTo_stack_drop {ctx : Ctx} {targetDepth : Nat}
             (Structured.BasicInstr.op .pop)) state.evm with
     | error err =>
         simp [hCode] at hRun
+        cases hRun
     | ok evmClean =>
         simp [hCode] at hRun
         cases hRun
@@ -482,15 +485,23 @@ theorem runScoped_regular_cleanup {program : Program} {ctx : Ctx}
   cases hOpen : runOpen program ctx fuel block state with
   | error err =>
       simp [hOpen] at hRun
+      cases hRun
   | ok openResult =>
       rcases openResult with ⟨openOutcome, finalCtx⟩
       rcases openOutcome with ⟨openFinal, mode⟩
       cases mode <;> simp [hOpen, Outcome.regular] at hRun
       case regular =>
+        change
+          (do
+            let state' ←
+              Ctx.runCleanupTo finalCtx ctx.layout.length openFinal
+            .ok (Outcome.regular state')) =
+              .ok (Outcome.regular final) at hRun
         cases hCleanup :
             Ctx.runCleanupTo finalCtx ctx.layout.length openFinal with
         | error err =>
             simp [hCleanup] at hRun
+            cases hRun
         | ok cleaned =>
             simp [hCleanup] at hRun
             cases hRun

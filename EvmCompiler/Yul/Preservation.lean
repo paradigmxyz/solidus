@@ -1,3 +1,4 @@
+import EvmCompiler.Yul.Compiler
 import EvmCompiler.Yul.Semantics
 import EvmCompiler.Yul.SolcValidation
 import EvmCompiler.Objects.Preservation

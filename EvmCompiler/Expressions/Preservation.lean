@@ -1,16 +1,10 @@
+import EvmCompiler.Core.Except
 import EvmCompiler.Expressions.Semantics
+import EvmCompiler.Expressions.Compiler
 import EvmCompiler.Structured.Preservation
 
 namespace EvmCompiler
 namespace Expressions
-
-@[simp] theorem except_bind_error {ε α β : Type} (err : ε)
-    (f : α → Except ε β) :
-    (Except.error err >>= f) = Except.error err := rfl
-
-@[simp] theorem except_bind_ok {ε α β : Type} (value : α)
-    (f : α → Except ε β) :
-    (Except.ok value >>= f) = f value := rfl
 
 @[simp] theorem RunState.withEVM_withEVM (state : RunState)
     (first second : EVMState) :

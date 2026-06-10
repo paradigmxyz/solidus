@@ -1,5 +1,60 @@
 # Solidity Front Half
 
+## Architecture verification
+
+Run the repository verification gate with:
+
+```sh
+scripts/verify.sh
+```
+
+The gate checks dependency-direction rules before invoking `lake build`.
+Focused builds may be supplied as arguments:
+
+```sh
+scripts/verify.sh EvmCompiler.Locals.SourceLowering
+```
+
+Record reproducible architecture metrics with:
+
+```sh
+scripts/architecture_metrics.sh \
+  --cache-label warm \
+  --build EvmCompiler.Yul.ObserverOracle \
+  --build EvmCompiler.Functions.CallAwareSpill \
+  --build EvmCompiler.Objects.Compiler
+```
+
+The default output is
+`proof_artifacts/architecture_baseline.json`.
+
+Focused architecture layers are available through:
+
+```sh
+scripts/verify_layer.sh effects
+scripts/verify_layer.sh allocator
+scripts/verify_layer.sh typedcfg
+scripts/verify_layer.sh public
+scripts/verify_layer.sh proofs
+```
+
+The `allocator` layer includes the scoped allocation model and the public
+allocation-consuming Objects lowerer. The `typedcfg` layer includes both the
+Structured-to-TypedCfg compiler and the checked `AllocatedTypedCfg` pass that
+pairs a well-formed program allocation with its CFG certificate.
+
+The public scratch-frame fallback uses
+`Functions.ScratchFrameSpill.allocationPlanner` followed by
+`allocationLowerer`: planning computes exact scoped slots and frame size without
+emitting code, and lowering performs one checked emission pass from that plan.
+
+To share dependency package builds across worktrees while retaining a local
+`.lake/build`, run:
+
+```sh
+scripts/setup_shared_lake_cache.sh
+```
+
 ## Oracle Reviews
 
 `oracle.py` builds compact review packets and submits them to the OpenAI

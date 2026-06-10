@@ -41,18 +41,6 @@ def usesOutsideContext : PrimOp → Bool
   | _ =>
       false
 
-/--
-Primitive operations excluded from no-CALL/CREATE gas-erased replay paths.
-`gas` is included because it observes gas bookkeeping directly, not because it
-performs an external call.
--/
-def isCallCreate : PrimOp → Bool
-  | .create | .call | .callcode | .delegatecall | .create2 | .staticcall
-  | .gas =>
-      true
-  | _ =>
-      false
-
 end PrimOp
 
 namespace Instr
@@ -60,10 +48,6 @@ namespace Instr
 def accepted : Instr → Bool
   | .prim op => op.accepted
   | .label _ | .push _ | .jump _ | .jumpi _ => true
-
-def usesCallCreate : Instr → Bool
-  | .prim op => op.isCallCreate
-  | .label _ | .push _ | .jump _ | .jumpi _ => false
 
 end Instr
 
@@ -91,20 +75,6 @@ def labelsUnique (program : Program) : Bool :=
 
 def instructionsAccepted (program : Program) : Bool :=
   program.all Instr.accepted
-
-def usesCallCreate (program : Program) : Bool :=
-  program.any Instr.usesCallCreate
-
-theorem usesCallCreate_append (left right : Program) :
-    usesCallCreate (left ++ right) =
-      (usesCallCreate left || usesCallCreate right) := by
-  simp [usesCallCreate]
-
-theorem usesCallCreate_append_eq_false {left right : Program}
-    (hLeft : usesCallCreate left = false)
-    (hRight : usesCallCreate right = false) :
-    usesCallCreate (left ++ right) = false := by
-  simp [usesCallCreate_append, hLeft, hRight]
 
 /--
 The independent accepted-input checker for the labeled assembly IR.

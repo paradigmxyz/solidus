@@ -1,4 +1,6 @@
+import EvmCompiler.Core.Except
 import EvmCompiler.Locals.Syntax
+import EvmCompiler.Expressions.Syntax
 import EvmCompiler.Structured.Semantics
 
 namespace EvmCompiler

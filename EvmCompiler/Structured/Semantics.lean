@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.Syntax
+import EvmCompiler.Assembly.Semantics
 
 namespace EvmCompiler
 namespace Structured

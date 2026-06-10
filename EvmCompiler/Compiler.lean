@@ -1,0 +1,1 @@
+import EvmCompiler.Compiler.Artifact
