@@ -30167,6 +30167,100 @@ theorem compileBlockStmtWithSwitchFallback?_cont_sound_meta_exact_handler_scope_
   exact
     ⟨contTarget, exprFuel, hRun, hBodyRel, hBodyDefined, hBodyStack⟩
 
+theorem expressionsRunForLoop_true_bodyRegular_postRegular_loop_exists
+    {exprProgram : Expressions.Program} {cond : Expressions.Expr 1}
+    {post body : Expressions.Block}
+    {state afterCond bodyState postState : Expressions.RunState}
+    {outcome : Expressions.Outcome}
+    {bodyFuel postFuel loopFuel : Nat}
+    (hCond :
+      Expressions.Expr.runConditionState cond state =
+        .ok (afterCond, true))
+    (hBody :
+      Expressions.Block.run exprProgram bodyFuel body afterCond =
+        .ok (Expressions.Outcome.regular bodyState))
+    (hPost :
+      Expressions.Block.run exprProgram postFuel post bodyState =
+        .ok (Expressions.Outcome.regular postState))
+    (hLoop :
+      Expressions.Stmt.runForLoop exprProgram loopFuel cond post body
+          postState =
+        .ok outcome) :
+    ∃ forFuel,
+      Expressions.Stmt.runForLoop exprProgram forFuel cond post body state =
+        .ok outcome := by
+  let bigFuel := Nat.max bodyFuel (Nat.max postFuel loopFuel)
+  have hBodyBig :
+      Expressions.Block.run exprProgram bigFuel body afterCond =
+        .ok (Expressions.Outcome.regular bodyState) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_max_left bodyFuel (Nat.max postFuel loopFuel)) hBody
+  have hPostBig :
+      Expressions.Block.run exprProgram bigFuel post bodyState =
+        .ok (Expressions.Outcome.regular postState) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_trans (Nat.le_max_left postFuel loopFuel)
+          (Nat.le_max_right bodyFuel (Nat.max postFuel loopFuel))) hPost
+  have hLoopBig :
+      Expressions.Stmt.runForLoop exprProgram bigFuel cond post body
+          postState =
+        .ok outcome := by
+    exact
+      Expressions.Stmt.runForLoop_mono exprProgram
+        (Nat.le_trans (Nat.le_max_right postFuel loopFuel)
+          (Nat.le_max_right bodyFuel (Nat.max postFuel loopFuel))) hLoop
+  refine ⟨bigFuel + 1, ?_⟩
+  simp [Expressions.Stmt.runForLoop, hCond, hBodyBig, hPostBig, hLoopBig]
+
+theorem expressionsRunForLoop_true_bodyCont_postRegular_loop_exists
+    {exprProgram : Expressions.Program} {cond : Expressions.Expr 1}
+    {post body : Expressions.Block}
+    {state afterCond bodyState postState : Expressions.RunState}
+    {outcome : Expressions.Outcome}
+    {bodyFuel postFuel loopFuel : Nat}
+    (hCond :
+      Expressions.Expr.runConditionState cond state =
+        .ok (afterCond, true))
+    (hBody :
+      Expressions.Block.run exprProgram bodyFuel body afterCond =
+        .ok (Expressions.Outcome.cont bodyState))
+    (hPost :
+      Expressions.Block.run exprProgram postFuel post bodyState =
+        .ok (Expressions.Outcome.regular postState))
+    (hLoop :
+      Expressions.Stmt.runForLoop exprProgram loopFuel cond post body
+          postState =
+        .ok outcome) :
+    ∃ forFuel,
+      Expressions.Stmt.runForLoop exprProgram forFuel cond post body state =
+        .ok outcome := by
+  let bigFuel := Nat.max bodyFuel (Nat.max postFuel loopFuel)
+  have hBodyBig :
+      Expressions.Block.run exprProgram bigFuel body afterCond =
+        .ok (Expressions.Outcome.cont bodyState) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_max_left bodyFuel (Nat.max postFuel loopFuel)) hBody
+  have hPostBig :
+      Expressions.Block.run exprProgram bigFuel post bodyState =
+        .ok (Expressions.Outcome.regular postState) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_trans (Nat.le_max_left postFuel loopFuel)
+          (Nat.le_max_right bodyFuel (Nat.max postFuel loopFuel))) hPost
+  have hLoopBig :
+      Expressions.Stmt.runForLoop exprProgram bigFuel cond post body
+          postState =
+        .ok outcome := by
+    exact
+      Expressions.Stmt.runForLoop_mono exprProgram
+        (Nat.le_trans (Nat.le_max_right postFuel loopFuel)
+          (Nat.le_max_right bodyFuel (Nat.max postFuel loopFuel))) hLoop
+  refine ⟨bigFuel + 1, ?_⟩
+  simp [Expressions.Stmt.runForLoop, hCond, hBodyBig, hPostBig, hLoopBig]
+
 theorem compileForFallbackWithSwitchFallback?_regular_sound_meta_exact_of_cond_false_stmt_sound
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
