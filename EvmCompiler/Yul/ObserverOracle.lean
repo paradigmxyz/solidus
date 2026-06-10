@@ -28969,6 +28969,361 @@ theorem compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
                             simp [Stmt.run, hContainsFalse, invalid,
                               Structured.invalid] at hRun
 
+theorem oracleSafe_compileOpen_terminalTailPrefix_of_run
+    {canBreak canContinue canLeave : Bool}
+    {program : Locals.Program} :
+    ∀ {sourceCtx : Ctx} {targetCtx : Locals.Ctx}
+      {fuel : Nat} {kind : Assembly.HaltKind}
+      {stmts : List Locals.Stmt}
+      {state outState : State} {sourceCtxOut : Ctx}
+      {code : List Expressions.Stmt} {targetCtxOut : Locals.Ctx},
+      TerminalTailPrefix sourceCtx kind stmts →
+      Structured.Preservation.Terminal.RelSafe kind →
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut) →
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+        .ok (Outcome.halt kind outState, sourceCtxOut) →
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := code } := by
+  intro sourceCtx targetCtx fuel kind stmts state outState sourceCtxOut code
+    targetCtxOut hPrefix hTerminalSafe hCompile hRun
+  induction hPrefix generalizing targetCtx fuel state outState sourceCtxOut
+      code targetCtxOut
+  case terminal sourceCtx kind =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          simp [Locals.Block.compileOpen, Locals.Stmt.compile] at hCompile
+          rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+          subst code
+          subst targetCtxOut
+          cases hTerminal :
+              replayPrimitiveSemantics.terminal kind state.shared []
+                state.trace with
+          | error err =>
+              simp [Block.runOpen, Stmt.run, hTerminal] at hRun
+          | ok terminalResult =>
+              rcases terminalResult with ⟨sharedAfter, traceAfter⟩
+              simp [Block.runOpen, Stmt.run, hTerminal, Outcome.halt]
+                at hRun
+              exact
+                (Stmt.oracleSafe_terminalBlock_of_relSafe
+                  (canBreak := canBreak)
+                  (canContinue := canContinue)
+                  (canLeave := canLeave)
+                  (ctx := targetCtx) hTerminalSafe).2
+  case terminalArgs sourceCtx kind args hOwned hAccess =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hArgsCode :
+              Locals.ExprSeq.compileCode targetCtx 0 args with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hArgsCode] at hCompile
+          | some argsCode =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hArgsCode] at hCompile
+              rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+              subst code
+              subst targetCtxOut
+              cases hArgs : Expr.ExprSeq.eval args state with
+              | error err =>
+                  simp [Block.runOpen, Stmt.run, hArgs] at hRun
+              | ok argsResult =>
+                  rcases argsResult with ⟨stateAfterArgs, values⟩
+                  cases hTerminal :
+                      replayPrimitiveSemantics.terminal kind
+                        stateAfterArgs.shared values
+                        stateAfterArgs.trace with
+                  | error err =>
+                      simp [Block.runOpen, Stmt.run, hArgs, hTerminal]
+                        at hRun
+                  | ok terminalResult =>
+                      rcases terminalResult with ⟨sharedAfter, traceAfter⟩
+                      simp [Block.runOpen, Stmt.run, hArgs, hTerminal,
+                        Outcome.halt] at hRun
+                      exact
+                        (Stmt.oracleSafe_terminalArgsBlock_of_compileSeqCode_eval_sourceOwned
+                          (canBreak := canBreak)
+                          (canContinue := canContinue)
+                          (canLeave := canLeave)
+                          (kind := kind) (args := args)
+                          (ctx := targetCtx) (state := state)
+                          (state' := stateAfterArgs) (values := values)
+                          (code := argsCode)
+                          hOwned hArgsCode hArgs hTerminalSafe).2
+  case expr sourceCtx kind expr rest hOwned hAccess hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              cases hRestCompile :
+                  Locals.Block.compileOpen targetCtx { stmts := rest } with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hRestCompile] at hCompile
+              | some restResult =>
+                  rcases restResult with ⟨restCode, restTargetCtxOut⟩
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hRestCompile] at hCompile
+                  rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                  subst code
+                  subst targetCtxOut
+                  simp [Block.runOpen] at hRun
+                  cases hEval : Expr.eval expr state with
+                  | error err =>
+                      simp [Stmt.run, hEval] at hRun
+                  | ok evalResult =>
+                      rcases evalResult with ⟨stateAfterExpr, values⟩
+                      simp [Stmt.run, hEval] at hRun
+                      cases hRestRun :
+                          Block.runOpen program sourceCtx fuel
+                            { stmts := rest } stateAfterExpr with
+                      | error err =>
+                          rw [hRestRun] at hRun
+                          simp at hRun
+                      | ok restRunResult =>
+                          rcases restRunResult with
+                            ⟨restOutcome, restSourceCtxOut⟩
+                          rw [hRestRun] at hRun
+                          simp at hRun
+                          rcases hRun with
+                            ⟨hOutcome, hSourceCtxOut⟩
+                          subst restOutcome
+                          subst sourceCtxOut
+                          have hStmt :=
+                            Stmt.oracleSafe_exprBlock_of_compileCode_eval_sourceOwned
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (expr := expr) (ctx := targetCtx)
+                              (state := state)
+                              (state' := stateAfterExpr)
+                              (values := values) (code := headCode)
+                              hOwned hHeadCode hEval
+                          have hRestSafe :=
+                            ih hTerminalSafe hRestCompile hRestRun
+                          exact
+                            (oracleSafe_compileOpen_cons_of_stmtBlock
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (stmt := Locals.Stmt.expr expr)
+                              (rest := rest)
+                              (stmtCode := Locals.codeStmt headCode)
+                              (restCode := restCode)
+                              (targetCtx := targetCtx)
+                              (targetCtxAfter := targetCtx)
+                              (targetCtxOut := restTargetCtxOut)
+                              hStmt.1 hRestCompile hStmt.2
+                              hRestSafe).2
+  case let_ sourceCtx kind name expr rest hOwned hAccess hFresh hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              let sourceCtxAfter : Ctx :=
+                { sourceCtx with scope := name :: sourceCtx.scope }
+              let targetCtxAfter : Locals.Ctx :=
+                targetCtx.withLayout (name :: targetCtx.layout)
+              cases hRestCompile :
+                  Locals.Block.compileOpen targetCtxAfter
+                    { stmts := rest } with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, sourceCtxAfter, targetCtxAfter,
+                    hRestCompile] at hCompile
+              | some restResult =>
+                  rcases restResult with ⟨restCode, restTargetCtxOut⟩
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, sourceCtxAfter, targetCtxAfter,
+                    hRestCompile] at hCompile
+                  rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                  subst code
+                  subst targetCtxOut
+                  simp [Block.runOpen] at hRun
+                  cases hEvalOne : Expr.evalOne expr state with
+                  | error err =>
+                      simp [Stmt.run, hEvalOne] at hRun
+                  | ok evalResult =>
+                      rcases evalResult with ⟨stateAfterValue, value⟩
+                      simp [Stmt.run, hEvalOne, sourceCtxAfter] at hRun
+                      cases hRestRun :
+                          Block.runOpen program sourceCtxAfter fuel
+                            { stmts := rest }
+                            (stateAfterValue.insert name value) with
+                      | error err =>
+                          rw [hRestRun] at hRun
+                          simp [sourceCtxAfter] at hRun
+                      | ok restRunResult =>
+                          rcases restRunResult with
+                            ⟨restOutcome, restSourceCtxOut⟩
+                          rw [hRestRun] at hRun
+                          simp [sourceCtxAfter] at hRun
+                          rcases hRun with
+                            ⟨hOutcome, hSourceCtxOut⟩
+                          subst restOutcome
+                          subst sourceCtxOut
+                          have hStmt :=
+                            Stmt.oracleSafe_letBlock_of_compileCode_evalOne_sourceOwned
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (name := name) (expr := expr)
+                              (ctx := targetCtx) (state := state)
+                              (state' := stateAfterValue)
+                              (value := value) (code := headCode)
+                              hOwned hHeadCode hEvalOne
+                          have hRestSafe :=
+                            ih hTerminalSafe hRestCompile hRestRun
+                          exact
+                            (oracleSafe_compileOpen_cons_of_stmtBlock
+                              (canBreak := canBreak)
+                              (canContinue := canContinue)
+                              (canLeave := canLeave)
+                              (stmt := Locals.Stmt.let_ name expr)
+                              (rest := rest)
+                              (stmtCode := Locals.codeStmt headCode)
+                              (restCode := restCode)
+                              (targetCtx := targetCtx)
+                              (targetCtxAfter := targetCtxAfter)
+                              (targetCtxOut := restTargetCtxOut)
+                              hStmt.1 hRestCompile hStmt.2
+                              hRestSafe).2
+  case assign sourceCtx kind name idx expr rest hName hBound hOwned hAccess
+      hRest ih =>
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          cases hHeadCode :
+              Locals.Expr.compileCode targetCtx 0 expr with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hHeadCode] at hCompile
+          | some headCode =>
+              cases hDepth :
+                  Locals.Layout.lookupDepth? name targetCtx.layout with
+              | none =>
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    hHeadCode, hDepth] at hCompile
+              | some depth =>
+                  cases hSwap :
+                      Locals.StackOp.swap? depth with
+                  | none =>
+                      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                        hHeadCode, hDepth, hSwap] at hCompile
+                  | some swapOp =>
+                      cases hRestCompile :
+                          Locals.Block.compileOpen targetCtx
+                            { stmts := rest } with
+                      | none =>
+                          simp [Locals.Block.compileOpen,
+                            Locals.Stmt.compile, hHeadCode, hDepth, hSwap,
+                            hRestCompile] at hCompile
+                      | some restResult =>
+                          rcases restResult with
+                            ⟨restCode, restTargetCtxOut⟩
+                          simp [Locals.Block.compileOpen,
+                            Locals.Stmt.compile, hHeadCode, hDepth, hSwap,
+                            hRestCompile] at hCompile
+                          rcases hCompile with ⟨hCode, hTargetCtxOut⟩
+                          subst code
+                          subst targetCtxOut
+                          simp [Block.runOpen] at hRun
+                          by_cases hContains :
+                              Locals.Source.Store.contains state.vars name =
+                                true
+                          · simp [Stmt.run, hContains] at hRun
+                            cases hEvalOne : Expr.evalOne expr state with
+                            | error err =>
+                                simp [hContains, hEvalOne] at hRun
+                            | ok evalResult =>
+                                rcases evalResult with
+                                  ⟨stateAfterValue, value⟩
+                                simp [hContains, hEvalOne] at hRun
+                                let stateAfterAssign :=
+                                  stateAfterValue.withVars
+                                    (Locals.Source.Store.insert
+                                      stateAfterValue.vars name value)
+                                cases hRestRun :
+                                    Block.runOpen program sourceCtx fuel
+                                      { stmts := rest }
+                                      stateAfterAssign with
+                                | error err =>
+                                    rw [hRestRun] at hRun
+                                    simp [stateAfterAssign] at hRun
+                                | ok restRunResult =>
+                                    rcases restRunResult with
+                                      ⟨restOutcome, restSourceCtxOut⟩
+                                    rw [hRestRun] at hRun
+                                    simp [stateAfterAssign] at hRun
+                                    rcases hRun with
+                                      ⟨hOutcome, hSourceCtxOut⟩
+                                    subst restOutcome
+                                    subst sourceCtxOut
+                                    have hStmt :=
+                                      Stmt.oracleSafe_assignBlock_of_compileCode_evalOne_sourceOwned
+                                        (canBreak := canBreak)
+                                        (canContinue := canContinue)
+                                        (canLeave := canLeave)
+                                        (name := name) (expr := expr)
+                                        (ctx := targetCtx)
+                                        (depth := depth)
+                                        (swapOp := swapOp)
+                                        (state := state)
+                                        (state' := stateAfterValue)
+                                        (value := value)
+                                        (code := headCode)
+                                        hOwned hDepth hHeadCode hSwap
+                                        hEvalOne
+                                    have hRestSafe :=
+                                      ih hTerminalSafe hRestCompile hRestRun
+                                    exact
+                                      (oracleSafe_compileOpen_cons_of_stmtBlock
+                                        (canBreak := canBreak)
+                                        (canContinue := canContinue)
+                                        (canLeave := canLeave)
+                                        (stmt :=
+                                          Locals.Stmt.assign name expr)
+                                        (rest := rest)
+                                        (stmtCode :=
+                                          Locals.codeStmt
+                                            (headCode ++
+                                              [Structured.BasicInstr.op
+                                                swapOp,
+                                                Structured.BasicInstr.op
+                                                  .pop]))
+                                        (restCode := restCode)
+                                        (targetCtx := targetCtx)
+                                        (targetCtxAfter := targetCtx)
+                                        (targetCtxOut := restTargetCtxOut)
+                                        hStmt.1 hRestCompile hStmt.2
+                                        hRestSafe).2
+                          · have hContainsFalse :
+                                Locals.Source.Store.contains state.vars name =
+                                  false := by
+                              cases hValue :
+                                  Locals.Source.Store.contains state.vars name <;>
+                                simp [hValue] at hContains ⊢
+                            simp [Stmt.run, hContainsFalse, invalid,
+                              Structured.invalid] at hRun
+
 theorem compileScoped_terminalTailPrefixBlockHaltWithOracle
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
@@ -49323,6 +49678,127 @@ theorem run_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial
   exact
     ⟨expressionFuel, targetOut, by simpa [State.initial] using hReplay⟩
 
+theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_runState
+    {fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial outState : State}
+    {kind : Assembly.HaltKind}
+    (hPrefix :
+      Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
+    (hRun : runState fuel program initial = .ok (Outcome.halt kind outState)) :
+    ExpressionsReplay.OracleSafe.Program lower := by
+  cases program with
+  | mk procs body =>
+      cases body with
+      | mk stmts =>
+          have hBodyCompile :
+              Locals.Block.compile Locals.Ctx.initial { stmts := stmts } =
+                some lower.body :=
+            Locals.Program.body_toExpressions_of_toExpressions? hLower
+          unfold Locals.Block.compile at hBodyCompile
+          cases hOpen :
+              Locals.Block.compileOpen Locals.Ctx.initial
+                { stmts := stmts } with
+          | none =>
+              simp [hOpen] at hBodyCompile
+          | some openResult =>
+              rcases openResult with ⟨code, targetCtxOut⟩
+              cases hFinish :
+                  Locals.finishScoped Locals.Ctx.initial targetCtxOut code with
+              | none =>
+                  simp [hOpen, hFinish] at hBodyCompile
+              | some lowerBody =>
+                  simp [hOpen, hFinish] at hBodyCompile
+                  cases hBodyCompile
+                  have hRunScoped :
+                      Block.runScoped
+                          { procs := procs, body := { stmts := stmts } }
+                          Locals.Source.Ctx.initial { stmts := stmts } fuel
+                          initial =
+                        .ok (Outcome.halt kind outState) := by
+                    simpa [runState] using hRun
+                  unfold Block.runScoped at hRunScoped
+                  cases hOpenRun :
+                      Block.runOpen
+                          { procs := procs, body := { stmts := stmts } }
+                          Locals.Source.Ctx.initial fuel { stmts := stmts }
+                          initial with
+                  | error err =>
+                      simp [hOpenRun] at hRunScoped
+                  | ok openRunResult =>
+                      rcases openRunResult with ⟨openOutcome, sourceCtxOut⟩
+                      simp [hOpenRun] at hRunScoped
+                      cases openOutcome with
+                      | mk openState openMode =>
+                          cases openMode <;>
+                            simp [Outcome.regular, Outcome.brk,
+                              Outcome.cont, Outcome.leave, Outcome.halt]
+                              at hRunScoped
+                          case halt openKind =>
+                            rcases hRunScoped with
+                              ⟨hOpenState, hOpenKind⟩
+                            subst openState
+                            subst openKind
+                            have hOpenHalt :
+                                Block.runOpen
+                                    { procs := procs,
+                                      body := { stmts := stmts } }
+                                    Locals.Source.Ctx.initial fuel
+                                    { stmts := stmts } initial =
+                                  .ok
+                                    (Outcome.halt kind outState,
+                                      sourceCtxOut) := by
+                              simpa [Outcome.halt] using hOpenRun
+                            have hOpenSafe :
+                                ExpressionsReplay.OracleSafe.Block false
+                                    false false { stmts := code } :=
+                              Block.oracleSafe_compileOpen_terminalTailPrefix_of_run
+                                (program :=
+                                  { procs := procs,
+                                    body := { stmts := stmts } })
+                                (canBreak := false)
+                                (canContinue := false)
+                                (canLeave := false)
+                                (sourceCtx := Locals.Source.Ctx.initial)
+                                (targetCtx := Locals.Ctx.initial)
+                                (fuel := fuel) (kind := kind)
+                                (stmts := stmts) (state := initial)
+                                (outState := outState)
+                                (sourceCtxOut := sourceCtxOut)
+                                (code := code)
+                                (targetCtxOut := targetCtxOut)
+                                hPrefix hTerminalSafe hOpen hOpenHalt
+                            have hBodySafe :
+                                ExpressionsReplay.OracleSafe.Block false
+                                    false false lower.body :=
+                              ExpressionsReplay.OracleSafe.finishScopedBlock
+                                hOpenSafe hFinish
+                            exact
+                              { procs :=
+                                  ExpressionsReplay.procListCodeShaped_of_program_toExpressions?
+                                    hLower
+                                body := hBodySafe }
+
+theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_run
+    {fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial : EVMState} {trace : Trace}
+    {outState : State} {kind : Assembly.HaltKind}
+    (hPrefix :
+      Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
+    (hRun :
+      run fuel program initial trace = .ok (Outcome.halt kind outState)) :
+    ExpressionsReplay.OracleSafe.Program lower :=
+  oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_runState
+    (fuel := fuel) (program := program) (lower := lower)
+    (initial := State.initial initial.toSharedState trace)
+    (outState := outState) (kind := kind)
+    hPrefix hLower hTerminalSafe (by simpa [run] using hRun)
+
 theorem runState_noLoopReplayPrefixBlockHaltWithOracle_of_toExpressions?
     {fuel : Nat} {program : Locals.Program}
     {lower : Expressions.Program} {initial outState : State}
@@ -50901,6 +51377,54 @@ theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_
       (kind := kind) (dryHalt := dryHalt)
       (SourceReplay.Block.TerminalTailPrefix.toNoLoopReplayPrefix hPrefix)
       hLower hDryHalt hCompile hStack hRun hLen hBounds hSafe hInitialPc
+
+theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hPrefix :
+      SourceReplay.Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        sourceProgram.body.stmts)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  have hSafe : ExpressionsReplay.OracleSafe.Program exprProgram :=
+    SourceReplay.Program.oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_run
+      (fuel := sourceFuel) (program := sourceProgram)
+      (lower := exprProgram) (initial := dryRun.initial)
+      (trace := dryRun.trace) (outState := sourceOut) (kind := kind)
+      hPrefix hLower hTerminalSafe hRun
+  exact
+    result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+      (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun
+      (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hPrefix hLower hDryHalt hCompile hStack hRun hLen hBounds hSafe
+      hInitialPc
 
 theorem result_eq_of_halted_localsAtomicIfPrefixThenTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
