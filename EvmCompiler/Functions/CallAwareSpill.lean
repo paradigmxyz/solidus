@@ -33299,6 +33299,27 @@ theorem compileCheckedWithSwitchFallback?_lookup_of_find?
     compileExpressionsProgramWithSwitchFallback?_lookup_of_find?
       hExpr hFind
 
+theorem compileCheckedWithSwitchFallback?_expressions_preserves_endPc
+    {range : ScratchRange} {program : Program}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {asm : Assembly.Program} {fuel : Nat} {initial : EVMState}
+    {outcome : Expressions.Outcome}
+    (hCompile :
+      compileCheckedWithSwitchFallback? range program =
+        some (plan, exprProgram, asm))
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hRun : exprProgram.run fuel initial = .ok outcome) :
+    ∃ targetFuel targetOutcome,
+      Assembly.Source.runNResult asm targetFuel initial =
+        .ok targetOutcome ∧
+      Structured.Preservation.WholeProgramOutcomeRel outcome targetOutcome ∧
+      Structured.Preservation.TargetOutcomeEndPc asm targetOutcome := by
+  rcases compileCheckedWithSwitchFallback?_eq_some hCompile with
+    ⟨_hExpr, hAsm⟩
+  exact
+    Expressions.Program.compile_preserves_of_compileChecked_endPc
+      hAsm hInitialPc hRun
+
 noncomputable def compileCheckedAssembly?
     (range : ScratchRange) (program : Program) :
     Option Assembly.Program := do
@@ -33748,6 +33769,44 @@ theorem compileCheckedPlannedPreallocWithSwitchFallback?_preallocFits
       cases h : SourceAcceptedCheck.Program.sourceAccepted? program <;>
         simp [h] at hSupported ⊢
     simp [hUnsupported] at hCompile
+
+theorem compileCheckedPlannedPreallocWithSwitchFallback?_expressions_compile
+    {maxWords : Nat} {program : Program}
+    {range : ScratchRange} {plan : Plan}
+    {exprProgram : Expressions.Program} {asm : Assembly.Program}
+    (hCompile :
+      compileCheckedPlannedPreallocWithSwitchFallback? maxWords program =
+        some (range, plan, exprProgram, asm)) :
+    compileExpressionsProgramWithSwitchFallback? range program =
+        some (plan, exprProgram) ∧
+      Expressions.Program.compileChecked? exprProgram = some asm ∧
+      range.base = 0 ∧ range.words ≤ maxWords := by
+  rcases compileCheckedPlannedPreallocWithSwitchFallback?_eq_some hCompile with
+    ⟨hChecked, hBase, hBound⟩
+  rcases compileCheckedWithSwitchFallback?_eq_some hChecked with
+    ⟨hExpr, hAsm⟩
+  exact ⟨hExpr, hAsm, hBase, hBound⟩
+
+theorem compileCheckedPlannedPreallocWithSwitchFallback?_expressions_preserves_endPc
+    {maxWords : Nat} {program : Program}
+    {range : ScratchRange} {plan : Plan}
+    {exprProgram : Expressions.Program} {asm : Assembly.Program}
+    {fuel : Nat} {initial : EVMState} {outcome : Expressions.Outcome}
+    (hCompile :
+      compileCheckedPlannedPreallocWithSwitchFallback? maxWords program =
+        some (range, plan, exprProgram, asm))
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hRun : exprProgram.run fuel initial = .ok outcome) :
+    ∃ targetFuel targetOutcome,
+      Assembly.Source.runNResult asm targetFuel initial =
+        .ok targetOutcome ∧
+      Structured.Preservation.WholeProgramOutcomeRel outcome targetOutcome ∧
+      Structured.Preservation.TargetOutcomeEndPc asm targetOutcome := by
+  rcases compileCheckedPlannedPreallocWithSwitchFallback?_eq_some hCompile with
+    ⟨hChecked, _hBase, _hBound⟩
+  exact
+    compileCheckedWithSwitchFallback?_expressions_preserves_endPc
+      hChecked hInitialPc hRun
 
 theorem compileCheckedPlannedPrealloc?_preallocFits
     {maxWords : Nat} {program : Program}
