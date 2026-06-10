@@ -48036,9 +48036,9 @@ theorem compileStmtWithSwitchFallback?_for_halt_sound_meta_of_source_loop_halt_s
     {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
     {init : Block} {cond : Expr 1} {post body : Block}
     {plan : Plan} {exprProgram : Expressions.Program}
-    {sourceCtx sourceCtxAfter : Source.Ctx}
-    {fuel : Nat}
-    {source sourceAfter : Source.State}
+    {sourceCtx sourceCtxAfter initCtx : Source.Ctx}
+    {loopFuel : Nat}
+    {source sourceAfter sourceAfterInit sourceAfterLoop : Source.State}
     {target : Expressions.RunState} {kind : Assembly.HaltKind}
     (hCompile :
       compileStmtWithSwitchFallback? range program handlers returns
@@ -48055,9 +48055,19 @@ theorem compileStmtWithSwitchFallback?_for_halt_sound_meta_of_source_loop_halt_s
     (hLength : target.evm.stack.length = stackLayout.length)
     (hSourceRun :
       Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
-          sourceCtx fuel (.for_ init cond post body) source =
+          sourceCtx (loopFuel + 1) (.for_ init cond post body) source =
         .ok (Source.Outcome.halt kind sourceAfter, sourceCtxAfter))
-    (hFuelBound : fuel ≤ maxFuel)
+    (hInitRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx.withoutLoopControl loopFuel init source =
+        .ok (Source.Outcome.regular sourceAfterInit, initCtx))
+    (hLoopRun :
+      Source.Stmt.runForLoop Locals.Source.PrimitiveSemantics.structured
+          program initCtx cond initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope) body loopFuel
+          sourceAfterInit =
+        .ok (Source.Outcome.halt kind sourceAfterLoop))
+    (hFuelBound : loopFuel + 1 ≤ maxFuel)
     (hInitStmtRegular :
       SwitchFallbackStmtRegularSoundBelow maxFuel range program
         handlers.withoutLoopControl returns exprProgram)
@@ -48115,95 +48125,21 @@ theorem compileStmtWithSwitchFallback?_for_halt_sound_meta_of_source_loop_halt_s
   have hForCompile :=
     compileStmtWithSwitchFallback?_for_fallback_eq_some_compileFor
       hCompile hFallback
-  cases fuel with
-  | zero =>
-      simp [Source.Stmt.run, Source.invalid, Structured.invalid] at hSourceRun
-  | succ loopFuel =>
-      have hLoopFuelBound : loopFuel ≤ maxFuel :=
-        Nat.le_trans (Nat.le_succ loopFuel) hFuelBound
-      unfold Source.Stmt.run at hSourceRun
-      cases hInitRun :
-          Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured
-              program sourceCtx.withoutLoopControl loopFuel init source with
-      | error err =>
-          simp [hInitRun] at hSourceRun
-      | ok initResult =>
-          rcases initResult with ⟨initOutcome, initCtx⟩
-          rcases initOutcome with ⟨sourceAfterInit, initMode⟩
-          cases initMode with
-          | regular =>
-              cases hLoopRun :
-                  Source.Stmt.runForLoop
-                    Locals.Source.PrimitiveSemantics.structured program
-                    initCtx cond initCtx.withoutLoopControl post
-                    (initCtx.withLoopControl initCtx.scope initCtx.scope)
-                    body loopFuel sourceAfterInit with
-              | error err =>
-                  simp [hInitRun, hLoopRun,
-                    Source.Outcome.halt,
-                    Locals.Source.Outcome.halt] at hSourceRun
-              | ok loopOutcome =>
-                  rcases loopOutcome with ⟨sourceAfterLoop, loopMode⟩
-                  cases loopMode with
-                  | regular =>
-                      simp [hInitRun, hLoopRun, Source.Outcome.regular,
-                        Source.Outcome.halt,
-                        Locals.Source.Outcome.regular,
-                        Locals.Source.Outcome.halt] at hSourceRun
-                  | brk =>
-                      simp [hInitRun, hLoopRun, Source.Outcome.brk,
-                        Source.Outcome.halt, Source.invalid,
-                        Structured.invalid, Locals.Source.Outcome.brk,
-                        Locals.Source.Outcome.halt] at hSourceRun
-                  | cont =>
-                      simp [hInitRun, hLoopRun, Source.Outcome.cont,
-                        Source.Outcome.halt, Source.invalid,
-                        Structured.invalid, Locals.Source.Outcome.cont,
-                        Locals.Source.Outcome.halt] at hSourceRun
-                  | leave =>
-                      simp [hInitRun, hLoopRun, Source.Outcome.leave,
-                        Source.Outcome.halt,
-                        Locals.Source.Outcome.leave,
-                        Locals.Source.Outcome.halt] at hSourceRun
-                      cases hSourceRun.1
-                  | halt loopKind =>
-                      simp [hInitRun, hLoopRun, Source.Outcome.halt,
-                        Locals.Source.Outcome.halt] at hSourceRun
-                      rcases hSourceRun with ⟨hOutcome, hCtxAfter⟩
-                      cases hOutcome
-                      cases hCtxAfter
-                      rcases
-                          compileForFallbackWithSwitchFallback?_halt_sound_meta_of_loop_halt_sound_below
-                            hSpec hWordBytes hForCompile hScope hRel
-                            hDefined hLength
-                            (by
-                              simpa [Source.Outcome.regular] using hInitRun)
-                            (by
-                              simpa [Source.Outcome.halt] using hLoopRun)
-                            hLoopFuelBound hLoopFuelBound hInitStmtRegular
-                            hLoopHaltSound with
-                        ⟨haltTarget, exprFuel, hRun, hShared⟩
-                      refine ⟨haltTarget, exprFuel, hRun, ?_⟩
-                      rw [← hOutcome]
-                      exact hShared
-          | brk =>
-              simp [hInitRun, Source.Outcome.brk, Source.Outcome.halt,
-                Source.invalid, Structured.invalid, Locals.Source.Outcome.brk,
-                Locals.Source.Outcome.halt] at hSourceRun
-          | cont =>
-              simp [hInitRun, Source.Outcome.cont, Source.Outcome.halt,
-                Source.invalid, Structured.invalid,
-                Locals.Source.Outcome.cont,
-                Locals.Source.Outcome.halt] at hSourceRun
-          | leave =>
-              simp [hInitRun, Source.Outcome.leave, Source.Outcome.halt,
-                Locals.Source.Outcome.leave,
-                Locals.Source.Outcome.halt] at hSourceRun
-              cases hSourceRun.1
-          | halt initKind =>
-              simp [hInitRun, Source.Outcome.halt,
-                Locals.Source.Outcome.halt] at hSourceRun
-              cases hSourceRun.1
+  have hLoopFuelBound : loopFuel ≤ maxFuel := by omega
+  unfold Source.Stmt.run at hSourceRun
+  simp [hInitRun, hLoopRun, Source.Outcome.regular, Source.Outcome.halt,
+    Locals.Source.Outcome.regular, Locals.Source.Outcome.halt] at hSourceRun
+  rcases hSourceRun with ⟨hOutcome, hCtxAfter⟩
+  cases hCtxAfter
+  rcases
+      compileForFallbackWithSwitchFallback?_halt_sound_meta_of_loop_halt_sound_below
+        hSpec hWordBytes hForCompile hScope hRel hDefined hLength
+        hInitRun hLoopRun hLoopFuelBound hLoopFuelBound hInitStmtRegular
+        hLoopHaltSound with
+    ⟨haltTarget, exprFuel, hRun, hShared⟩
+  refine ⟨haltTarget, exprFuel, hRun, ?_⟩
+  rw [← hOutcome]
+  exact hShared
 
 theorem compileStmtWithSwitchFallback?_for_regular_sound_meta_exact_of_source_loop_regular_sound_pred
     (hSpec : ZeroPaddingSpec)
