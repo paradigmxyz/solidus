@@ -320,6 +320,18 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToBlock
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToPreservingBlock
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishScopedBlock
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.codeStmtCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.exprCodeShaped_of_locals_compile
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishToPreserving
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishScoped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledBlockCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledStmtCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledCasesCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledDefaultCodeShaped
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_compileToPreserving
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procCodeShaped_of_toExpressions?
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_toExpressions?
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_program_toExpressions?
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped.of_lookup?
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.CaseListCodeShaped.of_select
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Expr.runCodeExprWithOracle
@@ -856,6 +868,18 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToBlock
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishToPreservingBlock
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishScopedBlock
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.codeStmtCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.exprCodeShaped_of_locals_compile
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishToPreserving
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishScoped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledBlockCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledStmtCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledCasesCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.compiledDefaultCodeShaped
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_compileToPreserving
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procCodeShaped_of_toExpressions?
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_toExpressions?
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_program_toExpressions?
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.programCodeShaped
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.blockToStructured
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.OracleSafe.stmtToStructured

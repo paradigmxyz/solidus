@@ -19165,6 +19165,590 @@ theorem finishScopedBlock {canBreak canContinue canLeave : Bool}
 
 end OracleSafe
 
+theorem codeStmtCodeShaped (code : Structured.Code) :
+    StmtListCodeShaped (Locals.codeStmt code) := by
+  simp [Locals.codeStmt, StmtListCodeShaped, StmtCodeShaped]
+
+theorem exprCodeShaped_of_locals_compile
+    {results : Nat} {ctx : Locals.Ctx} {expr : Locals.Expr results}
+    {lower : Expressions.Expr results}
+    (hCompile : Locals.Expr.compile ctx expr = some lower) :
+    ExprCodeShaped lower := by
+  unfold Locals.Expr.compile at hCompile
+  cases hCode : Locals.Expr.compileCode ctx 0 expr with
+  | none =>
+      simp [hCode] at hCompile
+  | some code =>
+      simp [hCode] at hCompile
+      cases hCompile
+      simp [ExprCodeShaped]
+
+theorem blockCodeShaped_of_finishToPreserving
+    {final : Locals.Ctx} {preserve targetDepth : Nat}
+    {stmts : List Expressions.Stmt} {lower : Expressions.Block}
+    (hStmts : StmtListCodeShaped stmts)
+    (hFinish :
+      Locals.finishToPreserving final preserve targetDepth stmts =
+        some lower) :
+    BlockCodeShaped lower := by
+  unfold Locals.finishToPreserving at hFinish
+  cases hCleanup : final.cleanupToPreserving? preserve targetDepth with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      cases hFinish
+      exact StmtListCodeShaped_append hStmts (codeStmtCodeShaped cleanup)
+
+theorem blockCodeShaped_of_finishScoped
+    {outer final : Locals.Ctx}
+    {stmts : List Expressions.Stmt} {lower : Expressions.Block}
+    (hStmts : StmtListCodeShaped stmts)
+    (hFinish : Locals.finishScoped outer final stmts = some lower) :
+    BlockCodeShaped lower := by
+  unfold Locals.finishScoped at hFinish
+  cases hCleanup : final.cleanupTo? outer.layout.length with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      cases hFinish
+      exact StmtListCodeShaped_append hStmts (codeStmtCodeShaped cleanup)
+
+set_option maxHeartbeats 800000 in
+set_option linter.unusedSimpArgs false in
+mutual
+  theorem compiledBlockCodeShaped (ctx : Locals.Ctx)
+      (block : Locals.Block)
+      {stmts : List Expressions.Stmt} {final : Locals.Ctx}
+      (hCompile :
+        Locals.Block.compileOpen ctx block = some (stmts, final)) :
+      StmtListCodeShaped stmts := by
+    cases block with
+    | mk list =>
+        cases list with
+        | nil =>
+            simp [Locals.Block.compileOpen] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact trivial
+        | cons stmt rest =>
+            simp [Locals.Block.compileOpen] at hCompile
+            cases hStmt : Locals.Stmt.compile ctx stmt with
+            | none =>
+                simp [hStmt] at hCompile
+            | some stmtOut =>
+                rcases stmtOut with ⟨stmtCode, ctx'⟩
+                cases hRest :
+                    Locals.Block.compileOpen ctx' { stmts := rest } with
+                | none =>
+                    simp [hStmt, hRest] at hCompile
+                | some restOut =>
+                    rcases restOut with ⟨restCode, ctx''⟩
+                    simp [hStmt, hRest] at hCompile
+                    rcases hCompile with ⟨hStmts, _hFinal⟩
+                    subst stmts
+                    exact
+                      StmtListCodeShaped_append
+                        (compiledStmtCodeShaped ctx stmt hStmt)
+                        (compiledBlockCodeShaped ctx' { stmts := rest }
+                          hRest)
+  termination_by sizeOf block
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+
+  theorem compiledStmtCodeShaped (ctx : Locals.Ctx)
+      (stmt : Locals.Stmt)
+      {stmts : List Expressions.Stmt} {final : Locals.Ctx}
+      (hCompile :
+        Locals.Stmt.compile ctx stmt = some (stmts, final)) :
+      StmtListCodeShaped stmts := by
+    cases stmt with
+    | expr expr =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hCode : Locals.Expr.compileCode ctx 0 expr with
+        | none =>
+            simp [hCode] at hCompile
+        | some code =>
+            simp [hCode] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact codeStmtCodeShaped code
+    | exprs exprs =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hCode : Locals.ExprSeq.compileCode ctx 0 exprs with
+        | none =>
+            simp [hCode] at hCompile
+        | some code =>
+            simp [hCode] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact codeStmtCodeShaped code
+    | let_ name value =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hCode : Locals.Expr.compileCode ctx 0 value with
+        | none =>
+            simp [hCode] at hCompile
+        | some code =>
+            simp [hCode] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact codeStmtCodeShaped code
+    | assign name value =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+        | none =>
+            simp [hDepth] at hCompile
+        | some depth =>
+            cases hValueCode : Locals.Expr.compileCode ctx 0 value with
+            | none =>
+                simp [hDepth, hValueCode] at hCompile
+            | some valueCode =>
+                cases hSwap : Locals.StackOp.swap? depth with
+                | none =>
+                    simp [hDepth, hValueCode, hSwap] at hCompile
+                | some swapOp =>
+                    simp [hDepth, hValueCode, hSwap] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    exact
+                      codeStmtCodeShaped
+                        (valueCode ++
+                          [ Structured.BasicInstr.op swapOp
+                          , Structured.BasicInstr.op .pop
+                          ])
+    | assignTop name =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+        | none =>
+            simp [hDepth] at hCompile
+        | some depth =>
+            cases hSwap : Locals.StackOp.swap? depth with
+            | none =>
+                simp [hDepth, hSwap] at hCompile
+            | some swapOp =>
+                simp [hDepth, hSwap] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                exact
+                  codeStmtCodeShaped
+                    [ Structured.BasicInstr.op swapOp
+                    , Structured.BasicInstr.op .pop
+                    ]
+    | assignTopWithOffset offset name =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+        | none =>
+            simp [hDepth] at hCompile
+        | some depth =>
+            cases hSwap : Locals.StackOp.swap? (offset + depth) with
+            | none =>
+                simp [hDepth, hSwap] at hCompile
+            | some swapOp =>
+                simp [hDepth, hSwap] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                exact
+                  codeStmtCodeShaped
+                    [ Structured.BasicInstr.op swapOp
+                    , Structured.BasicInstr.op .pop
+                    ]
+    | promoteName name =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hPromote : ctx.promoteNameStackOnly? name with
+        | none =>
+            simp [hPromote] at hCompile
+        | some promoteResult =>
+            rcases promoteResult with ⟨promoteCode, promoted⟩
+            simp [hPromote] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact codeStmtCodeShaped promoteCode
+    | cleanupTo targetLayout =>
+        by_cases hTarget :
+            targetLayout =
+              ctx.layout.drop (ctx.layout.length - targetLayout.length)
+        · simp only [Locals.Stmt.compile, if_pos hTarget] at hCompile
+          cases hCleanup : ctx.cleanupTo? targetLayout.length with
+          | none =>
+              simp [hCleanup] at hCompile
+          | some cleanup =>
+              simp [hCleanup] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact codeStmtCodeShaped cleanup
+        · simp only [Locals.Stmt.compile, if_neg hTarget] at hCompile
+          simp at hCompile
+    | block body =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hBodyCompile : Locals.Block.compileOpen ctx body with
+        | none =>
+            simp [hBodyCompile] at hCompile
+        | some bodyOut =>
+            rcases bodyOut with ⟨bodyCode, bodyCtx⟩
+            cases hFinish : Locals.finishScoped ctx bodyCtx bodyCode with
+            | none =>
+                simp [hBodyCompile, hFinish] at hCompile
+            | some lowerBlock =>
+                simp [hBodyCompile, hFinish] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                cases lowerBlock with
+                | mk lowerStmts =>
+                    exact
+                      blockCodeShaped_of_finishScoped
+                        (compiledBlockCodeShaped ctx body hBodyCompile)
+                        hFinish
+    | if_ cond body =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hCond : Locals.Expr.compile ctx cond with
+        | none =>
+            simp [hCond] at hCompile
+        | some condExpr =>
+            cases hBodyCompile : Locals.Block.compileOpen ctx body with
+            | none =>
+                simp [hCond, hBodyCompile] at hCompile
+            | some bodyOut =>
+                rcases bodyOut with ⟨bodyCode, bodyCtx⟩
+                cases hFinish : Locals.finishScoped ctx bodyCtx bodyCode with
+                | none =>
+                    simp [hCond, hBodyCompile, hFinish] at hCompile
+                | some lowerBody =>
+                    simp [hCond, hBodyCompile, hFinish] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    have hCondShape :=
+                      exprCodeShaped_of_locals_compile hCond
+                    have hBodyShape :=
+                      blockCodeShaped_of_finishScoped
+                        (compiledBlockCodeShaped ctx body hBodyCompile)
+                        hFinish
+                    exact ⟨⟨hCondShape, hBodyShape⟩, trivial⟩
+    | switch scrutinee cases defaultBody =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hScrutinee : Locals.Expr.compile ctx scrutinee with
+        | none =>
+            simp [hScrutinee] at hCompile
+        | some scrutineeExpr =>
+            cases hCases : Locals.CaseList.compile ctx cases with
+            | none =>
+                simp [hScrutinee, hCases] at hCompile
+            | some lowerCases =>
+                cases hDefault : Locals.Default.compile ctx defaultBody with
+                | none =>
+                    simp [hScrutinee, hCases, hDefault] at hCompile
+                | some lowerDefault =>
+                    simp [hScrutinee, hCases, hDefault] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    have hScrutineeShape :=
+                      exprCodeShaped_of_locals_compile hScrutinee
+                    have hCasesShape :=
+                      compiledCasesCodeShaped ctx cases hCases
+                    have hDefaultShape :=
+                      compiledDefaultCodeShaped ctx defaultBody hDefault
+                    exact
+                      ⟨⟨hScrutineeShape, hCasesShape, hDefaultShape⟩,
+                        trivial⟩
+    | for_ init cond post body =>
+        simp [Locals.Stmt.compile] at hCompile
+        let initBase := ctx.withoutLoopControl
+        cases hInit : Locals.Block.compileOpen initBase init with
+        | none =>
+            simp [initBase, hInit] at hCompile
+        | some initOut =>
+            rcases initOut with ⟨initCode, initCtx⟩
+            cases hCond : Locals.Expr.compile initCtx cond with
+            | none =>
+                simp [initBase, hInit, hCond] at hCompile
+            | some condExpr =>
+                let postBase := initCtx.withoutLoopControl
+                cases hPost : Locals.Block.compileOpen postBase post with
+                | none =>
+                    simp [initBase, postBase, hInit, hCond, hPost]
+                      at hCompile
+                | some postOut =>
+                    rcases postOut with ⟨postCode, postCtx⟩
+                    cases hLowerPost :
+                        Locals.finishScoped postBase postCtx postCode with
+                    | none =>
+                        simp [initBase, postBase, hInit, hCond, hPost,
+                          hLowerPost] at hCompile
+                    | some lowerPost =>
+                        let bodyBase :=
+                          initCtx.withLoopControl initCtx.layout.length
+                        cases hBody :
+                            Locals.Block.compileOpen bodyBase body with
+                        | none =>
+                            simp [initBase, postBase, bodyBase, hInit, hCond,
+                              hPost, hLowerPost, hBody] at hCompile
+                        | some bodyOut =>
+                            rcases bodyOut with ⟨bodyCode, bodyCtx⟩
+                            cases hLowerBody :
+                                Locals.finishScoped bodyBase bodyCtx bodyCode with
+                            | none =>
+                                simp [initBase, postBase, bodyBase, hInit,
+                                  hCond, hPost, hLowerPost, hBody,
+                                  hLowerBody] at hCompile
+                            | some lowerBody =>
+                                cases hCleanup :
+                                    initCtx.cleanupTo? ctx.layout.length with
+                                | none =>
+                                    simp [initBase, postBase, bodyBase, hInit,
+                                      hCond, hPost, hLowerPost, hBody,
+                                      hLowerBody, hCleanup] at hCompile
+                                | some cleanup =>
+                                    simp [initBase, postBase, bodyBase, hInit,
+                                      hCond, hPost, hLowerPost, hBody,
+                                      hLowerBody, hCleanup] at hCompile
+                                    rcases hCompile with ⟨rfl, rfl⟩
+                                    have hInitShape :=
+                                      compiledBlockCodeShaped initBase init
+                                        hInit
+                                    have hCondShape :=
+                                      exprCodeShaped_of_locals_compile hCond
+                                    have hPostShape :=
+                                      blockCodeShaped_of_finishScoped
+                                        (compiledBlockCodeShaped postBase post
+                                          hPost)
+                                        hLowerPost
+                                    have hBodyShape :=
+                                      blockCodeShaped_of_finishScoped
+                                        (compiledBlockCodeShaped bodyBase body
+                                          hBody)
+                                        hLowerBody
+                                    have hLoopShape :
+                                        StmtListCodeShaped
+                                          [Expressions.Stmt.for_
+                                            { stmts := initCode } condExpr
+                                            lowerPost lowerBody] := by
+                                      exact
+                                        ⟨⟨hInitShape, hCondShape,
+                                            hPostShape, hBodyShape⟩,
+                                          trivial⟩
+                                    exact
+                                      StmtListCodeShaped_append
+                                        hLoopShape
+                                        (codeStmtCodeShaped cleanup)
+    | brk =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hTarget : ctx.breakDepth? with
+        | none =>
+            simp [hTarget] at hCompile
+        | some target =>
+            cases hCleanup : ctx.cleanupTo? target with
+            | none =>
+                simp [hTarget, hCleanup] at hCompile
+            | some cleanup =>
+                simp [hTarget, hCleanup] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                exact
+                  StmtListCodeShaped_append (codeStmtCodeShaped cleanup)
+                    (by exact ⟨trivial, trivial⟩)
+    | cont =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hTarget : ctx.continueDepth? with
+        | none =>
+            simp [hTarget] at hCompile
+        | some target =>
+            cases hCleanup : ctx.cleanupTo? target with
+            | none =>
+                simp [hTarget, hCleanup] at hCompile
+            | some cleanup =>
+                simp [hTarget, hCleanup] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                exact
+                  StmtListCodeShaped_append (codeStmtCodeShaped cleanup)
+                    (by exact ⟨trivial, trivial⟩)
+    | leave =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hTarget : ctx.leaveDepth? with
+        | none =>
+            simp [hTarget] at hCompile
+        | some target =>
+            cases hCleanup :
+                ctx.cleanupToPreserving? ctx.leaveRetc target with
+            | none =>
+                simp [hTarget, hCleanup] at hCompile
+            | some cleanup =>
+                simp [hTarget, hCleanup] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                exact
+                  StmtListCodeShaped_append (codeStmtCodeShaped cleanup)
+                    (by exact ⟨trivial, trivial⟩)
+    | call name =>
+        simp [Locals.Stmt.compile] at hCompile
+        rcases hCompile with ⟨rfl, rfl⟩
+        exact ⟨trivial, trivial⟩
+    | terminal kind =>
+        simp [Locals.Stmt.compile] at hCompile
+        rcases hCompile with ⟨rfl, rfl⟩
+        exact
+          StmtListCodeShaped_append
+            (codeStmtCodeShaped ctx.cleanupAll)
+            (by exact ⟨trivial, trivial⟩)
+    | terminalArgs kind args =>
+        simp [Locals.Stmt.compile] at hCompile
+        cases hCode : Locals.ExprSeq.compileCode ctx 0 args with
+        | none =>
+            simp [hCode] at hCompile
+        | some code =>
+            simp [hCode] at hCompile
+            rcases hCompile with ⟨rfl, rfl⟩
+            exact
+              StmtListCodeShaped_append (codeStmtCodeShaped code)
+                (by exact ⟨trivial, trivial⟩)
+  termination_by sizeOf stmt
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+
+  theorem compiledCasesCodeShaped (ctx : Locals.Ctx)
+      (cases : List (Word × Locals.Block))
+      {lowerCases : List (Word × Expressions.Block)}
+      (hCompile :
+        Locals.CaseList.compile ctx cases = some lowerCases) :
+      CaseListCodeShaped lowerCases := by
+    cases cases with
+    | nil =>
+        simp [Locals.CaseList.compile] at hCompile
+        cases hCompile
+        exact trivial
+    | cons head rest =>
+        cases head with
+        | mk value body =>
+            cases hBody : Locals.Block.compileOpen ctx body with
+            | none =>
+                simp [Locals.CaseList.compile, hBody] at hCompile
+            | some bodyOut =>
+                rcases bodyOut with ⟨bodyCode, bodyCtx⟩
+                cases hFinish : Locals.finishScoped ctx bodyCtx bodyCode with
+                | none =>
+                    simp [Locals.CaseList.compile, hBody, hFinish]
+                      at hCompile
+                | some lowerBody =>
+                    cases hRest : Locals.CaseList.compile ctx rest with
+                    | none =>
+                        simp [Locals.CaseList.compile, hBody, hFinish, hRest]
+                          at hCompile
+                    | some lowerRest =>
+                        simp [Locals.CaseList.compile, hBody, hFinish, hRest]
+                          at hCompile
+                        cases hCompile
+                        exact
+                          ⟨blockCodeShaped_of_finishScoped
+                              (compiledBlockCodeShaped ctx body hBody)
+                              hFinish,
+                            compiledCasesCodeShaped ctx rest hRest⟩
+  termination_by sizeOf cases
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+
+  theorem compiledDefaultCodeShaped (ctx : Locals.Ctx)
+      (defaultBody : Option Locals.Block)
+      {lowerDefault : Option Expressions.Block}
+      (hCompile :
+        Locals.Default.compile ctx defaultBody = some lowerDefault) :
+      DefaultCodeShaped lowerDefault := by
+    cases defaultBody with
+    | none =>
+        simp [Locals.Default.compile] at hCompile
+        cases hCompile
+        exact trivial
+    | some body =>
+        cases hBody : Locals.Block.compileOpen ctx body with
+        | none =>
+            simp [Locals.Default.compile, hBody] at hCompile
+        | some bodyOut =>
+            rcases bodyOut with ⟨bodyCode, bodyCtx⟩
+            cases hFinish : Locals.finishScoped ctx bodyCtx bodyCode with
+            | none =>
+                simp [Locals.Default.compile, hBody, hFinish] at hCompile
+            | some lowerBody =>
+                simp [Locals.Default.compile, hBody, hFinish] at hCompile
+                cases hCompile
+                exact
+                  blockCodeShaped_of_finishScoped
+                    (compiledBlockCodeShaped ctx body hBody)
+                    hFinish
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals subst_vars
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+end
+
+theorem blockCodeShaped_of_compileToPreserving
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {block : Locals.Block} {lower : Expressions.Block}
+    (hCompile :
+      Locals.Block.compileToPreserving ctx preserve targetDepth block =
+        some lower) :
+    BlockCodeShaped lower := by
+  unfold Locals.Block.compileToPreserving at hCompile
+  cases hOpen : Locals.Block.compileOpen ctx block with
+  | none =>
+      simp [hOpen] at hCompile
+  | some openResult =>
+      rcases openResult with ⟨stmts, final⟩
+      cases hFinish :
+          Locals.finishToPreserving final preserve targetDepth stmts with
+      | none =>
+          simp [hOpen, hFinish] at hCompile
+      | some lowerBlock =>
+          simp [hOpen, hFinish] at hCompile
+          cases hCompile
+          exact
+            blockCodeShaped_of_finishToPreserving
+              (compiledBlockCodeShaped ctx block hOpen) hFinish
+
+theorem procCodeShaped_of_toExpressions?
+    {proc : Locals.Proc} {lower : Expressions.Proc}
+    (hCompile : proc.toExpressions? = some lower) :
+    ProcCodeShaped lower := by
+  unfold Locals.Proc.toExpressions? at hCompile
+  cases hBody :
+      Locals.Block.compileToPreserving
+        (Locals.Ctx.procEntryWithLayoutAndRetc proc.entryLayout proc.retc)
+        proc.retc 0 proc.body with
+  | none =>
+      simp [hBody] at hCompile
+  | some lowerBody =>
+      simp [hBody] at hCompile
+      cases hCompile
+      exact blockCodeShaped_of_compileToPreserving hBody
+
+theorem procListCodeShaped_of_toExpressions? :
+    ∀ {procs : List Locals.Proc} {lowerProcs : List Expressions.Proc},
+      Locals.ProcList.toExpressions? procs = some lowerProcs →
+      ProcListCodeShaped lowerProcs := by
+  intro procs
+  induction procs with
+  | nil =>
+      intro lowerProcs hCompile
+      simp [Locals.ProcList.toExpressions?] at hCompile
+      cases hCompile
+      simp [ProcListCodeShaped]
+  | cons proc rest ih =>
+      intro lowerProcs hCompile
+      cases hProc : proc.toExpressions? with
+      | none =>
+          simp [Locals.ProcList.toExpressions?, hProc] at hCompile
+      | some lowerProc =>
+          cases hRest : Locals.ProcList.toExpressions? rest with
+          | none =>
+              simp [Locals.ProcList.toExpressions?, hProc, hRest] at hCompile
+          | some lowerRest =>
+              simp [Locals.ProcList.toExpressions?, hProc, hRest] at hCompile
+              cases hCompile
+              exact
+                ⟨procCodeShaped_of_toExpressions? hProc,
+                  ih hRest⟩
+
+theorem procListCodeShaped_of_program_toExpressions?
+    {program : Locals.Program} {lower : Expressions.Program}
+    (hCompile : program.toExpressions? = some lower) :
+    ProcListCodeShaped lower.procs :=
+  procListCodeShaped_of_toExpressions?
+    (Locals.Program.procs_toExpressions_of_toExpressions? hCompile)
+
 theorem ProcListCodeShaped.of_lookup?
     {name : Name} {procs : List Expressions.Proc} {proc : Expressions.Proc}
     (hCode : ProcListCodeShaped procs)

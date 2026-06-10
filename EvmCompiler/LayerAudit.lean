@@ -1013,6 +1013,42 @@ abbrev expressionsReplayOracleSafeFinishToPreservingBlock :=
 abbrev expressionsReplayOracleSafeFinishScopedBlock :=
   @Yul.ObserverOracle.ExpressionsReplay.OracleSafe.finishScopedBlock
 
+abbrev expressionsReplayCodeStmtCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.codeStmtCodeShaped
+
+abbrev expressionsReplayExprCodeShapedOfLocalsCompile :=
+  @Yul.ObserverOracle.ExpressionsReplay.exprCodeShaped_of_locals_compile
+
+abbrev expressionsReplayBlockCodeShapedOfFinishToPreserving :=
+  @Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishToPreserving
+
+abbrev expressionsReplayBlockCodeShapedOfFinishScoped :=
+  @Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_finishScoped
+
+abbrev expressionsReplayCompiledBlockCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.compiledBlockCodeShaped
+
+abbrev expressionsReplayCompiledStmtCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.compiledStmtCodeShaped
+
+abbrev expressionsReplayCompiledCasesCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.compiledCasesCodeShaped
+
+abbrev expressionsReplayCompiledDefaultCodeShaped :=
+  @Yul.ObserverOracle.ExpressionsReplay.compiledDefaultCodeShaped
+
+abbrev expressionsReplayBlockCodeShapedOfCompileToPreserving :=
+  @Yul.ObserverOracle.ExpressionsReplay.blockCodeShaped_of_compileToPreserving
+
+abbrev expressionsReplayProcCodeShapedOfToExpressions :=
+  @Yul.ObserverOracle.ExpressionsReplay.procCodeShaped_of_toExpressions?
+
+abbrev expressionsReplayProcListCodeShapedOfToExpressions :=
+  @Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_toExpressions?
+
+abbrev expressionsReplayProcListCodeShapedOfProgramToExpressions :=
+  @Yul.ObserverOracle.ExpressionsReplay.procListCodeShaped_of_program_toExpressions?
+
 abbrev expressionsReplayProcListCodeShapedOfLookup :=
   @Yul.ObserverOracle.ExpressionsReplay.ProcListCodeShaped.of_lookup?
 
