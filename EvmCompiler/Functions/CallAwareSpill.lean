@@ -10178,6 +10178,78 @@ theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope_exists
     ⟨restrictedLayout, brkTarget, exprFuel, rfl, hRun, hRel',
       hDefined', hStack, hCtx⟩
 
+theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope_reference
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {plan : Plan} {program : Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileBreakWithSpillFallback? range handlers sourceScope stackLayout
+        layout = some plan)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hBreakScope : sourceCtx.breakScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .brk source =
+        .ok (Source.Outcome.brk sourceAfter, sourceCtxAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.brk brkTarget) ∧
+        SpillStateRel range handlerScope [] referenceLayout sourceAfter
+          brkTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+        brkTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  rcases compileBreakWithSpillFallback?_eq_some_components hCompile with
+    ⟨_breakScope, entry, _hBreak, hEntry, _hEntryStack, hPlan⟩
+  have hEntryRestrict :
+      SpillLayout.restrictToScope handlerScope entry.layout =
+        SpillLayout.restrictToScope handlerScope layout := by
+    have hReferenceLayout' :
+        SpillLayout.WellFormed range handlerScope []
+          (SpillLayout.restrictToScope handlerScope layout) := by
+      simpa [hReference] using hReferenceLayout
+    simpa using
+      normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+        (scope := handlerScope) hEntry hReferenceLayout'
+  have hPlanRestrict :
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+    subst plan
+    simpa [hReference] using hEntryRestrict
+  rcases
+      compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope_exists
+        hSpec hWordBytes
+        hCompile hHandlers hBreakScope hCleanup hRel hDefined hLength
+        hSourceRun with
+    ⟨restrictedLayout, brkTarget, exprFuel, hRestricted, hRun, hRel',
+      hDefined', hStack, hCtx⟩
+  exact
+    ⟨brkTarget, exprFuel, hRun,
+      by simpa [hRestricted, hPlanRestrict] using hRel',
+      by
+        intro name location hMem
+        exact
+          hDefined' (name := name) (location := location)
+            (by simpa [hRestricted, hPlanRestrict] using hMem),
+      hStack, hCtx⟩
+
 theorem compileContinueWithSpillFallback?_noCallCreate
     {range : ScratchRange} {handlers : FallbackHandlers}
     {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
@@ -10638,6 +10710,78 @@ theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope_ex
   exact
     ⟨restrictedLayout, contTarget, exprFuel, rfl, hRun, hRel',
       hDefined', hStack, hCtx⟩
+
+theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope_reference
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {plan : Plan} {program : Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileContinueWithSpillFallback? range handlers sourceScope
+        stackLayout layout = some plan)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hContinueScope : sourceCtx.continueScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .cont source =
+        .ok (Source.Outcome.cont sourceAfter, sourceCtxAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.cont contTarget) ∧
+        SpillStateRel range handlerScope [] referenceLayout sourceAfter
+          contTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+        contTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  rcases compileContinueWithSpillFallback?_eq_some_components hCompile with
+    ⟨_continueScope, entry, _hContinue, hEntry, _hEntryStack, hPlan⟩
+  have hEntryRestrict :
+      SpillLayout.restrictToScope handlerScope entry.layout =
+        SpillLayout.restrictToScope handlerScope layout := by
+    have hReferenceLayout' :
+        SpillLayout.WellFormed range handlerScope []
+          (SpillLayout.restrictToScope handlerScope layout) := by
+      simpa [hReference] using hReferenceLayout
+    simpa using
+      normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+        (scope := handlerScope) hEntry hReferenceLayout'
+  have hPlanRestrict :
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+    subst plan
+    simpa [hReference] using hEntryRestrict
+  rcases
+      compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope_exists
+        hSpec hWordBytes
+        hCompile hHandlers hContinueScope hCleanup hRel hDefined hLength
+        hSourceRun with
+    ⟨restrictedLayout, contTarget, exprFuel, hRestricted, hRun, hRel',
+      hDefined', hStack, hCtx⟩
+  exact
+    ⟨contTarget, exprFuel, hRun,
+      by simpa [hRestricted, hPlanRestrict] using hRel',
+      by
+        intro name location hMem
+        exact
+          hDefined' (name := name) (location := location)
+            (by simpa [hRestricted, hPlanRestrict] using hMem),
+      hStack, hCtx⟩
 
 theorem compileCall?_eq_some
     {range : ScratchRange} {program : Program}
