@@ -9194,6 +9194,132 @@ theorem compileTerminalWithSpillFallback?_noCallCreate
   simp [Expressions.Block.usesCallCreate,
     Expressions.StmtList.usesCallCreate, Expressions.Stmt.usesCallCreate]
 
+theorem list_filter_mem_eq_of_cleanupScopeRel :
+    ∀ {layout scope : List Name},
+      Locals.SourceLowering.CleanupScopeRel layout scope →
+      layout.Nodup →
+      layout.filter (fun name => decide (name ∈ scope)) = scope
+  | [], scope, hRel, _hNodup => by
+      unfold Locals.SourceLowering.CleanupScopeRel at hRel
+      simp at hRel
+      subst scope
+      simp
+  | head :: tail, scope, hRel, hNodup => by
+      by_cases hFull : scope.length = (head :: tail).length
+      · have hScopeEq : head :: tail = scope := by
+          unfold Locals.SourceLowering.CleanupScopeRel at hRel
+          have hSub :
+              (head :: tail).length - scope.length = 0 := by
+            omega
+          rw [hSub] at hRel
+          simpa using hRel
+        subst scope
+        exact List.filter_eq_self.mpr (by intro name hMem; simp [hMem])
+      · have hScopeLen :
+            scope.length ≤ tail.length := by
+          have hDepth :
+              scope.length ≤ (head :: tail).length :=
+            Locals.SourceLowering.CleanupScopeRel.depth_le hRel
+          have hConsLen : scope.length ≤ tail.length + 1 := by
+            simpa using hDepth
+          have hNe : scope.length ≠ tail.length + 1 := by
+            intro hEq
+            apply hFull
+            simpa [hEq]
+          omega
+        have hTailRel :
+            Locals.SourceLowering.CleanupScopeRel tail scope := by
+          unfold Locals.SourceLowering.CleanupScopeRel at hRel ⊢
+          have hSub :
+              (head :: tail).length - scope.length =
+                tail.length - scope.length + 1 := by
+            simp
+            omega
+          rw [hSub] at hRel
+          simpa [List.drop] using hRel
+        cases hNodup with
+        | cons hHeadNotTail hTailNodup =>
+            have hHeadNotScope : head ∉ scope := by
+              intro hHeadScope
+              unfold Locals.SourceLowering.CleanupScopeRel at hTailRel
+              have hHeadDrop :
+                  head ∈ tail.drop (tail.length - scope.length) := by
+                rw [hTailRel]
+                exact hHeadScope
+              exact hHeadNotTail head (List.mem_of_mem_drop hHeadDrop) rfl
+            have hTailFilter :
+                tail.filter (fun name => decide (name ∈ scope)) = scope :=
+              list_filter_mem_eq_of_cleanupScopeRel hTailRel hTailNodup
+            simp [hHeadNotScope, hTailFilter]
+
+theorem spillLayout_names_restrictToScope (scope : List Name)
+    (layout : SpillLayout.Layout) :
+    SpillLayout.names (SpillLayout.restrictToScope scope layout) =
+      (SpillLayout.names layout).filter
+        (fun name => decide (name ∈ scope)) := by
+  induction layout with
+  | nil =>
+      simp [SpillLayout.restrictToScope, SpillLayout.names]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, location⟩
+      by_cases hName : name ∈ scope
+      · simpa [SpillLayout.restrictToScope, SpillLayout.names, hName]
+          using ih
+      · simpa [SpillLayout.restrictToScope, SpillLayout.names, hName]
+          using ih
+
+theorem spillLayout_restrictToScope_sublist (scope : List Name)
+    (layout : SpillLayout.Layout) :
+    (SpillLayout.restrictToScope scope layout).Sublist layout := by
+  simpa [SpillLayout.restrictToScope] using
+    (List.filter_sublist
+      (p := fun binding : SpillLayout.Binding =>
+        decide (binding.1 ∈ scope)) (l := layout))
+
+theorem spillLayout_scratchSlots_restrictToScope_sublist
+    (scope : List Name) (layout : SpillLayout.Layout) :
+    (SpillLayout.scratchSlots
+        (SpillLayout.restrictToScope scope layout)).Sublist
+      (SpillLayout.scratchSlots layout) := by
+  have hSub : (SpillLayout.restrictToScope scope layout).Sublist layout :=
+    spillLayout_restrictToScope_sublist scope layout
+  simpa [SpillLayout.scratchSlots] using
+    (List.Sublist.filterMap
+      (fun binding : SpillLayout.Binding =>
+        SpillLayout.scratchSlot? binding.2) hSub)
+
+theorem spillLayout_checked_restrictToScope_of_cleanupScopeRel_emptyStack
+    {range : ScratchRange} {sourceScope handlerScope : List Name}
+    {layout : SpillLayout.Layout}
+    (hLayout : SpillLayout.WellFormed range sourceScope [] layout)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope) :
+    SpillLayout.checked? range handlerScope []
+      (SpillLayout.restrictToScope handlerScope layout) = true := by
+  apply SpillLayout.checked?_complete
+  refine
+    { names_eq := ?_
+      names_nodup := ?_
+      bindings_ok := ?_
+      scratch_slots_nodup := ?_ }
+  · have hSourceNodup : sourceScope.Nodup := by
+      simpa [← hLayout.names_eq] using hLayout.names_nodup
+    rw [spillLayout_names_restrictToScope, hLayout.names_eq]
+    exact list_filter_mem_eq_of_cleanupScopeRel hCleanup hSourceNodup
+  · rw [spillLayout_names_restrictToScope]
+    exact hLayout.names_nodup.filter
+      (fun name => decide (name ∈ handlerScope))
+  · intro binding hMem
+    have hMemOrig : binding ∈ layout := by
+      have hMem' := hMem
+      simp [SpillLayout.restrictToScope] at hMem'
+      exact hMem'.1
+    exact hLayout.bindings_ok binding hMemOrig
+  · exact
+      List.Sublist.nodup
+        (spillLayout_scratchSlots_restrictToScope_sublist handlerScope layout)
+        hLayout.scratch_slots_nodup
+
 theorem spillLayout_storeDefined_restrictSourceToScope_self
     {range : ScratchRange} {sourceScope stackLayout : List Name}
     {layout : SpillLayout.Layout} {source : Source.State}
@@ -9538,11 +9664,11 @@ theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope
         layout = some plan)
     (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
     (hBreakScope : sourceCtx.breakScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
     (hRestricted :
       restrictedLayout = SpillLayout.restrictToScope handlerScope
         plan.layout)
-    (hCheck :
-      SpillLayout.checked? range handlerScope [] restrictedLayout = true)
     (hRel :
       SpillStateRel range sourceScope stackLayout layout source target.evm)
     (hDefined : SpillLayout.StoreDefined source.vars layout)
@@ -9566,6 +9692,8 @@ theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope
     cases hBreak
     rfl
   subst breakScope
+  have hEntryScope : entry.sourceScope = sourceScope :=
+    normalizePlanStack?_sourceScope hEntry
   have hEmptyRun :
       ∃ planFuel,
         Expressions.Block.run exprProgram planFuel
@@ -9608,6 +9736,18 @@ theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope
         SpillLayout.restrictToScope handlerScope entry.layout := by
     subst plan
     simpa using hRestricted
+  have hCheckPlan :
+      SpillLayout.checked? range handlerScope []
+        (SpillLayout.restrictToScope handlerScope entry.layout) = true := by
+    have hEntryLayout :
+        SpillLayout.WellFormed range entry.sourceScope [] entry.layout := by
+      simpa [hEntryStack] using hEntryRel.layoutWellFormed
+    exact
+      spillLayout_checked_restrictToScope_of_cleanupScopeRel_emptyStack
+        hEntryLayout (by simpa [hEntryScope] using hCleanup)
+  have hCheck :
+      SpillLayout.checked? range handlerScope [] restrictedLayout = true := by
+    simpa [hRestrictedPlan] using hCheckPlan
   have hExactRel :
       SpillStateRel range handlerScope [] restrictedLayout
         sourceAfter final := by
@@ -9936,11 +10076,11 @@ theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope
         stackLayout layout = some plan)
     (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
     (hContinueScope : sourceCtx.continueScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
     (hRestricted :
       restrictedLayout = SpillLayout.restrictToScope handlerScope
         plan.layout)
-    (hCheck :
-      SpillLayout.checked? range handlerScope [] restrictedLayout = true)
     (hRel :
       SpillStateRel range sourceScope stackLayout layout source target.evm)
     (hDefined : SpillLayout.StoreDefined source.vars layout)
@@ -9964,6 +10104,8 @@ theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope
     cases hContinue
     rfl
   subst continueScope
+  have hEntryScope : entry.sourceScope = sourceScope :=
+    normalizePlanStack?_sourceScope hEntry
   have hEmptyRun :
       ∃ planFuel,
         Expressions.Block.run exprProgram planFuel
@@ -10006,6 +10148,18 @@ theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope
         SpillLayout.restrictToScope handlerScope entry.layout := by
     subst plan
     simpa using hRestricted
+  have hCheckPlan :
+      SpillLayout.checked? range handlerScope []
+        (SpillLayout.restrictToScope handlerScope entry.layout) = true := by
+    have hEntryLayout :
+        SpillLayout.WellFormed range entry.sourceScope [] entry.layout := by
+      simpa [hEntryStack] using hEntryRel.layoutWellFormed
+    exact
+      spillLayout_checked_restrictToScope_of_cleanupScopeRel_emptyStack
+        hEntryLayout (by simpa [hEntryScope] using hCleanup)
+  have hCheck :
+      SpillLayout.checked? range handlerScope [] restrictedLayout = true := by
+    simpa [hRestrictedPlan] using hCheckPlan
   have hExactRel :
       SpillStateRel range handlerScope [] restrictedLayout
         sourceAfter final := by
