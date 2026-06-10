@@ -9399,6 +9399,38 @@ theorem spillLayout_map_pushStackBinding_eq_self_of_emptyStack_wf
         exact hAll b (by simp [hMem])
       simp [hHead, hTail]
 
+/-- Scratch bindings survive a layout evolution. This is the proof-side
+invariant needed when an ancestor local has already been spilled and a nested
+statement pushes stack locals or allocates additional scratch locals. -/
+def ScratchMonotone (layout layout' : SpillLayout.Layout) : Prop :=
+  ∀ name slot,
+    (name, SpillLayout.LocalLocation.scratch slot) ∈ layout →
+    (name, SpillLayout.LocalLocation.scratch slot) ∈ layout'
+
+theorem scratchMonotone_refl (layout : SpillLayout.Layout) :
+    ScratchMonotone layout layout := fun _ _ h => h
+
+theorem scratchMonotone_trans {a b c : SpillLayout.Layout}
+    (hab : ScratchMonotone a b) (hbc : ScratchMonotone b c) :
+    ScratchMonotone a c := fun name slot h => hbc name slot (hab name slot h)
+
+theorem scratchMonotone_pushStack (name : Name)
+    (layout : SpillLayout.Layout) :
+    ScratchMonotone layout (SpillLayout.pushStackLayout name layout) := by
+  intro n slot hMem
+  unfold SpillLayout.pushStackLayout
+  refine List.mem_cons_of_mem _ ?_
+  rw [List.mem_map]
+  exact ⟨(n, SpillLayout.LocalLocation.scratch slot), hMem, rfl⟩
+
+theorem scratchMonotone_pushScratch (name : Name) (slot : Nat)
+    (layout : SpillLayout.Layout) :
+    ScratchMonotone layout
+      (SpillLayout.pushScratchLayout name slot layout) := by
+  intro n s hMem
+  unfold SpillLayout.pushScratchLayout
+  exact List.mem_cons_of_mem _ hMem
+
 theorem spillLayout_restrictToScope_pushStackLayout_of_not_mem_emptyStack_wf
     {range : ScratchRange} {sourceScope scope : List Name}
     {layout : SpillLayout.Layout} {name : Name}
