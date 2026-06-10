@@ -529,6 +529,8 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenHaltWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenRegularWithOracle.scoped
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenHaltWithOracle.scoped
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayOpenWithOracle_pair_of_switch_select
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_noLoopReplayPrefixBlockWithOracle_pair
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchForPrefixSlack
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicSwitchForPrefixSlack_pos
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular
@@ -1010,6 +1012,8 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayPrefix_of_switch_select
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenRegularWithOracle.scoped
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenHaltWithOracle.scoped
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayOpenWithOracle_pair_of_switch_select
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_noLoopReplayPrefixBlockWithOracle_pair
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicSwitchForPrefixSlack_pos
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular_of_block
