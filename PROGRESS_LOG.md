@@ -1,5 +1,7 @@
 # Progress Log
 
+- 2026-06-09 20:19 PDT - proof/call-aware-loop-control-init-scope-invariants - added checked Functions block cleanup-scope facts, stack-free layout self-restriction under `SpillLayout.WellFormed`, and source store/state double-restrict collapse under a scope-subset premise. Verification passed: focused `lake env lean EvmCompiler/Functions/CallAwareSpill.lean`, `lake build EvmCompiler.Functions.CallAwareSpill`, and `git diff --check`. Remaining gap: prove the handler-layout stability invariant across regular body prefixes so true-condition `for` body `break` can rewrite to the compiler's outer fallthrough layout.
+
 - 2026-06-09 20:12 PDT - proof/call-aware-loop-control-layout-restrict-subset - added checked layout facts showing cleanup-scope membership is retained by the source layout and nested `SpillLayout.restrictToScope` collapses under a scope-subset premise. These are preparatory for proving abrupt loop-body exits restrict down to the outer `for` layout. Focused Lean check passed; module build and commit are next.
 
 - 2026-06-09 20:07 PDT - proof/call-aware-loop-control-exact-blockstmt-bridge - added checked exact handler-scope `break`/`continue` preservation for `compileBlockStmtWithSwitchFallback?`, lifting the list/block-open exact bridges through scoped block execution and the regular-exit stack normalizer via nonregular passthrough. Focused Lean check passed; module build and commit are next.

@@ -9204,6 +9204,28 @@ theorem functions_stmt_outEnv_cleanupScopeRel (env : List Name) (stmt : Stmt) :
         Locals.SourceLowering.CleanupScopeRel.cons
           (Locals.SourceLowering.CleanupScopeRel.refl env)
 
+theorem functions_stmtList_outEnv_cleanupScopeRel :
+    ∀ (env : List Name) (stmts : List Stmt),
+      Locals.SourceLowering.CleanupScopeRel
+        (Scope.StmtList.outEnv env stmts) env
+  | env, [] => by
+      simp [Scope.StmtList.outEnv,
+        Locals.SourceLowering.CleanupScopeRel.refl]
+  | env, stmt :: rest => by
+      exact
+        Locals.SourceLowering.CleanupScopeRel.trans
+          (functions_stmtList_outEnv_cleanupScopeRel
+            (Scope.Stmt.outEnv env stmt) rest)
+          (functions_stmt_outEnv_cleanupScopeRel env stmt)
+
+theorem functions_block_outEnv_cleanupScopeRel
+    (env : List Name) (block : Block) :
+    Locals.SourceLowering.CleanupScopeRel
+      (Scope.Block.outEnv env block) env := by
+  cases block with
+  | mk stmts =>
+      exact functions_stmtList_outEnv_cleanupScopeRel env stmts
+
 theorem list_filter_mem_eq_of_cleanupScopeRel :
     ∀ {layout scope : List Name},
       Locals.SourceLowering.CleanupScopeRel layout scope →
@@ -9320,6 +9342,42 @@ theorem spillLayout_restrictToScope_restrictToScope_of_subset
       · have hInner : name ∈ inner := hSubset name hOuter
         simp [SpillLayout.restrictToScope, hOuter, hInner, hRest]
       · simp [SpillLayout.restrictToScope, hOuter, hRest]
+
+theorem spillLayout_restrictToScope_self_of_wellFormed
+    {range : ScratchRange} {sourceScope : List Name}
+    {layout : SpillLayout.Layout}
+    (hLayout : SpillLayout.WellFormed range sourceScope [] layout) :
+    SpillLayout.restrictToScope sourceScope layout = layout := by
+  simp [SpillLayout.restrictToScope]
+  intro name location hMem
+  have hName : name ∈ SpillLayout.names layout :=
+    SpillLayout.name_mem_of_binding hMem
+  have hNameScope : name ∈ sourceScope := by
+    simpa [hLayout.names_eq] using hName
+  exact hNameScope
+
+theorem source_store_restrictTo_restrictTo_of_subset
+    {outer inner : List Name}
+    (hSubset : ∀ name, name ∈ outer → name ∈ inner)
+    (store : Source.Store) :
+    Locals.Source.Store.restrictTo outer
+        (Locals.Source.Store.restrictTo inner store) =
+      Locals.Source.Store.restrictTo outer store := by
+  funext name
+  by_cases hOuter : name ∈ outer
+  · have hInner : name ∈ inner := hSubset name hOuter
+    simp [Locals.Source.Store.restrictTo, hOuter, hInner]
+  · simp [Locals.Source.Store.restrictTo, hOuter]
+
+theorem source_state_restrictTo_restrictTo_of_subset
+    {outer inner : List Name}
+    (hSubset : ∀ name, name ∈ outer → name ∈ inner)
+    (state : Source.State) :
+    (state.restrictTo inner).restrictTo outer =
+      state.restrictTo outer := by
+  cases state
+  simp [Locals.Source.State.restrictTo,
+    source_store_restrictTo_restrictTo_of_subset hSubset]
 
 theorem spillLayout_scratchSlots_restrictToScope_sublist
     (scope : List Name) (layout : SpillLayout.Layout) :
