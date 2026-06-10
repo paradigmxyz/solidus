@@ -48938,6 +48938,181 @@ theorem adaptiveSpillPrivateObservable_halt_of_callAware_halt_replay
         Locals.Source.Program.ConservativeSpillPrivateObservableOutcomeRel,
         Source.Outcome.halt] using And.intro hKind.symm hSourceObs
 
+theorem compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of_ghostRun_given_stmt_sound
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxWords : Nat} {range : ScratchRange} {program : Program}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {asm : Assembly.Program}
+    {fuel : Nat} {initial : EVMState}
+    {sourceAfter ghostAfter : Source.State}
+    {sourceCtxAfter : Source.Ctx}
+    (hCompile :
+      compileCheckedPlannedPreallocWithSwitchFallback? maxWords program =
+        some (range, plan, exprProgram, asm))
+    (hStmtSound :
+      SwitchFallbackStmtRegularSound range program {} [] exprProgram)
+    (hInitialMemory : ScratchInitialMemoryEmpty initial.toMachineState)
+    (hInitialStack : initial.stack = [])
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hGhostRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          Source.Ctx.initial fuel program.body
+          (Source.Program.initialState
+            (range.preallocState initial).toSharedState) =
+        .ok (Source.Outcome.regular ghostAfter, sourceCtxAfter))
+    (hSourceGhost :
+      SourceStatePrivateScratchInvariant sourceAfter ghostAfter) :
+    ∃ targetFuel targetOutcome,
+      Assembly.Source.runNResult asm targetFuel initial =
+        .ok targetOutcome ∧
+      Locals.Source.Program.AdaptiveSpillPrivateObservableOutcomeRel range
+        (Source.Outcome.regular sourceAfter) targetOutcome ∧
+      Structured.Preservation.TargetOutcomeEndPc asm targetOutcome := by
+  rcases
+      compileCheckedPlannedPreallocWithSwitchFallback?_expressions_compile
+        hCompile with
+    ⟨hExpr, hAsm, _hBase, _hBound⟩
+  rcases
+      compileExpressionsProgramWithSwitchFallback?_eq_some_components
+        hExpr with
+    ⟨procs, bodyPlan, _hProcs, hBody, hPlanEq, hExprProgram⟩
+  subst plan
+  subst exprProgram
+  have hFits : range.preallocFits? = true :=
+    compileCheckedPlannedPreallocWithSwitchFallback?_preallocFits hCompile
+  have hReady : range.preallocReady? initial.toMachineState = true :=
+    ScratchRange.preallocReady?_of_fits hSpec hWordBytes hFits
+      (ScratchInitialMemoryEmpty.activeNoOverflow hInitialMemory)
+  rcases run_scratchPreallocCode_preallocState range initial with
+    ⟨preallocTarget, hPreRun, hPreStack, hPreMachine, hPreShared⟩
+  let initialRunState : Expressions.RunState :=
+    Structured.Program.initialState initial
+  let preallocRunState : Expressions.RunState :=
+    initialRunState.withEVM preallocTarget
+  let compiledProgram : Expressions.Program :=
+    { procs := procs
+      body := (withScratchPrealloc range bodyPlan).block }
+  have hBoundary :
+      PrivateScratchBoundary.scratchCheck?
+          preallocTarget.toMachineState range [] [] [] =
+        true := by
+    rw [hPreMachine]
+    exact scratchCheck?_preallocMachine_empty hReady
+  have hGhostRunPreallocTarget :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          Source.Ctx.initial fuel program.body
+          (Source.Program.initialState preallocTarget.toSharedState) =
+        .ok (Source.Outcome.regular ghostAfter, sourceCtxAfter) := by
+    simpa [hPreShared] using hGhostRun
+  have hInitialRel :
+      SpillStateRel range [] [] []
+        (Source.Program.initialState preallocTarget.toSharedState)
+        preallocTarget :=
+    SpillStateRel.of_scratchBoundary_empty hBoundary
+      (SharedStateEqOutsideScratch.refl range preallocTarget.toSharedState)
+  have hPreallocStackLength :
+      preallocTarget.stack.length = ([] : List Name).length := by
+    simpa [hPreStack, hInitialStack]
+  rcases
+      compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_of_regular_sound
+        (range := range) (program := program) (handlers := {})
+        (returns := []) (sourceScope := []) (stackLayout := [])
+        (layout := []) (block := program.body) (plan := bodyPlan)
+        (exprProgram := compiledProgram)
+        (sourceCtx := Source.Ctx.initial) (sourceCtxAfter := sourceCtxAfter)
+        (fuel := fuel)
+        (source :=
+          Source.Program.initialState preallocTarget.toSharedState)
+        (sourceAfter := ghostAfter) (target := preallocRunState)
+        (by simpa [compileMainBodyWithSwitchFallback?] using hBody)
+        (by rfl)
+        (by simpa [preallocRunState] using hInitialRel)
+        SpillLayout.StoreDefined.nil
+        (by simpa [preallocRunState] using hPreallocStackLength)
+        hGhostRunPreallocTarget
+        hStmtSound with
+    ⟨bodyFinal, bodyFuel, hBodyRun, hBodyRel, _hBodyDefined,
+      _hBodyLength, _hSourceScope⟩
+  have hPreBlockRun :
+      ∃ preFuel,
+        Expressions.Block.run compiledProgram
+            preFuel (ExpressionsBlock.ofCode (scratchPreallocCode range))
+            initialRunState =
+          .ok (Expressions.Outcome.regular preallocRunState) := by
+    rcases
+        expressionsBlock_ofCode_run_exists
+          compiledProgram
+          (state := initialRunState) hPreRun with
+      ⟨preFuel, hRun⟩
+    exact ⟨preFuel, by simpa [initialRunState, preallocRunState] using hRun⟩
+  have hBodyRun' :
+      ∃ bodyFuel',
+        Expressions.Block.run compiledProgram
+            bodyFuel' bodyPlan.block preallocRunState =
+          .ok (Expressions.Outcome.regular bodyFinal) := by
+    exact ⟨bodyFuel, hBodyRun⟩
+  rcases
+      expressionsBlock_append_regular_exists
+        compiledProgram
+        hPreBlockRun hBodyRun' with
+    ⟨exprFuel, hExprBlockRun⟩
+  have hExprRun :
+      compiledProgram.run exprFuel initial =
+        .ok (Expressions.Outcome.regular bodyFinal) := by
+    simpa [compiledProgram, Expressions.Program.run, initialRunState,
+      withScratchPrealloc]
+      using hExprBlockRun
+  rcases
+      Expressions.Program.compile_preserves_of_compileChecked_endPc
+        (by simpa [compiledProgram] using hAsm) hInitialPc hExprRun with
+    ⟨targetFuel, targetOutcome, hAsmRun, hAsmRel, hEndPc⟩
+  have hBodyFinalEq :
+      bodyFinal = initialRunState.withEVM bodyFinal.evm := by
+    have hReturns := expressionsBlockRun_regular_returns_eq hBodyRun
+    cases bodyFinal with
+    | mk evm returns =>
+        simpa [preallocRunState, initialRunState, Structured.RunState.withEVM]
+          using hReturns
+  have hAsmRel' :
+      Structured.Preservation.WholeProgramOutcomeRel
+        (Expressions.Outcome.regular
+          (initialRunState.withEVM bodyFinal.evm))
+        targetOutcome := by
+    rw [← hBodyFinalEq]
+    exact hAsmRel
+  let openPlan : SpillPlan :=
+    { sourceScope := bodyPlan.sourceScope
+      stackLayout := bodyPlan.stackLayout
+      layout := bodyPlan.layout
+      code := .Code [] }
+  have hOpenRel :
+      Locals.Source.Program.AdaptiveSpillOpenOutcomeRel range initial
+        (Source.Outcome.regular ghostAfter) targetOutcome := by
+    refine ⟨openPlan, .regular bodyFinal.evm, ?_, ?_⟩
+    · simpa [openPlan] using SpillOutcomeRel.regular hBodyRel
+    · change
+        Structured.Preservation.WholeProgramOutcomeRel
+          (Expressions.Outcome.regular
+            (initialRunState.withEVM bodyFinal.evm))
+          targetOutcome
+      exact hAsmRel'
+  have hOutcomeInv :
+      SourceOutcomePrivateScratchInvariant
+        (Source.Outcome.regular sourceAfter)
+        (Source.Outcome.regular ghostAfter) := by
+    simpa [Source.Outcome.regular, Locals.Source.Outcome.regular] using
+      SourceOutcomePrivateScratchInvariant.regular hSourceGhost
+  have hPrivate :
+      Locals.Source.Program.AdaptiveSpillPrivateObservableOutcomeRel range
+        (Source.Outcome.regular sourceAfter) targetOutcome := by
+    simpa [Locals.Source.Program.AdaptiveSpillPrivateObservableOutcomeRel] using
+      Locals.Source.Program.ConservativeSpillOpenOutcomeRel.privateObservable_of_source_privateScratchInvariant
+        hOutcomeInv
+        (by simpa [Locals.Source.Program.AdaptiveSpillOpenOutcomeRel] using
+          hOpenRel)
+  exact ⟨targetFuel, targetOutcome, hAsmRun, hPrivate, hEndPc⟩
+
 theorem compileCheckedPlannedPrealloc?_regular_observations_of_ghostRun
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
