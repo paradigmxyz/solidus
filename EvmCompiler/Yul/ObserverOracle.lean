@@ -80,6 +80,10 @@ def yulPrimObserver? : EvmYul.Operation .Yul → Option Observer
     op.toPrimOp.haltKind? = none := by
   cases op <;> rfl
 
+def basicOpOracleSafe (op : Structured.BasicOp) : Prop :=
+  basicOpObserver? op ≠ none ∨
+    ∃ step, Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step
+
 theorem stackOp_dup?_observer_none :
     ∀ {n : Nat} {op : Structured.BasicOp},
       Locals.StackOp.dup? n = some op → basicOpObserver? op = none
@@ -3814,6 +3818,42 @@ theorem oracleFrameSafe_singleton_op_of_replay
               oracleFrameSafe_singleton_op_nonObserver_of_sourceContinuingStep
                 hObserver hCont
       · simp [hLen] at hEval
+  | some _kind =>
+      cases op <;> simp [basicOpObserver?] at hObserver
+      all_goals
+        first
+        | exact oracleFrameSafe_singleton_msize
+        | exact oracleFrameSafe_singleton_gas
+
+theorem oracleRelSafe_singleton_op_of_basicOpOracleSafe
+    {op : Structured.BasicOp}
+    (hSafe : basicOpOracleSafe op) :
+    OracleRelSafe [Structured.BasicInstr.op op] := by
+  cases hObserver : basicOpObserver? op with
+  | none =>
+      rcases hSafe with hObserverSome | ⟨step, hStep⟩
+      · simp [hObserver] at hObserverSome
+      · exact
+          oracleRelSafe_singleton_op_nonObserver_of_sourceContinuingStep
+            hObserver hStep
+  | some _kind =>
+      cases op <;> simp [basicOpObserver?] at hObserver
+      all_goals
+        first
+        | exact oracleRelSafe_singleton_msize
+        | exact oracleRelSafe_singleton_gas
+
+theorem oracleFrameSafe_singleton_op_of_basicOpOracleSafe
+    {op : Structured.BasicOp}
+    (hSafe : basicOpOracleSafe op) :
+    OracleFrameSafe [Structured.BasicInstr.op op] := by
+  cases hObserver : basicOpObserver? op with
+  | none =>
+      rcases hSafe with hObserverSome | ⟨step, hStep⟩
+      · simp [hObserver] at hObserverSome
+      · exact
+          oracleFrameSafe_singleton_op_nonObserver_of_sourceContinuingStep
+            hObserver hStep
   | some _kind =>
       cases op <;> simp [basicOpObserver?] at hObserver
       all_goals
@@ -18973,6 +19013,150 @@ theorem exprBlock {canBreak canContinue canLeave : Bool}
     Block canBreak canContinue canLeave { stmts := [.expr expr] } :=
   stmtBlock (exprStmt hExpr)
 
+theorem ifStmt {canBreak canContinue canLeave : Bool}
+    {cond : Structured.Code} {body : Expressions.Block}
+    (hCondRel : StructuredReplay.Code.OracleRelSafe cond)
+    (hCondFrame : StructuredReplay.Code.OracleFrameSafe cond)
+    (hBody : Block canBreak canContinue canLeave body) :
+    Stmt canBreak canContinue canLeave
+      (.if_ (Expressions.Expr.code (results := 1) cond) body) := by
+  refine ⟨?_, ?_⟩
+  · simp [StmtCodeShaped, ExprCodeShaped, hBody.codeShaped]
+  · simpa [Expressions.Stmt.toStructured, Expressions.Expr.compile] using
+      StructuredReplay.OracleSafe.Stmt.if_ hCondRel hCondFrame
+        hBody.structured
+
+theorem ifBlock {canBreak canContinue canLeave : Bool}
+    {cond : Structured.Code} {body : Expressions.Block}
+    (hCondRel : StructuredReplay.Code.OracleRelSafe cond)
+    (hCondFrame : StructuredReplay.Code.OracleFrameSafe cond)
+    (hBody : Block canBreak canContinue canLeave body) :
+    Block canBreak canContinue canLeave
+      { stmts := [Expressions.Stmt.if_
+        (Expressions.Expr.code (results := 1) cond) body] } :=
+  stmtBlock (ifStmt hCondRel hCondFrame hBody)
+
+theorem caseListCodeShaped_of_blocks
+    {canBreak canContinue canLeave : Bool}
+    {cases : List (Word × Expressions.Block)}
+    (hCases :
+      ∀ value body, (value, body) ∈ cases →
+        Block canBreak canContinue canLeave body) :
+    CaseListCodeShaped cases := by
+  induction cases with
+  | nil =>
+      simp [CaseListCodeShaped]
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      exact
+        ⟨(hCases value body (by simp)).codeShaped,
+          ih (by
+            intro restValue restBody hMem
+            exact hCases restValue restBody (by simp [hMem]))⟩
+
+theorem defaultCodeShaped_of_block
+    {canBreak canContinue canLeave : Bool}
+    {defaultBody : Option Expressions.Block}
+    (hDefault :
+      ∀ body, defaultBody = some body →
+        Block canBreak canContinue canLeave body) :
+    DefaultCodeShaped defaultBody := by
+  cases defaultBody with
+  | none =>
+      simp [DefaultCodeShaped]
+  | some body =>
+      simpa [DefaultCodeShaped] using (hDefault body rfl).codeShaped
+
+theorem caseListToStructured_blocks
+    {canBreak canContinue canLeave : Bool}
+    {cases : List (Word × Expressions.Block)}
+    (hCases :
+      ∀ value body, (value, body) ∈ cases →
+        Block canBreak canContinue canLeave body) :
+    ∀ value body, (value, body) ∈ Expressions.CaseList.toStructured cases →
+      StructuredReplay.OracleSafe.Block canBreak canContinue canLeave body := by
+  induction cases with
+  | nil =>
+      intro value body hMem
+      simp [Expressions.CaseList.toStructured] at hMem
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBody⟩
+      intro value body hMem
+      simp [Expressions.CaseList.toStructured] at hMem
+      rcases hMem with hHead | hRest
+      · have hCase :
+            StructuredReplay.OracleSafe.Block canBreak canContinue canLeave
+              caseBody.toStructured :=
+          (hCases caseValue caseBody (by simp)).structured
+        rcases hHead with ⟨rfl, rfl⟩
+        exact hCase
+      · exact
+          ih
+            (by
+              intro restValue restBody hRestMem
+              exact hCases restValue restBody (by simp [hRestMem]))
+            value body hRest
+
+theorem defaultToStructured_block
+    {canBreak canContinue canLeave : Bool}
+    {defaultBody : Option Expressions.Block}
+    (hDefault :
+      ∀ body, defaultBody = some body →
+        Block canBreak canContinue canLeave body) :
+    ∀ body, Expressions.Default.toStructured defaultBody = some body →
+      StructuredReplay.OracleSafe.Block canBreak canContinue canLeave body := by
+  intro body hSome
+  cases defaultBody with
+  | none =>
+      simp [Expressions.Default.toStructured] at hSome
+  | some sourceBody =>
+      simp [Expressions.Default.toStructured] at hSome
+      cases hSome
+      exact (hDefault sourceBody rfl).structured
+
+theorem switchStmt {canBreak canContinue canLeave : Bool}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Expressions.Block)}
+    {defaultBody : Option Expressions.Block}
+    (hScrutineeRel : StructuredReplay.Code.OracleRelSafe scrutinee)
+    (hScrutineeFrame : StructuredReplay.Code.OracleFrameSafe scrutinee)
+    (hCases :
+      ∀ value body, (value, body) ∈ cases →
+        Block canBreak canContinue canLeave body)
+    (hDefault :
+      ∀ body, defaultBody = some body →
+        Block canBreak canContinue canLeave body) :
+    Stmt canBreak canContinue canLeave
+      (.switch (Expressions.Expr.code (results := 1) scrutinee)
+        cases defaultBody) := by
+  refine ⟨?_, ?_⟩
+  · exact
+      ⟨by simp [ExprCodeShaped],
+        caseListCodeShaped_of_blocks hCases,
+        defaultCodeShaped_of_block hDefault⟩
+  · simpa [Expressions.Stmt.toStructured, Expressions.Expr.compile] using
+      StructuredReplay.OracleSafe.Stmt.switch hScrutineeRel hScrutineeFrame
+        (caseListToStructured_blocks hCases)
+        (defaultToStructured_block hDefault)
+
+theorem switchBlock {canBreak canContinue canLeave : Bool}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Expressions.Block)}
+    {defaultBody : Option Expressions.Block}
+    (hScrutineeRel : StructuredReplay.Code.OracleRelSafe scrutinee)
+    (hScrutineeFrame : StructuredReplay.Code.OracleFrameSafe scrutinee)
+    (hCases :
+      ∀ value body, (value, body) ∈ cases →
+        Block canBreak canContinue canLeave body)
+    (hDefault :
+      ∀ body, defaultBody = some body →
+        Block canBreak canContinue canLeave body) :
+    Block canBreak canContinue canLeave
+      { stmts := [Expressions.Stmt.switch
+        (Expressions.Expr.code (results := 1) scrutinee)
+        cases defaultBody] } :=
+  stmtBlock (switchStmt hScrutineeRel hScrutineeFrame hCases hDefault)
+
 theorem brkStmt {canContinue canLeave : Bool} :
     Stmt true canContinue canLeave .brk := by
   refine ⟨?_, ?_⟩
@@ -19636,7 +19820,9 @@ mutual
   termination_by sizeOf cases
   decreasing_by
     all_goals subst_vars
-    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+    all_goals try cases caseBody
+    all_goals try rw [List.cons.sizeOf_spec]
+    all_goals simp_all [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
       List.cons.sizeOf_spec]
     all_goals omega
 
@@ -19670,6 +19856,7 @@ mutual
   termination_by sizeOf defaultBody
   decreasing_by
     all_goals subst_vars
+    all_goals try cases sourceBody
     all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
       List.cons.sizeOf_spec]
     all_goals omega
@@ -22413,6 +22600,194 @@ mutual
 end
 
 namespace Expr
+
+mutual
+  def SyntaxOracleSafe {results : Nat} (expr : Locals.Expr results) :
+      Prop :=
+    match expr with
+    | .lit _value => True
+    | .var _name => True
+    | .code _code => False
+    | .prim op args =>
+        basicOpOracleSafe op ∧ ExprSeq.SyntaxOracleSafe args
+
+  def ExprSeq.SyntaxOracleSafe {results : Nat}
+      (exprs : Locals.ExprSeq results) : Prop :=
+    match exprs with
+    | .nil => True
+    | .cons head tail =>
+        SyntaxOracleSafe head ∧ ExprSeq.SyntaxOracleSafe tail
+end
+
+set_option maxHeartbeats 800000 in
+mutual
+  theorem oracleSafe_compileCode_of_syntaxOracleSafe :
+      ∀ {results : Nat} {expr : Locals.Expr results}
+        {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code},
+        SyntaxOracleSafe expr →
+        Locals.Expr.compileCode ctx offset expr = some code →
+          StructuredReplay.Code.OracleRelSafe code ∧
+            StructuredReplay.Code.OracleFrameSafe code := by
+    intro results expr ctx offset code hSafe hCompile
+    cases expr with
+    | lit value =>
+        simp [Locals.Expr.compileCode] at hCompile
+        cases hCompile
+        exact
+          ⟨StructuredReplay.Code.oracleRelSafe_singleton_push value,
+            StructuredReplay.Code.oracleFrameSafe_singleton_push value⟩
+    | var name =>
+        simp [Locals.Expr.compileCode] at hCompile
+        cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+        | none =>
+            simp [hDepth] at hCompile
+        | some depth =>
+            cases hDup : Locals.StackOp.dup? (offset + depth) with
+            | none =>
+                simp [hDepth, hDup] at hCompile
+            | some op =>
+                simp [hDepth, hDup] at hCompile
+                cases hCompile
+                have hRunner :
+                    Structured.Preservation.Code.RunnerSafe
+                      [Structured.BasicInstr.op op] :=
+                  (EvmCompiler.Locals.SourceLowering.StateRel.SpillScratch.stackOp_dup?_codeBackendSafe
+                    hDup).1
+                have hFrame :
+                    Structured.Code.FrameSafe
+                      [Structured.BasicInstr.op op] :=
+                  (EvmCompiler.Locals.SourceLowering.StateRel.SpillScratch.stackOp_dup?_codeBackendSafe
+                    hDup).2
+                have hObserver : basicOpObserver? op = none :=
+                  stackOp_dup?_observer_none hDup
+                refine ⟨?_, ?_⟩
+                · exact
+                    StructuredReplay.Code.oracleRelSafe_of_runnerSafe_nonObserver
+                      hRunner
+                      (by
+                        intro instr hMem
+                        have hInstr :
+                            instr = Structured.BasicInstr.op op := by
+                          simpa using hMem
+                        subst instr
+                        simpa [Structured.BasicInstr.toAssembly,
+                          Assembly.ResourceObserver.ofInstr?,
+                          basicOp_toPrimOp_observer] using hObserver)
+                · exact
+                    StructuredReplay.Code.oracleFrameSafe_singleton_op_nonObserver
+                      hObserver hFrame
+    | code raw =>
+        cases hSafe
+    | prim op args =>
+        simp [SyntaxOracleSafe] at hSafe
+        rcases hSafe with ⟨hOpSafe, hArgsSafe⟩
+        simp [Locals.Expr.compileCode] at hCompile
+        cases hArgsCode :
+            Locals.ExprSeq.compileCode ctx offset args with
+        | none =>
+            simp [hArgsCode] at hCompile
+        | some argsCode =>
+            simp [hArgsCode] at hCompile
+            cases hCompile
+            have hArgs :
+                StructuredReplay.Code.OracleRelSafe argsCode ∧
+                  StructuredReplay.Code.OracleFrameSafe argsCode :=
+              oracleSafe_compileSeqCode_of_syntaxOracleSafe
+                hArgsSafe hArgsCode
+            have hOpRel :
+                StructuredReplay.Code.OracleRelSafe
+                  [Structured.BasicInstr.op op] :=
+              StructuredReplay.Code.oracleRelSafe_singleton_op_of_basicOpOracleSafe
+                hOpSafe
+            have hOpFrame :
+                StructuredReplay.Code.OracleFrameSafe
+                  [Structured.BasicInstr.op op] :=
+              StructuredReplay.Code.oracleFrameSafe_singleton_op_of_basicOpOracleSafe
+                hOpSafe
+            exact
+              ⟨StructuredReplay.Code.oracleRelSafe_append hArgs.1 hOpRel,
+                StructuredReplay.Code.oracleFrameSafe_append hArgs.2
+                  hOpFrame⟩
+
+  theorem oracleSafe_compileSeqCode_of_syntaxOracleSafe :
+      ∀ {results : Nat} {exprs : Locals.ExprSeq results}
+        {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code},
+        ExprSeq.SyntaxOracleSafe exprs →
+        Locals.ExprSeq.compileCode ctx offset exprs = some code →
+          StructuredReplay.Code.OracleRelSafe code ∧
+            StructuredReplay.Code.OracleFrameSafe code := by
+    intro results exprs ctx offset code hSafe hCompile
+    cases exprs with
+    | nil =>
+        simp [Locals.ExprSeq.compileCode] at hCompile
+        cases hCompile
+        exact
+          ⟨StructuredReplay.Code.oracleRelSafe_nil,
+            StructuredReplay.Code.oracleFrameSafe_nil⟩
+    | @cons left right head tail =>
+        simp [ExprSeq.SyntaxOracleSafe] at hSafe
+        rcases hSafe with ⟨hHeadSafe, hTailSafe⟩
+        simp [Locals.ExprSeq.compileCode] at hCompile
+        cases hHeadCode :
+            Locals.Expr.compileCode ctx offset head with
+        | none =>
+            simp [hHeadCode] at hCompile
+        | some headCode =>
+            cases hTailCode :
+                Locals.ExprSeq.compileCode ctx (offset + left) tail with
+            | none =>
+                simp [hHeadCode, hTailCode] at hCompile
+            | some tailCode =>
+                simp [hHeadCode, hTailCode] at hCompile
+                cases hCompile
+                have hHead :
+                    StructuredReplay.Code.OracleRelSafe headCode ∧
+                      StructuredReplay.Code.OracleFrameSafe headCode :=
+                  oracleSafe_compileCode_of_syntaxOracleSafe
+                    hHeadSafe hHeadCode
+                have hTail :
+                    StructuredReplay.Code.OracleRelSafe tailCode ∧
+                      StructuredReplay.Code.OracleFrameSafe tailCode :=
+                  oracleSafe_compileSeqCode_of_syntaxOracleSafe
+                    hTailSafe hTailCode
+                exact
+                  ⟨StructuredReplay.Code.oracleRelSafe_append hHead.1
+                      hTail.1,
+                    StructuredReplay.Code.oracleFrameSafe_append hHead.2
+                      hTail.2⟩
+end
+
+theorem oracleRelSafe_compileCode_of_syntaxOracleSafe
+    {results : Nat} {expr : Locals.Expr results}
+    {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code}
+    (hSafe : SyntaxOracleSafe expr)
+    (hCompile : Locals.Expr.compileCode ctx offset expr = some code) :
+    StructuredReplay.Code.OracleRelSafe code :=
+  (oracleSafe_compileCode_of_syntaxOracleSafe hSafe hCompile).1
+
+theorem oracleFrameSafe_compileCode_of_syntaxOracleSafe
+    {results : Nat} {expr : Locals.Expr results}
+    {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code}
+    (hSafe : SyntaxOracleSafe expr)
+    (hCompile : Locals.Expr.compileCode ctx offset expr = some code) :
+    StructuredReplay.Code.OracleFrameSafe code :=
+  (oracleSafe_compileCode_of_syntaxOracleSafe hSafe hCompile).2
+
+theorem oracleRelSafe_compileSeqCode_of_syntaxOracleSafe
+    {results : Nat} {exprs : Locals.ExprSeq results}
+    {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code}
+    (hSafe : ExprSeq.SyntaxOracleSafe exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx offset exprs = some code) :
+    StructuredReplay.Code.OracleRelSafe code :=
+  (oracleSafe_compileSeqCode_of_syntaxOracleSafe hSafe hCompile).1
+
+theorem oracleFrameSafe_compileSeqCode_of_syntaxOracleSafe
+    {results : Nat} {exprs : Locals.ExprSeq results}
+    {ctx : Locals.Ctx} {offset : Nat} {code : Structured.Code}
+    (hSafe : ExprSeq.SyntaxOracleSafe exprs)
+    (hCompile : Locals.ExprSeq.compileCode ctx offset exprs = some code) :
+    StructuredReplay.Code.OracleFrameSafe code :=
+  (oracleSafe_compileSeqCode_of_syntaxOracleSafe hSafe hCompile).2
 
 mutual
   theorem oracleFrameSafe_compileCode_of_eval_sourceOwned :
@@ -38424,6 +38799,75 @@ def NoLoopReplayDefault
   ∀ body, defaultBody = some body →
     NoLoopReplayPrefix ctx body.stmts
 
+mutual
+  def StmtListSyntaxOracleSafe (stmts : List Locals.Stmt) : Prop :=
+    match stmts with
+    | [] => True
+    | Locals.Stmt.expr expr :: rest =>
+        Expr.SyntaxOracleSafe expr ∧ StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.exprs exprs :: rest =>
+        Expr.ExprSeq.SyntaxOracleSafe exprs ∧ StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.let_ _name expr :: rest =>
+        Expr.SyntaxOracleSafe expr ∧ StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.assign _name expr :: rest =>
+        Expr.SyntaxOracleSafe expr ∧ StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.if_ cond body :: rest =>
+        Expr.SyntaxOracleSafe cond ∧
+          StmtListSyntaxOracleSafe body.stmts ∧
+          StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.switch scrutinee cases defaultBody :: rest =>
+        Expr.SyntaxOracleSafe scrutinee ∧
+          CaseListSyntaxOracleSafe cases ∧
+          DefaultSyntaxOracleSafe defaultBody ∧
+          StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.terminal _kind :: rest =>
+        StmtListSyntaxOracleSafe rest
+    | Locals.Stmt.terminalArgs _kind args :: rest =>
+        Expr.ExprSeq.SyntaxOracleSafe args ∧ StmtListSyntaxOracleSafe rest
+    | _stmt :: _rest => False
+  termination_by sizeOf stmts
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def CaseListSyntaxOracleSafe
+      (cases : List (Word × Locals.Block)) : Prop :=
+    match cases with
+    | [] => True
+    | (_value, body) :: rest =>
+        StmtListSyntaxOracleSafe body.stmts ∧
+          CaseListSyntaxOracleSafe rest
+  termination_by sizeOf cases
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def DefaultSyntaxOracleSafe (defaultBody : Option Locals.Block) :
+      Prop :=
+    match defaultBody with
+    | none => True
+    | some body => StmtListSyntaxOracleSafe body.stmts
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+end
+
 theorem AtomicPrefix.toNoLoopReplayPrefix :
     ∀ {ctx stmts}, AtomicPrefix ctx stmts →
       NoLoopReplayPrefix ctx stmts := by
@@ -38567,6 +39011,560 @@ theorem noLoopReplayPrefix_of_switch_select
             intro restValue restBody hMem
             exact hCases restValue restBody (by simp [hMem]))
           hSelect
+
+private theorem sizeOf_stmtListTailBlock_lt_cons
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt) :
+    sizeOf ({ stmts := rest } : Locals.Block) <
+      sizeOf ({ stmts := stmt :: rest } : Locals.Block) := by
+  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec]
+
+private theorem sizeOf_listTail_lt_cons {α : Type} [SizeOf α]
+    (head : α) (rest : List α) :
+    sizeOf rest < sizeOf (head :: rest) := by
+  rw [List.cons.sizeOf_spec]
+  omega
+
+private theorem sizeOf_caseBody_lt_cons
+    (caseValue : Word) (caseBody : Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf caseBody < sizeOf ((caseValue, caseBody) :: rest) := by
+  rw [List.cons.sizeOf_spec, Prod.mk.sizeOf_spec]
+  omega
+
+private theorem sizeOf_pairSnd_lt_cons
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf head.2 < sizeOf (head :: rest) := by
+  rcases head with ⟨caseValue, body⟩
+  cases body
+  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec,
+    Prod.mk.sizeOf_spec]
+  omega
+
+private theorem sizeOf_pairSnd_lt_cons_expanded
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf head.2 < 1 + sizeOf head + sizeOf rest := by
+  simpa [List.cons.sizeOf_spec] using sizeOf_pairSnd_lt_cons head rest
+
+set_option maxHeartbeats 1000000 in
+mutual
+  theorem oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+      {canBreak canContinue canLeave : Bool}
+      {ctx : Locals.Ctx} {block : Locals.Block}
+      {code : List Expressions.Stmt} {ctxOut : Locals.Ctx}
+      (hSyntax : StmtListSyntaxOracleSafe block.stmts)
+      (hCompile :
+        Locals.Block.compileOpen ctx block = some (code, ctxOut)) :
+      ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+        { stmts := code } := by
+    cases block with
+    | mk stmts =>
+    cases stmts with
+    | nil =>
+        simp [Locals.Block.compileOpen] at hCompile
+        rcases hCompile with ⟨rfl, rfl⟩
+        exact ⟨trivial, StructuredReplay.OracleSafe.Block.nil⟩
+    | cons stmt rest =>
+        cases stmt with
+        | expr expr =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with ⟨hExprSafe, hRestSafeSyntax⟩
+            cases hHeadCode : Locals.Expr.compileCode ctx 0 expr with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hHeadCode] at hCompile
+            | some headCode =>
+                cases hRestCompile :
+                    Locals.Block.compileOpen ctx { stmts := rest } with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, hRestCompile] at hCompile
+                | some restResult =>
+                    rcases restResult with ⟨restCode, restCtxOut⟩
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, hRestCompile] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    exact
+                      ExpressionsReplay.OracleSafe.block_append
+                        (ExpressionsReplay.OracleSafe.codeStmtBlock
+                          (Expr.oracleRelSafe_compileCode_of_syntaxOracleSafe
+                            hExprSafe hHeadCode)
+                          (Expr.oracleFrameSafe_compileCode_of_syntaxOracleSafe
+                            hExprSafe hHeadCode))
+                        (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                          (ctx := ctx) (block := { stmts := rest })
+                          (code := restCode) (ctxOut := restCtxOut)
+                          hRestSafeSyntax hRestCompile)
+        | exprs exprs =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with ⟨hExprsSafe, hRestSafeSyntax⟩
+            cases hHeadCode : Locals.ExprSeq.compileCode ctx 0 exprs with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hHeadCode] at hCompile
+            | some headCode =>
+                cases hRestCompile :
+                    Locals.Block.compileOpen ctx { stmts := rest } with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, hRestCompile] at hCompile
+                | some restResult =>
+                    rcases restResult with ⟨restCode, restCtxOut⟩
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, hRestCompile] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    exact
+                      ExpressionsReplay.OracleSafe.block_append
+                        (ExpressionsReplay.OracleSafe.codeStmtBlock
+                          (Expr.oracleRelSafe_compileSeqCode_of_syntaxOracleSafe
+                            hExprsSafe hHeadCode)
+                          (Expr.oracleFrameSafe_compileSeqCode_of_syntaxOracleSafe
+                            hExprsSafe hHeadCode))
+                        (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                          (ctx := ctx) (block := { stmts := rest })
+                          (code := restCode) (ctxOut := restCtxOut)
+                          hRestSafeSyntax hRestCompile)
+        | let_ name expr =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with ⟨hExprSafe, hRestSafeSyntax⟩
+            cases hHeadCode : Locals.Expr.compileCode ctx 0 expr with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hHeadCode] at hCompile
+            | some headCode =>
+                let nextCtx := ctx.withLayout (name :: ctx.layout)
+                cases hRestCompile :
+                    Locals.Block.compileOpen nextCtx { stmts := rest } with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, nextCtx, hRestCompile] at hCompile
+                | some restResult =>
+                    rcases restResult with ⟨restCode, restCtxOut⟩
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hHeadCode, nextCtx, hRestCompile] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    exact
+                      ExpressionsReplay.OracleSafe.block_append
+                        (ExpressionsReplay.OracleSafe.codeStmtBlock
+                          (Expr.oracleRelSafe_compileCode_of_syntaxOracleSafe
+                            hExprSafe hHeadCode)
+                          (Expr.oracleFrameSafe_compileCode_of_syntaxOracleSafe
+                            hExprSafe hHeadCode))
+                        (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                          (ctx := nextCtx) (block := { stmts := rest })
+                          (code := restCode) (ctxOut := restCtxOut)
+                          hRestSafeSyntax hRestCompile)
+        | assign name expr =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with ⟨hExprSafe, hRestSafeSyntax⟩
+            cases hDepth : Locals.Layout.lookupDepth? name ctx.layout with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hDepth] at hCompile
+            | some depth =>
+                cases hHeadCode : Locals.Expr.compileCode ctx 0 expr with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hDepth, hHeadCode] at hCompile
+                | some headCode =>
+                    cases hSwap : Locals.StackOp.swap? depth with
+                    | none =>
+                        simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                          hDepth, hHeadCode, hSwap] at hCompile
+                    | some swapOp =>
+                        cases hRestCompile :
+                            Locals.Block.compileOpen ctx { stmts := rest } with
+                        | none =>
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, hDepth, hHeadCode, hSwap,
+                              hRestCompile] at hCompile
+                        | some restResult =>
+                            rcases restResult with ⟨restCode, restCtxOut⟩
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, hDepth, hHeadCode, hSwap,
+                              hRestCompile] at hCompile
+                            rcases hCompile with ⟨rfl, rfl⟩
+                            have hValueRel :
+                                StructuredReplay.Code.OracleRelSafe
+                                  headCode :=
+                              Expr.oracleRelSafe_compileCode_of_syntaxOracleSafe
+                                hExprSafe hHeadCode
+                            have hValueFrame :
+                                StructuredReplay.Code.OracleFrameSafe
+                                  headCode :=
+                              Expr.oracleFrameSafe_compileCode_of_syntaxOracleSafe
+                                hExprSafe hHeadCode
+                            have hSuffixRunner :
+                                Structured.Preservation.Code.RunnerSafe
+                                  [Structured.BasicInstr.op swapOp,
+                                    Structured.BasicInstr.op .pop] :=
+                              Structured.Preservation.Code.RunnerSafe.append
+                                (StructuredReplay.Code.runnerSafe_singleton_stackSwap?
+                                  hSwap)
+                                Structured.Preservation.Code.pop_runnerSafe
+                            have hSuffixFrameSafe :
+                                Structured.Code.FrameSafe
+                                  [Structured.BasicInstr.op swapOp,
+                                    Structured.BasicInstr.op .pop] :=
+                              Structured.Preservation.Code.FrameSafe.append
+                                (StructuredReplay.Code.frameSafe_singleton_stackSwap?
+                                  hSwap)
+                                Structured.Preservation.Code.pop_frameSafe
+                            have hSuffixObserverFree :
+                                StructuredReplay.Code.ObserverFree
+                                  [Structured.BasicInstr.op swapOp,
+                                    Structured.BasicInstr.op .pop] :=
+                              StructuredReplay.Code.observerFree_append
+                                (StructuredReplay.Code.observerFree_singleton_stackSwap?
+                                  hSwap)
+                                StructuredReplay.Code.observerFree_singleton_pop
+                            have hSuffixRel :
+                                StructuredReplay.Code.OracleRelSafe
+                                  [Structured.BasicInstr.op swapOp,
+                                    Structured.BasicInstr.op .pop] :=
+                              StructuredReplay.Code.oracleRelSafe_of_runnerSafe_nonObserver
+                                hSuffixRunner hSuffixObserverFree
+                            have hSuffixFrame :
+                                StructuredReplay.Code.OracleFrameSafe
+                                  [Structured.BasicInstr.op swapOp,
+                                    Structured.BasicInstr.op .pop] :=
+                              StructuredReplay.Code.oracleFrameSafe_of_frameSafe_observer_free
+                                hSuffixFrameSafe hSuffixObserverFree
+                            exact
+                              ExpressionsReplay.OracleSafe.block_append
+                                (ExpressionsReplay.OracleSafe.codeStmtBlock
+                                  (StructuredReplay.Code.oracleRelSafe_append
+                                    hValueRel hSuffixRel)
+                                  (StructuredReplay.Code.oracleFrameSafe_append
+                                    hValueFrame hSuffixFrame))
+                                (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                                  (ctx := ctx) (block := { stmts := rest })
+                                  (code := restCode) (ctxOut := restCtxOut)
+                                  hRestSafeSyntax hRestCompile)
+        | assignTop name =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | assignTopWithOffset offset name =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | promoteName name =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | cleanupTo targetLayout =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | block body =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | if_ cond body =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with
+              ⟨hCondSafe, hBodySafeSyntax, hRestSafeSyntax⟩
+            cases hCondCode : Locals.Expr.compileCode ctx 0 cond with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  Locals.Expr.compile, hCondCode] at hCompile
+            | some condCode =>
+                cases hBodyOpen :
+                    Locals.Block.compileOpen ctx body with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      Locals.Expr.compile, hCondCode, hBodyOpen]
+                      at hCompile
+                | some bodyOpenResult =>
+                    rcases bodyOpenResult with ⟨bodyCode, bodyCtxOut⟩
+                    cases hFinish :
+                        Locals.finishScoped ctx bodyCtxOut bodyCode with
+                    | none =>
+                        simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                          Locals.Expr.compile, hCondCode, hBodyOpen,
+                          hFinish] at hCompile
+                    | some lowerBody =>
+                        cases hRestCompile :
+                            Locals.Block.compileOpen ctx { stmts := rest } with
+                        | none =>
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, Locals.Expr.compile,
+                              hCondCode, hBodyOpen, hFinish, hRestCompile]
+                              at hCompile
+                        | some restResult =>
+                            rcases restResult with ⟨restCode, restCtxOut⟩
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, Locals.Expr.compile,
+                              hCondCode, hBodyOpen, hFinish, hRestCompile]
+                              at hCompile
+                            rcases hCompile with ⟨rfl, rfl⟩
+                            have hBodyOpenSafe :
+                                ExpressionsReplay.OracleSafe.Block
+                                  canBreak canContinue canLeave
+                                  { stmts := bodyCode } :=
+                              oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                                (ctx := ctx) (block := body)
+                                (code := bodyCode) (ctxOut := bodyCtxOut)
+                                hBodySafeSyntax hBodyOpen
+                            have hBodySafe :
+                                ExpressionsReplay.OracleSafe.Block
+                                  canBreak canContinue canLeave lowerBody :=
+                              ExpressionsReplay.OracleSafe.finishScopedBlock
+                                hBodyOpenSafe hFinish
+                            exact
+                              ExpressionsReplay.OracleSafe.block_append
+                                (ExpressionsReplay.OracleSafe.ifBlock
+                                  (Expr.oracleRelSafe_compileCode_of_syntaxOracleSafe
+                                    hCondSafe hCondCode)
+                                  (Expr.oracleFrameSafe_compileCode_of_syntaxOracleSafe
+                                    hCondSafe hCondCode)
+                                  hBodySafe)
+                                (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                                  (ctx := ctx) (block := { stmts := rest })
+                                  (code := restCode) (ctxOut := restCtxOut)
+                                  hRestSafeSyntax hRestCompile)
+        | switch scrutinee cases defaultBody =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with
+              ⟨hScrutineeSafe, hCasesSafeSyntax, hDefaultSafeSyntax,
+                hRestSafeSyntax⟩
+            cases hScrutineeCode :
+                Locals.Expr.compileCode ctx 0 scrutinee with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  Locals.Expr.compile, hScrutineeCode] at hCompile
+            | some scrutineeCode =>
+                cases hCasesCompile :
+                    Locals.CaseList.compile ctx cases with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      Locals.Expr.compile, hScrutineeCode, hCasesCompile]
+                      at hCompile
+                | some lowerCases =>
+                    cases hDefaultCompile :
+                        Locals.Default.compile ctx defaultBody with
+                    | none =>
+                        simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                          Locals.Expr.compile, hScrutineeCode, hCasesCompile,
+                          hDefaultCompile] at hCompile
+                    | some lowerDefault =>
+                        cases hRestCompile :
+                            Locals.Block.compileOpen ctx { stmts := rest } with
+                        | none =>
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, Locals.Expr.compile,
+                              hScrutineeCode, hCasesCompile,
+                              hDefaultCompile, hRestCompile] at hCompile
+                        | some restResult =>
+                            rcases restResult with ⟨restCode, restCtxOut⟩
+                            simp [Locals.Block.compileOpen,
+                              Locals.Stmt.compile, Locals.Expr.compile,
+                              hScrutineeCode, hCasesCompile,
+                              hDefaultCompile, hRestCompile] at hCompile
+                            rcases hCompile with ⟨rfl, rfl⟩
+                            have hCasesSafe :
+                                ∀ value body,
+                                  (value, body) ∈ lowerCases →
+                                    ExpressionsReplay.OracleSafe.Block
+                                      canBreak canContinue canLeave body :=
+                              oracleSafe_compileCases_of_syntaxOracleSafe
+                                hCasesSafeSyntax hCasesCompile
+                            have hDefaultSafe :
+                                ∀ body, lowerDefault = some body →
+                                  ExpressionsReplay.OracleSafe.Block
+                                    canBreak canContinue canLeave body :=
+                              oracleSafe_compileDefault_of_syntaxOracleSafe
+                                hDefaultSafeSyntax hDefaultCompile
+                            exact
+                              ExpressionsReplay.OracleSafe.block_append
+                                (ExpressionsReplay.OracleSafe.switchBlock
+                                  (Expr.oracleRelSafe_compileCode_of_syntaxOracleSafe
+                                    hScrutineeSafe hScrutineeCode)
+                                  (Expr.oracleFrameSafe_compileCode_of_syntaxOracleSafe
+                                    hScrutineeSafe hScrutineeCode)
+                                  hCasesSafe hDefaultSafe)
+                                (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                                  (ctx := ctx) (block := { stmts := rest })
+                                  (code := restCode) (ctxOut := restCtxOut)
+                                  hRestSafeSyntax hRestCompile)
+        | for_ init cond post body =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | brk =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | cont =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | leave =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | call name =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+        | terminal kind =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            have hRestSafeSyntax : StmtListSyntaxOracleSafe rest := by
+              simpa [StmtListSyntaxOracleSafe] using hSyntax
+            cases hRestCompile :
+                Locals.Block.compileOpen ctx { stmts := rest } with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hRestCompile] at hCompile
+            | some restResult =>
+                rcases restResult with ⟨restCode, restCtxOut⟩
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hRestCompile] at hCompile
+                rcases hCompile with ⟨rfl, rfl⟩
+                simpa [List.append_assoc] using
+                  ExpressionsReplay.OracleSafe.block_append
+                    (ExpressionsReplay.OracleSafe.cleanupAllTerminalBlock
+                      (Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe
+                        kind))
+                    (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                      (ctx := ctx) (block := { stmts := rest }) (code := restCode)
+                      (ctxOut := restCtxOut) hRestSafeSyntax hRestCompile)
+        | terminalArgs kind args =>
+            simp [StmtListSyntaxOracleSafe] at hSyntax
+            rcases hSyntax with ⟨hArgsSafe, hRestSafeSyntax⟩
+            cases hArgsCode : Locals.ExprSeq.compileCode ctx 0 args with
+            | none =>
+                simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  hArgsCode] at hCompile
+            | some argsCode =>
+                cases hRestCompile :
+                    Locals.Block.compileOpen ctx { stmts := rest } with
+                | none =>
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hArgsCode, hRestCompile] at hCompile
+                | some restResult =>
+                    rcases restResult with ⟨restCode, restCtxOut⟩
+                    simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                      hArgsCode, hRestCompile] at hCompile
+                    rcases hCompile with ⟨rfl, rfl⟩
+                    simpa [List.append_assoc] using
+                      ExpressionsReplay.OracleSafe.block_append
+                        (ExpressionsReplay.OracleSafe.codeStmtTerminalBlock
+                          (Expr.oracleRelSafe_compileSeqCode_of_syntaxOracleSafe
+                            hArgsSafe hArgsCode)
+                          (Expr.oracleFrameSafe_compileSeqCode_of_syntaxOracleSafe
+                            hArgsSafe hArgsCode)
+                          (Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe
+                            kind))
+                        (oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                          (ctx := ctx) (block := { stmts := rest })
+                          (code := restCode)
+                          (ctxOut := restCtxOut) hRestSafeSyntax hRestCompile)
+  termination_by sizeOf block
+  decreasing_by
+    all_goals
+      first
+      | exact sizeOf_stmtListTailBlock_lt_cons stmt rest
+      | subst_vars
+        simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        try omega
+
+  theorem oracleSafe_compileCases_of_syntaxOracleSafe
+      {canBreak canContinue canLeave : Bool}
+      {ctx : Locals.Ctx} {cases : List (Word × Locals.Block)}
+      {lowerCases : List (Word × Expressions.Block)}
+      (hSyntax : CaseListSyntaxOracleSafe cases)
+      (hCompile : Locals.CaseList.compile ctx cases = some lowerCases) :
+      ∀ value body, (value, body) ∈ lowerCases →
+        ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+          body := by
+    intro value body hMem
+    cases cases with
+    | nil =>
+        simp [Locals.CaseList.compile] at hCompile
+        cases hCompile
+        simp at hMem
+    | cons head rest =>
+        unfold CaseListSyntaxOracleSafe at hSyntax
+        rcases hSyntax with ⟨hBodySafeSyntax, hRestSafeSyntax⟩
+        unfold Locals.CaseList.compile at hCompile
+        cases hBodyOpen :
+            Locals.Block.compileOpen ctx head.2 with
+        | none =>
+            simp [hBodyOpen] at hCompile
+        | some bodyOpenResult =>
+            rcases bodyOpenResult with ⟨bodyCode, bodyCtxOut⟩
+            cases hFinish :
+                Locals.finishScoped ctx bodyCtxOut bodyCode with
+            | none =>
+                simp [hBodyOpen, hFinish] at hCompile
+            | some lowerBody =>
+                cases hRestCompile :
+                    Locals.CaseList.compile ctx rest with
+                | none =>
+                    simp [hBodyOpen, hFinish, hRestCompile] at hCompile
+                | some lowerRest =>
+                    simp [hBodyOpen, hFinish, hRestCompile] at hCompile
+                    cases hCompile
+                    simp at hMem
+                    rcases hMem with hHead | hRest
+                    · rcases hHead with ⟨rfl, rfl⟩
+                      exact
+                        ExpressionsReplay.OracleSafe.finishScopedBlock
+                          (by
+                            exact
+                              oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                                (ctx := ctx) (block := head.2)
+                                (code := bodyCode) (ctxOut := bodyCtxOut)
+                                hBodySafeSyntax hBodyOpen)
+                          hFinish
+                    · exact
+                        oracleSafe_compileCases_of_syntaxOracleSafe
+                          hRestSafeSyntax hRestCompile value body hRest
+  termination_by sizeOf cases + 1
+  decreasing_by
+    all_goals subst_vars
+    all_goals try rcases head with ⟨caseValue, caseBody⟩
+    all_goals try cases caseBody
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+
+  theorem oracleSafe_compileDefault_of_syntaxOracleSafe
+      {canBreak canContinue canLeave : Bool}
+      {ctx : Locals.Ctx} {defaultBody : Option Locals.Block}
+      {lowerDefault : Option Expressions.Block}
+      (hSyntax : DefaultSyntaxOracleSafe defaultBody)
+      (hCompile : Locals.Default.compile ctx defaultBody = some lowerDefault) :
+      ∀ body, lowerDefault = some body →
+        ExpressionsReplay.OracleSafe.Block canBreak canContinue canLeave
+          body := by
+    intro body hSome
+    cases defaultBody with
+    | none =>
+        simp [Locals.Default.compile] at hCompile
+        cases hCompile
+        simp at hSome
+    | some sourceBody =>
+        simp [DefaultSyntaxOracleSafe] at hSyntax
+        cases hBodyOpen :
+            Locals.Block.compileOpen ctx sourceBody with
+        | none =>
+            simp [Locals.Default.compile, hBodyOpen] at hCompile
+        | some bodyOpenResult =>
+            rcases bodyOpenResult with ⟨bodyCode, bodyCtxOut⟩
+            cases hFinish :
+                Locals.finishScoped ctx bodyCtxOut bodyCode with
+            | none =>
+                simp [Locals.Default.compile, hBodyOpen, hFinish]
+                  at hCompile
+            | some lowerBody =>
+                simp [Locals.Default.compile, hBodyOpen, hFinish]
+                  at hCompile
+                cases hCompile
+                simp at hSome
+                cases hSome
+                exact
+                  ExpressionsReplay.OracleSafe.finishScopedBlock
+                    (by
+                      exact
+                        oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                          (ctx := ctx) (block := sourceBody)
+                          (code := bodyCode) (ctxOut := bodyCtxOut)
+                          hSyntax hBodyOpen)
+                    hFinish
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals
+      subst_vars
+      try cases sourceBody
+      simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+        List.cons.sizeOf_spec]
+      try omega
+end
 
 def NoLoopReplayOpenRegularWithOracle
     (asmProgram : Assembly.Program) (program : Locals.Program)
@@ -49800,6 +50798,54 @@ theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_run
     (outState := outState) (kind := kind)
     hPrefix hLower (by simpa [run] using hRun)
 
+theorem oracleSafe_program_of_toExpressions?_of_stmtListSyntaxOracleSafe
+    {program : Locals.Program} {lower : Expressions.Program}
+    (hSyntax :
+      Block.StmtListSyntaxOracleSafe program.body.stmts)
+    (hLower : program.toExpressions? = some lower) :
+    ExpressionsReplay.OracleSafe.Program lower := by
+  cases program with
+  | mk procs body =>
+      cases body with
+      | mk stmts =>
+          have hBodyCompile :
+              Locals.Block.compile Locals.Ctx.initial { stmts := stmts } =
+                some lower.body :=
+            Locals.Program.body_toExpressions_of_toExpressions? hLower
+          unfold Locals.Block.compile at hBodyCompile
+          cases hOpen :
+              Locals.Block.compileOpen Locals.Ctx.initial
+                { stmts := stmts } with
+          | none =>
+              simp [hOpen] at hBodyCompile
+          | some openResult =>
+              rcases openResult with ⟨code, targetCtxOut⟩
+              cases hFinish :
+                  Locals.finishScoped Locals.Ctx.initial targetCtxOut code with
+              | none =>
+                  simp [hOpen, hFinish] at hBodyCompile
+              | some lowerBody =>
+                  simp [hOpen, hFinish] at hBodyCompile
+                  cases hBodyCompile
+                  have hOpenSafe :
+                      ExpressionsReplay.OracleSafe.Block false false false
+                        { stmts := code } :=
+                    Block.oracleSafe_compileOpen_of_stmtListSyntaxOracleSafe
+                      (ctx := Locals.Ctx.initial)
+                      (block := { stmts := stmts })
+                      (code := code) (ctxOut := targetCtxOut)
+                      hSyntax hOpen
+                  have hBodySafe :
+                      ExpressionsReplay.OracleSafe.Block false false false
+                        lower.body :=
+                    ExpressionsReplay.OracleSafe.finishScopedBlock
+                      hOpenSafe hFinish
+                  exact
+                    { procs :=
+                        ExpressionsReplay.procListCodeShaped_of_program_toExpressions?
+                          hLower
+                      body := hBodySafe }
+
 theorem runState_noLoopReplayPrefixBlockHaltWithOracle_of_toExpressions?
     {fuel : Nat} {program : Locals.Program}
     {lower : Expressions.Program} {initial outState : State}
@@ -51336,6 +52382,53 @@ theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_pr
       (sourceFuel := expressionFuel) (sourceOut := targetOut)
       (traceOut := sourceOut.trace) (kind := kind) (dryHalt := dryHalt)
       hDryHalt hCompile hReplay hLen hBounds hSafe hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_syntaxOracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hPrefix :
+      SourceReplay.Block.NoLoopReplayPrefix Locals.Source.Ctx.initial
+        sourceProgram.body.stmts)
+    (hSyntax :
+      SourceReplay.Block.StmtListSyntaxOracleSafe
+        sourceProgram.body.stmts)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  have hSafe : ExpressionsReplay.OracleSafe.Program exprProgram :=
+    SourceReplay.Program.oracleSafe_program_of_toExpressions?_of_stmtListSyntaxOracleSafe
+      hSyntax hLower
+  exact
+    result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+      (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun
+      (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hPrefix hLower hDryHalt hCompile hStack hRun hLen hBounds hSafe
+      hInitialPc
 
 theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
