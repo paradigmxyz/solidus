@@ -61270,6 +61270,49 @@ theorem compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of
     hSpec hWordBytes hCompile hInputs.stmts.regular hInitialMemory
     hInitialStack hInitialPc hGhostRun hSourceGhost
 
+theorem compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of_ghostRun_given_supported_call_replay_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxWords : Nat} {range : ScratchRange} {program : Program}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {asm : Assembly.Program}
+    {fuel : Nat} {initial : EVMState}
+    {sourceAfter ghostAfter : Source.State}
+    {sourceCtxAfter : Source.Ctx}
+    (hCompile :
+      compileCheckedPlannedPreallocWithSwitchFallback? maxWords program =
+        some (range, plan, exprProgram, asm))
+    (hRegularSupported :
+      SwitchFallbackStmtRegularDispatchSupportedBelow fuel range program [])
+    (hBrkSupported :
+      SwitchFallbackStmtBrkDispatchSupportedBelow fuel range program [])
+    (hContSupported :
+      SwitchFallbackStmtContDispatchSupportedBelow fuel range program [])
+    (hCalls :
+      SwitchFallbackCallReplayBelow fuel range program exprProgram)
+    (hInitialMemory : ScratchInitialMemoryEmpty initial.toMachineState)
+    (hInitialStack : initial.stack = [])
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hGhostRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          Source.Ctx.initial fuel program.body
+          (Source.Program.initialState
+            (range.preallocState initial).toSharedState) =
+        .ok (Source.Outcome.regular ghostAfter, sourceCtxAfter))
+    (hSourceGhost :
+      SourceStatePrivateScratchInvariant sourceAfter ghostAfter) :
+    ∃ targetFuel targetOutcome,
+      Assembly.Source.runNResult asm targetFuel initial =
+        .ok targetOutcome ∧
+      Locals.Source.Program.AdaptiveSpillPrivateObservableOutcomeRel range
+        (Source.Outcome.regular sourceAfter) targetOutcome ∧
+      Structured.Preservation.TargetOutcomeEndPc asm targetOutcome :=
+  compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of_ghostRun_given_dispatcher_inputs_below
+    hSpec hWordBytes hCompile
+    (SwitchFallbackDispatcherInputsBelow.of_supported_call_replay_below
+      hSpec hWordBytes hRegularSupported hBrkSupported hContSupported hCalls)
+    hInitialMemory hInitialStack hInitialPc hGhostRun hSourceGhost
+
 theorem compileCheckedPlannedPrealloc?_regular_observations_of_ghostRun
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
