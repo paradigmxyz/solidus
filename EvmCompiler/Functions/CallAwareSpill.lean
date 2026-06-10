@@ -9532,6 +9532,30 @@ theorem not_mem_scope_of_not_mem_sourceScope_of_restrict_wf
     simpa [hLayout.names_eq] using hNameLayout
   exact hFresh hNameSource
 
+theorem mem_sourceScope_of_mem_scope_of_restrict_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout) :
+    ∀ {name : Name}, name ∈ scope → name ∈ sourceScope := by
+  intro name hName
+  have hNameReference :
+      name ∈ SpillLayout.names referenceLayout := by
+    rw [hReferenceLayout.names_eq]
+    exact hName
+  have hNameLayout : name ∈ SpillLayout.names layout := by
+    have hFiltered :
+        name ∈
+          (SpillLayout.names layout).filter
+            (fun name => decide (name ∈ scope)) := by
+      simpa [hReference, spillLayout_names_restrictToScope] using
+        hNameReference
+    exact List.mem_of_mem_filter hFiltered
+  simpa [hLayout.names_eq] using hNameLayout
+
 theorem compileFreshAtom?_restrictToScope_eq_of_reference_wf
     {range : ScratchRange} {sourceScope stackLayout scope : List Name}
     {layout referenceLayout : SpillLayout.Layout}
@@ -9892,6 +9916,663 @@ theorem compileFreshAtomWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
                     compileFreshAtomWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
                       (plan := tail) hTail hReferenceNext hReferenceLayout
                       hNextLayout
+
+theorem spillAllStack?_restrictToScope_eq_of_emptyStack_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    (hPlan :
+      SpillPlan.spillAllStack? range sourceScope stackLayout layout =
+        some plan)
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout)) :
+    SpillLayout.restrictToScope scope plan.layout =
+      SpillLayout.restrictToScope scope layout := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [SpillPlan.spillAllStack?] at hPlan
+      cases hPlan
+      rfl
+  | cons top restStack ih =>
+      unfold SpillPlan.spillAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | none =>
+          simp [hEvict] at hPlan
+      | some evicted =>
+          rcases evicted with ⟨slot, nextLayout⟩
+          cases hTail :
+              SpillPlan.spillAllStack? range sourceScope restStack
+                nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              rcases SpillLayout.evictTopStackLayout?_sound hEvict with
+                ⟨_top, _restStack, _hStackLayout, _hTop, _hSlot, hNext,
+                  _hCheck⟩
+              have hNextRestrict :
+                  SpillLayout.restrictToScope scope nextLayout =
+                    SpillLayout.restrictToScope scope layout := by
+                rw [hNext]
+                exact
+                  spillLayout_restrictToScope_evictTopStackLayout_of_emptyStack_wf
+                    hLayout
+              have hNextLayout :
+                  SpillLayout.WellFormed range scope []
+                    (SpillLayout.restrictToScope scope nextLayout) := by
+                simpa [hNextRestrict] using hLayout
+              have hTailRestrict :
+                  SpillLayout.restrictToScope scope tail.layout =
+                    SpillLayout.restrictToScope scope nextLayout :=
+                ih (layout := nextLayout) (plan := tail) hTail hNextLayout
+              exact hTailRestrict.trans hNextRestrict
+
+theorem compileFreshAtomWithSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {stmt : Locals.Stmt} {plan : SpillPlan}
+    (hCompile :
+      SpillPlan.compileFreshAtomWithSpill? range sourceScope stackLayout
+          layout stmt =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold SpillPlan.compileFreshAtomWithSpill? at hCompile
+  cases hSpill :
+      SpillPlan.spillAllStack? range sourceScope stackLayout layout with
+  | none =>
+      simp [hSpill] at hCompile
+  | some spill =>
+      simp [hSpill] at hCompile
+      cases hAtom :
+          SpillPlan.compileFreshAtom? range spill.sourceScope
+            spill.stackLayout spill.layout stmt with
+      | none =>
+          simp [hAtom] at hCompile
+      | some atom =>
+          simp [hAtom] at hCompile
+          cases hCompile
+          have hReferenceRestrict :
+              SpillLayout.WellFormed range scope []
+                (SpillLayout.restrictToScope scope layout) := by
+            simpa [hReference] using hReferenceLayout
+          have hSpillRestrict :
+              SpillLayout.restrictToScope scope spill.layout =
+                SpillLayout.restrictToScope scope layout :=
+            spillAllStack?_restrictToScope_eq_of_emptyStack_wf
+              hSpill hReferenceRestrict
+          have hReferenceSpill :
+              referenceLayout =
+                SpillLayout.restrictToScope scope spill.layout :=
+            hReference.trans hSpillRestrict.symm
+          have hSpillLayout :
+              SpillLayout.WellFormed range spill.sourceScope
+                spill.stackLayout spill.layout :=
+            SpillPlan.spillAllStack?_wellFormed hSpill hLayout
+          exact
+            compileFreshAtom?_restrictToScope_eq_of_reference_wf
+              hAtom hReferenceSpill hReferenceLayout hSpillLayout
+
+theorem compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {stmt : Locals.Stmt} {plan : SpillPlan}
+    (hCompile :
+      SpillPlan.compileFreshAtomWithConservativeSpill? range sourceScope
+          stackLayout layout stmt =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold SpillPlan.compileFreshAtomWithConservativeSpill? at hCompile
+  cases hAtom :
+      SpillPlan.compileFreshAtom? range sourceScope stackLayout layout stmt with
+  | some atom =>
+      simp [hAtom] at hCompile
+      cases hCompile
+      exact
+        compileFreshAtom?_restrictToScope_eq_of_reference_wf
+          hAtom hReference hReferenceLayout hLayout
+  | none =>
+      simp [hAtom] at hCompile
+      exact
+        compileFreshAtomWithSpill?_restrictToScope_eq_of_reference_wf
+          hCompile hReference hReferenceLayout hLayout
+
+theorem compileStmtListWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout} :
+    ∀ {stmts : List Locals.Stmt} {plan : SpillPlan},
+      SpillPlan.compileStmtListWithAdaptiveSpill? range sourceScope
+          stackLayout layout stmts =
+        some plan →
+      referenceLayout = SpillLayout.restrictToScope scope layout →
+      SpillLayout.WellFormed range scope [] referenceLayout →
+      SpillLayout.WellFormed range sourceScope stackLayout layout →
+      SpillLayout.restrictToScope scope plan.layout = referenceLayout
+  | [], plan, hCompile, hReference, _hReferenceLayout, _hLayout => by
+      simp [SpillPlan.compileStmtListWithAdaptiveSpill?] at hCompile
+      cases hCompile
+      exact hReference.symm
+  | stmt :: rest, plan, hCompile, hReference, hReferenceLayout, hLayout => by
+      unfold SpillPlan.compileStmtListWithAdaptiveSpill? at hCompile
+      cases hHead :
+          SpillPlan.compileFreshAtomWithAdaptiveSpill? range sourceScope
+            stackLayout layout stmt with
+      | none =>
+          simp [hHead] at hCompile
+      | some head =>
+          cases hTail :
+              SpillPlan.compileStmtListWithAdaptiveSpill? range
+                head.sourceScope head.stackLayout head.layout rest with
+          | none =>
+              simp [hHead, hTail] at hCompile
+          | some tail =>
+              simp [hHead, hTail] at hCompile
+              cases hCompile
+              have hHeadRestrict :
+                  SpillLayout.restrictToScope scope head.layout =
+                    referenceLayout :=
+                compileFreshAtomWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+                  (plan := head) hHead hReference hReferenceLayout hLayout
+              have hHeadLayout :
+                  SpillLayout.WellFormed range head.sourceScope
+                    head.stackLayout head.layout :=
+                SpillPlan.compileFreshAtomWithAdaptiveSpill?_wellFormed
+                  hHead hLayout
+              exact
+                compileStmtListWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+                  (plan := tail) hTail hHeadRestrict.symm
+                  hReferenceLayout hHeadLayout
+
+theorem compileBlockOpenWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {block : Locals.Block} {plan : SpillPlan}
+    (hCompile :
+      SpillPlan.compileBlockOpenWithAdaptiveSpill? range sourceScope
+          stackLayout layout block =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  cases block with
+  | mk stmts =>
+      exact
+        compileStmtListWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+          (stmts := stmts) (plan := plan)
+          (by
+            simpa [SpillPlan.compileBlockOpenWithAdaptiveSpill?] using
+              hCompile)
+          hReference hReferenceLayout hLayout
+
+mutual
+
+theorem compileStmtWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout} :
+    ∀ {stmt : Locals.Stmt} {plan : SpillPlan},
+      SpillPlan.compileStmtWithConservativeScopedSpill? range sourceScope
+          stackLayout layout stmt =
+        some plan →
+      referenceLayout = SpillLayout.restrictToScope scope layout →
+      SpillLayout.WellFormed range scope [] referenceLayout →
+      SpillLayout.WellFormed range sourceScope stackLayout layout →
+      SpillLayout.restrictToScope scope plan.layout = referenceLayout
+  | .expr (results := results) expr, plan, hCompile, hReference,
+      hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .exprs exprs, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .let_ name value, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .assign name value, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .assignTop name, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .assignTopWithOffset offset name, plan, hCompile, hReference,
+      hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .promoteName name, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .cleanupTo targetLayout, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .block body, plan, hCompile, hReference, hReferenceLayout, hLayout => by
+      rcases
+          SpillPlan.compileBlockStmtWithConservativeScopedSpill?_eq_some
+            (by
+              simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+                using hCompile) with
+        ⟨bodyPlan, restrictedLayout, hBodyPlan, hRestricted, _hCheck,
+          hPlanEq⟩
+      cases hPlanEq
+      have hBodyRestrict :
+          SpillLayout.restrictToScope scope bodyPlan.layout =
+            referenceLayout :=
+        compileBlockOpenWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+          (block := body) (plan := bodyPlan) hBodyPlan
+          hReference hReferenceLayout hLayout
+      have hSubset :
+          ∀ name, name ∈ scope → name ∈ sourceScope :=
+        fun name hName =>
+          mem_sourceScope_of_mem_scope_of_restrict_wf
+            hLayout hReference hReferenceLayout hName
+      calc
+        SpillLayout.restrictToScope scope restrictedLayout =
+            SpillLayout.restrictToScope scope
+              (SpillLayout.restrictToScope sourceScope bodyPlan.layout) := by
+          rw [hRestricted]
+        _ = SpillLayout.restrictToScope scope bodyPlan.layout :=
+          spillLayout_restrictToScope_restrictToScope_of_subset
+            hSubset bodyPlan.layout
+        _ = referenceLayout := hBodyRestrict
+  | .if_ cond body, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .switch scrutinee cases defaultBody, plan, hCompile, hReference,
+      hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .for_ init cond post body, plan, hCompile, hReference,
+      hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .brk, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .cont, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .leave, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .call name, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .terminal kind, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  | .terminalArgs kind args, plan, hCompile, hReference, hReferenceLayout,
+      hLayout =>
+      compileFreshAtomWithConservativeSpill?_restrictToScope_eq_of_reference_wf
+        (by
+          simpa [SpillPlan.compileStmtWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  termination_by stmt plan _hCompile _hReference _hReferenceLayout
+      _hLayout =>
+    (sizeOf stmt, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | simp
+
+theorem compileStmtListWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout} :
+    ∀ {stmts : List Locals.Stmt} {plan : SpillPlan},
+      SpillPlan.compileStmtListWithConservativeScopedSpill? range sourceScope
+          stackLayout layout stmts =
+        some plan →
+      referenceLayout = SpillLayout.restrictToScope scope layout →
+      SpillLayout.WellFormed range scope [] referenceLayout →
+      SpillLayout.WellFormed range sourceScope stackLayout layout →
+      SpillLayout.restrictToScope scope plan.layout = referenceLayout
+  | [], plan, hCompile, hReference, _hReferenceLayout, _hLayout => by
+      simp [SpillPlan.compileStmtListWithConservativeScopedSpill?]
+        at hCompile
+      cases hCompile
+      exact hReference.symm
+  | stmt :: rest, plan, hCompile, hReference, hReferenceLayout,
+      hLayout => by
+      unfold SpillPlan.compileStmtListWithConservativeScopedSpill? at hCompile
+      cases hHead :
+          SpillPlan.compileStmtWithConservativeScopedSpill? range sourceScope
+            stackLayout layout stmt with
+      | none =>
+          simp [hHead] at hCompile
+      | some head =>
+          cases hTail :
+              SpillPlan.compileStmtListWithConservativeScopedSpill? range
+                head.sourceScope head.stackLayout head.layout rest with
+          | none =>
+              simp [hHead, hTail] at hCompile
+          | some tail =>
+              simp [hHead, hTail] at hCompile
+              cases hCompile
+              have hHeadRestrict :
+                  SpillLayout.restrictToScope scope head.layout =
+                    referenceLayout :=
+                compileStmtWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+                  (stmt := stmt) (plan := head) hHead
+                  hReference hReferenceLayout hLayout
+              have hHeadLayout :
+                  SpillLayout.WellFormed range head.sourceScope
+                    head.stackLayout head.layout :=
+                SpillPlan.compileStmtWithConservativeScopedSpill?_wellFormed
+                  (stmt := stmt) (plan := head) hHead hLayout
+              exact
+                compileStmtListWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+                  (stmts := rest) (plan := tail) hTail
+                  hHeadRestrict.symm hReferenceLayout hHeadLayout
+  termination_by stmts plan _hCompile _hReference _hReferenceLayout
+      _hLayout =>
+    (sizeOf stmts, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | exact Prod.Lex.right _
+          (Prod.Lex.left _ _ (by omega))
+
+theorem compileBlockOpenWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout} :
+    ∀ {block : Locals.Block} {plan : SpillPlan},
+      SpillPlan.compileBlockOpenWithConservativeScopedSpill? range
+          sourceScope stackLayout layout block =
+        some plan →
+      referenceLayout = SpillLayout.restrictToScope scope layout →
+      SpillLayout.WellFormed range scope [] referenceLayout →
+      SpillLayout.WellFormed range sourceScope stackLayout layout →
+      SpillLayout.restrictToScope scope plan.layout = referenceLayout
+  | ⟨stmts⟩, plan, hCompile, hReference, hReferenceLayout, hLayout =>
+      compileStmtListWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+        (stmts := stmts) (plan := plan)
+        (by
+          simpa [SpillPlan.compileBlockOpenWithConservativeScopedSpill?]
+            using hCompile)
+        hReference hReferenceLayout hLayout
+  termination_by block plan _hCompile _hReference _hReferenceLayout
+      _hLayout =>
+    (sizeOf block, 1)
+  decreasing_by
+    cases block
+    simp_wf
+    omega
+
+end
+
+theorem compileLocalsBlockSpan?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {block : Locals.Block} {plan : Plan}
+    (hCompile :
+      compileLocalsBlockSpan? range sourceScope stackLayout layout block =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileLocalsBlockSpan? at hCompile
+  cases hAdaptive :
+      SpillPlan.compileBlockOpenWithAdaptiveSpill? range sourceScope
+        stackLayout layout block with
+  | some adaptivePlan =>
+      simp [hAdaptive, planOfSpillPlan] at hCompile
+      cases hCompile
+      exact
+        compileBlockOpenWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+          (block := block) (plan := adaptivePlan) hAdaptive
+          hReference hReferenceLayout hLayout
+  | none =>
+      simp [hAdaptive] at hCompile
+      cases hConservative :
+          SpillPlan.compileBlockOpenWithConservativeScopedSpill? range
+            sourceScope stackLayout layout block with
+      | none =>
+          simp [hConservative] at hCompile
+      | some conservativePlan =>
+          simp [hConservative, planOfSpillPlan] at hCompile
+          cases hCompile
+          exact
+            compileBlockOpenWithConservativeScopedSpill?_restrictToScope_eq_of_reference_wf
+              (block := block) (plan := conservativePlan) hConservative
+              hReference hReferenceLayout hLayout
+
+theorem compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {returns sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {stmt : Stmt} {plan : Plan}
+    (hCompile :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+          stmt =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout :=
+  compileLocalsBlockSpan?_restrictToScope_eq_of_reference_wf
+    (block := { stmts := Stmt.toLocals returns stmt }) hCompile
+    hReference hReferenceLayout hLayout
+
+theorem compileExprStmtWithSpillFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {expr : Expr 0} {plan : Plan}
+    (hCompile :
+      compileExprStmtWithSpillFallback? range sourceScope stackLayout layout
+          expr =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileExprStmtWithSpillFallback? at hCompile
+  cases hCode : SpillExpr.compileCode? range 0 layout expr with
+  | none =>
+      simp [hCode] at hCompile
+  | some code =>
+      simp [hCode] at hCompile
+      cases hCompile
+      exact hReference.symm
+
+theorem compileLetWithSpillFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {name : Name} {value : Expr 1} {plan : Plan}
+    (hCompile :
+      compileLetWithSpillFallback? range sourceScope stackLayout layout
+          name value =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileLetWithSpillFallback? at hCompile
+  by_cases hNameSource : name ∈ sourceScope
+  · simp [hNameSource] at hCompile
+  · simp [hNameSource] at hCompile
+    cases hCode : SpillExpr.compileCode? range 0 layout value with
+    | none =>
+        simp [hCode] at hCompile
+    | some code =>
+        simp [hCode] at hCompile
+        have hNameScope : name ∉ scope :=
+          not_mem_scope_of_not_mem_sourceScope_of_restrict_wf
+            hLayout hReference hReferenceLayout hNameSource
+        by_cases hStack : stackLayout.length < 16
+        · simp [hStack] at hCompile
+          cases hCompile
+          have hReferenceLayout' :
+              SpillLayout.WellFormed range scope []
+                (SpillLayout.restrictToScope scope layout) := by
+            simpa [hReference] using hReferenceLayout
+          have hPush :
+              SpillLayout.restrictToScope scope
+                  (SpillLayout.pushStackLayout name layout) =
+                SpillLayout.restrictToScope scope layout :=
+            spillLayout_restrictToScope_pushStackLayout_of_not_mem_restrict_emptyStack_wf
+              hReferenceLayout' hNameScope
+          exact hPush.trans hReference.symm
+        · simp [hStack] at hCompile
+          cases hSlot :
+              SpillLayout.firstFreeScratchSlot? range layout with
+          | none =>
+              simp [hSlot] at hCompile
+          | some slot =>
+              simp [hSlot] at hCompile
+              cases hCompile
+              have hPush :
+                  SpillLayout.restrictToScope scope
+                      (SpillLayout.pushScratchLayout name slot layout) =
+                    SpillLayout.restrictToScope scope layout :=
+                spillLayout_restrictToScope_pushScratchLayout_of_not_mem
+                  hNameScope
+              exact hPush.trans hReference.symm
+
+theorem compileAssignWithSpillFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {name : Name} {value : Expr 1} {plan : Plan}
+    (hCompile :
+      compileAssignWithSpillFallback? range sourceScope stackLayout layout
+          name value =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileAssignWithSpillFallback? at hCompile
+  cases hCode : SpillExpr.compileCode? range 0 layout value with
+  | none =>
+      simp [hCode] at hCompile
+  | some code =>
+      simp [hCode] at hCompile
+      cases hLookup : SpillLayout.lookup? name layout with
+      | none =>
+          simp [hLookup] at hCompile
+      | some location =>
+          cases location with
+          | stack depth =>
+              cases hSwap : Locals.StackOp.swap? (depth + 1) with
+              | none =>
+                  simp [hLookup, hSwap] at hCompile
+              | some swapOp =>
+                  simp [hLookup, hSwap] at hCompile
+                  cases hCompile
+                  exact hReference.symm
+          | scratch slot =>
+              simp [hLookup] at hCompile
+              cases hCompile
+              exact hReference.symm
+
+theorem compileTerminalArgsWithSpillFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {kind : Assembly.HaltKind} {args : Locals.ExprSeq kind.argCount}
+    {plan : Plan}
+    (hCompile :
+      compileTerminalArgsWithSpillFallback? range sourceScope stackLayout
+          layout kind args =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileTerminalArgsWithSpillFallback? at hCompile
+  cases hCode : SpillExpr.compileSeqFullCode? range 0 layout args with
+  | none =>
+      simp [hCode] at hCompile
+  | some code =>
+      simp [hCode] at hCompile
+      cases hCompile
+      exact hReference.symm
+
+theorem compileTerminalWithSpillFallback?_restrictToScope_eq_of_reference_wf
+    {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {kind : Assembly.HaltKind} {plan : Plan}
+    (hCompile :
+      compileTerminalWithSpillFallback? sourceScope stackLayout layout kind =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  simp [compileTerminalWithSpillFallback?] at hCompile
+  cases hCompile
+  exact hReference.symm
 
 theorem normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
     {range : ScratchRange} {plan full : Plan} {scope : List Name}
@@ -11372,6 +12053,92 @@ theorem compileCall?_sourceScope_stackLayout
   constructor
   · exact SpillPlan.spillAllStack?_sourceScope hSpill
   · rfl
+
+theorem compileCall?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {program : Program}
+    {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    (hCompile :
+      compileCall? range program sourceScope stackLayout layout targets
+          functionName args =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  rcases compileCall?_eq_some hCompile with
+    ⟨_fn, spill, _saved, _argsCode, _storeCode, _hFind, _hTargetsNodup,
+      _hArgsLength, _hTargetsLength, _hSafe, hSpill, _hSavedEq,
+      _hArgsCode, _hStoreCode, hPlan⟩
+  subst plan
+  have hReferenceLayout' :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout) := by
+    simpa [hReference] using hReferenceLayout
+  have hSpillRestrict :
+      SpillLayout.restrictToScope scope spill.layout =
+        SpillLayout.restrictToScope scope layout :=
+    spillAllStack?_restrictToScope_eq_of_emptyStack_wf
+      hSpill hReferenceLayout'
+  exact hSpillRestrict.trans hReference.symm
+
+theorem compileCallWithNormalizedStackFallback?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {program : Program}
+    {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    (hCompile :
+      compileCallWithNormalizedStackFallback? range program sourceScope
+          stackLayout layout targets functionName args =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  unfold compileCallWithNormalizedStackFallback? at hCompile
+  cases hEntry :
+      normalizePlanStack? range
+        { sourceScope := sourceScope
+          stackLayout := stackLayout
+          layout := layout
+          block := { stmts := [] } } with
+  | none =>
+      simp [hEntry] at hCompile
+  | some entry =>
+      simp [hEntry] at hCompile
+      cases hCall :
+          compileCall? range program entry.sourceScope entry.stackLayout
+            entry.layout targets functionName args with
+      | none =>
+          simp [hCall] at hCompile
+      | some callPlan =>
+          simp [hCall] at hCompile
+          cases hCompile
+          have hReferenceLayout' :
+              SpillLayout.WellFormed range scope []
+                (SpillLayout.restrictToScope scope layout) := by
+            simpa [hReference] using hReferenceLayout
+          have hEntryRestrict :
+              SpillLayout.restrictToScope scope entry.layout =
+                SpillLayout.restrictToScope scope layout :=
+            normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+              (scope := scope) hEntry hReferenceLayout'
+          have hEntryReference :
+              referenceLayout =
+                SpillLayout.restrictToScope scope entry.layout :=
+            hReference.trans hEntryRestrict.symm
+          have hCallRestrict :
+              SpillLayout.restrictToScope scope callPlan.layout =
+                referenceLayout :=
+            compileCall?_restrictToScope_eq_of_reference_wf
+              (scope := scope) (referenceLayout := referenceLayout)
+              hCall hEntryReference hReferenceLayout
+          simpa using hCallRestrict
 
 theorem source_call_regular_ctx
     {prim : Source.PrimitiveSemantics}
@@ -21225,6 +21992,76 @@ theorem compileStmtWithSwitchFallback?_regular_sound_meta_exact_of_nonCall_helpe
         by simpa using hFinalRel, hFinalDefined,
         by simpa using hFinalLength, hScopeAfter⟩
 
+theorem compileStmtWithSwitchFallback?_regular_sound_meta_exact_of_nonCall_helper_success_branch_premises_reference
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout} {handlerScope : List Name}
+    {stmt : Stmt} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCandidate : StmtUsesNonCallSpanFallback stmt)
+    (hHelper :
+      compileNonCallStmtSpan? range returns sourceScope
+          stackLayout layout stmt =
+        some plan)
+    (hOwned : SourceLowering.SourceToLocals.Stmt.SourceOwned returns stmt)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel stmt source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter)) :
+    compileStmtWithSwitchFallback? range program handlers returns
+        sourceScope stackLayout layout stmt = some plan ∧
+      ∃ finalRunState exprFuel,
+        Expressions.Block.run exprProgram exprFuel plan.block target =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+            sourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+          finalRunState.evm.stack.length = plan.stackLayout.length ∧
+          sourceCtxAfter.scope = plan.sourceScope ∧
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout := by
+  constructor
+  · exact
+      compileStmtWithSwitchFallback?_eq_some_of_nonCall_helper_success
+        hCandidate hHelper
+  · rcases
+        (compileStmtWithSwitchFallback?_regular_sound_meta_exact_of_nonCall_helper_success_branch_premises
+          hSpec hWordBytes
+          (range := range) (program := program)
+          (handlers := handlers) (returns := returns)
+          (sourceScope := sourceScope) (stackLayout := stackLayout)
+          (layout := layout) (stmt := stmt) (plan := plan)
+          (exprProgram := exprProgram) (sourceCtx := sourceCtx)
+          (sourceCtxAfter := sourceCtxAfter) (fuel := fuel)
+          (source := source) (sourceAfter := sourceAfter)
+          (target := target) hCandidate hHelper hOwned hScope hRel
+          hDefined hLength hSourceRun).2 with
+      ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+        hFinalLength, hScopeAfter⟩
+    have hPlanReference :
+        SpillLayout.restrictToScope handlerScope plan.layout =
+          referenceLayout :=
+      compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+        hHelper hReference hReferenceLayout hRel.layoutWellFormed
+    exact
+      ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+        hFinalLength, hScopeAfter, hPlanReference⟩
+
 theorem compileStmtWithSwitchFallback?_regular_sound_meta_exact_of_nonCall_helper_success_handler_free
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -22663,6 +23500,284 @@ theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound
   | call targets functionName args =>
       simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
 
+theorem compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {stmt : Stmt} {plan : Plan}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmt =
+        some plan)
+    (hSafe : StmtAtomicOrTerminalSafe stmt)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  cases stmt with
+  | expr expr =>
+      unfold compileStmtWithSwitchFallback? at hCompile
+      cases hHelper :
+          compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+            (.expr expr) with
+      | some helperPlan =>
+          simp [hHelper] at hCompile
+          cases hCompile
+          exact
+            compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+              hHelper hReference hReferenceLayout hLayout
+      | none =>
+          simp [hHelper] at hCompile
+          exact
+            compileExprStmtWithSpillFallback?_restrictToScope_eq_of_reference_wf
+              hCompile hReference
+  | let_ name valueExpr =>
+      unfold compileStmtWithSwitchFallback? at hCompile
+      cases hHelper :
+          compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+            (.let_ name valueExpr) with
+      | some helperPlan =>
+          simp [hHelper] at hCompile
+          cases hCompile
+          exact
+            compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+              hHelper hReference hReferenceLayout hLayout
+      | none =>
+          simp [hHelper] at hCompile
+          exact
+            compileLetWithSpillFallback?_restrictToScope_eq_of_reference_wf
+              hCompile hReference hReferenceLayout hLayout
+  | assign name valueExpr =>
+      unfold compileStmtWithSwitchFallback? at hCompile
+      cases hHelper :
+          compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+            (.assign name valueExpr) with
+      | some helperPlan =>
+          simp [hHelper] at hCompile
+          cases hCompile
+          exact
+            compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+              hHelper hReference hReferenceLayout hLayout
+      | none =>
+          simp [hHelper] at hCompile
+          exact
+            compileAssignWithSpillFallback?_restrictToScope_eq_of_reference_wf
+              hCompile hReference
+  | terminal kind =>
+      unfold compileStmtWithSwitchFallback? at hCompile
+      cases hHelper :
+          compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+            (.terminal kind) with
+      | some helperPlan =>
+          simp [hHelper] at hCompile
+          cases hCompile
+          exact
+            compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+              hHelper hReference hReferenceLayout hLayout
+      | none =>
+          simp [hHelper] at hCompile
+          exact
+            compileTerminalWithSpillFallback?_restrictToScope_eq_of_reference_wf
+              hCompile hReference
+  | terminalArgs kind args =>
+      unfold compileStmtWithSwitchFallback? at hCompile
+      cases hHelper :
+          compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+            (.terminalArgs kind args) with
+      | some helperPlan =>
+          simp [hHelper] at hCompile
+          cases hCompile
+          exact
+            compileNonCallStmtSpan?_restrictToScope_eq_of_reference_wf
+              hHelper hReference hReferenceLayout hLayout
+      | none =>
+          simp [hHelper] at hCompile
+          exact
+            compileTerminalArgsWithSpillFallback?_restrictToScope_eq_of_reference_wf
+              hCompile hReference
+  | block body =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | if_ cond body =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | switch scrutinee cases defaultBody =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | for_ init cond post body =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | brk =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | cont =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | leave =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+  | call targets functionName args =>
+      simp [StmtAtomicOrTerminalSafe] at hSafe
+
+theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_reference_of_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {handlerScope : List Name} {stmt : Stmt} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmt =
+        some plan)
+    (hSafe : StmtAtomicTerminalOrLoopControlSafe stmt)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel stmt source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter)) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+  cases stmt with
+  | brk =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hBreak : sourceCtx.breakScope? with
+      | none =>
+          simp [hBreak, Source.invalid, Structured.invalid] at hSourceRun
+      | some scope =>
+          simp [hBreak, Source.Outcome.brk, Source.Outcome.regular]
+            at hSourceRun
+          cases hSourceRun.1
+  | cont =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hContinue : sourceCtx.continueScope? with
+      | none =>
+          simp [hContinue, Source.invalid, Structured.invalid] at hSourceRun
+      | some scope =>
+          simp [hContinue, Source.Outcome.cont, Source.Outcome.regular]
+            at hSourceRun
+          cases hSourceRun.1
+  | expr expr =>
+      have hAtomic : StmtAtomicOrTerminalSafe (.expr expr) := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe,
+          StmtAtomicOrTerminalSafe] using hSafe
+      rcases
+          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_of_safe
+            hSpec hWordBytes hCompile hSafe hScope hRel hDefined hLength
+            hSourceRun with
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter⟩
+      have hPlanReference :
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout :=
+        compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+          hCompile hAtomic hReference hReferenceLayout hRel.layoutWellFormed
+      exact
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter, hPlanReference⟩
+  | let_ name valueExpr =>
+      have hAtomic : StmtAtomicOrTerminalSafe (.let_ name valueExpr) := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe,
+          StmtAtomicOrTerminalSafe] using hSafe
+      rcases
+          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_of_safe
+            hSpec hWordBytes hCompile hSafe hScope hRel hDefined hLength
+            hSourceRun with
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter⟩
+      have hPlanReference :
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout :=
+        compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+          hCompile hAtomic hReference hReferenceLayout hRel.layoutWellFormed
+      exact
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter, hPlanReference⟩
+  | assign name valueExpr =>
+      have hAtomic : StmtAtomicOrTerminalSafe (.assign name valueExpr) := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe,
+          StmtAtomicOrTerminalSafe] using hSafe
+      rcases
+          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_of_safe
+            hSpec hWordBytes hCompile hSafe hScope hRel hDefined hLength
+            hSourceRun with
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter⟩
+      have hPlanReference :
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout :=
+        compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+          hCompile hAtomic hReference hReferenceLayout hRel.layoutWellFormed
+      exact
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter, hPlanReference⟩
+  | terminal kind =>
+      have hAtomic : StmtAtomicOrTerminalSafe (.terminal kind) := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe,
+          StmtAtomicOrTerminalSafe] using hSafe
+      rcases
+          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_of_safe
+            hSpec hWordBytes hCompile hSafe hScope hRel hDefined hLength
+            hSourceRun with
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter⟩
+      have hPlanReference :
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout :=
+        compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+          hCompile hAtomic hReference hReferenceLayout hRel.layoutWellFormed
+      exact
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter, hPlanReference⟩
+  | terminalArgs kind args =>
+      have hAtomic :
+          StmtAtomicOrTerminalSafe (.terminalArgs kind args) := by
+        simpa [StmtAtomicTerminalOrLoopControlSafe,
+          StmtAtomicOrTerminalSafe] using hSafe
+      rcases
+          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_of_safe
+            hSpec hWordBytes hCompile hSafe hScope hRel hDefined hLength
+            hSourceRun with
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter⟩
+      have hPlanReference :
+          SpillLayout.restrictToScope handlerScope plan.layout =
+            referenceLayout :=
+        compileStmtWithSwitchFallback?_atomicOrTerminal_restrictToScope_eq_of_reference_wf
+          hCompile hAtomic hReference hReferenceLayout hRel.layoutWellFormed
+      exact
+        ⟨finalRunState, exprFuel, hRun, hFinalRel, hFinalDefined,
+          hFinalLength, hScopeAfter, hPlanReference⟩
+  | block body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | if_ cond body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | switch scrutinee cases defaultBody =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | for_ init cond post body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | leave =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | call targets functionName args =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+
 theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_halt_sound_meta_of_safe
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -23814,6 +24929,211 @@ theorem compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_of_atomicTe
           (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
           (by simpa [BlockAtomicTerminalOrLoopControlSafe] using hSafe)
           hScope hRel hDefined hLength hSourceRun
+
+theorem compileStmtListWithSwitchFallback?_regular_sound_meta_exact_reference_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} :
+    ∀ {stmts : List Stmt} {plan : Plan}
+      {exprProgram : Expressions.Program}
+      {sourceCtx sourceCtxAfter : Source.Ctx}
+      {fuel : Nat} {source sourceAfter : Source.State}
+      {target : Expressions.RunState} {handlerScope : List Name}
+      {referenceLayout : SpillLayout.Layout},
+      compileStmtListWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmts =
+        some plan →
+      StmtListAtomicTerminalOrLoopControlSafe stmts →
+      sourceCtx.scope = sourceScope →
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout →
+      SpillLayout.WellFormed range handlerScope [] referenceLayout →
+      SpillStateRel range sourceScope stackLayout layout source target.evm →
+      SpillLayout.StoreDefined source.vars layout →
+      target.evm.stack.length = stackLayout.length →
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel { stmts := stmts } source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter) →
+      ∃ finalRunState exprFuel,
+        Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.regular finalRunState) ∧
+        SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+          sourceAfter finalRunState.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+        finalRunState.evm.stack.length = plan.stackLayout.length ∧
+        sourceCtxAfter.scope = plan.sourceScope ∧
+        SpillLayout.restrictToScope handlerScope plan.layout =
+          referenceLayout
+  | [], plan, exprProgram, sourceCtx, sourceCtxAfter, fuel, source,
+      sourceAfter, target, handlerScope, referenceLayout, hCompile, _hSafe,
+      hScope, hReference, _hReferenceLayout, hRel, hDefined, hLength,
+      hSourceRun => by
+      have hPlan := compileStmtListWithSwitchFallback?_eq_some_nil hCompile
+      subst plan
+      cases fuel with
+      | zero =>
+          simp [Source.Block.runOpen, Source.invalid, Structured.invalid]
+            at hSourceRun
+      | succ fuel =>
+          simp [Source.Block.runOpen] at hSourceRun
+          rcases hSourceRun with ⟨hOutcome, hCtx⟩
+          cases hOutcome
+          cases hCtx
+          refine ⟨target.withEVM target.evm, 1, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          · simp [Expressions.Block.run, Structured.RunState.withEVM]
+          · simpa [Structured.RunState.withEVM] using hRel
+          · exact hDefined
+          · simpa [Structured.RunState.withEVM] using hLength
+          · exact hScope
+          · exact hReference.symm
+  | stmt :: rest, plan, exprProgram, sourceCtx, sourceCtxAfter, fuel, source,
+      sourceFinal, target, handlerScope, referenceLayout, hCompile, hSafe,
+      hScope, hReference, hReferenceLayout, hRel, hDefined, hLength,
+      hSourceRun => by
+      rcases hSafe with ⟨hHeadSafe, hTailSafe⟩
+      cases fuel with
+      | zero =>
+          simp [Source.Block.runOpen, Source.invalid, Structured.invalid]
+            at hSourceRun
+      | succ fuel =>
+          rcases compileStmtListWithSwitchFallback?_eq_some_cons hCompile with
+            ⟨head, tail, hHeadCompile, hTailCompile, hPlan⟩
+          cases hStmtRun :
+              Source.Stmt.run Locals.Source.PrimitiveSemantics.structured
+                program sourceCtx fuel stmt source with
+          | error err =>
+              simp [Source.Block.runOpen, hStmtRun] at hSourceRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨headOutcome, sourceCtxMid⟩
+              cases headOutcome with
+              | mk sourceHead mode =>
+                  cases mode with
+                  | regular =>
+                      have hTailSourceRun :
+                          Source.Block.runOpen
+                              Locals.Source.PrimitiveSemantics.structured
+                              program sourceCtxMid fuel { stmts := rest }
+                              sourceHead =
+                            .ok (Source.Outcome.regular sourceFinal,
+                              sourceCtxAfter) := by
+                        simpa [Source.Block.runOpen, hStmtRun] using
+                          hSourceRun
+                      rcases
+                          compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_regular_sound_meta_exact_reference_of_safe
+                            hSpec hWordBytes hHeadCompile hHeadSafe hScope
+                            hReference hReferenceLayout hRel hDefined
+                            hLength hStmtRun with
+                        ⟨headRunState, headFuel, hHeadRun, hHeadRel,
+                          hHeadDefined, hHeadLength, hHeadScope,
+                          hHeadReference⟩
+                      have hReferenceMid :
+                          referenceLayout =
+                            SpillLayout.restrictToScope handlerScope
+                              head.layout := hHeadReference.symm
+                      rcases
+                          compileStmtListWithSwitchFallback?_regular_sound_meta_exact_reference_of_atomicTerminalOrLoopControl_safe
+                            hSpec hWordBytes
+                            (sourceScope := head.sourceScope)
+                            (stackLayout := head.stackLayout)
+                            (layout := head.layout)
+                            (target := headRunState)
+                            (handlerScope := handlerScope)
+                            (referenceLayout := referenceLayout)
+                            hTailCompile hTailSafe hHeadScope hReferenceMid
+                            hReferenceLayout hHeadRel hHeadDefined
+                            hHeadLength hTailSourceRun with
+                        ⟨finalRunState, tailFuel, hTailRun, hTailRel,
+                          hTailDefined, hTailLength, hTailScope,
+                          hTailReference⟩
+                      subst plan
+                      rcases
+                          expressionsBlock_append_regular_exists exprProgram
+                            (left := head.block) (right := tail.block)
+                            (state := target) (mid := headRunState)
+                            ⟨headFuel, hHeadRun⟩
+                            ⟨tailFuel, hTailRun⟩ with
+                        ⟨exprFuel, hRun⟩
+                      exact
+                        ⟨finalRunState, exprFuel, hRun, hTailRel,
+                          hTailDefined, hTailLength, hTailScope,
+                          hTailReference⟩
+                  | brk =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.brk]
+                        at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                  | cont =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.cont]
+                        at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                  | leave =>
+                      simp [Source.Block.runOpen, hStmtRun,
+                        Source.Outcome.leave] at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                  | halt kind =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.halt]
+                        at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+
+theorem compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_reference_of_atomicTerminalOrLoopControl_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState} {handlerScope : List Name}
+    (hCompile :
+      compileBlockOpenWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hSafe : BlockAtomicTerminalOrLoopControlSafe block)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel block source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter)) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+  cases block with
+  | mk stmts =>
+      exact
+        compileStmtListWithSwitchFallback?_regular_sound_meta_exact_reference_of_atomicTerminalOrLoopControl_safe
+          hSpec hWordBytes
+          (stmts := stmts) (plan := plan) (exprProgram := exprProgram)
+          (sourceCtx := sourceCtx) (sourceCtxAfter := sourceCtxAfter)
+          (fuel := fuel) (source := source) (sourceAfter := sourceAfter)
+          (target := target) (handlerScope := handlerScope)
+          (referenceLayout := referenceLayout)
+          (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
+          (by simpa [BlockAtomicTerminalOrLoopControlSafe] using hSafe)
+          hScope hReference hReferenceLayout hRel hDefined hLength
+          hSourceRun
 
 theorem compileStmtListWithSwitchFallback?_halt_sound_meta_of_atomicTerminalOrLoopControl_safe
     (hSpec : ZeroPaddingSpec)
