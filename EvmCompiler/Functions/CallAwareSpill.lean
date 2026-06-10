@@ -21744,6 +21744,49 @@ theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callR
     ⟨final, exprFuel, hRun, hFinalRel, hStoreDefined, hFinalLength,
       hScopeAfter⟩
 
+theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callReplayBelow_maxFuel
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.call targets functionName args) =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hCallReplay :
+      CallReplayForBelow maxFuel range program exprProgram target source
+        targets functionName args) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular (target.withEVM final)) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter final ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      final.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope :=
+  compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callReplayBelow
+    hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
+    (CallReplayForBelow.mono hFuelBound hCallReplay)
+
 def StmtUsesNonCallSpanFallback : Stmt → Prop
   | .expr _ => True
   | .let_ _ _ => True
