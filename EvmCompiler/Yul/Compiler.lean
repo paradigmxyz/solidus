@@ -466,6 +466,26 @@ theorem lower1?_gas (state : Fresh.State) :
       none := by
   simp [lower1?, lower?_gas]
 
+theorem lower1Unchecked?_gas (state : Fresh.State) :
+    lower1Unchecked? state
+        (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []) =
+      some ([], (.prim .gas .nil : Locals.Expr 1), state) := by
+  simp [lower1Unchecked?, lowerUnchecked?, Prim.toUncheckedBasicOp?,
+    List.pureAliasArgsSafe?, List.toLocals1?, List.toStackSeq?,
+    List.toSeq?, cast,
+    Expressions.Structured.BasicOp.inputs,
+    Expressions.Structured.BasicOp.outputs]
+
+theorem lower1Unchecked?_msize (state : Fresh.State) :
+    lower1Unchecked? state
+        (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []) =
+      some ([], (.prim .msize .nil : Locals.Expr 1), state) := by
+  simp [lower1Unchecked?, lowerUnchecked?, Prim.toUncheckedBasicOp?,
+    List.pureAliasArgsSafe?, List.toLocals1?, List.toStackSeq?,
+    List.toSeq?, cast,
+    Expressions.Structured.BasicOp.inputs,
+    Expressions.Structured.BasicOp.outputs]
+
 theorem lower1?_lit (state : Fresh.State) (value : Word) :
     lower1? state (.Lit value) =
       some ([], (.lit value : Locals.Expr 1), state) := by
@@ -2088,6 +2108,52 @@ mutual
         some ({ stmts := lower }, state')
 end
 
+theorem toFunctionsListUncheckedFuel?_let_gas
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
+    toFunctionsListUncheckedFuel? fuel.succ state
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], state) := by
+  simp [toFunctionsListUncheckedFuel?, Expr.lower1Unchecked?_gas]
+
+theorem toFunctionsListUncheckedFuel?_let_msize
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
+    toFunctionsListUncheckedFuel? fuel.succ state
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], state) := by
+  simp [toFunctionsListUncheckedFuel?, Expr.lower1Unchecked?_msize]
+
+theorem toFunctionsListUncheckedFuel?_assign_gas
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
+    toFunctionsListUncheckedFuel? fuel.succ state
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], state) := by
+  simp [toFunctionsListUncheckedFuel?, Expr.lower1Unchecked?_gas]
+
+theorem toFunctionsListUncheckedFuel?_assign_msize
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
+    toFunctionsListUncheckedFuel? fuel.succ state
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], state) := by
+  simp [toFunctionsListUncheckedFuel?, Expr.lower1Unchecked?_msize]
+
 noncomputable def toFunctionsList? (state : Fresh.State) (stmt : AstStmt) :
     Option (List Functions.Stmt × Fresh.State) :=
   toFunctionsListFuel? (fuel stmt) state stmt
@@ -2639,6 +2705,30 @@ noncomputable def toObjects? (contract : AstContract) :
     .mk "root" functionProgram [] []
   some { root := root }
 
+/--
+Observer-admitting contract lowering.
+
+This is the same Yul-to-Objects shape as `toObjects?`, but it uses the
+unchecked expression/statement lowerers so visible `gas()` and `msize()` calls
+can pass through as `BasicOp.gas`/`BasicOp.msize`.  Its preservation contract is
+the explicit observer-oracle route, not the ordinary exact-preservation route.
+-/
+noncomputable def toObjectsWithObservers? (contract : AstContract) :
+    Option Objects.Program := do
+  let initial := Fresh.initial (names contract)
+  let (bodyStmts, state) ←
+    Stmt.toFunctionsListUncheckedFuel? (Stmt.fuel contract.dispatcher)
+      initial contract.dispatcher
+  let (functions, _state) ←
+    FunctionList.toFunDefsUncheckedFuel?
+      (FunctionList.fuel (functionEntries contract)) state
+      (functionEntries contract)
+  let functionProgram : Functions.Program :=
+    { functions := functions, body := { stmts := bodyStmts } }
+  let root : Objects.Object :=
+    .mk "root" functionProgram [] []
+  some { root := root }
+
 def Supported (contract : AstContract) : Prop :=
   Stmt.Supported contract.dispatcher ∧
     FunctionList.Supported (functionEntries contract)
@@ -2672,6 +2762,15 @@ noncomputable def toExpressions? (program : Program) : Option Expressions.Progra
 noncomputable def compile? (program : Program) :
     Option Assembly.TargetProgram := do
   let lower ← toObjects? program
+  Objects.Program.compile? lower
+
+noncomputable def toObjectsWithObservers? (program : Program) :
+    Option Objects.Program :=
+  Contract.toObjectsWithObservers? program.contract
+
+noncomputable def compileWithObservers? (program : Program) :
+    Option Assembly.TargetProgram := do
+  let lower ← toObjectsWithObservers? program
   Objects.Program.compile? lower
 
 def WF (program : Program) : Prop :=

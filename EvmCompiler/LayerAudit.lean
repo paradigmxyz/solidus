@@ -56,6 +56,93 @@ resource observers.
 abbrev targetDryRun :=
   Yul.ObserverOracle.TargetDryRun
 
+abbrev yulSourceReplayState :=
+  Yul.ObserverOracle.YulSourceReplay.State
+
+abbrev yulSourceReplayResult :=
+  Yul.ObserverOracle.YulSourceReplay.Result
+
+abbrev yulSourceReplayPrimCall :=
+  @Yul.ObserverOracle.YulSourceReplay.primCall
+
+abbrev yulSourceReplayProgramInstallContract :=
+  @Yul.ObserverOracle.YulSourceReplay.Program.installContract
+
+abbrev yulSourceReplayProgramRun :=
+  @Yul.ObserverOracle.YulSourceReplay.Program.run
+
+abbrev yulSourceReplayCall :=
+  @Yul.ObserverOracle.YulSourceReplay.call
+
+abbrev yulSourceReplayCallDispatcher :=
+  @Yul.ObserverOracle.YulSourceReplay.callDispatcher
+
+abbrev yulSourceReplayExec :=
+  @Yul.ObserverOracle.YulSourceReplay.exec
+
+abbrev yulSourceReplayLoop :=
+  @Yul.ObserverOracle.YulSourceReplay.loop
+
+abbrev yulSourceReplayExecExprStmtCallGasCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_exprStmtCall_gas_cons
+
+abbrev yulSourceReplayExecExprStmtCallMsizeCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_exprStmtCall_msize_cons
+
+abbrev yulSourceReplayExecLetGasCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_let_gas_cons
+
+abbrev yulSourceReplayExecLetMsizeCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_let_msize_cons
+
+abbrev yulSourceReplayExecAssignGasCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_assign_gas_cons
+
+abbrev yulSourceReplayExecAssignMsizeCons :=
+  @Yul.ObserverOracle.YulSourceReplay.exec_assign_msize_cons
+
+abbrev yulExprLower1UncheckedGas :=
+  @Yul.Expr.lower1Unchecked?_gas
+
+abbrev yulExprLower1UncheckedMsize :=
+  @Yul.Expr.lower1Unchecked?_msize
+
+abbrev yulToLocalsExprReplayBridgeLower1UncheckedGasCons :=
+  @Yul.ObserverOracle.YulToLocalsExprReplayBridge.lower1Unchecked_gas_cons
+
+abbrev yulToLocalsExprReplayBridgeLower1UncheckedMsizeCons :=
+  @Yul.ObserverOracle.YulToLocalsExprReplayBridge.lower1Unchecked_msize_cons
+
+abbrev yulToLocalsExprReplayBridgeLower1UncheckedGasEvalOneCons :=
+  @Yul.ObserverOracle.YulToLocalsExprReplayBridge.lower1Unchecked_gas_evalOne_cons
+
+abbrev yulToLocalsExprReplayBridgeLower1UncheckedMsizeEvalOneCons :=
+  @Yul.ObserverOracle.YulToLocalsExprReplayBridge.lower1Unchecked_msize_evalOne_cons
+
+abbrev yulStmtToFunctionsListUncheckedFuelLetGas :=
+  @Yul.Stmt.toFunctionsListUncheckedFuel?_let_gas
+
+abbrev yulStmtToFunctionsListUncheckedFuelLetMsize :=
+  @Yul.Stmt.toFunctionsListUncheckedFuel?_let_msize
+
+abbrev yulStmtToFunctionsListUncheckedFuelAssignGas :=
+  @Yul.Stmt.toFunctionsListUncheckedFuel?_assign_gas
+
+abbrev yulStmtToFunctionsListUncheckedFuelAssignMsize :=
+  @Yul.Stmt.toFunctionsListUncheckedFuel?_assign_msize
+
+abbrev yulToLocalsStmtReplayBridgeLetGasCons :=
+  @Yul.ObserverOracle.YulToLocalsStmtReplayBridge.let_gas_cons
+
+abbrev yulToLocalsStmtReplayBridgeLetMsizeCons :=
+  @Yul.ObserverOracle.YulToLocalsStmtReplayBridge.let_msize_cons
+
+abbrev yulToLocalsStmtReplayBridgeAssignGasCons :=
+  @Yul.ObserverOracle.YulToLocalsStmtReplayBridge.assign_gas_cons
+
+abbrev yulToLocalsStmtReplayBridgeAssignMsizeCons :=
+  @Yul.ObserverOracle.YulToLocalsStmtReplayBridge.assign_msize_cons
+
 abbrev targetDryRunOrdinaryRun :=
   @Yul.ObserverOracle.TargetDryRun.ordinary_run
 
@@ -133,6 +220,30 @@ abbrev targetDryRunOracleRunEmpty :=
 
   abbrev targetDryRunResultEqOfHaltedLocalsNoLoopReplayShapeCheckRunOfToExpressionsOfCompileAcceptedOfSyntaxOracleSafeCheckOfCompileByteLengthLtOfDryRunHaltedConsumesTrace :=
     @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_toExpressions?_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+
+  abbrev targetDryRunResultEqOfHaltedLocalsNoLoopReplayShapeCheckRunOfCompileCheckedOfCompileAcceptedOfSyntaxOracleSafeCheckOfCompileByteLengthLtOfDryRunHaltedConsumesTrace :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+
+  abbrev targetDryRunResultEqOfHaltedLocalsNoLoopReplayShapeCheckRunOfCompileCheckedOfCompileExecutableOfCompileAcceptedOfSyntaxOracleSafeCheckOfCompileByteLengthLtOfDryRunHaltedConsumesTrace :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileExecutable_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+
+  abbrev yulObserverRouteToLocalsWithObserversEqSome :=
+    @Yul.ObserverOracle.YulObserverRoute.toLocalsWithObservers?_eq_some
+
+  abbrev yulObserverRouteCompileCheckedWithObserversOfLocalsAssemblyTarget :=
+    @Yul.ObserverOracle.YulObserverRoute.compileCheckedWithObservers?_of_localsAssemblyTarget
+
+  abbrev yulObserverRouteCompileWithObserversOfLocalsAssemblyTarget :=
+    @Yul.ObserverOracle.YulObserverRoute.compileWithObservers?_of_localsAssemblyTarget
+
+  abbrev targetDryRunResultEqOfHaltedYulObserverLocalsNoLoopReplayShapeCheckRunOfCompileCheckedRouteOfCompileAcceptedOfSyntaxOracleSafeCheckOfCompileByteLengthLtOfDryRunHaltedConsumesTrace :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_yulObserverLocalsNoLoopReplayShapeCheck_run_of_compileCheckedRoute_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+
+  abbrev yulToLocalsHaltReplayBridge :=
+    @Yul.ObserverOracle.YulToLocalsHaltReplayBridge
+
+  abbrev targetDryRunResultEqOfHaltedYulSourceReplayBridgeOfCompileCheckedRouteOfCompileAcceptedOfSyntaxOracleSafeCheckOfCompileByteLengthLtOfDryRunHaltedConsumesTrace :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_yulSourceReplayBridge_of_compileCheckedRoute_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
 
   abbrev targetDryRunResultEqOfHaltedLocalsAtomicIfPrefixThenTerminalTailRunOfToExpressionsOfProgramOracleSafeOfCompileByteLengthLtOfDryRunHalted :=
     @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_localsAtomicIfPrefixThenTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted

@@ -3,6 +3,7 @@ import EvmCompiler.Locals.SourceLowering
 import EvmCompiler.Locals.SourceSemantics
 import EvmCompiler.Structured.StackResource
 import EvmCompiler.Yul.Compiler
+import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler
 namespace Yul
@@ -376,6 +377,662 @@ theorem consume_cons_same (kind : Observer) (value : Word) (trace : Trace) :
     consume kind ({ kind := kind, value := value } :: trace) =
       .ok (value, trace) := by
   simp [consume]
+
+namespace YulSourceReplay
+
+structure State where
+  source : EvmYul.Yul.State
+  trace : Trace
+
+namespace State
+
+def withSource (state : State) (source : EvmYul.Yul.State) : State :=
+  { state with source := source }
+
+def withTrace (state : State) (trace : Trace) : State :=
+  { state with trace := trace }
+
+@[simp] theorem withSource_source (state : State)
+    (source : EvmYul.Yul.State) :
+    (state.withSource source).source = source := rfl
+
+@[simp] theorem withSource_trace (state : State)
+    (source : EvmYul.Yul.State) :
+    (state.withSource source).trace = state.trace := rfl
+
+@[simp] theorem withTrace_source (state : State) (trace : Trace) :
+    (state.withTrace trace).source = state.source := rfl
+
+@[simp] theorem withTrace_trace (state : State) (trace : Trace) :
+    (state.withTrace trace).trace = trace := rfl
+
+end State
+
+def consume (kind : Observer) : Trace →
+    Except EvmYul.Yul.Exception (Word × Trace)
+  | [] => .error .InvalidInstruction
+  | observation :: rest =>
+      if observation.kind = kind then
+        .ok (observation.value, rest)
+      else
+        .error .InvalidInstruction
+
+def primCall (fuel : Nat) (state : State)
+    (prim : EvmYul.Operation .Yul) (args : List Word) :
+    Except EvmYul.Yul.Exception (State × List Word) :=
+  match fuel with
+  | 0 => .error .OutOfFuel
+  | fuel' + 1 =>
+      match yulPrimObserver? prim with
+      | some kind =>
+          match args with
+          | [] =>
+              match consume kind state.trace with
+              | .ok (value, trace') =>
+                  .ok ({ state with trace := trace' }, [value])
+              | .error err => .error err
+          | _ :: _ => .error .InvalidArguments
+      | none =>
+          match EvmYul.Yul.primCall fuel' state.source prim args with
+          | .ok (source', values) =>
+              .ok ({ state with source := source' }, values)
+          | .error err => .error err
+
+theorem consume_cons_same (kind : Observer) (value : Word) (trace : Trace) :
+    consume kind ({ kind := kind, value := value } :: trace) =
+      .ok (value, trace) := by
+  simp [consume]
+
+theorem primCall_gas_cons (fuel : Nat)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    primCall fuel.succ
+        { source := source, trace := { kind := .gas, value := value } :: trace }
+        (.StackMemFlow .GAS) [] =
+      .ok ({ source := source, trace := trace }, [value]) := by
+  simp [primCall, consume]
+
+theorem primCall_msize_cons (fuel : Nat)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    primCall fuel.succ
+        { source := source, trace := { kind := .msize, value := value } :: trace }
+        (.StackMemFlow .MSIZE) [] =
+      .ok ({ source := source, trace := trace }, [value]) := by
+  simp [primCall, consume]
+
+theorem primCall_nonObserver_preserves_trace
+    {fuel : Nat} {state state' : State} {prim : EvmYul.Operation .Yul}
+    {args values : List Word}
+    (hObserver : yulPrimObserver? prim = none)
+    (hRun : primCall fuel.succ state prim args = .ok (state', values)) :
+    EvmYul.Yul.primCall fuel state.source prim args =
+        .ok (state'.source, values) ∧
+      state'.trace = state.trace := by
+  unfold primCall at hRun
+  simp [hObserver] at hRun
+  generalize hPrim :
+      EvmYul.Yul.primCall fuel state.source prim args = primResult at hRun ⊢
+  cases primResult with
+  | error err =>
+      simp at hRun
+  | ok result =>
+      rcases result with ⟨source', values'⟩
+      simp at hRun
+      rcases hRun with ⟨hState, hValues⟩
+      have hSource :
+          state'.source = source' := by
+        simpa using congrArg State.source hState.symm
+      have hTrace :
+          state'.trace = state.trace := by
+        simpa using congrArg State.trace hState.symm
+      cases hValues
+      exact ⟨by simpa [hSource] using hPrim, hTrace⟩
+
+def multifill (vars : List EvmYul.Identifier) :
+    Except EvmYul.Yul.Exception (State × List Word) →
+      Except EvmYul.Yul.Exception State
+  | .ok (state, values) =>
+      .ok { state with source := state.source.multifill vars values }
+  | .error err => .error err
+
+mutual
+
+  def evalTail (fuel : Nat) (args : List EvmYul.Yul.Ast.Expr)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (result : Except EvmYul.Yul.Exception (State × Word)) :
+      Except EvmYul.Yul.Exception (State × List Word) :=
+    match result with
+    | .ok (state, arg) =>
+        match fuel with
+        | 0 => .error .OutOfFuel
+        | fuel' + 1 =>
+            match evalArgs fuel' args codeOverride state with
+            | .ok (state', args') => .ok (state', arg :: args')
+            | .error err => .error err
+    | .error err => .error err
+  termination_by (fuel, 0, sizeOf args)
+
+  def evalArgs (fuel : Nat) (args : List EvmYul.Yul.Ast.Expr)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception (State × List Word) :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        match args with
+        | [] => .ok (state, [])
+        | arg :: args =>
+            evalTail fuel' args codeOverride
+              (eval fuel' arg codeOverride state)
+  termination_by (fuel, 1, sizeOf args)
+
+  def evalValues (fuel : Nat) (expr : EvmYul.Yul.Ast.Expr)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception (State × List Word) :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        match expr with
+        | .Call (.inl prim) args =>
+            match evalArgs fuel' args.reverse codeOverride state with
+            | .ok (stateAfterArgs, values) =>
+                primCall fuel' stateAfterArgs prim values.reverse
+            | .error err => .error err
+        | .Call (.inr yulFunctionName) args =>
+            match evalArgs fuel' args.reverse codeOverride state with
+            | .ok (stateAfterArgs, values) =>
+                call fuel' values.reverse (some yulFunctionName)
+                  codeOverride stateAfterArgs
+            | .error err => .error err
+        | .Var id =>
+            match state.source.lookup? id with
+            | some value => .ok (state, [value])
+            | none => .error (.UnknownIdentifier id)
+        | .Lit value => .ok (state, [value])
+  termination_by (fuel, 2, sizeOf expr)
+
+  def eval (fuel : Nat) (expr : EvmYul.Yul.Ast.Expr)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception (State × Word) :=
+    match evalValues fuel expr codeOverride state with
+    | .ok (state', values) => .ok (state', values.head!)
+    | .error err => .error err
+  termination_by (fuel, 3, sizeOf expr)
+
+  def call (fuel : Nat) (args : List Word)
+      (yulFunctionNameOption : Option EvmYul.Yul.Ast.YulFunctionName)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception (State × List Word) :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        match state.source.sharedState.accountMap.find?
+            state.source.executionEnv.codeOwner with
+        | none =>
+            .error (.MissingContract
+              (s!"{state.source.executionEnv.codeOwner}"))
+        | some yulContract =>
+            let code : EvmYul.Yul.Ast.YulContract :=
+              codeOverride.getD yulContract.code
+            let fOpt : Option EvmYul.Yul.Ast.FunctionDefinition :=
+              match yulFunctionNameOption with
+              | none =>
+                  some (EvmYul.Yul.Ast.FunctionDefinition.Def [] []
+                    [code.dispatcher])
+              | some yulFunctionName =>
+                  code.functions.lookup yulFunctionName
+            match fOpt with
+            | none =>
+                .error (.MissingContractFunction
+                  (yulFunctionNameOption.getD ".none"))
+            | some f =>
+                match f with
+                | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body =>
+                    let source₁ :=
+                      EvmYul.Yul.State.mkOk
+                        (state.source.initcall params rets args)
+                    match exec fuel' (.Block body) codeOverride
+                        { state with source := source₁ } with
+                    | .error err => .error err
+                    | .ok state₂ =>
+                        let source₃ :=
+                          (state₂.source.reviveJump.overwrite?
+                            state.source).setStore state.source
+                        .ok ({ state₂ with source := source₃ },
+                          List.map state₂.source.lookup! rets)
+  termination_by (fuel, 4, sizeOf args)
+
+  def callDispatcher (fuel : Nat)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception (State × List Word) :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        let f :=
+          EvmYul.Yul.Ast.FunctionDefinition.Def [] []
+            [state.source.executionEnv.code.dispatcher]
+        match f with
+        | EvmYul.Yul.Ast.FunctionDefinition.Def params rets body =>
+            let source₁ :=
+              EvmYul.Yul.State.mkOk
+                (state.source.initcall params rets [])
+            match exec fuel' (.Block body) codeOverride
+                { state with source := source₁ } with
+            | .error err => .error err
+            | .ok state₂ =>
+                let source₃ :=
+                  (state₂.source.reviveJump.overwrite?
+                    state.source).setStore state.source
+                .ok ({ state₂ with source := source₃ },
+                  List.map state₂.source.lookup! rets)
+  termination_by (fuel, 5, 0)
+
+  def execSeq (fuel : Nat) (stmts : List EvmYul.Yul.Ast.Stmt)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception State :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        match stmts with
+        | [] => .ok state
+        | stmt :: stmts =>
+            match exec fuel' stmt codeOverride state with
+            | .error err => .error err
+            | .ok state₁ =>
+                match state₁.source with
+                | .Ok _ _ => execSeq fuel' stmts codeOverride state₁
+                | .OutOfFuel => .ok state₁
+                | .Checkpoint _ => .ok state₁
+  termination_by (fuel, 6, sizeOf stmts)
+
+  def exec (fuel : Nat) (stmt : EvmYul.Yul.Ast.Stmt)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception State :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | fuel' + 1 =>
+        match stmt with
+        | .Block stmts =>
+            match execSeq fuel' stmts codeOverride state with
+            | .error err => .error err
+            | .ok state₁ =>
+                .ok { state₁ with
+                  source :=
+                    state₁.source.restrictStoreTo state.source.store }
+        | .Let vars exprOption =>
+            match EvmYul.Yul.checkDeclaration state.source vars with
+            | .error err => .error err
+            | .ok () =>
+                match exprOption with
+                | none =>
+                    .ok { state with
+                      source := state.source.zeroFill vars }
+                | some expr =>
+                    multifill vars
+                      (evalValues fuel' expr codeOverride state)
+        | .Assign vars expr =>
+            match EvmYul.Yul.checkAssignment state.source vars with
+            | .error err => .error err
+            | .ok () =>
+                multifill vars (evalValues fuel' expr codeOverride state)
+        | .If cond body =>
+            match eval fuel' cond codeOverride state with
+            | .error err => .error err
+            | .ok (state₁, condValue) =>
+                if condValue ≠ ⟨0⟩ then
+                  exec fuel' (.Block body) codeOverride state₁
+                else
+                  .ok state₁
+        | .ExprStmtCall expr =>
+            match expr with
+            | .Call (.inl prim) args =>
+                match evalArgs fuel' args.reverse codeOverride state with
+                | .ok (stateAfterArgs, values) =>
+                    multifill [] (primCall fuel' stateAfterArgs prim
+                      values.reverse)
+                | .error err => .error err
+            | .Call (.inr yulFunctionName) args =>
+                match evalArgs fuel' args.reverse codeOverride state with
+                | .ok (stateAfterArgs, values) =>
+                    match fuel' with
+                    | 0 => .error .OutOfFuel
+                    | fuel'' + 1 =>
+                        multifill []
+                          (call fuel'' values.reverse
+                            (some yulFunctionName) codeOverride
+                            stateAfterArgs)
+                | .error err => .error err
+            | _ => .error .InvalidExpression
+        | .Switch cond cases' default' =>
+            match eval fuel' cond codeOverride state with
+            | .error err => .error err
+            | .ok (state₁, condValue) =>
+                exec fuel'
+                  (.Block
+                    (EvmYul.Yul.selectSwitchCase condValue default'
+                      cases'))
+                  codeOverride state₁
+        | .For cond post body =>
+            loop fuel' cond post body codeOverride state
+        | .Continue =>
+            .ok { state with
+              source := EvmYul.Yul.State.setContinue state.source }
+        | .Break =>
+            .ok { state with
+              source := EvmYul.Yul.State.setBreak state.source }
+        | .Leave =>
+            .ok { state with
+              source := EvmYul.Yul.State.setLeave state.source }
+  termination_by (fuel, 7, sizeOf stmt)
+
+  def loop (fuel : Nat) (cond : EvmYul.Yul.Ast.Expr)
+      (post body : List EvmYul.Yul.Ast.Stmt)
+      (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+      (state : State) :
+      Except EvmYul.Yul.Exception State :=
+    match fuel with
+    | 0 => .error .OutOfFuel
+    | 1 => .error .OutOfFuel
+    | fuel' + 1 + 1 =>
+        match eval fuel' cond codeOverride
+            { state with source := EvmYul.Yul.State.mkOk state.source } with
+        | .error err => .error err
+        | .ok (state₁, condValue) =>
+            if condValue = ⟨0⟩ then
+              .ok { state₁ with
+                source := state₁.source.overwrite? state.source }
+            else
+              match exec fuel' (.Block body) codeOverride state₁ with
+              | .error err => .error err
+              | .ok state₂ =>
+                  match state₂.source with
+                  | .OutOfFuel =>
+                      .ok { state₂ with
+                        source := state₂.source.overwrite? state.source }
+                  | .Checkpoint (.Break _ _) =>
+                      .ok { state₂ with
+                        source :=
+                          state₂.source.reviveJump.overwrite? state.source }
+                  | .Checkpoint (.Leave _ _) =>
+                      .ok { state₂ with
+                        source := state₂.source.overwrite? state.source }
+                  | .Checkpoint (.Continue _ _)
+                  | _ =>
+                      match exec fuel' (.Block post) codeOverride
+                          { state₂ with
+                            source := state₂.source.reviveJump } with
+                      | .error err => .error err
+                      | .ok state₃ =>
+                          let source₄ :=
+                            state₃.source.overwrite? state.source
+                          match state₃.source with
+                          | .OutOfFuel =>
+                              .ok { state₃ with source := source₄ }
+                          | .Checkpoint (.Leave _ _) =>
+                              .ok { state₃ with source := source₄ }
+                          | _ =>
+                              match exec fuel' (.For cond post body)
+                                  codeOverride
+                                  { state₃ with source := source₄ } with
+                              | .error err => .error err
+                              | .ok state₅ =>
+                                  .ok { state₅ with
+                                    source :=
+                                      state₅.source.overwrite?
+                                        state.source }
+  termination_by (fuel, 8, sizeOf cond + sizeOf post + sizeOf body)
+
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | exact Prod.Lex.right _ (Prod.Lex.left _ _ (by omega))
+
+end
+
+theorem evalArgs_nil_succ (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract) (state : State) :
+    evalArgs fuel.succ [] codeOverride state = .ok (state, []) := by
+  simp [evalArgs]
+
+theorem evalValues_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    evalValues fuel.succ.succ
+        (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])
+        codeOverride
+        { source := source, trace := { kind := .gas, value := value } :: trace } =
+      .ok ({ source := source, trace := trace }, [value]) := by
+  simp [evalValues, evalArgs, primCall, consume]
+
+theorem evalValues_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    evalValues fuel.succ.succ
+        (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])
+        codeOverride
+        { source := source,
+          trace := { kind := .msize, value := value } :: trace } =
+      .ok ({ source := source, trace := trace }, [value]) := by
+  simp [evalValues, evalArgs, primCall, consume]
+
+theorem exec_exprStmtCall_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    exec fuel.succ.succ
+        (.ExprStmtCall
+          (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))
+        codeOverride
+        { source := source, trace := { kind := .gas, value := value } :: trace } =
+      .ok ({ source := source.multifill [] [value], trace := trace }) := by
+  simp [exec, evalArgs, primCall, consume, multifill]
+
+theorem exec_exprStmtCall_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
+    exec fuel.succ.succ
+        (.ExprStmtCall
+          (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))
+        codeOverride
+        { source := source, trace := { kind := .msize, value := value } :: trace } =
+      .ok ({ source := source.multifill [] [value], trace := trace }) := by
+  simp [exec, evalArgs, primCall, consume, multifill]
+
+theorem exec_let_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (name : EvmYul.Identifier)
+    (value : Word) (trace : Trace)
+    (hDecl : EvmYul.Yul.checkDeclaration source [name] = .ok ()) :
+    exec fuel.succ.succ.succ
+        (.Let [name]
+          (some
+            (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])))
+        codeOverride
+        { source := source, trace := { kind := .gas, value := value } :: trace } =
+      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+  simp [exec, hDecl, evalValues, evalArgs, primCall, consume, multifill]
+
+theorem exec_let_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (name : EvmYul.Identifier)
+    (value : Word) (trace : Trace)
+    (hDecl : EvmYul.Yul.checkDeclaration source [name] = .ok ()) :
+    exec fuel.succ.succ.succ
+        (.Let [name]
+          (some
+            (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])))
+        codeOverride
+        { source := source, trace := { kind := .msize, value := value } :: trace } =
+      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+  simp [exec, hDecl, evalValues, evalArgs, primCall, consume, multifill]
+
+theorem exec_assign_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (name : EvmYul.Identifier)
+    (value : Word) (trace : Trace)
+    (hAssign : EvmYul.Yul.checkAssignment source [name] = .ok ()) :
+    exec fuel.succ.succ.succ
+        (.Assign [name]
+          (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))
+        codeOverride
+        { source := source, trace := { kind := .gas, value := value } :: trace } =
+      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+  simp [exec, hAssign, evalValues, evalArgs, primCall, consume, multifill]
+
+theorem exec_assign_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (source : EvmYul.Yul.State) (name : EvmYul.Identifier)
+    (value : Word) (trace : Trace)
+    (hAssign : EvmYul.Yul.checkAssignment source [name] = .ok ()) :
+    exec fuel.succ.succ.succ
+        (.Assign [name]
+          (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))
+        codeOverride
+        { source := source,
+          trace := { kind := .msize, value := value } :: trace } =
+	      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+  simp [exec, hAssign, evalValues, evalArgs, primCall, consume, multifill]
+
+theorem execSeq_singleton_let_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl :
+      EvmYul.Yul.checkDeclaration (.Ok shared store) [name] = .ok ()) :
+    execSeq fuel.succ.succ.succ.succ
+        [(.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])))]
+        codeOverride
+        { source := .Ok shared store,
+          trace := { kind := .gas, value := value } :: trace } =
+      .ok
+        { source :=
+            EvmYul.Yul.State.multifill [name] [value] (.Ok shared store),
+          trace := trace } := by
+  have hHead :=
+    exec_let_gas_cons fuel codeOverride (.Ok shared store) name value trace
+      hDecl
+  simp [execSeq, hHead, EvmYul.Yul.State.multifill,
+    EvmYul.Yul.State.insert]
+
+theorem execSeq_singleton_let_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl :
+      EvmYul.Yul.checkDeclaration (.Ok shared store) [name] = .ok ()) :
+    execSeq fuel.succ.succ.succ.succ
+        [(.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])))]
+        codeOverride
+        { source := .Ok shared store,
+          trace := { kind := .msize, value := value } :: trace } =
+      .ok
+        { source :=
+            EvmYul.Yul.State.multifill [name] [value] (.Ok shared store),
+          trace := trace } := by
+  have hHead :=
+    exec_let_msize_cons fuel codeOverride (.Ok shared store) name value trace
+      hDecl
+  simp [execSeq, hHead, EvmYul.Yul.State.multifill,
+    EvmYul.Yul.State.insert]
+
+theorem execSeq_singleton_assign_gas_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign :
+      EvmYul.Yul.checkAssignment (.Ok shared store) [name] = .ok ()) :
+    execSeq fuel.succ.succ.succ.succ
+        [(.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))]
+        codeOverride
+        { source := .Ok shared store,
+          trace := { kind := .gas, value := value } :: trace } =
+      .ok
+        { source :=
+            EvmYul.Yul.State.multifill [name] [value] (.Ok shared store),
+          trace := trace } := by
+  have hHead :=
+    exec_assign_gas_cons fuel codeOverride (.Ok shared store) name value trace
+      hAssign
+  simp [execSeq, hHead, EvmYul.Yul.State.multifill,
+    EvmYul.Yul.State.insert]
+
+theorem execSeq_singleton_assign_msize_cons (fuel : Nat)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (shared : EvmYul.SharedState .Yul) (store : EvmYul.Yul.VarStore)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign :
+      EvmYul.Yul.checkAssignment (.Ok shared store) [name] = .ok ()) :
+    execSeq fuel.succ.succ.succ.succ
+        [(.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))]
+        codeOverride
+        { source := .Ok shared store,
+          trace := { kind := .msize, value := value } :: trace } =
+      .ok
+        { source :=
+            EvmYul.Yul.State.multifill [name] [value] (.Ok shared store),
+          trace := trace } := by
+  have hHead :=
+    exec_assign_msize_cons fuel codeOverride (.Ok shared store) name value trace
+      hAssign
+  simp [execSeq, hHead, EvmYul.Yul.State.multifill,
+    EvmYul.Yul.State.insert]
+
+inductive Result where
+  | regular (state : State)
+  | yulHalt (source : EvmYul.Yul.State) (value : Word)
+  | revert (sourceBeforeRevert : EvmYul.Yul.State)
+
+namespace Program
+
+def installContract (program : _root_.EvmCompiler.Yul.Program)
+    (state : State) : State :=
+  { state with
+    source :=
+      match state.source with
+      | .Ok shared store =>
+          .Ok
+            { shared with
+              executionEnv :=
+                { shared.executionEnv with code := program.contract } }
+            store
+      | .OutOfFuel => .OutOfFuel
+      | .Checkpoint jump => .Checkpoint jump }
+
+@[simp] theorem installContract_trace
+    (program : _root_.EvmCompiler.Yul.Program) (state : State) :
+    (installContract program state).trace = state.trace := rfl
+
+def run (fuel : Nat) (program : _root_.EvmCompiler.Yul.Program)
+    (source : EvmYul.Yul.State) (trace : Trace) :
+    Except EvmYul.Yul.Exception Result :=
+  match
+      callDispatcher fuel (some program.contract)
+        (installContract program { source := source, trace := trace }) with
+  | .ok (state', _rets) => .ok (.regular state')
+  | .error (.YulHalt source' value) => .ok (.yulHalt source' value)
+  | .error (.Revert sourceBeforeRevert) =>
+      .ok (.revert sourceBeforeRevert)
+  | .error err => .error err
+
+end Program
+
+end YulSourceReplay
 
 theorem replay_eval_gas_cons
     (shared : EvmYul.SharedState .EVM) (value : Word) (trace : Trace) :
@@ -52266,6 +52923,396 @@ end Program
 
 end SourceReplay
 
+namespace YulToLocalsExprReplayBridge
+
+theorem lower1Unchecked_gas_cons
+    {fresh fresh' : Fresh.State}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (value : Word) (trace : Trace)
+    (hLower :
+      _root_.EvmCompiler.Yul.Expr.lower1Unchecked? fresh
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []) =
+        some (pre, lower, fresh')) :
+    pre = [] ∧
+      lower = (Locals.Expr.prim .gas .nil : Locals.Expr 1) ∧
+      fresh' = fresh ∧
+      YulSourceReplay.evalValues fuel.succ.succ
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok ({ source := yulSource, trace := trace }, [value]) ∧
+      SourceReplay.Expr.eval lower
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok ({ localsState with trace := trace }, [value]) := by
+  rw [_root_.EvmCompiler.Yul.Expr.lower1Unchecked?_gas] at hLower
+  cases hLower
+  exact
+    ⟨rfl, rfl, rfl,
+      YulSourceReplay.evalValues_gas_cons fuel codeOverride yulSource value
+        trace,
+      SourceReplay.Expr.eval_gas_cons localsState value trace⟩
+
+theorem lower1Unchecked_msize_cons
+    {fresh fresh' : Fresh.State}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (value : Word) (trace : Trace)
+    (hLower :
+      _root_.EvmCompiler.Yul.Expr.lower1Unchecked? fresh
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []) =
+        some (pre, lower, fresh')) :
+    pre = [] ∧
+      lower = (Locals.Expr.prim .msize .nil : Locals.Expr 1) ∧
+      fresh' = fresh ∧
+      YulSourceReplay.evalValues fuel.succ.succ
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok ({ source := yulSource, trace := trace }, [value]) ∧
+      SourceReplay.Expr.eval lower
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok ({ localsState with trace := trace }, [value]) := by
+  rw [_root_.EvmCompiler.Yul.Expr.lower1Unchecked?_msize] at hLower
+  cases hLower
+  exact
+    ⟨rfl, rfl, rfl,
+      YulSourceReplay.evalValues_msize_cons fuel codeOverride yulSource value
+        trace,
+      SourceReplay.Expr.eval_msize_cons localsState value trace⟩
+
+theorem lower1Unchecked_gas_evalOne_cons
+    {fresh fresh' : Fresh.State}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (value : Word) (trace : Trace)
+    (hLower :
+      _root_.EvmCompiler.Yul.Expr.lower1Unchecked? fresh
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []) =
+        some (pre, lower, fresh')) :
+    pre = [] ∧
+      lower = (Locals.Expr.prim .gas .nil : Locals.Expr 1) ∧
+      fresh' = fresh ∧
+      YulSourceReplay.eval fuel.succ.succ
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok ({ source := yulSource, trace := trace }, value) ∧
+      SourceReplay.Expr.evalOne lower
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok ({ localsState with trace := trace }, value) := by
+  rw [_root_.EvmCompiler.Yul.Expr.lower1Unchecked?_gas] at hLower
+  cases hLower
+  have hYul :=
+    YulSourceReplay.evalValues_gas_cons fuel codeOverride yulSource value
+      trace
+  have hLocals := SourceReplay.Expr.eval_gas_cons localsState value trace
+  exact
+    ⟨rfl, rfl, rfl,
+      by simp [YulSourceReplay.eval, hYul],
+      by simp [SourceReplay.Expr.evalOne, hLocals]⟩
+
+theorem lower1Unchecked_msize_evalOne_cons
+    {fresh fresh' : Fresh.State}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (fuel : Nat) (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (value : Word) (trace : Trace)
+    (hLower :
+      _root_.EvmCompiler.Yul.Expr.lower1Unchecked? fresh
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []) =
+        some (pre, lower, fresh')) :
+    pre = [] ∧
+      lower = (Locals.Expr.prim .msize .nil : Locals.Expr 1) ∧
+      fresh' = fresh ∧
+      YulSourceReplay.eval fuel.succ.succ
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok ({ source := yulSource, trace := trace }, value) ∧
+      SourceReplay.Expr.evalOne lower
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok ({ localsState with trace := trace }, value) := by
+  rw [_root_.EvmCompiler.Yul.Expr.lower1Unchecked?_msize] at hLower
+  cases hLower
+  have hYul :=
+    YulSourceReplay.evalValues_msize_cons fuel codeOverride yulSource value
+      trace
+  have hLocals := SourceReplay.Expr.eval_msize_cons localsState value trace
+  exact
+    ⟨rfl, rfl, rfl,
+      by simp [YulSourceReplay.eval, hYul],
+      by simp [SourceReplay.Expr.evalOne, hLocals]⟩
+
+end YulToLocalsExprReplayBridge
+
+namespace YulToLocalsStmtReplayBridge
+
+theorem let_gas_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl : EvmYul.Yul.checkDeclaration yulSource [name] = .ok ()) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.let_ (identName name)
+            (.prim .gas .nil : Locals.Expr 1)) =
+        [Locals.Stmt.let_ (identName name)
+          (.prim .gas .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.exec yulFuel.succ.succ.succ
+          (.Let [name]
+            (some
+              (.Call (.inl
+                ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])))
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] yulSource) trace) ∧
+      SourceReplay.Stmt.run program ctx localsFuel
+          (Locals.Stmt.let_ (identName name)
+            (.prim .gas .nil : Locals.Expr 1))
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+  have hYul :=
+    YulSourceReplay.exec_let_gas_cons yulFuel codeOverride yulSource name
+      value trace hDecl
+  have hLocals := SourceReplay.Expr.eval_gas_cons localsState value trace
+  exact
+    ⟨by
+      simpa using
+        _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_gas
+          lowerFuel fresh name,
+      by simp [Functions.Stmt.toLocals],
+      hYul,
+      by simp [SourceReplay.Stmt.run, SourceReplay.Expr.evalOne, hLocals]⟩
+
+theorem let_msize_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hDecl : EvmYul.Yul.checkDeclaration yulSource [name] = .ok ()) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Let [name]
+          (some
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))) =
+      some
+        ([Functions.Stmt.let_ (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.let_ (identName name)
+            (.prim .msize .nil : Locals.Expr 1)) =
+        [Locals.Stmt.let_ (identName name)
+          (.prim .msize .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.exec yulFuel.succ.succ.succ
+          (.Let [name]
+            (some
+              (.Call (.inl
+                ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])))
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] yulSource) trace) ∧
+      SourceReplay.Stmt.run program ctx localsFuel
+          (Locals.Stmt.let_ (identName name)
+            (.prim .msize .nil : Locals.Expr 1))
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).insert (identName name) value),
+            { ctx with scope := (identName name :: ctx.scope) }) := by
+  have hYul :=
+    YulSourceReplay.exec_let_msize_cons yulFuel codeOverride yulSource name
+      value trace hDecl
+  have hLocals := SourceReplay.Expr.eval_msize_cons localsState value trace
+  exact
+    ⟨by
+      simpa using
+        _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_msize
+          lowerFuel fresh name,
+      by simp [Functions.Stmt.toLocals],
+      hYul,
+      by simp [SourceReplay.Stmt.run, SourceReplay.Expr.evalOne, hLocals]⟩
+
+theorem assign_gas_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign : EvmYul.Yul.checkAssignment yulSource [name] = .ok ())
+    (hContains : localsState.vars.contains (identName name) = true) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .gas .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.assign (identName name)
+            (.prim .gas .nil : Locals.Expr 1)) =
+        [Locals.Stmt.assign (identName name)
+          (.prim .gas .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.exec yulFuel.succ.succ.succ
+          (.Assign [name]
+            (.Call (.inl
+              ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []))
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] yulSource) trace) ∧
+      SourceReplay.Stmt.run program ctx localsFuel
+          (Locals.Stmt.assign (identName name)
+            (.prim .gas .nil : Locals.Expr 1))
+          { localsState with
+            trace := { kind := .gas, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+  have hYul :=
+    YulSourceReplay.exec_assign_gas_cons yulFuel codeOverride yulSource name
+      value trace hAssign
+  have hLocals := SourceReplay.Expr.eval_gas_cons localsState value trace
+  have hContains' :
+      ({ localsState with
+        trace := { kind := .gas, value := value } :: trace } :
+        SourceReplay.State).vars.contains (identName name) = true := by
+    simpa [SourceReplay.State.vars] using hContains
+  exact
+    ⟨by
+      simpa using
+        _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_gas
+          lowerFuel fresh name,
+      by simp [Functions.Stmt.toLocals],
+      hYul,
+      by
+        simp [SourceReplay.Stmt.run, hContains',
+          SourceReplay.Expr.evalOne, hLocals]⟩
+
+theorem assign_msize_cons
+    (lowerFuel yulFuel localsFuel : Nat)
+    (fresh : Fresh.State) (program : Locals.Program)
+    (ctx : SourceReplay.Ctx)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (yulSource : EvmYul.Yul.State) (localsState : SourceReplay.State)
+    (name : EvmYul.Identifier) (value : Word) (trace : Trace)
+    (hAssign : EvmYul.Yul.checkAssignment yulSource [name] = .ok ())
+    (hContains : localsState.vars.contains (identName name) = true) :
+    _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?
+        lowerFuel.succ fresh
+        (.Assign [name]
+          (.Call (.inl
+            ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])) =
+      some
+        ([Functions.Stmt.assign (identName name)
+          (.prim .msize .nil : Locals.Expr 1)], fresh) ∧
+      Functions.Stmt.toLocals []
+          (Functions.Stmt.assign (identName name)
+            (.prim .msize .nil : Locals.Expr 1)) =
+        [Locals.Stmt.assign (identName name)
+          (.prim .msize .nil : Locals.Expr 1)] ∧
+      YulSourceReplay.exec yulFuel.succ.succ.succ
+          (.Assign [name]
+            (.Call (.inl
+              ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []))
+          codeOverride
+          { source := yulSource,
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (YulSourceReplay.State.mk
+            (EvmYul.Yul.State.multifill [name] [value] yulSource) trace) ∧
+      SourceReplay.Stmt.run program ctx localsFuel
+          (Locals.Stmt.assign (identName name)
+            (.prim .msize .nil : Locals.Expr 1))
+          { localsState with
+            trace := { kind := .msize, value := value } :: trace } =
+        .ok
+          (SourceReplay.Outcome.regular
+              (({ localsState with trace := trace } :
+                SourceReplay.State).withVars
+                (Locals.Source.Store.insert
+                  (({ localsState with trace := trace } :
+                    SourceReplay.State).vars)
+                  (identName name) value)),
+            ctx) := by
+  have hYul :=
+    YulSourceReplay.exec_assign_msize_cons yulFuel codeOverride yulSource name
+      value trace hAssign
+  have hLocals := SourceReplay.Expr.eval_msize_cons localsState value trace
+  have hContains' :
+      ({ localsState with
+        trace := { kind := .msize, value := value } :: trace } :
+        SourceReplay.State).vars.contains (identName name) = true := by
+    simpa [SourceReplay.State.vars] using hContains
+  exact
+    ⟨by
+      simpa using
+        _root_.EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_msize
+          lowerFuel fresh name,
+      by simp [Functions.Stmt.toLocals],
+      hYul,
+      by
+        simp [SourceReplay.Stmt.run, hContains',
+          SourceReplay.Expr.evalOne, hLocals]⟩
+
+end YulToLocalsStmtReplayBridge
+
 namespace AssemblyOracle
 
 theorem target_run_result_unique
@@ -52385,6 +53432,124 @@ theorem source_run_induces_target_run_exists_of_compile_byteLength_lt
 
 end AssemblyOracle
 
+namespace YulObserverRoute
+
+noncomputable def toLocalsWithObservers?
+    (program : _root_.EvmCompiler.Yul.Program) :
+    Option Locals.Program := do
+  let lower ← _root_.EvmCompiler.Yul.Program.toObjectsWithObservers? program
+  some lower.toFunctions.toLocals
+
+noncomputable def compileCheckedWithObservers?
+    (program : _root_.EvmCompiler.Yul.Program) :
+    Option Assembly.Program := do
+  let sourceProgram ← toLocalsWithObservers? program
+  Locals.Source.Program.compileChecked? sourceProgram
+
+noncomputable def compileCheckedLocalsAssemblyTargetWithObservers?
+    (program : _root_.EvmCompiler.Yul.Program) :
+    Option (Locals.Program × Assembly.Program × Assembly.TargetProgram) := do
+  let sourceProgram ← toLocalsWithObservers? program
+  let asm ← Locals.Source.Program.compileChecked? sourceProgram
+  let target ← Assembly.compileExecutable? asm
+  some (sourceProgram, asm, target)
+
+theorem toLocalsWithObservers?_eq_some
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program}
+    (hLower : toLocalsWithObservers? program = some sourceProgram) :
+    ∃ lower : Objects.Program,
+      _root_.EvmCompiler.Yul.Program.toObjectsWithObservers? program =
+          some lower ∧
+        lower.toFunctions.toLocals = sourceProgram := by
+  unfold toLocalsWithObservers? at hLower
+  cases hObj :
+      _root_.EvmCompiler.Yul.Program.toObjectsWithObservers? program with
+  | none =>
+      simp [hObj] at hLower
+  | some lower =>
+      simp [hObj] at hLower
+      exact ⟨lower, rfl, hLower⟩
+
+theorem compileCheckedLocalsAssemblyTargetWithObservers?_eq_some
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    {target : Assembly.TargetProgram}
+    (hCompile :
+      compileCheckedLocalsAssemblyTargetWithObservers? program =
+        some (sourceProgram, asm, target)) :
+    toLocalsWithObservers? program = some sourceProgram ∧
+      Locals.Source.Program.compileChecked? sourceProgram = some asm ∧
+      Assembly.compileExecutable? asm = some target := by
+  unfold compileCheckedLocalsAssemblyTargetWithObservers? at hCompile
+  cases hLower : toLocalsWithObservers? program with
+  | none =>
+      simp [hLower] at hCompile
+  | some sourceProgram' =>
+      cases hChecked :
+          Locals.Source.Program.compileChecked? sourceProgram' with
+      | none =>
+          simp [hLower, hChecked] at hCompile
+      | some asm' =>
+          cases hExecutable : Assembly.compileExecutable? asm' with
+          | none =>
+              simp [hLower, hChecked, hExecutable] at hCompile
+          | some target' =>
+              have hCompile' :
+                  some (sourceProgram', asm', target') =
+                    some (sourceProgram, asm, target) := by
+                simpa [hLower, hChecked, hExecutable] using hCompile
+              cases hCompile'
+              exact
+                ⟨by simpa using hLower,
+                  by simpa using hChecked,
+                  by simpa using hExecutable⟩
+
+theorem compileCheckedWithObservers?_of_localsAssemblyTarget
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    {target : Assembly.TargetProgram}
+    (hCompile :
+      compileCheckedLocalsAssemblyTargetWithObservers? program =
+        some (sourceProgram, asm, target)) :
+    compileCheckedWithObservers? program = some asm := by
+  rcases compileCheckedLocalsAssemblyTargetWithObservers?_eq_some hCompile with
+    ⟨hLower, hChecked, _hExecutable⟩
+  simp [compileCheckedWithObservers?, hLower, hChecked]
+
+theorem compileWithObservers?_of_localsAssemblyTarget
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    {target : Assembly.TargetProgram}
+    (hCompile :
+      compileCheckedLocalsAssemblyTargetWithObservers? program =
+        some (sourceProgram, asm, target)) :
+    _root_.EvmCompiler.Yul.Program.compileWithObservers? program =
+      some target := by
+  rcases compileCheckedLocalsAssemblyTargetWithObservers?_eq_some hCompile with
+    ⟨hLower, hChecked, hExecutable⟩
+  rcases toLocalsWithObservers?_eq_some hLower with
+    ⟨lower, hObj, hSource⟩
+  subst sourceProgram
+  have hLocalsExecutable :
+      Locals.Program.compileExecutable?
+          lower.toFunctions.toLocals = some target := by
+    rcases Locals.Source.Program.compileChecked?_eq_some hChecked with
+      ⟨exprProgram, hExpr, hStructuredCompile⟩
+    rcases
+        Structured.Preservation.ProcedurePreservation.compileChecked?_eq_some
+          hStructuredCompile with
+      ⟨hAsm, _hStructuredAccepted, _hBounds⟩
+    subst asm
+    simpa [Locals.Program.compileExecutable?,
+      Expressions.Program.compileExecutable?, Expressions.Program.compile,
+      hExpr] using hExecutable
+  simp [_root_.EvmCompiler.Yul.Program.compileWithObservers?,
+    Objects.Program.compile?, hObj, Functions.Inline.Program.compileExecutable?,
+    Functions.Program.compileExecutable?, hLocalsExecutable]
+
+end YulObserverRoute
+
 structure TargetDryRun where
   target : Assembly.TargetProgram
   fuel : Nat
@@ -52394,6 +53559,22 @@ structure TargetDryRun where
   run :
     Assembly.Target.runNResultWithObservers target fuel initial =
       .ok (result, trace)
+
+def YulToLocalsHaltReplayBridge
+    (resultRel :
+      YulSourceReplay.Result → Assembly.HaltKind → SourceReplay.State → Prop)
+    (program : _root_.EvmCompiler.Yul.Program)
+    (sourceProgram : Locals.Program) (dryRun : TargetDryRun) : Prop :=
+  ∃ (yulFuel : Nat) (yulInitial : EvmYul.Yul.State)
+    (yulResult : YulSourceReplay.Result)
+    (sourceFuel : Nat) (sourceOut : SourceReplay.State)
+    (kind : Assembly.HaltKind),
+    YulSourceReplay.Program.run yulFuel program yulInitial dryRun.trace =
+        .ok yulResult ∧
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut) ∧
+      resultRel yulResult kind sourceOut
 
 namespace TargetDryRun
 
@@ -53238,6 +54419,201 @@ theorem result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_toExpressions?_o
       (kind := kind) (dryHalt := dryHalt)
       hPrefix hSyntax hLower hDryHalt hCompile hStack hRun hLen hBounds
       hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hAccepted : Locals.Source.Program.CompileAccepted sourceProgram)
+    (hNoLoopShape :
+      SourceReplay.Block.noLoopReplayShape?
+        sourceProgram.body.stmts = true)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hCompileChecked :
+      Locals.Source.Program.compileChecked? sourceProgram = some asm)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? asm = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen : Assembly.Program.byteLength asm < EvmYul.UInt256.size)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted asm ∧
+        Assembly.Preservation.BlockTraceResultWithOracle asm dryRun.target
+          assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle asm assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  rcases Locals.Source.Program.compileChecked?_eq_some hCompileChecked with
+    ⟨exprProgram, hLower, hStructuredCompile⟩
+  rcases
+      Structured.Preservation.ProcedurePreservation.compileChecked?_eq_some
+        hStructuredCompile with
+    ⟨hAsm, _hStructuredAccepted, hBounds⟩
+  subst asm
+  exact
+    result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_toExpressions?_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+      (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun
+      (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hAccepted hNoLoopShape hSyntax hLower hDryHalt
+      (by simpa [Expressions.Program.compile] using hCompile)
+      hStack hRun
+      (by simpa [Expressions.Program.compile] using hLen)
+      hBounds hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileExecutable_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hAccepted : Locals.Source.Program.CompileAccepted sourceProgram)
+    (hNoLoopShape :
+      SourceReplay.Block.noLoopReplayShape?
+        sourceProgram.body.stmts = true)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hCompileChecked :
+      Locals.Source.Program.compileChecked? sourceProgram = some asm)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompileExecutable :
+      Assembly.compileExecutable? asm = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen : Assembly.Program.byteLength asm < EvmYul.UInt256.size)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted asm ∧
+        Assembly.Preservation.BlockTraceResultWithOracle asm dryRun.target
+          assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle asm assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] :=
+  result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    (sourceProgram := sourceProgram) (asm := asm) dryRun
+    (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+    (kind := kind) (dryHalt := dryHalt)
+    hAccepted hNoLoopShape hSyntax hCompileChecked hDryHalt
+    (by simpa [Assembly.compileExecutable?_eq_compile?] using hCompileExecutable)
+    hStack hRun hLen hInitialPc
+
+theorem result_eq_of_halted_yulObserverLocalsNoLoopReplayShapeCheck_run_of_compileCheckedRoute_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hAccepted : Locals.Source.Program.CompileAccepted sourceProgram)
+    (hNoLoopShape :
+      SourceReplay.Block.noLoopReplayShape?
+        sourceProgram.body.stmts = true)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hCompileRoute :
+      YulObserverRoute.compileCheckedLocalsAssemblyTargetWithObservers?
+        program = some (sourceProgram, asm, dryRun.target))
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen : Assembly.Program.byteLength asm < EvmYul.UInt256.size)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted asm ∧
+        Assembly.Preservation.BlockTraceResultWithOracle asm dryRun.target
+          assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle asm assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  rcases
+      YulObserverRoute.compileCheckedLocalsAssemblyTargetWithObservers?_eq_some
+        hCompileRoute with
+    ⟨_hLower, hCompileChecked, hCompileExecutable⟩
+  exact
+    result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_compileChecked_of_compileExecutable_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+      (sourceProgram := sourceProgram) (asm := asm) dryRun
+      (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hAccepted hNoLoopShape hSyntax hCompileChecked hDryHalt
+      hCompileExecutable hStack hRun hLen hInitialPc
+
+theorem result_eq_of_halted_yulSourceReplayBridge_of_compileCheckedRoute_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {program : _root_.EvmCompiler.Yul.Program}
+    {sourceProgram : Locals.Program} {asm : Assembly.Program}
+    {resultRel :
+      YulSourceReplay.Result → Assembly.HaltKind → SourceReplay.State → Prop}
+    (dryRun : TargetDryRun) {dryHalt : Assembly.Halt}
+    (hAccepted : Locals.Source.Program.CompileAccepted sourceProgram)
+    (hNoLoopShape :
+      SourceReplay.Block.noLoopReplayShape?
+        sourceProgram.body.stmts = true)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hCompileRoute :
+      YulObserverRoute.compileCheckedLocalsAssemblyTargetWithObservers?
+        program = some (sourceProgram, asm, dryRun.target))
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hStack : dryRun.initial.stack = [])
+    (hBridge :
+      YulToLocalsHaltReplayBridge resultRel program sourceProgram dryRun)
+    (hLen : Assembly.Program.byteLength asm < EvmYul.UInt256.size)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ yulFuel yulInitial yulResult sourceOut kind assemblyFuel halt,
+      YulSourceReplay.Program.run yulFuel program yulInitial dryRun.trace =
+        .ok yulResult ∧
+      resultRel yulResult kind sourceOut ∧
+      Assembly.Accepted asm ∧
+        Assembly.Preservation.BlockTraceResultWithOracle asm dryRun.target
+          assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle asm assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  rcases hBridge with
+    ⟨yulFuel, yulInitial, yulResult, sourceFuel, sourceOut, kind,
+      hYulRun, hSourceRun, hRel⟩
+  rcases
+      result_eq_of_halted_yulObserverLocalsNoLoopReplayShapeCheck_run_of_compileCheckedRoute_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+        (program := program) (sourceProgram := sourceProgram) (asm := asm)
+        dryRun (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+        (kind := kind) (dryHalt := dryHalt)
+        hAccepted hNoLoopShape hSyntax hCompileRoute hDryHalt hStack
+        hSourceRun hLen hInitialPc with
+    ⟨assemblyFuel, halt, hAsmAccepted, hTrace, hOracleRun, hResult,
+      hKind, hTraceEmpty⟩
+  exact
+    ⟨yulFuel, yulInitial, yulResult, sourceOut, kind, assemblyFuel, halt,
+      hYulRun, hRel, hAsmAccepted, hTrace, hOracleRun, hResult, hKind,
+      hTraceEmpty⟩
 
 theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
