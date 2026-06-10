@@ -31889,6 +31889,152 @@ theorem SwitchFallbackLoopStmtSoundBelow.of_le
       SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
         hSound.bodyContReference
 
+structure SwitchFallbackStmtPackagesBelow
+    (maxFuel : Nat) (range : ScratchRange) (program : Program)
+    (returns : List Name) (exprProgram : Expressions.Program) : Prop where
+  regular :
+    ∀ {handlers : FallbackHandlers},
+      SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
+        returns exprProgram
+  regularReference :
+    ∀ {handlers : FallbackHandlers},
+      SwitchFallbackStmtRegularReferenceSoundBelow maxFuel range program
+        handlers returns exprProgram
+  brkReference :
+    ∀ {handlers : FallbackHandlers},
+      SwitchFallbackStmtBrkReferenceSoundBelow maxFuel range program handlers
+        returns exprProgram
+  contReference :
+    ∀ {handlers : FallbackHandlers},
+      SwitchFallbackStmtContReferenceSoundBelow maxFuel range program handlers
+        returns exprProgram
+
+theorem SwitchFallbackStmtPackagesBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtPackagesBelow larger range program returns
+        exprProgram) :
+    SwitchFallbackStmtPackagesBelow smaller range program returns
+      exprProgram where
+  regular := by
+    intro handlers
+    exact
+      SwitchFallbackStmtRegularSoundBelow.of_le hFuelLe hSound.regular
+  regularReference := by
+    intro handlers
+    exact
+      SwitchFallbackStmtRegularReferenceSoundBelow.of_le hFuelLe
+        hSound.regularReference
+  brkReference := by
+    intro handlers
+    exact
+      SwitchFallbackStmtBrkReferenceSoundBelow.of_le hFuelLe
+        hSound.brkReference
+  contReference := by
+    intro handlers
+    exact
+      SwitchFallbackStmtContReferenceSoundBelow.of_le hFuelLe
+        hSound.contReference
+
+theorem SwitchFallbackStmtPackagesBelow.loopSound
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hSound :
+      SwitchFallbackStmtPackagesBelow maxFuel range program returns
+        exprProgram) :
+    SwitchFallbackLoopStmtSoundBelow maxFuel range program handlers returns
+      exprProgram where
+  looplessRegular := hSound.regular
+  bodyRegular := by
+    intro bodyHandlerScope
+    exact hSound.regular
+  bodyRegularReference := by
+    intro bodyHandlerScope
+    exact hSound.regularReference
+  bodyBrkReference := by
+    intro bodyHandlerScope
+    exact hSound.brkReference
+  bodyContReference := by
+    intro bodyHandlerScope
+    exact hSound.contReference
+
+structure SwitchFallbackDispatcherInputsBelow
+    (maxFuel : Nat) (range : ScratchRange) (program : Program)
+    (returns : List Name) (exprProgram : Expressions.Program) : Prop where
+  calls :
+    SwitchFallbackCallReplayBelow maxFuel range program exprProgram
+  stmts :
+    SwitchFallbackStmtPackagesBelow maxFuel range program returns exprProgram
+
+theorem SwitchFallbackDispatcherInputsBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {returns : List Name} {exprProgram : Expressions.Program}
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow larger range program returns
+        exprProgram) :
+    SwitchFallbackDispatcherInputsBelow smaller range program returns
+      exprProgram where
+  calls := SwitchFallbackCallReplayBelow.of_le hFuelLe hInputs.calls
+  stmts := SwitchFallbackStmtPackagesBelow.of_le hFuelLe hInputs.stmts
+
+theorem SwitchFallbackDispatcherInputsBelow.loopSound
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {exprProgram : Expressions.Program}
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow maxFuel range program returns
+        exprProgram) :
+    SwitchFallbackLoopStmtSoundBelow maxFuel range program handlers returns
+      exprProgram :=
+  hInputs.stmts.loopSound
+
+theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_of_dispatcher_inputs_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.call targets functionName args) =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow maxFuel range program returns
+        exprProgram) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular (target.withEVM final)) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter final ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      final.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope :=
+  compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_of_replay_package_below
+    hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
+    hFuelBound hInputs.calls
+
 theorem compileStmtListWithSwitchFallback?_brk_sound_meta_exact_handler_scope_reference_of_stmt_sound_below
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -54161,6 +54307,41 @@ theorem compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of
         (by simpa [Locals.Source.Program.AdaptiveSpillOpenOutcomeRel] using
           hOpenRel)
   exact ⟨targetFuel, targetOutcome, hAsmRun, hPrivate, hEndPc⟩
+
+theorem compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of_ghostRun_given_dispatcher_inputs_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxWords : Nat} {range : ScratchRange} {program : Program}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {asm : Assembly.Program}
+    {fuel : Nat} {initial : EVMState}
+    {sourceAfter ghostAfter : Source.State}
+    {sourceCtxAfter : Source.Ctx}
+    (hCompile :
+      compileCheckedPlannedPreallocWithSwitchFallback? maxWords program =
+        some (range, plan, exprProgram, asm))
+    (hInputs :
+      SwitchFallbackDispatcherInputsBelow fuel range program [] exprProgram)
+    (hInitialMemory : ScratchInitialMemoryEmpty initial.toMachineState)
+    (hInitialStack : initial.stack = [])
+    (hInitialPc : initial.pc = Assembly.Program.pcAfter [])
+    (hGhostRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          Source.Ctx.initial fuel program.body
+          (Source.Program.initialState
+            (range.preallocState initial).toSharedState) =
+        .ok (Source.Outcome.regular ghostAfter, sourceCtxAfter))
+    (hSourceGhost :
+      SourceStatePrivateScratchInvariant sourceAfter ghostAfter) :
+    ∃ targetFuel targetOutcome,
+      Assembly.Source.runNResult asm targetFuel initial =
+        .ok targetOutcome ∧
+      Locals.Source.Program.AdaptiveSpillPrivateObservableOutcomeRel range
+        (Source.Outcome.regular sourceAfter) targetOutcome ∧
+      Structured.Preservation.TargetOutcomeEndPc asm targetOutcome :=
+  compileCheckedPlannedPreallocWithSwitchFallback?_regular_observations_of_ghostRun_given_stmt_sound_below
+    hSpec hWordBytes hCompile hInputs.stmts.regular hInitialMemory
+    hInitialStack hInitialPc hGhostRun hSourceGhost
 
 theorem compileCheckedPlannedPrealloc?_regular_observations_of_ghostRun
     (hSpec : ZeroPaddingSpec)
