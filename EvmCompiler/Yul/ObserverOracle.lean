@@ -40509,6 +40509,42 @@ theorem runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
                     ⟨(((fuel + slack) + 2) + code.length), targetOut,
                       hReplay, hFinalRel⟩
 
+theorem run_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?_initial
+    {slack fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial : EVMState} {trace : Trace}
+    {outState : State}
+    (hPrefix :
+      Block.AtomicSwitchForPrefixSlack slack Locals.Source.Ctx.initial
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hStack : initial.stack = [])
+    (hRun :
+      run fuel program initial trace = .ok (Outcome.regular outState)) :
+    ∃ expressionFuel targetOut,
+      ExpressionsReplay.Block.runWithOracle lower.compile
+          (Assembly.Program.byteLength []) lower expressionFuel lower.body
+          (Structured.Program.initialState initial) trace =
+        .ok (Expressions.Outcome.regular targetOut, outState.trace) ∧
+      Locals.SourceLowering.StateRel Locals.Source.Ctx.initial.scope
+        outState.source targetOut := by
+  rcases
+      runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
+        (slack := slack) (fuel := fuel) (program := program)
+        (lower := lower)
+        (initial := State.initial initial.toSharedState trace)
+        (outState := outState)
+        (target := Structured.Program.initialState initial)
+        hPrefix hLower
+        (by
+          simpa [Locals.Source.Ctx.initial, State.initial] using
+            (Locals.SourceLowering.StateRel.initial
+              (initial := initial) hStack))
+        (by simpa [run] using hRun) with
+    ⟨expressionFuel, targetOut, hReplay, hFinalRel⟩
+  exact
+    ⟨expressionFuel, targetOut, by simpa [State.initial] using hReplay,
+      hFinalRel⟩
+
 theorem runState_observerFree_matches_source
     {fuel : Nat} {program : Locals.Program} {initial : State}
     {outcome : Outcome}

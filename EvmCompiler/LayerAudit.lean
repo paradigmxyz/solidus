@@ -1160,6 +1160,9 @@ abbrev sourceReplayRun :=
 abbrev sourceReplayProgramRunStateAtomicSwitchForPrefixSlackWithOracleOfToExpressions :=
   @Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
 
+abbrev sourceReplayProgramRunAtomicSwitchForPrefixSlackWithOracleOfToExpressionsInitial :=
+  @Yul.ObserverOracle.SourceReplay.Program.run_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?_initial
+
 abbrev sourceReplayEvalGasCons :=
   @Yul.ObserverOracle.SourceReplay.Expr.eval_gas_cons
 
