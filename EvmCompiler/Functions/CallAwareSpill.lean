@@ -21419,6 +21419,146 @@ theorem compileStmtWithSwitchFallback?_cont_sound_meta_branch_premises
         compileContinueWithSpillFallback?_cont_sound_meta hSpec hWordBytes
           hCompile hHandlers hRel hDefined hLength hSourceRun
 
+theorem compileStmtWithSwitchFallback?_brk_sound_meta_exact_handler_scope_reference
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout .brk =
+        some plan)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hBreakScope : sourceCtx.breakScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .brk source =
+        .ok (Source.Outcome.brk sourceAfter, sourceCtxAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.brk brkTarget) ∧
+        SpillStateRel range handlerScope [] referenceLayout sourceAfter
+          brkTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+        brkTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  unfold compileStmtWithSwitchFallback? at hCompile
+  cases hHelper :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+        .brk with
+  | some helperPlan =>
+      simp [hHelper] at hCompile
+      cases hCompile
+      have hOwned :
+          SourceLowering.SourceToLocals.Stmt.SourceOwned returns .brk := by
+        simp [SourceLowering.SourceToLocals.Stmt.SourceOwned]
+      rcases
+          compileNonCallStmtSpan?_expressionsBlock_sound_of_source_run
+            hSpec hWordBytes (exprProgram := exprProgram)
+            hHelper hOwned hScope hRel hDefined hSourceRun with
+        ⟨result, _exprFuel, _hRun, hOutcomeRel⟩
+      cases result with
+      | regular final =>
+          simp [SpillOutcomeRel, Source.Outcome.brk] at hOutcomeRel
+          cases hOutcomeRel
+      | halt kind final =>
+          simp [SpillOutcomeRel, Source.Outcome.brk] at hOutcomeRel
+          cases hOutcomeRel
+  | none =>
+      simp [hHelper] at hCompile
+      exact
+        compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope_reference
+          hSpec hWordBytes hCompile hHandlers hBreakScope hCleanup
+          hReference hReferenceLayout hRel hDefined hLength hSourceRun
+
+theorem compileStmtWithSwitchFallback?_cont_sound_meta_exact_handler_scope_reference
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout .cont =
+        some plan)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hContinueScope : sourceCtx.continueScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .cont source =
+        .ok (Source.Outcome.cont sourceAfter, sourceCtxAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.cont contTarget) ∧
+        SpillStateRel range handlerScope [] referenceLayout sourceAfter
+          contTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+        contTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  unfold compileStmtWithSwitchFallback? at hCompile
+  cases hHelper :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+        .cont with
+  | some helperPlan =>
+      simp [hHelper] at hCompile
+      cases hCompile
+      have hOwned :
+          SourceLowering.SourceToLocals.Stmt.SourceOwned returns .cont := by
+        simp [SourceLowering.SourceToLocals.Stmt.SourceOwned]
+      rcases
+          compileNonCallStmtSpan?_expressionsBlock_sound_of_source_run
+            hSpec hWordBytes (exprProgram := exprProgram)
+            hHelper hOwned hScope hRel hDefined hSourceRun with
+        ⟨result, _exprFuel, _hRun, hOutcomeRel⟩
+      cases result with
+      | regular final =>
+          simp [SpillOutcomeRel, Source.Outcome.cont] at hOutcomeRel
+          cases hOutcomeRel
+      | halt kind final =>
+          simp [SpillOutcomeRel, Source.Outcome.cont] at hOutcomeRel
+          cases hOutcomeRel
+  | none =>
+      simp [hHelper] at hCompile
+      exact
+        compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope_reference
+          hSpec hWordBytes hCompile hHandlers hContinueScope hCleanup
+          hReference hReferenceLayout hRel hDefined hLength hSourceRun
+
 theorem compileStmtWithSwitchFallback?_terminalArgs_halt_sound_meta_of_exprSeqSafe_handler_free
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -22476,6 +22616,275 @@ theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_cont_sound_me
             hSourceRun with
         ⟨contTarget, exprFuel, hRun, hShared, hStack, _hCtx⟩
       exact ⟨contTarget, exprFuel, hRun, hShared, hStack⟩
+  | brk =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hBreak : sourceCtx.breakScope? with
+      | none =>
+          simp [hBreak, Source.invalid, Structured.invalid] at hSourceRun
+      | some scope =>
+          simp [hBreak, Source.Outcome.brk, Source.Outcome.cont] at hSourceRun
+          cases hSourceRun.1
+  | expr expr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hEval :
+          Source.Expr.eval Locals.Source.PrimitiveSemantics.structured expr
+            source with
+      | error err =>
+          simp [hEval] at hSourceRun
+      | ok result =>
+          simp [hEval, Source.Outcome.regular, Source.Outcome.cont]
+            at hSourceRun
+          cases hSourceRun.1
+  | let_ name valueExpr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hEval :
+          Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+            valueExpr source with
+      | error err =>
+          simp [hEval] at hSourceRun
+      | ok result =>
+          simp [hEval, Source.Outcome.regular, Source.Outcome.cont]
+            at hSourceRun
+          cases hSourceRun.1
+  | assign name valueExpr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hContains : source.vars.contains name with
+      | false =>
+          simp [hContains, Source.invalid, Structured.invalid] at hSourceRun
+      | true =>
+          cases hEval :
+              Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+                valueExpr source with
+          | error err =>
+              simp [hContains, hEval] at hSourceRun
+          | ok result =>
+              simp [hContains, hEval, Source.Outcome.regular,
+                Source.Outcome.cont] at hSourceRun
+              cases hSourceRun.1
+  | terminal kind =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hTerminal :
+          Locals.Source.PrimitiveSemantics.structured.terminal kind
+            source.shared [] with
+      | error err =>
+          simp [hTerminal] at hSourceRun
+      | ok shared' =>
+          simp [hTerminal, Source.Outcome.halt, Source.Outcome.cont]
+            at hSourceRun
+          cases hSourceRun.1
+  | terminalArgs kind args =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hArgs :
+          Locals.Source.Expr.ExprSeq.eval
+            Locals.Source.PrimitiveSemantics.structured args source with
+      | error err =>
+          simp [hArgs] at hSourceRun
+      | ok argResult =>
+          rcases argResult with ⟨stateAfterArgs, values⟩
+          cases hTerminal :
+              Locals.Source.PrimitiveSemantics.structured.terminal kind
+                stateAfterArgs.shared values with
+          | error err =>
+              simp [hArgs, hTerminal] at hSourceRun
+          | ok shared' =>
+              simp [hArgs, hTerminal, Source.Outcome.halt,
+                Source.Outcome.cont] at hSourceRun
+              cases hSourceRun.1
+  | block body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | if_ cond body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | switch scrutinee cases defaultBody =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | for_ init cond post body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | leave =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | call targets functionName args =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+
+theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_brk_sound_meta_exact_handler_scope_reference_of_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {stmt : Stmt} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmt =
+        some plan)
+    (hSafe : StmtAtomicTerminalOrLoopControlSafe stmt)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hBreakScope : sourceCtx.breakScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel stmt source =
+        .ok (Source.Outcome.brk sourceAfter, sourceCtxAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.brk brkTarget) ∧
+      SpillStateRel range handlerScope [] referenceLayout sourceAfter
+        brkTarget.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+      brkTarget.evm.stack.length = ([] : List Name).length ∧
+      sourceCtxAfter = sourceCtx := by
+  cases stmt with
+  | brk =>
+      exact
+        compileStmtWithSwitchFallback?_brk_sound_meta_exact_handler_scope_reference
+          hSpec hWordBytes hCompile hHandlers hBreakScope hCleanup hScope
+          hReference hReferenceLayout hRel hDefined hLength hSourceRun
+  | cont =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hContinue : sourceCtx.continueScope? with
+      | none =>
+          simp [hContinue, Source.invalid, Structured.invalid] at hSourceRun
+      | some scope =>
+          simp [hContinue, Source.Outcome.cont, Source.Outcome.brk]
+            at hSourceRun
+          cases hSourceRun.1
+  | expr expr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hEval :
+          Source.Expr.eval Locals.Source.PrimitiveSemantics.structured expr
+            source with
+      | error err =>
+          simp [hEval] at hSourceRun
+      | ok result =>
+          simp [hEval, Source.Outcome.regular, Source.Outcome.brk] at hSourceRun
+          cases hSourceRun.1
+  | let_ name valueExpr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hEval :
+          Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+            valueExpr source with
+      | error err =>
+          simp [hEval] at hSourceRun
+      | ok result =>
+          simp [hEval, Source.Outcome.regular, Source.Outcome.brk] at hSourceRun
+          cases hSourceRun.1
+  | assign name valueExpr =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hContains : source.vars.contains name with
+      | false =>
+          simp [hContains, Source.invalid, Structured.invalid] at hSourceRun
+      | true =>
+          cases hEval :
+              Source.Expr.evalOne Locals.Source.PrimitiveSemantics.structured
+                valueExpr source with
+          | error err =>
+              simp [hContains, hEval] at hSourceRun
+          | ok result =>
+              simp [hContains, hEval, Source.Outcome.regular,
+                Source.Outcome.brk] at hSourceRun
+              cases hSourceRun.1
+  | terminal kind =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hTerminal :
+          Locals.Source.PrimitiveSemantics.structured.terminal kind
+            source.shared [] with
+      | error err =>
+          simp [hTerminal] at hSourceRun
+      | ok shared' =>
+          simp [hTerminal, Source.Outcome.halt, Source.Outcome.brk]
+            at hSourceRun
+          cases hSourceRun.1
+  | terminalArgs kind args =>
+      unfold Source.Stmt.run at hSourceRun
+      cases hArgs :
+          Locals.Source.Expr.ExprSeq.eval
+            Locals.Source.PrimitiveSemantics.structured args source with
+      | error err =>
+          simp [hArgs] at hSourceRun
+      | ok argResult =>
+          rcases argResult with ⟨stateAfterArgs, values⟩
+          cases hTerminal :
+              Locals.Source.PrimitiveSemantics.structured.terminal kind
+                stateAfterArgs.shared values with
+          | error err =>
+              simp [hArgs, hTerminal] at hSourceRun
+          | ok shared' =>
+              simp [hArgs, hTerminal, Source.Outcome.halt,
+                Source.Outcome.brk] at hSourceRun
+              cases hSourceRun.1
+  | block body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | if_ cond body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | switch scrutinee cases defaultBody =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | for_ init cond post body =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | leave =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+  | call targets functionName args =>
+      simp [StmtAtomicTerminalOrLoopControlSafe] at hSafe
+
+theorem compileStmtWithSwitchFallback?_atomicTerminalOrLoopControl_cont_sound_meta_exact_handler_scope_reference_of_safe
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {stmt : Stmt} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {referenceLayout : SpillLayout.Layout}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmt =
+        some plan)
+    (hSafe : StmtAtomicTerminalOrLoopControlSafe stmt)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hContinueScope : sourceCtx.continueScope? = some handlerScope)
+    (hCleanup :
+      Locals.SourceLowering.CleanupScopeRel sourceScope handlerScope)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel stmt source =
+        .ok (Source.Outcome.cont sourceAfter, sourceCtxAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.cont contTarget) ∧
+      SpillStateRel range handlerScope [] referenceLayout sourceAfter
+        contTarget.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars referenceLayout ∧
+      contTarget.evm.stack.length = ([] : List Name).length ∧
+      sourceCtxAfter = sourceCtx := by
+  cases stmt with
+  | cont =>
+      exact
+        compileStmtWithSwitchFallback?_cont_sound_meta_exact_handler_scope_reference
+          hSpec hWordBytes hCompile hHandlers hContinueScope hCleanup hScope
+          hReference hReferenceLayout hRel hDefined hLength hSourceRun
   | brk =>
       unfold Source.Stmt.run at hSourceRun
       cases hBreak : sourceCtx.breakScope? with
