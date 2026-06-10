@@ -37512,6 +37512,246 @@ theorem noLoopReplayPrefix_of_switch_select
             exact hCases restValue restBody (by simp [hMem]))
           hSelect
 
+def NoLoopReplayOpenRegularWithOracle
+    (asmProgram : Assembly.Program) (program : Locals.Program)
+    (exprProgram : Expressions.Program)
+    (sourceCtx : Ctx) (stmts : List Locals.Stmt) : Prop :=
+  ∀ {targetCtx : Locals.Ctx} {fuel pc : Nat} {state outState : State}
+    {target : Locals.RunState} {code : List Expressions.Stmt}
+    {sourceCtxOut : Ctx} {targetCtxOut : Locals.Ctx},
+    Locals.SourceLowering.CtxRel sourceCtx targetCtx →
+    sourceCtx.scope.Nodup →
+    Locals.SourceLowering.StateRel sourceCtx.scope state.source target →
+    Locals.Block.compileOpen targetCtx { stmts := stmts } =
+      some (code, targetCtxOut) →
+    Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+      .ok (Outcome.regular outState, sourceCtxOut) →
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel { stmts := code } target state.trace =
+        .ok (Expressions.Outcome.regular targetOut, outState.trace) ∧
+      Locals.SourceLowering.StateRel sourceCtxOut.scope
+        outState.source targetOut ∧
+      Locals.SourceLowering.CtxRel sourceCtxOut targetCtxOut
+
+def NoLoopReplayOpenHaltWithOracle
+    (asmProgram : Assembly.Program) (program : Locals.Program)
+    (exprProgram : Expressions.Program)
+    (sourceCtx : Ctx) (stmts : List Locals.Stmt) : Prop :=
+  ∀ {targetCtx : Locals.Ctx} {fuel pc : Nat} {kind : Assembly.HaltKind}
+    {state outState : State} {target : Locals.RunState}
+    {code : List Expressions.Stmt}
+    {sourceCtxOut : Ctx} {targetCtxOut : Locals.Ctx},
+    Locals.SourceLowering.CtxRel sourceCtx targetCtx →
+    sourceCtx.scope.Nodup →
+    Locals.SourceLowering.StateRel sourceCtx.scope state.source target →
+    Locals.Block.compileOpen targetCtx { stmts := stmts } =
+      some (code, targetCtxOut) →
+    Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+      .ok (Outcome.halt kind outState, sourceCtxOut) →
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel { stmts := code } target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace)
+
+theorem NoLoopReplayOpenRegularWithOracle.scoped
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Ctx} {stmts : List Locals.Stmt}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {state outState : State}
+    {target : Locals.RunState}
+    {code : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    (hReplayOpen :
+      NoLoopReplayOpenRegularWithOracle asmProgram program exprProgram
+        sourceCtx stmts)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx targetCtxOut code = some lowerBody)
+    (hRun :
+      Block.runScoped program sourceCtx { stmts := stmts } fuel state =
+        .ok (Outcome.regular outState)) :
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel lowerBody target state.trace =
+        .ok (Expressions.Outcome.regular targetOut, outState.trace) ∧
+      Locals.SourceLowering.StateRel sourceCtx.scope
+        outState.source targetOut ∧
+      Locals.SourceLowering.CtxRel sourceCtx targetCtx := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, sourceCtxOut⟩
+      simp [hOpen] at hRun
+      cases openOutcome with
+      | mk openState openMode =>
+          cases openMode <;>
+            simp [Outcome.regular, Outcome.brk, Outcome.cont, Outcome.leave,
+              Outcome.halt] at hRun
+          cases hRun
+          have hOpenRegular :
+              Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+                .ok (Outcome.regular openState, sourceCtxOut) := by
+            simpa [Outcome.regular] using hOpen
+          rcases
+              hReplayOpen hCtx hNoDup hRel hCompileOpen hOpenRegular with
+            ⟨targetOpen, openFuel, hReplayOpenTarget, hOpenRel, hCtxOut⟩
+          unfold Locals.finishScoped at hFinish
+          cases hCleanup :
+              targetCtxOut.cleanupTo? targetCtx.layout.length with
+          | none =>
+              simp [hCleanup] at hFinish
+          | some cleanup =>
+              simp [hCleanup] at hFinish
+              cases hFinish
+              have hCleanupSourceDepth :
+                  targetCtxOut.cleanupTo? sourceCtx.scope.length =
+                    some cleanup := by
+                rcases hCtx with
+                  ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+                simpa [hLayout] using hCleanup
+              have hScopeSourceOut :
+                  Locals.SourceLowering.CleanupScopeRel sourceCtxOut.scope
+                    sourceCtx.scope :=
+                Block.runOpen_regular_cleanupScopeRel hOpenRegular
+              have hScopeTargetOut :
+                  Locals.SourceLowering.CleanupScopeRel targetCtxOut.layout
+                    sourceCtx.scope := by
+                rcases hCtxOut with
+                  ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+                simpa [hLayout] using hScopeSourceOut
+              have hOpenRelTarget :
+                  Locals.SourceLowering.StateRel targetCtxOut.layout
+                    openState.source targetOpen := by
+                rcases hCtxOut with
+                  ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+                simpa [hLayout] using hOpenRel
+              rcases
+                  ExpressionsReplay.Block.runWithOracle_cleanupTo_scope_exists
+                    (asmProgram := asmProgram) (pc := pc)
+                    (fuel := openFuel)
+                    (program := exprProgram) (ctx := targetCtxOut)
+                    (scope := sourceCtx.scope) (source := openState.source)
+                    (target := targetOpen) (cleanup := cleanup)
+                    (trace := openState.trace)
+                    hScopeTargetOut hOpenRelTarget hCleanupSourceDepth with
+                ⟨targetClean, hReplayCleanup, hCleanRel, _hReturns⟩
+              let combinedFuel : Nat := openFuel + openFuel + 2
+              have hReplayOpenSlack :
+                  ExpressionsReplay.Block.runWithOracle asmProgram pc
+                      exprProgram (combinedFuel + code.length)
+                      { stmts := code } target state.trace =
+                    .ok (Expressions.Outcome.regular targetOpen,
+                      openState.trace) :=
+                ExpressionsReplay.Block.runWithOracle_mono asmProgram pc
+                  exprProgram
+                  (by
+                    dsimp [combinedFuel]
+                    omega) hReplayOpenTarget
+              have hReplayCleanupSlack :
+                  ExpressionsReplay.Block.runWithOracle asmProgram pc
+                      exprProgram combinedFuel
+                      { stmts := Locals.codeStmt cleanup } targetOpen
+                      openState.trace =
+                    .ok (Expressions.Outcome.regular targetClean,
+                      openState.trace) :=
+                ExpressionsReplay.Block.runWithOracle_mono asmProgram pc
+                  exprProgram
+                  (by
+                    dsimp [combinedFuel]
+                    omega) hReplayCleanup
+              have hReplayFull :
+                  ExpressionsReplay.Block.runWithOracle asmProgram pc
+                      exprProgram (combinedFuel + code.length)
+                      { stmts := code ++ Locals.codeStmt cleanup } target
+                      state.trace =
+                    .ok (Expressions.Outcome.regular targetClean,
+                      openState.trace) :=
+                ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
+                  (asmProgram := asmProgram) (pc := pc)
+                  (program := exprProgram) (left := code)
+                  (right := Locals.codeStmt cleanup) hReplayOpenSlack
+                  hReplayCleanupSlack
+              exact
+                ⟨targetClean, combinedFuel + code.length,
+                  by simpa [State.restrictTo] using hReplayFull,
+                  by simpa [State.restrictTo] using hCleanRel, hCtx⟩
+
+theorem NoLoopReplayOpenHaltWithOracle.scoped
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Ctx} {stmts : List Locals.Stmt}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {kind : Assembly.HaltKind}
+    {state outState : State} {target : Locals.RunState}
+    {code : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    (hReplayOpen :
+      NoLoopReplayOpenHaltWithOracle asmProgram program exprProgram
+        sourceCtx stmts)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx targetCtxOut code = some lowerBody)
+    (hRun :
+      Block.runScoped program sourceCtx { stmts := stmts } fuel state =
+        .ok (Outcome.halt kind outState)) :
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel lowerBody target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, sourceCtxOut⟩
+      simp [hOpen] at hRun
+      cases openOutcome with
+      | mk openState openMode =>
+          cases openMode <;>
+            simp [Outcome.regular, Outcome.brk, Outcome.cont, Outcome.leave,
+              Outcome.halt] at hRun
+          case halt openKind =>
+            rcases hRun with ⟨hOpenState, hOpenKind⟩
+            subst openState
+            subst openKind
+            have hOpenHalt :
+                Block.runOpen program sourceCtx fuel { stmts := stmts }
+                    state =
+                  .ok (Outcome.halt kind outState, sourceCtxOut) := by
+              simpa [Outcome.halt] using hOpen
+            rcases hReplayOpen hCtx hNoDup hRel hCompileOpen hOpenHalt with
+              ⟨targetOut, targetFuel, hReplayOpenTarget⟩
+            unfold Locals.finishScoped at hFinish
+            cases hCleanup :
+                targetCtxOut.cleanupTo? targetCtx.layout.length with
+            | none =>
+                simp [hCleanup] at hFinish
+            | some cleanup =>
+                simp [hCleanup] at hFinish
+                cases hFinish
+                refine ⟨targetOut, targetFuel, ?_⟩
+                simpa using
+                  ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+                    (asmProgram := asmProgram) (pc := pc)
+                    (program := exprProgram) code
+                    (Locals.codeStmt cleanup) hReplayOpenTarget
+
 inductive AtomicSwitchForPrefixSlack :
     Nat → Ctx → List Locals.Stmt → Prop where
   | nil (ctx : Ctx) :
