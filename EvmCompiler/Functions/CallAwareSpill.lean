@@ -9286,6 +9286,41 @@ theorem spillLayout_restrictToScope_sublist (scope : List Name)
       (p := fun binding : SpillLayout.Binding =>
         decide (binding.1 ∈ scope)) (l := layout))
 
+theorem mem_of_cleanupScopeRel {layout scope : List Name} {name : Name}
+    (hRel : Locals.SourceLowering.CleanupScopeRel layout scope)
+    (hMem : name ∈ scope) :
+    name ∈ layout := by
+  unfold Locals.SourceLowering.CleanupScopeRel at hRel
+  rw [← hRel] at hMem
+  exact List.mem_of_mem_drop hMem
+
+theorem spillLayout_restrictToScope_restrictToScope_of_subset
+    {outer inner : List Name}
+    (hSubset : ∀ name, name ∈ outer → name ∈ inner)
+    (layout : SpillLayout.Layout) :
+    SpillLayout.restrictToScope outer
+        (SpillLayout.restrictToScope inner layout) =
+      SpillLayout.restrictToScope outer layout := by
+  induction layout with
+  | nil =>
+      simp [SpillLayout.restrictToScope]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, location⟩
+      have hRest :
+          List.filter
+              (fun binding : SpillLayout.Binding =>
+                decide (binding.1 ∈ outer) && decide (binding.1 ∈ inner))
+              rest =
+            List.filter
+              (fun binding : SpillLayout.Binding =>
+                decide (binding.1 ∈ outer))
+              rest := by
+        simpa [SpillLayout.restrictToScope] using ih
+      by_cases hOuter : name ∈ outer
+      · have hInner : name ∈ inner := hSubset name hOuter
+        simp [SpillLayout.restrictToScope, hOuter, hInner, hRest]
+      · simp [SpillLayout.restrictToScope, hOuter, hRest]
+
 theorem spillLayout_scratchSlots_restrictToScope_sublist
     (scope : List Name) (layout : SpillLayout.Layout) :
     (SpillLayout.scratchSlots
