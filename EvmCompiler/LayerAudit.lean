@@ -1514,6 +1514,9 @@ abbrev sourceReplayBlockAtomicIfPrefix :=
 abbrev sourceReplayBlockCompileOpenAtomicIfPrefixBlockWithOracle :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixBlockWithOracle
 
+abbrev sourceReplayBlockCompileOpenAtomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle
+
 abbrev sourceReplayBlockAtomicSwitchCases :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases
 

@@ -488,6 +488,7 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_ifTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixBlockWithOracle
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchDefault
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicPrefix_of_switch_select
@@ -951,6 +952,7 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_switchAtomicPrefixWithOracle_of_evalOne_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_ifTrueAtomicPrefixWithOracle_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixBlockWithOracle
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicPrefix_of_switch_select
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.atomicSwitchForPrefixSlack_pos
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchPrefix_mode_regular

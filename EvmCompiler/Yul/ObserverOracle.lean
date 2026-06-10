@@ -35591,6 +35591,96 @@ theorem compileOpen_atomicIfPrefixBlockWithOracle
                                               Outcome.regular] at hRun
                                           · simp [hBodyRun, Outcome.halt,
                                               Outcome.regular] at hRun
+
+theorem compileOpen_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter sourceCtxOut : Ctx}
+    {targetCtx targetCtxAfter targetCtxOut : Locals.Ctx}
+    {sourceFuel pc : Nat} {prefixStmts tail : List Locals.Stmt}
+    {state stateAfterPrefix outState : State}
+    {target : Locals.RunState}
+    {prefixCode tailCode : List Expressions.Stmt}
+    {kind : Assembly.HaltKind}
+    (hPrefix : AtomicIfPrefix sourceCtx prefixStmts)
+    (hTail : TerminalTailPrefix sourceCtxAfter kind tail)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hNoDupAfter : sourceCtxAfter.scope.Nodup)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompilePrefix :
+      Locals.Block.compileOpen targetCtx { stmts := prefixStmts } =
+        some (prefixCode, targetCtxAfter))
+    (hCompileTail :
+      Locals.Block.compileOpen targetCtxAfter { stmts := tail } =
+        some (tailCode, targetCtxOut))
+    (hRunPrefix :
+      Block.runOpen program sourceCtx sourceFuel { stmts := prefixStmts } state =
+        .ok (Outcome.regular stateAfterPrefix, sourceCtxAfter))
+    (hRunTail :
+      Block.runOpen program sourceCtxAfter sourceFuel { stmts := tail }
+          stateAfterPrefix =
+        .ok (Outcome.halt kind outState, sourceCtxOut)) :
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel { stmts := prefixCode ++ tailCode } target
+          state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  rcases
+      compileOpen_atomicIfPrefixBlockWithOracle
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram) (sourceCtx := sourceCtx)
+        (targetCtx := targetCtx) (fuel := sourceFuel) (pc := pc)
+        (stmts := prefixStmts) (state := state)
+        (openState := stateAfterPrefix) (target := target)
+        (code := prefixCode) (sourceCtxOut := sourceCtxAfter)
+        (targetCtxOut := targetCtxAfter)
+        hPrefix hCtx hNoDup hRel hCompilePrefix hRunPrefix with
+    ⟨targetAfterPrefix, hPrefixReplay, hPrefixRel, hCtxAfter⟩
+  rcases
+      compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram) (sourceCtx := sourceCtxAfter)
+        (targetCtx := targetCtxAfter) (fuel := sourceFuel) (pc := pc)
+        (kind := kind) (stmts := tail) (state := stateAfterPrefix)
+        (outState := outState) (target := targetAfterPrefix)
+        (code := tailCode) (sourceCtxOut := sourceCtxOut)
+        (targetCtxOut := targetCtxOut)
+        hTail hCtxAfter hNoDupAfter hPrefixRel hCompileTail hRunTail with
+    ⟨targetOut, tailFuel, hTailReplay⟩
+  let combinedFuel : Nat := (sourceFuel + 1) + tailFuel
+  have hPrefixReplay' :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (combinedFuel + prefixCode.length)
+          { stmts := prefixCode } target state.trace =
+        .ok
+          (Expressions.Outcome.regular targetAfterPrefix,
+            stateAfterPrefix.trace) := by
+    exact
+      ExpressionsReplay.Block.runWithOracle_mono asmProgram pc exprProgram
+        (by
+          dsimp [combinedFuel]
+          omega) hPrefixReplay
+  have hTailReplay' :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          combinedFuel { stmts := tailCode } targetAfterPrefix
+          stateAfterPrefix.trace =
+        .ok
+          (Expressions.Outcome.halt kind targetOut,
+            outState.trace) := by
+    exact
+      ExpressionsReplay.Block.runWithOracle_mono asmProgram pc exprProgram
+        (by
+          dsimp [combinedFuel]
+          omega) hTailReplay
+  exact
+    ⟨targetOut, combinedFuel + prefixCode.length,
+      ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        prefixCode tailCode hPrefixReplay' hTailReplay'⟩
+
 theorem compileOpen_atomicSwitchPrefixBlockWithOracle
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program} :
