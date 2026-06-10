@@ -1178,6 +1178,12 @@ abbrev sourceReplayBlockCompileOpenSingletonTerminalWithOracleOfRun :=
 abbrev sourceReplayBlockCompileOpenSingletonTerminalArgsWithOracleOfRun :=
   @Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_terminalArgsWithOracle_of_run
 
+abbrev sourceReplayBlockCompileOpenConsTerminalBlockHaltWithOracleOfRun :=
+  @Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_terminalBlockHaltWithOracle_of_run
+
+abbrev sourceReplayBlockCompileOpenConsTerminalArgsBlockHaltWithOracleOfRun :=
+  @Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_terminalArgsBlockHaltWithOracle_of_run
+
 abbrev sourceReplayBlockCompileOpenConsExprBlockHaltWithOracleOfEvalSourceOwned :=
   @Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_exprBlockHaltWithOracle_of_eval_sourceOwned
 

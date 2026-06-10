@@ -25816,6 +25816,163 @@ theorem compileOpen_singleton_terminalArgsWithOracle_of_run
                 hReplayArgs hReplayTerminal
             simpa [hTraceAfter] using hReplayFull
 
+theorem compileOpen_cons_terminalBlockHaltWithOracle_of_run
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {kind : Assembly.HaltKind}
+    {rest : List Locals.Stmt}
+    {state outState : State} {target : Locals.RunState}
+    {restCode : List Expressions.Stmt}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hRun :
+      Block.runOpen program sourceCtx (fuel + 1)
+          { stmts := Locals.Stmt.terminal kind :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtxOut)) :
+    ∃ targetOut targetFuel,
+      Locals.Block.compileOpen targetCtx
+          { stmts := Locals.Stmt.terminal kind :: rest } =
+        some
+          ((Locals.codeStmt targetCtx.cleanupAll ++
+              [Expressions.Stmt.terminal kind]) ++
+            restCode,
+            targetCtxOut) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel
+          { stmts :=
+              (Locals.codeStmt targetCtx.cleanupAll ++
+                  [Expressions.Stmt.terminal kind]) ++
+                restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  have hRunBase :
+      Block.runOpen program sourceCtx (fuel + 1)
+          { stmts := [Locals.Stmt.terminal kind] } state =
+        .ok (Outcome.halt kind outState, sourceCtx) := by
+    cases hTerminal :
+        replayPrimitiveSemantics.terminal kind state.shared [] state.trace with
+    | error err =>
+        simp [Block.runOpen, Stmt.run, hTerminal] at hRun
+    | ok terminalResult =>
+        rcases terminalResult with ⟨sharedAfter, traceAfter⟩
+        simp [Block.runOpen, Stmt.run, hTerminal, Outcome.halt] at hRun ⊢
+        rcases hRun with ⟨hOut, _hCtxOut⟩
+        exact hOut
+  rcases
+      compileOpen_singleton_terminalWithOracle_of_run
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+        (fuel := fuel) (pc := pc) (kind := kind)
+        (state := state) (outState := outState) (target := target)
+        hCtx hRel hRunBase with
+    ⟨targetOut, _hCompileHead, hReplayHead⟩
+  refine ⟨targetOut, (fuel + 2) + 1, ?_, ?_⟩
+  · simp [Locals.Block.compileOpen, Locals.Stmt.compile, hCompileRest,
+      List.append_assoc]
+  · simpa [List.append_assoc] using
+      ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        (Locals.codeStmt targetCtx.cleanupAll ++
+          [Expressions.Stmt.terminal kind])
+        restCode hReplayHead
+
+theorem compileOpen_cons_terminalArgsBlockHaltWithOracle_of_run
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {rest : List Locals.Stmt}
+    {state outState : State} {target : Locals.RunState}
+    {code : Structured.Code} {restCode : List Expressions.Stmt}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hOwned : Locals.Source.ExprSeq.SourceOwned args)
+    (hAccess :
+      Locals.SourceLowering.ExprSeq.Accessible sourceCtx.scope 0 args)
+    (hCompileArgs : Locals.ExprSeq.compileCode targetCtx 0 args = some code)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hRun :
+      Block.runOpen program sourceCtx (fuel + 1)
+          { stmts := Locals.Stmt.terminalArgs kind args :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtxOut)) :
+    ∃ targetOut targetFuel,
+      Locals.Block.compileOpen targetCtx
+          { stmts := Locals.Stmt.terminalArgs kind args :: rest } =
+        some
+          ((Locals.codeStmt code ++ [Expressions.Stmt.terminal kind]) ++
+            restCode,
+            targetCtxOut) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel
+          { stmts :=
+              (Locals.codeStmt code ++ [Expressions.Stmt.terminal kind]) ++
+                restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  have hTargetNoDup : targetCtx.layout.Nodup := by
+    rcases hCtx with
+      ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+    simpa [hLayout] using hNoDup
+  have hTargetAccess :
+      Locals.SourceLowering.ExprSeq.Accessible targetCtx.layout 0 args := by
+    rcases hCtx with
+      ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+    simpa [hLayout] using hAccess
+  have hRunBase :
+      Block.runOpen program sourceCtx (fuel + 1)
+          { stmts := [Locals.Stmt.terminalArgs kind args] } state =
+        .ok (Outcome.halt kind outState, sourceCtx) := by
+    cases hArgs : Expr.ExprSeq.eval args state with
+    | error err =>
+        simp [Block.runOpen, Stmt.run, hArgs] at hRun
+    | ok argsResult =>
+        rcases argsResult with ⟨stateAfterArgs, values⟩
+        cases hTerminal :
+            replayPrimitiveSemantics.terminal kind stateAfterArgs.shared
+              values stateAfterArgs.trace with
+        | error err =>
+            simp [Block.runOpen, Stmt.run, hArgs, hTerminal] at hRun
+        | ok terminalResult =>
+            rcases terminalResult with ⟨sharedAfter, traceAfter⟩
+            simp [Block.runOpen, Stmt.run, hArgs, hTerminal,
+              Outcome.halt] at hRun ⊢
+            rcases hRun with ⟨hOut, _hCtxOut⟩
+            exact hOut
+  rcases
+      compileOpen_singleton_terminalArgsWithOracle_of_run
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+        (fuel := fuel) (pc := pc) (kind := kind)
+        (args := args) (state := state) (outState := outState)
+        (target := target) (code := code)
+        hCtx hRel hTargetNoDup hOwned hTargetAccess hCompileArgs
+        hRunBase with
+    ⟨targetOut, _hCompileHead, hReplayHead⟩
+  refine ⟨targetOut, (fuel + 2) + 1, ?_, ?_⟩
+  · simp [Locals.Block.compileOpen, Locals.Stmt.compile, hCompileArgs,
+      hCompileRest, List.append_assoc]
+  · simpa [List.append_assoc] using
+      ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        (Locals.codeStmt code ++ [Expressions.Stmt.terminal kind])
+        restCode hReplayHead
+
 theorem oracleSafe_compileOpen_cons_of_stmtBlock
     {canBreak canContinue canLeave : Bool}
     {targetCtx targetCtxAfter targetCtxOut : Locals.Ctx}
