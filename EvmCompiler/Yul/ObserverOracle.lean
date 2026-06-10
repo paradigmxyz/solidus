@@ -27861,6 +27861,81 @@ theorem compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
                             simp [Stmt.run, hContainsFalse, invalid,
                               Structured.invalid] at hRun
 
+theorem compileScoped_terminalTailPrefixBlockHaltWithOracle
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Ctx} {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {kind : Assembly.HaltKind}
+    {stmts : List Locals.Stmt}
+    {state outState : State} {target : Locals.RunState}
+    {code : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    (hPrefix : TerminalTailPrefix sourceCtx kind stmts)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx targetCtxOut code = some lowerBody)
+    (hRun :
+      Block.runScoped program sourceCtx { stmts := stmts } fuel state =
+        .ok (Outcome.halt kind outState)) :
+    ∃ targetOut targetFuel,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel lowerBody target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, sourceCtxOut⟩
+      simp [hOpen] at hRun
+      cases openOutcome with
+      | mk openState openMode =>
+          cases openMode <;>
+            simp [Outcome.regular, Outcome.brk, Outcome.cont, Outcome.leave,
+              Outcome.halt] at hRun
+          case halt openKind =>
+            rcases hRun with ⟨hOpenState, hOpenKind⟩
+            subst openState
+            subst openKind
+            have hOpenHalt :
+                Block.runOpen program sourceCtx fuel { stmts := stmts }
+                    state =
+                  .ok (Outcome.halt kind outState, sourceCtxOut) := by
+              simpa [Outcome.halt] using hOpen
+            rcases
+                compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
+                  (asmProgram := asmProgram) (program := program)
+                  (exprProgram := exprProgram)
+                  (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+                  (fuel := fuel) (pc := pc) (kind := kind)
+                  (stmts := stmts) (state := state)
+                  (outState := outState) (target := target)
+                  (code := code) (sourceCtxOut := sourceCtxOut)
+                  (targetCtxOut := targetCtxOut)
+                  hPrefix hCtx hNoDup hRel hCompileOpen hOpenHalt with
+              ⟨targetOut, targetFuel, hReplayOpen⟩
+            unfold Locals.finishScoped at hFinish
+            cases hCleanup :
+                targetCtxOut.cleanupTo? targetCtx.layout.length with
+            | none =>
+                simp [hCleanup] at hFinish
+            | some cleanup =>
+                simp [hCleanup] at hFinish
+                cases hFinish
+                refine ⟨targetOut, targetFuel, ?_⟩
+                simpa using
+                  ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+                    (asmProgram := asmProgram) (pc := pc)
+                    (program := exprProgram) code
+                    (Locals.codeStmt cleanup) hReplayOpen
+
 theorem runOpen_atomicPrefix_mode_regular
     {program : Locals.Program} :
     ∀ {sourceCtx : Ctx} {fuel : Nat} {stmts : List Locals.Stmt}

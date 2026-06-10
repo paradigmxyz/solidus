@@ -1193,6 +1193,9 @@ abbrev sourceReplayBlockCompileOpenAppendInv :=
 abbrev sourceReplayBlockCompileOpenTerminalTailPrefixBlockHaltWithOracleOfRun :=
   @Yul.ObserverOracle.SourceReplay.Block.compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
 
+abbrev sourceReplayBlockCompileScopedTerminalTailPrefixBlockHaltWithOracle :=
+  @Yul.ObserverOracle.SourceReplay.Block.compileScoped_terminalTailPrefixBlockHaltWithOracle
+
 abbrev sourceReplayProgramRunStateTerminalTailPrefixBlockHaltWithOracleOfToExpressions :=
   @Yul.ObserverOracle.SourceReplay.Program.runState_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?
 
