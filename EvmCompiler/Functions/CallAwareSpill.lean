@@ -32058,6 +32058,125 @@ theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_of_dispatch
     hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
     hFuelBound hInputs.calls
 
+theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_reference_of_replay_package_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {handlerScope : List Name}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.call targets functionName args) =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hReplay :
+      SwitchFallbackCallReplayBelow maxFuel range program exprProgram) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout := by
+  have hCompileCall :
+      compileCallWithNormalizedStackFallback? range program sourceScope
+          stackLayout layout targets functionName args =
+        some plan := by
+    simpa [compileStmtWithSwitchFallback?] using hCompile
+  have hPlanReference :
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout :=
+    compileCallWithNormalizedStackFallback?_restrictToScope_eq_of_reference_wf
+      (scope := handlerScope) (referenceLayout := referenceLayout)
+      hCompileCall hReference hReferenceLayout
+  rcases
+      compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_of_replay_package_below
+        hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
+        hFuelBound hReplay with
+    ⟨final, exprFuel, hRun, hFinalRel, hFinalDefined, hFinalLength,
+      hScopeAfter⟩
+  exact
+    ⟨target.withEVM final, exprFuel, hRun,
+      by simpa [Structured.RunState.withEVM] using hFinalRel,
+      hFinalDefined,
+      by simpa [Structured.RunState.withEVM] using hFinalLength,
+      hScopeAfter, hPlanReference⟩
+
+theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_reference_of_step_inputs_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {handlerScope : List Name}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.call targets functionName args) =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope handlerScope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range handlerScope [] referenceLayout)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hInputs :
+      SwitchFallbackDispatcherStepInputsBelow maxFuel range program returns
+        exprProgram) :
+    ∃ finalRunState exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular finalRunState) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter finalRunState.evm ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      finalRunState.evm.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope ∧
+      SpillLayout.restrictToScope handlerScope plan.layout =
+        referenceLayout :=
+  compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_reference_of_replay_package_below
+    hSpec hWordBytes hCompile hScope hReference hReferenceLayout hRel
+    hDefined hLength hSourceRun hFuelBound hInputs.calls
+
 theorem compileStmtListWithSwitchFallback?_brk_sound_meta_exact_handler_scope_reference_of_stmt_sound_below
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
