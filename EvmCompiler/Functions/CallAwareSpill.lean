@@ -9356,6 +9356,245 @@ theorem spillLayout_restrictToScope_self_of_wellFormed
     simpa [hLayout.names_eq] using hName
   exact hNameScope
 
+theorem spillLayout_pushStackBinding_eq_self_of_mem_emptyStack_wf
+    {range : ScratchRange} {sourceScope : List Name}
+    {layout : SpillLayout.Layout}
+    (hLayout : SpillLayout.WellFormed range sourceScope [] layout)
+    {binding : SpillLayout.Binding}
+    (hMem : binding ∈ layout) :
+    SpillLayout.pushStackBinding binding = binding := by
+  rcases binding with ⟨name, location⟩
+  cases location with
+  | stack depth =>
+      have hOk := hLayout.bindings_ok (name, SpillLayout.LocalLocation.stack depth)
+        hMem
+      simp [SpillLayout.BindingOk] at hOk
+  | scratch slot =>
+      rfl
+
+theorem spillLayout_map_pushStackBinding_eq_self_of_emptyStack_wf
+    {range : ScratchRange} {sourceScope : List Name}
+    {layout : SpillLayout.Layout}
+    (hLayout : SpillLayout.WellFormed range sourceScope [] layout) :
+    layout.map SpillLayout.pushStackBinding = layout := by
+  have hAll :
+      ∀ binding, binding ∈ layout →
+        SpillLayout.pushStackBinding binding = binding := by
+    intro binding hMem
+    exact
+      spillLayout_pushStackBinding_eq_self_of_mem_emptyStack_wf
+        hLayout hMem
+  clear hLayout
+  induction layout with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      have hHead :
+          SpillLayout.pushStackBinding binding = binding := hAll binding
+        (by simp)
+      have hTail :
+          rest.map SpillLayout.pushStackBinding = rest := by
+        apply ih
+        intro b hMem
+        exact hAll b (by simp [hMem])
+      simp [hHead, hTail]
+
+theorem spillLayout_restrictToScope_pushStackLayout_of_not_mem_emptyStack_wf
+    {range : ScratchRange} {sourceScope scope : List Name}
+    {layout : SpillLayout.Layout} {name : Name}
+    (hLayout : SpillLayout.WellFormed range sourceScope [] layout)
+    (hName : name ∉ scope) :
+    SpillLayout.restrictToScope scope
+        (SpillLayout.pushStackLayout name layout) =
+      SpillLayout.restrictToScope scope layout := by
+  have hMap :
+      layout.map SpillLayout.pushStackBinding = layout :=
+    spillLayout_map_pushStackBinding_eq_self_of_emptyStack_wf hLayout
+  simp [SpillLayout.restrictToScope, SpillLayout.pushStackLayout, hName,
+    hMap]
+
+theorem spillLayout_restrictToScope_pushScratchLayout_of_not_mem
+    {scope : List Name} {layout : SpillLayout.Layout}
+    {name : Name} {slot : Nat}
+    (hName : name ∉ scope) :
+    SpillLayout.restrictToScope scope
+        (SpillLayout.pushScratchLayout name slot layout) =
+      SpillLayout.restrictToScope scope layout := by
+  simp [SpillLayout.restrictToScope, SpillLayout.pushScratchLayout, hName]
+
+theorem spillLayout_evictTopStackBinding_eq_self_of_mem_restrict_emptyStack_wf
+    {range : ScratchRange} {scope : List Name}
+    {layout : SpillLayout.Layout} {slot : Nat}
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout))
+    {binding : SpillLayout.Binding}
+    (hMem : binding ∈ layout)
+    (hName : binding.1 ∈ scope) :
+    SpillLayout.evictTopStackBinding slot binding = binding := by
+  rcases binding with ⟨name, location⟩
+  cases location with
+  | stack depth =>
+      have hRestrictMem :
+          (name, SpillLayout.LocalLocation.stack depth) ∈
+            SpillLayout.restrictToScope scope layout := by
+        simp [SpillLayout.restrictToScope, hMem, hName]
+      have hOk :=
+        hLayout.bindings_ok (name, SpillLayout.LocalLocation.stack depth)
+          hRestrictMem
+      simp [SpillLayout.BindingOk] at hOk
+  | scratch oldSlot =>
+      rfl
+
+theorem spillLayout_restrictToScope_evictTopStackLayout_of_emptyStack_wf
+    {range : ScratchRange} {scope : List Name}
+    {layout : SpillLayout.Layout} {slot : Nat}
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout)) :
+    SpillLayout.restrictToScope scope
+        (SpillLayout.evictTopStackLayout slot layout) =
+      SpillLayout.restrictToScope scope layout := by
+  have hAll :
+      ∀ binding, binding ∈ layout → binding.1 ∈ scope →
+        SpillLayout.evictTopStackBinding slot binding = binding := by
+    intro binding hMem hName
+    exact
+      spillLayout_evictTopStackBinding_eq_self_of_mem_restrict_emptyStack_wf
+        hLayout hMem hName
+  clear hLayout
+  induction layout with
+  | nil =>
+      simp [SpillLayout.restrictToScope, SpillLayout.evictTopStackLayout]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, location⟩
+      by_cases hName : name ∈ scope
+      · have hHead :
+            SpillLayout.evictTopStackBinding slot (name, location) =
+              (name, location) :=
+          hAll (name, location) (by simp) hName
+        have hTail :
+            SpillLayout.restrictToScope scope
+                (SpillLayout.evictTopStackLayout slot rest) =
+              SpillLayout.restrictToScope scope rest := by
+          apply ih
+          intro binding hMem hBindingName
+          exact hAll binding (by simp [hMem]) hBindingName
+        simpa [SpillLayout.restrictToScope, SpillLayout.evictTopStackLayout,
+          hName, hHead] using hTail
+      · have hTail :
+            SpillLayout.restrictToScope scope
+                (SpillLayout.evictTopStackLayout slot rest) =
+              SpillLayout.restrictToScope scope rest := by
+          apply ih
+          intro binding hMem hBindingName
+          exact hAll binding (by simp [hMem]) hBindingName
+        cases location <;>
+          simpa [SpillLayout.restrictToScope, SpillLayout.evictTopStackLayout,
+            SpillLayout.evictTopStackBinding, SpillLayout.LocalLocation.evictTopStack,
+            hName] using hTail
+
+theorem spillOrDropAllStack?_restrictToScope_eq_of_emptyStack_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout : SpillLayout.Layout} {plan : SpillPlan}
+    (hPlan :
+      SpillPlan.spillOrDropAllStack? range sourceScope stackLayout layout =
+        some plan)
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout)) :
+    SpillLayout.restrictToScope scope plan.layout =
+      SpillLayout.restrictToScope scope layout := by
+  induction stackLayout generalizing layout plan with
+  | nil =>
+      simp [SpillPlan.spillOrDropAllStack?] at hPlan
+      cases hPlan
+      rfl
+  | cons top restStack ih =>
+      unfold SpillPlan.spillOrDropAllStack? at hPlan
+      cases hEvict :
+          SpillLayout.evictTopStackLayout? range sourceScope
+            (top :: restStack) layout with
+      | some evicted =>
+          rcases evicted with ⟨slot, nextLayout⟩
+          cases hTail :
+              SpillPlan.spillOrDropAllStack? range sourceScope restStack
+                nextLayout with
+          | none =>
+              simp [hEvict, hTail] at hPlan
+          | some tail =>
+              simp [hEvict, hTail] at hPlan
+              cases hPlan
+              rcases SpillLayout.evictTopStackLayout?_sound hEvict with
+                ⟨_top, _restStack, _hStackLayout, _hTop, _hSlot, hNext,
+                  _hCheck⟩
+              have hNextRestrict :
+                  SpillLayout.restrictToScope scope nextLayout =
+                    SpillLayout.restrictToScope scope layout := by
+                rw [hNext]
+                exact
+                  spillLayout_restrictToScope_evictTopStackLayout_of_emptyStack_wf
+                    hLayout
+              have hNextLayout :
+                  SpillLayout.WellFormed range scope []
+                    (SpillLayout.restrictToScope scope nextLayout) := by
+                simpa [hNextRestrict] using hLayout
+              have hTailRestrict :
+                  SpillLayout.restrictToScope scope tail.layout =
+                    SpillLayout.restrictToScope scope nextLayout :=
+                ih (layout := nextLayout) (plan := tail) hTail hNextLayout
+              exact hTailRestrict.trans hNextRestrict
+      | none =>
+          simp [hEvict] at hPlan
+          cases hDrop :
+              SpillLayout.dropDeadTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hDrop] at hPlan
+          | some nextLayout =>
+              cases hTail :
+                  SpillPlan.spillOrDropAllStack? range sourceScope restStack
+                    nextLayout with
+              | none =>
+                  simp [hDrop, hTail] at hPlan
+              | some tail =>
+                  simp [hDrop, hTail] at hPlan
+                  cases hPlan
+                  rcases SpillLayout.dropDeadTopStackLayout?_sound hDrop with
+                    ⟨_top, _restStack, _hStackLayout, _hTop, hNext,
+                      _hCheck⟩
+                  have hNextRestrict :
+                      SpillLayout.restrictToScope scope nextLayout =
+                        SpillLayout.restrictToScope scope layout := by
+                    rw [hNext]
+                    exact
+                      spillLayout_restrictToScope_evictTopStackLayout_of_emptyStack_wf
+                        hLayout
+                  have hNextLayout :
+                      SpillLayout.WellFormed range scope []
+                        (SpillLayout.restrictToScope scope nextLayout) := by
+                    simpa [hNextRestrict] using hLayout
+                  have hTailRestrict :
+                      SpillLayout.restrictToScope scope tail.layout =
+                        SpillLayout.restrictToScope scope nextLayout :=
+                    ih (layout := nextLayout) (plan := tail) hTail hNextLayout
+                  exact hTailRestrict.trans hNextRestrict
+
+theorem normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
+    {range : ScratchRange} {plan full : Plan} {scope : List Name}
+    (hNormalize : normalizePlanStack? range plan = some full)
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope plan.layout)) :
+    SpillLayout.restrictToScope scope full.layout =
+      SpillLayout.restrictToScope scope plan.layout := by
+  rcases normalizePlanStack?_eq_some hNormalize with
+    ⟨spill, hSpill, hFull⟩
+  subst full
+  simpa [appendSpillPlan] using
+    spillOrDropAllStack?_restrictToScope_eq_of_emptyStack_wf
+      hSpill hLayout
+
 theorem source_store_restrictTo_restrictTo_of_subset
     {outer inner : List Name}
     (hSubset : ∀ name, name ∈ outer → name ∈ inner)
