@@ -235,6 +235,30 @@ def Eventually (program : Program) (state : EVMState)
   ∃ fuel outcome,
     runNResult program fuel state = outcome ∧ post outcome
 
+theorem runNResult_add (program : Program) (first second : Nat)
+    (state : EVMState) :
+    runNResult program (first + second) state =
+      (do
+        let result ← runNResult program first state
+        match result with
+        | .running mid => runNResult program second mid
+        | .halted halt => .ok (.halted halt)) := by
+  induction first generalizing state with
+  | zero =>
+      simp only [Nat.zero_add, runNResult, Bind.bind, Except.bind]
+  | succ first ih =>
+      rw [Nat.succ_add, runNResult, runNResult]
+      cases hStep : stepResult program state with
+      | error err =>
+          simp only [hStep, Bind.bind, Except.bind]
+      | ok result =>
+          simp only [hStep, Bind.bind, Except.bind]
+          cases result with
+          | halted halt =>
+              rfl
+          | running state' =>
+              exact ih state'
+
 theorem runNResult_add_of_running
     (program : Program) (first second : Nat)
     {state mid : EVMState}
@@ -242,30 +266,9 @@ theorem runNResult_add_of_running
       runNResult program first state = .ok (.running mid)) :
     runNResult program (first + second) state =
       runNResult program second mid := by
-  induction first generalizing state with
-  | zero =>
-      simp [runNResult] at hFirst
-      cases hFirst
-      simp only [Nat.zero_add]
-  | succ first ih =>
-      unfold runNResult at hFirst
-      cases hStep : stepResult program state with
-      | error err =>
-          rw [hStep] at hFirst
-          simp only [Bind.bind, Except.bind] at hFirst
-          cases hFirst
-      | ok result =>
-          rw [hStep] at hFirst
-          cases result with
-          | halted halt =>
-              cases hFirst
-          | running state' =>
-              change
-                runNResult program first state' =
-                  .ok (.running mid) at hFirst
-              rw [Nat.succ_add, runNResult]
-              simp only [hStep, Bind.bind, Except.bind]
-              exact ih hFirst
+  rw [runNResult_add]
+  rw [hFirst]
+  rfl
 
 namespace Eventually
 
@@ -361,6 +364,69 @@ def eraseGas (state : EVMState) : EVMState :=
     gasAvailable := EvmYul.UInt256.ofNat 0
     execLength := 0
   }
+
+/--
+Erase lowering-only control position and accounting fields while retaining the
+ordinary EVM data observed by adjacent compiler IRs.
+
+Structured and TypedCfg control transfers are atomic, while their Assembly
+lowerings may execute labels, stack shuffles, and dispatch tests. Those hidden
+instructions legitimately change `pc` and `execLength`.
+-/
+def eraseControl (state : EVMState) : EVMState :=
+  { eraseGas state with pc := EvmYul.UInt256.ofNat 0 }
+
+def SameData (target source : EVMState) : Prop :=
+  eraseControl target = eraseControl source
+
+theorem eraseControl_with_pc (state : EVMState) (pc : Word) :
+    eraseControl { state with pc := pc } = eraseControl state := by
+  cases state
+  rfl
+
+theorem eraseControl_with_stack (state : EVMState)
+    (stack : EvmYul.Stack Word) :
+    eraseControl { state with stack := stack } =
+      { eraseControl state with stack := stack } := by
+  cases state
+  rfl
+
+theorem eraseControl_with_stack_congr {left right : EVMState}
+    {stack : EvmYul.Stack Word}
+    (hEq : eraseControl left = eraseControl right) :
+    eraseControl { left with stack := stack } =
+      eraseControl { right with stack := stack } := by
+  cases left
+  cases right
+  simp [eraseControl, eraseGas] at hEq ⊢
+  exact hEq.1
+
+theorem eraseControl_replaceStackAndIncrPC_of_eq
+    {left right : EVMState}
+    {leftStack rightStack : EvmYul.Stack Word} {pcΔ : Nat}
+    (hEq : eraseControl left = eraseControl right)
+    (hStack : leftStack = rightStack) :
+    eraseControl
+        (left.replaceStackAndIncrPC leftStack (pcΔ := pcΔ)) =
+      eraseControl
+        (right.replaceStackAndIncrPC rightStack (pcΔ := pcΔ)) := by
+  cases left
+  cases right
+  simp [eraseControl, eraseGas] at hEq ⊢
+  exact ⟨hEq.1, hStack⟩
+
+theorem SameData.refl (state : EVMState) :
+    SameData state state := rfl
+
+theorem SameData.trans {first second third : EVMState}
+    (hFirst : SameData first second)
+    (hSecond : SameData second third) :
+    SameData first third :=
+  Eq.trans hFirst hSecond
+
+theorem SameData.jumpPc (dest : Nat) (state : EVMState) :
+    SameData (Source.jumpPc dest state) state := by
+  simp [SameData, Source.jumpPc, eraseControl_with_pc]
 
 end Assembly
 end EvmCompiler

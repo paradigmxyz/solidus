@@ -1,4 +1,5 @@
 import EvmCompiler.TypedCfg.Semantics
+import EvmCompiler.Assembly.StackShuffle
 
 namespace EvmCompiler
 namespace TypedCfg
@@ -66,46 +67,36 @@ end Instr
 
 namespace Terminator
 
-def swapAt? (depth : Nat) : Option Assembly.Instr :=
-  (Instr.lower? (.swap (depth - 1))).bind List.head?
+def returnDispatchTest (depth : Nat) (site : ReturnSite) : Assembly.Program :=
+  [ Assembly.StackShuffle.dupInstr (depth + 1)
+  , .push site.token
+  , .prim .eq
+  , .jumpi site.caseLabel
+  ]
 
-def liftBuriedToTop? : Nat → Option Assembly.Program
-  | 0 => some []
-  | depth + 1 => do
-      let lifted ← liftBuriedToTop? depth
-      let swap ← swapAt? (depth + 1)
-      some (lifted ++ [swap])
+def returnDispatchTestCases (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  sites.flatMap (returnDispatchTest depth)
 
-def removeBuriedUnder? (depth : Nat) : Option Assembly.Program := do
-  let lifted ← liftBuriedToTop? depth
-  some (lifted ++ [.prim .pop])
+def returnDispatchTests (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  returnDispatchTestCases depth sites ++ [.prim .invalid]
 
-def returnDispatchTests? (depth : Nat) :
-    List ReturnSite → Option Assembly.Program
-  | [] => some [.prim .invalid]
-  | site :: rest => do
-      let duplicate ← Instr.lower? (.dup depth)
-      let tail ← returnDispatchTests? depth rest
-      some
-        (duplicate ++
-          [.push site.token, .prim .eq,
-            .jumpi site.caseLabel] ++ tail)
+def returnDispatchCase (depth : Nat) (site : ReturnSite) : Assembly.Program :=
+  .label site.caseLabel ::
+    Assembly.StackShuffle.removeBuriedUnder depth ++ [.jump site.target]
 
-def returnDispatchCases? (depth : Nat) :
-    List ReturnSite → Option Assembly.Program
-  | [] => some []
-  | site :: rest => do
-      let cleanup ← removeBuriedUnder? depth
-      let tail ← returnDispatchCases? depth rest
-      some
-        (.label site.caseLabel ::
-          cleanup ++ [.jump site.target] ++ tail)
+def returnDispatchCases (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  sites.flatMap (returnDispatchCase depth)
+
+def returnDispatchCode (depth : Nat) (sites : List ReturnSite) :
+    Assembly.Program :=
+  returnDispatchTests depth sites ++ returnDispatchCases depth sites
 
 def returnDispatchCode? (depth : Nat) (sites : List ReturnSite) :
-    Option Assembly.Program := do
-  let tests ← returnDispatchTests? depth sites
-  let cases ← returnDispatchCases? depth sites
-  some (tests ++ cases)
+    Option Assembly.Program :=
+  if depth < 16 then some (returnDispatchCode depth sites) else none
 
 def lowerAt? (shape : Shape) : Terminator → Option Assembly.Program
   | .fallthrough next => some [.jump next]

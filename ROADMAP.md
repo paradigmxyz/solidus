@@ -396,10 +396,10 @@ Goal: make stack/control invariants explicit before Assembly.
   generated CFG.
 - [ ] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
-  DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies and
-  every non-return-dispatch terminator are now proved against the shared
-  Assembly execution-outcome contract. Return-dispatch, block-level outcome
-  composition, and program stepping remain.
+  DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies,
+  every terminator including return dispatch, and complete entry-label/body/
+  terminator block execution are proved against the shared Assembly
+  execution-outcome contract. Program stepping remains.
 - [ ] Prove TypedCfg-to-Assembly lowering preservation.
 - [ ] Prove label uniqueness and PC bounds from the artifact certificate.
   Certification now rejects duplicate/unresolved emitted labels and PC

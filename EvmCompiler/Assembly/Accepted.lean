@@ -181,6 +181,24 @@ theorem labelPc_append_label_eq
   simpa [labelPc] using
     labelPcFrom_append_label_eq pre suffix 0 hNotMem
 
+theorem labelPc_append_label_eq_of_labels_nodup
+    (pre suffix : Program) {target : Label}
+    (hNodup : (labels (pre ++ .label target :: suffix)).Nodup) :
+    labelPc (pre ++ .label target :: suffix) target =
+      some pre.byteLength := by
+  have hLabels :
+      labels (pre ++ .label target :: suffix) =
+        labels pre ++ target :: labels suffix := by
+    simp [labels_append, labels]
+  have hNodupLocal :
+      (labels pre ++ target :: labels suffix).Nodup := by
+    simpa [hLabels] using hNodup
+  have hNotMem : target ∉ labels pre := by
+    rw [List.nodup_append] at hNodupLocal
+    intro hMem
+    exact hNodupLocal.2.2 target hMem target (by simp) rfl
+  exact labelPc_append_label_eq pre suffix hNotMem
+
 end Program
 
 /--

@@ -27542,3 +27542,46 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   open Yul lowering, observer replay, Structured preservation, and the legacy
   aggregate; the architecture dependency check, focused no-hole search, and
   `git diff --check` also passed.
+
+## 2026-06-10 16:09 PDT - Compaction resume: return dispatch preservation
+
+- Resumed under `$verifiable-compiler` from `adefd9e22`; the current target is
+  the remaining TypedCfg return-dispatch simulation, factored through reusable
+  dispatch-test selection and buried-token cleanup before block/program
+  composition.
+
+## 2026-06-10 16:14 PDT - Compaction resume: migration distance audit
+
+- Audited the active tree and roadmap after the public plan-first TypedCfg
+  cutover. Estimated the full migration at roughly 70% complete: the executable
+  architecture is about 80-85% complete, while the remaining proof, pure
+  allocation-planning, and legacy-deletion work is about 55-60% complete.
+- The immediate proof boundary is return dispatch: exact machine-state equality
+  is intentionally false because lowering introduces hidden control
+  instructions that change `pc` and `execLength`. The next repair is a shared
+  observable-state relation that preserves EVM data while abstracting those
+  lowering-only counters, followed by block and whole-program composition.
+
+## 2026-06-10 16:31 PDT - Compaction resume: block composition
+
+- Resumed under `$verifiable-compiler` after completing the uniform
+  return-dispatch theorem. Every TypedCfg terminator now has a checked
+  outcome-simulation proof, including selected, unknown, and missing return
+  tokens; the active boundary is composing entry-label, body, and terminator
+  execution into a whole-block certificate.
+
+## 2026-06-10 16:47 PDT - TypedCfg whole-block preservation
+
+- proof: completed a uniform return-dispatch theorem over the shared
+  observable-state relation, covering selected targets, unknown tokens, and
+  missing stack tokens.
+- architecture: moved TypedCfg return-dispatch stack shuffles onto reusable
+  Assembly fragments and added checked shared preservation lemmas for lifting
+  and removing buried stack values.
+- proof: added runtime-output-shape determinism, exact successful-body PC
+  advancement, and whole-block outcome simulation. The block theorem composes
+  the entry `JUMPDEST`, body execution or error, and every terminator outcome
+  without erasing PC-sensitive primitive behavior.
+- verification: focused `lake build EvmCompiler.TypedCfg.Preservation` passed
+  all 1,106 jobs. The next boundary is projecting block fragments, resolved
+  labels, and PC-fit facts through whole-program certification.
