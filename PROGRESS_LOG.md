@@ -1,5 +1,7 @@
 # Progress Log
 
+- 2026-06-09 20:07 PDT - proof/call-aware-loop-control-exact-blockstmt-bridge - added checked exact handler-scope `break`/`continue` preservation for `compileBlockStmtWithSwitchFallback?`, lifting the list/block-open exact bridges through scoped block execution and the regular-exit stack normalizer via nonregular passthrough. Focused Lean check passed; module build and commit are next.
+
 - 2026-06-09 20:02 PDT - proof/call-aware-loop-control-exact-continue-bridge - added the checked exact handler-scope list/block preservation bridge for `continue` outcomes through `compileStmtListWithSwitchFallback?` and `compileBlockOpenWithSwitchFallback?`, mirroring the break bridge with handler-scope cleanup and restricted spill-layout relations. Focused Lean check passed for `EvmCompiler/Functions/CallAwareSpill.lean`; `lake build EvmCompiler.Yul.ObserverOracle` also rebuilt the dirty spill dependency successfully before commit `0af378754`.
 
 - 2026-06-09 19:54 PDT - compaction-resume/call-aware-loop-control-exact-bridge - resumed under `$verifiable-compiler`; current checkpoint is fixing the Functions-vs-Locals namespace mismatch in the exact handler-scope break/continue bridge, with executable Aave/Permit2 fallback already green and the public proof route still in progress.
