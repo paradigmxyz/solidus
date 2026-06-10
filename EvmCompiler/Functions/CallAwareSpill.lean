@@ -9522,6 +9522,131 @@ theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_current_scope
     exact hExactDefined (name := name) (location := location) hMem
   · simpa [Structured.RunState.withEVM, hEntryStack] using hFinalStack
 
+theorem compileBreakWithSpillFallback?_brk_sound_meta_exact_handler_scope
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {plan : Plan} {program : Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {restrictedLayout : SpillLayout.Layout}
+    (hCompile :
+      compileBreakWithSpillFallback? range handlers sourceScope stackLayout
+        layout = some plan)
+    (hHandlers : handlers.breakScope? = sourceCtx.breakScope?)
+    (hBreakScope : sourceCtx.breakScope? = some handlerScope)
+    (hRestricted :
+      restrictedLayout = SpillLayout.restrictToScope handlerScope
+        plan.layout)
+    (hCheck :
+      SpillLayout.checked? range handlerScope [] restrictedLayout = true)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .brk source =
+        .ok (Source.Outcome.brk sourceAfter, sourceCtxAfter)) :
+    ∃ brkTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.brk brkTarget) ∧
+        SpillStateRel range handlerScope [] restrictedLayout sourceAfter
+          brkTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars restrictedLayout ∧
+        brkTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  rcases compileBreakWithSpillFallback?_eq_some_components hCompile with
+    ⟨breakScope, entry, hBreak, hEntry, hEntryStack, hPlan⟩
+  have hBreakEq : breakScope = handlerScope := by
+    rw [hHandlers, hBreakScope] at hBreak
+    cases hBreak
+    rfl
+  subst breakScope
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact hSpec hWordBytes
+        (exprProgram := exprProgram) (sourceAfter := source)
+        (target := target) (targetAfter := target.evm)
+        hEntry hEmptyRun hRel hDefined hLength with
+    ⟨final, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      hEntryEmpty, hFinalStack⟩
+  have hBreakStmt :
+      ∃ breakFuel,
+        Expressions.Stmt.run exprProgram breakFuel Expressions.Stmt.brk
+            (target.withEVM final) =
+          .ok (Expressions.Outcome.brk (target.withEVM final)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Stmt.run]
+  rcases
+      Expressions.Block.run_single_exists exprProgram hBreakStmt with
+    ⟨breakFuel, hBreakBlock⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram
+        ⟨entryFuel, hEntryRun⟩ ⟨breakFuel, hBreakBlock⟩ with
+    ⟨exprFuel, hRun⟩
+  have hSourceFacts :
+      sourceAfter = source.restrictTo handlerScope ∧
+        sourceCtxAfter = sourceCtx := by
+    unfold Source.Stmt.run at hSourceRun
+    simp [hBreakScope, Source.Outcome.brk] at hSourceRun
+    rcases hSourceRun with ⟨hOutcome, hCtx⟩
+    cases hOutcome
+    cases hCtx
+    constructor <;> rfl
+  have hRestrictedPlan :
+      restrictedLayout =
+        SpillLayout.restrictToScope handlerScope entry.layout := by
+    subst plan
+    simpa using hRestricted
+  have hExactRel :
+      SpillStateRel range handlerScope [] restrictedLayout
+        sourceAfter final := by
+    have hRel' :
+        SpillStateRel range handlerScope [] restrictedLayout
+          (source.restrictTo handlerScope) final :=
+      SpillStateRel.restrictToScope hRestrictedPlan hCheck
+        (by simpa [hEntryStack] using hEntryRel)
+    simpa [hSourceFacts.1] using hRel'
+  have hExactDefined :
+      SpillLayout.StoreDefined sourceAfter.vars restrictedLayout := by
+    have hDefined' :
+        SpillLayout.StoreDefined
+          (source.restrictTo handlerScope).vars restrictedLayout := by
+      have hRestrictDefined :
+          SpillLayout.StoreDefined
+            (Locals.Source.Store.restrictTo handlerScope source.vars)
+            (SpillLayout.restrictToScope handlerScope entry.layout) :=
+        SpillLayout.StoreDefined.restrictToScope
+          (scope := handlerScope) hEntryDefined
+      intro name location hMem
+      have hValue :=
+        hRestrictDefined (name := name) (location := location)
+          (by simpa [hRestrictedPlan] using hMem)
+      simpa [Locals.Source.State.restrictTo] using hValue
+    intro name location hMem
+    have hValue :=
+      hDefined' (name := name) (location := location) hMem
+    simpa [hSourceFacts.1] using hValue
+  subst plan
+  refine
+    ⟨target.withEVM final, exprFuel,
+      by simpa using hRun,
+      ?_, ?_, ?_, hSourceFacts.2⟩
+  · simpa [Structured.RunState.withEVM] using hExactRel
+  · intro name location hMem
+    exact hExactDefined (name := name) (location := location) hMem
+  · simpa [Structured.RunState.withEVM, hEntryStack] using hFinalStack
+
 theorem compileContinueWithSpillFallback?_noCallCreate
     {range : ScratchRange} {handlers : FallbackHandlers}
     {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
@@ -9785,6 +9910,131 @@ theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_current_scope
     have hValue :=
       hDefined' (name := name) (location := location) hMem
     simpa [hEntryScope, hSourceFacts.1] using hValue
+  subst plan
+  refine
+    ⟨target.withEVM final, exprFuel,
+      by simpa using hRun,
+      ?_, ?_, ?_, hSourceFacts.2⟩
+  · simpa [Structured.RunState.withEVM] using hExactRel
+  · intro name location hMem
+    exact hExactDefined (name := name) (location := location) hMem
+  · simpa [Structured.RunState.withEVM, hEntryStack] using hFinalStack
+
+theorem compileContinueWithSpillFallback?_cont_sound_meta_exact_handler_scope
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {handlers : FallbackHandlers}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {plan : Plan} {program : Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {handlerScope : List Name} {restrictedLayout : SpillLayout.Layout}
+    (hCompile :
+      compileContinueWithSpillFallback? range handlers sourceScope
+        stackLayout layout = some plan)
+    (hHandlers : handlers.continueScope? = sourceCtx.continueScope?)
+    (hContinueScope : sourceCtx.continueScope? = some handlerScope)
+    (hRestricted :
+      restrictedLayout = SpillLayout.restrictToScope handlerScope
+        plan.layout)
+    (hCheck :
+      SpillLayout.checked? range handlerScope [] restrictedLayout = true)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel .cont source =
+        .ok (Source.Outcome.cont sourceAfter, sourceCtxAfter)) :
+    ∃ contTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.cont contTarget) ∧
+        SpillStateRel range handlerScope [] restrictedLayout sourceAfter
+          contTarget.evm ∧
+        SpillLayout.StoreDefined sourceAfter.vars restrictedLayout ∧
+        contTarget.evm.stack.length = ([] : List Name).length ∧
+        sourceCtxAfter = sourceCtx := by
+  rcases compileContinueWithSpillFallback?_eq_some_components hCompile with
+    ⟨continueScope, entry, hContinue, hEntry, hEntryStack, hPlan⟩
+  have hContinueEq : continueScope = handlerScope := by
+    rw [hHandlers, hContinueScope] at hContinue
+    cases hContinue
+    rfl
+  subst continueScope
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact hSpec hWordBytes
+        (exprProgram := exprProgram) (sourceAfter := source)
+        (target := target) (targetAfter := target.evm)
+        hEntry hEmptyRun hRel hDefined hLength with
+    ⟨final, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      hEntryEmpty, hFinalStack⟩
+  have hContinueStmt :
+      ∃ continueFuel,
+        Expressions.Stmt.run exprProgram continueFuel Expressions.Stmt.cont
+            (target.withEVM final) =
+          .ok (Expressions.Outcome.cont (target.withEVM final)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Stmt.run]
+  rcases
+      Expressions.Block.run_single_exists exprProgram hContinueStmt with
+    ⟨continueFuel, hContinueBlock⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram
+        ⟨entryFuel, hEntryRun⟩ ⟨continueFuel, hContinueBlock⟩ with
+    ⟨exprFuel, hRun⟩
+  have hSourceFacts :
+      sourceAfter = source.restrictTo handlerScope ∧
+        sourceCtxAfter = sourceCtx := by
+    unfold Source.Stmt.run at hSourceRun
+    simp [hContinueScope, Source.Outcome.cont] at hSourceRun
+    rcases hSourceRun with ⟨hOutcome, hCtx⟩
+    cases hOutcome
+    cases hCtx
+    constructor <;> rfl
+  have hRestrictedPlan :
+      restrictedLayout =
+        SpillLayout.restrictToScope handlerScope entry.layout := by
+    subst plan
+    simpa using hRestricted
+  have hExactRel :
+      SpillStateRel range handlerScope [] restrictedLayout
+        sourceAfter final := by
+    have hRel' :
+        SpillStateRel range handlerScope [] restrictedLayout
+          (source.restrictTo handlerScope) final :=
+      SpillStateRel.restrictToScope hRestrictedPlan hCheck
+        (by simpa [hEntryStack] using hEntryRel)
+    simpa [hSourceFacts.1] using hRel'
+  have hExactDefined :
+      SpillLayout.StoreDefined sourceAfter.vars restrictedLayout := by
+    have hDefined' :
+        SpillLayout.StoreDefined
+          (source.restrictTo handlerScope).vars restrictedLayout := by
+      have hRestrictDefined :
+          SpillLayout.StoreDefined
+            (Locals.Source.Store.restrictTo handlerScope source.vars)
+            (SpillLayout.restrictToScope handlerScope entry.layout) :=
+        SpillLayout.StoreDefined.restrictToScope
+          (scope := handlerScope) hEntryDefined
+      intro name location hMem
+      have hValue :=
+        hRestrictDefined (name := name) (location := location)
+          (by simpa [hRestrictedPlan] using hMem)
+      simpa [Locals.Source.State.restrictTo] using hValue
+    intro name location hMem
+    have hValue :=
+      hDefined' (name := name) (location := location) hMem
+    simpa [hSourceFacts.1] using hValue
   subst plan
   refine
     ⟨target.withEVM final, exprFuel,
