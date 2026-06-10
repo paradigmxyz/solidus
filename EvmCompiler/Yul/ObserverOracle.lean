@@ -26078,6 +26078,99 @@ theorem compileOpen_cons_exprBlockWithOracle_of_eval_sourceOwned
     ⟨targetOut, hCompileOpen, hRunOpen, hReplayOpen, hMode, hFinalRel,
       hFinalCtxRel⟩
 
+theorem compileOpen_cons_exprBlockHaltWithOracle_of_eval_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {expr : Locals.Expr 0}
+    {rest : List Locals.Stmt}
+    {state stateAfterExpr outState : State} {values : List Word}
+    {target : Locals.RunState} {code : Structured.Code}
+    {restCode : List Expressions.Stmt} {kind : Assembly.HaltKind}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned expr)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 expr)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileExpr : Locals.Expr.compileCode targetCtx 0 expr = some code)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hEval : Expr.eval expr state = .ok (stateAfterExpr, values))
+    (hRestRun :
+      Block.runOpen program sourceCtx fuel { stmts := rest }
+          stateAfterExpr =
+        .ok (Outcome.halt kind outState, sourceCtxOut))
+    (hRestReplay :
+      ∀ evm',
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterExpr.source (target.withEVM evm') →
+        ∃ targetOut targetFuel,
+          ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+              targetFuel { stmts := restCode } (target.withEVM evm')
+              stateAfterExpr.trace =
+            .ok (Expressions.Outcome.halt kind targetOut,
+              outState.trace)) :
+    ∃ targetOut targetFuel,
+      Locals.Block.compileOpen targetCtx
+          { stmts := Locals.Stmt.expr expr :: rest } =
+        some (Expressions.Stmt.code code :: restCode, targetCtxOut) ∧
+      Block.runOpen program sourceCtx (fuel + 1)
+          { stmts := Locals.Stmt.expr expr :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtxOut) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel { stmts := Expressions.Stmt.code code :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  rcases
+      Stmt.compileExprWithOracle_of_eval_sourceOwned
+        (asmProgram := asmProgram) (program := program)
+        (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+        (fuel := fuel) (pc := pc) (expr := expr)
+        (state := state) (stateAfterExpr := stateAfterExpr)
+        (values := values) (target := target) (code := code)
+        hCtx hNoDup hOwned hAccess hRel hCompileExpr hEval with
+    ⟨evm', hCompileStmt, hStmtRun, hRunCode, hHeadRel, _hCtxOut⟩
+  have hCompileStmtSingle :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some ([Expressions.Stmt.code code], targetCtx) := by
+    simpa [Locals.codeStmt] using hCompileStmt
+  rcases hRestReplay evm' hHeadRel with
+    ⟨targetOut, restFuel, hReplayRest⟩
+  have hStmtReplay :
+      ExpressionsReplay.Stmt.runWithOracle asmProgram pc exprProgram
+          restFuel (Expressions.Stmt.code code) target state.trace =
+        .ok (Expressions.Outcome.regular (target.withEVM evm'),
+          stateAfterExpr.trace) :=
+    ExpressionsReplay.Stmt.runWithOracle_code_of_run
+      (asmProgram := asmProgram) (pc := pc) (fuel := restFuel)
+      (program := exprProgram) hRunCode
+  rcases
+      compileOpen_cons_regularBlockWithOracle_of_runs_targetFuel
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (sourceCtxAfter := sourceCtx)
+        (sourceCtxOut := sourceCtxOut)
+        (targetCtx := targetCtx) (targetCtxAfter := targetCtx)
+        (targetCtxOut := targetCtxOut)
+        (sourceFuel := fuel) (targetFuel := restFuel) (pc := pc)
+        (stmt := Locals.Stmt.expr expr) (rest := rest)
+        (state := state) (stateAfterStmt := stateAfterExpr)
+        (target := target) (targetAfterStmt := target.withEVM evm')
+        (outcome := Outcome.halt kind outState)
+        (stmtCode := Expressions.Stmt.code code)
+        (restCode := restCode)
+        (exprResult :=
+          (Expressions.Outcome.halt kind targetOut, outState.trace))
+        hCompileStmtSingle hCompileRest hStmtRun hRestRun hStmtReplay
+        hReplayRest with
+    ⟨hCompileOpen, hRunOpen, hReplayOpen⟩
+  exact ⟨targetOut, restFuel + 1, hCompileOpen, hRunOpen, hReplayOpen⟩
+
 theorem compileOpen_cons_exprBlockRestSlackWithOracle_of_eval_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
