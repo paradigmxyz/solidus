@@ -1616,6 +1616,18 @@ abbrev sourceReplayBlockAtomicPrefixOfSwitchSelect :=
 abbrev sourceReplayBlockAtomicSwitchPrefix :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchPrefix
 
+abbrev sourceReplayBlockNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayPrefix
+
+abbrev sourceReplayBlockNoLoopReplayCases :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayCases
+
+abbrev sourceReplayBlockNoLoopReplayDefault :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayDefault
+
+abbrev sourceReplayBlockNoLoopReplayPrefixOfSwitchSelect :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayPrefix_of_switch_select
+
 abbrev sourceReplayBlockAtomicSwitchForPrefixSlack :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchForPrefixSlack
 

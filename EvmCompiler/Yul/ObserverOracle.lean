@@ -36302,6 +36302,106 @@ inductive AtomicSwitchPrefix : Ctx → List Locals.Stmt → Prop where
       AtomicSwitchPrefix ctx
         (Locals.Stmt.switch scrutinee cases defaultBody :: rest)
 
+inductive NoLoopReplayPrefix : Ctx → List Locals.Stmt → Prop where
+  | nil (ctx : Ctx) :
+      NoLoopReplayPrefix ctx []
+  | expr (ctx : Ctx) {expr : Locals.Expr 0} {rest : List Locals.Stmt}
+      (hOwned : Locals.Source.Expr.SourceOwned expr)
+      (hAccess :
+        Locals.SourceLowering.Expr.Accessible ctx.scope 0 expr)
+      (hRest : NoLoopReplayPrefix ctx rest) :
+      NoLoopReplayPrefix ctx (Locals.Stmt.expr expr :: rest)
+  | let_ (ctx : Ctx) {name : Name} {expr : Locals.Expr 1}
+      {rest : List Locals.Stmt}
+      (hOwned : Locals.Source.Expr.SourceOwned expr)
+      (hAccess :
+        Locals.SourceLowering.Expr.Accessible ctx.scope 0 expr)
+      (hFresh : name ∉ ctx.scope)
+      (hRest :
+        NoLoopReplayPrefix { ctx with scope := name :: ctx.scope } rest) :
+      NoLoopReplayPrefix ctx (Locals.Stmt.let_ name expr :: rest)
+  | assign (ctx : Ctx) {name : Name} {idx : Nat}
+      {expr : Locals.Expr 1} {rest : List Locals.Stmt}
+      (hName : ctx.scope[idx]? = some name)
+      (hBound : idx + 1 ≤ 16)
+      (hOwned : Locals.Source.Expr.SourceOwned expr)
+      (hAccess :
+        Locals.SourceLowering.Expr.Accessible ctx.scope 0 expr)
+      (hRest : NoLoopReplayPrefix ctx rest) :
+      NoLoopReplayPrefix ctx (Locals.Stmt.assign name expr :: rest)
+  | terminal (ctx : Ctx) {kind : Assembly.HaltKind}
+      {rest : List Locals.Stmt} :
+      NoLoopReplayPrefix ctx (Locals.Stmt.terminal kind :: rest)
+  | terminalArgs (ctx : Ctx) {kind : Assembly.HaltKind}
+      {args : Locals.ExprSeq kind.argCount} {rest : List Locals.Stmt}
+      (hOwned : Locals.Source.ExprSeq.SourceOwned args)
+      (hAccess :
+        Locals.SourceLowering.ExprSeq.Accessible ctx.scope 0 args) :
+      NoLoopReplayPrefix ctx
+        (Locals.Stmt.terminalArgs kind args :: rest)
+  | branch (ctx : Ctx) {cond : Locals.Expr 1}
+      {bodyStmts rest : List Locals.Stmt}
+      (hOwned : Locals.Source.Expr.SourceOwned cond)
+      (hAccess :
+        Locals.SourceLowering.Expr.Accessible ctx.scope 0 cond)
+      (hBody : NoLoopReplayPrefix ctx bodyStmts)
+      (hRest : NoLoopReplayPrefix ctx rest) :
+      NoLoopReplayPrefix ctx
+        (Locals.Stmt.if_ cond { stmts := bodyStmts } :: rest)
+  | switch (ctx : Ctx) {scrutinee : Locals.Expr 1}
+      {cases : List (Word × Locals.Block)}
+      {defaultBody : Option Locals.Block}
+      {rest : List Locals.Stmt}
+      (hOwned : Locals.Source.Expr.SourceOwned scrutinee)
+      (hAccess :
+        Locals.SourceLowering.Expr.Accessible ctx.scope 0 scrutinee)
+      (hCases :
+        ∀ value body, (value, body) ∈ cases →
+          NoLoopReplayPrefix ctx body.stmts)
+      (hDefault :
+        ∀ body, defaultBody = some body →
+          NoLoopReplayPrefix ctx body.stmts)
+      (hRest : NoLoopReplayPrefix ctx rest) :
+      NoLoopReplayPrefix ctx
+        (Locals.Stmt.switch scrutinee cases defaultBody :: rest)
+
+def NoLoopReplayCases
+    (ctx : Ctx) (cases : List (Word × Locals.Block)) : Prop :=
+  ∀ value body, (value, body) ∈ cases →
+    NoLoopReplayPrefix ctx body.stmts
+
+def NoLoopReplayDefault
+    (ctx : Ctx) (defaultBody : Option Locals.Block) : Prop :=
+  ∀ body, defaultBody = some body →
+    NoLoopReplayPrefix ctx body.stmts
+
+theorem noLoopReplayPrefix_of_switch_select
+    {ctx : Ctx} {scrutinee : Word}
+    {cases : List (Word × Locals.Block)}
+    {defaultBody : Option Locals.Block} {selected : Locals.Block}
+    (hCases : NoLoopReplayCases ctx cases)
+    (hDefault : NoLoopReplayDefault ctx defaultBody)
+    (hSelect :
+      Locals.Source.Switch.select scrutinee cases defaultBody =
+        some selected) :
+    NoLoopReplayPrefix ctx selected.stmts := by
+  induction cases with
+  | nil =>
+      simp [Locals.Source.Switch.select] at hSelect
+      exact hDefault selected hSelect
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBlock⟩
+      by_cases hMatch : caseValue = scrutinee
+      · simp [Locals.Source.Switch.select, hMatch] at hSelect
+        cases hSelect
+        exact hCases caseValue selected (by simp)
+      · simp [Locals.Source.Switch.select, hMatch] at hSelect
+        exact ih
+          (by
+            intro restValue restBody hMem
+            exact hCases restValue restBody (by simp [hMem]))
+          hSelect
+
 inductive AtomicSwitchForPrefixSlack :
     Nat → Ctx → List Locals.Stmt → Prop where
   | nil (ctx : Ctx) :
