@@ -1157,6 +1157,9 @@ abbrev expressionsReplayStmtRunWithOracleMono :=
 abbrev sourceReplayRun :=
   @Yul.ObserverOracle.SourceReplay.Program.run
 
+abbrev sourceReplayBlockCompileOpenSingletonTerminalWithOracleOfRun :=
+  @Yul.ObserverOracle.SourceReplay.Block.compileOpen_singleton_terminalWithOracle_of_run
+
 abbrev sourceReplayProgramRunStateAtomicSwitchForPrefixSlackWithOracleOfToExpressions :=
   @Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
 
