@@ -25662,6 +25662,26 @@ theorem compileStmtWithSwitchFallback?_atomicOrTerminal_halt_sound_meta_handler_
   | call targets functionName args =>
       simp [StmtAtomicOrTerminalSafe] at hSafe
 
+theorem expressionsBlockRun_regular_returns_eq
+    {program : Expressions.Program} {fuel : Nat}
+    {block : Expressions.Block} {state final : Expressions.RunState}
+    (hRun :
+      Expressions.Block.run program fuel block state =
+        .ok (Expressions.Outcome.regular final)) :
+    final.returns = state.returns := by
+  have hStructuredRun :
+      Structured.Block.run program.toStructured fuel block.toStructured state =
+        .ok (Structured.Outcome.regular final) := by
+    simpa [Expressions.Outcome.regular] using
+      (by
+        simpa [Expressions.Block.run_toStructured program fuel block state]
+          using hRun)
+  have hEval := Structured.Block.eval_of_run hStructuredRun
+  have hReturns :=
+    Structured.Preservation.Frame.Block.Eval.returns_preserved hEval
+  simpa [Structured.Preservation.Frame.Outcome.ReturnsPreserved,
+    Structured.Outcome.regular] using hReturns
+
 theorem compileStmtListWithSwitchFallback?_regular_sound_meta_exact_of_stmt_sound
     {range : ScratchRange} {program : Program}
     {handlers : FallbackHandlers}
@@ -25880,6 +25900,343 @@ theorem compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_of_stmt_sou
           (target := target)
           (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
           hScope hRel hDefined hLength hSourceRun hStmtSound
+
+theorem compileStmtListWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} :
+    ∀ {stmts : List Stmt} {plan : Plan}
+      {exprProgram : Expressions.Program}
+      {sourceCtx sourceCtxAfter : Source.Ctx}
+      {fuel : Nat} {source sourceAfter : Source.State}
+      {target : Expressions.RunState}
+      {values : List Word} {frame : Structured.ReturnDest}
+      {returnStack : List Structured.ReturnDest},
+      compileStmtListWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout stmts =
+        some plan →
+      sourceCtx.scope = sourceScope →
+      SpillStateRel range sourceScope stackLayout layout source target.evm →
+      SpillLayout.StoreDefined source.vars layout →
+      target.evm.stack.length = stackLayout.length →
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel { stmts := stmts } source =
+        .ok (Source.Outcome.leave sourceAfter, sourceCtxAfter) →
+      Source.Store.lookupMany returns sourceAfter.vars = some values →
+      (∀ leaveScope name,
+        sourceCtx.leaveScope? = some leaveScope →
+        name ∈ returns →
+        name ∈ leaveScope) →
+      target.returns = frame :: returnStack →
+      (∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.regular stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        ∃ finalRunState exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range stmtPlan.sourceScope stmtPlan.stackLayout
+            stmtPlan.layout stmtSourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined stmtSourceAfter.vars stmtPlan.layout ∧
+          finalRunState.evm.stack.length = stmtPlan.stackLayout.length ∧
+          stmtSourceCtxAfter.scope = stmtPlan.sourceScope) →
+      (∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState}
+        {stmtValues : List Word} {stmtFrame : Structured.ReturnDest}
+        {stmtReturnStack : List Structured.ReturnDest},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.leave stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        Source.Store.lookupMany returns stmtSourceAfter.vars =
+          some stmtValues →
+        (∀ leaveScope name,
+          stmtSourceCtx.leaveScope? = some leaveScope →
+          name ∈ returns →
+          name ∈ leaveScope) →
+        stmtTarget.returns = stmtFrame :: stmtReturnStack →
+        ∃ final exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.leave (stmtTarget.withEVM final)) ∧
+          final.stack = stmtValues.reverse ∧
+          SharedStateEqOutsideScratch range stmtSourceAfter.shared
+            final.toSharedState ∧
+          ScratchRegionReady final.toMachineState range.base range.words) →
+      ∃ final exprFuel,
+        Expressions.Block.run exprProgram exprFuel plan.block target =
+          .ok (Expressions.Outcome.leave (target.withEVM final)) ∧
+        final.stack = values.reverse ∧
+        SharedStateEqOutsideScratch range sourceAfter.shared
+          final.toSharedState ∧
+        ScratchRegionReady final.toMachineState range.base range.words
+  | [], plan, exprProgram, sourceCtx, sourceCtxAfter, fuel, source,
+      sourceAfter, target, values, frame, returnStack, hCompile, _hScope,
+      _hRel, _hDefined, _hLength, hSourceRun, _hLookup,
+      _hReturnsInLeaveScope, _hReturns, _hStmtRegular, _hStmtLeave => by
+      have hPlan := compileStmtListWithSwitchFallback?_eq_some_nil hCompile
+      subst plan
+      cases fuel with
+      | zero =>
+          simp [Source.Block.runOpen, Source.invalid, Structured.invalid]
+            at hSourceRun
+      | succ fuel =>
+          simp [Source.Block.runOpen, Source.Outcome.regular] at hSourceRun
+          cases hSourceRun.1
+  | stmt :: rest, plan, exprProgram, sourceCtx, sourceCtxAfter, fuel, source,
+      sourceFinal, target, values, frame, returnStack, hCompile, hScope,
+      hRel, hDefined, hLength, hSourceRun, hLookup,
+      hReturnsInLeaveScope, hReturns, hStmtRegular, hStmtLeave => by
+      cases fuel with
+      | zero =>
+          simp [Source.Block.runOpen, Source.invalid, Structured.invalid]
+            at hSourceRun
+      | succ fuel =>
+          rcases compileStmtListWithSwitchFallback?_eq_some_cons hCompile with
+            ⟨head, tail, hHeadCompile, hTailCompile, hPlan⟩
+          cases hStmtRun :
+              Source.Stmt.run Locals.Source.PrimitiveSemantics.structured
+                program sourceCtx fuel stmt source with
+          | error err =>
+              simp [Source.Block.runOpen, hStmtRun] at hSourceRun
+          | ok stmtResult =>
+              rcases stmtResult with ⟨headOutcome, sourceCtxMid⟩
+              cases headOutcome with
+              | mk sourceHead mode =>
+                  cases mode with
+                  | regular =>
+                      have hTailSourceRun :
+                          Source.Block.runOpen
+                              Locals.Source.PrimitiveSemantics.structured
+                              program sourceCtxMid fuel { stmts := rest }
+                              sourceHead =
+                            .ok (Source.Outcome.leave sourceFinal,
+                              sourceCtxAfter) := by
+                        simpa [Source.Block.runOpen, hStmtRun] using
+                          hSourceRun
+                      rcases
+                          hStmtRegular hHeadCompile hScope hRel hDefined
+                            hLength hStmtRun with
+                        ⟨headRunState, headFuel, hHeadRun, hHeadRel,
+                          hHeadDefined, hHeadLength, hHeadScope⟩
+                      have hHeadReturns :
+                          headRunState.returns = target.returns :=
+                        expressionsBlockRun_regular_returns_eq hHeadRun
+                      have hLeaveScopeEq :
+                          sourceCtxMid.leaveScope? =
+                            sourceCtx.leaveScope? :=
+                        source_stmt_regular_leaveScope_eq hStmtRun
+                      have hReturnsInMid :
+                          ∀ leaveScope name,
+                            sourceCtxMid.leaveScope? = some leaveScope →
+                            name ∈ returns →
+                            name ∈ leaveScope := by
+                        intro leaveScope name hMid hNameMem
+                        exact hReturnsInLeaveScope leaveScope name
+                          (by simpa [hLeaveScopeEq] using hMid) hNameMem
+                      rcases
+                          compileStmtListWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+                            (sourceScope := head.sourceScope)
+                            (stackLayout := head.stackLayout)
+                            (layout := head.layout)
+                            (target := headRunState)
+                            hTailCompile hHeadScope hHeadRel hHeadDefined
+                            hHeadLength hTailSourceRun hLookup hReturnsInMid
+                            (by simpa [hHeadReturns] using hReturns)
+                            hStmtRegular hStmtLeave with
+                        ⟨final, tailFuel, hTailRun, hFinalStack,
+                          hFinalShared, hFinalReady⟩
+                      subst plan
+                      rcases
+                          expressionsBlock_append_regular_exists exprProgram
+                            (left := head.block) (right := tail.block)
+                            (state := target) (mid := headRunState)
+                            ⟨headFuel, hHeadRun⟩
+                            ⟨tailFuel, hTailRun⟩ with
+                        ⟨exprFuel, hRun⟩
+                      exact
+                        ⟨final, exprFuel,
+                          by
+                            simpa [Structured.RunState.withEVM,
+                              hHeadReturns] using hRun,
+                          hFinalStack, hFinalShared, hFinalReady⟩
+                  | brk =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.brk,
+                        Source.Outcome.leave] at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                  | cont =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.cont,
+                        Source.Outcome.leave] at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                  | leave =>
+                      simp [Source.Block.runOpen, hStmtRun,
+                        Source.Outcome.leave] at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+                      rcases
+                          hStmtLeave hHeadCompile hScope hRel hDefined
+                            hLength hStmtRun hLookup hReturnsInLeaveScope
+                            hReturns with
+                        ⟨final, headFuel, hHeadRun, hFinalStack,
+                          hFinalShared, hFinalReady⟩
+                      subst plan
+                      rcases
+                          expressionsBlock_append_nonregular_exists exprProgram
+                            (left := head.block) (right := tail.block)
+                            (state := target)
+                            ⟨headFuel, hHeadRun⟩
+                            (by simp [Expressions.Outcome.leave]) with
+                        ⟨exprFuel, hRun⟩
+                      exact
+                        ⟨final, exprFuel, hRun, hFinalStack, hFinalShared,
+                          hFinalReady⟩
+                  | halt headKind =>
+                      simp [Source.Block.runOpen, hStmtRun, Source.Outcome.halt,
+                        Source.Outcome.leave] at hSourceRun
+                      rcases hSourceRun with ⟨hOutcome, _hCtx⟩
+                      cases hOutcome
+
+theorem compileBlockOpenWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {values : List Word} {frame : Structured.ReturnDest}
+    {returnStack : List Structured.ReturnDest}
+    (hCompile :
+      compileBlockOpenWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel block source =
+        .ok (Source.Outcome.leave sourceAfter, sourceCtxAfter))
+    (hLookup :
+      Source.Store.lookupMany returns sourceAfter.vars = some values)
+    (hReturnsInLeaveScope :
+      ∀ leaveScope name,
+        sourceCtx.leaveScope? = some leaveScope →
+        name ∈ returns →
+        name ∈ leaveScope)
+    (hReturns : target.returns = frame :: returnStack)
+    (hStmtRegular :
+      ∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.regular stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        ∃ finalRunState exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range stmtPlan.sourceScope stmtPlan.stackLayout
+            stmtPlan.layout stmtSourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined stmtSourceAfter.vars stmtPlan.layout ∧
+          finalRunState.evm.stack.length = stmtPlan.stackLayout.length ∧
+          stmtSourceCtxAfter.scope = stmtPlan.sourceScope)
+    (hStmtLeave :
+      ∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState}
+        {stmtValues : List Word} {stmtFrame : Structured.ReturnDest}
+        {stmtReturnStack : List Structured.ReturnDest},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.leave stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        Source.Store.lookupMany returns stmtSourceAfter.vars =
+          some stmtValues →
+        (∀ leaveScope name,
+          stmtSourceCtx.leaveScope? = some leaveScope →
+          name ∈ returns →
+          name ∈ leaveScope) →
+        stmtTarget.returns = stmtFrame :: stmtReturnStack →
+        ∃ final exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.leave (stmtTarget.withEVM final)) ∧
+          final.stack = stmtValues.reverse ∧
+          SharedStateEqOutsideScratch range stmtSourceAfter.shared
+            final.toSharedState ∧
+          ScratchRegionReady final.toMachineState range.base range.words) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.leave (target.withEVM final)) ∧
+      final.stack = values.reverse ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        final.toSharedState ∧
+      ScratchRegionReady final.toMachineState range.base range.words := by
+  cases block with
+  | mk stmts =>
+      exact
+        compileStmtListWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+          (stmts := stmts) (plan := plan) (exprProgram := exprProgram)
+          (sourceCtx := sourceCtx) (sourceCtxAfter := sourceCtxAfter)
+          (fuel := fuel) (source := source) (sourceAfter := sourceAfter)
+          (target := target) (values := values) (frame := frame)
+          (returnStack := returnStack)
+          (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
+          hScope hRel hDefined hLength hSourceRun hLookup
+          hReturnsInLeaveScope hReturns hStmtRegular hStmtLeave
 
 theorem compileStmtListWithSwitchFallback?_halt_sound_meta_of_stmt_sound
     {range : ScratchRange} {program : Program}
@@ -28648,6 +29005,51 @@ theorem source_block_runScoped_cont_eq_open
                 Locals.Source.Outcome.halt, Locals.Source.Outcome.cont]
                 at hRun
 
+theorem source_block_runScoped_leave_eq_open
+    {prim : Source.PrimitiveSemantics}
+    {program : Program} {ctx : Source.Ctx} {block : Block} {fuel : Nat}
+    {state stateAfter : Source.State}
+    (hRun :
+      Source.Block.runScoped prim program ctx block fuel state =
+        .ok (Source.Outcome.leave stateAfter)) :
+    ∃ ctxAfter,
+      Source.Block.runOpen prim program ctx fuel block state =
+        .ok (Source.Outcome.leave stateAfter, ctxAfter) := by
+  unfold Source.Block.runScoped at hRun
+  cases hOpen :
+      Source.Block.runOpen prim program ctx fuel block state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok result =>
+      rcases result with ⟨outcome, ctxAfter⟩
+      cases outcome with
+      | mk outcomeState mode =>
+          cases mode with
+          | regular =>
+              simp [hOpen, Source.Outcome.regular, Source.Outcome.leave,
+                Locals.Source.Outcome.regular, Locals.Source.Outcome.leave]
+                at hRun
+          | brk =>
+              simp [hOpen, Source.Outcome.brk, Source.Outcome.leave,
+                Locals.Source.Outcome.brk, Locals.Source.Outcome.leave]
+                at hRun
+          | cont =>
+              simp [hOpen, Source.Outcome.cont, Source.Outcome.leave,
+                Locals.Source.Outcome.cont, Locals.Source.Outcome.leave]
+                at hRun
+          | leave =>
+              simp [hOpen, Source.Outcome.leave,
+                Locals.Source.Outcome.leave] at hRun
+              cases hRun
+              exact
+                ⟨ctxAfter, by
+                  simpa [Source.Outcome.leave,
+                    Locals.Source.Outcome.leave] using hOpen⟩
+          | halt headKind =>
+              simp [hOpen, Source.Outcome.halt, Source.Outcome.leave,
+                Locals.Source.Outcome.halt, Locals.Source.Outcome.leave]
+                at hRun
+
 theorem compileBlockStmtWithSwitchFallback?_regular_sound_meta_exact_of_stmt_sound
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -29045,6 +29447,133 @@ theorem compileBlockStmtWithSwitchFallback?_cont_sound_meta_of_stmt_sound
     ⟨exprFuel, hRun⟩
   subst plan
   exact ⟨contTarget, exprFuel, hRun, hShared, hStack⟩
+
+theorem compileBlockStmtWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    {values : List Word} {frame : Structured.ReturnDest}
+    {returnStack : List Structured.ReturnDest}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.leave sourceAfter))
+    (hLookup :
+      Source.Store.lookupMany returns sourceAfter.vars = some values)
+    (hReturnsInLeaveScope :
+      ∀ leaveScope name,
+        sourceCtx.leaveScope? = some leaveScope →
+        name ∈ returns →
+        name ∈ leaveScope)
+    (hReturns : target.returns = frame :: returnStack)
+    (hStmtRegular :
+      ∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.regular stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        ∃ finalRunState exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range stmtPlan.sourceScope stmtPlan.stackLayout
+            stmtPlan.layout stmtSourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined stmtSourceAfter.vars stmtPlan.layout ∧
+          finalRunState.evm.stack.length = stmtPlan.stackLayout.length ∧
+          stmtSourceCtxAfter.scope = stmtPlan.sourceScope)
+    (hStmtLeave :
+      ∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState}
+        {stmtValues : List Word} {stmtFrame : Structured.ReturnDest}
+        {stmtReturnStack : List Structured.ReturnDest},
+        compileStmtWithSwitchFallback? range program handlers returns
+            currentScope currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.leave stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        Source.Store.lookupMany returns stmtSourceAfter.vars =
+          some stmtValues →
+        (∀ leaveScope name,
+          stmtSourceCtx.leaveScope? = some leaveScope →
+          name ∈ returns →
+          name ∈ leaveScope) →
+        stmtTarget.returns = stmtFrame :: stmtReturnStack →
+        ∃ final exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.leave (stmtTarget.withEVM final)) ∧
+          final.stack = stmtValues.reverse ∧
+          SharedStateEqOutsideScratch range stmtSourceAfter.shared
+            final.toSharedState ∧
+          ScratchRegionReady final.toMachineState range.base range.words) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.leave (target.withEVM final)) ∧
+      final.stack = values.reverse ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        final.toSharedState ∧
+      ScratchRegionReady final.toMachineState range.base range.words := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
+      _hRestricted, _hCheck, hPlan⟩
+  rcases source_block_runScoped_leave_eq_open hSourceRun with
+    ⟨sourceCtxAfter, hOpen⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+        (plan := bodyPlan) (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx) (sourceCtxAfter := sourceCtxAfter)
+        (fuel := fuel) (source := source) (sourceAfter := sourceAfter)
+        (target := target) (values := values) (frame := frame)
+        (returnStack := returnStack)
+        hBodyCompile hScope hRel hDefined hLength hOpen hLookup
+        hReturnsInLeaveScope hReturns hStmtRegular hStmtLeave with
+    ⟨final, bodyFuel, hBodyRun, hFinalStack, hShared, hReady⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target)
+        (outcome := Expressions.Outcome.leave (target.withEVM final))
+        hNormalize ⟨bodyFuel, hBodyRun⟩
+        (by simp [Expressions.Outcome.leave]) with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact ⟨final, exprFuel, hRun, hFinalStack, hShared, hReady⟩
 
 theorem compileBlockStmtWithSwitchFallback?_brk_sound_meta_exact_handler_scope_of_stmt_sound
     (hSpec : ZeroPaddingSpec)
@@ -30427,6 +30956,341 @@ theorem compileForFallbackWithSwitchFallback?_halt_sound_meta_of_body_halt_stmt_
     ⟨exprFuel, hRun⟩
   subst plan
   exact ⟨haltTarget, exprFuel, hRun, hShared⟩
+
+theorem compileForFallbackWithSwitchFallback?_leave_sound_exact_of_body_leave_stmt_sound
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers} {returns : List Name}
+    {sourceScope stackLayout : List Name} {layout : SpillLayout.Layout}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {sourceCtx initCtx : Source.Ctx}
+    {fuel bodyFuel : Nat}
+    {source sourceAfterInit sourceAfterCond sourceAfterBody : Source.State}
+    {target : Expressions.RunState}
+    {values : List Word} {frame : Structured.ReturnDest}
+    {returnStack : List Structured.ReturnDest}
+    (hCompile :
+      compileForFallbackWithSwitchFallback? range program handlers returns
+        sourceScope stackLayout layout init cond post body =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hInitRun :
+      Source.Block.runOpen Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx.withoutLoopControl fuel init source =
+        .ok (Source.Outcome.regular sourceAfterInit, initCtx))
+    (hCondEval :
+      Source.Expr.evalCondition Locals.Source.PrimitiveSemantics.structured
+          cond sourceAfterInit =
+        .ok (sourceAfterCond, true))
+    (hBodyRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program
+          (initCtx.withLoopControl initCtx.scope initCtx.scope) body
+          bodyFuel sourceAfterCond =
+        .ok (Source.Outcome.leave sourceAfterBody))
+    (hLookup :
+      Source.Store.lookupMany returns sourceAfterBody.vars = some values)
+    (hReturnsInLeaveScope :
+      ∀ leaveScope name,
+        sourceCtx.leaveScope? = some leaveScope →
+        name ∈ returns →
+        name ∈ leaveScope)
+    (hReturns : target.returns = frame :: returnStack)
+    (hInitStmtSound :
+      ∀ {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState},
+        compileStmtWithSwitchFallback? range program
+            handlers.withoutLoopControl returns currentScope
+            currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.regular stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        ∃ finalRunState exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range stmtPlan.sourceScope stmtPlan.stackLayout
+            stmtPlan.layout stmtSourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined stmtSourceAfter.vars stmtPlan.layout ∧
+          finalRunState.evm.stack.length = stmtPlan.stackLayout.length ∧
+          stmtSourceCtxAfter.scope = stmtPlan.sourceScope)
+    (hBodyStmtRegular :
+      ∀ {bodyHandlerScope : List Name}
+        {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState},
+        compileStmtWithSwitchFallback? range program
+            (handlers.withLoopControl bodyHandlerScope) returns currentScope
+            currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.regular stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        ∃ finalRunState exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.regular finalRunState) ∧
+          SpillStateRel range stmtPlan.sourceScope stmtPlan.stackLayout
+            stmtPlan.layout stmtSourceAfter finalRunState.evm ∧
+          SpillLayout.StoreDefined stmtSourceAfter.vars stmtPlan.layout ∧
+          finalRunState.evm.stack.length = stmtPlan.stackLayout.length ∧
+          stmtSourceCtxAfter.scope = stmtPlan.sourceScope)
+    (hBodyStmtLeave :
+      ∀ {bodyHandlerScope : List Name}
+        {currentScope currentStackLayout : List Name}
+        {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+        {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+        {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+        {stmtTarget : Expressions.RunState}
+        {stmtValues : List Word} {stmtFrame : Structured.ReturnDest}
+        {stmtReturnStack : List Structured.ReturnDest},
+        compileStmtWithSwitchFallback? range program
+            (handlers.withLoopControl bodyHandlerScope) returns currentScope
+            currentStackLayout currentLayout stmt =
+          some stmtPlan →
+        stmtSourceCtx.scope = currentScope →
+        SpillStateRel range currentScope currentStackLayout currentLayout
+          stmtSource stmtTarget.evm →
+        SpillLayout.StoreDefined stmtSource.vars currentLayout →
+        stmtTarget.evm.stack.length = currentStackLayout.length →
+        Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+            stmtSourceCtx stmtFuel stmt stmtSource =
+          .ok (Source.Outcome.leave stmtSourceAfter,
+            stmtSourceCtxAfter) →
+        Source.Store.lookupMany returns stmtSourceAfter.vars =
+          some stmtValues →
+        (∀ leaveScope name,
+          stmtSourceCtx.leaveScope? = some leaveScope →
+          name ∈ returns →
+          name ∈ leaveScope) →
+        stmtTarget.returns = stmtFrame :: stmtReturnStack →
+        ∃ final exprFuel,
+          Expressions.Block.run exprProgram exprFuel stmtPlan.block
+              stmtTarget =
+            .ok (Expressions.Outcome.leave (stmtTarget.withEVM final)) ∧
+          final.stack = stmtValues.reverse ∧
+          SharedStateEqOutsideScratch range stmtSourceAfter.shared
+            final.toSharedState ∧
+          ScratchRegionReady final.toMachineState range.base range.words) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.leave (target.withEVM final)) ∧
+      final.stack = values.reverse ∧
+      SharedStateEqOutsideScratch range sourceAfterBody.shared
+        final.toSharedState ∧
+      ScratchRegionReady final.toMachineState range.base range.words := by
+  rcases
+      compileForFallbackWithSwitchFallback?_eq_some_components hCompile with
+    ⟨entry, initOpen, initPlan, condCode, _postRaw, postPlan, bodyRaw,
+      bodyPlan, _finalLayout, hEntry, hEntryStack, hInitOpen, hInitNorm,
+      hInitStack, hCondSafe, hCondCode, _hPostCompile, _hPostNorm,
+      _hPostOk, hBodyCompile, hBodyNorm, _hBodyOk, _hFinalLayout,
+      _hCheck, hPlan⟩
+  have hEntryScope : entry.sourceScope = sourceScope :=
+    normalizePlanStack?_sourceScope hEntry
+  have hEmptyRun :
+      ∃ planFuel,
+        Expressions.Block.run exprProgram planFuel
+            ({ stmts := [] } : Expressions.Block) target =
+          .ok (Expressions.Outcome.regular (target.withEVM target.evm)) := by
+    refine ⟨1, ?_⟩
+    simp [Expressions.Block.run, Structured.RunState.withEVM]
+  rcases
+      normalizePlanStack?_regular_sound_exact
+        hSpec hWordBytes hEntry hEmptyRun hRel hDefined hLength with
+    ⟨entryFinal, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+      _hEntryStackLayout, hEntryFinalStack⟩
+  have hInitScopeInput :
+      sourceCtx.withoutLoopControl.scope = entry.sourceScope := by
+    simpa [Source.Ctx.withoutLoopControl, hEntryScope] using hScope
+  rcases
+      compileBlockOpenWithSwitchFallback?_regular_sound_meta_exact_of_stmt_sound
+        (plan := initOpen) (exprProgram := exprProgram)
+        (sourceCtx := sourceCtx.withoutLoopControl)
+        (sourceCtxAfter := initCtx) (fuel := fuel)
+        (source := source) (sourceAfter := sourceAfterInit)
+        (target := target.withEVM entryFinal)
+        hInitOpen hInitScopeInput
+        (by simpa [Structured.RunState.withEVM, hEntryStack] using hEntryRel)
+        hEntryDefined
+        (by simpa [Structured.RunState.withEVM] using hEntryFinalStack)
+        hInitRun hInitStmtSound with
+    ⟨initRunState, initFuel, hInitTargetRun, hInitRel, hInitDefined,
+      hInitLength, hInitCtxScope⟩
+  have hInitReturns : initRunState.returns = target.returns := by
+    have hReturnsFromInit :=
+      expressionsBlockRun_regular_returns_eq hInitTargetRun
+    simpa [Structured.RunState.withEVM] using hReturnsFromInit
+  rcases
+      normalizePlanStack?_regular_sound_exact_runState
+        hSpec hWordBytes hInitNorm
+        (target := target.withEVM entryFinal)
+        (finalRunState := initRunState)
+        ⟨initFuel, hInitTargetRun⟩ hInitRel hInitDefined hInitLength with
+    ⟨initFinal, initNormFuel, hInitNormRun, hInitNormRel,
+      hInitNormDefined, _hInitNormStackLayout, hInitFinalStack⟩
+  rcases expr_evalCondition_true_inv hCondEval with
+    ⟨value, hEvalOne, hValueTrue⟩
+  have hExprEval :
+      Source.Expr.eval Locals.Source.PrimitiveSemantics.structured cond
+          sourceAfterInit =
+        .ok (sourceAfterCond, [value]) :=
+    expr_eval_of_evalOne hEvalOne
+  rcases
+      compileCode_exact_prefix_structured
+        (expr := cond)
+        (range := range) (sourceScope := initPlan.sourceScope)
+        (stackLayout := initPlan.stackLayout)
+        (layout := initPlan.layout) (source := sourceAfterInit)
+        (source' := sourceAfterCond) (target := initFinal)
+        (stackPrefix := []) (baseStack := []) (offset := 0)
+        (values := [value]) (code := condCode)
+        (SourceNoMemoryTouch.expr?_sound hCondSafe)
+        (SpillStackPrefixRel.of_spillStateRel hInitNormRel)
+        (by simpa using hInitFinalStack)
+        rfl hCondCode hExprEval with
+    ⟨afterCondEval, hCondRun, hCondStack, hCondRel⟩
+  have hAfterCondStack : afterCondEval.stack = [value] := by
+    simpa using hCondStack
+  let afterPop : EVMState := { afterCondEval with stack := [] }
+  have hAfterPopRel :
+      SpillStateRel range initPlan.sourceScope [] initPlan.layout
+        sourceAfterCond afterPop := by
+    have hRel' :
+        SpillStateRel range initPlan.sourceScope [] initPlan.layout
+          sourceAfterCond
+          ({ afterCondEval with stack := [] } : EVMState) :=
+      spillStackPrefixRel_singleton_empty_to_spillStateRel
+        (by simpa [hInitStack] using hCondRel)
+        hAfterCondStack
+    simpa [afterPop] using hRel'
+  have hAfterPopDefined :
+      SpillLayout.StoreDefined sourceAfterCond.vars initPlan.layout := by
+    intro name location hMem
+    have hValue :=
+      hInitNormDefined (name := name) (location := location) hMem
+    simpa [Locals.Source.Expr.eval_vars_eq hExprEval] using hValue
+  have hInitPlanScope : initPlan.sourceScope = initOpen.sourceScope :=
+    normalizePlanStack?_sourceScope hInitNorm
+  have hInitCtxScopeToPlan : initCtx.scope = initPlan.sourceScope :=
+    hInitCtxScope.trans hInitPlanScope.symm
+  have hBodyScope :
+      (initCtx.withLoopControl initCtx.scope initCtx.scope).scope =
+        initPlan.sourceScope := by
+    simpa [Source.Ctx.withLoopControl] using hInitCtxScopeToPlan
+  have hInitLeaveScope : initCtx.leaveScope? = sourceCtx.leaveScope? := by
+    have hLeave :=
+      SourceDirect.SourceRun.block_runOpen_regular_leaveScope hInitRun
+    simpa [Source.Ctx.withoutLoopControl] using hLeave
+  have hBodyReturnsInLeaveScope :
+      ∀ leaveScope name,
+        (initCtx.withLoopControl initCtx.scope initCtx.scope).leaveScope? =
+          some leaveScope →
+        name ∈ returns →
+        name ∈ leaveScope := by
+    intro leaveScope name hLeave hNameMem
+    exact hReturnsInLeaveScope leaveScope name
+      (by simpa [Source.Ctx.withLoopControl, hInitLeaveScope] using hLeave)
+      hNameMem
+  have hBodyReturns :
+      (initRunState.withEVM afterPop).returns = frame :: returnStack := by
+    simpa [Structured.RunState.withEVM, hInitReturns] using hReturns
+  rcases
+      compileBlockStmtWithSwitchFallback?_leave_sound_exact_of_stmt_sound
+        (plan := bodyRaw) (exprProgram := exprProgram)
+        (sourceCtx := initCtx.withLoopControl initCtx.scope initCtx.scope)
+        (fuel := bodyFuel) (source := sourceAfterCond)
+        (sourceAfter := sourceAfterBody)
+        (target := initRunState.withEVM afterPop)
+        (values := values) (frame := frame) (returnStack := returnStack)
+        hBodyCompile hBodyScope
+        (by simpa [Structured.RunState.withEVM] using hAfterPopRel)
+        hAfterPopDefined
+        (by simp [Structured.RunState.withEVM, afterPop])
+        hBodyRun hLookup hBodyReturnsInLeaveScope hBodyReturns
+        hBodyStmtRegular hBodyStmtLeave with
+    ⟨final, bodyRawFuel, hBodyRawRun, hFinalStack, hShared, hReady⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyRaw) (full := bodyPlan)
+        (exprProgram := exprProgram)
+        (target := initRunState.withEVM afterPop)
+        (outcome :=
+          Expressions.Outcome.leave
+            ((initRunState.withEVM afterPop).withEVM final))
+        hBodyNorm ⟨bodyRawFuel, hBodyRawRun⟩
+        (by simp [Expressions.Outcome.leave]) with
+    ⟨bodyPlanFuel, hBodyPlanRun⟩
+  let loopFuel := Nat.max initNormFuel bodyPlanFuel
+  have hInitNormRunBig :
+      Expressions.Block.run exprProgram (Nat.succ loopFuel)
+          initPlan.block (target.withEVM entryFinal) =
+        .ok (Expressions.Outcome.regular
+          (initRunState.withEVM initFinal)) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_trans (Nat.le_max_left initNormFuel bodyPlanFuel)
+          (Nat.le_succ loopFuel))
+        hInitNormRun
+  have hBodyPlanRunBig :
+      Expressions.Block.run exprProgram loopFuel bodyPlan.block
+          (initRunState.withEVM afterPop) =
+        .ok (Expressions.Outcome.leave
+          ((initRunState.withEVM afterPop).withEVM final)) := by
+    exact
+      Expressions.Block.run_mono exprProgram
+        (Nat.le_max_right initNormFuel bodyPlanFuel) hBodyPlanRun
+  have hForStmt :
+      ∃ forFuel,
+      Expressions.Stmt.run exprProgram forFuel
+            (Expressions.Stmt.for_ initPlan.block (.code condCode)
+              postPlan.block bodyPlan.block)
+            (target.withEVM entryFinal) =
+          .ok (Expressions.Outcome.leave (initRunState.withEVM final)) := by
+    refine ⟨Nat.succ (Nat.succ loopFuel), ?_⟩
+    simp [Expressions.Stmt.run, Expressions.Stmt.runForLoop,
+      Expressions.Expr.runConditionState, Expressions.Expr.runCondition,
+      Expressions.Expr.run, Structured.Code.runState,
+      Structured.Code.popCondition, EvmYul.Stack.pop, hInitNormRunBig,
+      hCondRun, hAfterCondStack, hValueTrue, hBodyPlanRunBig, afterPop,
+      Expressions.RunState.withEVM_withEVM]
+  rcases
+      Expressions.Block.run_single_exists exprProgram hForStmt with
+    ⟨forFuel, hForRun⟩
+  rcases
+      expressionsBlock_append_regular_exists exprProgram
+        ⟨entryFuel, hEntryRun⟩ ⟨forFuel, hForRun⟩ with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact
+    ⟨final, exprFuel,
+      by
+        simpa [Structured.RunState.withEVM, hInitReturns] using hRun,
+      hFinalStack, hShared, hReady⟩
 
 theorem compileForFallbackWithSwitchFallback?_halt_sound_meta_of_body_regular_post_halt_stmt_sound
     (hSpec : ZeroPaddingSpec)
