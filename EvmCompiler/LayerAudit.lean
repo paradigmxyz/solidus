@@ -1661,6 +1661,30 @@ abbrev sourceReplayBlockNoLoopReplayCases :=
 abbrev sourceReplayBlockNoLoopReplayDefault :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayDefault
 
+abbrev sourceReplayBlockAtomicPrefixToNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicPrefix.toNoLoopReplayPrefix
+
+abbrev sourceReplayBlockTerminalTailPrefixToNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.TerminalTailPrefix.toNoLoopReplayPrefix
+
+abbrev sourceReplayBlockAtomicSwitchCasesToNoLoopReplayCases :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases.toNoLoopReplayCases
+
+abbrev sourceReplayBlockAtomicSwitchDefaultToNoLoopReplayDefault :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchDefault.toNoLoopReplayDefault
+
+abbrev sourceReplayBlockAtomicIfPrefixToNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefix.toNoLoopReplayPrefix
+
+abbrev sourceReplayBlockAtomicIfPrefixWithOutToNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.toNoLoopReplayPrefix
+
+abbrev sourceReplayBlockAtomicSwitchPrefixToNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchPrefix.toNoLoopReplayPrefix
+
+abbrev sourceReplayBlockAtomicIfPrefixWithOutAppendNoLoopReplayPrefix :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.append_noLoopReplayPrefix
+
 abbrev sourceReplayBlockNoLoopReplayPrefixOfSwitchSelect :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayPrefix_of_switch_select
 

@@ -529,6 +529,14 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayCases
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayDefault
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicPrefix.toNoLoopReplayPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.TerminalTailPrefix.toNoLoopReplayPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases.toNoLoopReplayCases
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchDefault.toNoLoopReplayDefault
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefix.toNoLoopReplayPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.toNoLoopReplayPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchPrefix.toNoLoopReplayPrefix
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.append_noLoopReplayPrefix
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.noLoopReplayPrefix_of_switch_select
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenRegularWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.NoLoopReplayOpenHaltWithOracle
@@ -1075,6 +1083,14 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.run_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.toAtomicIfPrefix
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicIfPrefixWithOut_append_halt_split
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicPrefix.toNoLoopReplayPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.TerminalTailPrefix.toNoLoopReplayPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchCases.toNoLoopReplayCases
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchDefault.toNoLoopReplayDefault
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefix.toNoLoopReplayPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.toNoLoopReplayPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicSwitchPrefix.toNoLoopReplayPrefix
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.AtomicIfPrefixWithOut.append_noLoopReplayPrefix
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicIfPrefixThenTerminalTailPrefixBlockHaltWithOracle_of_splitRuns
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.runState_atomicIfPrefixWithOutThenTerminalTailPrefixBlockHaltWithOracle_of_toExpressions?_of_run
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.run_atomicIfPrefixWithOutThenTerminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial_of_run

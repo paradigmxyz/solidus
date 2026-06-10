@@ -37485,6 +37485,123 @@ def NoLoopReplayDefault
   ∀ body, defaultBody = some body →
     NoLoopReplayPrefix ctx body.stmts
 
+theorem AtomicPrefix.toNoLoopReplayPrefix :
+    ∀ {ctx stmts}, AtomicPrefix ctx stmts →
+      NoLoopReplayPrefix ctx stmts := by
+  intro ctx stmts hPrefix
+  induction hPrefix with
+  | nil ctx =>
+      exact NoLoopReplayPrefix.nil ctx
+  | expr ctx hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.expr ctx hOwned hAccess ih
+  | let_ ctx hOwned hAccess hFresh _hRest ih =>
+      exact NoLoopReplayPrefix.let_ ctx hOwned hAccess hFresh ih
+  | assign ctx hName hBound hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.assign ctx hName hBound hOwned hAccess ih
+
+theorem TerminalTailPrefix.toNoLoopReplayPrefix :
+    ∀ {ctx kind stmts}, TerminalTailPrefix ctx kind stmts →
+      NoLoopReplayPrefix ctx stmts := by
+  intro ctx kind stmts hPrefix
+  induction hPrefix with
+  | terminal ctx kind =>
+      exact NoLoopReplayPrefix.terminal ctx
+  | terminalArgs ctx hOwned hAccess =>
+      exact NoLoopReplayPrefix.terminalArgs ctx hOwned hAccess
+  | expr ctx hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.expr ctx hOwned hAccess ih
+  | let_ ctx hOwned hAccess hFresh _hRest ih =>
+      exact NoLoopReplayPrefix.let_ ctx hOwned hAccess hFresh ih
+  | assign ctx hName hBound hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.assign ctx hName hBound hOwned hAccess ih
+
+theorem AtomicSwitchCases.toNoLoopReplayCases
+    {ctx : Ctx} {cases : List (Word × Locals.Block)}
+    (hCases : AtomicSwitchCases ctx cases) :
+    NoLoopReplayCases ctx cases := by
+  intro value body hMem
+  exact AtomicPrefix.toNoLoopReplayPrefix (hCases value body hMem)
+
+theorem AtomicSwitchDefault.toNoLoopReplayDefault
+    {ctx : Ctx} {defaultBody : Option Locals.Block}
+    (hDefault : AtomicSwitchDefault ctx defaultBody) :
+    NoLoopReplayDefault ctx defaultBody := by
+  intro body hSome
+  exact AtomicPrefix.toNoLoopReplayPrefix (hDefault body hSome)
+
+theorem AtomicIfPrefix.toNoLoopReplayPrefix :
+    ∀ {ctx stmts}, AtomicIfPrefix ctx stmts →
+      NoLoopReplayPrefix ctx stmts := by
+  intro ctx stmts hPrefix
+  induction hPrefix with
+  | nil ctx =>
+      exact NoLoopReplayPrefix.nil ctx
+  | expr ctx hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.expr ctx hOwned hAccess ih
+  | let_ ctx hOwned hAccess hFresh _hRest ih =>
+      exact NoLoopReplayPrefix.let_ ctx hOwned hAccess hFresh ih
+  | assign ctx hName hBound hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.assign ctx hName hBound hOwned hAccess ih
+  | branch ctx hOwned hAccess hBody _hRest ih =>
+      exact
+        NoLoopReplayPrefix.branch ctx hOwned hAccess
+          (AtomicPrefix.toNoLoopReplayPrefix hBody) ih
+
+theorem AtomicIfPrefixWithOut.toNoLoopReplayPrefix
+    {ctx : Ctx} {stmts : List Locals.Stmt} {ctxOut : Ctx}
+    (hPrefix : AtomicIfPrefixWithOut ctx stmts ctxOut) :
+    NoLoopReplayPrefix ctx stmts :=
+  AtomicIfPrefix.toNoLoopReplayPrefix
+    (AtomicIfPrefixWithOut.toAtomicIfPrefix hPrefix)
+
+theorem AtomicSwitchPrefix.toNoLoopReplayPrefix :
+    ∀ {ctx stmts}, AtomicSwitchPrefix ctx stmts →
+      NoLoopReplayPrefix ctx stmts := by
+  intro ctx stmts hPrefix
+  induction hPrefix with
+  | nil ctx =>
+      exact NoLoopReplayPrefix.nil ctx
+  | expr ctx hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.expr ctx hOwned hAccess ih
+  | let_ ctx hOwned hAccess hFresh _hRest ih =>
+      exact NoLoopReplayPrefix.let_ ctx hOwned hAccess hFresh ih
+  | assign ctx hName hBound hOwned hAccess _hRest ih =>
+      exact NoLoopReplayPrefix.assign ctx hName hBound hOwned hAccess ih
+  | branch ctx hOwned hAccess hBody _hRest ih =>
+      exact
+        NoLoopReplayPrefix.branch ctx hOwned hAccess
+          (AtomicPrefix.toNoLoopReplayPrefix hBody) ih
+  | switch ctx hOwned hAccess hCases hDefault _hRest ih =>
+      exact
+        NoLoopReplayPrefix.switch ctx hOwned hAccess
+          (AtomicSwitchCases.toNoLoopReplayCases hCases)
+          (AtomicSwitchDefault.toNoLoopReplayDefault hDefault) ih
+
+theorem AtomicIfPrefixWithOut.append_noLoopReplayPrefix :
+    ∀ {ctx prefixStmts ctxOut tail},
+      AtomicIfPrefixWithOut ctx prefixStmts ctxOut →
+      NoLoopReplayPrefix ctxOut tail →
+      NoLoopReplayPrefix ctx (prefixStmts ++ tail) := by
+  intro ctx prefixStmts ctxOut tail hPrefix hTail
+  induction hPrefix with
+  | nil ctx =>
+      simpa using hTail
+  | expr ctx hOwned hAccess _hRest ih =>
+      simp
+      exact NoLoopReplayPrefix.expr ctx hOwned hAccess (ih hTail)
+  | let_ ctx hOwned hAccess hFresh _hRest ih =>
+      simp
+      exact NoLoopReplayPrefix.let_ ctx hOwned hAccess hFresh (ih hTail)
+  | assign ctx hName hBound hOwned hAccess _hRest ih =>
+      simp
+      exact NoLoopReplayPrefix.assign ctx hName hBound hOwned hAccess
+        (ih hTail)
+  | branch ctx hOwned hAccess hBody _hRest ih =>
+      simp
+      exact
+        NoLoopReplayPrefix.branch ctx hOwned hAccess
+          (AtomicPrefix.toNoLoopReplayPrefix hBody) (ih hTail)
+
 theorem noLoopReplayPrefix_of_switch_select
     {ctx : Ctx} {scrutinee : Word}
     {cases : List (Word × Locals.Block)}
