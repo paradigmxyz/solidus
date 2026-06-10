@@ -20696,6 +20696,54 @@ theorem runWithOracle_append_regular_of_runs
               exact
                 runWithOracle_append_regular_of_runs rest right hLeft hRight
 
+theorem runWithOracle_append_halt_of_left
+    {asmProgram : Assembly.Program} {pc : Nat}
+    {program : Expressions.Program} :
+    ∀ (left right : List Expressions.Stmt)
+      {fuel : Nat} {state targetOut : Expressions.RunState}
+      {trace traceOut : Trace} {kind : Assembly.HaltKind},
+      runWithOracle asmProgram pc program fuel { stmts := left } state
+          trace =
+        .ok (Expressions.Outcome.halt kind targetOut, traceOut) →
+      runWithOracle asmProgram pc program fuel { stmts := left ++ right }
+          state trace =
+        .ok (Expressions.Outcome.halt kind targetOut, traceOut)
+  | [], right, fuel, state, targetOut, trace, traceOut, kind, hLeft => by
+      cases fuel with
+      | zero =>
+          simp [runWithOracle, Structured.invalid] at hLeft
+      | succ fuel =>
+          simp [runWithOracle, Expressions.Outcome.halt] at hLeft
+          rcases hLeft with ⟨hOutcome, _hTrace⟩
+          cases hOutcome
+  | stmt :: rest, right, fuel, state, targetOut, trace, traceOut, kind,
+      hLeft => by
+      cases fuel with
+      | zero =>
+          simp [runWithOracle, Structured.invalid] at hLeft
+      | succ fuel =>
+          cases hStmt :
+              Stmt.runWithOracle asmProgram pc program fuel stmt state
+                trace with
+          | error err =>
+              simp [runWithOracle, hStmt] at hLeft
+          | ok stmtResult =>
+              rcases stmtResult with ⟨stmtOutcome, traceAfterStmt⟩
+              cases stmtOutcome with
+              | mk stateAfterStmt mode =>
+                  cases mode <;>
+                    simp [runWithOracle, hStmt, Expressions.Outcome.regular,
+                      Expressions.Outcome.brk, Expressions.Outcome.cont,
+                      Expressions.Outcome.leave, Expressions.Outcome.halt,
+                      Structured.Outcome.regular, Structured.Outcome.brk,
+                      Structured.Outcome.cont, Structured.Outcome.leave,
+                      Structured.Outcome.halt] at hLeft ⊢
+                  case regular =>
+                    exact
+                      runWithOracle_append_halt_of_left rest right hLeft
+                  case halt =>
+                    exact hLeft
+
 theorem runWithOracle_cons_codeStmt_append_regular_of_runs
     {asmProgram : Assembly.Program} {pc fuel : Nat}
     {program : Expressions.Program} {stmt : Expressions.Stmt}
@@ -41564,6 +41612,160 @@ theorem run_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?_initial
     ⟨expressionFuel, targetOut, by simpa [State.initial] using hReplay,
       hFinalRel⟩
 
+theorem runState_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?
+    {fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial outState : State}
+    {target : Locals.RunState} {kind : Assembly.HaltKind}
+    (hPrefix :
+      Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hRel :
+      Locals.SourceLowering.StateRel Locals.Source.Ctx.initial.scope
+        initial.source target)
+    (hRun : runState fuel program initial = .ok (Outcome.halt kind outState)) :
+    ∃ expressionFuel targetOut,
+      ExpressionsReplay.Block.runWithOracle lower.compile
+          (Assembly.Program.byteLength []) lower expressionFuel lower.body
+          target initial.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+  cases program with
+  | mk procs body =>
+      cases body with
+      | mk stmts =>
+          have hBodyCompile :
+              Locals.Block.compile Locals.Ctx.initial { stmts := stmts } =
+                some lower.body :=
+            Locals.Program.body_toExpressions_of_toExpressions? hLower
+          unfold Locals.Block.compile at hBodyCompile
+          cases hOpen :
+              Locals.Block.compileOpen Locals.Ctx.initial
+                { stmts := stmts } with
+          | none =>
+              simp [hOpen] at hBodyCompile
+          | some openResult =>
+              rcases openResult with ⟨code, targetCtxOut⟩
+              cases hFinish :
+                  Locals.finishScoped Locals.Ctx.initial targetCtxOut code with
+              | none =>
+                  simp [hOpen, hFinish] at hBodyCompile
+              | some lowerBody =>
+                  simp [hOpen, hFinish] at hBodyCompile
+                  cases hBodyCompile
+                  have hNoDup :
+                      Locals.Source.Ctx.initial.scope.Nodup := by
+                    simp [Locals.Source.Ctx.initial]
+                  have hRunScoped :
+                      Block.runScoped
+                          { procs := procs, body := { stmts := stmts } }
+                          Locals.Source.Ctx.initial { stmts := stmts } fuel
+                          initial =
+                        .ok (Outcome.halt kind outState) := by
+                    simpa [runState] using hRun
+                  unfold Block.runScoped at hRunScoped
+                  cases hRunOpen :
+                      Block.runOpen
+                          { procs := procs, body := { stmts := stmts } }
+                          Locals.Source.Ctx.initial fuel { stmts := stmts }
+                          initial with
+                  | error err =>
+                      simp [hRunOpen] at hRunScoped
+                  | ok openRunResult =>
+                      rcases openRunResult with ⟨openOutcome, sourceCtxOut⟩
+                      simp [hRunOpen] at hRunScoped
+                      cases openOutcome with
+                      | mk openState openMode =>
+                          cases openMode <;>
+                            simp [Outcome.regular, Outcome.brk,
+                              Outcome.cont, Outcome.leave, Outcome.halt]
+                              at hRunScoped
+                          case halt openKind =>
+                            rcases hRunScoped with
+                              ⟨hOpenState, hOpenKind⟩
+                            subst openState
+                            subst openKind
+                            have hRunOpenHalt :
+                                Block.runOpen
+                                    { procs := procs,
+                                      body := { stmts := stmts } }
+                                    Locals.Source.Ctx.initial
+                                    fuel { stmts := stmts } initial =
+                                  .ok
+                                    (Outcome.halt kind outState,
+                                      sourceCtxOut) := by
+                              simpa [Outcome.halt] using hRunOpen
+                            rcases
+                                Block.compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
+                                  (asmProgram := lower.compile)
+                                  (program :=
+                                    { procs := procs,
+                                      body := { stmts := stmts } })
+                                  (exprProgram := lower)
+                                  (sourceCtx := Locals.Source.Ctx.initial)
+                                  (targetCtx := Locals.Ctx.initial)
+                                  (fuel := fuel)
+                                  (pc := Assembly.Program.byteLength [])
+                                  (kind := kind) (stmts := stmts)
+                                  (state := initial) (outState := outState)
+                                  (target := target) (code := code)
+                                  (sourceCtxOut := sourceCtxOut)
+                                  (targetCtxOut := targetCtxOut)
+                                  hPrefix Locals.SourceLowering.CtxRel.initial
+                                  hNoDup hRel hOpen hRunOpenHalt with
+                              ⟨targetOut, expressionFuel, hReplayOpen⟩
+                            unfold Locals.finishScoped at hFinish
+                            cases hCleanup :
+                                targetCtxOut.cleanupTo?
+                                  Locals.Ctx.initial.layout.length with
+                            | none =>
+                                simp [hCleanup] at hFinish
+                            | some cleanup =>
+                                simp [hCleanup] at hFinish
+                                have hLowerBody :
+                                    lower.body =
+                                      { stmts :=
+                                          code ++ Locals.codeStmt cleanup } := by
+                                  exact hFinish.symm
+                                refine ⟨expressionFuel, targetOut, ?_⟩
+                                simpa [hLowerBody] using
+                                  ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+                                    (asmProgram := lower.compile)
+                                    (pc := Assembly.Program.byteLength [])
+                                    (program := lower) code
+                                    (Locals.codeStmt cleanup) hReplayOpen
+
+theorem run_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial
+    {fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial : EVMState} {trace : Trace}
+    {outState : State} {kind : Assembly.HaltKind}
+    (hPrefix :
+      Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hStack : initial.stack = [])
+    (hRun :
+      run fuel program initial trace = .ok (Outcome.halt kind outState)) :
+    ∃ expressionFuel targetOut,
+      ExpressionsReplay.Block.runWithOracle lower.compile
+          (Assembly.Program.byteLength []) lower expressionFuel lower.body
+          (Structured.Program.initialState initial) trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+  rcases
+      runState_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?
+        (fuel := fuel) (program := program) (lower := lower)
+        (initial := State.initial initial.toSharedState trace)
+        (outState := outState)
+        (target := Structured.Program.initialState initial) (kind := kind)
+        hPrefix hLower
+        (by
+          simpa [Locals.Source.Ctx.initial, State.initial] using
+            (Locals.SourceLowering.StateRel.initial
+              (initial := initial) hStack))
+        (by simpa [run] using hRun) with
+    ⟨expressionFuel, targetOut, hReplay⟩
+  exact
+    ⟨expressionFuel, targetOut, by simpa [State.initial] using hReplay⟩
+
 theorem runState_observerFree_matches_source
     {fuel : Nat} {program : Locals.Program} {initial : State}
     {outcome : Outcome}
@@ -42107,6 +42309,61 @@ theorem result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_c
       by simpa [Expressions.Program.compile] using hTrace,
       by simpa [Expressions.Program.compile] using hCompiled,
       hResult, hKind⟩
+
+theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hPrefix :
+      SourceReplay.Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
+        sourceProgram.body.stmts)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hTraceDone : sourceOut.trace = [])
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hSafe : ExpressionsReplay.OracleSafe.Program exprProgram)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace []
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, []) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind := by
+  rcases
+      SourceReplay.Program.run_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial
+        (fuel := sourceFuel) (program := sourceProgram)
+        (lower := exprProgram) (initial := dryRun.initial)
+        (trace := dryRun.trace) (outState := sourceOut) (kind := kind)
+        hPrefix hLower hStack hRun with
+    ⟨expressionFuel, targetOut, hReplay⟩
+  have hReplayEmpty :
+      ExpressionsReplay.Block.runWithOracle exprProgram.compile
+          (Assembly.Program.byteLength []) exprProgram expressionFuel
+          exprProgram.body (Structured.Program.initialState dryRun.initial)
+          dryRun.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, []) := by
+    simpa [hTraceDone] using hReplay
+  exact
+    result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+      (program := exprProgram) dryRun
+      (sourceFuel := expressionFuel) (sourceOut := targetOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hDryHalt hCompile hReplayEmpty hLen hBounds hSafe hInitialPc
 
 end TargetDryRun
 

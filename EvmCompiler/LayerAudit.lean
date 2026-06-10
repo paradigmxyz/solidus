@@ -95,6 +95,9 @@ abbrev targetDryRunOracleRunEmpty :=
   abbrev targetDryRunResultEqOfHaltedExpressionsMainOracleRunOfProgramOracleSafeOfCompileByteLengthLtOfDryRunHalted :=
     @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
 
+  abbrev targetDryRunResultEqOfHaltedLocalsTerminalTailRunOfToExpressionsOfProgramOracleSafeOfCompileByteLengthLtOfDryRunHalted :=
+    @Yul.ObserverOracle.TargetDryRun.result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
+
   abbrev targetDryRunSourceOracleRunMatchesTargetOracleOfCompile :=
     @Yul.ObserverOracle.TargetDryRun.sourceOracle_run_matches_targetOracle_of_compile
 
@@ -1148,6 +1151,9 @@ abbrev expressionsReplayBlockRunWithOracleMono :=
 abbrev expressionsReplayBlockRunWithOracleAppendRegularOfRuns :=
   @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
 
+abbrev expressionsReplayBlockRunWithOracleAppendHaltOfLeft :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+
 abbrev expressionsReplayStmtRunForLoopWithOracleMono :=
   @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_mono
 
@@ -1174,6 +1180,12 @@ abbrev sourceReplayBlockCompileOpenConsAssignBlockHaltWithOracleOfEvalOneSourceO
 
 abbrev sourceReplayBlockCompileOpenTerminalTailPrefixBlockHaltWithOracleOfRun :=
   @Yul.ObserverOracle.SourceReplay.Block.compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
+
+abbrev sourceReplayProgramRunStateTerminalTailPrefixBlockHaltWithOracleOfToExpressions :=
+  @Yul.ObserverOracle.SourceReplay.Program.runState_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?
+
+abbrev sourceReplayProgramRunTerminalTailPrefixBlockHaltWithOracleOfToExpressionsInitial :=
+  @Yul.ObserverOracle.SourceReplay.Program.run_terminalTailPrefixBlockHaltWithOracle_of_toExpressions?_initial
 
 abbrev sourceReplayProgramRunStateAtomicSwitchForPrefixSlackWithOracleOfToExpressions :=
   @Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
