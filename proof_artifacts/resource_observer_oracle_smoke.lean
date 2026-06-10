@@ -84,6 +84,9 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Assembly.Preservation.BlockTraceResultWithOracle.targetPcSafe_of_byteLength_lt
 #check EvmCompiler.Assembly.Preservation.BlockTraceResultWithOracle.target_runNResultWithOracle_exists
 #check EvmCompiler.Assembly.Preservation.BlockTraceResultWithOracle.target_runNResultWithOracle_exists_of_byteLength_lt
+#check EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_return
+#check EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_revert
+#check EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe
 #check EvmCompiler.Yul.ObserverOracle.replayPrimitiveSemantics
 #check EvmCompiler.Yul.ObserverOracle.replay_eval_gas_cons
 #check EvmCompiler.Yul.ObserverOracle.replay_eval_msize_cons
@@ -1104,6 +1107,9 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_append_inv
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_terminalTailPrefixBlockHaltWithOracle_of_run
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.oracleSafe_compileOpen_terminalTailPrefix_of_run
+#print axioms EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_return
+#print axioms EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_revert
+#print axioms EvmCompiler.Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_terminalTailPrefixBlockHaltWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifTrueHaltWithOracleExists_of_evalCondition_sourceOwned
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_cons_ifTrueRegularRestHaltWithOracle_of_evalCondition_sourceOwned

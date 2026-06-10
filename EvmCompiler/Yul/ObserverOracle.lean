@@ -49686,7 +49686,6 @@ theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_runState
       Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
         program.body.stmts)
     (hLower : program.toExpressions? = some lower)
-    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
     (hRun : runState fuel program initial = .ok (Outcome.halt kind outState)) :
     ExpressionsReplay.OracleSafe.Program lower := by
   cases program with
@@ -49769,7 +49768,10 @@ theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_runState
                                 (sourceCtxOut := sourceCtxOut)
                                 (code := code)
                                 (targetCtxOut := targetCtxOut)
-                                hPrefix hTerminalSafe hOpen hOpenHalt
+                                hPrefix
+                                (Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe
+                                  kind)
+                                hOpen hOpenHalt
                             have hBodySafe :
                                 ExpressionsReplay.OracleSafe.Block false
                                     false false lower.body :=
@@ -49789,7 +49791,6 @@ theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_run
       Block.TerminalTailPrefix Locals.Source.Ctx.initial kind
         program.body.stmts)
     (hLower : program.toExpressions? = some lower)
-    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
     (hRun :
       run fuel program initial trace = .ok (Outcome.halt kind outState)) :
     ExpressionsReplay.OracleSafe.Program lower :=
@@ -49797,7 +49798,7 @@ theorem oracleSafe_program_terminalTailPrefix_of_toExpressions?_of_run
     (fuel := fuel) (program := program) (lower := lower)
     (initial := State.initial initial.toSharedState trace)
     (outState := outState) (kind := kind)
-    hPrefix hLower hTerminalSafe (by simpa [run] using hRun)
+    hPrefix hLower (by simpa [run] using hRun)
 
 theorem runState_noLoopReplayPrefixBlockHaltWithOracle_of_toExpressions?
     {fuel : Nat} {program : Locals.Program}
@@ -51394,7 +51395,6 @@ theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_compile_
       SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
           dryRun.trace =
         .ok (SourceReplay.Outcome.halt kind sourceOut))
-    (hTerminalSafe : Structured.Preservation.Terminal.RelSafe kind)
     (hLen :
       Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
     (hBounds :
@@ -51417,7 +51417,7 @@ theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_compile_
       (fuel := sourceFuel) (program := sourceProgram)
       (lower := exprProgram) (initial := dryRun.initial)
       (trace := dryRun.trace) (outState := sourceOut) (kind := kind)
-      hPrefix hLower hTerminalSafe hRun
+      hPrefix hLower hRun
   exact
     result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
       (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun

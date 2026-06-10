@@ -12226,6 +12226,125 @@ theorem terminalRelSafe_selfdestruct :
           rw [hState]
           simp [hActive, hMemory, hReturnData]
 
+theorem terminalRelSafe_return :
+    Structured.Preservation.Terminal.RelSafe .return := by
+  intro source sourceFinal target tokens hRel hStep
+  cases hSourceStack : source.evm.stack with
+  | nil =>
+      simp [Structured.Terminal.step, Assembly.Target.stepInstr,
+        Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+        Assembly.HaltKind.toPrimOp, Assembly.PrimOp.toEVM,
+        evm_step_return_eq_binaryMachineStateOp,
+        EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+        hSourceStack] at hStep
+  | cons offset rest =>
+      cases rest with
+      | nil =>
+          simp [Structured.Terminal.step, Assembly.Target.stepInstr,
+            Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+            Assembly.HaltKind.toPrimOp, Assembly.PrimOp.toEVM,
+            evm_step_return_eq_binaryMachineStateOp,
+            EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+            hSourceStack] at hStep
+      | cons size tail =>
+          have hSourceStep :
+              Structured.Terminal.step .return source.evm =
+                .ok (({ source.evm with
+                  toMachineState :=
+                    source.evm.toMachineState.evmReturn offset size
+                }).replaceStackAndIncrPC tail) :=
+            structured_terminal_step_return_of_stack
+              source.evm offset size tail hSourceStack
+          rw [hSourceStep] at hStep
+          cases hStep
+          rcases hRel.replace_visible_stack tail with
+            ⟨suffix, hTargetStack, hRelAfterPop⟩
+          have hTargetStackCons :
+              target.stack = offset :: size :: (tail ++ suffix) := by
+            rw [hTargetStack, hSourceStack]
+            simp
+          let targetFinal : EVMState :=
+            ({ target with
+              toMachineState :=
+                target.toMachineState.evmReturn offset size
+            }).replaceStackAndIncrPC (tail ++ suffix)
+          refine ⟨targetFinal, ?_, ?_⟩
+          · exact
+              structured_terminal_step_return_of_stack target offset size
+                (tail ++ suffix) hTargetStackCons
+          · refine ⟨?_, ?_⟩
+            · simpa [targetFinal, EvmYul.EVM.State.replaceStackAndIncrPC,
+                Structured.RunState.withEVM] using hRelAfterPop.stackRel
+            · have hData := hRelAfterPop.dataRel
+              simp [targetFinal, EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC, Structured.RunState.withEVM,
+                Structured.Preservation.eraseControl, Assembly.eraseGas]
+                at hData ⊢
+              rcases hData with
+                ⟨hState, hActive, hMemory, hReturnData, _hReturn⟩
+              simp [EvmYul.MachineState.evmReturn, hState, hActive,
+                hMemory, hReturnData]
+
+theorem terminalRelSafe_revert :
+    Structured.Preservation.Terminal.RelSafe .revert := by
+  intro source sourceFinal target tokens hRel hStep
+  cases hSourceStack : source.evm.stack with
+  | nil =>
+      simp [Structured.Terminal.step, Assembly.Target.stepInstr,
+        Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+        Assembly.HaltKind.toPrimOp, Assembly.PrimOp.toEVM,
+        evm_step_revert_eq_binaryMachineStateOp,
+        EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+        hSourceStack] at hStep
+  | cons offset rest =>
+      cases rest with
+      | nil =>
+          simp [Structured.Terminal.step, Assembly.Target.stepInstr,
+            Assembly.PrimOp.step, Assembly.PrimOp.continuingStep?,
+            Assembly.HaltKind.toPrimOp, Assembly.PrimOp.toEVM,
+            evm_step_revert_eq_binaryMachineStateOp,
+            EvmYul.EVM.binaryMachineStateOp, EvmYul.Stack.pop2,
+            hSourceStack] at hStep
+      | cons size tail =>
+          have hSourceStep :
+              Structured.Terminal.step .revert source.evm =
+                .ok (({ source.evm with
+                  toMachineState :=
+                    source.evm.toMachineState.evmRevert offset size
+                }).replaceStackAndIncrPC tail) :=
+            structured_terminal_step_revert_of_stack
+              source.evm offset size tail hSourceStack
+          rw [hSourceStep] at hStep
+          cases hStep
+          rcases hRel.replace_visible_stack tail with
+            ⟨suffix, hTargetStack, hRelAfterPop⟩
+          have hTargetStackCons :
+              target.stack = offset :: size :: (tail ++ suffix) := by
+            rw [hTargetStack, hSourceStack]
+            simp
+          let targetFinal : EVMState :=
+            ({ target with
+              toMachineState :=
+                target.toMachineState.evmRevert offset size
+            }).replaceStackAndIncrPC (tail ++ suffix)
+          refine ⟨targetFinal, ?_, ?_⟩
+          · exact
+              structured_terminal_step_revert_of_stack target offset size
+                (tail ++ suffix) hTargetStackCons
+          · refine ⟨?_, ?_⟩
+            · simpa [targetFinal, EvmYul.EVM.State.replaceStackAndIncrPC,
+                Structured.RunState.withEVM] using hRelAfterPop.stackRel
+            · have hData := hRelAfterPop.dataRel
+              simp [targetFinal, EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC, Structured.RunState.withEVM,
+                Structured.Preservation.eraseControl, Assembly.eraseGas]
+                at hData ⊢
+              rcases hData with
+                ⟨hState, hActive, hMemory, hReturnData, _hReturn⟩
+              simp [EvmYul.MachineState.evmRevert,
+                EvmYul.MachineState.evmReturn, hState, hActive, hMemory,
+                hReturnData]
+
 theorem terminalRelSafe_of_haltKind?
     {kind : Assembly.HaltKind}
     (hSafe :
@@ -12234,6 +12353,14 @@ theorem terminalRelSafe_of_haltKind?
   cases kind <;>
     simp [StateRel.SpillScratch.SourceNoMemoryTouch.haltKind?] at hSafe
   · exact terminalRelSafe_stop
+  · exact terminalRelSafe_selfdestruct
+
+theorem terminalRelSafe (kind : Assembly.HaltKind) :
+    Structured.Preservation.Terminal.RelSafe kind := by
+  cases kind
+  · exact terminalRelSafe_stop
+  · exact terminalRelSafe_return
+  · exact terminalRelSafe_revert
   · exact terminalRelSafe_selfdestruct
 
 theorem structured_terminal_stop_step

@@ -4361,6 +4361,18 @@ example {range : Locals.SourceLowering.StateRel.SpillScratch.ScratchRange}
   Locals.SourceLowering.PrimitiveSemantics.structured_terminal_step_exists_outsideScratch
     hNoMem hEval hRel hShared hStack
 
+example :
+    Structured.Preservation.Terminal.RelSafe .return :=
+  Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_return
+
+example :
+    Structured.Preservation.Terminal.RelSafe .revert :=
+  Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe_revert
+
+example (kind : Assembly.HaltKind) :
+    Structured.Preservation.Terminal.RelSafe kind :=
+  Locals.SourceLowering.PrimitiveSemantics.terminalRelSafe kind
+
 example
     (hSpec : Locals.SourceLowering.StateRel.SpillScratch.ZeroPaddingSpec)
     (hWordBytes :
