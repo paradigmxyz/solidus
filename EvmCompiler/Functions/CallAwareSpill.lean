@@ -21365,6 +21365,36 @@ theorem CallHaltReplayForBelow.mono
     hReplay (Nat.lt_of_lt_of_le hLt hLe) hFind hArgs hBody hSaved
       hSavedRel hPrefix hStack
 
+structure SwitchFallbackCallReplayBelow
+    (maxFuel : Nat) (range : ScratchRange) (program : Program)
+    (exprProgram : Expressions.Program) : Prop where
+  regular :
+    ∀ {target : Expressions.RunState} {source : Source.State}
+      {targets : List Name} {functionName : Name}
+      {args : List (Expr 1)},
+      CallReplayForBelow maxFuel range program exprProgram target source
+        targets functionName args
+  halt :
+    ∀ {target : Expressions.RunState} {source : Source.State}
+      {targets : List Name} {functionName : Name}
+      {args : List (Expr 1)},
+      CallHaltReplayForBelow maxFuel range program exprProgram target source
+        targets functionName args
+
+theorem SwitchFallbackCallReplayBelow.of_le
+    {smaller larger : Nat} (hFuelLe : smaller ≤ larger)
+    {range : ScratchRange} {program : Program}
+    {exprProgram : Expressions.Program}
+    (hReplay :
+      SwitchFallbackCallReplayBelow larger range program exprProgram) :
+    SwitchFallbackCallReplayBelow smaller range program exprProgram where
+  regular := by
+    intro target source targets functionName args
+    exact CallReplayForBelow.mono hFuelLe hReplay.regular
+  halt := by
+    intro target source targets functionName args
+    exact CallHaltReplayForBelow.mono hFuelLe hReplay.halt
+
 theorem compileCall?_halt_sound_given_callReplayBelow
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -21786,6 +21816,48 @@ theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callR
   compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callReplayBelow
     hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
     (CallReplayForBelow.mono hFuelBound hCallReplay)
+
+theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_of_replay_package_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.call targets functionName args) =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.regular sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hReplay :
+      SwitchFallbackCallReplayBelow maxFuel range program exprProgram) :
+    ∃ final exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.regular (target.withEVM final)) ∧
+      SpillStateRel range plan.sourceScope plan.stackLayout plan.layout
+        sourceAfter final ∧
+      SpillLayout.StoreDefined sourceAfter.vars plan.layout ∧
+      final.stack.length = plan.stackLayout.length ∧
+      sourceCtxAfter.scope = plan.sourceScope :=
+  compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callReplayBelow_maxFuel
+    hSpec hWordBytes hCompile hScope hRel hDefined hLength hSourceRun
+    hFuelBound hReplay.regular
 
 def StmtUsesNonCallSpanFallback : Stmt → Prop
   | .expr _ => True
