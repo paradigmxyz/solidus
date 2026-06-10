@@ -25702,6 +25702,46 @@ theorem expressionsBlockRun_cont_returns_eq
   simpa [Structured.Preservation.Frame.Outcome.ReturnsPreserved,
     Structured.Outcome.cont] using hReturns
 
+theorem expressionsBlockRun_brk_returns_eq
+    {program : Expressions.Program} {fuel : Nat}
+    {block : Expressions.Block} {state final : Expressions.RunState}
+    (hRun :
+      Expressions.Block.run program fuel block state =
+        .ok (Expressions.Outcome.brk final)) :
+    final.returns = state.returns := by
+  have hStructuredRun :
+      Structured.Block.run program.toStructured fuel block.toStructured state =
+        .ok (Structured.Outcome.brk final) := by
+    simpa [Expressions.Outcome.brk] using
+      (by
+        simpa [Expressions.Block.run_toStructured program fuel block state]
+          using hRun)
+  have hEval := Structured.Block.eval_of_run hStructuredRun
+  have hReturns :=
+    Structured.Preservation.Frame.Block.Eval.returns_preserved hEval
+  simpa [Structured.Preservation.Frame.Outcome.ReturnsPreserved,
+    Structured.Outcome.brk] using hReturns
+
+theorem expressionsBlockRun_leave_returns_eq
+    {program : Expressions.Program} {fuel : Nat}
+    {block : Expressions.Block} {state final : Expressions.RunState}
+    (hRun :
+      Expressions.Block.run program fuel block state =
+        .ok (Expressions.Outcome.leave final)) :
+    final.returns = state.returns := by
+  have hStructuredRun :
+      Structured.Block.run program.toStructured fuel block.toStructured state =
+        .ok (Structured.Outcome.leave final) := by
+    simpa [Expressions.Outcome.leave] using
+      (by
+        simpa [Expressions.Block.run_toStructured program fuel block state]
+          using hRun)
+  have hEval := Structured.Block.eval_of_run hStructuredRun
+  have hReturns :=
+    Structured.Preservation.Frame.Block.Eval.returns_preserved hEval
+  simpa [Structured.Preservation.Frame.Outcome.ReturnsPreserved,
+    Structured.Outcome.leave] using hReturns
+
 theorem compileStmtListWithSwitchFallback?_regular_sound_meta_exact_of_stmt_sound
     {range : ScratchRange} {program : Program}
     {handlers : FallbackHandlers}
