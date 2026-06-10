@@ -84,6 +84,31 @@ def basicOpOracleSafe (op : Structured.BasicOp) : Prop :=
   basicOpObserver? op ≠ none ∨
     ∃ step, Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = some step
 
+def basicOpOracleSafe? (op : Structured.BasicOp) : Bool :=
+  match basicOpObserver? op with
+  | some _ => true
+  | none =>
+      (Locals.Source.PrimitiveSemantics.sourceContinuingStep? op).isSome
+
+theorem basicOpOracleSafe_of_basicOpOracleSafe?
+    {op : Structured.BasicOp} :
+    basicOpOracleSafe? op = true → basicOpOracleSafe op := by
+  unfold basicOpOracleSafe?
+  cases hObserver : basicOpObserver? op with
+  | some observer =>
+      intro _hSafe
+      left
+      simp [hObserver]
+  | none =>
+      intro hSafe
+      right
+      cases hStep :
+          Locals.Source.PrimitiveSemantics.sourceContinuingStep? op with
+      | none =>
+          simp [hStep] at hSafe
+      | some step =>
+          exact ⟨step, rfl⟩
+
 theorem stackOp_dup?_observer_none :
     ∀ {n : Nat} {op : Structured.BasicOp},
       Locals.StackOp.dup? n = some op → basicOpObserver? op = none
@@ -22619,6 +22644,57 @@ mutual
         SyntaxOracleSafe head ∧ ExprSeq.SyntaxOracleSafe tail
 end
 
+mutual
+  def syntaxOracleSafe? {results : Nat}
+      (expr : Locals.Expr results) : Bool :=
+    match expr with
+    | .lit _value => true
+    | .var _name => true
+    | .code _code => false
+    | .prim op args =>
+        basicOpOracleSafe? op && ExprSeq.syntaxOracleSafe? args
+
+  def ExprSeq.syntaxOracleSafe? {results : Nat}
+      (exprs : Locals.ExprSeq results) : Bool :=
+    match exprs with
+    | .nil => true
+    | .cons head tail =>
+        syntaxOracleSafe? head && ExprSeq.syntaxOracleSafe? tail
+end
+
+mutual
+  theorem syntaxOracleSafe_of_syntaxOracleSafe? :
+      ∀ {results : Nat} {expr : Locals.Expr results},
+        syntaxOracleSafe? expr = true → SyntaxOracleSafe expr := by
+    intro results expr hSafe
+    cases expr with
+    | lit value =>
+        simp [SyntaxOracleSafe]
+    | var name =>
+        simp [SyntaxOracleSafe]
+    | code code =>
+        simp [syntaxOracleSafe?] at hSafe
+    | prim op args =>
+        simp [syntaxOracleSafe?] at hSafe
+        exact
+          ⟨basicOpOracleSafe_of_basicOpOracleSafe? hSafe.1,
+            ExprSeq.syntaxOracleSafe_of_syntaxOracleSafe? hSafe.2⟩
+
+  theorem ExprSeq.syntaxOracleSafe_of_syntaxOracleSafe? :
+      ∀ {results : Nat} {exprs : Locals.ExprSeq results},
+        ExprSeq.syntaxOracleSafe? exprs = true →
+          ExprSeq.SyntaxOracleSafe exprs := by
+    intro results exprs hSafe
+    cases exprs with
+    | nil =>
+        simp [ExprSeq.SyntaxOracleSafe]
+    | @cons left right head tail =>
+        simp [ExprSeq.syntaxOracleSafe?] at hSafe
+        exact
+          ⟨syntaxOracleSafe_of_syntaxOracleSafe? hSafe.1,
+            ExprSeq.syntaxOracleSafe_of_syntaxOracleSafe? hSafe.2⟩
+end
+
 set_option maxHeartbeats 800000 in
 mutual
   theorem oracleSafe_compileCode_of_syntaxOracleSafe :
@@ -38868,6 +38944,293 @@ mutual
         omega
 end
 
+mutual
+  def stmtListSyntaxOracleSafe? (stmts : List Locals.Stmt) : Bool :=
+    match stmts with
+    | [] => true
+    | Locals.Stmt.expr expr :: rest =>
+        Expr.syntaxOracleSafe? expr && stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.exprs exprs :: rest =>
+        Expr.ExprSeq.syntaxOracleSafe? exprs &&
+          stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.let_ _name expr :: rest =>
+        Expr.syntaxOracleSafe? expr && stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.assign _name expr :: rest =>
+        Expr.syntaxOracleSafe? expr && stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.if_ cond body :: rest =>
+        Expr.syntaxOracleSafe? cond &&
+          stmtListSyntaxOracleSafe? body.stmts &&
+          stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.switch scrutinee cases defaultBody :: rest =>
+        Expr.syntaxOracleSafe? scrutinee &&
+          caseListSyntaxOracleSafe? cases &&
+          defaultSyntaxOracleSafe? defaultBody &&
+          stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.terminal _kind :: rest =>
+        stmtListSyntaxOracleSafe? rest
+    | Locals.Stmt.terminalArgs _kind args :: rest =>
+        Expr.ExprSeq.syntaxOracleSafe? args &&
+          stmtListSyntaxOracleSafe? rest
+    | _stmt :: _rest => false
+  termination_by sizeOf stmts
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def caseListSyntaxOracleSafe?
+      (cases : List (Word × Locals.Block)) : Bool :=
+    match cases with
+    | [] => true
+    | (_value, body) :: rest =>
+        stmtListSyntaxOracleSafe? body.stmts &&
+          caseListSyntaxOracleSafe? rest
+  termination_by sizeOf cases
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def defaultSyntaxOracleSafe? (defaultBody : Option Locals.Block) :
+      Bool :=
+    match defaultBody with
+    | none => true
+    | some body => stmtListSyntaxOracleSafe? body.stmts
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+end
+
+private theorem sizeOf_stmtListTailBlock_lt_cons
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt) :
+    sizeOf ({ stmts := rest } : Locals.Block) <
+      sizeOf ({ stmts := stmt :: rest } : Locals.Block) := by
+  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec]
+
+private theorem sizeOf_listTail_lt_cons {α : Type} [SizeOf α]
+    (head : α) (rest : List α) :
+    sizeOf rest < sizeOf (head :: rest) := by
+  rw [List.cons.sizeOf_spec]
+  omega
+
+private theorem sizeOf_caseBody_lt_cons
+    (caseValue : Word) (caseBody : Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf caseBody < sizeOf ((caseValue, caseBody) :: rest) := by
+  rw [List.cons.sizeOf_spec, Prod.mk.sizeOf_spec]
+  omega
+
+private theorem sizeOf_pairSnd_lt_cons
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf head.2 < sizeOf (head :: rest) := by
+  rcases head with ⟨caseValue, body⟩
+  cases body
+  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec,
+    Prod.mk.sizeOf_spec]
+  omega
+
+private theorem sizeOf_pairSnd_lt_cons_expanded
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf head.2 < 1 + sizeOf head + sizeOf rest := by
+  simpa [List.cons.sizeOf_spec] using sizeOf_pairSnd_lt_cons head rest
+
+private theorem sizeOf_caseHeadBodyStmts_lt_cons_plus_one
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    1 + sizeOf head.2.stmts < 1 + sizeOf head + sizeOf rest + 1 := by
+  rcases head with ⟨value, body⟩
+  cases body with
+  | mk bodyStmts =>
+      simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec]
+      omega
+
+mutual
+  theorem stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+      {stmts : List Locals.Stmt}
+      (hSafe : stmtListSyntaxOracleSafe? stmts = true) :
+      StmtListSyntaxOracleSafe stmts := by
+    cases stmts with
+    | nil =>
+        simp [StmtListSyntaxOracleSafe]
+    | cons stmt rest =>
+        cases stmt with
+        | expr expr =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.syntaxOracleSafe_of_syntaxOracleSafe? hSafe.1)
+                (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                  hSafe.2)
+        | exprs exprs =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.ExprSeq.syntaxOracleSafe_of_syntaxOracleSafe?
+                  hSafe.1)
+                (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                  hSafe.2)
+        | let_ name expr =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.syntaxOracleSafe_of_syntaxOracleSafe? hSafe.1)
+                (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                  hSafe.2)
+        | assign name expr =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.syntaxOracleSafe_of_syntaxOracleSafe? hSafe.1)
+                (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                  hSafe.2)
+        | assignTop name =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | assignTopWithOffset offset name =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | promoteName name =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | cleanupTo targetLayout =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | block body =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | if_ cond body =>
+            cases hCond : Expr.syntaxOracleSafe? cond <;>
+              simp [stmtListSyntaxOracleSafe?, hCond] at hSafe
+            cases hBody : stmtListSyntaxOracleSafe? body.stmts <;>
+              simp [hBody] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.syntaxOracleSafe_of_syntaxOracleSafe? hCond)
+                (And.intro
+                  (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                    hBody)
+                  (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                    hSafe))
+        | switch scrutinee cases defaultBody =>
+            cases hScrutinee : Expr.syntaxOracleSafe? scrutinee <;>
+              simp [stmtListSyntaxOracleSafe?, hScrutinee] at hSafe
+            cases hCases : caseListSyntaxOracleSafe? cases <;>
+              simp [hCases] at hSafe
+            cases hDefault : defaultSyntaxOracleSafe? defaultBody <;>
+              simp [hDefault] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.syntaxOracleSafe_of_syntaxOracleSafe? hScrutinee)
+                (And.intro
+                  (caseListSyntaxOracleSafe_of_caseListSyntaxOracleSafe?
+                    hCases)
+                  (And.intro
+                    (defaultSyntaxOracleSafe_of_defaultSyntaxOracleSafe?
+                      hDefault)
+                    (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                      hSafe)))
+        | for_ init cond post body =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | brk =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | cont =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | leave =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | call name =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+        | terminal kind =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                hSafe
+        | terminalArgs kind args =>
+            simp [stmtListSyntaxOracleSafe?] at hSafe
+            simpa [StmtListSyntaxOracleSafe] using
+              And.intro
+                (Expr.ExprSeq.syntaxOracleSafe_of_syntaxOracleSafe?
+                  hSafe.1)
+                (stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                  hSafe.2)
+  termination_by sizeOf ({ stmts := stmts } : Locals.Block)
+  decreasing_by
+    all_goals
+      first
+      | exact sizeOf_stmtListTailBlock_lt_cons stmt rest
+      | subst_vars
+        try cases body
+        simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        try omega
+
+  theorem caseListSyntaxOracleSafe_of_caseListSyntaxOracleSafe?
+      {cases : List (Word × Locals.Block)}
+      (hSafe : caseListSyntaxOracleSafe? cases = true) :
+      CaseListSyntaxOracleSafe cases := by
+    cases cases with
+    | nil =>
+        simp [CaseListSyntaxOracleSafe]
+    | cons head rest =>
+        cases hBody : stmtListSyntaxOracleSafe? head.2.stmts with
+        | false =>
+            cases head with
+            | mk value body =>
+                simp [caseListSyntaxOracleSafe?, hBody] at hSafe
+        | true =>
+            have hBodySafe :
+                StmtListSyntaxOracleSafe head.2.stmts :=
+              stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+                hBody
+            cases head with
+            | mk value body =>
+                simp [caseListSyntaxOracleSafe?, hBody] at hSafe
+                have hRestSafe : CaseListSyntaxOracleSafe rest :=
+                  caseListSyntaxOracleSafe_of_caseListSyntaxOracleSafe?
+                    hSafe
+                simpa [CaseListSyntaxOracleSafe] using
+                  And.intro hBodySafe hRestSafe
+  termination_by sizeOf cases + 1
+  decreasing_by
+    all_goals subst_vars
+    all_goals try rcases head with ⟨caseValue, caseBody⟩
+    all_goals try cases caseBody
+    all_goals simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+      List.cons.sizeOf_spec]
+    all_goals omega
+
+  theorem defaultSyntaxOracleSafe_of_defaultSyntaxOracleSafe?
+      {defaultBody : Option Locals.Block}
+      (hSafe : defaultSyntaxOracleSafe? defaultBody = true) :
+      DefaultSyntaxOracleSafe defaultBody := by
+    cases defaultBody with
+    | none =>
+        simp [DefaultSyntaxOracleSafe]
+    | some body =>
+        simp [defaultSyntaxOracleSafe?] at hSafe
+        simpa [DefaultSyntaxOracleSafe] using
+          stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+            hSafe
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals
+      subst_vars
+      try cases body
+      simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+        List.cons.sizeOf_spec]
+      try omega
+end
+
 theorem AtomicPrefix.toNoLoopReplayPrefix :
     ∀ {ctx stmts}, AtomicPrefix ctx stmts →
       NoLoopReplayPrefix ctx stmts := by
@@ -39011,41 +39374,6 @@ theorem noLoopReplayPrefix_of_switch_select
             intro restValue restBody hMem
             exact hCases restValue restBody (by simp [hMem]))
           hSelect
-
-private theorem sizeOf_stmtListTailBlock_lt_cons
-    (stmt : Locals.Stmt) (rest : List Locals.Stmt) :
-    sizeOf ({ stmts := rest } : Locals.Block) <
-      sizeOf ({ stmts := stmt :: rest } : Locals.Block) := by
-  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec]
-
-private theorem sizeOf_listTail_lt_cons {α : Type} [SizeOf α]
-    (head : α) (rest : List α) :
-    sizeOf rest < sizeOf (head :: rest) := by
-  rw [List.cons.sizeOf_spec]
-  omega
-
-private theorem sizeOf_caseBody_lt_cons
-    (caseValue : Word) (caseBody : Locals.Block)
-    (rest : List (Word × Locals.Block)) :
-    sizeOf caseBody < sizeOf ((caseValue, caseBody) :: rest) := by
-  rw [List.cons.sizeOf_spec, Prod.mk.sizeOf_spec]
-  omega
-
-private theorem sizeOf_pairSnd_lt_cons
-    (head : Word × Locals.Block)
-    (rest : List (Word × Locals.Block)) :
-    sizeOf head.2 < sizeOf (head :: rest) := by
-  rcases head with ⟨caseValue, body⟩
-  cases body
-  simp [Locals.Block.mk.sizeOf_spec, List.cons.sizeOf_spec,
-    Prod.mk.sizeOf_spec]
-  omega
-
-private theorem sizeOf_pairSnd_lt_cons_expanded
-    (head : Word × Locals.Block)
-    (rest : List (Word × Locals.Block)) :
-    sizeOf head.2 < 1 + sizeOf head + sizeOf rest := by
-  simpa [List.cons.sizeOf_spec] using sizeOf_pairSnd_lt_cons head rest
 
 set_option maxHeartbeats 1000000 in
 mutual
@@ -50846,6 +51174,17 @@ theorem oracleSafe_program_of_toExpressions?_of_stmtListSyntaxOracleSafe
                           hLower
                       body := hBodySafe }
 
+theorem oracleSafe_program_of_toExpressions?_of_stmtListSyntaxOracleSafeCheck
+    {program : Locals.Program} {lower : Expressions.Program}
+    (hSyntax :
+      Block.stmtListSyntaxOracleSafe? program.body.stmts = true)
+    (hLower : program.toExpressions? = some lower) :
+    ExpressionsReplay.OracleSafe.Program lower :=
+  oracleSafe_program_of_toExpressions?_of_stmtListSyntaxOracleSafe
+    (Block.stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+      hSyntax)
+    hLower
+
 theorem runState_noLoopReplayPrefixBlockHaltWithOracle_of_toExpressions?
     {fuel : Nat} {program : Locals.Program}
     {lower : Expressions.Program} {initial outState : State}
@@ -52429,6 +52768,51 @@ theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_sy
       (kind := kind) (dryHalt := dryHalt)
       hPrefix hLower hDryHalt hCompile hStack hRun hLen hBounds hSafe
       hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hPrefix :
+      SourceReplay.Block.NoLoopReplayPrefix Locals.Source.Ctx.initial
+        sourceProgram.body.stmts)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] :=
+  result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_syntaxOracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun
+    (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+    (kind := kind) (dryHalt := dryHalt)
+    hPrefix
+    (SourceReplay.Block.stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
+      hSyntax)
+    hLower hDryHalt hCompile hStack hRun hLen hBounds hInitialPc
 
 theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
