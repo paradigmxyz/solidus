@@ -49749,6 +49749,56 @@ theorem result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of
   exact
     ⟨assemblyFuel, halt, hAccepted, hTrace, hCompiled, hResult, hKind⟩
 
+theorem result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+    {program : Structured.Program} (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : Structured.RunState}
+    {traceOut : Trace}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? program.compile = some dryRun.target)
+    (hRun :
+      StructuredReplay.Block.runWithOracle program.compile
+          (Assembly.Program.byteLength []) program sourceFuel program.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Structured.Outcome.halt kind sourceOut, traceOut))
+    (hLen : Assembly.Program.byteLength program.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program)
+    (hPreserves :
+      StructuredReplay.BlockPreservesWithOracle program
+        (Structured.Preservation.CompiledProgram.mainCtx program) 0
+        program.body)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted program.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle program.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace traceOut
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle program.compile assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, traceOut) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        traceOut = [] := by
+  rcases
+      _root_.EvmCompiler.Yul.ObserverOracle.StructuredReplay.ProgramPreservationWithOracle.halted_sourceOracle_run_of_main_block_preserves
+        (program := program) (sourceFuel := sourceFuel)
+        (initial := dryRun.initial) (sourceOut := sourceOut)
+        (trace := dryRun.trace) (traceOut := traceOut) (kind := kind)
+        hBounds hPreserves hInitialPc hRun with
+    ⟨assemblyFuel, halt, hSourceOracle, hKind⟩
+  rcases
+      result_eq_of_halted_sourceOracle_run_of_compile_byteLength_lt_of_dryRun_halted
+        (asm := program.compile) dryRun (sourceFuel := assemblyFuel)
+        (rest := []) (rest' := traceOut) (halt := halt)
+        (dryHalt := dryHalt)
+        hDryHalt hCompile (by simpa using hSourceOracle) hLen with
+    ⟨hAccepted, hTrace, hCompiled, hResult, hRest⟩
+  exact
+    ⟨assemblyFuel, halt, hAccepted, by simpa using hTrace,
+      by simpa using hCompiled, hResult, hKind, by simpa using hRest⟩
+
 theorem result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
     {program : Structured.Program} (dryRun : TargetDryRun)
     {sourceFuel : Nat} {sourceOut : Structured.RunState}
@@ -49780,6 +49830,43 @@ theorem result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of
   result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted
     (program := program) dryRun (sourceFuel := sourceFuel)
     (sourceOut := sourceOut) (kind := kind) (dryHalt := dryHalt)
+    hDryHalt hCompile hRun hLen hBounds
+    (StructuredReplay.OracleSafe.mainBlockPreserves hSafe) hInitialPc
+
+theorem result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+    {program : Structured.Program} (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : Structured.RunState}
+    {traceOut : Trace}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? program.compile = some dryRun.target)
+    (hRun :
+      StructuredReplay.Block.runWithOracle program.compile
+          (Assembly.Program.byteLength []) program sourceFuel program.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Structured.Outcome.halt kind sourceOut, traceOut))
+    (hLen : Assembly.Program.byteLength program.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program)
+    (hSafe :
+      StructuredReplay.OracleSafe.Block false false false program.body)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted program.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle program.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace traceOut
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle program.compile assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, traceOut) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        traceOut = [] :=
+  result_eq_of_halted_structuredMainOracle_run_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+    (program := program) dryRun (sourceFuel := sourceFuel)
+    (sourceOut := sourceOut) (traceOut := traceOut)
+    (kind := kind) (dryHalt := dryHalt)
     hDryHalt hCompile hRun hLen hBounds
     (StructuredReplay.OracleSafe.mainBlockPreserves hSafe) hInitialPc
 
@@ -49846,6 +49933,73 @@ theorem result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_c
       by simpa [Expressions.Program.compile] using hTrace,
       by simpa [Expressions.Program.compile] using hCompiled,
       hResult, hKind⟩
+
+theorem result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+    {program : Expressions.Program} (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : Expressions.RunState}
+    {traceOut : Trace}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? program.compile = some dryRun.target)
+    (hRun :
+      ExpressionsReplay.Block.runWithOracle program.compile
+          (Assembly.Program.byteLength []) program sourceFuel program.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Expressions.Outcome.halt kind sourceOut, traceOut))
+    (hLen : Assembly.Program.byteLength program.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        program.toStructured)
+    (hSafe : ExpressionsReplay.OracleSafe.Program program)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted program.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle program.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace traceOut
+          (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle program.compile assemblyFuel
+          dryRun.initial dryRun.trace =
+            .ok (.halted halt, traceOut) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        traceOut = [] := by
+  have hCodeShaped : ExpressionsReplay.ProgramCodeShaped program :=
+    ExpressionsReplay.OracleSafe.programCodeShaped hSafe
+  have hStructuredRun :
+      StructuredReplay.Block.runWithOracle program.toStructured.compile
+          (Assembly.Program.byteLength []) program.toStructured sourceFuel
+          program.toStructured.body
+          (Structured.Program.initialState dryRun.initial) dryRun.trace =
+        .ok (Structured.Outcome.halt kind sourceOut, traceOut) := by
+    have hToStructured :=
+      ExpressionsReplay.Block.runWithOracle_toStructured_of_codeShaped
+        (asmProgram := program.compile)
+        (pc := Assembly.Program.byteLength []) (program := program)
+        hCodeShaped sourceFuel program.body
+        (Structured.Program.initialState dryRun.initial) dryRun.trace
+        hCodeShaped.2
+    rw [hToStructured] at hRun
+    simpa [Expressions.Program.compile] using hRun
+  rcases
+      result_eq_of_halted_structuredMainOracle_run_of_main_block_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+        (program := program.toStructured) dryRun
+        (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+        (traceOut := traceOut) (kind := kind) (dryHalt := dryHalt)
+        hDryHalt
+        (by simpa [Expressions.Program.compile] using hCompile)
+        hStructuredRun
+        (by simpa [Expressions.Program.compile] using hLen)
+        hBounds
+        (ExpressionsReplay.OracleSafe.programBodyToStructured hSafe)
+        hInitialPc with
+    ⟨assemblyFuel, halt, hAccepted, hTrace, hCompiled, hResult, hKind,
+      hTraceOut⟩
+  exact
+    ⟨assemblyFuel, halt,
+      by simpa [Expressions.Program.compile] using hAccepted,
+      by simpa [Expressions.Program.compile] using hTrace,
+      by simpa [Expressions.Program.compile] using hCompiled,
+      hResult, hKind, hTraceOut⟩
 
 theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
@@ -49956,6 +50110,54 @@ theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_pr
       (sourceFuel := expressionFuel) (sourceOut := targetOut)
       (kind := kind) (dryHalt := dryHalt)
       hDryHalt hCompile hReplayEmpty hLen hBounds hSafe hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hPrefix :
+      SourceReplay.Block.NoLoopReplayPrefix Locals.Source.Ctx.initial
+        sourceProgram.body.stmts)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hSafe : ExpressionsReplay.OracleSafe.Program exprProgram)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  rcases
+      SourceReplay.Program.run_noLoopReplayPrefixBlockHaltWithOracle_of_toExpressions?_initial
+        (fuel := sourceFuel) (program := sourceProgram)
+        (lower := exprProgram) (initial := dryRun.initial)
+        (trace := dryRun.trace) (outState := sourceOut) (kind := kind)
+        hPrefix hLower hStack hRun with
+    ⟨expressionFuel, targetOut, hReplay⟩
+  exact
+    result_eq_of_halted_expressionsMainOracle_run_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_traceOut
+      (program := exprProgram) dryRun
+      (sourceFuel := expressionFuel) (sourceOut := targetOut)
+      (traceOut := sourceOut.trace) (kind := kind) (dryHalt := dryHalt)
+      hDryHalt hCompile hReplay hLen hBounds hSafe hInitialPc
 
 theorem result_eq_of_halted_localsAtomicIfPrefixThenTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
