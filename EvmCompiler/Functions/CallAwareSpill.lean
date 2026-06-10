@@ -21726,6 +21726,110 @@ theorem compileCallWithNormalizedStackFallback?_regular_sound_meta_exact_given_c
               hStoreDefined,
               by simpa using hScopeAfter⟩
 
+theorem compileCallWithNormalizedStackFallback?_halt_sound_given_callReplayBelow
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {range : ScratchRange} {program : Program}
+    {sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {source haltedState : Source.State}
+    {target : Expressions.RunState}
+    {ctx : Source.Ctx} {fuel : Nat}
+    {kind : Assembly.HaltKind}
+    (hCompile :
+      compileCallWithNormalizedStackFallback? range program sourceScope
+        stackLayout layout targets functionName args =
+        some plan)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hScope : ctx.scope = sourceScope)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          ctx fuel (.call targets functionName args) source =
+        .ok (Source.Outcome.halt kind haltedState, ctx))
+    (hCallReplay :
+      CallHaltReplayForBelow fuel range program exprProgram target source
+        targets functionName args) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range haltedState.shared
+        haltTarget.evm.toSharedState := by
+  unfold compileCallWithNormalizedStackFallback? at hCompile
+  cases hEntry :
+      normalizePlanStack? range
+        { sourceScope := sourceScope
+          stackLayout := stackLayout
+          layout := layout
+          block := { stmts := [] } } with
+  | none =>
+      simp [hEntry] at hCompile
+  | some entry =>
+      simp [hEntry] at hCompile
+      cases hCall :
+          compileCall? range program entry.sourceScope entry.stackLayout
+            entry.layout targets functionName args with
+      | none =>
+          simp [hCall] at hCompile
+      | some callPlan =>
+          simp [hCall] at hCompile
+          cases hCompile
+          have hEntryRun0 :
+              ∃ planFuel,
+                Expressions.Block.run exprProgram planFuel
+                    ({ stmts := [] } : Expressions.Block) target =
+                  .ok (Expressions.Outcome.regular
+                    (target.withEVM target.evm)) := by
+            refine ⟨1, ?_⟩
+            simp [Expressions.Block.run, Structured.RunState.withEVM]
+          rcases
+              normalizePlanStack?_regular_sound_exact
+                hSpec hWordBytes hEntry hEntryRun0 hRel hDefined hLength with
+            ⟨entryFinal, entryFuel, hEntryRun, hEntryRel, hEntryDefined,
+              hEntryStackLayout, hEntryStack⟩
+          have hEntryLength :
+              entryFinal.stack.length = entry.stackLayout.length := by
+            simp [hEntryStack, hEntryStackLayout]
+          rcases
+              compileCall?_halt_sound_given_callReplayBelow
+                hSpec hWordBytes hCall
+                (target := target.withEVM entryFinal)
+                (ctx := ctx)
+                (by
+                  simpa [Structured.RunState.withEVM] using hEntryRel)
+                hEntryDefined hSourceRun
+                (by
+                  intro bodyFuel fn sourceAfterArgs haltedState argValues kind
+                    saved savedValues afterArgsEVM baseStack spillScope
+                    spillLayout hLt hFind hArgs hBody hSaved hSavedRel
+                    hArgsRel hStack
+                  rcases
+                      hCallReplay hLt hFind hArgs hBody hSaved hSavedRel
+                        hArgsRel hStack with
+                    ⟨haltTarget, callFuel, hRun, hShared⟩
+                  exact
+                    ⟨haltTarget, callFuel,
+                      by
+                        simpa [Expressions.RunState.withEVM_withEVM] using
+                          hRun,
+                      hShared⟩) with
+            ⟨haltTarget, callFuel, hCallRun, hShared⟩
+          rcases
+              expressionsBlock_append_regular_exists exprProgram
+                (left := entry.block) (right := callPlan.block)
+                (state := target) (mid := target.withEVM entryFinal)
+                ⟨entryFuel, hEntryRun⟩
+                ⟨callFuel, by
+                  simpa [Expressions.RunState.withEVM_withEVM] using
+                    hCallRun⟩ with
+            ⟨exprFuel, hRun⟩
+          exact ⟨haltTarget, exprFuel, hRun, hShared⟩
+
 theorem compileStmtWithSwitchFallback?_call_regular_sound_meta_exact_given_callReplay
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -29498,7 +29602,7 @@ theorem compileBlockStmtWithSwitchFallback?_halt_sound_meta_of_stmt_sound
     ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
       _hRestricted, _hCheck, hPlan⟩
   rcases source_block_runScoped_halt_eq_open hSourceRun with
-    ⟨sourceCtxAfter, hOpen⟩
+    ⟨_sourceCtxAfter, hOpen⟩
   rcases
       compileBlockOpenWithSwitchFallback?_halt_sound_meta_of_stmt_sound
         hBodyCompile hScope hRel hDefined hLength hOpen hStmtRegular
@@ -34090,6 +34194,61 @@ theorem compileBlockOpenWithSwitchFallback?_halt_sound_meta_of_stmt_sound_below
           (compileBlockOpenWithSwitchFallback?_eq_some hCompile)
           hScope hRel hDefined hLength hSourceRun hFuelBound
           hStmtRegular hStmtHalt
+
+theorem compileBlockStmtWithSwitchFallback?_halt_sound_meta_of_stmt_sound_below
+    {maxFuel : Nat} {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {block : Block} {plan : Plan}
+    {exprProgram : Expressions.Program}
+    {sourceCtx : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState} {kind : Assembly.HaltKind}
+    (hCompile :
+      compileBlockStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout block =
+        some plan)
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Block.runScoped Locals.Source.PrimitiveSemantics.structured
+          program sourceCtx block fuel source =
+        .ok (Source.Outcome.halt kind sourceAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hStmtRegular :
+      SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
+        returns exprProgram)
+    (hStmtHalt :
+      SwitchFallbackStmtHaltSoundBelow maxFuel range program handlers returns
+        exprProgram) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        haltTarget.evm.toSharedState := by
+  rcases compileBlockStmtWithSwitchFallback?_eq_some hCompile with
+    ⟨bodyPlan, normalized, _restrictedLayout, hBodyCompile, hNormalize,
+      _hRestricted, _hCheck, hPlan⟩
+  rcases source_block_runScoped_halt_eq_open hSourceRun with
+    ⟨_sourceCtxAfter, hOpen⟩
+  rcases
+      compileBlockOpenWithSwitchFallback?_halt_sound_meta_of_stmt_sound_below
+        hBodyCompile hScope hRel hDefined hLength hOpen hFuelBound
+        hStmtRegular hStmtHalt with
+    ⟨haltTarget, bodyFuel, hBodyRun, hShared⟩
+  rcases
+      normalizePlanStack?_nonregular_passthrough
+        (range := range) (plan := bodyPlan) (full := normalized)
+        (exprProgram := exprProgram) (target := target)
+        (outcome := Expressions.Outcome.halt kind haltTarget)
+        hNormalize ⟨bodyFuel, hBodyRun⟩
+        (by simp [Expressions.Outcome.halt]) with
+    ⟨exprFuel, hRun⟩
+  subst plan
+  exact ⟨haltTarget, exprFuel, hRun, hShared⟩
 
 theorem compileBlockStmtWithSwitchFallback?_regular_sound_meta_exact_of_regular_sound
     (hSpec : ZeroPaddingSpec)
