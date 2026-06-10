@@ -38876,6 +38876,70 @@ def NoLoopReplayDefault
     NoLoopReplayPrefix ctx body.stmts
 
 mutual
+  def noLoopReplayShape? (stmts : List Locals.Stmt) : Bool :=
+    match stmts with
+    | [] => true
+    | Locals.Stmt.expr _expr :: rest =>
+        noLoopReplayShape? rest
+    | Locals.Stmt.let_ _name _expr :: rest =>
+        noLoopReplayShape? rest
+    | Locals.Stmt.assign _name _expr :: rest =>
+        noLoopReplayShape? rest
+    | Locals.Stmt.terminal _kind :: _rest =>
+        true
+    | Locals.Stmt.terminalArgs _kind _args :: _rest =>
+        true
+    | Locals.Stmt.if_ _cond body :: rest =>
+        noLoopReplayShape? body.stmts && noLoopReplayShape? rest
+    | Locals.Stmt.switch _scrutinee cases defaultBody :: rest =>
+        noLoopReplayCasesShape? cases &&
+          noLoopReplayDefaultShape? defaultBody &&
+          noLoopReplayShape? rest
+    | _stmt :: _rest => false
+  termination_by sizeOf stmts
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def noLoopReplayCasesShape?
+      (cases : List (Word × Locals.Block)) : Bool :=
+    match cases with
+    | [] => true
+    | (_value, body) :: rest =>
+        noLoopReplayShape? body.stmts &&
+          noLoopReplayCasesShape? rest
+  termination_by sizeOf cases
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+
+  def noLoopReplayDefaultShape? (defaultBody : Option Locals.Block) :
+      Bool :=
+    match defaultBody with
+    | none => true
+    | some body => noLoopReplayShape? body.stmts
+  termination_by sizeOf defaultBody
+  decreasing_by
+    all_goals simp_wf
+    all_goals try cases body
+    all_goals first
+      | omega
+      | try simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        omega
+end
+
+mutual
   def StmtListSyntaxOracleSafe (stmts : List Locals.Stmt) : Prop :=
     match stmts with
     | [] => True
@@ -39015,6 +39079,60 @@ mutual
         omega
 end
 
+private def selfTargetCtx (ctx : Ctx) : Locals.Ctx where
+  layout := ctx.scope
+  breakDepth? := ctx.breakScope?.map List.length
+  continueDepth? := ctx.continueScope?.map List.length
+  leaveDepth? := ctx.leaveScope?.map List.length
+  leaveRetc := 0
+
+private theorem ctxRel_selfTargetCtx (ctx : Ctx) :
+    Locals.SourceLowering.CtxRel ctx (selfTargetCtx ctx) := by
+  simp [selfTargetCtx, Locals.SourceLowering.CtxRel]
+
+private theorem expr_sourceOwned_of_scoped
+    {env : List Name} {results : Nat} {expr : Locals.Expr results}
+    (hScoped : Locals.Scope.ExprScoped env expr) :
+    Locals.Source.Expr.SourceOwned expr :=
+  Locals.SourceLowering.Scope.expr_sourceOwned_of_scoped hScoped
+
+private theorem exprSeq_sourceOwned_of_scoped
+    {env : List Name} {results : Nat} {exprs : Locals.ExprSeq results}
+    (hScoped : Locals.Scope.ExprSeqScoped env exprs) :
+    Locals.Source.ExprSeq.SourceOwned exprs :=
+  Locals.SourceLowering.Scope.exprSeq_sourceOwned_of_scoped hScoped
+
+private theorem expr_accessible_of_scoped_bound
+    {ctx : Ctx} {results : Nat} {expr : Locals.Expr results}
+    (hScoped : Locals.Scope.ExprScoped ctx.scope expr)
+    (hBound :
+      Locals.SourceLowering.Access.ExprBound ctx.scope 0 expr) :
+    Locals.SourceLowering.Expr.Accessible ctx.scope 0 expr :=
+  Locals.SourceLowering.CtxRel.expr_accessible_of_scoped_bound
+    (source := ctx) (target := selfTargetCtx ctx)
+    (ctxRel_selfTargetCtx ctx) hScoped hBound
+
+private theorem exprSeq_accessible_of_scoped_bound
+    {ctx : Ctx} {results : Nat} {exprs : Locals.ExprSeq results}
+    (hScoped : Locals.Scope.ExprSeqScoped ctx.scope exprs)
+    (hBound :
+      Locals.SourceLowering.Access.ExprSeqBound ctx.scope 0 exprs) :
+    Locals.SourceLowering.ExprSeq.Accessible ctx.scope 0 exprs :=
+  Locals.SourceLowering.CtxRel.exprSeq_accessible_of_scoped_bound
+    (source := ctx) (target := selfTargetCtx ctx)
+    (ctxRel_selfTargetCtx ctx) hScoped hBound
+
+private theorem stmtListLowerable_of_blockLowerable
+    {env : List Name} {block : Locals.Block}
+    (hLower :
+      Locals.SourceLowering.Structural.BlockLowerable env block) :
+    Locals.SourceLowering.Structural.StmtListLowerable
+      env block.stmts := by
+  cases block with
+  | mk stmts =>
+      simpa [Locals.SourceLowering.Structural.BlockLowerable]
+        using hLower
+
 private theorem sizeOf_stmtListTailBlock_lt_cons
     (stmt : Locals.Stmt) (rest : List Locals.Stmt) :
     sizeOf ({ stmts := rest } : Locals.Block) <
@@ -39059,6 +39177,253 @@ private theorem sizeOf_caseHeadBodyStmts_lt_cons_plus_one
   | mk bodyStmts =>
       simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec]
       omega
+
+private theorem sizeOf_caseBodyStmts_lt_cons_plus_one
+    (caseValue : Word) (caseBody : Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf caseBody.stmts < sizeOf ((caseValue, caseBody) :: rest) + 1 := by
+  cases caseBody with
+  | mk bodyStmts =>
+      simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+        List.cons.sizeOf_spec]
+      omega
+
+private theorem sizeOf_caseBodyBlock_lt_cons_plus_one
+    (caseValue : Word) (caseBody : Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf ({ stmts := caseBody.stmts } : Locals.Block) <
+      sizeOf ((caseValue, caseBody) :: rest) + 1 := by
+  cases caseBody with
+  | mk bodyStmts =>
+      simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+        List.cons.sizeOf_spec]
+      omega
+
+private theorem sizeOf_caseHeadBlock_lt_cons_plus_one
+    (head : Word × Locals.Block)
+    (rest : List (Word × Locals.Block)) :
+    sizeOf ({ stmts := head.2.stmts } : Locals.Block) <
+      sizeOf (head :: rest) + 1 := by
+  rcases head with ⟨caseValue, caseBody⟩
+  exact sizeOf_caseBodyBlock_lt_cons_plus_one caseValue caseBody rest
+
+private theorem sizeOf_blockStmts_lt_block (body : Locals.Block) :
+    sizeOf body.stmts < sizeOf body := by
+  cases body with
+  | mk stmts =>
+      simp [Locals.Block.mk.sizeOf_spec]
+
+private theorem sizeOf_blockOfStmts_lt_some (body : Locals.Block) :
+    sizeOf ({ stmts := body.stmts } : Locals.Block) <
+      sizeOf (some body) := by
+  cases body with
+  | mk stmts =>
+      simp [Locals.Block.mk.sizeOf_spec]
+
+set_option maxHeartbeats 800000 in
+mutual
+  theorem noLoopReplayPrefix_of_structuralLowerable_of_shape?
+      {ctx : Ctx} {stmts : List Locals.Stmt}
+      (hLower :
+        Locals.SourceLowering.Structural.StmtListLowerable
+          ctx.scope stmts)
+      (hShape : noLoopReplayShape? stmts = true) :
+      NoLoopReplayPrefix ctx stmts := by
+    cases stmts with
+    | nil =>
+        exact NoLoopReplayPrefix.nil ctx
+    | cons stmt rest =>
+        cases stmt with
+        | expr expr =>
+            simp [noLoopReplayShape?] at hShape
+            rcases hLower with ⟨hAtomic, hRestLower⟩
+            rcases hAtomic with ⟨hResults, hScoped, hBound⟩
+            cases hResults
+            exact
+              NoLoopReplayPrefix.expr ctx
+                (expr_sourceOwned_of_scoped hScoped)
+                (expr_accessible_of_scoped_bound hScoped hBound)
+                (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                  (ctx := ctx) hRestLower hShape)
+        | exprs exprs =>
+            simp [noLoopReplayShape?] at hShape
+        | let_ name expr =>
+            simp [noLoopReplayShape?] at hShape
+            rcases hLower with ⟨hAtomic, hRestLower⟩
+            rcases hAtomic with ⟨_hHolds, hScoped, hBound⟩
+            rcases hScoped with ⟨hFresh, hExprScoped⟩
+            exact
+              NoLoopReplayPrefix.let_ ctx
+                (expr_sourceOwned_of_scoped hExprScoped)
+                (expr_accessible_of_scoped_bound hExprScoped hBound)
+                hFresh
+                (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                  (ctx := { ctx with scope := name :: ctx.scope })
+                  (by simpa [Locals.Scope.Stmt.outEnv] using hRestLower)
+                  hShape)
+        | assign name expr =>
+            simp [noLoopReplayShape?] at hShape
+            rcases hLower with ⟨hAtomic, hRestLower⟩
+            rcases hAtomic with ⟨_hHolds, hScoped, hBound⟩
+            rcases hScoped with ⟨hNameMem, hExprScoped⟩
+            rcases List.mem_iff_getElem?.mp hNameMem with ⟨idx, hName⟩
+            have hIdxLt : idx < ctx.scope.length :=
+              (List.getElem?_eq_some_iff.mp hName).1
+            have hBoundIdx : idx + 1 ≤ 16 := by
+              simp [Locals.SourceLowering.AtomicStmt.SourceAccessBound,
+                Locals.SourceLowering.Access.ExprBound] at hBound
+              omega
+            exact
+              NoLoopReplayPrefix.assign ctx hName hBoundIdx
+                (expr_sourceOwned_of_scoped hExprScoped)
+                (expr_accessible_of_scoped_bound hExprScoped hBound)
+                (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                  (ctx := ctx)
+                  (by simpa [Locals.Scope.Stmt.outEnv] using hRestLower)
+                  hShape)
+        | assignTop name =>
+            simp [noLoopReplayShape?] at hShape
+        | assignTopWithOffset offset name =>
+            simp [noLoopReplayShape?] at hShape
+        | promoteName name =>
+            simp [noLoopReplayShape?] at hShape
+        | cleanupTo targetLayout =>
+            simp [noLoopReplayShape?] at hShape
+        | block body =>
+            simp [noLoopReplayShape?] at hShape
+        | if_ cond body =>
+            cases hBodyShape : noLoopReplayShape? body.stmts <;>
+              simp [noLoopReplayShape?, hBodyShape] at hShape
+            rcases hLower with ⟨hStmtLower, hRestLower⟩
+            rcases hStmtLower with ⟨hCondScoped, hCondBound, hBodyLower⟩
+            cases body with
+            | mk bodyStmts =>
+                exact
+                  NoLoopReplayPrefix.branch ctx
+                    (expr_sourceOwned_of_scoped hCondScoped)
+                    (expr_accessible_of_scoped_bound hCondScoped hCondBound)
+                    (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                      (ctx := ctx) (stmts := bodyStmts)
+                      (stmtListLowerable_of_blockLowerable hBodyLower)
+                      hBodyShape)
+                    (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                      (ctx := ctx)
+                      (by simpa [Locals.Scope.Stmt.outEnv] using hRestLower)
+                      hShape)
+        | switch scrutinee cases defaultBody =>
+            cases hCasesShape : noLoopReplayCasesShape? cases <;>
+              simp [noLoopReplayShape?, hCasesShape] at hShape
+            cases hDefaultShape : noLoopReplayDefaultShape? defaultBody <;>
+              simp [hDefaultShape] at hShape
+            rcases hLower with ⟨hStmtLower, hRestLower⟩
+            rcases hStmtLower with
+              ⟨hScrutineeScoped, hScrutineeBound, hCasesLower,
+                hDefaultLower⟩
+            exact
+              NoLoopReplayPrefix.switch ctx
+                (expr_sourceOwned_of_scoped hScrutineeScoped)
+                (expr_accessible_of_scoped_bound hScrutineeScoped
+                  hScrutineeBound)
+                (by
+                  intro value body hMem
+                  exact
+                    noLoopReplayCases_of_structuralLowerable_of_shape?
+                      (ctx := ctx) hCasesLower hCasesShape hMem)
+                (by
+                  intro body hSome
+                  cases defaultBody with
+                  | none =>
+                      simp at hSome
+                  | some sourceBody =>
+                      simp [noLoopReplayDefaultShape?] at hDefaultShape
+                      cases hSome
+                      exact
+                        noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                          (ctx := ctx) (stmts := body.stmts)
+                          (stmtListLowerable_of_blockLowerable hDefaultLower)
+                          hDefaultShape)
+                (noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                  (ctx := ctx)
+                  (by simpa [Locals.Scope.Stmt.outEnv] using hRestLower)
+                  hShape)
+        | for_ init cond post body =>
+            simp [noLoopReplayShape?] at hShape
+        | brk =>
+            simp [noLoopReplayShape?] at hShape
+        | cont =>
+            simp [noLoopReplayShape?] at hShape
+        | leave =>
+            simp [noLoopReplayShape?] at hShape
+        | call name =>
+            simp [noLoopReplayShape?] at hShape
+        | terminal kind =>
+            exact NoLoopReplayPrefix.terminal ctx
+        | terminalArgs kind args =>
+            rcases hLower with ⟨hAtomic, _hRestLower⟩
+            rcases hAtomic with ⟨_hHolds, hScoped, hBound⟩
+            exact
+              NoLoopReplayPrefix.terminalArgs ctx
+                (exprSeq_sourceOwned_of_scoped hScoped)
+                (exprSeq_accessible_of_scoped_bound hScoped hBound)
+  termination_by sizeOf ({ stmts := stmts } : Locals.Block)
+  decreasing_by
+    all_goals
+      first
+      | exact sizeOf_stmtListTailBlock_lt_cons stmt rest
+      | subst_vars
+        try cases body
+        simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec]
+        try omega
+
+  theorem noLoopReplayCases_of_structuralLowerable_of_shape?
+      {ctx : Ctx} {cases : List (Word × Locals.Block)}
+      (hLower :
+        Locals.SourceLowering.Structural.CaseListLowerable
+          ctx.scope cases)
+      (hShape : noLoopReplayCasesShape? cases = true)
+      {value : Word} {body : Locals.Block}
+      (hMem : (value, body) ∈ cases) :
+      NoLoopReplayPrefix ctx body.stmts := by
+    cases cases with
+    | nil =>
+        simp at hMem
+    | cons head rest =>
+        cases head with
+        | mk caseValue caseBody =>
+            have hShapes :
+                noLoopReplayShape? caseBody.stmts = true ∧
+                  noLoopReplayCasesShape? rest = true := by
+              unfold noLoopReplayCasesShape? at hShape
+              simpa [Bool.and_eq_true] using hShape
+            rcases hShapes with ⟨hBodyShape, hShape⟩
+            rcases hLower with ⟨hBodyLower, hRestLower⟩
+            rw [List.mem_cons] at hMem
+            rcases hMem with hHead | hRest
+            · cases hHead
+              exact
+                noLoopReplayPrefix_of_structuralLowerable_of_shape?
+                  (ctx := ctx) (stmts := body.stmts)
+                  (stmtListLowerable_of_blockLowerable hBodyLower)
+                  hBodyShape
+            · exact
+                noLoopReplayCases_of_structuralLowerable_of_shape?
+                  (ctx := ctx) hRestLower hShape hRest
+  termination_by sizeOf cases + 1
+  decreasing_by
+    all_goals
+      first
+      | exact sizeOf_caseBodyBlock_lt_cons_plus_one
+          caseValue caseBody rest
+      | exact Nat.succ_lt_succ
+          (sizeOf_listTail_lt_cons (caseValue, caseBody) rest)
+      | subst_vars
+        have hBlockSize : sizeOf caseBody.stmts < sizeOf caseBody :=
+          sizeOf_blockStmts_lt_block caseBody
+        simp [Locals.Block.mk.sizeOf_spec, Prod.mk.sizeOf_spec,
+          List.cons.sizeOf_spec] at hBlockSize ⊢
+        try omega
+end
 
 mutual
   theorem stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
@@ -52813,6 +53178,66 @@ theorem result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_sy
     (SourceReplay.Block.stmtListSyntaxOracleSafe_of_stmtListSyntaxOracleSafe?
       hSyntax)
     hLower hDryHalt hCompile hStack hRun hLen hBounds hInitialPc
+
+theorem result_eq_of_halted_localsNoLoopReplayShapeCheck_run_of_toExpressions?_of_compileAccepted_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+    {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
+    (dryRun : TargetDryRun)
+    {sourceFuel : Nat} {sourceOut : SourceReplay.State}
+    {kind : Assembly.HaltKind} {dryHalt : Assembly.Halt}
+    (hAccepted : Locals.Source.Program.CompileAccepted sourceProgram)
+    (hNoLoopShape :
+      SourceReplay.Block.noLoopReplayShape?
+        sourceProgram.body.stmts = true)
+    (hSyntax :
+      SourceReplay.Block.stmtListSyntaxOracleSafe?
+        sourceProgram.body.stmts = true)
+    (hLower : sourceProgram.toExpressions? = some exprProgram)
+    (hDryHalt : dryRun.result = .halted dryHalt)
+    (hCompile : Assembly.compile? exprProgram.compile = some dryRun.target)
+    (hStack : dryRun.initial.stack = [])
+    (hRun :
+      SourceReplay.Program.run sourceFuel sourceProgram dryRun.initial
+          dryRun.trace =
+        .ok (SourceReplay.Outcome.halt kind sourceOut))
+    (hLen :
+      Assembly.Program.byteLength exprProgram.compile < EvmYul.UInt256.size)
+    (hBounds :
+      Structured.Preservation.ProcedurePreservation.CompilationBounds
+        exprProgram.toStructured)
+    (hInitialPc : dryRun.initial.pc = Assembly.Program.pcAfter []) :
+    ∃ assemblyFuel halt,
+      Assembly.Accepted exprProgram.compile ∧
+        Assembly.Preservation.BlockTraceResultWithOracle exprProgram.compile
+          dryRun.target assemblyFuel dryRun.initial dryRun.trace
+          sourceOut.trace (.halted halt) ∧
+        Assembly.Compiled.runNResultWithOracle exprProgram.compile
+          assemblyFuel dryRun.initial dryRun.trace =
+            .ok (.halted halt, sourceOut.trace) ∧
+        .halted halt = dryRun.result ∧
+        kind = halt.kind ∧
+        sourceOut.trace = [] := by
+  have hLowerable :
+      Locals.SourceLowering.Structural.StmtListLowerable
+        Locals.Source.Ctx.initial.scope sourceProgram.body.stmts := by
+    cases hBody : sourceProgram.body with
+    | mk stmts =>
+        have hBlock := hAccepted.lowerable
+        rw [hBody] at hBlock
+        simpa [Locals.Source.Ctx.initial,
+          Locals.SourceLowering.Structural.BlockLowerable]
+          using hBlock
+  have hPrefix :
+      SourceReplay.Block.NoLoopReplayPrefix Locals.Source.Ctx.initial
+        sourceProgram.body.stmts :=
+    SourceReplay.Block.noLoopReplayPrefix_of_structuralLowerable_of_shape?
+      hLowerable hNoLoopShape
+  exact
+    result_eq_of_halted_localsNoLoopReplayPrefix_run_of_toExpressions?_of_syntaxOracleSafeCheck_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
+      (sourceProgram := sourceProgram) (exprProgram := exprProgram) dryRun
+      (sourceFuel := sourceFuel) (sourceOut := sourceOut)
+      (kind := kind) (dryHalt := dryHalt)
+      hPrefix hSyntax hLower hDryHalt hCompile hStack hRun hLen hBounds
+      hInitialPc
 
 theorem result_eq_of_halted_localsTerminalTail_run_of_toExpressions?_of_program_oracleSafe_of_compile_byteLength_lt_of_dryRun_halted_consumes_trace
     {sourceProgram : Locals.Program} {exprProgram : Expressions.Program}
