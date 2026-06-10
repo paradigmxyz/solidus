@@ -49850,6 +49850,70 @@ theorem compileStmtWithSwitchFallback?_if_halt_sound_meta_of_fallback_stmt_sound
                               hLength hEval hBodyRun hBodyFuelBound
                               hStmtRegular hStmtHalt
 
+theorem compileStmtWithSwitchFallback?_if_halt_sound_meta_of_sourceOwned_stmt_sound_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {cond : Expr 1} {body : Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState} {kind : Assembly.HaltKind}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.if_ cond body) =
+        some plan)
+    (hOwned :
+      SourceLowering.SourceToLocals.Stmt.SourceOwned returns
+        (.if_ cond body))
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.if_ cond body) source =
+        .ok (Source.Outcome.halt kind sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hStmtRegular :
+      SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
+        returns exprProgram)
+    (hStmtHalt :
+      SwitchFallbackStmtHaltSoundBelow maxFuel range program handlers returns
+        exprProgram) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        haltTarget.evm.toSharedState := by
+  cases hHelper :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+        (.if_ cond body) with
+  | some helperPlan =>
+      simp [compileStmtWithSwitchFallback?, hHelper] at hCompile
+      cases hCompile
+      rcases
+          compileNonCallStmtSpan?_expressionsBlock_sound_of_source_run
+            hSpec hWordBytes hHelper hOwned hScope hRel hDefined
+            hSourceRun with
+        ⟨result, exprFuel, hRun, hOutcomeRel⟩
+      rcases SpillOutcomeRel.halt_inv hOutcomeRel with
+        ⟨haltEVM, hResult, hHaltRel⟩
+      subst result
+      exact
+        ⟨target.withEVM haltEVM, exprFuel,
+          by simpa [SpillStmtCode.toExpressionsOutcome] using hRun,
+          by simpa [SpillHaltRel] using hHaltRel⟩
+  | none =>
+      exact
+        compileStmtWithSwitchFallback?_if_halt_sound_meta_of_fallback_stmt_sound_below
+          hSpec hWordBytes hCompile hHelper hScope hRel hDefined hLength
+          hSourceRun hFuelBound hStmtRegular hStmtHalt
+
 theorem compileStmtWithSwitchFallback?_if_brk_sound_meta_of_sourceOwned_stmt_sound
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -53751,6 +53815,26 @@ abbrev SwitchFallbackStmtContDispatchSupportedBelow
     SwitchFallbackStmtRegularDispatchSupported range returns currentScope
       currentStackLayout currentLayout stmt
 
+abbrev SwitchFallbackStmtHaltDispatchSupportedBelow
+    (maxFuel : Nat) (range : ScratchRange) (program : Program)
+    (returns : List Name) : Prop :=
+  ∀ {handlers : FallbackHandlers}
+    {currentScope currentStackLayout : List Name}
+    {currentLayout : SpillLayout.Layout} {stmt : Stmt}
+    {stmtPlan : Plan} {stmtSourceCtx stmtSourceCtxAfter : Source.Ctx}
+    {stmtFuel : Nat} {stmtSource stmtSourceAfter : Source.State}
+    {stmtKind : Assembly.HaltKind},
+    compileStmtWithSwitchFallback? range program handlers returns
+        currentScope currentStackLayout currentLayout stmt =
+      some stmtPlan →
+    Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+        stmtSourceCtx stmtFuel stmt stmtSource =
+      .ok (Source.Outcome.halt stmtKind stmtSourceAfter,
+        stmtSourceCtxAfter) →
+    stmtFuel ≤ maxFuel →
+    SwitchFallbackStmtRegularDispatchSupported range returns currentScope
+      currentStackLayout currentLayout stmt
+
 theorem compileStmtWithSwitchFallback?_regular_sound_meta_exact_of_dispatcher_inputs_below
     (hSpec : ZeroPaddingSpec)
     (hWordBytes : WordByteEncodingSpec)
@@ -56002,6 +56086,71 @@ theorem compileStmtWithSwitchFallback?_switch_halt_sound_meta_of_fallback_stmt_s
                               hSpec hWordBytes hCompile hScope hRel hDefined
                               hLength hEval hSelect hBodyRun hBodyFuelBound
                               hStmtRegular hStmtHalt
+
+theorem compileStmtWithSwitchFallback?_switch_halt_sound_meta_of_sourceOwned_stmt_sound_below
+    (hSpec : ZeroPaddingSpec)
+    (hWordBytes : WordByteEncodingSpec)
+    {maxFuel : Nat}
+    {range : ScratchRange} {program : Program}
+    {handlers : FallbackHandlers}
+    {returns sourceScope stackLayout : List Name}
+    {layout : SpillLayout.Layout} {scrutinee : Expr 1}
+    {cases : List (Word × Block)} {defaultBody : Option Block}
+    {plan : Plan} {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxAfter : Source.Ctx}
+    {fuel : Nat} {source sourceAfter : Source.State}
+    {target : Expressions.RunState} {kind : Assembly.HaltKind}
+    (hCompile :
+      compileStmtWithSwitchFallback? range program handlers returns
+          sourceScope stackLayout layout (.switch scrutinee cases defaultBody) =
+        some plan)
+    (hOwned :
+      SourceLowering.SourceToLocals.Stmt.SourceOwned returns
+        (.switch scrutinee cases defaultBody))
+    (hScope : sourceCtx.scope = sourceScope)
+    (hRel :
+      SpillStateRel range sourceScope stackLayout layout source target.evm)
+    (hDefined : SpillLayout.StoreDefined source.vars layout)
+    (hLength : target.evm.stack.length = stackLayout.length)
+    (hSourceRun :
+      Source.Stmt.run Locals.Source.PrimitiveSemantics.structured program
+          sourceCtx fuel (.switch scrutinee cases defaultBody) source =
+        .ok (Source.Outcome.halt kind sourceAfter, sourceCtxAfter))
+    (hFuelBound : fuel ≤ maxFuel)
+    (hStmtRegular :
+      SwitchFallbackStmtRegularSoundBelow maxFuel range program handlers
+        returns exprProgram)
+    (hStmtHalt :
+      SwitchFallbackStmtHaltSoundBelow maxFuel range program handlers returns
+        exprProgram) :
+    ∃ haltTarget exprFuel,
+      Expressions.Block.run exprProgram exprFuel plan.block target =
+        .ok (Expressions.Outcome.halt kind haltTarget) ∧
+      SharedStateEqOutsideScratch range sourceAfter.shared
+        haltTarget.evm.toSharedState := by
+  cases hHelper :
+      compileNonCallStmtSpan? range returns sourceScope stackLayout layout
+        (.switch scrutinee cases defaultBody) with
+  | some helperPlan =>
+      simp [compileStmtWithSwitchFallback?, hHelper] at hCompile
+      cases hCompile
+      rcases
+          compileNonCallStmtSpan?_expressionsBlock_sound_of_source_run
+            hSpec hWordBytes hHelper hOwned hScope hRel hDefined
+            hSourceRun with
+        ⟨result, exprFuel, hRun, hOutcomeRel⟩
+      rcases SpillOutcomeRel.halt_inv hOutcomeRel with
+        ⟨haltEVM, hResult, hHaltRel⟩
+      subst result
+      exact
+        ⟨target.withEVM haltEVM, exprFuel,
+          by simpa [SpillStmtCode.toExpressionsOutcome] using hRun,
+          by simpa [SpillHaltRel] using hHaltRel⟩
+  | none =>
+      exact
+        compileStmtWithSwitchFallback?_switch_halt_sound_meta_of_fallback_stmt_sound_below
+          hSpec hWordBytes hCompile hHelper hScope hRel hDefined hLength
+          hSourceRun hFuelBound hStmtRegular hStmtHalt
 
 theorem compileStmtWithSwitchFallback?_switch_brk_sound_meta_of_sourceOwned_stmt_sound
     (hSpec : ZeroPaddingSpec)
