@@ -1145,6 +1145,9 @@ abbrev expressionsReplayStmtRunForLoopWithOracleTrueRegularOfBodyPostLoop :=
 abbrev expressionsReplayBlockRunWithOracleMono :=
   @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_mono
 
+abbrev expressionsReplayBlockRunWithOracleAppendRegularOfRuns :=
+  @Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
+
 abbrev expressionsReplayStmtRunForLoopWithOracleMono :=
   @Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_mono
 
@@ -1153,6 +1156,9 @@ abbrev expressionsReplayStmtRunWithOracleMono :=
 
 abbrev sourceReplayRun :=
   @Yul.ObserverOracle.SourceReplay.Program.run
+
+abbrev sourceReplayProgramRunStateAtomicSwitchForPrefixSlackWithOracleOfToExpressions :=
+  @Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
 
 abbrev sourceReplayEvalGasCons :=
   @Yul.ObserverOracle.SourceReplay.Expr.eval_gas_cons
@@ -1516,6 +1522,12 @@ abbrev sourceReplayBlockCompileOpenAtomicSwitchForPrefixSlackBlockWithOracleOfRu
 
 abbrev sourceReplayBlockCompileOpenAtomicSwitchForPrefixSlackBlockWithOracle :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
+
+abbrev sourceReplayBlockCompileOpenAtomicSwitchForPrefixSlackBlockWithCleanupWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithCleanupWithOracle
+
+abbrev sourceReplayBlockCompileScopedAtomicSwitchForPrefixSlackBlockRegularWithOracle :=
+  @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchForPrefixSlackBlockRegularWithOracle
 
 abbrev sourceReplayBlockCompileOpenAtomicSwitchPrefixBlockWithOracle :=
   @EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithOracle

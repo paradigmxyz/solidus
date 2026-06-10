@@ -365,9 +365,11 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_cont_of_body_post_loop
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_regular_of_body_post_loop
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_mono
+#check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_mono
 #check EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_mono
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.run
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_gas_cons
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_msize_cons
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_length
@@ -489,6 +491,8 @@ import EvmCompiler.Yul.ObserverOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchForPrefixSlack_mode_regular
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle_of_run
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithCleanupWithOracle
+#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchForPrefixSlackBlockRegularWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithCleanupWithOracle
 #check EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchPrefixBlockRegularWithOracle
@@ -826,6 +830,7 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_cont_of_body_post_loop
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_true_regular_of_body_post_loop
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_mono
+#print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runForLoopWithOracle_mono
 #print axioms EvmCompiler.Yul.ObserverOracle.ExpressionsReplay.Stmt.runWithOracle_mono
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Expr.eval_gas_cons
@@ -943,6 +948,8 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runOpen_atomicSwitchForPrefixSlack_mode_regular
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle_of_run
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchForPrefixSlackBlockWithCleanupWithOracle
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchForPrefixSlackBlockRegularWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileOpen_atomicSwitchPrefixBlockWithCleanupWithOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.compileScoped_atomicSwitchPrefixBlockRegularWithOracle
@@ -957,5 +964,6 @@ import EvmCompiler.Yul.ObserverOracle
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Block.runScoped_observerFree_matches_source
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.runForLoop_observerFree_matches_source
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Stmt.run_observerFree_matches_source
+#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.runState_observerFree_matches_source
 #print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.run_observerFree_matches_source

@@ -20646,6 +20646,56 @@ theorem runWithOracle_cons_regular_of_runs
   simp [runWithOracle, hStmt, hRest, Expressions.Outcome.regular,
     Structured.Outcome.regular]
 
+theorem runWithOracle_append_regular_of_runs
+    {asmProgram : Assembly.Program} {pc : Nat}
+    {program : Expressions.Program} :
+    ∀ (left right : List Expressions.Stmt)
+      {fuel : Nat} {state stateAfterLeft : Expressions.RunState}
+      {trace traceAfterLeft : Trace}
+      {result : Expressions.Outcome × Trace},
+      runWithOracle asmProgram pc program (fuel + left.length)
+          { stmts := left } state trace =
+        .ok (Expressions.Outcome.regular stateAfterLeft,
+          traceAfterLeft) →
+      runWithOracle asmProgram pc program fuel { stmts := right }
+          stateAfterLeft traceAfterLeft =
+        .ok result →
+      runWithOracle asmProgram pc program (fuel + left.length)
+          { stmts := left ++ right } state trace =
+        .ok result
+  | [], right, fuel, state, stateAfterLeft, trace, traceAfterLeft, result,
+      hLeft, hRight => by
+      cases fuel with
+      | zero =>
+          simp [runWithOracle, Structured.invalid] at hLeft
+      | succ fuel =>
+          simp [runWithOracle] at hLeft
+          rcases hLeft with ⟨hState, hTrace⟩
+          cases hState
+          cases hTrace
+          simpa using hRight
+  | stmt :: rest, right, fuel, state, stateAfterLeft, trace, traceAfterLeft,
+      result, hLeft, hRight => by
+      have hFuel :
+          fuel + (stmt :: rest).length = (fuel + rest.length) + 1 := by
+        simp
+        omega
+      rw [hFuel] at hLeft ⊢
+      cases hStmt :
+          Stmt.runWithOracle asmProgram pc program (fuel + rest.length) stmt
+            state trace with
+      | error err =>
+          simp [runWithOracle, hStmt] at hLeft
+      | ok stmtResult =>
+          rcases stmtResult with ⟨stmtOutcome, traceAfterStmt⟩
+          cases stmtOutcome with
+          | mk stateAfterStmt mode =>
+              cases mode <;>
+                simp [runWithOracle, hStmt, Expressions.Outcome.regular,
+                  Structured.Outcome.regular] at hLeft ⊢
+              exact
+                runWithOracle_append_regular_of_runs rest right hLeft hRight
+
 theorem runWithOracle_cons_codeStmt_append_regular_of_runs
     {asmProgram : Assembly.Program} {pc fuel : Nat}
     {program : Expressions.Program} {stmt : Expressions.Stmt}
@@ -40063,6 +40113,181 @@ theorem compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
     ⟨targetOut, by simpa [Outcome.regular] using hReplay,
       by simpa [Outcome.regular] using hFinalRel, hFinalCtx⟩
 
+theorem compileOpen_atomicSwitchForPrefixSlackBlockWithCleanupWithOracle
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {slack : Nat} {sourceCtx : Ctx} {targetCtx : Locals.Ctx}
+    {cleanupScope : List Name}
+    {fuel pc : Nat} {stmts : List Locals.Stmt}
+    {state openState : State} {target : Locals.RunState}
+    {code : List Expressions.Stmt}
+    {sourceCtxOut : Ctx} {targetCtxOut : Locals.Ctx}
+    {cleanup : Structured.Code}
+    (hPrefix : AtomicSwitchForPrefixSlack slack sourceCtx stmts)
+    (hCleanupScope :
+      Locals.SourceLowering.CleanupScopeRel sourceCtx.scope cleanupScope)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel : Locals.SourceLowering.StateRel sourceCtx.scope
+      state.source target)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hCleanup : targetCtxOut.cleanupTo? cleanupScope.length = some cleanup)
+    (hRun :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state =
+        .ok (Outcome.regular openState, sourceCtxOut)) :
+    ∃ targetOut,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (((fuel + slack) + 2) + code.length)
+          { stmts := code ++ Locals.codeStmt cleanup }
+          target state.trace =
+        .ok (Expressions.Outcome.regular targetOut, openState.trace) ∧
+      Locals.SourceLowering.StateRel cleanupScope
+        (openState.source.restrictTo cleanupScope) targetOut ∧
+      Locals.SourceLowering.CtxRel sourceCtxOut targetCtxOut := by
+  rcases
+      compileOpen_atomicSwitchForPrefixSlackBlockWithOracle
+        (asmProgram := asmProgram) (program := program)
+        (exprProgram := exprProgram) (slack := slack)
+        (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+        (fuel := fuel) (pc := pc) (stmts := stmts)
+        (state := state) (openState := openState)
+        (target := target) (code := code)
+        (sourceCtxOut := sourceCtxOut)
+        (targetCtxOut := targetCtxOut)
+        hPrefix hCtx hNoDup hRel hCompileOpen hRun with
+    ⟨targetOpen, hOpenReplay, hOpenRel, hFinalCtx⟩
+  have hScopeSourceOut :
+      Locals.SourceLowering.CleanupScopeRel sourceCtxOut.scope
+        cleanupScope :=
+    Locals.SourceLowering.CleanupScopeRel.trans
+      (Block.runOpen_regular_cleanupScopeRel hRun) hCleanupScope
+  have hScopeTargetOut :
+      Locals.SourceLowering.CleanupScopeRel targetCtxOut.layout
+        cleanupScope := by
+    rcases hFinalCtx with
+      ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+    simpa [hLayout] using hScopeSourceOut
+  have hOpenRelTarget :
+      Locals.SourceLowering.StateRel targetCtxOut.layout openState.source
+        targetOpen := by
+    rcases hFinalCtx with
+      ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+    simpa [hLayout] using hOpenRel
+  rcases
+      ExpressionsReplay.Block.runWithOracle_cleanupTo_scope_exists
+        (asmProgram := asmProgram) (pc := pc) (fuel := fuel + slack)
+        (program := exprProgram) (ctx := targetCtxOut)
+        (scope := cleanupScope) (source := openState.source)
+        (target := targetOpen) (cleanup := cleanup)
+        (trace := openState.trace)
+        hScopeTargetOut hOpenRelTarget hCleanup with
+    ⟨targetClean, hReplayCleanup, hCleanRel, _hReturns⟩
+  have hOpenReplaySlack :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (((fuel + slack) + 2) + code.length) { stmts := code }
+          target state.trace =
+        .ok (Expressions.Outcome.regular targetOpen, openState.trace) :=
+    ExpressionsReplay.Block.runWithOracle_mono asmProgram pc exprProgram
+      (by omega) hOpenReplay
+  have hFullReplay :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (((fuel + slack) + 2) + code.length)
+          { stmts := code ++ Locals.codeStmt cleanup }
+          target state.trace =
+        .ok (Expressions.Outcome.regular targetClean, openState.trace) :=
+    ExpressionsReplay.Block.runWithOracle_append_regular_of_runs
+      (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+      (left := code) (right := Locals.codeStmt cleanup)
+      (fuel := (fuel + slack) + 2) hOpenReplaySlack hReplayCleanup
+  exact ⟨targetClean, hFullReplay, hCleanRel, hFinalCtx⟩
+
+theorem compileScoped_atomicSwitchForPrefixSlackBlockRegularWithOracle
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {slack : Nat} {sourceCtx : Ctx}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {stmts : List Locals.Stmt}
+    {state : State} {target : Locals.RunState}
+    {code : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    {outState : State}
+    (hPrefix : AtomicSwitchForPrefixSlack slack sourceCtx stmts)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hRel : Locals.SourceLowering.StateRel sourceCtx.scope
+      state.source target)
+    (hCompileOpen :
+      Locals.Block.compileOpen targetCtx { stmts := stmts } =
+        some (code, targetCtxOut))
+    (hFinish :
+      Locals.finishScoped targetCtx targetCtxOut code = some lowerBody)
+    (hRun :
+      Block.runScoped program sourceCtx { stmts := stmts } fuel state =
+        .ok (Outcome.regular outState)) :
+    ∃ targetOut,
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (((fuel + slack) + 2) + code.length)
+          lowerBody target state.trace =
+        .ok (Expressions.Outcome.regular targetOut, outState.trace) ∧
+      Locals.SourceLowering.StateRel sourceCtx.scope
+        outState.source targetOut ∧
+      Locals.SourceLowering.CtxRel sourceCtx targetCtx := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen program sourceCtx fuel { stmts := stmts } state with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, sourceCtxOut⟩
+      simp [hOpen] at hRun
+      cases openOutcome with
+      | mk openState openMode =>
+          cases openMode <;>
+            simp [Outcome.regular, Outcome.brk, Outcome.cont, Outcome.leave,
+              Outcome.halt] at hRun
+          cases hRun
+          unfold Locals.finishScoped at hFinish
+          cases hCleanup :
+              targetCtxOut.cleanupTo? targetCtx.layout.length with
+          | none =>
+              simp [hCleanup] at hFinish
+          | some cleanup =>
+              simp [hCleanup] at hFinish
+              cases hFinish
+              have hOpenRegular :
+                  Block.runOpen program sourceCtx fuel { stmts := stmts }
+                      state =
+                    .ok (Outcome.regular openState, sourceCtxOut) := by
+                simpa [Outcome.regular] using hOpen
+              have hCleanupSourceDepth :
+                  targetCtxOut.cleanupTo? sourceCtx.scope.length =
+                    some cleanup := by
+                rcases hCtx with
+                  ⟨hLayout, _hBreak, _hContinue, _hLeave, _hRetc⟩
+                simpa [hLayout] using hCleanup
+              rcases
+                  compileOpen_atomicSwitchForPrefixSlackBlockWithCleanupWithOracle
+                    (asmProgram := asmProgram) (program := program)
+                    (exprProgram := exprProgram) (slack := slack)
+                    (sourceCtx := sourceCtx) (targetCtx := targetCtx)
+                    (cleanupScope := sourceCtx.scope)
+                    (fuel := fuel) (pc := pc) (stmts := stmts)
+                    (state := state) (openState := openState)
+                    (target := target) (code := code)
+                    (sourceCtxOut := sourceCtxOut)
+                    (targetCtxOut := targetCtxOut)
+                    (cleanup := cleanup)
+                    hPrefix
+                    (Locals.SourceLowering.CleanupScopeRel.refl
+                      sourceCtx.scope)
+                    hCtx hNoDup hRel hCompileOpen hCleanupSourceDepth
+                    hOpenRegular with
+                ⟨targetOut, hReplay, hFinalRel, _hFinalCtx⟩
+              refine ⟨targetOut, ?_, ?_, hCtx⟩
+              · simpa [State.restrictTo] using hReplay
+              · simpa [State.restrictTo] using hFinalRel
+
 theorem compileOpen_singleton_forRegularAtomicSwitchBlocksWithOracle_of_runForLoop
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
@@ -40210,6 +40435,79 @@ inductive Eval : Nat → Locals.Program → State → Outcome → Prop where
       {outcome : Outcome}
       (hRun : runState fuel program initial = .ok outcome) :
       Eval fuel program initial outcome
+
+theorem runState_atomicSwitchForPrefixSlackWithOracle_of_toExpressions?
+    {slack fuel : Nat} {program : Locals.Program}
+    {lower : Expressions.Program} {initial outState : State}
+    {target : Locals.RunState}
+    (hPrefix :
+      Block.AtomicSwitchForPrefixSlack slack Locals.Source.Ctx.initial
+        program.body.stmts)
+    (hLower : program.toExpressions? = some lower)
+    (hRel :
+      Locals.SourceLowering.StateRel Locals.Source.Ctx.initial.scope
+        initial.source target)
+    (hRun : runState fuel program initial = .ok (Outcome.regular outState)) :
+    ∃ expressionFuel targetOut,
+      ExpressionsReplay.Block.runWithOracle lower.compile
+          (Assembly.Program.byteLength []) lower expressionFuel lower.body
+          target initial.trace =
+        .ok (Expressions.Outcome.regular targetOut, outState.trace) ∧
+      Locals.SourceLowering.StateRel Locals.Source.Ctx.initial.scope
+        outState.source targetOut := by
+  cases program with
+  | mk procs body =>
+      cases body with
+      | mk stmts =>
+          have hBodyCompile :
+              Locals.Block.compile Locals.Ctx.initial { stmts := stmts } =
+                some lower.body :=
+            Locals.Program.body_toExpressions_of_toExpressions? hLower
+          unfold Locals.Block.compile at hBodyCompile
+          cases hOpen :
+              Locals.Block.compileOpen Locals.Ctx.initial
+                { stmts := stmts } with
+          | none =>
+              simp [hOpen] at hBodyCompile
+          | some openResult =>
+              rcases openResult with ⟨code, targetCtxOut⟩
+              cases hFinish :
+                  Locals.finishScoped Locals.Ctx.initial targetCtxOut code with
+              | none =>
+                  simp [hOpen, hFinish] at hBodyCompile
+              | some lowerBody =>
+                  simp [hOpen, hFinish] at hBodyCompile
+                  cases hBodyCompile
+                  have hNoDup :
+                      Locals.Source.Ctx.initial.scope.Nodup := by
+                    simp [Locals.Source.Ctx.initial]
+                  have hRunScoped :
+                      Block.runScoped
+                          { procs := procs, body := { stmts := stmts } }
+                          Locals.Source.Ctx.initial { stmts := stmts } fuel
+                          initial =
+                        .ok (Outcome.regular outState) := by
+                    simpa [runState] using hRun
+                  rcases
+                      Block.compileScoped_atomicSwitchForPrefixSlackBlockRegularWithOracle
+                        (asmProgram := lower.compile)
+                        (program :=
+                          { procs := procs, body := { stmts := stmts } })
+                        (exprProgram := lower) (slack := slack)
+                        (sourceCtx := Locals.Source.Ctx.initial)
+                        (targetCtx := Locals.Ctx.initial)
+                        (targetCtxOut := targetCtxOut)
+                        (fuel := fuel)
+                        (pc := Assembly.Program.byteLength [])
+                        (stmts := stmts) (state := initial)
+                        (target := target) (code := code)
+                        (lowerBody := lower.body) (outState := outState)
+                        hPrefix Locals.SourceLowering.CtxRel.initial hNoDup
+                        hRel hOpen hFinish hRunScoped with
+                    ⟨targetOut, hReplay, hFinalRel, _hCtx⟩
+                  exact
+                    ⟨(((fuel + slack) + 2) + code.length), targetOut,
+                      hReplay, hFinalRel⟩
 
 theorem runState_observerFree_matches_source
     {fuel : Nat} {program : Locals.Program} {initial : State}
