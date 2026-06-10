@@ -9410,8 +9410,91 @@ theorem spillLayout_restrictToScope_pushStackLayout_of_not_mem_emptyStack_wf
   have hMap :
       layout.map SpillLayout.pushStackBinding = layout :=
     spillLayout_map_pushStackBinding_eq_self_of_emptyStack_wf hLayout
-  simp [SpillLayout.restrictToScope, SpillLayout.pushStackLayout, hName,
-    hMap]
+  have hRestrictMap :
+      SpillLayout.restrictToScope scope
+          (layout.map SpillLayout.pushStackBinding) =
+        SpillLayout.restrictToScope scope layout :=
+    congrArg (SpillLayout.restrictToScope scope) hMap
+  simpa [SpillLayout.restrictToScope, SpillLayout.pushStackLayout, hName]
+    using hRestrictMap
+
+theorem spillLayout_pushStackBinding_eq_self_of_mem_restrict_emptyStack_wf
+    {range : ScratchRange} {scope : List Name}
+    {layout : SpillLayout.Layout}
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout))
+    {binding : SpillLayout.Binding}
+    (hMem : binding ∈ layout)
+    (hName : binding.1 ∈ scope) :
+    SpillLayout.pushStackBinding binding = binding := by
+  rcases binding with ⟨name, location⟩
+  cases location with
+  | stack depth =>
+      have hRestrictMem :
+          (name, SpillLayout.LocalLocation.stack depth) ∈
+            SpillLayout.restrictToScope scope layout := by
+        simp [SpillLayout.restrictToScope, hMem, hName]
+      have hOk :=
+        hLayout.bindings_ok (name, SpillLayout.LocalLocation.stack depth)
+          hRestrictMem
+      simp [SpillLayout.BindingOk] at hOk
+  | scratch slot =>
+      rfl
+
+theorem spillLayout_restrictToScope_pushStackLayout_of_not_mem_restrict_emptyStack_wf
+    {range : ScratchRange} {scope : List Name}
+    {layout : SpillLayout.Layout} {name : Name}
+    (hLayout :
+      SpillLayout.WellFormed range scope []
+        (SpillLayout.restrictToScope scope layout))
+    (hName : name ∉ scope) :
+    SpillLayout.restrictToScope scope
+        (SpillLayout.pushStackLayout name layout) =
+      SpillLayout.restrictToScope scope layout := by
+  have hAll :
+      ∀ binding, binding ∈ layout → binding.1 ∈ scope →
+        SpillLayout.pushStackBinding binding = binding := by
+    intro binding hMem hBindingName
+    exact
+      spillLayout_pushStackBinding_eq_self_of_mem_restrict_emptyStack_wf
+        hLayout hMem hBindingName
+  clear hLayout
+  have hMap :
+      SpillLayout.restrictToScope scope
+          (layout.map SpillLayout.pushStackBinding) =
+        SpillLayout.restrictToScope scope layout := by
+    induction layout with
+    | nil =>
+        simp [SpillLayout.restrictToScope]
+    | cons binding rest ih =>
+        rcases binding with ⟨bindingName, location⟩
+        by_cases hBindingName : bindingName ∈ scope
+        · have hHead :
+              SpillLayout.pushStackBinding (bindingName, location) =
+                (bindingName, location) :=
+            hAll (bindingName, location) (by simp) hBindingName
+          have hTail :
+              SpillLayout.restrictToScope scope
+                  (rest.map SpillLayout.pushStackBinding) =
+                SpillLayout.restrictToScope scope rest := by
+            apply ih
+            intro binding hMem hBindingName'
+            exact hAll binding (by simp [hMem]) hBindingName'
+          simpa [SpillLayout.restrictToScope, hBindingName, hHead] using
+            hTail
+        · have hTail :
+              SpillLayout.restrictToScope scope
+                  (rest.map SpillLayout.pushStackBinding) =
+                SpillLayout.restrictToScope scope rest := by
+            apply ih
+            intro binding hMem hBindingName'
+            exact hAll binding (by simp [hMem]) hBindingName'
+          cases location <;>
+            simpa [SpillLayout.restrictToScope, SpillLayout.pushStackBinding,
+              hBindingName] using hTail
+  unfold SpillLayout.restrictToScope at hMap ⊢
+  simp [SpillLayout.pushStackLayout, hName, hMap]
 
 theorem spillLayout_restrictToScope_pushScratchLayout_of_not_mem
     {scope : List Name} {layout : SpillLayout.Layout}
@@ -9421,6 +9504,155 @@ theorem spillLayout_restrictToScope_pushScratchLayout_of_not_mem
         (SpillLayout.pushScratchLayout name slot layout) =
       SpillLayout.restrictToScope scope layout := by
   simp [SpillLayout.restrictToScope, SpillLayout.pushScratchLayout, hName]
+
+theorem not_mem_scope_of_not_mem_sourceScope_of_restrict_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout} {name : Name}
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hFresh : name ∉ sourceScope) :
+    name ∉ scope := by
+  intro hName
+  have hNameReference :
+      name ∈ SpillLayout.names referenceLayout := by
+    rw [hReferenceLayout.names_eq]
+    exact hName
+  have hNameLayout : name ∈ SpillLayout.names layout := by
+    have hFiltered :
+        name ∈
+          (SpillLayout.names layout).filter
+            (fun name => decide (name ∈ scope)) := by
+      simpa [hReference, spillLayout_names_restrictToScope] using
+        hNameReference
+    exact List.mem_of_mem_filter hFiltered
+  have hNameSource : name ∈ sourceScope := by
+    simpa [hLayout.names_eq] using hNameLayout
+  exact hFresh hNameSource
+
+theorem compileFreshAtom?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope stackLayout scope : List Name}
+    {layout referenceLayout : SpillLayout.Layout}
+    {stmt : Locals.Stmt} {plan : SpillAtomPlan}
+    (hCompile :
+      SpillPlan.compileFreshAtom? range sourceScope stackLayout layout stmt =
+        some plan)
+    (hReference :
+      referenceLayout = SpillLayout.restrictToScope scope layout)
+    (hReferenceLayout :
+      SpillLayout.WellFormed range scope [] referenceLayout)
+    (hLayout : SpillLayout.WellFormed range sourceScope stackLayout layout) :
+    SpillLayout.restrictToScope scope plan.layout = referenceLayout := by
+  rcases
+      SpillPlan.compileFreshAtom?_atom hCompile with
+    ⟨hAtom, hFresh⟩
+  cases stmt with
+  | @expr results expr =>
+      cases results with
+      | zero =>
+          unfold SpillAtomPlan.compile? SpillAtomPlan.compileExpr0? at hAtom
+          cases hSafe : SourceNoMemoryTouch.expr? expr <;>
+            simp [hSafe] at hAtom
+          cases hCode : SpillExpr.compileCode? range 0 layout expr <;>
+            simp [hCode] at hAtom
+          cases hAtom
+          exact hReference.symm
+      | succ results =>
+          simp [SpillAtomPlan.compile?] at hAtom
+  | exprs exprs =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | let_ name value =>
+      have hFreshName : name ∉ sourceScope := by
+        simpa [SpillAtomPlan.Fresh] using hFresh
+      have hNameNotScope : name ∉ scope :=
+        not_mem_scope_of_not_mem_sourceScope_of_restrict_wf
+          hLayout hReference hReferenceLayout hFreshName
+      unfold SpillAtomPlan.compile? SpillAtomPlan.compileLet? at hAtom
+      cases hSafe : SourceNoMemoryTouch.expr? value <;>
+        simp [hSafe] at hAtom
+      cases hCode : SpillExpr.compileCode? range 0 layout value <;>
+        simp [hCode] at hAtom
+      by_cases hStack : stackLayout.length < 16
+      · simp [hStack] at hAtom
+        cases hAtom
+        have hReferenceRestrict :
+            SpillLayout.WellFormed range scope []
+              (SpillLayout.restrictToScope scope layout) := by
+          simpa [hReference] using hReferenceLayout
+        exact
+          (spillLayout_restrictToScope_pushStackLayout_of_not_mem_restrict_emptyStack_wf
+            hReferenceRestrict hNameNotScope).trans hReference.symm
+      · cases hSlot :
+          SpillLayout.firstFreeScratchSlot? range layout with
+        | none =>
+            simp [hStack, hSlot] at hAtom
+        | some slot =>
+            simp [hStack, hSlot] at hAtom
+            cases hAtom
+            exact
+              (spillLayout_restrictToScope_pushScratchLayout_of_not_mem
+                (layout := layout) (slot := slot) hNameNotScope).trans
+                hReference.symm
+  | assign name value =>
+      unfold SpillAtomPlan.compile? SpillAtomPlan.compileAssign? at hAtom
+      cases hSafe : SourceNoMemoryTouch.expr? value <;>
+        simp [hSafe] at hAtom
+      cases hCode : SpillExpr.compileCode? range 0 layout value <;>
+        simp [hCode] at hAtom
+      cases hLookup : SpillLayout.lookup? name layout <;>
+        simp [hLookup] at hAtom
+      case some location =>
+        cases location with
+        | stack depth =>
+            cases hSwap : Locals.StackOp.swap? (depth + 1) <;>
+              simp [hSwap] at hAtom
+            cases hAtom
+            exact hReference.symm
+        | scratch slot =>
+            cases hAtom
+            exact hReference.symm
+  | assignTop name =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | assignTopWithOffset offset name =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | promoteName name =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | cleanupTo targetLayout =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | block body =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | if_ cond body =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | switch scrutinee cases defaultBody =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | for_ init cond post body =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | brk =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | cont =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | leave =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | call name =>
+      simp [SpillAtomPlan.compile?] at hAtom
+  | terminal kind =>
+      unfold SpillAtomPlan.compile? SpillAtomPlan.compileTerminal? at hAtom
+      cases hSafe : SourceNoMemoryTouch.haltKind? kind <;>
+        simp [hSafe] at hAtom
+      cases hAtom
+      exact hReference.symm
+  | terminalArgs kind args =>
+      unfold SpillAtomPlan.compile? SpillAtomPlan.compileTerminalArgs? at hAtom
+      cases hSafe :
+          SourceNoMemoryTouch.haltKind? kind &&
+            SourceNoMemoryTouch.exprSeq? args <;>
+        simp [hSafe] at hAtom
+      cases hCode : SpillExpr.compileSeqFullCode? range 0 layout args <;>
+        simp [hCode] at hAtom
+      cases hAtom
+      exact hReference.symm
 
 theorem spillLayout_evictTopStackBinding_eq_self_of_mem_restrict_emptyStack_wf
     {range : ScratchRange} {scope : List Name}
@@ -9579,6 +9811,87 @@ theorem spillOrDropAllStack?_restrictToScope_eq_of_emptyStack_wf
                         SpillLayout.restrictToScope scope nextLayout :=
                     ih (layout := nextLayout) (plan := tail) hTail hNextLayout
                   exact hTailRestrict.trans hNextRestrict
+
+theorem compileFreshAtomWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+    {range : ScratchRange} {sourceScope scope : List Name}
+    {referenceLayout : SpillLayout.Layout} {stmt : Locals.Stmt} :
+    ∀ {stackLayout : List Name} {layout : SpillLayout.Layout}
+      {plan : SpillPlan},
+      SpillPlan.compileFreshAtomWithAdaptiveSpill? range sourceScope
+          stackLayout layout stmt =
+        some plan →
+      referenceLayout = SpillLayout.restrictToScope scope layout →
+      SpillLayout.WellFormed range scope [] referenceLayout →
+      SpillLayout.WellFormed range sourceScope stackLayout layout →
+      SpillLayout.restrictToScope scope plan.layout = referenceLayout
+  | [], layout, plan, hCompile, hReference, hReferenceLayout, hLayout => by
+      unfold SpillPlan.compileFreshAtomWithAdaptiveSpill? at hCompile
+      cases hAtom :
+          SpillPlan.compileFreshAtom? range sourceScope [] layout stmt with
+      | none =>
+          simp [hAtom] at hCompile
+      | some atom =>
+          simp [hAtom] at hCompile
+          cases hCompile
+          exact
+            compileFreshAtom?_restrictToScope_eq_of_reference_wf
+              hAtom hReference hReferenceLayout hLayout
+  | top :: restStack, layout, plan, hCompile, hReference,
+      hReferenceLayout, hLayout => by
+      unfold SpillPlan.compileFreshAtomWithAdaptiveSpill? at hCompile
+      cases hAtom :
+          SpillPlan.compileFreshAtom? range sourceScope (top :: restStack)
+            layout stmt with
+      | some atom =>
+          simp [hAtom] at hCompile
+          cases hCompile
+          exact
+            compileFreshAtom?_restrictToScope_eq_of_reference_wf
+              hAtom hReference hReferenceLayout hLayout
+      | none =>
+          simp [hAtom] at hCompile
+          cases hEvict :
+              SpillLayout.evictTopStackLayout? range sourceScope
+                (top :: restStack) layout with
+          | none =>
+              simp [hEvict] at hCompile
+          | some evicted =>
+              rcases evicted with ⟨slot, nextLayout⟩
+              cases hTail :
+                  SpillPlan.compileFreshAtomWithAdaptiveSpill? range
+                    sourceScope restStack nextLayout stmt with
+              | none =>
+                  simp [hEvict, hTail] at hCompile
+              | some tail =>
+                  simp [hEvict, hTail] at hCompile
+                  cases hCompile
+                  rcases SpillLayout.evictTopStackLayout?_wellFormed
+                      hEvict with
+                    ⟨_top, _restStack, hStackLayout, hNextLayout⟩
+                  cases hStackLayout
+                  have hReferenceRestrict :
+                      SpillLayout.WellFormed range scope []
+                        (SpillLayout.restrictToScope scope layout) := by
+                    simpa [hReference] using hReferenceLayout
+                  have hNextRestrict :
+                      SpillLayout.restrictToScope scope nextLayout =
+                        SpillLayout.restrictToScope scope layout := by
+                    rcases SpillLayout.evictTopStackLayout?_sound
+                        hEvict with
+                      ⟨_top, _restStack, _hStackLayout, _hTop, _hSlot,
+                        hNext, _hCheck⟩
+                    rw [hNext]
+                    exact
+                      spillLayout_restrictToScope_evictTopStackLayout_of_emptyStack_wf
+                        hReferenceRestrict
+                  have hReferenceNext :
+                      referenceLayout =
+                        SpillLayout.restrictToScope scope nextLayout :=
+                    hReference.trans hNextRestrict.symm
+                  exact
+                    compileFreshAtomWithAdaptiveSpill?_restrictToScope_eq_of_reference_wf
+                      (plan := tail) hTail hReferenceNext hReferenceLayout
+                      hNextLayout
 
 theorem normalizePlanStack?_restrictToScope_eq_of_emptyStack_wf
     {range : ScratchRange} {plan full : Plan} {scope : List Name}
