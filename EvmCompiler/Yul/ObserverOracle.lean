@@ -32465,6 +32465,137 @@ theorem compileOpen_cons_ifTrueHaltWithOracle_of_evalCondition_sourceOwned
   · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
   · simp [Block.runOpen, hStmtRun, Outcome.halt]
 
+theorem compileOpen_cons_ifTrueHaltWithOracleExists_of_evalCondition_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx bodyCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat} {cond : Locals.Expr 1} {body : Locals.Block}
+    {rest : List Locals.Stmt}
+    {state stateAfterCond outState : State}
+    {target : Locals.RunState} {condCode : Structured.Code}
+    {bodyCode : List Expressions.Stmt} {lowerBody : Expressions.Block}
+    {restCode : List Expressions.Stmt} {kind : Assembly.HaltKind}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned cond)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 cond)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileCond :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hCompileBody :
+      Locals.Block.compileOpen targetCtx body = some (bodyCode, bodyCtx))
+    (hFinishBody :
+      Locals.finishScoped targetCtx bodyCtx bodyCode = some lowerBody)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hEvalCond :
+      Expr.evalCondition cond state = .ok (stateAfterCond, true))
+    (hBodyRun :
+      Block.runScoped program sourceCtx body fuel stateAfterCond =
+        .ok (Outcome.halt kind outState))
+    (hBodyReplay :
+      ∀ evmAfterPop,
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterCond.source (target.withEVM evmAfterPop) →
+        ∃ targetOut bodyFuel,
+          ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+              bodyFuel lowerBody (target.withEVM evmAfterPop)
+              stateAfterCond.trace =
+            .ok (Expressions.Outcome.halt kind targetOut,
+              outState.trace)) :
+    ∃ targetOut targetFuel,
+      Locals.Block.compileOpen targetCtx
+          { stmts := Locals.Stmt.if_ cond body :: rest } =
+        some
+          (Expressions.Stmt.if_
+              (Expressions.Expr.code (results := 1) condCode)
+              lowerBody :: restCode,
+            targetCtxOut) ∧
+      Block.runOpen program sourceCtx ((fuel + 1) + 1)
+          { stmts := Locals.Stmt.if_ cond body :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtx) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel
+          { stmts :=
+              Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  rcases hCtx with ⟨hLayout, hBreak, hContinue, hLeave, hRetc⟩
+  rcases
+      Expr.runCompiledExpressionsConditionWithOracle_of_evalCondition_sourceOwned
+        (program := asmProgram) (expr := cond)
+        (layout := sourceCtx.scope) (ctx := targetCtx)
+        (pc := pc) (state := state) (state' := stateAfterCond)
+        (cond := true) (target := target) (code := condCode)
+        hLayout hNoDup hOwned hAccess hRel hCompileCond hEvalCond with
+    ⟨evmAfterPop, _value, hCompileCondExpr, _hEvalOne,
+      hCondReplay, hStateRel⟩
+  rcases hBodyReplay evmAfterPop hStateRel with
+    ⟨targetOut, bodyFuel, hReplayBody⟩
+  have hCompileStmt :
+      Locals.Stmt.compile targetCtx (.if_ cond body) =
+        some
+          ([Expressions.Stmt.if_
+            (Expressions.Expr.code (results := 1) condCode)
+            lowerBody],
+            targetCtx) := by
+    simp [Locals.Stmt.compile, hCompileCondExpr, hCompileBody,
+      hFinishBody]
+  have hStmtRun :
+      Stmt.run program sourceCtx (fuel + 1) (.if_ cond body) state =
+        .ok (Outcome.halt kind outState, sourceCtx) := by
+    simp [Stmt.run, hEvalCond, hBodyRun]
+  have hStmtReplay :
+      ExpressionsReplay.Stmt.runWithOracle asmProgram pc exprProgram
+          (bodyFuel + 1)
+          (Expressions.Stmt.if_
+            (Expressions.Expr.code (results := 1) condCode)
+            lowerBody)
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) :=
+    ExpressionsReplay.Stmt.runWithOracle_if_true_of_condition_body
+      (asmProgram := asmProgram) (pc := pc) (fuel := bodyFuel)
+      (program := exprProgram)
+      (cond := Expressions.Expr.code (results := 1) condCode)
+      (body := lowerBody) hCondReplay hReplayBody
+  have hReplayHead :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              [Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody] }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simp [ExpressionsReplay.Block.runWithOracle, hStmtReplay,
+      Expressions.Outcome.halt]
+  have hReplayFull :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              Expressions.Stmt.if_
+                (Expressions.Expr.code (results := 1) condCode)
+                lowerBody :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simpa using
+      ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        [Expressions.Stmt.if_
+          (Expressions.Expr.code (results := 1) condCode)
+          lowerBody]
+        restCode hReplayHead
+  refine ⟨targetOut, ((bodyFuel + 1) + 1), ?_, ?_, hReplayFull⟩
+  · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
+  · simp [Block.runOpen, hStmtRun, Outcome.halt]
+
 theorem compileOpen_cons_ifTrueRegularRestHaltWithOracle_of_evalCondition_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
@@ -34049,6 +34180,194 @@ theorem compileOpen_cons_switchSomeHaltWithOracle_of_evalOne_sourceOwned
           lowerCases lowerDefault]
         restCode hReplayHead
   refine ⟨targetOut, ?_, ?_, hReplayFull⟩
+  · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
+  · simp [Block.runOpen, hStmtRun, Outcome.halt]
+
+theorem compileOpen_cons_switchSomeHaltWithOracleExists_of_evalOne_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx bodyCtx targetCtxOut : Locals.Ctx}
+    {fuel pc : Nat}
+    {scrutinee : Locals.Expr 1}
+    {cases : List (Word × Locals.Block)}
+    {defaultBody : Option Locals.Block}
+    {selected : Locals.Block} {rest : List Locals.Stmt}
+    {state stateAfterScrutinee outState : State} {value : Word}
+    {target : Locals.RunState} {scrutineeCode : Structured.Code}
+    {bodyCode : List Expressions.Stmt}
+    {lowerCases : List (Word × Expressions.Block)}
+    {lowerDefault : Option Expressions.Block}
+    {lowerBody : Expressions.Block}
+    {restCode : List Expressions.Stmt} {kind : Assembly.HaltKind}
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned scrutinee)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 scrutinee)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileScrutinee :
+      Locals.Expr.compileCode targetCtx 0 scrutinee = some scrutineeCode)
+    (hCompileCases :
+      Locals.CaseList.compile targetCtx cases = some lowerCases)
+    (hCompileDefault :
+      Locals.Default.compile targetCtx defaultBody = some lowerDefault)
+    (hCompileBody :
+      Locals.Block.compileOpen targetCtx selected = some (bodyCode, bodyCtx))
+    (hFinishBody :
+      Locals.finishScoped targetCtx bodyCtx bodyCode = some lowerBody)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hEvalOne :
+      Expr.evalOne scrutinee state = .ok (stateAfterScrutinee, value))
+    (hSelect :
+      Locals.Source.Switch.select value cases defaultBody = some selected)
+    (hBodyRun :
+      Block.runScoped program sourceCtx selected fuel stateAfterScrutinee =
+        .ok (Outcome.halt kind outState))
+    (hBodyReplay :
+      ∀ evmAfterPop,
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterScrutinee.source (target.withEVM evmAfterPop) →
+        ∃ targetOut bodyFuel,
+          ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+              bodyFuel lowerBody (target.withEVM evmAfterPop)
+              stateAfterScrutinee.trace =
+            .ok (Expressions.Outcome.halt kind targetOut,
+              outState.trace)) :
+    ∃ targetOut targetFuel,
+      Locals.Block.compileOpen targetCtx
+          { stmts :=
+              Locals.Stmt.switch scrutinee cases defaultBody :: rest } =
+        some
+          (Expressions.Stmt.switch
+              (Expressions.Expr.code (results := 1) scrutineeCode)
+              lowerCases lowerDefault :: restCode,
+            targetCtxOut) ∧
+      Block.runOpen program sourceCtx ((fuel + 1) + 1)
+          { stmts :=
+              Locals.Stmt.switch scrutinee cases defaultBody :: rest } state =
+        .ok (Outcome.halt kind outState, sourceCtx) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          targetFuel
+          { stmts :=
+              Expressions.Stmt.switch
+                (Expressions.Expr.code (results := 1) scrutineeCode)
+                lowerCases lowerDefault :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) := by
+  rcases hCtx with ⟨hLayout, hBreak, hContinue, hLeave, hRetc⟩
+  rcases
+      Expr.runCompiledCodeWithOracle_of_evalOne_sourceOwned
+        (program := asmProgram) (expr := scrutinee)
+        (layout := sourceCtx.scope) (ctx := targetCtx)
+        (pc := pc) (state := state)
+        (state' := stateAfterScrutinee) (value := value)
+        (target := target) (code := scrutineeCode)
+        hLayout hNoDup hOwned hAccess hRel hCompileScrutinee hEvalOne with
+    ⟨evmAfterScrutinee, hScrutineeRun, hExprRel⟩
+  rcases hExprRel with ⟨hShared, baseStack, hStack, hStackRel⟩
+  have hStackEVM :
+      evmAfterScrutinee.stack = [value] ++ baseStack := by
+    simpa [Structured.RunState.withEVM] using hStack
+  let evmAfterPop : EVMState :=
+    { evmAfterScrutinee with stack := baseStack }
+  have hPop :
+      evmAfterScrutinee.stack.pop = some (baseStack, value) := by
+    simp [hStackEVM, EvmYul.Stack.pop]
+  have hStateRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope
+        stateAfterScrutinee.source (target.withEVM evmAfterPop) := by
+    exact
+      ⟨by simpa [evmAfterPop, Structured.RunState.withEVM] using hShared,
+        by simpa [evmAfterPop, Structured.RunState.withEVM] using hStackRel⟩
+  rcases hBodyReplay evmAfterPop hStateRel with
+    ⟨targetOut, bodyFuel, hReplayBody⟩
+  have hCompileScrutineeExpr :
+      Locals.Expr.compile targetCtx scrutinee =
+        some (Expressions.Expr.code (results := 1) scrutineeCode) := by
+    simp [Locals.Expr.compile, hCompileScrutinee]
+  have hLowerSelect :
+      Expressions.Switch.select value lowerCases lowerDefault =
+        some lowerBody :=
+    Switch.compile_select_some
+      (ctx := targetCtx) (value := value)
+      (cases := cases) (defaultBody := defaultBody)
+      (selected := selected)
+      (selectedCode := bodyCode) (selectedCtx := bodyCtx)
+      (lowerCases := lowerCases) (lowerDefault := lowerDefault)
+      (lowerSelected := lowerBody)
+      hCompileCases hCompileDefault hCompileBody hFinishBody hSelect
+  have hCompileStmt :
+      Locals.Stmt.compile targetCtx (.switch scrutinee cases defaultBody) =
+        some
+          ([Expressions.Stmt.switch
+            (Expressions.Expr.code (results := 1) scrutineeCode)
+            lowerCases lowerDefault],
+            targetCtx) := by
+    simp [Locals.Stmt.compile, hCompileScrutineeExpr, hCompileCases,
+      hCompileDefault]
+  have hStmtRun :
+      Stmt.run program sourceCtx (fuel + 1)
+          (.switch scrutinee cases defaultBody) state =
+        .ok (Outcome.halt kind outState, sourceCtx) := by
+    simp [Stmt.run, hEvalOne, hSelect, hBodyRun]
+  have hStmtReplay :
+      ExpressionsReplay.Stmt.runWithOracle asmProgram pc exprProgram
+          (bodyFuel + 1)
+          (Expressions.Stmt.switch
+            (Expressions.Expr.code (results := 1) scrutineeCode)
+            lowerCases lowerDefault)
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut,
+          outState.trace) :=
+    ExpressionsReplay.Stmt.runWithOracle_switch_some_of_scrutinee_body
+      (asmProgram := asmProgram) (pc := pc) (fuel := bodyFuel)
+      (program := exprProgram)
+      (scrutinee := Expressions.Expr.code (results := 1) scrutineeCode)
+      (cases := lowerCases) (defaultBody := lowerDefault)
+      (selected := lowerBody)
+      (state := target)
+      (evmAfterScrutinee := evmAfterScrutinee)
+      (stack := baseStack) (value := value)
+      (trace := state.trace)
+      (traceAfterScrutinee := stateAfterScrutinee.trace)
+      (result :=
+        (Expressions.Outcome.halt kind targetOut, outState.trace))
+      (ExpressionsReplay.Expr.runCodeExprWithOracle_code_of_run
+        hScrutineeRun)
+      hPop hLowerSelect hReplayBody
+  have hReplayHead :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              [Expressions.Stmt.switch
+                (Expressions.Expr.code (results := 1) scrutineeCode)
+                lowerCases lowerDefault] }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simp [ExpressionsReplay.Block.runWithOracle, hStmtReplay,
+      Expressions.Outcome.halt]
+  have hReplayFull :
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          ((bodyFuel + 1) + 1)
+          { stmts :=
+              Expressions.Stmt.switch
+                (Expressions.Expr.code (results := 1) scrutineeCode)
+                lowerCases lowerDefault :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.halt kind targetOut, outState.trace) := by
+    simpa using
+      ExpressionsReplay.Block.runWithOracle_append_halt_of_left
+        (asmProgram := asmProgram) (pc := pc) (program := exprProgram)
+        [Expressions.Stmt.switch
+          (Expressions.Expr.code (results := 1) scrutineeCode)
+          lowerCases lowerDefault]
+        restCode hReplayHead
+  refine ⟨targetOut, ((bodyFuel + 1) + 1), ?_, ?_, hReplayFull⟩
   · simp [Locals.Block.compileOpen, hCompileStmt, hCompileRest]
   · simp [Block.runOpen, hStmtRun, Outcome.halt]
 
