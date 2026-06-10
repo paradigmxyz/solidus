@@ -126,7 +126,8 @@ theorem primOp_step_exists_gasExecRel
         Assembly.GasAware.EvmYul_step_noncontinuing_prim_exists_gasExecRel
           hStep hNoCallCreate hRel hTarget
       refine ⟨fullPost, ?_, hRelPost⟩
-      simpa [Assembly.PrimOp.step_eq_evm_step_of_not_continuing hStep full]
+      simpa [Assembly.PrimOp.step_eq_evm_step_of_not_continuing
+        hStep hNoCallCreate full]
         using hFull
   | some step =>
       have hTargetRun : step.run target = .ok targetPost := by
@@ -5604,7 +5605,9 @@ theorem structuredBasicInstr_step_no_call_gasAvailable_eq
       | none =>
           have hRun :
               EvmYul.step op.toPrimOp.toEVM none state = .ok post := by
-            simpa [Assembly.PrimOp.step, hCont] using hStep
+            rw [Assembly.PrimOp.step_eq_evm_step_of_not_continuing
+              hCont hNoPrim] at hStep
+            exact hStep
           exact
             Assembly.GasAware.EvmYul_step_noncontinuing_prim_gasAvailable_eq
               hCont hNoPrim hRun

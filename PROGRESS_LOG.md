@@ -27510,3 +27510,35 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - next theorem boundary: compose instruction runs into block bodies after
   proving the successful typeable-primitive PC advancement law, then prove
   terminator outcome simulation.
+
+## 2026-06-10 15:28 PDT - Compaction resume: migration completion audit
+
+- Resumed under `$verifiable-compiler` to measure the active architecture
+  migration against its roadmap; the public plan-first TypedCfg cutover and
+  instruction theorem are checked, while whole-program preservation, pure
+  call-aware planning, generic effect/outcome completion, and legacy deletion
+  remain on the critical path.
+
+## 2026-06-10 15:49 PDT - Compaction resume: TypedCfg outcome preservation
+
+- Resumed under `$verifiable-compiler` at the terminator-simulation boundary;
+  block-body preservation and the shared primitive PC repair are checked, and
+  the next step is a uniform Assembly execution-outcome contract covering
+  running, halting, and error results before whole-block/program composition.
+
+## 2026-06-10 15:58 PDT - TypedCfg direct terminator preservation
+
+- architecture: added `Assembly.Source.Eventually`, a shared existential
+  execution-outcome contract over `Except EVMException StepResult`, plus
+  running-prefix composition that preserves target errors.
+- theorem-boundary: TypedCfg `.invalid` intentionally forgets the concrete
+  exception, so its target relation now requires an Assembly error without
+  claiming an exception identity that the source IR does not retain.
+- proof: added checked simulation for fallthrough/jump, both conditional-jump
+  paths, stack underflow, all halt kinds, and explicit invalid terminators.
+  Return-dispatch is now the only terminator case outside this theorem.
+- verification: `lake build EvmCompiler.TypedCfg EvmCompiler.Public
+  EvmCompiler.Legacy` passed all 1,193 jobs, including gas-aware Assembly,
+  open Yul lowering, observer replay, Structured preservation, and the legacy
+  aggregate; the architecture dependency check, focused no-hole search, and
+  `git diff --check` also passed.

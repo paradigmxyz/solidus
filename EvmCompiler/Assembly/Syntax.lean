@@ -326,6 +326,44 @@ instance (pre code : Program) :
     Decidable (PCFitsFrom pre code) :=
   pcFitsFromDecidable pre code
 
+theorem PCFitsFrom.start {pre code : Program}
+    (hFits : PCFitsFrom pre code) :
+    pre.PCFits := by
+  cases code with
+  | nil =>
+      simpa [PCFitsFrom] using hFits
+  | cons _instr _rest =>
+      exact hFits.1
+
+theorem PCFitsFrom.end {pre code : Program}
+    (hFits : PCFitsFrom pre code) :
+    (pre ++ code).PCFits := by
+  induction code generalizing pre with
+  | nil =>
+      simpa [PCFitsFrom] using hFits
+  | cons instr rest ih =>
+      simpa [PCFitsFrom, List.append_assoc] using ih hFits.2
+
+theorem PCFitsFrom.left {pre first second : Program}
+    (hFits : PCFitsFrom pre (first ++ second)) :
+    PCFitsFrom pre first := by
+  induction first generalizing pre with
+  | nil =>
+      exact PCFitsFrom.start hFits
+  | cons _instr _rest ih =>
+      rcases hFits with ⟨hHere, hRest⟩
+      exact ⟨hHere, ih hRest⟩
+
+theorem PCFitsFrom.right {pre first second : Program}
+    (hFits : PCFitsFrom pre (first ++ second)) :
+    PCFitsFrom (pre ++ first) second := by
+  induction first generalizing pre with
+  | nil =>
+      simpa using hFits
+  | cons instr rest ih =>
+      rcases hFits with ⟨_hHere, hRest⟩
+      simpa [List.append_assoc] using ih hRest
+
 end Program
 
 end Assembly

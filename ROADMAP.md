@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 14:27 PDT.
+Last updated: 2026-06-10 15:58 PDT.
 
 ## Objective
 
@@ -43,6 +43,9 @@ Implemented in this migration:
 - entry-directed TypedCfg block ordering, explicit return-dispatch case labels,
   emitted-label uniqueness, checked Assembly acceptedness/PC bounds, and a
   proved per-instruction lowering theorem against fetched Assembly execution;
+- an error-preserving Assembly execution-outcome contract with checked
+  TypedCfg terminator simulation for jumps, conditional branches, halts, stack
+  underflow, and explicit invalid execution;
 - an `AllocatedTypedCfg` checked pass that pairs scoped allocation with the
   generated CFG and makes both allocation and CFG certificates mandatory
   successful-artifact metadata;
@@ -393,8 +396,10 @@ Goal: make stack/control invariants explicit before Assembly.
   generated CFG.
 - [ ] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
-  DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block and
-  terminator composition remain.
+  DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies and
+  every non-return-dispatch terminator are now proved against the shared
+  Assembly execution-outcome contract. Return-dispatch, block-level outcome
+  composition, and program stepping remain.
 - [ ] Prove TypedCfg-to-Assembly lowering preservation.
 - [ ] Prove label uniqueness and PC bounds from the artifact certificate.
   Certification now rejects duplicate/unresolved emitted labels and PC

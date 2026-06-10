@@ -4038,7 +4038,8 @@ theorem EvmYul_step_noncontinuing_prim_preserves_gasExecRel
     (hTarget : op.step target = .ok targetPost)
     (hFull : EvmYul.step op.toEVM none full = .ok fullPost) :
     GasExecRel fullPost targetPost := by
-  rw [PrimOp.step_eq_evm_step_of_not_continuing hStep] at hTarget
+  rw [PrimOp.step_eq_evm_step_of_not_continuing
+    hStep hNoCallCreate] at hTarget
   cases op <;>
     simp [PrimOp.continuingStep?, PrimOp.isCallCreate] at hStep hNoCallCreate
   · exact EvmYul_step_stop_preserves_gasExecRel hRel hTarget hFull
@@ -4511,7 +4512,8 @@ theorem EvmYul_step_noncontinuing_prim_exists_gasExecRel
     ∃ fullPost,
       EvmYul.step op.toEVM none full = .ok fullPost ∧
         GasExecRel fullPost targetPost := by
-  rw [PrimOp.step_eq_evm_step_of_not_continuing hStep] at hTarget
+  rw [PrimOp.step_eq_evm_step_of_not_continuing
+    hStep hNoCallCreate] at hTarget
   cases op <;>
     simp [PrimOp.continuingStep?, PrimOp.isCallCreate] at hStep hNoCallCreate
   · rw [hRel]
@@ -5147,7 +5149,8 @@ theorem XCoreStackAndJumpInputsReady.of_prim_stepInstrResult_no_call_create
                 (Target.stepInstrResult_halted_stepInstr hRun).1⟩
       have hOpStep : op.step state = .ok post := by
         simpa [Target.stepInstr] using hStepInstr
-      rw [PrimOp.step_eq_evm_step_of_not_continuing hStep] at hOpStep
+      rw [PrimOp.step_eq_evm_step_of_not_continuing
+        hStep hNoCallCreate] at hOpStep
       refine ⟨?_, ?_, ?_, ?_⟩
       · cases op <;>
           simp [PrimOp.continuingStep?, PrimOp.isCallCreate, TargetInstr.op,
@@ -5313,7 +5316,8 @@ theorem Target.stepInstrResult_running_stack_le_of_core_no_call_create
       simp [Target.stepInstr] at hStepInstr
       cases hCont : op.continuingStep? with
       | none =>
-          rw [PrimOp.step_eq_evm_step_of_not_continuing hCont] at hStepInstr
+          rw [PrimOp.step_eq_evm_step_of_not_continuing
+            hCont hNoCallCreate] at hStepInstr
           cases op <;>
             simp [PrimOp.continuingStep?, PrimOp.isCallCreate,
               targetInstrUsesCallCreate, TargetInstr.haltKind?,

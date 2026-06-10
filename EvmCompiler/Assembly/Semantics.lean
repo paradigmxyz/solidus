@@ -194,6 +194,24 @@ def runN (program : Program) : Nat → EVMState → Except EVMException EVMState
       let state' ← step program state
       runN program fuel state'
 
+theorem runN_add (program : Program) (first second : Nat)
+    (state : EVMState) :
+    runN program (first + second) state =
+      (do
+        let state' ← runN program first state
+        runN program second state') := by
+  induction first generalizing state with
+  | zero =>
+      simp only [Nat.zero_add, runN.eq_1, Bind.bind, Except.bind]
+  | succ first ih =>
+      rw [Nat.succ_add, runN.eq_2, runN.eq_2]
+      cases hStep : step program state with
+      | error err =>
+          simp only [hStep, Bind.bind, Except.bind]
+      | ok state' =>
+          simp only [hStep, Bind.bind, Except.bind]
+          exact ih state'
+
 def runNResult (program : Program) : Nat → EVMState → Except EVMException StepResult
   | 0, state => .ok (.running state)
   | fuel + 1, state => do
@@ -201,6 +219,98 @@ def runNResult (program : Program) : Nat → EVMState → Except EVMException St
       match result with
       | .running state' => runNResult program fuel state'
       | .halted halt => .ok (.halted halt)
+
+abbrev ExecutionOutcome := Except EVMException StepResult
+
+/--
+An execution segment ending in any observable Assembly outcome.
+
+Unlike the historical preservation helper, this contract retains target errors
+as outcomes. That is necessary for source layers such as `TypedCfg`, whose
+single `invalid` result intentionally abstracts over several concrete EVM
+exceptions.
+-/
+def Eventually (program : Program) (state : EVMState)
+    (post : ExecutionOutcome → Prop) : Prop :=
+  ∃ fuel outcome,
+    runNResult program fuel state = outcome ∧ post outcome
+
+theorem runNResult_add_of_running
+    (program : Program) (first second : Nat)
+    {state mid : EVMState}
+    (hFirst :
+      runNResult program first state = .ok (.running mid)) :
+    runNResult program (first + second) state =
+      runNResult program second mid := by
+  induction first generalizing state with
+  | zero =>
+      simp [runNResult] at hFirst
+      cases hFirst
+      simp only [Nat.zero_add]
+  | succ first ih =>
+      unfold runNResult at hFirst
+      cases hStep : stepResult program state with
+      | error err =>
+          rw [hStep] at hFirst
+          simp only [Bind.bind, Except.bind] at hFirst
+          cases hFirst
+      | ok result =>
+          rw [hStep] at hFirst
+          cases result with
+          | halted halt =>
+              cases hFirst
+          | running state' =>
+              change
+                runNResult program first state' =
+                  .ok (.running mid) at hFirst
+              rw [Nat.succ_add, runNResult]
+              simp only [hStep, Bind.bind, Except.bind]
+              exact ih hFirst
+
+namespace Eventually
+
+theorem pure {program : Program} {state : EVMState}
+    {post : ExecutionOutcome → Prop}
+    (hPost : post (.ok (.running state))) :
+    Eventually program state post := by
+  exact ⟨0, .ok (.running state), by simp [runNResult], hPost⟩
+
+theorem bind_running {program : Program} {state : EVMState}
+    {middle : EVMState → Prop} {post : ExecutionOutcome → Prop}
+    (hRun :
+      Eventually program state
+        (fun outcome =>
+          match outcome with
+          | .ok (.running mid) => middle mid
+          | _ => False))
+    (hNext : ∀ mid, middle mid → Eventually program mid post) :
+    Eventually program state post := by
+  rcases hRun with ⟨firstFuel, firstOutcome, hFirst, hMiddle⟩
+  cases firstOutcome with
+  | error err =>
+      cases hMiddle
+  | ok result =>
+      cases result with
+      | halted halt =>
+          cases hMiddle
+      | running mid =>
+          rcases hNext mid hMiddle with
+            ⟨secondFuel, outcome, hSecond, hPost⟩
+          exact
+            ⟨firstFuel + secondFuel, outcome,
+              (runNResult_add_of_running program firstFuel secondFuel
+                hFirst).trans hSecond,
+              hPost⟩
+
+theorem mono {program : Program} {state : EVMState}
+    {post₁ post₂ : ExecutionOutcome → Prop}
+    (hRun : Eventually program state post₁)
+    (hPost : ∀ outcome, post₁ outcome → post₂ outcome) :
+    Eventually program state post₂ := by
+  rcases hRun with ⟨fuel, outcome, hRun, hOutcome⟩
+  exact ⟨fuel, outcome, hRun, hPost outcome hOutcome⟩
+
+end Eventually
 
 end Source
 

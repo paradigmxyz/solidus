@@ -1925,7 +1925,13 @@ def step (op : PrimOp) (state : EvmYul.EVM.State) :
     Except EvmYul.EVM.ExecutionException EvmYul.EVM.State :=
   match op.continuingStep? with
   | some step => step.run state
-  | none => EvmYul.step op.toEVM none state
+  | none =>
+      match op with
+      | .create | .call | .callcode | .delegatecall | .create2
+      | .staticcall =>
+          .error .InvalidInstruction
+      | _ =>
+          EvmYul.step op.toEVM none state
 
 theorem step_eq_continuingStep_run {op : PrimOp} {step : PrimStep}
     (hStep : op.continuingStep? = some step) (state : EvmYul.EVM.State) :
@@ -1934,10 +1940,13 @@ theorem step_eq_continuingStep_run {op : PrimOp} {step : PrimStep}
   simp [hStep]
 
 theorem step_eq_evm_step_of_not_continuing {op : PrimOp}
-    (hStep : op.continuingStep? = none) (state : EvmYul.EVM.State) :
+    (hStep : op.continuingStep? = none)
+    (hNoCallCreate : op.isCallCreate = false)
+    (state : EvmYul.EVM.State) :
     op.step state = EvmYul.step op.toEVM none state := by
-  unfold PrimOp.step
-  simp [hStep]
+  cases op <;>
+    simp [PrimOp.step, PrimOp.continuingStep?,
+      PrimOp.isCallCreate] at hStep hNoCallCreate ⊢
 
 end PrimOp
 
