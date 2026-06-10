@@ -32006,6 +32006,197 @@ theorem compileOpen_cons_switchWithOracle_of_evalOne_sourceOwned
               · simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
                   Outcome.halt, Outcome.regular] at hStmtRun
 
+theorem compileOpen_cons_switchRestSlackWithOracle_of_evalOne_sourceOwned
+    {asmProgram : Assembly.Program} {program : Locals.Program}
+    {exprProgram : Expressions.Program}
+    {sourceCtx sourceCtxOut : Ctx}
+    {targetCtx targetCtxOut : Locals.Ctx}
+    {fuel pc restSlack : Nat}
+    {scrutinee : Locals.Expr 1}
+    {cases : List (Word × Locals.Block)}
+    {defaultBody : Option Locals.Block}
+    {rest : List Locals.Stmt}
+    {state stateAfterScrutinee stateAfterSwitch : State} {value : Word}
+    {target : Locals.RunState} {scrutineeCode : Structured.Code}
+    {lowerCases : List (Word × Expressions.Block)}
+    {lowerDefault : Option Expressions.Block}
+    {restCode : List Expressions.Stmt} {outcome : Outcome}
+    (hRestSlack : 1 ≤ restSlack)
+    (hCtx : Locals.SourceLowering.CtxRel sourceCtx targetCtx)
+    (hNoDup : sourceCtx.scope.Nodup)
+    (hOwned : Locals.Source.Expr.SourceOwned scrutinee)
+    (hAccess :
+      Locals.SourceLowering.Expr.Accessible sourceCtx.scope 0 scrutinee)
+    (hRel :
+      Locals.SourceLowering.StateRel sourceCtx.scope state.source target)
+    (hCompileScrutinee :
+      Locals.Expr.compileCode targetCtx 0 scrutinee = some scrutineeCode)
+    (hCompileCases :
+      Locals.CaseList.compile targetCtx cases = some lowerCases)
+    (hCompileDefault :
+      Locals.Default.compile targetCtx defaultBody = some lowerDefault)
+    (hCompileRest :
+      Locals.Block.compileOpen targetCtx { stmts := rest } =
+        some (restCode, targetCtxOut))
+    (hEvalOne :
+      Expr.evalOne scrutinee state = .ok (stateAfterScrutinee, value))
+    (hStmtRun :
+      Stmt.run program sourceCtx (fuel + 1)
+          (.switch scrutinee cases defaultBody) state =
+        .ok (Outcome.regular stateAfterSwitch, sourceCtx))
+    (hSelectedReplay :
+      ∀ (selected : Locals.Block) (bodyCode : List Expressions.Stmt)
+        (bodyCtx : Locals.Ctx) (lowerBody : Expressions.Block)
+        (stateAfterBody : State),
+        Locals.Source.Switch.select value cases defaultBody =
+          some selected →
+        Locals.Block.compileOpen targetCtx selected =
+          some (bodyCode, bodyCtx) →
+        Locals.finishScoped targetCtx bodyCtx bodyCode = some lowerBody →
+        Block.runScoped program sourceCtx selected fuel
+            stateAfterScrutinee =
+          .ok (Outcome.regular stateAfterBody) →
+        ∀ evmAfterPop,
+          Locals.SourceLowering.StateRel sourceCtx.scope
+            stateAfterScrutinee.source (target.withEVM evmAfterPop) →
+          ∃ targetAfterBody,
+            ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+                (fuel + 1) lowerBody (target.withEVM evmAfterPop)
+                stateAfterScrutinee.trace =
+              .ok (Expressions.Outcome.regular targetAfterBody,
+                stateAfterBody.trace) ∧
+            Locals.SourceLowering.StateRel sourceCtx.scope
+              stateAfterBody.source targetAfterBody)
+    (hRestRun :
+      Block.runOpen program sourceCtx (fuel + 1) { stmts := rest }
+          stateAfterSwitch =
+        .ok (outcome, sourceCtxOut))
+    (hRestReplay :
+      ∀ targetAfterSwitch,
+        Locals.SourceLowering.StateRel sourceCtx.scope
+          stateAfterSwitch.source targetAfterSwitch →
+        ∃ targetOut,
+          ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+              ((fuel + 1) + restSlack) { stmts := restCode }
+              targetAfterSwitch stateAfterSwitch.trace =
+            .ok (Expressions.Outcome.regular targetOut,
+              outcome.state.trace) ∧
+          outcome.mode = .regular ∧
+          Locals.SourceLowering.StateRel sourceCtxOut.scope
+            outcome.state.source targetOut ∧
+          Locals.SourceLowering.CtxRel sourceCtxOut targetCtxOut) :
+    ∃ targetOut,
+      Locals.Block.compileOpen targetCtx
+          { stmts :=
+              Locals.Stmt.switch scrutinee cases defaultBody :: rest } =
+        some
+          (Expressions.Stmt.switch
+              (Expressions.Expr.code (results := 1) scrutineeCode)
+              lowerCases lowerDefault :: restCode,
+            targetCtxOut) ∧
+      Block.runOpen program sourceCtx ((fuel + 1) + 1)
+          { stmts :=
+              Locals.Stmt.switch scrutinee cases defaultBody :: rest } state =
+        .ok (outcome, sourceCtxOut) ∧
+      ExpressionsReplay.Block.runWithOracle asmProgram pc exprProgram
+          (((fuel + 1) + restSlack) + 1)
+          { stmts :=
+              Expressions.Stmt.switch
+                (Expressions.Expr.code (results := 1) scrutineeCode)
+                lowerCases lowerDefault :: restCode }
+          target state.trace =
+        .ok (Expressions.Outcome.regular targetOut,
+          outcome.state.trace) ∧
+      outcome.mode = .regular ∧
+      Locals.SourceLowering.StateRel sourceCtxOut.scope
+        outcome.state.source targetOut ∧
+      Locals.SourceLowering.CtxRel sourceCtxOut targetCtxOut := by
+  cases hSelect :
+      Locals.Source.Switch.select value cases defaultBody with
+  | none =>
+      simp [Stmt.run, hEvalOne, hSelect] at hStmtRun
+      cases hStmtRun
+      exact
+        compileOpen_cons_switchNoneRestSlackWithOracle_of_evalOne_sourceOwned
+          (asmProgram := asmProgram) (program := program)
+          (exprProgram := exprProgram)
+          (sourceCtx := sourceCtx) (sourceCtxOut := sourceCtxOut)
+          (targetCtx := targetCtx) (targetCtxOut := targetCtxOut)
+          (fuel := fuel) (pc := pc) (restSlack := restSlack)
+          (scrutinee := scrutinee) (cases := cases)
+          (defaultBody := defaultBody) (rest := rest)
+          (state := state) (stateAfterScrutinee := stateAfterScrutinee)
+          (value := value) (target := target)
+          (scrutineeCode := scrutineeCode)
+          (lowerCases := lowerCases) (lowerDefault := lowerDefault)
+          (restCode := restCode) (outcome := outcome)
+          hRestSlack hCtx hNoDup hOwned hAccess hRel hCompileScrutinee
+          hCompileCases hCompileDefault hCompileRest hEvalOne hSelect
+          hRestRun hRestReplay
+  | some selected =>
+      rcases
+          Switch.compile_selected_open_finish
+            (ctx := targetCtx) (value := value) (cases := cases)
+            (defaultBody := defaultBody) (selected := selected)
+            (lowerCases := lowerCases) (lowerDefault := lowerDefault)
+            hCompileCases hCompileDefault hSelect with
+        ⟨bodyCode, bodyCtx, lowerBody, hCompileBody, hFinishBody,
+          _hLowerSelect⟩
+      cases hBodyRun :
+          Block.runScoped program sourceCtx selected fuel
+            stateAfterScrutinee with
+      | error err =>
+          simp [Stmt.run, hEvalOne, hSelect, hBodyRun] at hStmtRun
+      | ok bodyOutcome =>
+          cases bodyOutcome with
+          | mk stateAfterBody bodyMode =>
+              cases bodyMode
+              · have hBodyRunRegular :
+                    Block.runScoped program sourceCtx selected fuel
+                        stateAfterScrutinee =
+                      .ok (Outcome.regular stateAfterBody) := by
+                  simpa [Outcome.regular] using hBodyRun
+                simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
+                  Outcome.regular] at hStmtRun
+                cases hStmtRun
+                exact
+                  compileOpen_cons_switchSomeRestSlackWithOracle_of_evalOne_sourceOwned
+                    (asmProgram := asmProgram) (program := program)
+                    (exprProgram := exprProgram)
+                    (sourceCtx := sourceCtx) (sourceCtxOut := sourceCtxOut)
+                    (targetCtx := targetCtx) (bodyCtx := bodyCtx)
+                    (targetCtxOut := targetCtxOut)
+                    (fuel := fuel) (pc := pc)
+                    (restSlack := restSlack)
+                    (scrutinee := scrutinee) (cases := cases)
+                    (defaultBody := defaultBody)
+                    (selected := selected) (rest := rest)
+                    (state := state)
+                    (stateAfterScrutinee := stateAfterScrutinee)
+                    (stateAfterBody := stateAfterSwitch) (value := value)
+                    (target := target)
+                    (scrutineeCode := scrutineeCode)
+                    (bodyCode := bodyCode) (lowerCases := lowerCases)
+                    (lowerDefault := lowerDefault)
+                    (lowerBody := lowerBody) (restCode := restCode)
+                    (outcome := outcome)
+                    hRestSlack hCtx hNoDup hOwned hAccess hRel
+                    hCompileScrutinee hCompileCases hCompileDefault
+                    hCompileBody hFinishBody hCompileRest hEvalOne hSelect
+                    hBodyRunRegular
+                    (hSelectedReplay selected bodyCode bodyCtx lowerBody
+                      stateAfterSwitch hSelect hCompileBody hFinishBody
+                      hBodyRunRegular)
+                    hRestRun hRestReplay
+              · simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
+                  Outcome.brk, Outcome.regular] at hStmtRun
+              · simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
+                  Outcome.cont, Outcome.regular] at hStmtRun
+              · simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
+                  Outcome.leave, Outcome.regular] at hStmtRun
+              · simp [Stmt.run, hEvalOne, hSelect, hBodyRun,
+                  Outcome.halt, Outcome.regular] at hStmtRun
+
 theorem compileOpen_cons_switchSomeAtomicPrefixWithOracle_of_evalOne_sourceOwned
     {asmProgram : Assembly.Program} {program : Locals.Program}
     {exprProgram : Expressions.Program}
