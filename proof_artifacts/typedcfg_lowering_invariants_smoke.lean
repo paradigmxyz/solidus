@@ -55,7 +55,7 @@ example :
 def typedScratchLoad : List TypedCfg.Instr :=
   [ .bindScratch 0 "value" 0,
     .dup 0,
-    .push (Functions.ScratchFrameSpill.slotOffset 0),
+    .push (Functions.AllocationSupport.slotOffset 0),
     .prim .add,
     .prim .mload,
     .bindLocals 0 ["value"] ]
@@ -73,7 +73,7 @@ example :
 
 def allocationDrivenProcShapeRecorded : Bool :=
   let source :=
-    Functions.ScratchFrameSpill.AllocationExamples.program
+    Functions.MixedAllocation.Examples.program
   match
       Functions.MixedAllocation.allStackPlanner.plan? source with
   | none => false
@@ -97,7 +97,7 @@ example : allocationDrivenProcShapeRecorded = true := by
 
 def allocationDrivenLexicalShapeRecorded : Bool :=
   let source :=
-    Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
+    Functions.MixedAllocation.Examples.nestedProgram
   match
       Functions.MixedAllocation.allStackPlanner.plan? source with
   | none => false
@@ -121,7 +121,7 @@ example : allocationDrivenLexicalShapeRecorded = true := by
 
 def allocationDrivenScratchBindingRecorded : Bool :=
   let source :=
-    Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
+    Functions.MixedAllocation.Examples.nestedProgram
   match
       (Functions.MixedAllocation.allScratchPlanner 1).plan? source with
   | none => false

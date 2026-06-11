@@ -28244,3 +28244,25 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   allocation gap is the stronger theorem and implementation interface for
   every abstract well-formed plan, followed by splitting the reusable recipe
   helpers out of `ScratchFrameSpill` and deleting its superseded emitter.
+
+## 2026-06-11 09:16 PDT - ScratchFrameSpill emitter deletion
+
+- Extracted the live code-free allocation recipe, lexical planning state, and
+  frame-code primitives into the 296-line `Functions.AllocationSupport`
+  module. It contains no independent compiler backend.
+- Migrated `MixedAllocation`, `AllocationLowering`, the verification root,
+  layer gates, and proof artifacts to the new support module. Moved the small
+  source fixtures into `MixedAllocation.Examples`.
+- Deleted the superseded 6,129-line `Functions.ScratchFrameSpill` emitter and
+  its backend-specific proof corridor. No retained source module imports it,
+  and architecture guards continue to reject its reintroduction.
+- Verification passed: focused support/planner/lowerer/public builds; both
+  allocation proof artifacts; allocator and frontend layer gates; the full
+  1,157-target verification root; architecture and diff checks; all 244
+  bundled-Python importer/schema tests; Aave v3 math/interest smokes; and all
+  11 Permit2 call comparisons with only the independent `solc_validation`
+  limitation.
+- Refreshed architecture metrics: 81 modules, 91,175 Lean lines, 3,916
+  declarations, 59 compiler-variant declarations, and one outcome relation.
+  The oversized-module list now contains four proof/semantics modules rather
+  than five.

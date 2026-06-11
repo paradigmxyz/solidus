@@ -10,12 +10,12 @@ open Locals.Allocation
 abbrev SlotSet := MixedAllocation.SlotSet
 
 structure State where
-  allocation : ScratchFrameSpill.CompileState
+  allocation : AllocationSupport.CompileState
   layout : Locals.Layout
   deriving DecidableEq, Repr
 
 structure Ctx where
-  functions : List ScratchFrameSpill.FunSlots
+  functions : List AllocationSupport.FunSlots
   frameWords : Nat
   frameName : Name
   stackSlots : SlotSet
@@ -40,7 +40,7 @@ def exprSeqTwo (left right : Locals.Expr 1) : Locals.ExprSeq 2 := by
 
 def scratchAddressExpr (frameName : Name) (slot : Nat) : Locals.Expr 1 :=
   .prim .add
-    (exprSeqTwo (.var frameName) (.lit (ScratchFrameSpill.slotOffset slot)))
+    (exprSeqTwo (.var frameName) (.lit (AllocationSupport.slotOffset slot)))
 
 def scratchLoadExpr (frameName : Name) (slot : Nat) : Locals.Expr 1 :=
   .prim .mload (exprSeqOne (scratchAddressExpr frameName slot))
@@ -55,7 +55,7 @@ mutual
       Expr results → Option (Locals.Expr results)
     | .lit value => some (.lit value)
     | .var name => do
-        let slot ← ScratchFrameSpill.lookupSlot? name state.allocation.env
+        let slot ← AllocationSupport.lookupSlot? name state.allocation.env
         if isStackSlot ctx slot then
           some (.var name)
         else
@@ -104,15 +104,15 @@ def bindScratchBindings (baseDepth : Nat)
     (bindings : List (Name × Nat)) : Locals.Stmt :=
   .expr
     (Locals.Expr.code (results := 0)
-      (ScratchFrameSpill.bindScratchBindingsCode baseDepth bindings))
+      (AllocationSupport.bindScratchBindingsCode baseDepth bindings))
 
 def frameExpr (words : Nat) : Locals.Expr 1 :=
-  .code (ScratchFrameSpill.frameInitCode words)
+  .code (AllocationSupport.frameInitCode words)
 
 def splitPrelude : List Stmt → List Locals.Stmt × List Stmt
   | [] => ([], [])
   | stmt :: rest =>
-      match ScratchFrameSpill.compilePreludeStmt? stmt with
+      match AllocationSupport.compilePreludeStmt? stmt with
       | some (.code code) =>
           let (loweredPrefix, tail) := splitPrelude rest
           (.expr (Locals.Expr.code (results := 0) code) ::
@@ -149,12 +149,12 @@ def lowerReturns (ctx : Ctx) :
   | (name, slot) :: rest, layout =>
       let (head, nextLayout) :=
         if isStackSlot ctx slot then
-          ([Locals.Stmt.let_ name (.lit ScratchFrameSpill.zeroWord)],
+          ([Locals.Stmt.let_ name (.lit AllocationSupport.zeroWord)],
             name :: layout)
         else
           ([Locals.Stmt.expr
               (scratchStoreExpr ctx.frameName slot
-                (.lit ScratchFrameSpill.zeroWord))],
+                (.lit AllocationSupport.zeroWord))],
             layout)
       let (tail, finalLayout) :=
         lowerReturns ctx rest nextLayout
@@ -179,7 +179,7 @@ def stackAssignTopCode? (layout : Locals.Layout)
 def scratchAssignTopCode? (ctx : Ctx) (state : State)
     (remaining slot : Nat) : Option Structured.Code := do
   let frameDepth ← frameDepth? ctx state
-  ScratchFrameSpill.storeTopSlotCode?
+  AllocationSupport.storeTopSlotCode?
     (remaining + frameDepth + 1) slot
 
 def lowerCallTargetsCode? (ctx : Ctx) (state : State) :
@@ -187,7 +187,7 @@ def lowerCallTargetsCode? (ctx : Ctx) (state : State) :
   | [], _valuesAbove => some []
   | name :: rest, valuesAbove => do
       let slot ←
-        ScratchFrameSpill.lookupSlot? name state.allocation.env
+        AllocationSupport.lookupSlot? name state.allocation.env
       let head ←
         if isStackSlot ctx slot then
           stackAssignTopCode? state.layout (valuesAbove - 1) name
@@ -203,13 +203,13 @@ def scopeRoot : ScopeId → ScopeId
   | .lexical parent _ => scopeRoot parent
 
 def scopedStates
-    (recipe : ScratchFrameSpill.AllocationRecipe) :
-    List ScratchFrameSpill.ScopedAllocation :=
+    (recipe : AllocationSupport.AllocationRecipe) :
+    List AllocationSupport.ScopedAllocation :=
   { scope := .main, state := recipe.main } ::
     recipe.functions ++ recipe.lexicalScopes
 
 def scratchBindingsForRoot
-    (recipe : ScratchFrameSpill.AllocationRecipe)
+    (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (root : ScopeId) : List (Name × Nat) :=
   ((scopedStates recipe).filterMap fun entry =>
       if scopeRoot entry.scope = root then
@@ -219,15 +219,15 @@ def scratchBindingsForRoot
       else
         none).flatten.eraseDups
 
-def rootNeedsFrame (recipe : ScratchFrameSpill.AllocationRecipe)
+def rootNeedsFrame (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (root : ScopeId) : Bool :=
   !(scratchBindingsForRoot recipe stackSlots root).isEmpty
 
-def functionNeedsFrame (recipe : ScratchFrameSpill.AllocationRecipe)
+def functionNeedsFrame (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (name : Name) : Bool :=
   rootNeedsFrame recipe stackSlots (.function name)
 
-def frameFunctions (recipe : ScratchFrameSpill.AllocationRecipe)
+def frameFunctions (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) : List Name :=
   recipe.functionSlots.filterMap fun fn =>
     if functionNeedsFrame recipe stackSlots fn.name then
@@ -293,7 +293,7 @@ mutual
     | .let_ name value => do
         let lowered ← lowerExpr ctx state value
         let (slot, allocation) :=
-          ScratchFrameSpill.allocateName name state.allocation
+          AllocationSupport.allocateName name state.allocation
         if isStackSlot ctx slot then
           some
             ([.let_ name lowered],
@@ -308,7 +308,7 @@ mutual
             none
     | .assign name value => do
         let slot ←
-          ScratchFrameSpill.lookupSlot? name state.allocation.env
+          AllocationSupport.lookupSlot? name state.allocation.env
         let lowered ← lowerExpr ctx state value
         if isStackSlot ctx slot then
           some ([.assign name lowered], state)
@@ -356,7 +356,7 @@ mutual
         let values ← lowerReturnExprs ctx state returns
         some ([.exprs (exprSeqOfList values), .leave], state)
     | .call targets functionName args => do
-        let fn ← ScratchFrameSpill.lookupFun? functionName ctx.functions
+        let fn ← AllocationSupport.lookupFun? functionName ctx.functions
         if args.length = fn.params.length then pure () else none
         if targets.length = fn.returns.length then pure () else none
         if targets.Nodup then pure () else none
@@ -379,11 +379,11 @@ mutual
         some ([.terminalArgs kind lowered], state)
 end
 
-def lowerFunction? (recipe : ScratchFrameSpill.AllocationRecipe)
+def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
-    (state : ScratchFrameSpill.CompileState) (fn : FunDef) :
-    Option (Locals.Proc × ScratchFrameSpill.CompileState) := do
-  let slots ← ScratchFrameSpill.lookupFun? fn.name recipe.functionSlots
+    (state : AllocationSupport.CompileState) (fn : FunDef) :
+    Option (Locals.Proc × AllocationSupport.CompileState) := do
+  let slots ← AllocationSupport.lookupFun? fn.name recipe.functionSlots
   let root := ScopeId.function fn.name
   let scratchBindings :=
     scratchBindingsForRoot recipe stackSlots root
@@ -410,7 +410,7 @@ def lowerFunction? (recipe : ScratchFrameSpill.AllocationRecipe)
     lowerReturns ctx slots.returns paramLayout
   let bodyStart : State :=
     { allocation :=
-        { env := ScratchFrameSpill.functionEnv slots
+        { env := AllocationSupport.functionEnv slots
           nextSlot := state.nextSlot }
       layout := bodyLayout }
   let (body, final) ←
@@ -429,10 +429,10 @@ def lowerFunction? (recipe : ScratchFrameSpill.AllocationRecipe)
      { env := state.env
        nextSlot := final.allocation.nextSlot })
 
-def lowerFunctions? (recipe : ScratchFrameSpill.AllocationRecipe)
+def lowerFunctions? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name) :
-    ScratchFrameSpill.CompileState → List FunDef →
-      Option (List Locals.Proc × ScratchFrameSpill.CompileState)
+    AllocationSupport.CompileState → List FunDef →
+      Option (List Locals.Proc × AllocationSupport.CompileState)
   | state, [] => some ([], state)
   | state, fn :: rest => do
       let (proc, next) ←
@@ -441,9 +441,9 @@ def lowerFunctions? (recipe : ScratchFrameSpill.AllocationRecipe)
         lowerFunctions? recipe stackSlots frameName next rest
       some (proc :: tail, final)
 
-def lowerMain? (recipe : ScratchFrameSpill.AllocationRecipe)
+def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
-    (state : ScratchFrameSpill.CompileState)
+    (state : AllocationSupport.CompileState)
     (body : Block) : Option (Locals.Block × State) := do
   let root := ScopeId.main
   let scratchBindings :=
@@ -473,14 +473,14 @@ def lowerMain? (recipe : ScratchFrameSpill.AllocationRecipe)
     ({ stmts := sourcePrelude ++ prelude ++ lowered.stmts },
       final)
 
-def lowerToLocals? (recipe : ScratchFrameSpill.AllocationRecipe)
+def lowerToLocals? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (program : Program) : Option Locals.Program := do
   let (procs, stateAfterFunctions) ←
     lowerFunctions? recipe stackSlots frameName
       recipe.stateAfterSignatures program.functions
   if stateAfterFunctions = recipe.stateAfterFunctions then pure () else none
-  let mainStart : ScratchFrameSpill.CompileState :=
+  let mainStart : AllocationSupport.CompileState :=
     { env := [], nextSlot := stateAfterFunctions.nextSlot }
   let (main, final) ←
     lowerMain? recipe stackSlots frameName mainStart program.body
@@ -494,7 +494,7 @@ def allSourceNames (program : Program) : List Name :=
     program.functions.flatMap fun fn =>
       fn.name :: fn.params ++ fn.returns
   functionNames ++
-    (ScratchFrameSpill.planRecipeCore? program).toList.flatMap fun recipe =>
+    (AllocationSupport.planRecipeCore? program).toList.flatMap fun recipe =>
       (scopedStates recipe).flatMap fun entry =>
         entry.state.env.map Prod.fst
 
@@ -510,7 +510,7 @@ structure SlotOccurrence where
   slot : Nat
 
 def slotOccurrences
-    (recipe : ScratchFrameSpill.AllocationRecipe) :
+    (recipe : AllocationSupport.AllocationRecipe) :
     List SlotOccurrence :=
   (scopedStates recipe).flatMap fun entry =>
     entry.state.env.map fun binding =>
@@ -535,7 +535,7 @@ def inferSlotStack? (allocation : ProgramPlan)
   | .scratch scratchSlot =>
       if scratchSlot = slot then some false else none
 
-def inferStackSlots? (recipe : ScratchFrameSpill.AllocationRecipe)
+def inferStackSlots? (recipe : AllocationSupport.AllocationRecipe)
     (allocation : ProgramPlan) : Option SlotSet :=
   let occurrences := slotOccurrences recipe
   (List.range recipe.frameWords).filterM fun slot =>
@@ -543,7 +543,7 @@ def inferStackSlots? (recipe : ScratchFrameSpill.AllocationRecipe)
 
 def lowerLocalsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Locals.Program := do
-  let recipe ← ScratchFrameSpill.planRecipeCore? program
+  let recipe ← AllocationSupport.planRecipeCore? program
   let stackSlots ← inferStackSlots? recipe allocation
   if MixedAllocation.AllocationRecipe.toMixedProgramPlan
       recipe stackSlots = allocation then
@@ -603,10 +603,10 @@ def mixedCallProgram : Program :=
                     (exprSeqTwo (.var "x") (.var "y")))] } }]
     body :=
       { stmts :=
-          [ .let_ "out" (.lit ScratchFrameSpill.zeroWord),
+          [ .let_ "out" (.lit AllocationSupport.zeroWord),
             .call ["out"] "sum"
-              [ .lit (ScratchFrameSpill.word 2),
-                .lit (ScratchFrameSpill.word 3) ] ] } }
+              [ .lit (AllocationSupport.word 2),
+                .lit (AllocationSupport.word 3) ] ] } }
 
 def mixedCallPlan : Option ProgramPlan :=
   MixedAllocation.planAllocation? 4 [0, 3] mixedCallProgram
@@ -656,13 +656,13 @@ def twoReturnCallProgram : Program :=
                    (.prim .add
                      (exprSeqTwo
                        (.var "x")
-                       (.lit (ScratchFrameSpill.word 1)))) ] } }]
+                       (.lit (AllocationSupport.word 1)))) ] } }]
     body :=
       { stmts :=
-          [ .let_ "left" (.lit ScratchFrameSpill.zeroWord),
-            .let_ "right" (.lit ScratchFrameSpill.zeroWord),
+          [ .let_ "left" (.lit AllocationSupport.zeroWord),
+            .let_ "right" (.lit AllocationSupport.zeroWord),
             .call ["left", "right"] "pair"
-              [.lit (ScratchFrameSpill.word 7)] ] } }
+              [.lit (AllocationSupport.word 7)] ] } }
 
 def twoReturnCallAllocated :
     Option Compiler.AllocatedTypedCfg.CertifiedArtifact := do

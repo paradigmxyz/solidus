@@ -5,7 +5,7 @@ open EvmCompiler
 namespace EvmCompiler.ProofArtifacts.InlineAllocationPlanner
 
 def sourceProgram : Functions.Program :=
-  Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
+  Functions.MixedAllocation.Examples.nestedProgram
 
 def objectProgram : Objects.Program :=
   { root := .mk "InlineAllocationPlannerSmoke" sourceProgram [] [] }
@@ -19,7 +19,7 @@ def sourceDerivedLexicalPlanRecorded : Bool :=
       | some lowered =>
           decide
             (planned.allocation.find? (.lexical .main 0) =
-              some Functions.ScratchFrameSpill.AllocationExamples.nestedStackAllocationExpected) &&
+              some Functions.MixedAllocation.Examples.nestedStackAllocationExpected) &&
             decide (lowered.backend = .inlineStack)
 
 example : sourceDerivedLexicalPlanRecorded = true := by
@@ -33,7 +33,7 @@ example :
 def wideStatements : List Functions.Stmt :=
   (List.range 17).map fun idx =>
     .let_ ("wide_" ++ toString idx)
-      (.lit (Functions.ScratchFrameSpill.word idx))
+      (.lit (Functions.AllocationSupport.word idx))
 
 def wideSourceProgram : Functions.Program :=
   { functions := []

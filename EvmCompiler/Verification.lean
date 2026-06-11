@@ -1,7 +1,7 @@
 import EvmCompiler.Public
 import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
-import EvmCompiler.Functions.ScratchFrameSpill
+import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.Preservation

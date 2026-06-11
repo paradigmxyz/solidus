@@ -24,7 +24,9 @@ case "$layer" in
   allocator)
     modules=(
       EvmCompiler.Locals.Allocation
-      EvmCompiler.Functions.ScratchFrameSpill
+      EvmCompiler.Functions.AllocationSupport
+      EvmCompiler.Functions.MixedAllocation
+      EvmCompiler.Functions.AllocationLowering
       EvmCompiler.Objects.Compiler
     )
     ;;

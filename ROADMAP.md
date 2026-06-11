@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 09:10 PDT.
+Last updated: 2026-06-11 09:16 PDT.
 
 ## Objective
 
@@ -127,13 +127,13 @@ The remaining critical path is deliberately narrow and explicit:
    that quantified interface.
 2. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
-3. Run the final frontend, benchmark, deletion, proof-hole, and architecture
-   gates.
+3. Split the remaining oversized proof modules and run the final frontend,
+   benchmark, proof-hole, and architecture gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 96,972 Lean lines across 81 modules, down by about 925K lines from the
+tree is 91,175 Lean lines across 81 modules, down by about 931K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -442,12 +442,11 @@ Cutover gate:
 
 Deletion gate:
 
-- Delete independent compiler frontends after their planners and proof
-  obligations have migrated. CallAware is deleted, and no public route calls
-  the old ScratchFrameSpill planner/lowerer. `ScratchFrameSpill` still contains
-  the retained allocation-recipe and frame-code helpers plus its superseded
-  emitter; split those helpers and delete the emitter after the quantified
-  theorem no longer depends on that implementation corridor.
+- [x] Delete independent compiler frontends after their planners and proof
+  obligations have migrated. CallAware and the superseded 6K-line
+  ScratchFrameSpill emitter are deleted. The 296-line `AllocationSupport`
+  module retains only code-free source allocation recipes and frame-code
+  primitives used by the shared lowerer.
 
 ## Phase 5: Complete Allocated TypedCfg
 
@@ -728,9 +727,8 @@ The remaining critical path is:
    theorem.
 2. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
-3. Split and delete the superseded ScratchFrameSpill emitter and remaining
-   oversized proof/compiler modules, then rerun the final verification,
-   frontend, benchmark, deletion, proof-hole, and architecture gates.
+3. Split the remaining oversized proof/compiler modules, then rerun the final
+   verification, frontend, benchmark, proof-hole, and architecture gates.
 
 ## Progress Discipline
 

@@ -213,7 +213,9 @@ report_matches \
   EvmCompiler/Expressions/Compiler.lean \
   EvmCompiler/Locals/Compiler.lean \
   EvmCompiler/Functions/Compiler.lean \
-  EvmCompiler/Functions/ScratchFrameSpill.lean \
+  EvmCompiler/Functions/AllocationSupport.lean \
+  EvmCompiler/Functions/MixedAllocation.lean \
+  EvmCompiler/Functions/AllocationLowering.lean \
   EvmCompiler/Objects/Compiler.lean \
   EvmCompiler/Public.lean \
   EvmCompiler.lean
