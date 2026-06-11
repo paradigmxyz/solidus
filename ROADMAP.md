@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 23:15 PDT.
+Last updated: 2026-06-10 23:45 PDT.
 
 ## Objective
 
@@ -68,10 +68,12 @@ Implemented in this migration:
   statement-list composition;
 - checked Structured-to-TypedCfg semantic preservation for primitive
   instructions, straight-line code, both `if` branches, compiled code
-  statements, empty statement lists, and break/continue/leave/terminal leaves;
+  statements, empty statement lists, break/continue/leave/terminal leaves, and
+  the empty/no-default switch path;
 - a source-to-CFG state relation that realizes ghost procedure frames as
   concrete return-token/caller-stack suffixes while preserving gas and erasing
-  only lowering-owned control counters;
+  only lowering-owned control counters, with reusable primitive, code,
+  condition-pop, and regular-fragment congruence theorems;
 - a zero-byte, preservation-proved CFG relabel instruction plus allocation-
   derived inline procedure adapters: calls retain generic row-polymorphic entry
   shapes while canonical parameter locations name the internal body shape and
@@ -89,9 +91,9 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Extend the checked source-to-CFG semantic package through switch dispatch,
-   loops, and procedure calls/return dispatch, then compose the result into the
-   public artifact theorem.
+2. Extend the checked source-to-CFG semantic package through nonempty switch
+   dispatch, loops, and procedure calls/return dispatch, then compose the
+   result into the public artifact theorem.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 
@@ -592,7 +594,8 @@ Latest verified checkpoint:
 - architecture dependency and retired-module guards: pass;
 - stable verification aggregate, including observer, scratch-frame, object
   semantics, public API, public artifact simulation, generic Yul effects, and
-  TypedCfg and initial Structured-to-TypedCfg preservation: pass (1,155 jobs);
+  relational Structured-to-TypedCfg code/condition/switch preservation: pass
+  (1,155 jobs);
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -602,7 +605,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 88,771 Lean lines;
+- retained architecture metrics: 79 modules and 89,725 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -617,8 +620,8 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Finish source-to-CFG semantic composition and remaining certificate safety
-   projections.
+2. Finish nonempty-switch, loop, and call/return source-to-CFG semantic
+   composition and remaining certificate safety projections.
 3. Finish outcome-indexed projections/composition, then rerun the final
    verification, frontend, benchmark, and architecture gates.
 

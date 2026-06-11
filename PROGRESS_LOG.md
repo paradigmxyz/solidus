@@ -27866,3 +27866,29 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - Remaining source-to-CFG proof frontier is switch dispatch, loop recursion,
   concrete call/return-token execution, and composition into the public
   source-facing artifact theorem.
+## 2026-06-10 - Compaction resume
+
+Resumed the active architecture-migration goal from commit `4c173b4d1`. The immediate task is to remove the failed brute-force primitive congruence experiment, restore the focused Structured-to-TypedCfg preservation build, and continue the remaining switch, loop, call/return, and public-certificate composition work.
+
+## 2026-06-10 23:45 PDT - Relational code, condition, and switch preservation
+
+- Replaced the failed all-`BasicOp` simplification experiment with a checked
+  semantic-family proof over `Assembly.PrimStep`, then lifted it through
+  `BasicOp`, `BasicInstr`, and arbitrary straight-line `Code`. The only
+  non-continuing source cases are handled explicitly: `gas` reuses the machine
+  state family, while call/create placeholders remain invalid in this closed
+  semantics.
+- Strengthened `SameRuntimeData` to exact equality after erasing only `pc` and
+  `execLength`; gas and ordinary runtime data remain exact. Added reusable
+  stack replacement, condition-pop, code execution, and ghost-frame suffix
+  preservation lemmas.
+- Added relational `RegularPreserves` certificates for compiled code
+  statements and both `if` branches. Added an end-to-end certificate for the
+  empty switch without a default, composing scrutinee execution with the
+  generated pop-and-jump default block.
+- Verification passed: focused preservation check, full 1,155-job
+  `EvmCompiler.Verification`, no proof holes in the touched module, and
+  `git diff --check`. Fresh metrics are 79 modules, 89,725 Lean lines, 65
+  compiler variants, and one outcome relation.
+- Remaining source-to-CFG frontier is nonempty switch case recursion, loops,
+  concrete call/return-token execution, and public artifact composition.
