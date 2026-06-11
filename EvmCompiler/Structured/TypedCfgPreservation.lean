@@ -1390,6 +1390,42 @@ theorem transport_leave
   refine ⟨.jump label targetFinal, hEventually, ?_⟩
   exact Rel.leave_iff.mpr ⟨hLeave ▸ hLabel, hFinalRel⟩
 
+theorem transport_brk
+    {program : TypedCfg.Program} {entry : Assembly.Label}
+    {left right : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hBreak : left.breakLabel? = right.breakLabel?)
+    (hPath :
+      Path program entry left source
+        (Structured.Outcome.brk final) tokens) :
+    Path program entry right source
+      (Structured.Outcome.brk final) tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.brk_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  refine ⟨.jump label targetFinal, hEventually, ?_⟩
+  exact Rel.brk_iff.mpr ⟨hBreak ▸ hLabel, hFinalRel⟩
+
+theorem transport_cont
+    {program : TypedCfg.Program} {entry : Assembly.Label}
+    {left right : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hContinue : left.continueLabel? = right.continueLabel?)
+    (hPath :
+      Path program entry left source
+        (Structured.Outcome.cont final) tokens) :
+    Path program entry right source
+      (Structured.Outcome.cont final) tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.cont_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  refine ⟨.jump label targetFinal, hEventually, ?_⟩
+  exact Rel.cont_iff.mpr ⟨hContinue ▸ hLabel, hFinalRel⟩
+
 theorem transport_halt
     {program : TypedCfg.Program} {entry : Assembly.Label}
     {left right : Continuations}
@@ -1453,6 +1489,82 @@ theorem bind_jump
       hOutcomeRel⟩
 
 end Path
+
+/--
+Compiler-fragment preservation with outcome-indexed fallthrough metadata.
+
+Every outcome carries the shared semantic path. Only regular source outcomes
+require the compiler result to expose a fallthrough shape; abrupt outcomes
+terminate before a statement-list tail and impose no such metadata.
+-/
+def Preserves (result : TypedCfgCompiler.Result)
+    (program : TypedCfg.Program) (entry : Assembly.Label)
+    (continuations : Continuations) (source : RunState)
+    (outcome : Structured.Outcome) (tokens : List Word) : Prop :=
+  Path program entry continuations source outcome tokens ∧
+    (outcome.mode = .regular →
+      ∃ output, result.fallthrough? = some output)
+
+namespace Preserves
+
+theorem path
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry : Assembly.Label} {continuations : Continuations}
+    {source : RunState} {outcome : Structured.Outcome}
+    {tokens : List Word}
+    (hPreserves :
+      Preserves result program entry continuations source outcome tokens) :
+    Path program entry continuations source outcome tokens :=
+  hPreserves.1
+
+theorem fallthrough_of_regular
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry : Assembly.Label} {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hPreserves :
+      Preserves result program entry continuations source
+        (Structured.Outcome.regular final) tokens) :
+    ∃ output, result.fallthrough? = some output :=
+  hPreserves.2 rfl
+
+theorem of_regular
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry regular : Assembly.Label} {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hRegular : continuations.regular = regular)
+    (hFallthrough : ∃ output, result.fallthrough? = some output)
+    (hPreserves :
+      RegularPreserves result program entry regular source final tokens) :
+    Preserves result program entry continuations source
+      (Structured.Outcome.regular final) tokens := by
+  refine
+    ⟨Path.regular_of_regular hRegular hPreserves, ?_⟩
+  intro _hMode
+  exact hFallthrough
+
+theorem of_path_of_nonregular
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry : Assembly.Label} {continuations : Continuations}
+    {source : RunState} {outcome : Structured.Outcome}
+    {tokens : List Word}
+    (hMode : outcome.mode ≠ .regular)
+    (hPath : Path program entry continuations source outcome tokens) :
+    Preserves result program entry continuations source outcome tokens := by
+  refine ⟨hPath, ?_⟩
+  intro hRegular
+  exact False.elim (hMode hRegular)
+
+theorem to_regular_path
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry : Assembly.Label} {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hPreserves :
+      Preserves result program entry continuations source
+        (Structured.Outcome.regular final) tokens) :
+    PathPreserves program entry continuations.regular source final tokens :=
+  Path.to_regular hPreserves.1
+
+end Preserves
 
 end OutcomeSimulation
 
@@ -3615,6 +3727,63 @@ end Loop
 namespace Block
 
 /--
+Canonical decomposition of a successful nonempty statement-list compilation.
+-/
+theorem components_of_compileStmtListFuel?_cons
+    {compilerFuel : Nat} {stmt : Structured.Stmt}
+    {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+        (stmt :: rest) ctx supply entry input regular = some result) :
+    ∃ headResult,
+      TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+          entry input (TypedCfgCompiler.restLabel supply) =
+        some headResult ∧
+      ((headResult.fallthrough? = none ∧ result = headResult) ∨
+        ∃ tailInput tailResult,
+          headResult.fallthrough? = some tailInput ∧
+          TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+              headResult.next (TypedCfgCompiler.restLabel supply)
+              tailInput regular =
+            some tailResult ∧
+          result = headResult.append tailResult) := by
+  unfold TypedCfgCompiler.compileStmtListFuel? at hCompile
+  cases hHead :
+      TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+        entry input (TypedCfgCompiler.restLabel supply) with
+  | none =>
+      simp [hHead] at hCompile
+  | some headResult =>
+      cases hFallthrough : headResult.fallthrough? with
+      | none =>
+          have hEq : headResult = result := by
+            simpa [hHead, hFallthrough] using hCompile
+          have hResult : result = headResult := by
+            exact hEq.symm
+          exact
+            ⟨headResult, rfl,
+              Or.inl ⟨hFallthrough, hResult⟩⟩
+      | some tailInput =>
+          cases hTail :
+              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+                headResult.next (TypedCfgCompiler.restLabel supply)
+                tailInput regular with
+          | none =>
+              simp [hHead, hFallthrough, hTail] at hCompile
+          | some tailResult =>
+              have hEq : headResult.append tailResult = result := by
+                simpa [hHead, hFallthrough, hTail] using hCompile
+              have hResult : result = headResult.append tailResult := by
+                exact hEq.symm
+              exact
+                ⟨headResult, rfl,
+                  Or.inr
+                    ⟨tailInput, tailResult, hFallthrough, hTail, hResult⟩⟩
+
+/--
 Ambient-program form of empty statement-list preservation.
 -/
 theorem eventually_nil_of_compileStmtListFuel?
@@ -3665,6 +3834,191 @@ theorem regular_nil_of_compileStmtListFuel?
   simp [TypedCfgCompiler.mkBlock?] at hCompile
   cases hCompile
   exact ⟨input, rfl, hEventually⟩
+
+/--
+Empty statement-list preservation in the uniform outcome certificate.
+-/
+theorem preserves_nil_of_compileStmtListFuel?
+    {compilerFuel : Nat} {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program} {state : RunState} {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1) [] ctx
+        supply entry input regular = some result)
+    (hBlocks : BlocksInProgram result cfg) :
+    OutcomeSimulation.Preserves result cfg entry
+      (OutcomeSimulation.Continuations.ofContext ctx regular)
+      state (Structured.Outcome.regular state) tokens := by
+  refine ⟨?_, ?_⟩
+  · intro target hRel
+    have hEventually :=
+      eventually_nil_of_compileStmtListFuel?
+        (state := state.withEVM target) hCompile hBlocks
+    refine ⟨.jump regular target, ?_, ?_⟩
+    · simpa [RunState.withEVM] using hEventually
+    · exact OutcomeSimulation.Rel.regular_iff.mpr ⟨rfl, hRel⟩
+  · intro _hMode
+    unfold TypedCfgCompiler.compileStmtListFuel? at hCompile
+    simp [TypedCfgCompiler.mkBlock?] at hCompile
+    cases hCompile
+    exact ⟨input, rfl⟩
+
+/--
+Outcome-indexed statement-list composition.
+
+The head certificate supplies semantic execution for every mode and a
+fallthrough shape exactly when the source head is regular. This rules out a
+regular source result when the compiler statically terminated the list and
+composes the tail only in the compiler's fallthrough branch.
+-/
+theorem preserves_cons_of_compileStmtListFuel?_and_eval
+    {compilerFuel sourceFuel : Nat} {program : Structured.Program}
+    {stmt : Structured.Stmt} {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {outcome : Structured.Outcome}
+    {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+        (stmt :: rest) ctx supply entry input regular = some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hEval :
+      Structured.Block.Eval program sourceFuel
+        { stmts := stmt :: rest } source outcome)
+    (hHead :
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {stmtFuel : Nat} {stmtSource : RunState}
+        {stmtOutcome : Structured.Outcome},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        BlocksInProgram headResult cfg →
+        Structured.Stmt.Eval program stmtFuel stmt
+            stmtSource stmtOutcome →
+        OutcomeSimulation.Preserves headResult cfg entry
+          (OutcomeSimulation.Continuations.ofContext ctx
+            (TypedCfgCompiler.restLabel supply))
+          stmtSource stmtOutcome tokens)
+    (hTail :
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
+        {tailInput : TypedCfg.Shape}
+        {tailFuel : Nat} {tailSource : RunState}
+        {tailOutcome : Structured.Outcome},
+        headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        BlocksInProgram tailResult cfg →
+        Structured.Block.Eval program tailFuel { stmts := rest }
+            tailSource tailOutcome →
+        OutcomeSimulation.Preserves tailResult cfg
+          (TypedCfgCompiler.restLabel supply)
+          (OutcomeSimulation.Continuations.ofContext ctx regular)
+          tailSource tailOutcome tokens) :
+    OutcomeSimulation.Preserves result cfg entry
+      (OutcomeSimulation.Continuations.ofContext ctx regular)
+      source outcome tokens := by
+  rcases components_of_compileStmtListFuel?_cons hCompile with
+    ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
+  · rcases hNoTail with ⟨hFallthrough, rfl⟩
+    cases hEval with
+    | cons_regular hStmt _hRest =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hBlocks hStmt
+        rcases
+            OutcomeSimulation.Preserves.fallthrough_of_regular
+              hHeadPreserves with
+          ⟨output, hOutput⟩
+        rw [hFallthrough] at hOutput
+        cases hOutput
+    | cons_brk hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_brk
+            (by rfl) hHeadPreserves.path
+    | cons_cont hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_cont
+            (by rfl) hHeadPreserves.path
+    | cons_leave hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_leave
+            (by rfl) hHeadPreserves.path
+    | cons_halt hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_halt hHeadPreserves.path
+  · rcases hWithTail with
+      ⟨tailInput, tailResult, hFallthrough, hTailCompile, rfl⟩
+    have hHeadBlocks :=
+      BlocksInProgram.left_of_append hBlocks
+    have hTailBlocks :=
+      BlocksInProgram.right_of_append hBlocks
+    cases hEval with
+    | cons_regular hStmt hRest =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hHeadBlocks hStmt
+        have hTailPreserves :=
+          hTail hFallthrough hTailCompile hTailBlocks hRest
+        refine ⟨?_, ?_⟩
+        · exact
+            OutcomeSimulation.Path.bind_jump
+              hHeadPreserves.to_regular_path hTailPreserves.path
+        · intro hMode
+          rcases hTailPreserves.2 hMode with
+            ⟨output, hOutput⟩
+          exact
+            ⟨output,
+              by
+                simpa [TypedCfgCompiler.Result.append] using hOutput⟩
+    | cons_brk hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hHeadBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_brk
+            (by rfl) hHeadPreserves.path
+    | cons_cont hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hHeadBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_cont
+            (by rfl) hHeadPreserves.path
+    | cons_leave hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hHeadBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_leave
+            (by rfl) hHeadPreserves.path
+    | cons_halt hStmt =>
+        have hHeadPreserves :=
+          hHead hHeadCompile hHeadBlocks hStmt
+        apply OutcomeSimulation.Preserves.of_path_of_nonregular
+          (by simp)
+        exact
+          OutcomeSimulation.Path.transport_halt hHeadPreserves.path
 
 /--
 Generic regular statement-list composition.

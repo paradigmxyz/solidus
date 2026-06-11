@@ -27989,3 +27989,24 @@ Resumed from commit `92acedc39` with source-selected regular switch preservation
   outcome relation. Loop-specific source-to-CFG preservation is complete; the
   next proof is the mutual statement/block lift and concrete call/return
   dispatch.
+
+## 2026-06-11 - Compaction resume: outcome-indexed statement lists
+
+Resumed from commit `f92b851f6` with compiler-facing loop preservation complete. The current uncommitted checkpoint adds an honest outcome-indexed fragment certificate and statement-list composition; next is aggregate verification, then leaf statement certificates and the mutual statement/block lift.
+
+## 2026-06-11 06:41 PDT - Outcome-indexed statement-list composition
+
+- Added an outcome-indexed compiler-fragment certificate over the shared
+  simulation path. It requires compiler fallthrough metadata exactly for
+  regular source outcomes and keeps abrupt outcomes independent of a list tail.
+- Proved empty and nonempty statement-list composition across regular, break,
+  continue, leave, and halt outcomes, including both the compiler's static
+  no-tail branch and its appended-tail branch.
+- Theorem-boundary correction: the older `RegularPreserves` implication can be
+  vacuous when no concrete target state realizes the source tokens, so the new
+  certificate requires an explicit compiler-derived fallthrough witness rather
+  than projecting one from that relation.
+- Verification passed: full 1,156-job `EvmCompiler.Verification`, architecture
+  dependency/retired-route guard, proof-hole scan, and `git diff --check`.
+  Fresh metrics are 79 modules, 91,889 Lean lines, 65 compiler variants, and
+  one outcome relation.

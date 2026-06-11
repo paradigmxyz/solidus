@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 23:45 PDT.
+Last updated: 2026-06-11 06:41 PDT.
 
 ## Objective
 
@@ -66,6 +66,9 @@ Implemented in this migration:
 - compositional regular-execution certificates carrying both compiler
   fallthrough shape and finite CFG execution, with checked append and
   statement-list composition;
+- an outcome-indexed fragment certificate that retains compiler fallthrough
+  metadata exactly for regular source outcomes, with checked empty and
+  nonempty statement-list composition across every control mode;
 - checked Structured-to-TypedCfg semantic preservation for primitive
   instructions, straight-line code, both `if` branches, compiled code
   statements, empty statement lists, break/continue/leave/terminal leaves, and
@@ -91,8 +94,8 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Extend the checked source-to-CFG semantic package through nonempty switch
-   dispatch, loops, and procedure calls/return dispatch, then compose the
+2. Finish the mutual statement/block lift, extend the checked source-to-CFG
+   semantic package through procedure calls/return dispatch, then compose the
    result into the public artifact theorem.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
@@ -100,7 +103,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 88,771 Lean lines across 79 modules, down by about 932K lines from the
+tree is 91,889 Lean lines across 79 modules, down by about 929K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -275,8 +278,9 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [x] Provide projections for regular, break, continue, leave, and halt.
 - [ ] Prove generic append, scoped-block, branch, switch, and loop composition.
   The Structured-to-TypedCfg path now instantiates `OutcomeRel` with concrete
-  continuation and halt contracts and proves all `For.Eval` loop constructors;
-  the full statement/block and call lift remains.
+  continuation and halt contracts, proves all `For.Eval` loop constructors,
+  and composes outcome-indexed statement lists; leaf statements, the mutual
+  statement/block lift, and calls remain.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
@@ -612,6 +616,10 @@ Latest verified checkpoint:
   recursive backedges. A canonical `.for_` compiler decomposition and
   compiler-facing theorem now add init regular/leave/halt and exact generated
   fragment containment; loop-specific preservation is complete;
+- outcome-indexed compiler fragments now carry a semantic path for every mode
+  and fallthrough metadata exactly when the source result is regular. Empty
+  and nonempty statement lists compose through this certificate, including
+  abrupt head outcomes and the compiler's static no-tail branch;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -636,9 +644,9 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Finish loop and call/return source-to-CFG semantic composition, integrate
-   nonregular switch/body outcomes into the full Structured simulation, and
-   discharge remaining certificate safety projections.
+2. Finish the mutual statement/block source-to-CFG lift, concrete call/return
+   dispatch, and the public source-to-artifact theorem; then discharge the
+   remaining certificate safety projections.
 3. Finish outcome-indexed projections/composition, then rerun the final
    verification, frontend, benchmark, and architecture gates.
 
