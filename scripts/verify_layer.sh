@@ -20,7 +20,6 @@ case "$layer" in
   allocator)
     modules=(
       EvmCompiler.Locals.Allocation
-      EvmCompiler.Functions.CallAwareSpill
       EvmCompiler.Functions.ScratchFrameSpill
       EvmCompiler.Objects.Compiler
     )
@@ -42,8 +41,8 @@ case "$layer" in
       EvmCompiler
     )
     ;;
-  legacy)
-    modules=(EvmCompiler.Legacy)
+  verification)
+    modules=(EvmCompiler.Verification)
     ;;
   frontend)
     modules=(
@@ -54,16 +53,14 @@ case "$layer" in
     ;;
   proofs)
     modules=(
-      EvmCompiler.Functions.CallAwareSpill
-      EvmCompiler.Yul.ObserverOracle
-      EvmCompiler.Legacy
+      EvmCompiler.Verification
     )
     ;;
   all)
     modules=()
     ;;
   *)
-    printf 'usage: scripts/verify_layer.sh {core|effects|allocator|typedcfg|public|legacy|frontend|proofs|all}\n' >&2
+    printf 'usage: scripts/verify_layer.sh {core|effects|allocator|typedcfg|public|verification|frontend|proofs|all}\n' >&2
     exit 2
     ;;
 esac

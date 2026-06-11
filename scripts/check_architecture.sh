@@ -44,9 +44,44 @@ report_matches \
   EvmCompiler.lean
 
 report_matches \
-  'Stable public modules must not import legacy theorem corridors:' \
+  'Stable public modules must not import verification or retired theorem corridors:' \
   '^import EvmCompiler\.(LayerAudit|Yul\.(NoCallRuntime|OpenLowering|OpenGasAware|OpenRuntime|ObserverOracle))' \
   EvmCompiler.lean EvmCompiler/Public.lean
+
+retired_modules=(
+  EvmCompiler/Functions/CallAwareSpill.lean
+  EvmCompiler/Functions/LiveLayout.lean
+  EvmCompiler/Functions/LiveLayoutBridge.lean
+  EvmCompiler/Functions/LiveLayoutPreservation.lean
+  EvmCompiler/Functions/Preservation.lean
+  EvmCompiler/Objects/Preservation.lean
+  EvmCompiler/Yul/Preservation.lean
+  EvmCompiler/Yul/Reference.lean
+  EvmCompiler/Yul/RecursiveBridge.lean
+  EvmCompiler/Yul/RecursiveBridgeSupport.lean
+  EvmCompiler/Yul/NoCallCreate.lean
+  EvmCompiler/Yul/NoCallRuntime.lean
+  EvmCompiler/Yul/CompilerOpen.lean
+  EvmCompiler/Yul/OpenTargetFuel.lean
+  EvmCompiler/Yul/OpenLowering.lean
+  EvmCompiler/Yul/OpenRuntime.lean
+  EvmCompiler/Yul/ObjectPreservation.lean
+  EvmCompiler/Yul/ObjectRuntime.lean
+  EvmCompiler/LayerAudit.lean
+  EvmCompiler/StackGuardAudit.lean
+  EvmCompiler/Legacy.lean
+)
+for module in "${retired_modules[@]}"; do
+  if [[ -e "$module" ]]; then
+    printf 'Retired architecture module was restored: %s\n\n' "$module" >&2
+    failed=1
+  fi
+done
+
+report_matches \
+  'The verification root must not restore retired architecture imports:' \
+  '^import EvmCompiler\.(Legacy|LayerAudit|StackGuardAudit|Functions\.(CallAwareSpill|LiveLayout|LiveLayoutBridge|LiveLayoutPreservation|Preservation)|Objects\.Preservation|Yul\.(Preservation|Reference|RecursiveBridge|RecursiveBridgeSupport|NoCallCreate|NoCallRuntime|CompilerOpen|OpenTargetFuel|OpenLowering|OpenRuntime|ObjectPreservation|ObjectRuntime))' \
+  EvmCompiler/Verification.lean
 
 report_matches \
   'The stable Solidity frontend must compile through public artifacts, not legacy preservation corridors:' \

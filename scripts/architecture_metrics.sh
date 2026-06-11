@@ -143,11 +143,13 @@ outcome_relation_count="$(
     '^(def|abbrev|structure|inductive) [A-Za-z0-9_]*OutcomeRel' \
     EvmCompiler -g '*.lean'
 )"
-layer_audit_abbrev_count="$(
-  count_matches '^abbrev ' EvmCompiler/LayerAudit.lean
+verification_import_count="$(
+  count_matches '^import ' EvmCompiler/Verification.lean
 )"
-layer_audit_example_count="$(
-  count_matches '^example ' EvmCompiler/LayerAudit.lean
+verification_declaration_count="$(
+  count_matches \
+    '^(noncomputable )?(def|abbrev|structure|inductive|theorem|lemma|class|instance) ' \
+    EvmCompiler/Verification.lean
 )"
 
 mkdir -p "$(dirname "$output")"
@@ -160,10 +162,10 @@ jq -n \
   --argjson measurements "$measurements_json" \
   --argjson compiler_variant_count "$compiler_variant_count" \
   --argjson outcome_relation_count "$outcome_relation_count" \
-  --argjson layer_audit_abbrev_count "$layer_audit_abbrev_count" \
-  --argjson layer_audit_example_count "$layer_audit_example_count" \
+  --argjson verification_import_count "$verification_import_count" \
+  --argjson verification_declaration_count "$verification_declaration_count" \
   '{
-    schema_version: 1,
+    schema_version: 2,
     generated_at: $generated_at,
     git: {
       commit: $git_commit,
@@ -176,8 +178,8 @@ jq -n \
       declarations: ($modules | map(.declarations) | add),
       compiler_variant_declarations: $compiler_variant_count,
       outcome_relation_declarations: $outcome_relation_count,
-      layer_audit_abbrevs: $layer_audit_abbrev_count,
-      layer_audit_examples: $layer_audit_example_count
+      verification_root_imports: $verification_import_count,
+      verification_root_declarations: $verification_declaration_count
     },
     modules: $modules,
     build_measurements: $measurements

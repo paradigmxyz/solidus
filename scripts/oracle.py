@@ -60,22 +60,20 @@ Important constraints:
 DEFAULT_ARCHITECTURE_FILES = [
     "ROADMAP.md",
     "PROGRESS_LOG.md",
-    "EvmCompiler/LayerAudit.lean",
-    "EvmCompiler/Structured/TypedContinuations.lean",
-    "EvmCompiler/Yul/Reference.lean",
-    "EvmCompiler/Yul/Syntax.lean",
-    "EvmCompiler/Yul/Semantics.lean",
-    "EvmCompiler/Yul/RecursiveBridgeSupport.lean",
+    "EvmCompiler/Public.lean",
+    "EvmCompiler/Verification.lean",
+    "EvmCompiler/Simulation/Outcome.lean",
+    "EvmCompiler/Locals/Allocation.lean",
+    "EvmCompiler/TypedCfg/Preservation.lean",
+    "EvmCompiler/Yul/ObserverOracle.lean",
 ]
 
 DECLARATION_PATTERNS = [
-    r"\bstructure\s+SourceModeKontLayouts\b",
-    r"\bstructure\s+SourceResultKontOutcomeRel\b",
-    r"\bstructure\s+ProgramAcceptedRecursiveSourceBridgeWhenUpToAt\b",
-    r"\btheorem\s+recursiveSourceBridgeWhenUpToAt_succ\b",
-    r"\btheorem\s+checkedSeqKontSoundWhenFreshNamesAtCompileFuelHiddenCtx_cons_frontier_if_recursive_reserved_supported\b",
-    r"\btheorem\s+checkedSeqKontSoundWhenFreshNamesAtCompileFuelHiddenCtx_cons_frontier_switch_recursive_reserved_supported\b",
-    r"\btheorem\s+checkedSeqKontSoundWhenFreshNamesAtCompileFuelHiddenCtx_cons_for_of_generated_head_reserved_supported\b",
+    r"\bstructure\s+OutcomeContract\b",
+    r"\bstructure\s+ProgramPlan\b",
+    r"\bstructure\s+ProgramCert\b",
+    r"\btheorem\s+compileCertified\?_step_eventually\b",
+    r"\btheorem\s+compileArtifactWithPolicy\?_valid\b",
 ]
 
 

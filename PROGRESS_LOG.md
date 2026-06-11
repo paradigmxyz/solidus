@@ -27703,3 +27703,22 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - deletion boundary: LiveLayout, CallAware, and `Objects.Preservation` are now
   absent from stable Solidity/public imports. Their remaining consumers are
   legacy theorem and audit modules.
+
+- 2026-06-10: Compaction resume — continuing reverse-dependency classification and retirement of the CallAware/LiveLayout proof corridor after decoupling Yul object semantics.
+
+## 2026-06-10 19:55 PDT - Deleted the retired compatibility corridor
+
+- deletion: removed 21 closed-corridor source modules and four obsolete proof
+  artifacts, including CallAware, LiveLayout, recursive Yul replay/open-runtime
+  bridges, `LayerAudit`, `StackGuardAudit`, and `Legacy`; net deletion is
+  756,247 lines.
+- retained boundary: `Yul.ObjectModel` now compiles through public artifacts,
+  while `Yul.ObjectSemantics`, generic effect semantics, observer support,
+  source-planned scratch allocation, and TypedCfg preservation remain
+  independently buildable.
+- verification architecture: added `EvmCompiler.Verification`, replaced the
+  legacy layer target, updated oracle context and schema-v2 metrics, and added
+  guards that reject restoring any retired module or import.
+- verification: architecture checks passed, the retained-source stale-import
+  scan was clean, `git diff --check` passed, and
+  `lake build EvmCompiler.Verification` completed all 1,163 jobs.

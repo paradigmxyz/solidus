@@ -6,7 +6,7 @@ import EvmCompiler.Public
 /-!
 Stable compiler API.
 
-Historical theorem corridors and runtime-specific audit aliases are available
-through `EvmCompiler.Legacy`; importing the root compiler no longer pulls those
-large compatibility modules into downstream builds.
+Proof-bearing implementation modules are checked through
+`EvmCompiler.Verification`; importing the stable compiler root keeps that
+verification surface out of downstream runtime builds.
 -/

@@ -1,4 +1,5 @@
-import EvmCompiler.Yul.Preservation
+import EvmCompiler.Yul.Compiler
+import EvmCompiler.Yul.Semantics
 import EvmCompiler.Objects.Layout
 
 namespace EvmCompiler
@@ -643,16 +644,30 @@ noncomputable def sourceRunChecked? (fuel : Nat) (program : Program)
   let image ← bytecodeImage? program
   some (Yul.Program.runWithCodeImage fuel core image state)
 
-noncomputable def compileLiveNoInternalCallChecked?
-    (program : Program) : Option Assembly.Program := do
+noncomputable def compileArtifact?
+    (program : Program) : Option Objects.Program.CompileArtifact := do
   let lower ← toObjects? program
-  Objects.Source.Program.compileLiveNoInternalCallChecked? lower
+  Objects.Program.compileArtifact? lower
 
-noncomputable def compileCheckedWithAdaptiveSpillSourceOwned?
-    (range : Locals.SourceLowering.StateRel.SpillScratch.ScratchRange)
-    (program : Program) : Option Assembly.Program := do
-  let lower ← toObjects? program
-  Objects.Source.Program.compileCheckedWithAdaptiveSpillSourceOwned? range lower
+noncomputable def compile?
+    (program : Program) : Option Assembly.TargetProgram :=
+  (compileArtifact? program).map Compiler.Artifact.target
+
+theorem compileArtifact?_valid
+    {program : Program} {artifact : Objects.Program.CompileArtifact}
+    (hCompile : compileArtifact? program = some artifact) :
+    ∃ lower : Objects.Program,
+      toObjects? program = some lower ∧
+        artifact.Valid Objects.Program.defaultBackendPolicy lower := by
+  unfold compileArtifact? at hCompile
+  cases hLower : toObjects? program with
+  | none =>
+      simp [hLower] at hCompile
+  | some lower =>
+      simp [hLower] at hCompile
+      exact
+        ⟨lower, rfl,
+          Objects.Program.compileArtifactWithPolicy?_valid hCompile⟩
 
 def CheckedLowering (program : Program) (lower : Objects.Program) : Prop :=
   ∃ prelim : Objects.Object,

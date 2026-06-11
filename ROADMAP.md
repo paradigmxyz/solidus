@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 17:00 PDT.
+Last updated: 2026-06-10 19:55 PDT.
 
 ## Objective
 
@@ -24,10 +24,10 @@ pass.
 
 Implemented in this migration:
 
-- stable public root and explicit legacy compatibility import;
+- stable public root and a separate proof-bearing verification aggregate;
 - composable compiler passes, checked artifacts, and backend policy;
 - generic effectful Locals semantics used by observer expression replay;
-- shared outcome-indexed simulation and CallAware statement package;
+- shared outcome-indexed simulation contracts;
 - canonical allocation-plan vocabulary and well-formedness checker;
 - scoped `ProgramPlan` allocation with unique main/function/lexical scope
   identities and per-scope well-formedness;
@@ -65,19 +65,19 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Finish retiring or migrating the remaining live-layout corridor. Ordinary
-   stack and scratch-frame planning are code-free with source-derived
-   main/function/nested lexical bindings. The emitter-derived CallAware
-   backends have been removed from the stable Objects policy and imports; their
-   implementation remains only under `Legacy` until theorem consumers are
-   deleted.
+1. Expose one public artifact simulation relation that composes successful
+   public compilation, allocated TypedCfg stepping, and resolved target
+   execution without caller-supplied generated-code witnesses.
 2. Make canonical per-local locations directly drive Expressions/TypedCfg
    generation and CFG shapes across main and function scopes.
 3. Finish source-to-CFG semantic composition and make generated fragment
-   certificates carry exact code spans and safety projections.
-4. Finish the generic effects/outcomes migration, then delete duplicate replay
-   control evaluators, parallel backend compilers, direct Assembly lowering,
-   and legacy theorem corridors.
+   certificates carry the remaining safety projections.
+4. Finish the generic effects/outcomes migration and remove duplicate observer
+   replay control evaluators.
+
+The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
+`StackGuardAudit`, and `Legacy` have been deleted. The retained source tree is
+about 272K Lean lines, down by about 756K lines in this phase.
 
 ## Baseline Diagnosis
 
@@ -106,13 +106,13 @@ The implementation cost comes from missing cross-cutting abstractions:
 
 Baseline hotspots:
 
-- `Yul/RecursiveBridgeSupport.lean`: about 360K lines.
-- `Yul/OpenLowering.lean`: about 98K lines.
-- `Yul/Reference.lean`: about 85K lines.
-- `Functions/CallAwareSpill.lean`: about 65K lines.
+- `Yul/RecursiveBridgeSupport.lean`: about 360K lines, deleted.
+- `Yul/OpenLowering.lean`: about 98K lines, deleted.
+- `Yul/Reference.lean`: about 85K lines, deleted.
+- `Functions/CallAwareSpill.lean`: about 65K lines, deleted.
 - `Yul/ObserverOracle.lean`: about 55K lines.
-- `Functions/LiveLayoutPreservation.lean`: about 50K lines.
-- `LayerAudit.lean`: 613 `abbrev` aliases and 425 `example` pins.
+- `Functions/LiveLayoutPreservation.lean`: about 50K lines, deleted.
+- `LayerAudit.lean`: 613 `abbrev` aliases and 425 `example` pins, deleted.
 
 ## Target Architecture
 
@@ -253,8 +253,8 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [ ] Provide projections for regular, break, continue, leave, and halt.
 - [ ] Prove generic append, scoped-block, branch, switch, and loop composition.
 - [x] Migrate Locals spill preservation to the generic contract.
-- [x] Migrate CallAwareSpill statement packages to one outcome-indexed `sound`
-  field with compatibility projections.
+- [x] Validate the outcome-indexed package against the former CallAware route,
+  then retire that parallel compiler and proof family.
 - [ ] Migrate observer replay preservation. Its effectful source outcome now
   shares the generic effect representation, but target simulation packages have
   not cut over.
@@ -293,8 +293,9 @@ Preservation remains pass-specific but consumes `MetaValid` produced by the
 checked compiler.
 
 - [x] Introduce common compiler error/result vocabulary and composable passes.
-- [ ] Introduce checked artifact records for every legacy pass. Objects and
-  TypedCfg are migrated; lower legacy passes still expose historical APIs.
+- [x] Introduce checked artifact records for every retained public pass. The
+  historical parallel passes were deleted instead of receiving permanent
+  wrappers.
 - [x] Separate source well-formedness from backend/resource acceptance at the
   Objects/public boundary.
 - [ ] Replace all `compileChecked?_eq_some` boilerplate with common projections.
@@ -338,19 +339,14 @@ inductive LocalLocation
   artifacts carry an executable `LoweredFrom` certificate. It still accepts
   backend-shaped plan subsets rather than lowering arbitrary canonical
   per-local placements.
-- [ ] Convert ordinary layout, live layout, adaptive spill, call-aware spill,
-  and scratch-frame allocation into plan generators.
-  Ordinary stack and scratch-frame allocation now have code-free
-  shared-interface planners with source-derived main/function/nested lexical
-  bindings; scratch-frame also computes exact frame sizing. CallAware was
-  retired from the stable policy instead of receiving another parallel
-  planner. Live layout remains.
-- [ ] Remove post-hoc plan projection from CallAware/ScratchFrame artifacts:
-  planners must produce the canonical plan before any code is emitted.
-  Scratch-frame no longer uses post-hoc projection or its historical
-  probe/recompile cycle on the public path. The old CallAware module still
-  projects plans after emission, but it is now reachable only through
-  `EvmCompiler.Legacy`.
+- [x] Convert every retained allocation policy into a plan generator.
+  Ordinary stack and scratch-frame allocation have code-free shared-interface
+  planners with source-derived main/function/nested lexical bindings;
+  scratch-frame also computes exact frame sizing. Live-layout, adaptive-spill,
+  and CallAware policies were removed rather than preserved as parallel
+  compilers.
+- [x] Remove post-hoc plan projection from retained public artifacts. The
+  scratch-frame route plans first, emits once, and rejects allocation drift.
 - [ ] Prove one lowering theorem quantified over a well-formed plan.
   Exact executable plan-consumption theorems exist for each public backend,
   but semantic preservation for arbitrary well-formed plans does not.
@@ -374,8 +370,10 @@ Cutover gate:
 
 Deletion gate:
 
-- Delete independent CallAwareSpill and ScratchFrameSpill compiler frontends
-  after their planners and proof obligations have migrated.
+- Delete independent compiler frontends after their planners and proof
+  obligations have migrated. CallAware is deleted; ScratchFrameSpill now owns
+  the retained scratch planner/lowerer implementation rather than a public
+  compiler entry point.
 
 ## Phase 5: Complete Allocated TypedCfg
 
@@ -476,7 +474,7 @@ corridors.
   generated Lean modules expose that artifact instead of importing
   `Yul.Preservation` and rebuilding an intermediate Assembly program.
 - [x] Replace `LayerAudit` as the default root with a small public import/build
-  smoke; the historical aliases remain behind `EvmCompiler.Legacy`.
+  smoke and delete the historical aliases.
 - [x] Thin the Assembly/Structured/Expressions/Locals/Functions/Objects/Yul
   aggregate modules so they no longer import preservation and runtime proof
   corridors by default.
@@ -536,14 +534,10 @@ Exit gate:
 - [x] Cut the default root import and public compiler API to the new stable
   architecture.
 - [ ] Delete old replay interpreters.
-- [ ] Delete parallel allocation compilers.
-  CallAware is no longer imported by the stable Objects/Public compiler, but
-  its 65K-line implementation and the live-layout corridors remain in
-  `EvmCompiler.Legacy`. User-facing Solidity bridge diagnostics no longer
-  import or execute LiveLayout, adaptive-spill, CallAware, or the old
-  two-pass scratch-frame emitter.
+- [x] Delete parallel allocation compilers. The stable policy contains only
+  inline-stack and source-planned scratch-frame allocation.
 - [ ] Delete direct Structured-to-Assembly control lowering.
-- [ ] Delete compatibility theorem corridors and stale audit aliases.
+- [x] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The initial
   cutover snapshot is `proof_artifacts/architecture_current.json`; it records
   the expected temporary increase from new abstractions before legacy deletion.
@@ -552,9 +546,8 @@ Completion evidence:
 
 - `lake build` (passing at the current checkpoint)
 - focused builds for every migration layer
-- public LayerAudit replacement
+- `EvmCompiler.Verification`
 - resource observer proof artifact
-- call-family external-world proof artifacts
 - stack-too-deep/Aave/Permit2 smoke artifacts
 - Solidity bridge and bytecode smokes
 - no `sorry`, `admit`, or unexpected `sorryAx` in migrated/public modules
@@ -564,22 +557,18 @@ Completion evidence:
 
 Latest verified checkpoint:
 
-- stable Solidity frontend and BridgeJson builds after removing
-  `Objects.Preservation`: pass (1,143 and 1,144 jobs);
-- all generated `lean`, `lean-ir`, and `lean-json-ir` Simple modules compile
-  through public compiler artifacts;
-- stable public build after CallAware retirement: pass (1,141 jobs);
-- legacy aggregate, including the quarantined CallAware proofs: pass (1,197
-  jobs);
-- focused Objects compiler after deleting 362 lines of parallel backend policy:
-  pass (1,137 jobs);
+- deleted 21 retired source modules and four obsolete proof artifacts:
+  756,247 lines removed;
+- architecture dependency and retired-module guards: pass;
+- stable verification aggregate, including observer, scratch-frame, object
+  semantics, public API, and TypedCfg preservation: pass (1,163 jobs);
+- stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
   regressions;
 - source-derived inline-allocation and 17-local scratch fallback proof artifact:
   pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
-- `EvmCompiler.Legacy`: pass;
 - resource-observer proof artifact and axiom print: pass;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -593,14 +582,13 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Remove the stable Solidity frontend's remaining dependency on
-   `Objects.Preservation`, then delete the now-unreachable CallAware/live
-   compiler and proof modules.
-2. Finish source-to-CFG semantic composition and enrich generated fragment
-   certificates with exact code spans and safety projections.
-3. Finish the generic effect/outcome migrations and remove replay evaluators.
-4. Delete the legacy emitters, parallel backend compilers, and theorem
-   corridors after their replacement gates pass.
+1. Compose successful public artifacts with allocated TypedCfg and final target
+   execution through one hidden-witness simulation relation.
+2. Finish source-to-CFG semantic composition and remaining certificate safety
+   projections.
+3. Finish the generic effect/outcome migrations and remove observer replay
+   evaluators.
+4. Refresh final architecture metrics and rerun every verification/smoke gate.
 
 ## Progress Discipline
 
