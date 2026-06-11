@@ -27683,3 +27683,23 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   `Objects.Preservation`, so the stable public import graph transitively retains
   the legacy LiveLayout/CallAware theorem corridor. That dependency is the next
   deletion boundary.
+
+## 2026-06-10 18:25 PDT - Cut Solidity checked compilation onto public artifacts
+
+- architecture: removed the stable `Solidity.Frontend` import of
+  `Objects.Preservation`. Checked code, layout, local-data-base, and computed
+  object-data paths now expose `Objects.Program.CompileArtifact` and derive
+  their target from its mandatory allocation/TypedCfg certificate.
+- tooling: generated Yul/Frontend Lean modules now expose compile artifacts
+  directly and no longer import `Yul.Preservation`, call
+  `compileSolcChecked?`, or publish obsolete `CheckedAssembly` intermediates.
+- cleanup: localized the generic list-size termination lemma that had been
+  imported from `Structured.Preservation`, and corrected the stale
+  ScratchFrameSpill module description to match its public planner/lowerer role.
+- verification: `Solidity.Frontend` passes 1,143 jobs, `Solidity.BridgeJson`
+  passes 1,144 jobs, `EvmCompiler.Public` passes 1,141 jobs, all 244 Python
+  importer/schema tests pass, and generated `lean`, `lean-ir`, and
+  `lean-json-ir` modules for `Simple.sol` compile successfully.
+- deletion boundary: LiveLayout, CallAware, and `Objects.Preservation` are now
+  absent from stable Solidity/public imports. Their remaining consumers are
+  legacy theorem and audit modules.

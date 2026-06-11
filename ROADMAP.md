@@ -471,7 +471,10 @@ corridors.
 - [ ] Move open external execution and resource observation onto common effect
   events.
 - [x] Route Objects through the uniform artifact and backend-policy API.
-- [x] Route Solidity through the same public Objects artifact result.
+- [x] Route Solidity through the same public Objects artifact result. Checked
+  object images now compile through `Objects.Program.CompileArtifact`, and
+  generated Lean modules expose that artifact instead of importing
+  `Yul.Preservation` and rebuilding an intermediate Assembly program.
 - [x] Replace `LayerAudit` as the default root with a small public import/build
   smoke; the historical aliases remain behind `EvmCompiler.Legacy`.
 - [x] Thin the Assembly/Structured/Expressions/Locals/Functions/Objects/Yul
@@ -561,6 +564,10 @@ Completion evidence:
 
 Latest verified checkpoint:
 
+- stable Solidity frontend and BridgeJson builds after removing
+  `Objects.Preservation`: pass (1,143 and 1,144 jobs);
+- all generated `lean`, `lean-ir`, and `lean-json-ir` Simple modules compile
+  through public compiler artifacts;
 - stable public build after CallAware retirement: pass (1,141 jobs);
 - legacy aggregate, including the quarantined CallAware proofs: pass (1,197
   jobs);

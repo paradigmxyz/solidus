@@ -2441,12 +2441,14 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "noncomputable def programCheckedAssemblyWithComputedObjectData :",
+            "noncomputable def programCompileArtifactWithComputedObjectData :",
             rendered,
         )
-        self.assertIn("Option EvmCompiler.Assembly.Program", rendered)
         self.assertIn(
-            "program.compileCheckedWithComputedObjectDataAndLinkerSymbols?",
+            "Option EvmCompiler.Objects.Program.CompileArtifact", rendered
+        )
+        self.assertIn(
+            "program.compileArtifactWithComputedObjectDataAndLinkerSymbols?",
             rendered,
         )
         self.assertIn(
@@ -2482,17 +2484,19 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "Generated.Simple",
         )
         self.assertIn(
-            "noncomputable def programCheckedAssembly : "
-            "Option EvmCompiler.Assembly.Program",
+            "noncomputable def programCompileArtifact :",
             rendered,
         )
-        self.assertIn("EvmCompiler.Yul.Program.compileSolcChecked? program", rendered)
+        self.assertIn(
+            "Option EvmCompiler.Yul.Program.CompileArtifact", rendered
+        )
+        self.assertIn("EvmCompiler.Yul.Program.compileArtifact? program", rendered)
         self.assertIn(
             "noncomputable def programTarget : "
             "Option EvmCompiler.Assembly.TargetProgram",
             rendered,
         )
-        self.assertIn("EvmCompiler.Assembly.compile? asm", rendered)
+        self.assertIn("some compiled.target", rendered)
         self.assertIn("noncomputable def programBytecode : Option ByteArray", rendered)
         self.assertIn("EvmCompiler.Assembly.Bytecode.encodeTarget target", rendered)
 
@@ -2523,12 +2527,14 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("EvmCompiler.Solidity.Frontend.CallKind.objectBuiltin", rendered)
         self.assertIn("def programToYul : Option EvmCompiler.Yul.Program", rendered)
         self.assertIn(
-            "noncomputable def programToYulCheckedAssembly : "
-            "Option EvmCompiler.Assembly.Program",
+            "noncomputable def programToYulCompileArtifact :",
             rendered,
         )
+        self.assertIn(
+            "Option EvmCompiler.Yul.Program.CompileArtifact", rendered
+        )
         self.assertIn("let yul ← programToYul", rendered)
-        self.assertIn("EvmCompiler.Yul.Program.compileSolcChecked? yul", rendered)
+        self.assertIn("EvmCompiler.Yul.Program.compileArtifact? yul", rendered)
         self.assertIn(
             "noncomputable def programToYulTarget : "
             "Option EvmCompiler.Assembly.TargetProgram",
@@ -2566,7 +2572,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("EvmCompiler.Solidity.Frontend.ObjectLayout.mk []", rendered)
         self.assertIn("def programToYulWithLayout : Option EvmCompiler.Yul.Program", rendered)
         self.assertIn(
-            "noncomputable def programToYulWithLayoutCheckedAssembly",
+            "noncomputable def programToYulWithLayoutCompileArtifact",
             rendered,
         )
         self.assertIn(
@@ -2641,7 +2647,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "noncomputable def programToYulWithLocalDataBaseCheckedAssembly",
+            "noncomputable def programToYulWithLocalDataBaseCompileArtifact",
             rendered,
         )
         self.assertIn(
@@ -2816,12 +2822,14 @@ class SolidityToYulLeanTests(unittest.TestCase):
             rendered,
         )
         self.assertIn(
-            "noncomputable def programCheckedAssemblyWithComputedObjectData :",
+            "noncomputable def programCompileArtifactWithComputedObjectData :",
             rendered,
         )
-        self.assertIn("Option EvmCompiler.Assembly.Program", rendered)
         self.assertIn(
-            "program.compileCheckedWithComputedObjectDataAndLinkerSymbols?",
+            "Option EvmCompiler.Objects.Program.CompileArtifact", rendered
+        )
+        self.assertIn(
+            "program.compileArtifactWithComputedObjectDataAndLinkerSymbols?",
             rendered,
         )
 

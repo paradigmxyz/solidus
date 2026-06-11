@@ -2301,19 +2301,20 @@ def contract_to_lean(obj: YulObject, definition: str) -> str:
 
 
 def render_concrete_yul_backend_defs(yul_definition: str) -> str:
-    checked_assembly = yul_definition + "CheckedAssembly"
+    artifact = yul_definition + "CompileArtifact"
     target = yul_definition + "Target"
     bytecode = yul_definition + "Bytecode"
-    validate_lean_name(checked_assembly, "checked assembly definition name")
+    validate_lean_name(artifact, "compile artifact definition name")
     validate_lean_name(target, "target definition name")
     validate_lean_name(bytecode, "bytecode definition name")
     return f"""
-noncomputable def {checked_assembly} : Option EvmCompiler.Assembly.Program :=
-  EvmCompiler.Yul.Program.compileSolcChecked? {yul_definition}
+noncomputable def {artifact} :
+    Option EvmCompiler.Yul.Program.CompileArtifact :=
+  EvmCompiler.Yul.Program.compileArtifact? {yul_definition}
 
 noncomputable def {target} : Option EvmCompiler.Assembly.TargetProgram := do
-  let asm ← {checked_assembly}
-  EvmCompiler.Assembly.compile? asm
+  let compiled ← {artifact}
+  some compiled.target
 
 noncomputable def {bytecode} : Option ByteArray := do
   let target ← {target}
@@ -2322,20 +2323,21 @@ noncomputable def {bytecode} : Option ByteArray := do
 
 
 def render_optional_yul_backend_defs(optional_yul_definition: str) -> str:
-    checked_assembly = optional_yul_definition + "CheckedAssembly"
+    artifact = optional_yul_definition + "CompileArtifact"
     target = optional_yul_definition + "Target"
     bytecode = optional_yul_definition + "Bytecode"
-    validate_lean_name(checked_assembly, "checked assembly definition name")
+    validate_lean_name(artifact, "compile artifact definition name")
     validate_lean_name(target, "target definition name")
     validate_lean_name(bytecode, "bytecode definition name")
     return f"""
-noncomputable def {checked_assembly} : Option EvmCompiler.Assembly.Program := do
+noncomputable def {artifact} :
+    Option EvmCompiler.Yul.Program.CompileArtifact := do
   let yul ← {optional_yul_definition}
-  EvmCompiler.Yul.Program.compileSolcChecked? yul
+  EvmCompiler.Yul.Program.compileArtifact? yul
 
 noncomputable def {target} : Option EvmCompiler.Assembly.TargetProgram := do
-  let asm ← {checked_assembly}
-  EvmCompiler.Assembly.compile? asm
+  let compiled ← {artifact}
+  some compiled.target
 
 noncomputable def {bytecode} : Option ByteArray := do
   let target ← {target}
@@ -2460,12 +2462,12 @@ def render_frontend_module(
         to_objects_with_computed_object_data_definition,
         "to-Objects-with-computed-object-data definition name",
     )
-    checked_assembly_with_computed_object_data_definition = (
-        definition + "CheckedAssemblyWithComputedObjectData"
+    compile_artifact_with_computed_object_data_definition = (
+        definition + "CompileArtifactWithComputedObjectData"
     )
     validate_lean_name(
-        checked_assembly_with_computed_object_data_definition,
-        "checked-assembly-with-computed-object-data definition name",
+        compile_artifact_with_computed_object_data_definition,
+        "compile-artifact-with-computed-object-data definition name",
     )
     namespace_parts = []
     if namespace:
@@ -2478,7 +2480,6 @@ def render_frontend_module(
         f"{lean_string(contract_name)} ({obj.lean_ir()})"
     )
     header = f"""import EvmCompiler.Solidity.Frontend
-import EvmCompiler.Yul.Preservation
 import EvmCompiler.Assembly.Bytecode
 
 /-!
@@ -2615,9 +2616,9 @@ noncomputable def {to_objects_with_computed_object_data_definition} :
   {definition}.toObjectsWithComputedObjectDataAndLinkerSymbols?
     {linker_symbols_definition}
 
-noncomputable def {checked_assembly_with_computed_object_data_definition} :
-    Option EvmCompiler.Assembly.Program :=
-  {definition}.compileCheckedWithComputedObjectDataAndLinkerSymbols?
+noncomputable def {compile_artifact_with_computed_object_data_definition} :
+    Option EvmCompiler.Objects.Program.CompileArtifact :=
+  {definition}.compileArtifactWithComputedObjectDataAndLinkerSymbols?
     {linker_symbols_definition}
 """
     body += render_optional_yul_backend_defs(
@@ -2703,8 +2704,8 @@ def render_frontend_json_module(
     to_objects_with_computed_object_data_definition = (
         definition + "ToObjectsWithComputedObjectData"
     )
-    checked_assembly_with_computed_object_data_definition = (
-        definition + "CheckedAssemblyWithComputedObjectData"
+    compile_artifact_with_computed_object_data_definition = (
+        definition + "CompileArtifactWithComputedObjectData"
     )
     for generated_name, what in [
         (json_definition, "JSON definition name"),
@@ -2736,8 +2737,8 @@ def render_frontend_json_module(
             "to-Objects-with-computed-object-data definition name",
         ),
         (
-            checked_assembly_with_computed_object_data_definition,
-            "checked-assembly-with-computed-object-data definition name",
+            compile_artifact_with_computed_object_data_definition,
+            "compile-artifact-with-computed-object-data definition name",
         ),
     ]:
         validate_lean_name(generated_name, what)
@@ -2750,7 +2751,6 @@ def render_frontend_json_module(
 
     bridge_json = render_bridge_json(obj, source_name, contract_name)
     header = f"""import EvmCompiler.Solidity.BridgeJson
-import EvmCompiler.Yul.Preservation
 import EvmCompiler.Assembly.Bytecode
 
 /-!
@@ -2889,10 +2889,10 @@ noncomputable def {to_objects_with_computed_object_data_definition} :
   program.toObjectsWithComputedObjectDataAndLinkerSymbols?
     {linker_symbols_definition}
 
-noncomputable def {checked_assembly_with_computed_object_data_definition} :
-    Option EvmCompiler.Assembly.Program := do
+noncomputable def {compile_artifact_with_computed_object_data_definition} :
+    Option EvmCompiler.Objects.Program.CompileArtifact := do
   let program ← {definition}
-  program.compileCheckedWithComputedObjectDataAndLinkerSymbols?
+  program.compileArtifactWithComputedObjectDataAndLinkerSymbols?
     {linker_symbols_definition}
 """
     body += render_optional_yul_backend_defs(

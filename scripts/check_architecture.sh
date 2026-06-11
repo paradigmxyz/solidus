@@ -49,6 +49,11 @@ report_matches \
   EvmCompiler.lean EvmCompiler/Public.lean
 
 report_matches \
+  'The stable Solidity frontend must compile through public artifacts, not legacy preservation corridors:' \
+  '^import EvmCompiler\..*Preservation|Objects\.Source\.Program\.compileChecked\?|Functions\.Source\.Program\.compileChecked\?' \
+  EvmCompiler/Solidity/Frontend.lean
+
+report_matches \
   'The Objects public compiler must not call legacy backend target emitters:' \
   'Functions\.(CallAwareSpill|ScratchFrameSpill)\..*compile(Target|Executable)' \
   EvmCompiler/Objects/Compiler.lean
@@ -120,6 +125,10 @@ report_matches \
 report_matches \
   'User-facing bridge diagnostics must not restore retired parallel backends:' \
   'Functions\.(LiveLayout|CallAwareSpill|ScratchFrameSpill)|live_layout_|call_aware_|adaptive_spill|scratch_frame_spill' \
+  scripts/solidity_to_yul_lean.py
+report_matches \
+  'Generated Lean modules must not restore legacy preservation imports or Assembly intermediates:' \
+  'Yul\.Preservation|compileSolcChecked|CheckedAssembly' \
   scripts/solidity_to_yul_lean.py
 report_matches \
   'Successful public compiler metadata must not make allocation or TypedCfg certificates optional:' \

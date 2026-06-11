@@ -5,12 +5,10 @@ import EvmCompiler.Expressions.Preservation
 /-!
 Executable stack-too-deep fallback for imported function-layer programs.
 
-This compiler is intentionally not part of the public preservation spine yet.
-It keeps a hidden frame base on the EVM stack, stores source locals in a
-compiler-managed memory frame, and uses ordinary `Expressions.Stmt.call`
-splice points for internal function calls.  The route is for fail-closed
-bytecode generation after the theorem-covered ordinary path and checked
-call-aware spill path reject a program.
+The public Objects compiler uses this module as its second allocation policy.
+Its source-derived planner produces the canonical scoped allocation, and its
+single allocation-consuming lowerer stores source locals in a compiler-managed
+memory frame while preserving ordinary internal-call splice points.
 -/
 
 namespace EvmCompiler
