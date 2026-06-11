@@ -12,6 +12,8 @@ namespace TypedCfgLoweringInvariantsSmoke
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayouts
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayoutsWitnessed
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
+#check Functions.AllocationLowering.lowerExpressionsFromAllocation?_contract
+#check Objects.Program.PlannedProgram.loweringResult?_allocationContract
 
 def genericEntryShape : TypedCfg.Shape :=
   { slots := [.word, .returnToken]

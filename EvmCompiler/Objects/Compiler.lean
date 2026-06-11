@@ -152,6 +152,20 @@ theorem loweringResult?_lowerer_exact
         · simp [hGeneric, hScratch] at hLower
           exact congrArg some hLower.2
 
+theorem loweringResult?_allocationContract
+    {planned : PlannedProgram} {backend : Backend}
+    {expressions : Expressions.Program}
+    (hLower :
+      planned.loweringResult? =
+        some { backend := backend, expressions := expressions }) :
+    planned.allocation.WellFormed ∧
+      Functions.AllocationLowering.Compatible
+        planned.allocation planned.source := by
+  apply
+    Functions.AllocationLowering.lowerExpressionsFromAllocation?_contract
+  simpa [Functions.AllocationLowering.allocationLowerer] using
+    loweringResult?_lowerer_exact hLower
+
 theorem lowerWithAllocation?_eq (planned : PlannedProgram) :
     planned.lowerWithAllocation? = planned.lowerExpressions? := by
   rfl
@@ -312,7 +326,9 @@ def LoweredFrom (artifact : CompileArtifact)
     let planned : PlannedProgram :=
       { source := source
         allocation := artifact.metadata.allocation }
-    planned.lowerWithAllocation? = some expressions ∧
+    Functions.AllocationLowering.Compatible
+        artifact.metadata.allocation source ∧
+      planned.lowerWithAllocation? = some expressions ∧
       planned.lowerTypedCfg? expressions = some artifact.metadata.typedCfg ∧
       (Compiler.AllocatedTypedCfg.Program.ofAllocation
         artifact.metadata.allocation
@@ -337,6 +353,12 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
     | some lowered =>
         simp [hLower] at hCompile
         let expressions := lowered.expressions
+        have hContract :
+            planned.allocation.WellFormed ∧
+              Functions.AllocationLowering.Compatible
+                planned.allocation planned.source := by
+          apply loweringResult?_allocationContract
+          simpa using hLower
         cases hCfg : planned.lowerTypedCfg? expressions with
         | none =>
             rw [hCfg] at hCompile
@@ -363,7 +385,7 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                     simp only [Option.bind_some, Option.some.injEq] at hCompile
                     cases hCompile
                     exact
-                      ⟨expressions, compiled, by
+                      ⟨expressions, compiled, hContract.2, by
                           simp [lowerWithAllocation?, hLower, expressions],
                         hCfg, hAllocated,
                         hTarget, rfl⟩

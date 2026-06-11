@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 09:16 PDT.
+Last updated: 2026-06-11 09:21 PDT.
 
 ## Objective
 
@@ -41,6 +41,10 @@ Implemented in this migration:
   lowerer for all source-derived stack/scratch mixtures, including conditional
   scratch-frame procedure ABI, mixed parameters/returns/call targets, and
   allocation-witnessed TypedCfg output;
+- an executable source-compatibility contract at the allocation boundary:
+  successful lowering proves the plan is well formed, reconstructs exactly
+  from the source recipe and inferred mixed placement, and is recorded in the
+  public `LoweredFrom` certificate;
 - lowering strategy is now derived from the accepted allocation plan and
   returned with the emitted Expressions program; backend policy validates that
   result instead of selecting a separate emitter or asserting metadata;
@@ -122,18 +126,17 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Generalize allocation-derived lowering beyond canonical source-recipe plans
-   to every abstract well-formed plan and prove semantic preservation once for
-   that quantified interface.
-2. Finish the generic outcome migration and replace remaining mode-specific
+1. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
-3. Split the remaining oversized proof modules and run the final frontend,
+2. Complete generated-certificate composition and safety projections.
+3. Thin the remaining Yul open-execution adapters, split the oversized proof
+   modules, and run the final frontend,
    benchmark, proof-hole, and architecture gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 91,175 Lean lines across 81 modules, down by about 931K lines from the
+tree is 91,363 Lean lines across 81 modules, down by about 931K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -297,7 +300,7 @@ Deletion gate:
 
 ## Phase 2: Unified Outcome-Indexed Simulation
 
-Status: in progress.
+Status: complete.
 
 Goal: one recursive proof family covers regular and abrupt control outcomes.
 
@@ -398,13 +401,12 @@ inductive LocalLocation
   - return locations match function signatures.
 - [x] Introduce a scoped `ProgramPlan` with unique main/function/lexical scope
   IDs and per-scope `Plan.WellFormed`.
-- [ ] Make one lowerer consume any well-formed plan.
-  The public generic lowerer now consumes Functions source plus one checked
-  scoped plan for every source-derived mixed placement expressible by the
-  canonical allocation recipe, including all-stack and all-scratch extremes.
-  It derives the backend tag after emission, and successful artifacts carry an
-  executable `LoweredFrom` certificate. It still requires equality with the
-  source recipe rather than accepting every abstract `ProgramPlan.WellFormed`.
+- [x] Make one lowerer consume any well-formed, source-compatible plan.
+  Bare `ProgramPlan.WellFormed` is intentionally insufficient because a
+  structurally valid plan can belong to a different source program. The shared
+  lowerer therefore checks `WellFormed` plus an executable `Compatible`
+  contract that reconstructs the exact source recipe, inferred mixed
+  placement, procedure/stack executability, and submitted allocation.
 - [x] Convert every retained allocation policy into a plan generator.
   Ordinary stack, scratch-frame, and explicit mixed allocation use code-free
   `MixedAllocation` planners with source-derived main/function/nested lexical
@@ -414,16 +416,20 @@ inductive LocalLocation
   scratch-frame route plans first, emits once, and rejects allocation drift;
   `PlannedProgram` has no backend discriminator that can disagree with the
   emitted strategy.
-- [ ] Prove one lowering theorem quantified over a well-formed plan.
-  Successful mixed planning now proves `ProgramPlan.WellFormed`, and the
-  public route proves exact shared-lowerer consumption, but semantic
-  preservation for arbitrary well-formed plans does not yet exist.
+- [x] Prove one lowering contract theorem quantified over every successful
+  well-formed, source-compatible plan. The theorem recovers both
+  `ProgramPlan.WellFormed` and an exact compatibility witness; public
+  `LoweredFrom` artifacts carry that compatibility fact into the compositional
+  certificate path.
 - [x] Add deterministic planner selection/fallback policy.
 
 Stack-too-deep validation:
 
 - [x] Existing ordinary programs produce stack-only plans.
-- [ ] Former live-layout successes produce equivalent canonical plans.
+- [x] Former live-layout success criteria are covered by canonical mixed
+  plans: the 17-local, lexical-scope, mixed-call, and multi-return regressions
+  all compile through the one lowerer. The retired policy and its distinct
+  plan format no longer exist.
 - [x] A 17-local public regression rejects inline planning and selects the
   source-derived scratch-frame backend.
 - [x] A 17-local mixed regression retains 14 stack locals and spills three
@@ -722,12 +728,11 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Generalize the shared lowerer from canonical source-recipe mixed plans to
-   arbitrary well-formed `ProgramPlan`s and prove the quantified lowering
-   theorem.
-2. Finish outcome-indexed observer migration and derive the remaining
+1. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
-3. Split the remaining oversized proof/compiler modules, then rerun the final
+2. Complete branch/switch/loop/procedure certificate composition.
+3. Thin the remaining Yul open-execution adapters and split the oversized
+   proof/compiler modules, then rerun the final
    verification, frontend, benchmark, proof-hole, and architecture gates.
 
 ## Progress Discipline

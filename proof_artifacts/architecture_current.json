@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-06-11T16:13:33Z",
+  "generated_at": "2026-06-11T16:22:47Z",
   "git": {
-    "commit": "2136f6a8eeb0810f4761406f7598b64082363248",
+    "commit": "cd82fd48254dbaca01399e0197bbc781c10eb2ed",
     "branch": "codex/architecture-migration"
   },
   "totals": {
     "module_count": 81,
-    "source_lines": 91175,
+    "source_lines": 91363,
     "direct_imports": 203,
-    "declarations": 3916,
+    "declarations": 3929,
     "compiler_variant_declarations": 59,
     "outcome_relation_declarations": 1,
     "verification_root_imports": 10,
@@ -173,9 +173,9 @@
     {
       "path": "EvmCompiler/Functions/AllocationLowering.lean",
       "module": "EvmCompiler.Functions.AllocationLowering",
-      "source_lines": 680,
+      "source_lines": 844,
       "direct_imports": 2,
-      "declarations": 55
+      "declarations": 66
     },
     {
       "path": "EvmCompiler/Functions/AllocationSupport.lean",
@@ -201,9 +201,9 @@
     {
       "path": "EvmCompiler/Functions/MixedAllocation.lean",
       "module": "EvmCompiler.Functions.MixedAllocation",
-      "source_lines": 249,
+      "source_lines": 251,
       "direct_imports": 1,
-      "declarations": 29
+      "declarations": 30
     },
     {
       "path": "EvmCompiler/Functions/Semantics.lean",
@@ -299,9 +299,9 @@
     {
       "path": "EvmCompiler/Objects/Compiler.lean",
       "module": "EvmCompiler.Objects.Compiler",
-      "source_lines": 761,
+      "source_lines": 783,
       "direct_imports": 5,
-      "declarations": 63
+      "declarations": 64
     },
     {
       "path": "EvmCompiler/Objects/Layout.lean",

@@ -118,8 +118,8 @@ theorem blockSimulation_of_loweredFrom
       artifact.metadata.typedCfg.findBlock? label = some block) :
     artifact.BlockSimulation label initial := by
   rcases hLowered with
-    ⟨expressions, compiled, hExpressions, hCfg, hCompile, hExecutable,
-      hCertificate⟩
+    ⟨expressions, compiled, _hCompatible, hExpressions, hCfg, hCompile,
+      hExecutable, hCertificate⟩
   rcases
       Compiler.AllocatedTypedCfg.Program.compileCertified?_labelPc_exists
         hCompile hFind with
@@ -152,8 +152,8 @@ theorem structuredSimulation_of_loweredFrom
     artifact.StructuredSimulation initial outcome := by
   have hLoweredCopy := hLowered
   rcases hLowered with
-    ⟨loweredExpressions, compiled, hExpressions, hCfg, hCompile,
-      hExecutable, hCertificate⟩
+    ⟨loweredExpressions, compiled, _hCompatible, hExpressions, hCfg,
+      hCompile, hExecutable, hCertificate⟩
   rcases hEvaluation with
     ⟨evaluatedExpressions, hEvaluatedExpressions, hWF, hFrameSafe,
       hTerminal, hEval⟩

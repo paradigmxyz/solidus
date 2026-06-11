@@ -541,21 +541,150 @@ def inferStackSlots? (recipe : AllocationSupport.AllocationRecipe)
   (List.range recipe.frameWords).filterM fun slot =>
     inferSlotStack? allocation occurrences slot
 
-def lowerLocalsFromAllocation? (allocation : ProgramPlan)
-    (program : Program) : Option Locals.Program := do
+def compatiblePlan? (allocation : ProgramPlan)
+    (program : Program) :
+    Option (AllocationSupport.AllocationRecipe × SlotSet) := do
   let recipe ← AllocationSupport.planRecipeCore? program
   let stackSlots ← inferStackSlots? recipe allocation
-  if MixedAllocation.AllocationRecipe.toMixedProgramPlan
-      recipe stackSlots = allocation then
-    let frameName ← freshFrameName program
-    lowerToLocals? recipe stackSlots frameName program
+  if stackSlots.Nodup then pure () else none
+  if MixedAllocation.AllocationRecipe.executable?
+      recipe stackSlots program then
+    pure ()
   else
     none
+  if MixedAllocation.AllocationRecipe.toMixedProgramPlan
+      recipe stackSlots = allocation then
+    some (recipe, stackSlots)
+  else
+    none
+
+def Compatible (allocation : ProgramPlan) (program : Program) : Prop :=
+  (compatiblePlan? allocation program).isSome = true
+
+theorem compatiblePlan?_eq_some_exact
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    (hCompatible :
+      compatiblePlan? allocation program =
+        some (recipe, stackSlots)) :
+    AllocationSupport.planRecipeCore? program = some recipe ∧
+      inferStackSlots? recipe allocation = some stackSlots ∧
+      stackSlots.Nodup ∧
+      MixedAllocation.AllocationRecipe.executable?
+          recipe stackSlots program = true ∧
+      MixedAllocation.AllocationRecipe.toMixedProgramPlan
+          recipe stackSlots = allocation := by
+  unfold compatiblePlan? at hCompatible
+  cases hRecipe : AllocationSupport.planRecipeCore? program with
+  | none =>
+      simp [hRecipe] at hCompatible
+  | some plannedRecipe =>
+      cases hSlots :
+          inferStackSlots? plannedRecipe allocation with
+      | none =>
+          simp [hRecipe, hSlots] at hCompatible
+      | some plannedSlots =>
+          by_cases hNodup : plannedSlots.Nodup
+          · by_cases hExecutable :
+                MixedAllocation.AllocationRecipe.executable?
+                    plannedRecipe plannedSlots program = true
+            · by_cases hExact :
+                  MixedAllocation.AllocationRecipe.toMixedProgramPlan
+                      plannedRecipe plannedSlots = allocation
+              · simp
+                  [hRecipe, hSlots, hNodup, hExecutable, hExact]
+                  at hCompatible
+                rcases hCompatible with ⟨rfl, rfl⟩
+                exact
+                  ⟨rfl, hSlots, hNodup, hExecutable, hExact⟩
+              · simp
+                  [hRecipe, hSlots, hNodup, hExecutable, hExact]
+                  at hCompatible
+            · simp [hRecipe, hSlots, hNodup, hExecutable] at hCompatible
+          · simp [hRecipe, hSlots, hNodup] at hCompatible
+
+theorem compatible_witness
+    {allocation : ProgramPlan} {program : Program}
+    (hCompatible : Compatible allocation program) :
+    ∃ recipe stackSlots,
+      AllocationSupport.planRecipeCore? program = some recipe ∧
+        inferStackSlots? recipe allocation = some stackSlots ∧
+        stackSlots.Nodup ∧
+        MixedAllocation.AllocationRecipe.executable?
+            recipe stackSlots program = true ∧
+        MixedAllocation.AllocationRecipe.toMixedProgramPlan
+            recipe stackSlots = allocation := by
+  unfold Compatible at hCompatible
+  cases hPlan : compatiblePlan? allocation program with
+  | none =>
+      simp [hPlan] at hCompatible
+  | some validated =>
+      rcases validated with ⟨recipe, stackSlots⟩
+      exact
+        ⟨recipe, stackSlots,
+          compatiblePlan?_eq_some_exact hPlan⟩
+
+def validatePlan? (allocation : ProgramPlan)
+    (program : Program) :
+    Option (AllocationSupport.AllocationRecipe × SlotSet) := do
+  if allocation.wellFormed? then pure () else none
+  compatiblePlan? allocation program
+
+theorem validatePlan?_sound
+    {allocation : ProgramPlan} {program : Program}
+    {validated : AllocationSupport.AllocationRecipe × SlotSet}
+    (hValidate :
+      validatePlan? allocation program = some validated) :
+    allocation.WellFormed ∧ Compatible allocation program := by
+  unfold validatePlan? at hValidate
+  by_cases hWF : allocation.wellFormed? = true
+  · have hCompatible :
+        compatiblePlan? allocation program = some validated := by
+      simpa [hWF] using hValidate
+    exact
+      ⟨Locals.Allocation.ProgramPlan.wellFormed_of_check hWF,
+        by simp [Compatible, hCompatible]⟩
+  · simp [hWF] at hValidate
+
+def lowerLocalsFromAllocation? (allocation : ProgramPlan)
+    (program : Program) : Option Locals.Program := do
+  let (recipe, stackSlots) ← validatePlan? allocation program
+  let frameName ← freshFrameName program
+  lowerToLocals? recipe stackSlots frameName program
+
+theorem lowerLocalsFromAllocation?_contract
+    {allocation : ProgramPlan} {program : Program}
+    {locals : Locals.Program}
+    (hLower :
+      lowerLocalsFromAllocation? allocation program = some locals) :
+    allocation.WellFormed ∧ Compatible allocation program := by
+  unfold lowerLocalsFromAllocation? at hLower
+  cases hValidate : validatePlan? allocation program with
+  | none =>
+      simp [hValidate] at hLower
+  | some validated =>
+      exact validatePlan?_sound hValidate
 
 def lowerExpressionsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Expressions.Program := do
   let locals ← lowerLocalsFromAllocation? allocation program
   locals.toExpressions?
+
+theorem lowerExpressionsFromAllocation?_contract
+    {allocation : ProgramPlan} {program : Program}
+    {expressions : Expressions.Program}
+    (hLower :
+      lowerExpressionsFromAllocation? allocation program =
+        some expressions) :
+    allocation.WellFormed ∧ Compatible allocation program := by
+  unfold lowerExpressionsFromAllocation? at hLower
+  cases hLocals :
+      lowerLocalsFromAllocation? allocation program with
+  | none =>
+      simp [hLocals] at hLower
+  | some locals =>
+      exact lowerLocalsFromAllocation?_contract hLocals
 
 def allocationLowerer :
     Locals.Allocation.Lowerer Program Expressions.Program where
@@ -671,6 +800,41 @@ def twoReturnCallAllocated :
   compileAllocated? allocation twoReturnCallProgram
 
 example : twoReturnCallAllocated.isSome = true := by
+  native_decide
+
+def alterMainScratchWords (allocation : ProgramPlan) : ProgramPlan :=
+  { scopes :=
+      allocation.scopes.map fun scope =>
+        if scope.scope = .main then
+          { scope with
+            allocation :=
+              { scope.allocation with
+                scratchRegion? :=
+                  some
+                    { base := .freeMemoryPointer
+                      words := scope.allocation.scratchSlots.length + 1 } } }
+        else
+          scope }
+
+def alteredMixedWideRejected : Bool :=
+  match MixedAllocation.Examples.mixedWidePlan with
+  | none => false
+  | some allocation =>
+      (lowerExpressionsFromAllocation?
+        (alterMainScratchWords allocation)
+        MixedAllocation.Examples.wideProgram).isNone
+
+example : alteredMixedWideRejected = true := by
+  native_decide
+
+def foreignPlanRejected : Bool :=
+  match MixedAllocation.Examples.mixedWidePlan with
+  | none => false
+  | some allocation =>
+      (lowerExpressionsFromAllocation?
+        allocation mixedCallProgram).isNone
+
+example : foreignPlanRejected = true := by
   native_decide
 
 end Examples

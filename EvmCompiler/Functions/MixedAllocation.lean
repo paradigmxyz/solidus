@@ -104,6 +104,11 @@ def functionEntriesExecutable?
     else
       fn.params.length ≤ 16
 
+def executable? (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (program : Program) : Bool :=
+  (scopedStates recipe).all (scopeExecutable? recipe stackSlots) &&
+    functionEntriesExecutable? recipe stackSlots program
+
 def toMixedProgramPlan (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) : Locals.Allocation.ProgramPlan :=
   { scopes :=
@@ -131,10 +136,7 @@ def planAllocation? (maxFrameWords : Nat) (stackSlots : SlotSet)
     (program : Program) : Option Locals.Allocation.ProgramPlan := do
   if stackSlots.Nodup then pure () else none
   let recipe ← AllocationSupport.planRecipe? maxFrameWords program
-  if (AllocationRecipe.scopedStates recipe).all
-        (AllocationRecipe.scopeExecutable? recipe stackSlots) &&
-      AllocationRecipe.functionEntriesExecutable?
-        recipe stackSlots program then
+  if AllocationRecipe.executable? recipe stackSlots program then
     pure ()
   else
     none

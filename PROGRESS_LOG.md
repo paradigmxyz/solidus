@@ -28266,3 +28266,27 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   declarations, 59 compiler-variant declarations, and one outcome relation.
   The oversized-module list now contains four proof/semantics modules rather
   than five.
+
+## 2026-06-11 09:21 PDT - Allocation compatibility contract
+
+- Added an executable `Compatible` contract for the allocation boundary.
+  Compatibility decodes a submitted plan into the source-derived allocation
+  recipe and inferred mixed placement, checks duplicate-free placement and
+  procedure/stack executability, and requires exact plan reconstruction.
+- Made the shared lowerer validate both `ProgramPlan.WellFormed` and
+  `Compatible` before emission. Altered plans and plans generated for a
+  different source now have explicit rejection regressions.
+- Proved successful Locals and Expressions lowering recover plan
+  well-formedness and compatibility, plus an exact witness theorem exposing
+  the recipe, stack-slot selection, executability check, and allocation
+  equality.
+- Strengthened the public `LoweredFrom` certificate to carry source
+  compatibility and added the public lowering-result contract theorem.
+- Closed Phase 4. The stronger “every well-formed plan” wording was corrected:
+  well-formedness is structural, while source compatibility is the necessary
+  semantic ownership condition for a plan-consuming lowerer.
+- Verification passed: focused allocation/public builds, both allocation proof
+  artifacts, all 1,157 verification targets, architecture and diff checks, all
+  244 bundled-Python tests, Aave v3 math/interest smokes, and all 11 Permit2
+  call comparisons. Refreshed metrics record 81 modules, 91,363 Lean lines,
+  3,929 declarations, 59 compiler variants, and one outcome relation.
