@@ -97,6 +97,23 @@ theorem compileCertified?_checked
       compiles := hCompile
       metadataValid := hValid }
 
+theorem compileCertified?_step_eventually
+    {program : Program} {artifact : CertifiedArtifact}
+    {label : Assembly.Label} {block : TypedCfg.Block}
+    {state : Assembly.EVMState} {entryPc : Nat}
+    (hCompile : program.compileCertified? = some artifact)
+    (hFind : program.cfg.findBlock? label = some block)
+    (hLabelPc :
+      artifact.target.labelPc label = some entryPc)
+    (hPc : state.pc = EvmYul.UInt256.ofNat entryPc) :
+    Assembly.Source.Eventually artifact.target state
+      (TypedCfg.Preservation.Block.RunSimulates artifact.target
+        (program.cfg.step label state.incrPC)) := by
+  exact
+    TypedCfg.Program.compileCertified?_step_eventually
+      (compileCertified?_cfg hCompile)
+      hFind hLabelPc hPc
+
 end Program
 
 namespace Examples

@@ -70,6 +70,15 @@ def noDuplicates {α : Type} [BEq α] : List α → Bool
   | [] => true
   | x :: xs => !xs.contains x && noDuplicates xs
 
+theorem noDuplicates_eq_true_iff_nodup
+    {α : Type} [BEq α] [LawfulBEq α] (values : List α) :
+    noDuplicates values = true ↔ values.Nodup := by
+  induction values with
+  | nil =>
+      simp [noDuplicates]
+  | cons value rest ih =>
+      simp [noDuplicates, ih, List.contains_iff_mem]
+
 def labelsUnique (program : Program) : Bool :=
   noDuplicates program.labels
 
@@ -85,6 +94,36 @@ primitive-operation boundary centralized.
 -/
 def accepted (program : Program) : Bool :=
   instructionsAccepted program && labelsUnique program && allTargetsResolve program
+
+theorem labels_nodup_of_accepted {program : Program}
+    (hAccepted : program.accepted = true) :
+    program.labels.Nodup := by
+  have hUnique : program.labelsUnique = true := by
+    simp only [accepted, Bool.and_eq_true] at hAccepted
+    exact hAccepted.1.2
+  exact
+    (noDuplicates_eq_true_iff_nodup program.labels).mp hUnique
+
+theorem target_resolves_of_accepted {program : Program}
+    {instr : Instr} {target : Label}
+    (hAccepted : program.accepted = true)
+    (hInstr : instr ∈ program)
+    (hTarget : target ∈ instr.targets) :
+    ∃ pc, program.labelPc target = some pc := by
+  have hAllTargets : program.allTargetsResolve = true := by
+    simp only [accepted, Bool.and_eq_true] at hAccepted
+    exact hAccepted.2
+  have hInstrTargets :
+      instr.targets.all
+        (fun label => (program.labelPc label).isSome) = true :=
+    (List.all_eq_true.mp hAllTargets) instr hInstr
+  have hSome : (program.labelPc target).isSome = true :=
+    (List.all_eq_true.mp hInstrTargets) target hTarget
+  cases hPc : program.labelPc target with
+  | none =>
+      simp [hPc] at hSome
+  | some pc =>
+      exact ⟨pc, rfl⟩
 
 theorem labelPcFrom_none_of_not_mem_labels
     (program : Program) (base : Nat) {target : Label}
@@ -120,6 +159,56 @@ theorem labelPc_none_of_not_mem_labels
     (hNotMem : target ∉ labels program) :
     labelPc program target = none := by
   exact labelPcFrom_none_of_not_mem_labels program 0 hNotMem
+
+theorem mem_labels_of_label_mem
+    {program : Program} {target : Label}
+    (hMem : Instr.label target ∈ program) :
+    target ∈ labels program := by
+  induction program with
+  | nil =>
+      simp at hMem
+  | cons instr rest ih =>
+      simp only [List.mem_cons] at hMem
+      cases hMem with
+      | inl hEq =>
+          subst instr
+          simp [labels]
+      | inr hRest =>
+          cases instr <;> simp [labels, ih hRest]
+
+theorem labelPcFrom_exists_of_mem_labels
+    (program : Program) (base : Nat) {target : Label}
+    (hMem : target ∈ labels program) :
+    ∃ pc, labelPcFrom program base target = some pc := by
+  induction program generalizing base with
+  | nil =>
+      simp [labels] at hMem
+  | cons instr rest ih =>
+      cases instr with
+      | label name =>
+          simp only [labels, List.mem_cons] at hMem
+          by_cases hName : name = target
+          · subst name
+            exact ⟨base, by simp [labelPcFrom]⟩
+          · have hRest : target ∈ labels rest := by
+              exact hMem.resolve_left (Ne.symm hName)
+            simpa [labelPcFrom, hName] using
+              ih (base + Instr.byteSize (.label name)) hRest
+      | prim op =>
+          exact ih (base + Instr.byteSize (.prim op)) hMem
+      | push value =>
+          exact ih (base + Instr.byteSize (.push value)) hMem
+      | jump jumpTarget =>
+          exact ih (base + Instr.byteSize (.jump jumpTarget)) hMem
+      | jumpi jumpTarget =>
+          exact ih (base + Instr.byteSize (.jumpi jumpTarget)) hMem
+
+theorem labelPc_exists_of_mem_labels
+    (program : Program) {target : Label}
+    (hMem : target ∈ labels program) :
+    ∃ pc, labelPc program target = some pc := by
+  simpa [labelPc] using
+    labelPcFrom_exists_of_mem_labels program 0 hMem
 
 theorem labelPcFrom_append_label_eq
     (pre suffix : Program) (base : Nat) {target : Label}

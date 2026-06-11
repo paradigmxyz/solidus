@@ -27585,3 +27585,19 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - verification: focused `lake build EvmCompiler.TypedCfg.Preservation` passed
   all 1,106 jobs. The next boundary is projecting block fragments, resolved
   labels, and PC-fit facts through whole-program certification.
+
+## 2026-06-10 17:00 PDT - Certified TypedCfg whole-program stepping
+
+- architecture: successful program lowering now constructs a checked
+  `BlockFragment` decomposition for every source block lookup, even though the
+  entry block is reordered before emission.
+- proof: added generic Assembly projections from whole-program `PCFits` to
+  every fragment boundary and from acceptedness to label uniqueness and jump
+  target resolution.
+- proof: completed whole-program TypedCfg stepping. The theorem derives the
+  selected fragment, exact label byte offset, PC-fit prefix, direct targets,
+  and internal return-dispatch labels before applying whole-block simulation.
+- public boundary: `TypedCfg.Program.compileCertified?` and
+  `Compiler.AllocatedTypedCfg.Program.compileCertified?` now expose the
+  stepping theorem without caller-supplied compiler certificates, prefixes, or
+  generated-label tables.

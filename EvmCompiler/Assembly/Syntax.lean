@@ -7,7 +7,7 @@ namespace Assembly
 inductive Label where
   | named (name : String)
   | generated (scope : Nat) (tag : Nat)
-  deriving BEq, DecidableEq, Repr
+  deriving BEq, ReflBEq, LawfulBEq, DecidableEq, Repr
 abbrev Word := EvmYul.UInt256
 abbrev EVMOp := EvmYul.Operation EvmYul.OperationType.EVM
 
@@ -363,6 +363,37 @@ theorem PCFitsFrom.right {pre first second : Program}
   | cons instr rest ih =>
       rcases hFits with ⟨_hHere, hRest⟩
       simpa [List.append_assoc] using ih hRest
+
+theorem PCFits.of_byteLength_le {program whole : Program}
+    (hFits : whole.PCFits)
+    (hLe : program.byteLength ≤ whole.byteLength) :
+    program.PCFits := by
+  have hWholeLt : whole.byteLength < EvmYul.UInt256.size := by
+    have hWordLt : whole.pcAfter.toNat < EvmYul.UInt256.size :=
+      whole.pcAfter.val.isLt
+    rw [hFits] at hWordLt
+    exact hWordLt
+  unfold PCFits pcAfter
+  exact
+    EvmYul.UInt256.toNat_ofNat_of_lt
+      (Nat.lt_of_le_of_lt hLe hWholeLt)
+
+theorem PCFitsFrom.of_append {pre code post : Program}
+    (hFits : (pre ++ code ++ post).PCFits) :
+    PCFitsFrom pre code := by
+  induction code generalizing pre post with
+  | nil =>
+      exact
+        PCFits.of_byteLength_le hFits
+          (by simp [byteLength_append])
+  | cons instr rest ih =>
+      refine ⟨?_, ?_⟩
+      · exact
+          PCFits.of_byteLength_le hFits
+            (by
+              simp [byteLength_append, byteLength])
+      · apply ih (pre := pre ++ [instr]) (post := post)
+        simpa [List.append_assoc] using hFits
 
 end Program
 

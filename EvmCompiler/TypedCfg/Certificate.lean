@@ -1,6 +1,5 @@
 import EvmCompiler.Compiler.Artifact
-import EvmCompiler.TypedCfg.Lower
-import EvmCompiler.Assembly.Accepted
+import EvmCompiler.TypedCfg.Preservation
 
 namespace EvmCompiler
 namespace TypedCfg
@@ -326,6 +325,25 @@ theorem compileCertified?_checked {program : Program}
       compiles := hCompile
       metadataValid :=
         ⟨hTyped, compileCertified?_certificate hCompile⟩ }
+
+theorem compileCertified?_step_eventually
+    {program : Program} {artifact : CertifiedArtifact}
+    {label : Label} {block : Block}
+    {state : EVMState} {entryPc : Nat}
+    (hCompile : program.compileCertified? = some artifact)
+    (hFind : program.findBlock? label = some block)
+    (hLabelPc :
+      artifact.target.labelPc label = some entryPc)
+    (hPc : state.pc = EvmYul.UInt256.ofNat entryPc) :
+    Assembly.Source.Eventually artifact.target state
+      (Preservation.Block.RunSimulates artifact.target
+        (program.step label state.incrPC)) := by
+  exact
+    Preservation.Program.lower?_step_eventually
+      (compileCertified?_target hCompile)
+      (compileCertified?_targetAccepted hCompile)
+      (compileCertified?_pcFits hCompile)
+      hFind hLabelPc hPc
 
 end Program
 

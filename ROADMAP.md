@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 15:58 PDT.
+Last updated: 2026-06-10 17:00 PDT.
 
 ## Objective
 
@@ -44,8 +44,11 @@ Implemented in this migration:
   emitted-label uniqueness, checked Assembly acceptedness/PC bounds, and a
   proved per-instruction lowering theorem against fetched Assembly execution;
 - an error-preserving Assembly execution-outcome contract with checked
-  TypedCfg terminator simulation for jumps, conditional branches, halts, stack
-  underflow, and explicit invalid execution;
+  TypedCfg simulation for every instruction, return-dispatch path, complete
+  block execution, and whole-program block stepping;
+- certified whole-program stepping that constructs emitted block fragments,
+  PC-fit prefixes, target resolution, internal-label resolution, and exact
+  entry byte offsets from successful TypedCfg or AllocatedTypedCfg compilation;
 - an `AllocatedTypedCfg` checked pass that pairs scoped allocation with the
   generated CFG and makes both allocation and CFG certificates mandatory
   successful-artifact metadata;
@@ -69,8 +72,8 @@ The remaining critical path is deliberately narrow and explicit:
    exact agreement.
 2. Make canonical per-local locations directly drive Expressions/TypedCfg
    generation and CFG shapes across main and function scopes.
-3. Prove source-to-CFG and CFG-to-Assembly semantic preservation, plus label
-   uniqueness and PC bounds from generated certificates.
+3. Finish source-to-CFG semantic composition and make generated fragment
+   certificates carry exact code spans and safety projections.
 4. Finish the generic effects/outcomes migration, then delete duplicate replay
    control evaluators, parallel backend compilers, direct Assembly lowering,
    and legacy theorem corridors.
@@ -394,18 +397,19 @@ Goal: make stack/control invariants explicit before Assembly.
 - [ ] Make CFG value locations and block shapes derive directly from the
   canonical allocation rather than pairing the plan with a separately
   generated CFG.
-- [ ] Prove TypedCfg step preservation.
+- [x] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
   DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies,
   every terminator including return dispatch, and complete entry-label/body/
   terminator block execution are proved against the shared Assembly
-  execution-outcome contract. Program stepping remains.
-- [ ] Prove TypedCfg-to-Assembly lowering preservation.
-- [ ] Prove label uniqueness and PC bounds from the artifact certificate.
-  Certification now rejects duplicate/unresolved emitted labels and PC
-  wraparound and exposes checked target-acceptedness/`PCFits` theorems; these
-  facts still need to be projected through the compositional program
-  certificate and whole-program preservation theorem.
+  execution-outcome contract. Whole-program stepping constructs and composes
+  the selected emitted block fragment.
+- [x] Prove TypedCfg-to-Assembly lowering preservation.
+- [x] Prove label uniqueness and PC bounds from the certified artifact.
+  Successful TypedCfg and AllocatedTypedCfg artifacts now project acceptedness,
+  global label uniqueness, exact block-entry PCs, per-fragment PC fit, resolved
+  targets, and whole-program step simulation without caller-supplied generated
+  layout evidence.
 
 Cutover gate:
 

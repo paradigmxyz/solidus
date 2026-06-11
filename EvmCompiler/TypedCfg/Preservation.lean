@@ -2678,6 +2678,111 @@ theorem lower?_eventually
 
 end Block
 
+namespace Program
+
+theorem lower?_step_eventually
+    {program : TypedCfg.Program} {target : Assembly.Program}
+    {label : Label} {block : TypedCfg.Block}
+    {state : EVMState} {entryPc : Nat}
+    (hLower : program.lower? = some target)
+    (hAccepted : target.accepted = true)
+    (hFits : target.PCFits)
+    (hFind : program.findBlock? label = some block)
+    (hLabelPc : target.labelPc label = some entryPc)
+    (hPc : state.pc = EvmYul.UInt256.ofNat entryPc) :
+    Assembly.Source.Eventually target state
+      (Block.RunSimulates target
+        (program.step label state.incrPC)) := by
+  rcases
+      TypedCfg.Program.lower?_fragment_of_findBlock?
+        hLower hFind with
+    ⟨fragment⟩
+  have hBlockLabel : block.label = label := by
+    have hFound :
+        (block.label == label) = true :=
+      @List.find?_some TypedCfg.Block
+        (fun candidate : TypedCfg.Block =>
+          candidate.label == label)
+        block program.blocks hFind
+    exact beq_iff_eq.mp hFound
+  subst label
+  have hLabels : target.labels.Nodup :=
+    Assembly.Program.labels_nodup_of_accepted hAccepted
+  have hCodeFits :
+      Assembly.Program.PCFitsFrom fragment.pre fragment.code := by
+    apply Assembly.Program.PCFitsFrom.of_append
+    rw [← fragment.target_eq]
+    exact hFits
+  have hResolved :
+      Terminator.ResolvedControl target block.term := by
+    constructor
+    · intro symbolic hSymbolic
+      rcases
+          TypedCfg.Block.target_instr_mem_of_lower?
+            fragment.lower hSymbolic with
+        ⟨instr, hInstr, hInstrTarget⟩
+      have hInstrGlobal : instr ∈ target := by
+        rw [fragment.target_eq]
+        simp [hInstr]
+      exact
+        Assembly.Program.target_resolves_of_accepted
+          hAccepted hInstrGlobal hInstrTarget
+    · intro internal hInternal
+      have hInstr :
+          Assembly.Instr.label internal ∈ fragment.code :=
+        TypedCfg.Block.definedLabel_instr_mem_of_lower?
+          fragment.lower hInternal
+      have hInstrGlobal :
+          Assembly.Instr.label internal ∈ target := by
+        rw [fragment.target_eq]
+        simp [hInstr]
+      exact
+        Assembly.Program.labelPc_exists_of_mem_labels target
+          (Assembly.Program.mem_labels_of_label_mem hInstrGlobal)
+  rcases
+      TypedCfg.Block.lower?_starts_with_label fragment.lower with
+    ⟨tail, hCode⟩
+  have hEntryLabel :
+      target.labelPc block.label = some fragment.pre.byteLength := by
+    have hNodup :
+        (fragment.pre ++
+          Assembly.Instr.label block.label ::
+            (tail ++ fragment.post)).labels.Nodup := by
+      simpa [fragment.target_eq, hCode, List.append_assoc] using hLabels
+    have hAt :=
+      Assembly.Program.labelPc_append_label_eq_of_labels_nodup
+        fragment.pre (tail ++ fragment.post) hNodup
+    simpa [fragment.target_eq, hCode, List.append_assoc] using hAt
+  have hEntryPcEq : entryPc = fragment.pre.byteLength := by
+    rw [hEntryLabel] at hLabelPc
+    exact (Option.some.inj hLabelPc).symm
+  have hStatePc : state.pc = fragment.pre.pcAfter := by
+    calc
+      state.pc = EvmYul.UInt256.ofNat entryPc := hPc
+      _ = EvmYul.UInt256.ofNat fragment.pre.byteLength := by
+        rw [hEntryPcEq]
+      _ = fragment.pre.pcAfter := rfl
+  have hResolvedFragment :
+      Terminator.ResolvedControl
+        (fragment.pre ++ fragment.code ++ fragment.post)
+        block.term := by
+    rw [← fragment.target_eq]
+    exact hResolved
+  have hLabelsFragment :
+      ((fragment.pre ++ fragment.code ++ fragment.post).labels).Nodup := by
+    rw [← fragment.target_eq]
+    exact hLabels
+  have hRun :=
+    Block.lower?_eventually
+      (block := block) (code := fragment.code)
+      (pre := fragment.pre) (post := fragment.post)
+      (state := state) fragment.lower hCodeFits hStatePc
+      hResolvedFragment hLabelsFragment
+  rw [fragment.target_eq]
+  simpa [TypedCfg.Program.step, hFind] using hRun
+
+end Program
+
 end Preservation
 end TypedCfg
 end EvmCompiler

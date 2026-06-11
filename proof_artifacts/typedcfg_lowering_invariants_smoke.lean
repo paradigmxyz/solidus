@@ -1,8 +1,13 @@
 import EvmCompiler.TypedCfg
+import EvmCompiler.Compiler.AllocatedTypedCfg
 
 open EvmCompiler
 
 namespace TypedCfgLoweringInvariantsSmoke
+
+#check TypedCfg.Preservation.Program.lower?_step_eventually
+#check TypedCfg.Program.compileCertified?_step_eventually
+#check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
 
 def firstLabel : Assembly.Label :=
   .named "typedcfg:lowering:first"
