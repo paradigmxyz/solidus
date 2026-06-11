@@ -2736,6 +2736,51 @@ theorem preserves_empty_none_of_compileStmtFuel?
 
 end Switch
 
+namespace Loop
+
+/--
+The generated loop-condition block follows the independent source condition
+and preserves the concrete procedure-frame relation.
+-/
+theorem eventually_condition
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {cond : Structured.Code} {condValue : Bool}
+    {source afterCond : RunState} {tokens : List Word}
+    {target : EVMState}
+    (hBlocks : BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : cond.FrameSafe)
+    (hCond :
+      Structured.Code.runConditionState cond source =
+        .ok (afterCond, condValue))
+    (hRel : StateRel source tokens target) :
+    ∃ targetAfterCond,
+      cfg.Eventually loopLabel target
+          (.jump (if condValue then bodyLabel else endLabel)
+            targetAfterCond) ∧
+        StateRel afterCond tokens targetAfterCond := by
+  rcases StateRel.runCondition hFrameSafe hCond hRel with
+    ⟨targetAfterCond, hTargetCond, hAfterCondRel⟩
+  refine ⟨targetAfterCond, ?_, hAfterCondRel⟩
+  apply BlocksInProgram.eventually_of_run hBlocks hMem
+  simpa [RunState.withEVM] using
+    (Code.run_jumpi_toCfg
+      (target := bodyLabel) (fallthrough := endLabel)
+      hType hTargetCond)
+
+end Loop
+
 namespace Block
 
 /--

@@ -27933,3 +27933,19 @@ Resumed from commit `484ff1510` with the migration goal active. The current unco
 - Fresh metrics: 79 modules, 90,659 Lean lines, 65 compiler variants, and one
   outcome relation. The next Structured proof frontier is loop preservation,
   followed by concrete calls/returns and full nonregular outcome composition.
+## 2026-06-11 - Compaction resume: loop condition preservation
+
+Resumed from commit `92acedc39` with source-selected regular switch preservation complete. The current uncommitted checkpoint introduces the relational generated loop-condition block; next is to compile it and build init/body/post/backedge composition without adding loop-specific parallel semantics.
+
+## 2026-06-11 06:26 PDT - Relational loop-condition preservation
+
+- Added a reusable generated-loop-condition theorem. For either Boolean result,
+  the TypedCfg `jumpi` follows the independent Structured condition semantics
+  while preserving the concrete return-token/frame relation.
+- Verification passed: focused preservation check, full 1,155-job
+  `EvmCompiler.Verification`, architecture dependency/retired-route guard,
+  proof-hole scan, and `git diff --check`.
+- Fresh metrics: 79 modules, 90,704 Lean lines, 65 compiler variants, and one
+  outcome relation. Remaining loop work is init/body/post/backedge composition
+  through the shared outcome interface; calls/returns and the public artifact
+  theorem follow.
