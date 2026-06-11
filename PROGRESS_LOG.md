@@ -28290,3 +28290,21 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   244 bundled-Python tests, Aave v3 math/interest smokes, and all 11 Permit2
   call comparisons. Refreshed metrics record 81 modules, 91,363 Lean lines,
   3,929 declarations, 59 compiler variants, and one outcome relation.
+
+## 2026-06-11 09:24 PDT - Disconnected open/gas corridor deletion
+
+- Audited the retained import graph and found that `Yul.PrimSemantics`,
+  `OpenExternal`, `OpenAssembly`, `OpenFuelAdequacy`, `OpenGasAware`, and
+  `Assembly.GasAware` formed a disconnected historical proof corridor. No
+  stable compiler, public API, verification aggregate, or proof artifact
+  imported it.
+- Deleted that 45,203-line corridor and the unimported 194-line
+  `Locals.StackLowering` compatibility module. Architecture guards now reject
+  restoration of every removed module.
+- The live external-operation and resource-observer path remains the common
+  `Yul.Source.Effectful` primitive-handler semantics plus the public compiled
+  artifact and the small `ObserverOracle` specialization.
+- The full 1,157-target verification build and architecture checks pass after
+  deletion. Fresh metrics record 74 modules, 45,966 Lean lines, 2,327
+  declarations, 59 compiler variants, and one outcome relation. Only
+  `Structured/TypedCfgPreservation.lean` remains above the 5K soft limit.

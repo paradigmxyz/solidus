@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-06-11T16:22:47Z",
+  "generated_at": "2026-06-11T16:26:28Z",
   "git": {
-    "commit": "cd82fd48254dbaca01399e0197bbc781c10eb2ed",
+    "commit": "7cae910bea4ed58b6406e821b2054a7400612ade",
     "branch": "codex/architecture-migration"
   },
   "totals": {
-    "module_count": 81,
-    "source_lines": 91363,
-    "direct_imports": 203,
-    "declarations": 3929,
+    "module_count": 74,
+    "source_lines": 45966,
+    "direct_imports": 188,
+    "declarations": 2327,
     "compiler_variant_declarations": 59,
     "outcome_relation_declarations": 1,
     "verification_root_imports": 10,
@@ -43,13 +43,6 @@
       "source_lines": 979,
       "direct_imports": 2,
       "declarations": 73
-    },
-    {
-      "path": "EvmCompiler/Assembly/GasAware.lean",
-      "module": "EvmCompiler.Assembly.GasAware",
-      "source_lines": 15519,
-      "direct_imports": 1,
-      "declarations": 563
     },
     {
       "path": "EvmCompiler/Assembly/Observer.lean",
@@ -267,13 +260,6 @@
       "source_lines": 1034,
       "direct_imports": 4,
       "declarations": 50
-    },
-    {
-      "path": "EvmCompiler/Locals/StackLowering.lean",
-      "module": "EvmCompiler.Locals.StackLowering",
-      "source_lines": 194,
-      "direct_imports": 1,
-      "declarations": 10
     },
     {
       "path": "EvmCompiler/Locals/StackModel.lean",
@@ -519,41 +505,6 @@
       "source_lines": 350,
       "direct_imports": 3,
       "declarations": 26
-    },
-    {
-      "path": "EvmCompiler/Yul/OpenAssembly.lean",
-      "module": "EvmCompiler.Yul.OpenAssembly",
-      "source_lines": 2503,
-      "direct_imports": 5,
-      "declarations": 136
-    },
-    {
-      "path": "EvmCompiler/Yul/OpenExternal.lean",
-      "module": "EvmCompiler.Yul.OpenExternal",
-      "source_lines": 4835,
-      "direct_imports": 2,
-      "declarations": 229
-    },
-    {
-      "path": "EvmCompiler/Yul/OpenFuelAdequacy.lean",
-      "module": "EvmCompiler.Yul.OpenFuelAdequacy",
-      "source_lines": 178,
-      "direct_imports": 1,
-      "declarations": 1
-    },
-    {
-      "path": "EvmCompiler/Yul/OpenGasAware.lean",
-      "module": "EvmCompiler.Yul.OpenGasAware",
-      "source_lines": 14883,
-      "direct_imports": 2,
-      "declarations": 418
-    },
-    {
-      "path": "EvmCompiler/Yul/PrimSemantics.lean",
-      "module": "EvmCompiler.Yul.PrimSemantics",
-      "source_lines": 7285,
-      "direct_imports": 3,
-      "declarations": 245
     },
     {
       "path": "EvmCompiler/Yul/Primitive.lean",

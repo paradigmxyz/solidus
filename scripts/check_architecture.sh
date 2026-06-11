@@ -49,6 +49,7 @@ report_matches \
   EvmCompiler.lean EvmCompiler/Public.lean
 
 retired_modules=(
+  EvmCompiler/Assembly/GasAware.lean
   EvmCompiler/Structured/Compiler.lean
   EvmCompiler/Structured/TypedContinuations.lean
   EvmCompiler/Structured/TypedCfgBridge.lean
@@ -57,6 +58,7 @@ retired_modules=(
   EvmCompiler/Expressions/Preservation.lean
   EvmCompiler/Locals/Preservation.lean
   EvmCompiler/Locals/SourceLowering.lean
+  EvmCompiler/Locals/StackLowering.lean
   EvmCompiler/Functions/SourceDirect.lean
   EvmCompiler/Functions/SourceLowering.lean
   EvmCompiler/Functions/ScratchFrameMemory.lean
@@ -64,6 +66,11 @@ retired_modules=(
   EvmCompiler/Functions/CallDepthExamples.lean
   EvmCompiler/Functions/CallDepthRanked.lean
   EvmCompiler/Yul/ArgSlots.lean
+  EvmCompiler/Yul/PrimSemantics.lean
+  EvmCompiler/Yul/OpenExternal.lean
+  EvmCompiler/Yul/OpenAssembly.lean
+  EvmCompiler/Yul/OpenFuelAdequacy.lean
+  EvmCompiler/Yul/OpenGasAware.lean
   EvmCompiler/Yul/OpenStackResource.lean
   EvmCompiler/Functions/CallAwareSpill.lean
   EvmCompiler/Functions/LiveLayout.lean
@@ -86,6 +93,7 @@ retired_modules=(
   EvmCompiler/LayerAudit.lean
   EvmCompiler/StackGuardAudit.lean
   EvmCompiler/Legacy.lean
+  EvmCompiler/Functions/ScratchFrameSpill.lean
 )
 for module in "${retired_modules[@]}"; do
   if [[ -e "$module" ]]; then

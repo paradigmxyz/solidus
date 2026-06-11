@@ -126,17 +126,15 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Finish the generic outcome migration and replace remaining mode-specific
-   proof families with projections and composition theorems.
-2. Complete generated-certificate composition and safety projections.
-3. Thin the remaining Yul open-execution adapters, split the oversized proof
-   modules, and run the final frontend,
-   benchmark, proof-hole, and architecture gates.
+1. Complete generated-certificate composition and safety projections.
+2. Move the remaining internal regressions into focused proof artifacts.
+3. Split the oversized Structured preservation module and run the final
+   frontend, benchmark, proof-hole, and architecture gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 91,363 Lean lines across 81 modules, down by about 931K lines from the
+tree is 45,966 Lean lines across 74 modules, down by about 975K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -318,10 +316,13 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
-- [ ] Migrate observer replay preservation fully onto `OutcomeContract`. Its
-  source evaluator and public target theorem now use the shared effect and
-  public artifact surfaces, but the mode-indexed proof package has not cut over.
-- [ ] Replace mode-specific bounded-fuel weakening lemmas with one theorem.
+- [x] Migrate observer replay onto the shared semantic contract. The retained
+  `ObserverOracle` is a primitive-handler specialization of the common effect
+  semantics and reuses the public artifact simulation; the disconnected
+  mode-indexed observer proof package was deleted instead of preserved.
+- [x] Remove the mode-specific bounded-fuel weakening family. Its only
+  consumers were in the disconnected open/gas proof corridor, which is now
+  deleted.
 
 Cutover gate:
 
@@ -330,12 +331,12 @@ Cutover gate:
 
 Deletion gate:
 
-- Delete separate regular/halt/brk/cont recursive statement proof families once
-  all public consumers use projections from the generic simulation.
+- [x] Delete separate regular/halt/brk/cont recursive statement proof families
+  once all public consumers use projections from the generic simulation.
 
 ## Phase 3: Uniform Pass And Artifact Contracts
 
-Status: in progress.
+Status: complete.
 
 Goal: every compiler pass has one recognizable checked interface.
 
@@ -376,7 +377,7 @@ Exit gate:
 
 ## Phase 4: Allocation Plan
 
-Status: in progress.
+Status: complete.
 
 Goal: stack-too-deep is an analysis/planning concern, not a separate compiler.
 
@@ -522,6 +523,8 @@ Deletion gate:
 
 ## Phase 6: Generated Fragment Certificates
 
+Status: in progress.
+
 Goal: generated code properties compose mechanically.
 
 Each emitted fragment records:
@@ -555,14 +558,18 @@ Cutover gate:
 
 ## Phase 7: Thin Frontends And Public Spine
 
+Status: in progress.
+
 Goal: Yul and Solidity adapt source syntax; they do not host backend proof
 corridors.
 
 - [x] Define `EvmCompiler.Public` with stable compile/result/theorem interfaces.
-- [ ] Reduce Yul lowering to syntax conversion plus one imported-semantics
-  bridge.
-- [ ] Move open external execution and resource observation onto common effect
-  events.
+- [x] Reduce Yul lowering to syntax and primitive conversion plus the public
+  Objects compiler. Source semantics remain in the separate generic
+  `Yul.Source.Effectful` interpreter.
+- [x] Move external-operation handling and resource observation onto common
+  effect events. Custom source primitive handlers reuse `Yul.Source.Effectful`;
+  retained resource replay specializes it in `ObserverOracle`.
 - [x] Route Objects through the uniform artifact and backend-policy API.
 - [x] Compose successful public compilation with the hidden allocation-lowered
   Structured evaluation, complete TypedCfg outcome path, canonical CFG entry,
@@ -583,20 +590,22 @@ corridors.
 
 Public theorem modes:
 
-- closed deterministic execution;
-- open external call/create execution;
-- resource-observing execution;
-- gas/resource-bounded execution.
+- ordinary compilation and entry simulation;
+- resource-observer replay over the same compiled artifact;
+- custom source primitive/effect handlers through the shared effect semantics.
 
-All modes return projections of one compiled artifact and one semantic result
-relation.
+The retired open/gas proof corridors are no longer represented as independent
+public compiler modes.
 
 Deletion gate:
 
-- Delete obsolete OpenRuntime/NoCallRuntime/RecursiveBridge compatibility
-  wrappers once no public theorem imports them.
+- [x] Delete obsolete OpenRuntime/NoCallRuntime/RecursiveBridge compatibility
+  wrappers and the disconnected OpenExternal/OpenAssembly/OpenGasAware/
+  Assembly.GasAware proof corridor.
 
 ## Phase 8: Module And Build Architecture
+
+Status: in progress.
 
 - [x] Enforce dependency direction:
   `Syntax <- Semantics`, `Syntax <- Compiler`, and
@@ -642,7 +651,7 @@ Exit gate:
   preservation, spill-source, stack-resource, and call-depth proof cone.
 - [x] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The current
-  snapshot records 79 modules, 88,771 source lines, 65 compiler-variant
+  snapshot records 74 modules, 45,966 source lines, 59 compiler-variant
   declarations, and one outcome-relation declaration, versus 104 modules,
   1,021,199 lines, 145 variants, and 43 outcome relations at baseline.
 
@@ -713,8 +722,8 @@ Latest verified checkpoint:
   pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
-- full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules, 96,108 Lean lines, 66 compiler
+- full `lake build EvmCompiler.Verification`: pass (1,157 jobs);
+- retained architecture metrics: 74 modules, 45,966 Lean lines, 59 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -728,11 +737,10 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Finish outcome-indexed observer migration and derive the remaining
-   certificate safety projections.
-2. Complete branch/switch/loop/procedure certificate composition.
-3. Thin the remaining Yul open-execution adapters and split the oversized
-   proof/compiler modules, then rerun the final
+1. Complete branch/switch/loop/procedure certificate composition and derive
+   the remaining certificate safety projections.
+2. Move internal regressions into proof artifacts.
+3. Split `Structured/TypedCfgPreservation.lean`, then rerun the final
    verification, frontend, benchmark, proof-hole, and architecture gates.
 
 ## Progress Discipline
