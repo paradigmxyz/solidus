@@ -1,72 +1,9 @@
-import EvmCompiler.Structured.Syntax
-import EvmCompiler.Assembly.Semantics
+import EvmCompiler.Structured.EffectSemantics
 
 namespace EvmCompiler
 namespace Structured
 
-def invalid {α : Type} : Except EVMException α :=
-  .error .InvalidInstruction
-
-namespace BasicOp
-
-def step (op : BasicOp) (state : EVMState) : Except EVMException EVMState :=
-  Assembly.Target.stepInstr (Assembly.TargetInstr.prim op.toPrimOp) state
-
-end BasicOp
-
-namespace BasicInstr
-
-def step : BasicInstr → EVMState → Except EVMException EVMState
-  | .push value, state =>
-      Assembly.Target.stepInstr (Assembly.TargetInstr.push32 value) state
-  | .op basicOp, state =>
-      basicOp.step state
-  | .bindLocals _offset _names, state =>
-      .ok state
-  | .bindScratch _baseDepth _name _slot, state =>
-      .ok state
-
-end BasicInstr
-
-namespace Terminal
-
-def step (kind : Assembly.HaltKind) (state : EVMState) :
-    Except EVMException EVMState :=
-  Assembly.Target.stepInstr
-    (Assembly.TargetInstr.prim kind.toPrimOp) state
-
-end Terminal
-
 namespace Code
-
-def run : Code → EVMState → Except EVMException EVMState
-  | [], state => .ok state
-  | instr :: rest, state => do
-      let state' ← instr.step state
-      run rest state'
-
-def runState (code : Code) (state : RunState) :
-    Except EVMException RunState := do
-  let evm ← run code state.evm
-  .ok (state.withEVM evm)
-
-def popCondition (state : EVMState) :
-    Except EVMException (EVMState × Bool) :=
-  match state.stack.pop with
-  | some (stack, cond) =>
-      .ok ({ state with stack := stack }, cond != EvmYul.UInt256.ofNat 0)
-  | none =>
-      .error .StackUnderflow
-
-def runCondition (code : Code) (state : EVMState) :
-    Except EVMException (EVMState × Bool) := do
-  let state' ← run code state
-  popCondition state'
-
-def runConditionState (code : Code) (state : RunState) :
-    Except EVMException (RunState × Bool) := do
-  let (evm, cond) ← runCondition code state.evm
-  .ok (state.withEVM evm, cond)
 
 theorem runState_returns_eq
     {code : Code} {state final : RunState}
@@ -116,34 +53,7 @@ def FrameSafe (code : Code) : Prop :=
 
 end Code
 
-namespace StackFrame
-
-def splitArgs? (argc : Nat) (stack : EvmYul.Stack Word) :
-    Option (EvmYul.Stack Word × EvmYul.Stack Word) :=
-  if argc ≤ stack.length then
-    some (stack.take argc, stack.drop argc)
-  else
-    none
-
-def attachReturns? (frame : ReturnDest) (stack : EvmYul.Stack Word) :
-    Option (EvmYul.Stack Word) :=
-  if stack.length = frame.retc then
-    some (stack ++ frame.callerStack)
-  else
-    none
-
-end StackFrame
-
 namespace Switch
-
-def select (scrutinee : Word) :
-    List (Word × Block) → Option Block → Option Block
-  | [], defaultBody => defaultBody
-  | (value, body) :: rest, defaultBody =>
-      if value = scrutinee then
-        some body
-      else
-        select scrutinee rest defaultBody
 
 theorem wf_of_select {canBreak canContinue canLeave : Bool}
     {scrutinee : Word} {cases : List (Word × Block)}
@@ -176,157 +86,6 @@ theorem wf_of_select {canBreak canContinue canLeave : Bool}
           hTail
 
 end Switch
-
-mutual
-  /--
-  Fuel-indexed structured block execution.
-
-  `RunState.returns` is ghost control state. Primitive code and terminal EVM
-  opcodes mutate only `RunState.evm`; `call` pushes a return frame, and a
-  procedure boundary catches both ordinary fallthrough and `leave`.
-  -/
-  def Block.run (program : Program) : Nat → Block → RunState →
-      Except EVMException Outcome
-    | 0, _block, _state =>
-        invalid
-    | _fuel + 1, ⟨[]⟩, state =>
-        .ok (Outcome.regular state)
-    | fuel + 1, ⟨stmt :: rest⟩, state => do
-        let outcome ← Stmt.run program fuel stmt state
-        match outcome.mode with
-        | .regular => Block.run program fuel ⟨rest⟩ outcome.state
-        | .brk | .cont | .leave | .halt _ => .ok outcome
-
-  def Stmt.runForLoop (program : Program) (fuel : Nat) (cond : Code)
-      (post body : Block) (state : RunState) :
-      Except EVMException Outcome :=
-    match fuel with
-    | 0 =>
-        invalid
-    | fuel' + 1 =>
-        match Code.runConditionState cond state with
-        | .error err => .error err
-        | .ok (stateAfterCond, condTrue) =>
-            if condTrue then
-              match Block.run program fuel' body stateAfterCond with
-              | .error err => .error err
-              | .ok bodyOutcome =>
-                  match bodyOutcome.mode with
-                  | .brk =>
-                      .ok (Outcome.regular bodyOutcome.state)
-                  | .regular | .cont =>
-                      match Block.run program fuel' post bodyOutcome.state with
-                      | .error err => .error err
-                      | .ok postOutcome =>
-                          match postOutcome.mode with
-                          | .regular =>
-                              Stmt.runForLoop program fuel' cond post body
-                                postOutcome.state
-                          | .brk | .cont =>
-                              invalid
-                          | .leave | .halt _ =>
-                              .ok postOutcome
-                  | .leave | .halt _ =>
-                      .ok bodyOutcome
-            else
-              .ok (Outcome.regular stateAfterCond)
-
-  def Stmt.run (program : Program) : Nat → Stmt → RunState →
-      Except EVMException Outcome
-    | _fuel, Stmt.code code, state => do
-        let state' ← Code.runState code state
-        .ok (Outcome.regular state')
-    | 0, Stmt.if_ _cond _body, _state =>
-        invalid
-    | fuel + 1, Stmt.if_ cond body, state => do
-        let (stateAfterCond, condTrue) ← Code.runConditionState cond state
-        if condTrue then
-          Block.run program fuel body stateAfterCond
-        else
-          .ok (Outcome.regular stateAfterCond)
-    | 0, Stmt.switch _scrutinee _cases _defaultBody, _state =>
-        invalid
-    | fuel + 1, Stmt.switch scrutinee cases defaultBody, state => do
-        let stateAfterScrutinee ← Code.runState scrutinee state
-        match stateAfterScrutinee.evm.stack.pop with
-        | none =>
-            .error .StackUnderflow
-        | some ⟨stack, value⟩ =>
-            let evmAfterPop := { stateAfterScrutinee.evm with stack := stack }
-            let stateAfterPop := stateAfterScrutinee.withEVM evmAfterPop
-            match Switch.select value cases defaultBody with
-            | some body => Block.run program fuel body stateAfterPop
-            | none => .ok (Outcome.regular stateAfterPop)
-    | 0, Stmt.for_ _init _cond _post _body, _state =>
-        invalid
-    | fuel + 1, Stmt.for_ init cond post body, state => do
-        let initOutcome ← Block.run program fuel init state
-        match initOutcome.mode with
-        | .regular =>
-            Stmt.runForLoop program fuel cond post body initOutcome.state
-        | .brk | .cont =>
-            invalid
-        | .leave | .halt _ =>
-            .ok initOutcome
-    | _fuel, Stmt.brk, state =>
-        .ok (Outcome.brk state)
-    | _fuel, Stmt.cont, state =>
-        .ok (Outcome.cont state)
-    | _fuel, Stmt.leave, state =>
-        match state.returns with
-        | [] => invalid
-        | _ :: _ => .ok (Outcome.leave state)
-    | 0, Stmt.call _name, _state =>
-        invalid
-    | fuel + 1, Stmt.call name, state =>
-        match ProcList.lookup? name program.procs with
-        | none =>
-            invalid
-        | some proc =>
-            match StackFrame.splitArgs? proc.argc state.evm.stack with
-            | none =>
-                .error .StackUnderflow
-            | some (args, callerStack) =>
-                let callEVM := { state.evm with stack := args }
-                let callState :=
-                  (state.withEVM callEVM).pushReturn callerStack proc.retc
-                match Block.run program fuel proc.body callState with
-                | .error err => .error err
-                | .ok outcome =>
-                    match outcome.mode with
-                    | .regular | .leave =>
-                        match outcome.state.popReturn? with
-                        | none => invalid
-                        | some (frame, returned) =>
-                            match StackFrame.attachReturns? frame
-                                outcome.state.evm.stack with
-                            | none => invalid
-                            | some stack =>
-                                let evm := { outcome.state.evm with stack := stack }
-                                .ok (Outcome.regular (returned.withEVM evm))
-                    | .brk | .cont =>
-                        invalid
-                    | .halt kind =>
-                        .ok (Outcome.halt kind outcome.state)
-    | _fuel, Stmt.terminal kind, state => do
-        let evm ← Terminal.step kind state.evm
-        .ok (Outcome.halt kind (state.withEVM evm))
-end
-
-namespace Program
-
-def initialState (state : EVMState) : RunState :=
-  RunState.initial state
-
-def runState (fuel : Nat) (program : Program) (state : RunState) :
-    Except EVMException Outcome :=
-  Block.run program fuel program.body state
-
-def run (fuel : Nat) (program : Program) (state : EVMState) :
-    Except EVMException Outcome :=
-  runState fuel program (initialState state)
-
-end Program
 
 mutual
   /--
@@ -799,17 +558,18 @@ mutual
       Block.Eval program fuel block state outcome := by
     cases fuel with
     | zero =>
-        simp [Block.run, invalid] at hRun
+        simp [Block.run, EffectSemantics.Block.run, invalid] at hRun
     | succ fuel =>
         cases block with
         | mk stmts =>
             cases stmts with
             | nil =>
-                simp [Block.run] at hRun
+                simp [Block.run, EffectSemantics.Block.run] at hRun
                 cases hRun
                 exact Block.Eval.nil
             | cons stmt rest =>
-                unfold Block.run at hRun
+                unfold Block.run EffectSemantics.Block.run at hRun
+                rw [EffectSemantics.Stmt.ordinary_run] at hRun
                 cases hStmtRun : Stmt.run program fuel stmt state with
                 | error err =>
                     rw [hStmtRun] at hRun
@@ -853,19 +613,22 @@ mutual
       Stmt.Eval program fuel stmt state outcome := by
     cases stmt with
     | code code =>
+        unfold Stmt.run EffectSemantics.Stmt.run at hRun
+        rw [EffectSemantics.Code.ordinary_state_run] at hRun
         cases hCode : Code.runState code state with
         | error err =>
-            simp [Stmt.run, hCode, Bind.bind, Except.bind] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, hCode, Bind.bind, Except.bind] at hRun
         | ok final =>
-            simp [Stmt.run, hCode, Bind.bind, Except.bind] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, hCode, Bind.bind, Except.bind] at hRun
             cases hRun
             exact Stmt.Eval.code hCode
     | if_ cond body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            unfold Stmt.run EffectSemantics.Stmt.run at hRun
+            rw [EffectSemantics.Code.ordinary_state_runCondition] at hRun
             cases hCond : Code.runConditionState cond state with
             | error err =>
                 rw [hCond] at hRun
@@ -885,9 +648,10 @@ mutual
     | switch scrutinee cases defaultBody =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            unfold Stmt.run EffectSemantics.Stmt.run at hRun
+            rw [EffectSemantics.Code.ordinary_state_run] at hRun
             cases hScrutinee : Code.runState scrutinee state with
             | error err =>
                 simp [hScrutinee, Bind.bind, Except.bind] at hRun
@@ -919,9 +683,10 @@ mutual
     | for_ init cond post body =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            unfold Stmt.run EffectSemantics.Stmt.run at hRun
+            rw [EffectSemantics.Block.ordinary_run] at hRun
             cases hInitRun : Block.run program fuel init state with
             | error err =>
                 simp [hInitRun, Bind.bind, Except.bind] at hRun
@@ -959,15 +724,16 @@ mutual
                           Stmt.Eval.for_init_halt
                             (by simpa [Outcome.halt] using hInitEval)
     | brk =>
-        simp [Stmt.run] at hRun
+        simp [Stmt.run, EffectSemantics.Stmt.run] at hRun
         cases hRun
         exact Stmt.Eval.brk
     | cont =>
-        simp [Stmt.run] at hRun
+        simp [Stmt.run, EffectSemantics.Stmt.run] at hRun
         cases hRun
         exact Stmt.Eval.cont
     | leave =>
-        unfold Stmt.run at hRun
+        unfold Stmt.run EffectSemantics.Stmt.run at hRun
+        simp only [EffectSemantics.Ordinary.runStateModel_returns] at hRun
         cases hReturns : state.returns with
         | nil =>
             simp [hReturns, invalid] at hRun
@@ -978,9 +744,13 @@ mutual
     | call name =>
         cases fuel with
         | zero =>
-            simp [Stmt.run, invalid] at hRun
+            simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            unfold Stmt.run EffectSemantics.Stmt.run at hRun
+            simp only [EffectSemantics.Ordinary.runStateModel_evm,
+              EffectSemantics.Ordinary.runStateModel_withEVM,
+              EffectSemantics.Ordinary.runStateModel_pushReturn,
+              EffectSemantics.Ordinary.runStateModel_popReturn?] at hRun
             cases hLookup : ProcList.lookup? name program.procs with
             | none =>
                 simp [hLookup, Bind.bind, Except.bind, invalid] at hRun
@@ -999,10 +769,25 @@ mutual
                     cases hBodyRun :
                         Block.run program fuel proc.body callState with
                     | error err =>
+                        change
+                          EffectSemantics.Block.run
+                              EffectSemantics.Ordinary.runStateModel
+                              EffectSemantics.Ordinary.handler
+                              program fuel proc.body callState =
+                            .error err at hBodyRun
                         simp [callState, hBodyRun, Bind.bind, Except.bind] at hRun
                     | ok bodyOutcome =>
+                        have hBodyRunPublic :
+                            Block.run program fuel proc.body callState =
+                              .ok bodyOutcome := hBodyRun
+                        change
+                          EffectSemantics.Block.run
+                              EffectSemantics.Ordinary.runStateModel
+                              EffectSemantics.Ordinary.handler
+                              program fuel proc.body callState =
+                            .ok bodyOutcome at hBodyRun
                         simp [callState, hBodyRun, Bind.bind, Except.bind] at hRun
-                        have hBodyEval := Block.eval_of_run hBodyRun
+                        have hBodyEval := Block.eval_of_run hBodyRunPublic
                         cases bodyOutcome with
                         | mk bodyState bodyMode =>
                             cases bodyMode with
@@ -1063,12 +848,15 @@ mutual
                                       simpa [callState, Outcome.halt]
                                         using hBodyEval)
     | terminal kind =>
+        simp only [Stmt.run, EffectSemantics.Stmt.run,
+          EffectSemantics.Ordinary.runStateModel_evm,
+          EffectSemantics.Ordinary.runStateModel_withEVM] at hRun
         cases hStep : Terminal.step kind state.evm with
         | error err =>
-            simp [Stmt.run, hStep] at hRun
+            simp [hStep] at hRun
             cases hRun
         | ok evm =>
-            simp [Stmt.run, hStep] at hRun
+            simp [hStep] at hRun
             cases hRun
             exact Stmt.Eval.terminal hStep
 
@@ -1079,9 +867,10 @@ mutual
       For.Eval program fuel cond post body state outcome := by
     cases fuel with
     | zero =>
-        simp [Stmt.runForLoop, invalid] at hRun
+        simp [Stmt.runForLoop, EffectSemantics.Stmt.runForLoop, invalid] at hRun
     | succ fuel =>
-        unfold Stmt.runForLoop at hRun
+        unfold Stmt.runForLoop EffectSemantics.Stmt.runForLoop at hRun
+        rw [EffectSemantics.Code.ordinary_state_runCondition] at hRun
         cases hCond : Code.runConditionState cond state with
         | error err =>
             simp [hCond, Bind.bind, Except.bind] at hRun
@@ -1097,10 +886,25 @@ mutual
                 cases hBodyRun :
                     Block.run program fuel body stateAfterCond with
                 | error err =>
+                    change
+                      EffectSemantics.Block.run
+                          EffectSemantics.Ordinary.runStateModel
+                          EffectSemantics.Ordinary.handler
+                          program fuel body stateAfterCond =
+                        .error err at hBodyRun
                     simp [hBodyRun, Bind.bind, Except.bind] at hRun
                 | ok bodyOutcome =>
+                    have hBodyRunPublic :
+                        Block.run program fuel body stateAfterCond =
+                          .ok bodyOutcome := hBodyRun
+                    change
+                      EffectSemantics.Block.run
+                          EffectSemantics.Ordinary.runStateModel
+                          EffectSemantics.Ordinary.handler
+                          program fuel body stateAfterCond =
+                        .ok bodyOutcome at hBodyRun
                     simp [hBodyRun, Bind.bind, Except.bind] at hRun
-                    have hBodyEval := Block.eval_of_run hBodyRun
+                    have hBodyEval := Block.eval_of_run hBodyRunPublic
                     cases bodyOutcome with
                     | mk bodyState bodyMode =>
                         cases bodyMode with
@@ -1109,10 +913,25 @@ mutual
                             cases hPostRun :
                                 Block.run program fuel post bodyState with
                             | error err =>
+                                change
+                                  EffectSemantics.Block.run
+                                      EffectSemantics.Ordinary.runStateModel
+                                      EffectSemantics.Ordinary.handler
+                                      program fuel post bodyState =
+                                    .error err at hPostRun
                                 simp [hPostRun, Bind.bind, Except.bind] at hRun
                             | ok postOutcome =>
+                                have hPostRunPublic :
+                                    Block.run program fuel post bodyState =
+                                      .ok postOutcome := hPostRun
+                                change
+                                  EffectSemantics.Block.run
+                                      EffectSemantics.Ordinary.runStateModel
+                                      EffectSemantics.Ordinary.handler
+                                      program fuel post bodyState =
+                                    .ok postOutcome at hPostRun
                                 simp [hPostRun, Bind.bind, Except.bind] at hRun
-                                have hPostEval := Block.eval_of_run hPostRun
+                                have hPostEval := Block.eval_of_run hPostRunPublic
                                 cases postOutcome with
                                 | mk postState postMode =>
                                     cases postMode with
@@ -1163,10 +982,25 @@ mutual
                             cases hPostRun :
                                 Block.run program fuel post bodyState with
                             | error err =>
+                                change
+                                  EffectSemantics.Block.run
+                                      EffectSemantics.Ordinary.runStateModel
+                                      EffectSemantics.Ordinary.handler
+                                      program fuel post bodyState =
+                                    .error err at hPostRun
                                 simp [hPostRun, Bind.bind, Except.bind] at hRun
                             | ok postOutcome =>
+                                have hPostRunPublic :
+                                    Block.run program fuel post bodyState =
+                                      .ok postOutcome := hPostRun
+                                change
+                                  EffectSemantics.Block.run
+                                      EffectSemantics.Ordinary.runStateModel
+                                      EffectSemantics.Ordinary.handler
+                                      program fuel post bodyState =
+                                    .ok postOutcome at hPostRun
                                 simp [hPostRun, Bind.bind, Except.bind] at hRun
-                                have hPostEval := Block.eval_of_run hPostRun
+                                have hPostEval := Block.eval_of_run hPostRunPublic
                                 cases postOutcome with
                                 | mk postState postMode =>
                                     cases postMode with

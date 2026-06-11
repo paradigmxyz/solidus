@@ -4,6 +4,10 @@ namespace EvmCompiler
 namespace Structured
 namespace TypedCfgPreservation
 
+open Assembly
+
+attribute [local simp] Assembly.PrimStep.idRun_eq
+
 namespace Stmt
 
 /--
@@ -998,7 +1002,7 @@ theorem eventually_test
       SameRuntimeData targetFinal target := by
     cases target
     simp [targetFinal, afterEq, afterPush, afterDup,
-      SameRuntimeData, eraseCfgControl,
+      SameRuntimeData, eraseRuntimeControl,
       EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] at hTargetStack ⊢
     exact hTargetStack.symm

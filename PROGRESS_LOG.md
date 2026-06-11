@@ -28496,3 +28496,18 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   no-hole checks, and `git diff --check` pass. The new whole-run and
   checked-artifact backward-adequacy theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+2026-06-11 14:26:00 PDT | compaction-resume | Resumed after completing/checkpointing TypedCfg-to-Assembly terminal observer adequacy; next is canonicalizing the Structured state relation and designing shared Structured effect semantics for the adjacent Structured-to-TypedCfg lift.
+
+- 2026-06-11 14:43:09 PDT `consolidation`: Structured ordinary execution and
+  gas/msize replay now specialize one parameterized control interpreter in
+  `Structured.EffectSemantics`; `Structured.ObserverSemantics` adds only the
+  transcript state model and post-instruction handler. Structured preservation
+  now uses Assembly's canonical runtime-control erasure relation instead of a
+  duplicate local copy.
+
+- 2026-06-11 14:43:09 PDT `audit`: The 1,174-job verification root,
+  architecture dependency checks, scoped no-hole scan, `git diff --check`, and
+  focused axiom checks pass. Architecture guards require Structured observer
+  execution to use the shared interpreter and reserve observer preservation
+  ownership for the adjacent TypedCfg boundary. Audited theorems depend only
+  on `propext`, `Classical.choice`, and `Quot.sound`.

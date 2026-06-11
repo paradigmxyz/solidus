@@ -6,6 +6,10 @@ namespace EvmCompiler
 namespace Structured
 namespace TypedCfgPreservation
 
+open Assembly
+
+attribute [local simp] Assembly.PrimStep.idRun_eq
+
 /--
 Realize Structured's ghost return frames as the concrete return-token and
 caller-stack suffix carried by TypedCfg procedure execution.
@@ -39,100 +43,10 @@ theorem realizeStack_append_prefix
 Source-to-CFG state relation.
 
 The stack is related through concrete realization of ghost return frames.
-Control position and lowering-only resource counters are compared through the
-shared control-erased observation boundary, while available gas remains equal
-so the Structured `gas` primitive has the same CFG-level meaning.
+Control position and lowering-only resource counters are compared through
+Assembly's shared control-erased observation boundary, while available gas
+remains equal so the Structured `gas` primitive has the same CFG-level meaning.
 -/
-def eraseCfgControl (state : EVMState) : EVMState :=
-  { state with
-    pc := EvmYul.UInt256.ofNat 0
-    execLength := 0 }
-
-@[simp] theorem eraseCfgControl_mk
-    (shared : EvmYul.SharedState .EVM) (pc : EvmYul.UInt256)
-    (stack : EvmYul.Stack Word) (execLength : Nat) :
-    eraseCfgControl ⟨shared, pc, stack, execLength⟩ =
-      ⟨shared, EvmYul.UInt256.ofNat 0, stack, 0⟩ :=
-  rfl
-
-@[simp] theorem exceptMap_eraseCfgControl_ok (state : EVMState) :
-    (Except.ok state :
-      Except EvmYul.EVM.ExecutionException EVMState).map eraseCfgControl =
-        .ok (eraseCfgControl state) :=
-  rfl
-
-@[simp] theorem exceptMap_eraseCfgControl_error
-    (err : EvmYul.EVM.ExecutionException) :
-    (Except.error err :
-      Except EvmYul.EVM.ExecutionException EVMState).map eraseCfgControl =
-        .error err :=
-  rfl
-
-@[simp] theorem idRun_eq {α : Type} (value : α) :
-    Id.run value = value :=
-  rfl
-
-def SameRuntimeData (target source : EVMState) : Prop :=
-  eraseCfgControl target = eraseCfgControl source
-
-namespace SameRuntimeData
-
-theorem refl (state : EVMState) :
-    SameRuntimeData state state :=
-  rfl
-
-theorem trans {first second third : EVMState}
-    (hFirst : SameRuntimeData first second)
-    (hSecond : SameRuntimeData second third) :
-    SameRuntimeData first third :=
-  Eq.trans hFirst hSecond
-
-theorem sameData {target source : EVMState}
-    (hRel : SameRuntimeData target source) :
-    Assembly.SameData target source := by
-  cases target
-  cases source
-  simp [SameRuntimeData, eraseCfgControl, Assembly.SameData,
-    Assembly.eraseControl, Assembly.eraseGas] at hRel ⊢
-  constructor
-  · simpa [hRel.1]
-  · exact hRel.2
-
-theorem stack_eq {target source : EVMState}
-    (hRel : SameRuntimeData target source) :
-    target.stack = source.stack := by
-  cases target
-  cases source
-  simp [SameRuntimeData, eraseCfgControl] at hRel
-  exact hRel.2
-
-theorem replaceStackAndIncrPC
-    {target source : EVMState}
-    {targetStack sourceStack : EvmYul.Stack Word} {pcΔ : Nat}
-    (hRel : SameRuntimeData target source)
-    (hStack : targetStack = sourceStack) :
-    SameRuntimeData
-      (target.replaceStackAndIncrPC targetStack (pcΔ := pcΔ))
-      (source.replaceStackAndIncrPC sourceStack (pcΔ := pcΔ)) := by
-  cases target
-  cases source
-  simp [SameRuntimeData, eraseCfgControl] at hRel ⊢
-  exact ⟨hRel.1, hStack⟩
-
-theorem replaceStack
-    {target source : EVMState}
-    {targetStack sourceStack : EvmYul.Stack Word}
-    (hRel : SameRuntimeData target source)
-    (hStack : targetStack = sourceStack) :
-    SameRuntimeData
-      { target with stack := targetStack }
-      { source with stack := sourceStack } := by
-  cases target
-  cases source
-  simp [SameRuntimeData, eraseCfgControl] at hRel ⊢
-  exact ⟨hRel.1, hStack⟩
-
-end SameRuntimeData
 
 def StateRel (source : RunState) (tokens : List Word)
     (target : EVMState) : Prop :=
@@ -251,7 +165,7 @@ theorem pop
                 (targetStack := realizedTail)
                 (sourceStack := realizedTail) (pcΔ := 1) rfl
             simpa [targetFinal, RunState.withEVM, SameRuntimeData,
-              eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
+              eraseRuntimeControl, EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC] using hAfter
 
 theorem popCondition
@@ -289,7 +203,7 @@ theorem popCondition
           let targetFinal : EVMState :=
             { target with stack := realizedTail }
           refine ⟨targetFinal, ?_, ?_⟩
-          · simp [Structured.Code.popCondition, targetFinal,
+          · simp [Structured.Code.popCondition, EffectSemantics.Code.popCondition, targetFinal,
               hTargetStack, EvmYul.Stack.pop]
           · refine ⟨realizedTail, hTailRealize, ?_⟩
             have hAfter :=
@@ -323,180 +237,6 @@ theorem runAt_toCfg
 
 end BasicInstr
 
-namespace PrimStep
-
-/--
-Continuing primitive semantics depend on runtime data and stack, but not on the
-CFG-owned program counter or execution-length fields.
--/
-theorem run_map_eraseCfgControl
-    {step : Assembly.PrimStep} {target source : EVMState}
-    (hRel : SameRuntimeData target source) :
-    (step.run target).map eraseCfgControl =
-      (step.run source).map eraseCfgControl := by
-  cases target with
-  | mk targetShared targetPc targetStack targetExec =>
-      cases source with
-      | mk sourceShared sourcePc sourceStack sourceExec =>
-          simp [SameRuntimeData, eraseCfgControl] at hRel
-          rcases hRel with ⟨rfl, rfl⟩
-          cases step with
-          | bin f =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.execBinOp, hPop,
-                  eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | un f =>
-              cases hPop : targetStack.pop <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.execUnOp, hPop,
-                  eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | tri f =>
-              cases hPop : targetStack.pop3 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.execTriOp, hPop,
-                  eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | executionEnv f =>
-              simp [Except.map, Assembly.PrimStep.run,
-                EvmYul.EVM.executionEnvOp,
-                eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                EvmYul.EVM.State.incrPC]
-          | unaryExecutionEnv f =>
-              cases hPop : targetStack.pop <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.unaryExecutionEnvOp, hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | machineState f =>
-              simp [Except.map, Assembly.PrimStep.run,
-                EvmYul.EVM.machineStateOp,
-                eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                EvmYul.EVM.State.incrPC]
-          | binaryMachineState f =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.binaryMachineStateOp, hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | binaryMachineStateWithResult f =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.binaryMachineStateOp', hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | ternaryMachineState f =>
-              cases hPop : targetStack.pop3 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.ternaryMachineStateOp, hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | state f =>
-              simp [Except.map, Assembly.PrimStep.run, EvmYul.EVM.stateOp,
-                eraseCfgControl, EvmYul.EVM.State.replaceStackAndIncrPC,
-                EvmYul.EVM.State.incrPC]
-          | unaryState f =>
-              cases hPop : targetStack.pop <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.unaryStateOp,
-                  hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | binaryState f =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.binaryStateOp,
-                  hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | ternaryCopy f =>
-              cases hPop : targetStack.pop3 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.ternaryCopyOp,
-                  hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | quaternaryCopy f =>
-              cases hPop : targetStack.pop4 <;>
-                simp [Except.map, Assembly.PrimStep.run,
-                  EvmYul.EVM.quaternaryCopyOp,
-                  hPop, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | pop =>
-              cases hPop : targetStack.pop <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | mload =>
-              cases hPop : targetStack.pop <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | returndatacopy =>
-              cases hPop : targetStack.pop3 with
-              | none =>
-                  simp [Except.map, Assembly.PrimStep.run, hPop,
-                    eraseCfgControl]
-              | some values =>
-                  by_cases hBounds :
-                      targetShared.returnData.size <
-                        values.2.2.1.toNat + values.2.2.2.toNat <;>
-                    simp [Except.map, Assembly.PrimStep.run, hPop,
-                      hBounds, eraseCfgControl,
-                      EvmYul.EVM.State.replaceStackAndIncrPC,
-                      EvmYul.EVM.State.incrPC]
-          | dup n =>
-              by_cases hLength : n ≤ targetStack.length <;>
-                simp [Except.map, Assembly.PrimStep.run, EvmYul.dup,
-                  hLength, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | swap n =>
-              by_cases hLength : n + 1 ≤ targetStack.length <;>
-                simp [Except.map, Assembly.PrimStep.run, EvmYul.swap,
-                  hLength, eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | log0 =>
-              cases hPop : targetStack.pop2 <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | log1 =>
-              cases hPop : targetStack.pop3 <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | log2 =>
-              cases hPop : targetStack.pop4 <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | log3 =>
-              cases hPop : targetStack.pop5 <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | log4 =>
-              cases hPop : targetStack.pop6 <;>
-                simp [Except.map, Assembly.PrimStep.run, hPop,
-                  eraseCfgControl,
-                  EvmYul.EVM.State.replaceStackAndIncrPC,
-                  EvmYul.EVM.State.incrPC]
-          | invalid =>
-              rfl
-
-end PrimStep
-
 namespace BasicOp
 
 /--
@@ -504,18 +244,18 @@ Structured primitive execution is insensitive to CFG-owned control counters.
 The one admitted observer outside `continuingStep?`, `gas`, is covered because
 `SameRuntimeData` retains the complete shared machine state.
 -/
-theorem step_map_eraseCfgControl
+theorem step_map_eraseRuntimeControl
     {op : Structured.BasicOp} {target source : EVMState}
     (hRel : SameRuntimeData target source) :
-    (op.step target).map eraseCfgControl =
-      (op.step source).map eraseCfgControl := by
+    (op.step target).map eraseRuntimeControl =
+      (op.step source).map eraseRuntimeControl := by
   unfold Structured.BasicOp.step
   simp only [Assembly.Target.stepInstr]
   cases hStep : op.toPrimOp.continuingStep? with
   | some step =>
       rw [Assembly.PrimOp.step_eq_continuingStep_run hStep target,
         Assembly.PrimOp.step_eq_continuingStep_run hStep source]
-      exact PrimStep.run_map_eraseCfgControl hRel
+      exact Assembly.PrimStep.run_map_eraseRuntimeControl hRel
   | none =>
       have hCases :
           op = .gas ∨ op = .create ∨ op = .call ∨ op = .callcode ∨
@@ -527,11 +267,11 @@ theorem step_map_eraseCfgControl
         rfl | rfl | rfl | rfl | rfl | rfl | rfl
       · change
           (EvmYul.EVM.machineStateOp EvmYul.MachineState.gas target).map
-              eraseCfgControl =
+              eraseRuntimeControl =
             (EvmYul.EVM.machineStateOp EvmYul.MachineState.gas source).map
-              eraseCfgControl
+              eraseRuntimeControl
         exact
-          PrimStep.run_map_eraseCfgControl
+          Assembly.PrimStep.run_map_eraseRuntimeControl
             (step := .machineState EvmYul.MachineState.gas) hRel
       all_goals
         rfl
@@ -540,25 +280,25 @@ end BasicOp
 
 namespace BasicInstr
 
-theorem step_map_eraseCfgControl
+theorem step_map_eraseRuntimeControl
     {instr : Structured.BasicInstr} {target source : EVMState}
     (hRel : SameRuntimeData target source) :
-    (instr.step target).map eraseCfgControl =
-      (instr.step source).map eraseCfgControl := by
+    (instr.step target).map eraseRuntimeControl =
+      (instr.step source).map eraseRuntimeControl := by
   cases instr with
   | push value =>
       cases target with
       | mk targetShared targetPc targetStack targetExec =>
           cases source with
           | mk sourceShared sourcePc sourceStack sourceExec =>
-              simp [SameRuntimeData, eraseCfgControl] at hRel
+              simp [SameRuntimeData, eraseRuntimeControl] at hRel
               rcases hRel with ⟨rfl, rfl⟩
               simp [Structured.BasicInstr.step, Assembly.Target.stepInstr,
-                Except.map, eraseCfgControl,
+                Except.map, eraseRuntimeControl,
                 EvmYul.EVM.State.replaceStackAndIncrPC,
                 EvmYul.EVM.State.incrPC]
   | op op =>
-      exact BasicOp.step_map_eraseCfgControl hRel
+      exact BasicOp.step_map_eraseRuntimeControl hRel
   | bindLocals offset names =>
       simpa [Structured.BasicInstr.step, Except.map] using
         congrArg
@@ -580,23 +320,23 @@ namespace Code
 Straight-line Structured execution is congruent under the control-erased
 runtime relation.
 -/
-theorem run_map_eraseCfgControl
+theorem run_map_eraseRuntimeControl
     {code : Structured.Code} {target source : EVMState}
     (hRel : SameRuntimeData target source) :
-    (Structured.Code.run code target).map eraseCfgControl =
-      (Structured.Code.run code source).map eraseCfgControl := by
+    (Structured.Code.run code target).map eraseRuntimeControl =
+      (Structured.Code.run code source).map eraseRuntimeControl := by
   induction code generalizing target source with
   | nil =>
-      simpa [Structured.Code.run, Except.map] using hRel
+      simpa [Structured.Code.run, EffectSemantics.Code.run, Except.map] using hRel
   | cons instr rest ih =>
       have hHead :=
-        BasicInstr.step_map_eraseCfgControl
+        BasicInstr.step_map_eraseRuntimeControl
           (instr := instr) hRel
       cases hTarget : instr.step target with
       | error targetErr =>
           cases hSource : instr.step source with
           | error sourceErr =>
-              simpa [Structured.Code.run, hTarget, hSource,
+              simpa [Structured.Code.run, EffectSemantics.Code.run, hTarget, hSource,
                 Except.map, Bind.bind, Except.bind] using hHead
           | ok sourceFinal =>
               simp [hTarget, hSource, Except.map] at hHead
@@ -606,7 +346,7 @@ theorem run_map_eraseCfgControl
               simp [hTarget, hSource, Except.map] at hHead
           | ok sourceFinal =>
               simp [hTarget, hSource, Except.map] at hHead
-              simpa [Structured.Code.run, hTarget, hSource,
+              simpa [Structured.Code.run, EffectSemantics.Code.run, hTarget, hSource,
                 Bind.bind, Except.bind] using
                   ih (target := targetFinal) (source := sourceFinal) hHead
 
@@ -616,7 +356,7 @@ theorem run_sameRuntimeData_of_ok
     (hTarget : Structured.Code.run code target = .ok targetFinal)
     (hSource : Structured.Code.run code source = .ok sourceFinal) :
     SameRuntimeData targetFinal sourceFinal := by
-  have hRun := run_map_eraseCfgControl (code := code) hRel
+  have hRun := run_map_eraseRuntimeControl (code := code) hRel
   simpa [hTarget, hSource, Except.map] using hRun
 
 end Code
@@ -664,7 +404,7 @@ theorem runCode
                     stack := sourceFinal.stack ++ hidden } :=
             hFrameSafe source.evm sourceFinal hidden hSourceRun
           have hCongruence :=
-            Code.run_map_eraseCfgControl (code := code) hSame
+            Code.run_map_eraseRuntimeControl (code := code) hSame
           rw [hFramed] at hCongruence
           cases hTargetRun : Structured.Code.run code target with
           | error targetErr =>
@@ -697,18 +437,18 @@ theorem runCondition
           .ok (source.withEVM targetFinal, cond) ∧
         StateRel final tokens targetFinal := by
   unfold Structured.Code.runConditionState at hRun
-  unfold Structured.Code.runCondition at hRun
+  unfold Structured.Code.runCondition EffectSemantics.Code.runCondition at hRun
   cases hSourceCode : Structured.Code.run code source.evm with
   | error err =>
       simp [hSourceCode, Bind.bind, Except.bind] at hRun
   | ok afterCode =>
       cases hSourcePop : afterCode.stack.pop with
       | none =>
-          simp [hSourceCode, Structured.Code.popCondition, hSourcePop,
+          simp [hSourceCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hSourcePop,
             Bind.bind, Except.bind] at hRun
       | some popped =>
           rcases popped with ⟨stack, value⟩
-          simp [hSourceCode, Structured.Code.popCondition, hSourcePop,
+          simp [hSourceCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hSourcePop,
             Bind.bind, Except.bind] at hRun
           rcases hRun with ⟨hFinal, hCond⟩
           subst final
@@ -725,9 +465,29 @@ theorem runCondition
                 (source := source.withEVM afterCode)
                 hAfterCodeRel hSourcePop with
             ⟨targetFinal, hTargetPop, hFinalRel⟩
+          have hTargetCondition :
+              Structured.Code.runCondition code target =
+                .ok
+                  (targetFinal,
+                    value != EvmYul.UInt256.ofNat 0) := by
+            unfold Structured.Code.runCondition
+            unfold EffectSemantics.Code.runCondition
+            change
+              EffectSemantics.Code.run
+                  EffectSemantics.Ordinary.evmStateModel
+                  EffectSemantics.Ordinary.handler code target =
+                .ok targetAfterCode at hTargetCode
+            rw [hTargetCode]
+            change
+              EffectSemantics.Code.popCondition
+                  EffectSemantics.Ordinary.evmStateModel targetAfterCode =
+                .ok
+                  (targetFinal,
+                    value != EvmYul.UInt256.ofNat 0) at hTargetPop
+            exact hTargetPop
           refine ⟨targetFinal, ?_, ?_⟩
           · simp [Structured.Code.runConditionState,
-              Structured.Code.runCondition, hTargetCode, hTargetPop,
+              hTargetCondition,
               Bind.bind, Except.bind, RunState.withEVM]
           · simpa [RunState.withEVM] using hFinalRel
 
@@ -839,7 +599,7 @@ theorem runBody_sinkTopUnder
               EvmYul.EVM.State.replaceStackAndIncrPC] using hRunTail
           · simpa [List.append_assoc] using hStack
           · apply SameRuntimeData.trans hSame
-            simp [before, afterSwap, SameRuntimeData, eraseCfgControl,
+            simp [before, afterSwap, SameRuntimeData, eraseRuntimeControl,
               EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC, List.append_assoc]
 
@@ -903,7 +663,7 @@ theorem runBody_callEntry
         simpa [afterPush,
           EvmYul.EVM.State.replaceStackAndIncrPC] using hRunTail
       · apply SameRuntimeData.trans hSame
-        simp [before, afterPush, SameRuntimeData, eraseCfgControl,
+        simp [before, afterPush, SameRuntimeData, eraseRuntimeControl,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC]
 
@@ -1152,10 +912,16 @@ theorem runBody_toCfg
           cases hStep : instr.step state with
           | error err =>
               simp only [hStep, Except.map, Bind.bind, Except.bind,
-                Structured.Code.run]
+                Structured.Code.run, EffectSemantics.Code.run,
+                EffectSemantics.Ordinary.evmStateModel_evm,
+                EffectSemantics.Ordinary.evmStateModel_withEVM,
+                EffectSemantics.Ordinary.handler_afterInstr]
           | ok state' =>
               simp only [hStep, Except.map, Bind.bind, Except.bind,
-                Structured.Code.run]
+                Structured.Code.run, EffectSemantics.Code.run,
+                EffectSemantics.Ordinary.evmStateModel_evm,
+                EffectSemantics.Ordinary.evmStateModel_withEVM,
+                EffectSemantics.Ordinary.handler_afterInstr]
               exact ih hTailType
 
 theorem runState_toCfg
@@ -1196,18 +962,18 @@ theorem run_jumpi_toCfg
       .ok
         (.jump (if cond then target else fallthrough) final.evm) := by
   unfold Structured.Code.runConditionState at hCond
-  unfold Structured.Code.runCondition at hCond
+  unfold Structured.Code.runCondition EffectSemantics.Code.runCondition at hCond
   cases hCode : Structured.Code.run code state.evm with
   | error err =>
       simp [hCode, Bind.bind, Except.bind] at hCond
   | ok afterCode =>
       cases hPop : afterCode.stack.pop with
       | none =>
-          simp [hCode, Structured.Code.popCondition, hPop,
+          simp [hCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hPop,
             Bind.bind, Except.bind] at hCond
       | some popped =>
           rcases popped with ⟨stack, value⟩
-          simp [hCode, Structured.Code.popCondition, hPop,
+          simp [hCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hPop,
             Bind.bind, Except.bind] at hCond
           rcases hCond with ⟨hFinal, hBool⟩
           subst final

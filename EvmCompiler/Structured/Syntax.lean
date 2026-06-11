@@ -69,31 +69,53 @@ inductive Mode where
   | halt (kind : Assembly.HaltKind)
   deriving DecidableEq
 
-structure Outcome where
-  state : RunState
+structure OutcomeT (σ : Type) where
+  state : σ
   mode : Mode
 
-namespace Outcome
+abbrev Outcome := OutcomeT RunState
 
-def regular (state : RunState) : Outcome where
+namespace OutcomeT
+
+def regular {σ : Type} (state : σ) : OutcomeT σ where
   state := state
   mode := .regular
 
-def brk (state : RunState) : Outcome where
+def brk {σ : Type} (state : σ) : OutcomeT σ where
   state := state
   mode := .brk
 
-def cont (state : RunState) : Outcome where
+def cont {σ : Type} (state : σ) : OutcomeT σ where
   state := state
   mode := .cont
 
-def leave (state : RunState) : Outcome where
+def leave {σ : Type} (state : σ) : OutcomeT σ where
   state := state
   mode := .leave
 
-def halt (kind : Assembly.HaltKind) (state : RunState) : Outcome where
+def halt {σ : Type} (kind : Assembly.HaltKind) (state : σ) : OutcomeT σ where
   state := state
   mode := .halt kind
+
+end OutcomeT
+
+namespace Outcome
+
+abbrev state (outcome : Outcome) : RunState :=
+  OutcomeT.state outcome
+
+abbrev mode (outcome : Outcome) : Mode :=
+  OutcomeT.mode outcome
+
+abbrev regular := @OutcomeT.regular RunState
+
+abbrev brk := @OutcomeT.brk RunState
+
+abbrev cont := @OutcomeT.cont RunState
+
+abbrev leave := @OutcomeT.leave RunState
+
+abbrev halt := @OutcomeT.halt RunState
 
 @[simp] theorem regular_state (state : RunState) :
     (regular state).state = state := rfl

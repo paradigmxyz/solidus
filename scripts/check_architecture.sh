@@ -164,6 +164,26 @@ report_matches \
   '^import EvmCompiler\.(Structured|Expressions|Locals|Functions|Objects|Yul|Public)' \
   EvmCompiler/TypedCfg/ObserverPreservation.lean
 
+if ! rg -q '^import EvmCompiler\.Structured\.EffectSemantics$' \
+    EvmCompiler/Structured/ObserverSemantics.lean ||
+    ! rg -q 'EffectSemantics\.Program\.runState' \
+      EvmCompiler/Structured/ObserverSemantics.lean; then
+  printf '%s\n\n' \
+    'Structured observer execution must specialize the shared effect interpreter.' \
+    >&2
+  failed=1
+fi
+
+report_matches \
+  'Structured observer semantics must not restore a recursive observer-only control interpreter:' \
+  '^[[:space:]]*\|[[:space:]]*(fuel[[:space:]]*\+[[:space:]]*1|instr[[:space:]]*::[[:space:]]*rest)' \
+  EvmCompiler/Structured/ObserverSemantics.lean
+
+report_matches \
+  'Structured observer preservation must remain owned by the adjacent TypedCfg boundary:' \
+  '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
+  EvmCompiler/Structured/ObserverPreservation.lean
+
 if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
     EvmCompiler/Functions.lean ||
     ! rg -q '^namespace Canonical$' \

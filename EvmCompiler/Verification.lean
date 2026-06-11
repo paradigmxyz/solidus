@@ -9,6 +9,8 @@ import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.TypedCfgPreservation
+import EvmCompiler.Structured.EffectSemantics
+import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -40,6 +42,9 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_terminal_backward
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.compileCertified?_entry_terminal_backward
+#check EvmCompiler.Structured.EffectSemantics.Program.runState
+#check EvmCompiler.Structured.ObserverSemantics.Program.runState
+#check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists
