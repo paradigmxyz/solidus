@@ -28010,3 +28010,17 @@ Resumed from commit `f92b851f6` with compiler-facing loop preservation complete.
   dependency/retired-route guard, proof-hole scan, and `git diff --check`.
   Fresh metrics are 79 modules, 91,889 Lean lines, 65 compiler variants, and
   one outcome relation.
+## 2026-06-11 - Compaction resume: uniform statement certificates
+
+Resumed from commit `5c1399105` with outcome-indexed statement-list composition verified. The immediate work is to lift mechanical statement constructors into the shared certificate, then isolate and solve nonregular switch and concrete call/return dispatch.
+## 2026-06-11 - Compaction resume: mutual Structured preservation
+
+Resumed with uniform statement, loop, and nonregular switch certificates implemented. The active uncommitted proof threads source-fuel bounds through block and loop composition so the mutual statement/block theorem can close before concrete call dispatch.
+
+## 2026-06-11 06:59 PDT - Mutual non-call Structured preservation
+
+- Added source-control-to-compiler-continuation support and uniform outcome certificates for code, both conditional paths, break, continue, leave, terminal execution, and arbitrary selected switch-body outcomes.
+- Generalized switch dispatch from regular-only selected bodies to every source outcome, and threaded source-fuel bounds through statement-list and loop callbacks.
+- Closed the mutual statement/block preservation theorem for every non-call Structured constructor over the single shared outcome relation. Calls remain isolated behind the explicitly temporary internal `CallCertificate` boundary.
+- Verification passed: focused `EvmCompiler.Structured.TypedCfgPreservation`, all 1,156 `EvmCompiler.Verification` jobs, architecture dependency and retired-route checks, touched-file proof-hole scan, architecture metrics, and `git diff --check`.
+- Fresh metrics: 79 modules, 93,461 Lean lines, 65 compiler variants, and one outcome relation. The next proof boundary is concrete procedure-call and return-token dispatch, followed by removal of `CallCertificate` and public artifact composition.

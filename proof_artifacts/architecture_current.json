@@ -1,18 +1,18 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-06-11T05:32:59Z",
+  "generated_at": "2026-06-11T13:59:32Z",
   "git": {
-    "commit": "d77ddd223d7bce15555a62ff915581068d4a5898",
+    "commit": "5c13991052ed54def4df8b40635729bc64ae4c72",
     "branch": "codex/architecture-migration"
   },
   "totals": {
-    "module_count": 78,
-    "source_lines": 87614,
-    "direct_imports": 196,
-    "declarations": 3758,
+    "module_count": 79,
+    "source_lines": 93461,
+    "direct_imports": 200,
+    "declarations": 3910,
     "compiler_variant_declarations": 65,
     "outcome_relation_declarations": 1,
-    "verification_root_imports": 9,
+    "verification_root_imports": 10,
     "verification_root_declarations": 0
   },
   "modules": [
@@ -402,6 +402,13 @@
       "declarations": 50
     },
     {
+      "path": "EvmCompiler/Structured/TypedCfgPreservation.lean",
+      "module": "EvmCompiler.Structured.TypedCfgPreservation",
+      "source_lines": 5693,
+      "direct_imports": 3,
+      "declarations": 143
+    },
+    {
       "path": "EvmCompiler/TypedCfg.lean",
       "module": "EvmCompiler.TypedCfg",
       "source_lines": 5,
@@ -432,9 +439,9 @@
     {
       "path": "EvmCompiler/TypedCfg/Semantics.lean",
       "module": "EvmCompiler.TypedCfg.Semantics",
-      "source_lines": 158,
+      "source_lines": 280,
       "direct_imports": 2,
-      "declarations": 11
+      "declarations": 19
     },
     {
       "path": "EvmCompiler/TypedCfg/Syntax.lean",
@@ -446,15 +453,15 @@
     {
       "path": "EvmCompiler/TypedCfg/Typing.lean",
       "module": "EvmCompiler.TypedCfg.Typing",
-      "source_lines": 204,
+      "source_lines": 235,
       "direct_imports": 2,
-      "declarations": 23
+      "declarations": 24
     },
     {
       "path": "EvmCompiler/Verification.lean",
       "module": "EvmCompiler.Verification",
-      "source_lines": 17,
-      "direct_imports": 9,
+      "source_lines": 18,
+      "direct_imports": 10,
       "declarations": 0
     },
     {
@@ -563,14 +570,5 @@
       "declarations": 9
     }
   ],
-  "build_measurements": [
-    {
-      "module": "EvmCompiler.Verification",
-      "started_at": "2026-06-11T05:32:18Z",
-      "cache_state": "warm",
-      "exit_status": 0,
-      "real_seconds": 40.91,
-      "peak_rss_bytes": 2242527232
-    }
-  ]
+  "build_measurements": []
 }

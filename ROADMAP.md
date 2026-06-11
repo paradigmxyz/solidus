@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 06:41 PDT.
+Last updated: 2026-06-11 06:59 PDT.
 
 ## Objective
 
@@ -69,10 +69,11 @@ Implemented in this migration:
 - an outcome-indexed fragment certificate that retains compiler fallthrough
   metadata exactly for regular source outcomes, with checked empty and
   nonempty statement-list composition across every control mode;
-- checked Structured-to-TypedCfg semantic preservation for primitive
-  instructions, straight-line code, both `if` branches, compiled code
-  statements, empty statement lists, break/continue/leave/terminal leaves, and
-  the empty/no-default switch path;
+- checked mutual Structured-to-TypedCfg statement/block preservation through
+  every non-call source constructor and every regular or abrupt outcome,
+  including arbitrary selected switch-body outcomes and complete loop
+  recursion; the only temporary internal premise is concrete procedure-call
+  preservation;
 - a source-to-CFG state relation that realizes ghost procedure frames as
   concrete return-token/caller-stack suffixes while preserving gas and erasing
   only lowering-owned control counters, with reusable primitive, code,
@@ -94,8 +95,8 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Finish the mutual statement/block lift, extend the checked source-to-CFG
-   semantic package through procedure calls/return dispatch, then compose the
+2. Discharge the temporary call premise with concrete procedure-call and
+   return-token dispatch preservation, then compose the completed source-to-CFG
    result into the public artifact theorem.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
@@ -103,7 +104,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 91,889 Lean lines across 79 modules, down by about 929K lines from the
+tree is 93,461 Lean lines across 79 modules, down by about 928K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -279,8 +280,8 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [ ] Prove generic append, scoped-block, branch, switch, and loop composition.
   The Structured-to-TypedCfg path now instantiates `OutcomeRel` with concrete
   continuation and halt contracts, proves all `For.Eval` loop constructors,
-  and composes outcome-indexed statement lists; leaf statements, the mutual
-  statement/block lift, and calls remain.
+  composes outcome-indexed statement lists, and closes the mutual statement/
+  block proof for every non-call source constructor. Concrete calls remain.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
@@ -620,6 +621,11 @@ Latest verified checkpoint:
   and fallthrough metadata exactly when the source result is regular. Empty
   and nonempty statement lists compose through this certificate, including
   abrupt head outcomes and the compiler's static no-tail branch;
+- the mutual Structured statement/block theorem now covers code, both
+  conditional paths, arbitrary switch outcomes, all loop outcomes,
+  break/continue/leave, and terminal execution through one outcome-indexed
+  certificate. Procedure calls are isolated behind one explicitly temporary
+  internal premise rather than another recursive proof family;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -629,7 +635,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 91,535 Lean lines;
+- retained architecture metrics: 79 modules and 93,461 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -644,9 +650,9 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Finish the mutual statement/block source-to-CFG lift, concrete call/return
-   dispatch, and the public source-to-artifact theorem; then discharge the
-   remaining certificate safety projections.
+2. Prove concrete call/return dispatch, remove the temporary internal call
+   premise, and compose the public source-to-artifact theorem; then discharge
+   the remaining certificate safety projections.
 3. Finish outcome-indexed projections/composition, then rerun the final
    verification, frontend, benchmark, and architecture gates.
 
