@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 14:43 PDT.
+Last updated: 2026-06-11 15:07 PDT.
 
 ## Objective
 
@@ -101,8 +101,11 @@ Adjacent boundary status:
   complete allocation-sensitive observer theorem remains.
 - [ ] Structured -> TypedCfg: ordinary outcome-indexed path preservation is
   complete; Structured ordinary and observer execution now specialize one
-  shared parameterized control interpreter, while observer-aware adjacent
-  lifting remains.
+  shared parameterized control interpreter. Observer-aware instruction and
+  code lowering, hidden-frame replay congruence, condition selection,
+  effectful CFG path composition, straight-line statement preservation, and
+  false-conditional preservation are checked; recursive block, switch, loop,
+  call, halt, and whole-program forward/backward theorems remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

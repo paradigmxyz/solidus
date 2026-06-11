@@ -123,6 +123,96 @@ theorem consume?_source
         simpa using congrArg State.source hConsume.2.symm
       · simp [hGet, hKind] at hConsume
 
+theorem consume_remaining
+    {σ : Type} {transcript : Trace} {kind : Observer}
+    {state state' : State σ transcript} {value : Word}
+    (hConsume : consume? kind state = some (value, state')) :
+    Assembly.ResourceObserver.consume kind state.remaining =
+      .ok (value, state'.remaining) := by
+  unfold consume? at hConsume
+  cases hGet : transcript[state.cursor]? with
+  | none =>
+      simp [hGet] at hConsume
+  | some observation =>
+      by_cases hKind : observation.kind = kind
+      · simp [hGet, hKind] at hConsume
+        rcases hConsume with ⟨rfl, rfl⟩
+        rcases List.getElem?_eq_some_iff.mp hGet with ⟨hLt, hObservation⟩
+        rw [State.remaining, List.drop_eq_getElem_cons hLt]
+        simp [Assembly.ResourceObserver.consume, hObservation,
+          hKind, State.remaining]
+      · simp [hGet, hKind] at hConsume
+
+theorem consume?_of_consume_remaining
+    {σ : Type} {transcript : Trace} {kind : Observer}
+    {state : State σ transcript} {value : Word} {rest : Trace}
+    (hConsume :
+      Assembly.ResourceObserver.consume kind state.remaining =
+        .ok (value, rest)) :
+    ∃ state' : State σ transcript,
+      consume? kind state = some (value, state') ∧
+        state'.remaining = rest := by
+  cases hDrop : transcript.drop state.cursor with
+  | nil =>
+      simp [State.remaining, hDrop,
+        Assembly.ResourceObserver.consume] at hConsume
+  | cons observation tail =>
+      by_cases hKind : observation.kind = kind
+      · simp [State.remaining, hDrop,
+          Assembly.ResourceObserver.consume, hKind] at hConsume
+        rcases hConsume with ⟨rfl, rfl⟩
+        have hHead :
+            transcript[state.cursor]? = some observation := by
+          have hAtDrop :
+              (transcript.drop state.cursor)[0]? =
+                some observation := by
+            simp [hDrop]
+          simpa [List.getElem?_drop] using hAtDrop
+        refine
+          ⟨{ state with cursor := state.cursor + 1 }, ?_, ?_⟩
+        · simp [consume?, hHead, hKind]
+        · change transcript.drop (state.cursor + 1) = tail
+          have hTail := congrArg (List.drop 1) hDrop
+          simpa [List.drop_drop] using hTail
+      · simp [State.remaining, hDrop,
+          Assembly.ResourceObserver.consume, hKind] at hConsume
+
+theorem consume_remaining_eq
+    {σ : Type} {transcript : Trace} (kind : Observer)
+    (state : State σ transcript) :
+    (match consume? kind state with
+    | none =>
+        (Except.error .InvalidInstruction :
+          Except EvmCompiler.Assembly.EVMException (Word × Trace))
+    | some (value, state') => .ok (value, state'.remaining)) =
+    Assembly.ResourceObserver.consume kind state.remaining := by
+  cases hSource : consume? kind state with
+  | none =>
+      cases hTarget :
+          Assembly.ResourceObserver.consume kind state.remaining with
+      | error err =>
+          unfold Assembly.ResourceObserver.consume at hTarget
+          cases hRemaining : state.remaining with
+          | nil =>
+              simp [hRemaining] at hTarget
+              cases hTarget
+              simp [hSource]
+          | cons observation rest =>
+              by_cases hKind : observation.kind = kind
+              · simp [hRemaining, hKind] at hTarget
+              · simp [hRemaining, hKind] at hTarget
+                cases hTarget
+                simp [hSource]
+      | ok result =>
+          rcases result with ⟨value, rest⟩
+          obtain ⟨state', hConsume, _hRemaining⟩ :=
+            consume?_of_consume_remaining hTarget
+          rw [hSource] at hConsume
+          cases hConsume
+  | some result =>
+      rcases result with ⟨value, state'⟩
+      simp [hSource, consume_remaining hSource]
+
 theorem consume?_of_cursor_eq
     {σ τ : Type} {transcript : Trace} {kind : Observer}
     {left : State σ transcript} {right : State τ transcript}

@@ -113,6 +113,81 @@ theorem runN_succ {ε : Type} (handler : Handler ε)
           | .invalid state' =>
               .ok (.invalid state', effect') := rfl
 
+/--
+Successful finite execution from an effectful CFG entry.
+
+Residual jumps are intentional: adjacent compiler fragments compose by
+reaching one another's entry labels while threading the same effect state.
+-/
+def Eventually {ε : Type} (handler : Handler ε)
+    (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (effect : ε)
+    (outcome : TypedCfg.Outcome) (effect' : ε) : Prop :=
+  ∃ fuel,
+    runN handler program fuel label state effect =
+      .ok (outcome, effect')
+
+namespace Eventually
+
+theorem residual {ε : Type} (handler : Handler ε)
+    (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (effect : ε) :
+    Eventually handler program label state effect
+      (.jump label state) effect :=
+  ⟨0, rfl⟩
+
+theorem of_runN {ε : Type} {handler : Handler ε}
+    {program : TypedCfg.Program} {fuel : Nat} {label : Label}
+    {state : EVMState} {effect effect' : ε}
+    {outcome : TypedCfg.Outcome}
+    (hRun :
+      runN handler program fuel label state effect =
+        .ok (outcome, effect')) :
+    Eventually handler program label state effect outcome effect' :=
+  ⟨fuel, hRun⟩
+
+theorem bind_jump {ε : Type} {handler : Handler ε}
+    {program : TypedCfg.Program} {entry next : Label}
+    {initial middle : EVMState}
+    {initialEffect middleEffect finalEffect : ε}
+    {outcome : TypedCfg.Outcome}
+    (hFirst :
+      Eventually handler program entry initial initialEffect
+        (.jump next middle) middleEffect)
+    (hNext :
+      Eventually handler program next middle middleEffect
+        outcome finalEffect) :
+    Eventually handler program entry initial initialEffect
+      outcome finalEffect := by
+  rcases hFirst with ⟨firstFuel, hFirst⟩
+  rcases hNext with ⟨nextFuel, hNext⟩
+  refine ⟨firstFuel + nextFuel, ?_⟩
+  induction firstFuel generalizing entry initial initialEffect with
+  | zero =>
+      simp only [runN_zero] at hFirst
+      cases hFirst
+      simpa using hNext
+  | succ firstFuel ih =>
+      rw [Nat.succ_add, runN_succ]
+      rw [runN_succ] at hFirst
+      cases hStep :
+          step handler program entry initial initialEffect with
+      | error err =>
+          simp [hStep] at hFirst
+      | ok result =>
+          rcases result with ⟨stepOutcome, stepEffect⟩
+          rw [hStep] at hFirst
+          cases stepOutcome with
+          | jump target stepped =>
+              exact ih hFirst
+          | fallthrough stepped
+          | returnDispatch stepped
+          | halt kind stepped
+          | invalid stepped =>
+              cases hFirst
+
+end Eventually
+
 end Program
 
 end EffectSemantics

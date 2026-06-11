@@ -184,6 +184,11 @@ report_matches \
   '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
   EvmCompiler/Structured/ObserverPreservation.lean
 
+report_matches \
+  'Structured observer preservation must not reason through Assembly execution or lower-pass preservation:' \
+  '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
+  EvmCompiler/Structured/ObserverPreservation.lean
+
 if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
     EvmCompiler/Functions.lean ||
     ! rg -q '^namespace Canonical$' \

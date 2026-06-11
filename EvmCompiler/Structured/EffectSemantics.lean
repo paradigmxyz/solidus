@@ -141,6 +141,25 @@ def runCondition {σ : Type} (model : StateModel σ)
   let state' ← run model handler code state
   popCondition model state'
 
+theorem run_cons_eq_run_single_bind
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (instr : BasicInstr) (rest : Structured.Code) (state : σ) :
+    run model handler (instr :: rest) state =
+      (run model handler [instr] state).bind
+        (run model handler rest) := by
+  unfold run
+  cases hStep : instr.step (model.evm state) with
+  | error err =>
+      simp [hStep, Bind.bind, Except.bind]
+  | ok evm =>
+      cases hAfter :
+          handler.afterInstr instr (model.withEVM state evm) with
+      | error err =>
+          simp [hStep, hAfter, Bind.bind, Except.bind]
+      | ok final =>
+          simp only [hStep, hAfter, Bind.bind, Except.bind]
+          rw [show run model handler [] final = .ok final from rfl]
+
 end Code
 
 mutual
@@ -296,12 +315,829 @@ mutual
         .ok (Outcome.halt kind (model.withEVM state evm))
 end
 
+mutual
+  /--
+  Relational counterpart of the parameterized Structured interpreter.
+
+  This is the single control-evaluation relation for ordinary execution,
+  observer replay, and future effect handlers. Compiler proofs can therefore
+  recurse over Structured control once while taking primitive-effect
+  preservation as an adjacent-pass interface.
+  -/
+  inductive Block.Eval {σ : Type} (model : StateModel σ)
+      (handler : Handler σ) (program : Program) :
+      Nat → Block → σ → OutcomeT σ → Prop where
+    | nil {fuel : Nat} {state : σ} :
+        Block.Eval model handler program (fuel + 1) { stmts := [] } state
+          (Outcome.regular state)
+    | cons_regular {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+        {state mid : σ} {outcome : OutcomeT σ}
+        (hStmt :
+          Stmt.Eval model handler program fuel stmt state
+            (Outcome.regular mid))
+        (hRest :
+          Block.Eval model handler program fuel
+            { stmts := rest } mid outcome) :
+        Block.Eval model handler program (fuel + 1)
+          { stmts := stmt :: rest } state outcome
+    | cons_brk {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+        {state outState : σ}
+        (hStmt :
+          Stmt.Eval model handler program fuel stmt state
+            (Outcome.brk outState)) :
+        Block.Eval model handler program (fuel + 1)
+          { stmts := stmt :: rest } state (Outcome.brk outState)
+    | cons_cont {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+        {state outState : σ}
+        (hStmt :
+          Stmt.Eval model handler program fuel stmt state
+            (Outcome.cont outState)) :
+        Block.Eval model handler program (fuel + 1)
+          { stmts := stmt :: rest } state (Outcome.cont outState)
+    | cons_leave {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+        {state outState : σ}
+        (hStmt :
+          Stmt.Eval model handler program fuel stmt state
+            (Outcome.leave outState)) :
+        Block.Eval model handler program (fuel + 1)
+          { stmts := stmt :: rest } state (Outcome.leave outState)
+    | cons_halt {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+        {state outState : σ} {kind : Assembly.HaltKind}
+        (hStmt :
+          Stmt.Eval model handler program fuel stmt state
+            (Outcome.halt kind outState)) :
+        Block.Eval model handler program (fuel + 1)
+          { stmts := stmt :: rest } state (Outcome.halt kind outState)
+
+  inductive Stmt.Eval {σ : Type} (model : StateModel σ)
+      (handler : Handler σ) (program : Program) :
+      Nat → Stmt → σ → OutcomeT σ → Prop where
+    | code {fuel : Nat} {code : Code} {state final : σ}
+        (hCode : Code.run model handler code state = .ok final) :
+        Stmt.Eval model handler program fuel (.code code) state
+          (Outcome.regular final)
+    | if_false {fuel : Nat} {cond : Code} {body : Block}
+        {state stateAfterCond : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, false)) :
+        Stmt.Eval model handler program (fuel + 1) (.if_ cond body) state
+          (Outcome.regular stateAfterCond)
+    | if_true {fuel : Nat} {cond : Code} {body : Block}
+        {state stateAfterCond : σ} {outcome : OutcomeT σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond outcome) :
+        Stmt.Eval model handler program (fuel + 1) (.if_ cond body) state
+          outcome
+    | switch_none {fuel : Nat} {scrutinee : Code}
+        {cases : List (Word × Block)} {defaultBody : Option Block}
+        {state stateAfterScrutinee : σ}
+        {stack : EvmYul.Stack Word} {value : Word}
+        (hScrutinee :
+          Code.run model handler scrutinee state =
+            .ok stateAfterScrutinee)
+        (hPop :
+          (model.evm stateAfterScrutinee).stack.pop =
+            some (stack, value))
+        (hSelect : Switch.select value cases defaultBody = none) :
+        Stmt.Eval model handler program (fuel + 1)
+          (.switch scrutinee cases defaultBody) state
+          (Outcome.regular
+            (model.withEVM stateAfterScrutinee
+              { model.evm stateAfterScrutinee with stack := stack }))
+    | switch_some {fuel : Nat} {scrutinee : Code}
+        {cases : List (Word × Block)} {defaultBody : Option Block}
+        {state stateAfterScrutinee stateAfterPop : σ}
+        {stack : EvmYul.Stack Word} {value : Word} {body : Block}
+        {outcome : OutcomeT σ}
+        (hScrutinee :
+          Code.run model handler scrutinee state =
+            .ok stateAfterScrutinee)
+        (hPop :
+          (model.evm stateAfterScrutinee).stack.pop =
+            some (stack, value))
+        (hStateAfterPop :
+          stateAfterPop =
+            model.withEVM stateAfterScrutinee
+              { model.evm stateAfterScrutinee with stack := stack })
+        (hSelect : Switch.select value cases defaultBody = some body)
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterPop outcome) :
+        Stmt.Eval model handler program (fuel + 1)
+          (.switch scrutinee cases defaultBody) state outcome
+    | for_init_regular {fuel : Nat} {init : Block} {cond : Code}
+        {post body : Block} {state initState : σ}
+        {outcome : OutcomeT σ}
+        (hInit :
+          Block.Eval model handler program fuel init state
+            (Outcome.regular initState))
+        (hLoop :
+          For.Eval model handler program fuel cond post body initState
+            outcome) :
+        Stmt.Eval model handler program (fuel + 1)
+          (.for_ init cond post body) state outcome
+    | for_init_leave {fuel : Nat} {init : Block} {cond : Code}
+        {post body : Block} {state outState : σ}
+        (hInit :
+          Block.Eval model handler program fuel init state
+            (Outcome.leave outState)) :
+        Stmt.Eval model handler program (fuel + 1)
+          (.for_ init cond post body) state (Outcome.leave outState)
+    | for_init_halt {fuel : Nat} {init : Block} {cond : Code}
+        {post body : Block} {state outState : σ}
+        {kind : Assembly.HaltKind}
+        (hInit :
+          Block.Eval model handler program fuel init state
+            (Outcome.halt kind outState)) :
+        Stmt.Eval model handler program (fuel + 1)
+          (.for_ init cond post body) state (Outcome.halt kind outState)
+    | brk {fuel : Nat} {state : σ} :
+        Stmt.Eval model handler program fuel .brk state
+          (Outcome.brk state)
+    | cont {fuel : Nat} {state : σ} :
+        Stmt.Eval model handler program fuel .cont state
+          (Outcome.cont state)
+    | leave {fuel : Nat} {state : σ}
+        (hReturns : model.returns state ≠ []) :
+        Stmt.Eval model handler program fuel .leave state
+          (Outcome.leave state)
+    | call_regular {fuel : Nat} {name : Name} {state : σ}
+        {proc : Proc} {args callerStack stack : EvmYul.Stack Word}
+        {bodyState returned : σ} {frame : ReturnDest}
+        (hLookup : ProcList.lookup? name program.procs = some proc)
+        (hSplit :
+          StackFrame.splitArgs? proc.argc (model.evm state).stack =
+            some (args, callerStack))
+        (hBody :
+          Block.Eval model handler program fuel proc.body
+            (model.pushReturn
+              (model.withEVM state
+                { model.evm state with stack := args })
+              callerStack proc.retc)
+            (Outcome.regular bodyState))
+        (hPop : model.popReturn? bodyState = some (frame, returned))
+        (hAttach :
+          StackFrame.attachReturns? frame (model.evm bodyState).stack =
+            some stack) :
+        Stmt.Eval model handler program (fuel + 1) (.call name) state
+          (Outcome.regular
+            (model.withEVM returned
+              { model.evm bodyState with stack := stack }))
+    | call_leave {fuel : Nat} {name : Name} {state : σ}
+        {proc : Proc} {args callerStack stack : EvmYul.Stack Word}
+        {bodyState returned : σ} {frame : ReturnDest}
+        (hLookup : ProcList.lookup? name program.procs = some proc)
+        (hSplit :
+          StackFrame.splitArgs? proc.argc (model.evm state).stack =
+            some (args, callerStack))
+        (hBody :
+          Block.Eval model handler program fuel proc.body
+            (model.pushReturn
+              (model.withEVM state
+                { model.evm state with stack := args })
+              callerStack proc.retc)
+            (Outcome.leave bodyState))
+        (hPop : model.popReturn? bodyState = some (frame, returned))
+        (hAttach :
+          StackFrame.attachReturns? frame (model.evm bodyState).stack =
+            some stack) :
+        Stmt.Eval model handler program (fuel + 1) (.call name) state
+          (Outcome.regular
+            (model.withEVM returned
+              { model.evm bodyState with stack := stack }))
+    | call_halt {fuel : Nat} {name : Name} {state : σ}
+        {proc : Proc} {args callerStack : EvmYul.Stack Word}
+        {bodyState : σ} {kind : Assembly.HaltKind}
+        (hLookup : ProcList.lookup? name program.procs = some proc)
+        (hSplit :
+          StackFrame.splitArgs? proc.argc (model.evm state).stack =
+            some (args, callerStack))
+        (hBody :
+          Block.Eval model handler program fuel proc.body
+            (model.pushReturn
+              (model.withEVM state
+                { model.evm state with stack := args })
+              callerStack proc.retc)
+            (Outcome.halt kind bodyState)) :
+        Stmt.Eval model handler program (fuel + 1) (.call name) state
+          (Outcome.halt kind bodyState)
+    | terminal {fuel : Nat} {kind : Assembly.HaltKind}
+        {state : σ} {evm : EVMState}
+        (hStep : Terminal.step kind (model.evm state) = .ok evm) :
+        Stmt.Eval model handler program fuel (.terminal kind) state
+          (Outcome.halt kind (model.withEVM state evm))
+
+  inductive For.Eval {σ : Type} (model : StateModel σ)
+      (handler : Handler σ) (program : Program) :
+      Nat → Code → Block → Block → σ → OutcomeT σ → Prop where
+    | false {fuel : Nat} {cond : Code} {post body : Block}
+        {state stateAfterCond : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, false)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.regular stateAfterCond)
+    | body_brk {fuel : Nat} {cond : Code} {post body : Block}
+        {state stateAfterCond bodyState : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.brk bodyState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.regular bodyState)
+    | body_leave {fuel : Nat} {cond : Code} {post body : Block}
+        {state stateAfterCond bodyState : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.leave bodyState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.leave bodyState)
+    | body_halt {fuel : Nat} {cond : Code} {post body : Block}
+        {state stateAfterCond bodyState : σ} {kind : Assembly.HaltKind}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.halt kind bodyState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.halt kind bodyState)
+    | regular_post_regular {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        {outcome : OutcomeT σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.regular bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.regular postState))
+        (hLoop :
+          For.Eval model handler program fuel cond post body postState
+            outcome) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          outcome
+    | cont_post_regular {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        {outcome : OutcomeT σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.cont bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.regular postState))
+        (hLoop :
+          For.Eval model handler program fuel cond post body postState
+            outcome) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          outcome
+    | regular_post_leave {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.regular bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.leave postState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.leave postState)
+    | cont_post_leave {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.cont bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.leave postState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.leave postState)
+    | regular_post_halt {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        {kind : Assembly.HaltKind}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.regular bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.halt kind postState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.halt kind postState)
+    | cont_post_halt {fuel : Nat} {cond : Code}
+        {post body : Block} {state stateAfterCond bodyState postState : σ}
+        {kind : Assembly.HaltKind}
+        (hCond :
+          Code.runCondition model handler cond state =
+            .ok (stateAfterCond, true))
+        (hBody :
+          Block.Eval model handler program fuel body stateAfterCond
+            (Outcome.cont bodyState))
+        (hPost :
+          Block.Eval model handler program fuel post bodyState
+            (Outcome.halt kind postState)) :
+        For.Eval model handler program (fuel + 1) cond post body state
+          (Outcome.halt kind postState)
+end
+
+set_option linter.unusedSimpArgs false in
+mutual
+  theorem Block.eval_of_run {σ : Type} {model : StateModel σ}
+      {handler : Handler σ} {program : Program} {fuel : Nat}
+      {block : Block} {state : σ} {outcome : OutcomeT σ}
+      (hRun : Block.run model handler program fuel block state = .ok outcome) :
+      Block.Eval model handler program fuel block state outcome := by
+    cases fuel with
+    | zero =>
+        simp [Block.run, invalid] at hRun
+    | succ fuel =>
+        cases block with
+        | mk stmts =>
+            cases stmts with
+            | nil =>
+                simp [Block.run] at hRun
+                cases hRun
+                exact Block.Eval.nil
+            | cons stmt rest =>
+                unfold Block.run at hRun
+                cases hStmtRun :
+                    Stmt.run model handler program fuel stmt state with
+                | error err =>
+                    rw [hStmtRun] at hRun
+                    cases hRun
+                | ok stmtOutcome =>
+                    rw [hStmtRun] at hRun
+                    have hStmtEval := Stmt.eval_of_run hStmtRun
+                    cases stmtOutcome with
+                    | mk stmtState stmtMode =>
+                        cases stmtMode with
+                        | regular =>
+                            exact
+                              Block.Eval.cons_regular
+                                (by
+                                  simpa [Outcome.regular] using hStmtEval)
+                                (Block.eval_of_run hRun)
+                        | brk =>
+                            cases hRun
+                            exact
+                              Block.Eval.cons_brk
+                                (by simpa [Outcome.brk] using hStmtEval)
+                        | cont =>
+                            cases hRun
+                            exact
+                              Block.Eval.cons_cont
+                                (by simpa [Outcome.cont] using hStmtEval)
+                        | leave =>
+                            cases hRun
+                            exact
+                              Block.Eval.cons_leave
+                                (by simpa [Outcome.leave] using hStmtEval)
+                        | halt kind =>
+                            cases hRun
+                            exact
+                              Block.Eval.cons_halt
+                                (by simpa [Outcome.halt] using hStmtEval)
+
+  theorem Stmt.eval_of_run {σ : Type} {model : StateModel σ}
+      {handler : Handler σ} {program : Program} {fuel : Nat}
+      {stmt : Stmt} {state : σ} {outcome : OutcomeT σ}
+      (hRun : Stmt.run model handler program fuel stmt state = .ok outcome) :
+      Stmt.Eval model handler program fuel stmt state outcome := by
+    cases stmt with
+    | code code =>
+        unfold Stmt.run at hRun
+        cases hCode : Code.run model handler code state with
+        | error err =>
+            simp [hCode, Bind.bind, Except.bind] at hRun
+        | ok final =>
+            simp [hCode, Bind.bind, Except.bind] at hRun
+            cases hRun
+            exact Stmt.Eval.code hCode
+    | if_ cond body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun
+            cases hCond :
+                Code.runCondition model handler cond state with
+            | error err =>
+                rw [hCond] at hRun
+                cases hRun
+            | ok condResult =>
+                rcases condResult with ⟨stateAfterCond, condTrue⟩
+                rw [hCond] at hRun
+                cases condTrue with
+                | false =>
+                    simp at hRun
+                    cases hRun
+                    exact Stmt.Eval.if_false hCond
+                | true =>
+                    exact
+                      Stmt.Eval.if_true hCond
+                        (Block.eval_of_run hRun)
+    | switch scrutinee cases defaultBody =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun
+            cases hScrutinee :
+                Code.run model handler scrutinee state with
+            | error err =>
+                simp [hScrutinee, Bind.bind, Except.bind] at hRun
+            | ok stateAfterScrutinee =>
+                simp [hScrutinee, Bind.bind, Except.bind] at hRun
+                cases hPop :
+                    (model.evm stateAfterScrutinee).stack.pop with
+                | none =>
+                    simp [hPop] at hRun
+                | some popped =>
+                    rcases popped with ⟨stack, value⟩
+                    simp [hPop] at hRun
+                    let stateAfterPop :=
+                      model.withEVM stateAfterScrutinee
+                        { model.evm stateAfterScrutinee with stack := stack }
+                    cases hSelect :
+                        Switch.select value cases defaultBody with
+                    | none =>
+                        simp [hSelect] at hRun
+                        cases hRun
+                        exact
+                          Stmt.Eval.switch_none
+                            hScrutinee hPop hSelect
+                    | some body =>
+                        simp [hSelect] at hRun
+                        exact
+                          Stmt.Eval.switch_some hScrutinee hPop
+                            (show stateAfterPop =
+                              model.withEVM stateAfterScrutinee
+                                { model.evm stateAfterScrutinee with
+                                  stack := stack } from rfl)
+                            hSelect (Block.eval_of_run hRun)
+    | for_ init cond post body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun
+            cases hInitRun :
+                Block.run model handler program fuel init state with
+            | error err =>
+                simp [hInitRun, Bind.bind, Except.bind] at hRun
+            | ok initOutcome =>
+                simp [hInitRun, Bind.bind, Except.bind] at hRun
+                have hInitEval := Block.eval_of_run hInitRun
+                cases initOutcome with
+                | mk initState initMode =>
+                    cases initMode with
+                    | regular =>
+                        exact
+                          Stmt.Eval.for_init_regular
+                            (by simpa [Outcome.regular] using hInitEval)
+                            (For.eval_of_run hRun)
+                    | brk =>
+                        dsimp [Bind.bind, Except.bind, invalid] at hRun
+                        cases hRun
+                    | cont =>
+                        dsimp [Bind.bind, Except.bind, invalid] at hRun
+                        cases hRun
+                    | leave =>
+                        change
+                          Except.ok (Outcome.leave initState) =
+                            Except.ok outcome at hRun
+                        cases hRun
+                        exact
+                          Stmt.Eval.for_init_leave
+                            (by simpa [Outcome.leave] using hInitEval)
+                    | halt kind =>
+                        change
+                          Except.ok (Outcome.halt kind initState) =
+                            Except.ok outcome at hRun
+                        cases hRun
+                        exact
+                          Stmt.Eval.for_init_halt
+                            (by simpa [Outcome.halt] using hInitEval)
+    | brk =>
+        simp [Stmt.run] at hRun
+        cases hRun
+        exact Stmt.Eval.brk
+    | cont =>
+        simp [Stmt.run] at hRun
+        cases hRun
+        exact Stmt.Eval.cont
+    | leave =>
+        unfold Stmt.run at hRun
+        cases hReturns : model.returns state with
+        | nil =>
+            simp [hReturns, invalid] at hRun
+        | cons frame returns =>
+            simp [hReturns] at hRun
+            cases hRun
+            exact Stmt.Eval.leave (by simp [hReturns])
+    | call name =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun
+            cases hLookup : ProcList.lookup? name program.procs with
+            | none =>
+                simp [hLookup, Bind.bind, Except.bind, invalid] at hRun
+            | some proc =>
+                simp [hLookup, Bind.bind, Except.bind] at hRun
+                cases hSplit :
+                    StackFrame.splitArgs? proc.argc (model.evm state).stack with
+                | none =>
+                    simp [hSplit, Bind.bind, Except.bind] at hRun
+                | some split =>
+                    rcases split with ⟨args, callerStack⟩
+                    simp [hSplit, Bind.bind, Except.bind] at hRun
+                    let callState : σ :=
+                      model.pushReturn
+                        (model.withEVM state
+                          { model.evm state with stack := args })
+                        callerStack proc.retc
+                    cases hBodyRun :
+                        Block.run model handler program fuel proc.body
+                          callState with
+                    | error err =>
+                        simp [callState, hBodyRun,
+                          Bind.bind, Except.bind] at hRun
+                    | ok bodyOutcome =>
+                        simp [callState, hBodyRun,
+                          Bind.bind, Except.bind] at hRun
+                        have hBodyEval := Block.eval_of_run hBodyRun
+                        cases bodyOutcome with
+                        | mk bodyState bodyMode =>
+                            cases bodyMode with
+                            | regular =>
+                                simp [Outcome.regular] at hRun
+                                cases hPop :
+                                    model.popReturn? bodyState with
+                                | none =>
+                                    simp [hPop, invalid] at hRun
+                                | some popped =>
+                                    rcases popped with ⟨frame, returned⟩
+                                    simp [hPop] at hRun
+                                    cases hAttach :
+                                        StackFrame.attachReturns? frame
+                                          (model.evm bodyState).stack with
+                                    | none =>
+                                        simp [hAttach, invalid] at hRun
+                                    | some stack =>
+                                        simp [hAttach] at hRun
+                                        cases hRun
+                                        exact
+                                          Stmt.Eval.call_regular hLookup hSplit
+                                            (by
+                                              simpa [callState,
+                                                Outcome.regular]
+                                                using hBodyEval)
+                                            hPop hAttach
+                            | brk =>
+                                simp [Outcome.brk, invalid] at hRun
+                            | cont =>
+                                simp [Outcome.cont, invalid] at hRun
+                            | leave =>
+                                simp [Outcome.leave] at hRun
+                                cases hPop :
+                                    model.popReturn? bodyState with
+                                | none =>
+                                    simp [hPop, invalid] at hRun
+                                | some popped =>
+                                    rcases popped with ⟨frame, returned⟩
+                                    simp [hPop] at hRun
+                                    cases hAttach :
+                                        StackFrame.attachReturns? frame
+                                          (model.evm bodyState).stack with
+                                    | none =>
+                                        simp [hAttach, invalid] at hRun
+                                    | some stack =>
+                                        simp [hAttach] at hRun
+                                        cases hRun
+                                        exact
+                                          Stmt.Eval.call_leave hLookup hSplit
+                                            (by
+                                              simpa [callState, Outcome.leave]
+                                                using hBodyEval)
+                                            hPop hAttach
+                            | halt kind =>
+                                simp [Outcome.halt] at hRun
+                                cases hRun
+                                exact
+                                  Stmt.Eval.call_halt hLookup hSplit
+                                    (by
+                                      simpa [callState, Outcome.halt]
+                                        using hBodyEval)
+    | terminal kind =>
+        unfold Stmt.run at hRun
+        cases hStep : Terminal.step kind (model.evm state) with
+        | error err =>
+            simp [hStep] at hRun
+            cases hRun
+        | ok evm =>
+            simp [hStep] at hRun
+            cases hRun
+            exact Stmt.Eval.terminal hStep
+
+  theorem For.eval_of_run {σ : Type} {model : StateModel σ}
+      {handler : Handler σ} {program : Program} {fuel : Nat}
+      {cond : Code} {post body : Block} {state : σ}
+      {outcome : OutcomeT σ}
+      (hRun :
+        Stmt.runForLoop model handler program fuel cond post body state =
+          .ok outcome) :
+      For.Eval model handler program fuel cond post body state outcome := by
+    cases fuel with
+    | zero =>
+        simp [Stmt.runForLoop, invalid] at hRun
+    | succ fuel =>
+        unfold Stmt.runForLoop at hRun
+        cases hCond :
+            Code.runCondition model handler cond state with
+        | error err =>
+            simp [hCond, Bind.bind, Except.bind] at hRun
+        | ok condResult =>
+            rcases condResult with ⟨stateAfterCond, condTrue⟩
+            simp [hCond, Bind.bind, Except.bind] at hRun
+            cases condTrue with
+            | false =>
+                simp at hRun
+                cases hRun
+                exact For.Eval.false hCond
+            | true =>
+                cases hBodyRun :
+                    Block.run model handler program fuel body
+                      stateAfterCond with
+                | error err =>
+                    simp [hBodyRun, Bind.bind, Except.bind] at hRun
+                | ok bodyOutcome =>
+                    simp [hBodyRun, Bind.bind, Except.bind] at hRun
+                    have hBodyEval := Block.eval_of_run hBodyRun
+                    cases bodyOutcome with
+                    | mk bodyState bodyMode =>
+                        cases bodyMode with
+                        | regular =>
+                            simp [Outcome.regular] at hRun
+                            cases hPostRun :
+                                Block.run model handler program fuel post
+                                  bodyState with
+                            | error err =>
+                                simp [hPostRun,
+                                  Bind.bind, Except.bind] at hRun
+                            | ok postOutcome =>
+                                simp [hPostRun,
+                                  Bind.bind, Except.bind] at hRun
+                                have hPostEval :=
+                                  Block.eval_of_run hPostRun
+                                cases postOutcome with
+                                | mk postState postMode =>
+                                    cases postMode with
+                                    | regular =>
+                                        exact
+                                          For.Eval.regular_post_regular hCond
+                                            (by
+                                              simpa [Outcome.regular]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.regular]
+                                                using hPostEval)
+                                            (For.eval_of_run hRun)
+                                    | brk =>
+                                        simp [invalid] at hRun
+                                    | cont =>
+                                        simp [invalid] at hRun
+                                    | leave =>
+                                        simp at hRun
+                                        cases hRun
+                                        exact
+                                          For.Eval.regular_post_leave hCond
+                                            (by
+                                              simpa [Outcome.regular]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.leave]
+                                                using hPostEval)
+                                    | halt kind =>
+                                        simp at hRun
+                                        cases hRun
+                                        exact
+                                          For.Eval.regular_post_halt hCond
+                                            (by
+                                              simpa [Outcome.regular]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.halt]
+                                                using hPostEval)
+                        | brk =>
+                            simp [Outcome.brk] at hRun
+                            cases hRun
+                            exact
+                              For.Eval.body_brk hCond
+                                (by
+                                  simpa [Outcome.brk] using hBodyEval)
+                        | cont =>
+                            simp [Outcome.cont] at hRun
+                            cases hPostRun :
+                                Block.run model handler program fuel post
+                                  bodyState with
+                            | error err =>
+                                simp [hPostRun,
+                                  Bind.bind, Except.bind] at hRun
+                            | ok postOutcome =>
+                                simp [hPostRun,
+                                  Bind.bind, Except.bind] at hRun
+                                have hPostEval :=
+                                  Block.eval_of_run hPostRun
+                                cases postOutcome with
+                                | mk postState postMode =>
+                                    cases postMode with
+                                    | regular =>
+                                        exact
+                                          For.Eval.cont_post_regular hCond
+                                            (by
+                                              simpa [Outcome.cont]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.regular]
+                                                using hPostEval)
+                                            (For.eval_of_run hRun)
+                                    | brk =>
+                                        simp [invalid] at hRun
+                                    | cont =>
+                                        simp [invalid] at hRun
+                                    | leave =>
+                                        simp at hRun
+                                        cases hRun
+                                        exact
+                                          For.Eval.cont_post_leave hCond
+                                            (by
+                                              simpa [Outcome.cont]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.leave]
+                                                using hPostEval)
+                                    | halt kind =>
+                                        simp at hRun
+                                        cases hRun
+                                        exact
+                                          For.Eval.cont_post_halt hCond
+                                            (by
+                                              simpa [Outcome.cont]
+                                                using hBodyEval)
+                                            (by
+                                              simpa [Outcome.halt]
+                                                using hPostEval)
+                        | leave =>
+                            simp [Outcome.leave] at hRun
+                            cases hRun
+                            exact
+                              For.Eval.body_leave hCond
+                                (by
+                                  simpa [Outcome.leave] using hBodyEval)
+                        | halt kind =>
+                            simp [Outcome.halt] at hRun
+                            cases hRun
+                            exact
+                              For.Eval.body_halt hCond
+                                (by
+                                  simpa [Outcome.halt] using hBodyEval)
+end
+
 namespace Program
 
 def runState {σ : Type} (model : StateModel σ)
     (handler : Handler σ) (fuel : Nat) (program : Structured.Program)
     (state : σ) : Except EVMException (OutcomeT σ) :=
   Block.run model handler program fuel program.body state
+
+theorem eval_of_runState {σ : Type} {model : StateModel σ}
+    {handler : Handler σ} {fuel : Nat} {program : Structured.Program}
+    {state : σ} {outcome : OutcomeT σ}
+    (hRun : runState model handler fuel program state = .ok outcome) :
+    Block.Eval model handler program fuel program.body state outcome :=
+  Block.eval_of_run hRun
 
 end Program
 

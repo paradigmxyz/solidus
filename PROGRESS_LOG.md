@@ -28511,3 +28511,27 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   execution to use the shared interpreter and reserve observer preservation
   ownership for the adjacent TypedCfg boundary. Audited theorems depend only
   on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 14:59:29 PDT `compaction-resume`: Resumed with shared Structured
+  generic relational semantics plus observer instruction/code lowering and
+  replay congruence in progress. Next is completing observer code
+  frame/state preservation, then composing the Structured-to-TypedCfg control
+  proof through the adjacent pass-owned interface.
+
+- 2026-06-11 15:07:00 PDT `proof`: Checked the observer-aware
+  Structured-to-TypedCfg state relation, hidden-frame code preservation,
+  condition/pop preservation, generated `jumpi` agreement, shared effectful
+  CFG `Eventually` composition, and ambient-path preservation for
+  straight-line statements and false conditionals. All use the existing
+  compiler and exact remaining transcript; no generated evidence enters the
+  theorem interface.
+
+- 2026-06-11 15:07:00 PDT `oracle-incident`: A requested hostile critique of
+  the Structured boundary could not run because the configured oracle account
+  had insufficient quota. No unverified oracle output was used.
+
+- 2026-06-11 15:07:38 PDT `verification`: The 1,175-job verification root,
+  focused Structured observer build, architecture dependency guard, scoped
+  no-hole scan, `git diff --check`, and focused axiom audit pass. The new
+  adjacent theorems depend only on `propext`, `Classical.choice`, and
+  `Quot.sound`.

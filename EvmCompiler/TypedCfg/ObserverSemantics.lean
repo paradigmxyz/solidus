@@ -9,16 +9,17 @@ abbrev Trace := Assembly.ResourceTrace
 
 namespace Instr
 
+@[simp] def observer? : TypedCfg.Instr → Option Assembly.ResourceObserver
+  | .prim op => Assembly.ResourceObserver.ofPrimOp? op
+  | _ => none
+
 @[simp] def handler : EffectSemantics.Handler Trace where
   afterInstr instr final trace :=
-    match instr with
-    | .prim op =>
-        match Assembly.ResourceObserver.ofPrimOp? op with
-        | some kind =>
-            Assembly.ResourceObserver.applyOracleFromPostState
-              kind final trace
-        | none => .ok (final, trace)
-    | _ => .ok (final, trace)
+    match observer? instr with
+    | some kind =>
+        Assembly.ResourceObserver.applyOracleFromPostState
+          kind final trace
+    | none => .ok (final, trace)
 
 def runState (instr : TypedCfg.Instr) (shape : Shape)
     (state : EVMState) (trace : Trace) :
@@ -82,13 +83,13 @@ theorem runState_plain_pc
       | prim op =>
         cases hObserver : Assembly.ResourceObserver.ofPrimOp? op with
         | none =>
-            simp [hObserver] at hRun
+            simp [observer?, hObserver] at hRun
             rcases hRun with ⟨hFinal, _hTrace⟩
             subst final
             refine ⟨plain, ?_, rfl⟩
             simpa only [hPlain]
         | some kind =>
-            simp [hObserver] at hRun
+            simp [observer?, hObserver] at hRun
             cases hApply :
                 Assembly.ResourceObserver.applyOracleFromPostState
                   kind plain trace with
@@ -217,6 +218,12 @@ def runN (program : TypedCfg.Program) :
       Except EVMException (TypedCfg.Outcome × Trace) :=
   EffectSemantics.Program.runN Instr.handler program
 
+abbrev Eventually (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (trace : Trace)
+    (outcome : TypedCfg.Outcome) (trace' : Trace) : Prop :=
+  EffectSemantics.Program.Eventually
+    Instr.handler program label state trace outcome trace'
+
 @[simp] theorem runN_zero (program : TypedCfg.Program)
     (label : Label) (state : EVMState) (trace : Trace) :
     runN program 0 label state trace =
@@ -250,6 +257,41 @@ theorem runN_succ (program : TypedCfg.Program)
   | ok result =>
       rcases result with ⟨outcome, trace'⟩
       cases outcome <;> simp [hStep]
+
+namespace Eventually
+
+theorem residual (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (trace : Trace) :
+    Eventually program label state trace (.jump label state) trace :=
+  EffectSemantics.Program.Eventually.residual
+    Instr.handler program label state trace
+
+theorem of_runN
+    {program : TypedCfg.Program} {fuel : Nat} {label : Label}
+    {state : EVMState} {trace trace' : Trace}
+    {outcome : TypedCfg.Outcome}
+    (hRun :
+      runN program fuel label state trace =
+        .ok (outcome, trace')) :
+    Eventually program label state trace outcome trace' :=
+  EffectSemantics.Program.Eventually.of_runN hRun
+
+theorem bind_jump
+    {program : TypedCfg.Program} {entry next : Label}
+    {initial middle : EVMState}
+    {initialTrace middleTrace finalTrace : Trace}
+    {outcome : TypedCfg.Outcome}
+    (hFirst :
+      Eventually program entry initial initialTrace
+        (.jump next middle) middleTrace)
+    (hNext :
+      Eventually program next middle middleTrace
+        outcome finalTrace) :
+    Eventually program entry initial initialTrace
+      outcome finalTrace :=
+  EffectSemantics.Program.Eventually.bind_jump hFirst hNext
+
+end Eventually
 
 end Program
 
