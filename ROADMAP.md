@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 07:22 PDT.
+Last updated: 2026-06-11 07:44 PDT.
 
 ## Objective
 
@@ -70,14 +70,16 @@ Implemented in this migration:
   metadata exactly for regular source outcomes, with checked empty and
   nonempty statement-list composition across every control mode;
 - checked mutual Structured-to-TypedCfg statement/block preservation through
-  every non-call source constructor and every regular or abrupt outcome,
-  including arbitrary selected switch-body outcomes and complete loop
-  recursion; the only temporary internal premise is concrete procedure-call
-  preservation;
+  every source constructor and every regular or abrupt outcome, including
+  arbitrary selected switch-body outcomes, complete loop recursion, and
+  concrete procedure calls;
 - concrete call-entry stack execution, ghost-frame realization, source
-  pop/attach restoration, and globally unique return-token dispatch lookup;
-  successful whole-program generation now rejects duplicate return tokens and
-  exposes checked direct-or-relabel-adapted procedure-fragment provenance;
+  pop/attach restoration, globally unique return-token dispatch lookup, and
+  recursive callee preservation across regular, leave, and halt outcomes;
+  successful whole-program generation now rejects duplicate return tokens,
+  exposes checked direct-or-relabel-adapted procedure-fragment provenance, and
+  yields an artifact-facing Structured-to-TypedCfg simulation theorem without
+  a call oracle;
 - a source-to-CFG state relation that realizes ghost procedure frames as
   concrete return-token/caller-stack suffixes while preserving gas and erasing
   only lowering-owned control counters, with reusable primitive, code,
@@ -99,16 +101,15 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Discharge the temporary call premise with concrete procedure-call and
-   return-token dispatch preservation, then compose the completed source-to-CFG
-   result into the public artifact theorem.
+2. Compose the completed checked Structured-to-TypedCfg artifact theorem into
+   the public source-to-Assembly artifact theorem.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 93,461 Lean lines across 79 modules, down by about 928K lines from the
+tree is 95,382 Lean lines across 79 modules, down by about 926K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -281,11 +282,12 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [x] Package mode-specific cleanup, target shape, and state relation in an
   `OutcomeContract`.
 - [x] Provide projections for regular, break, continue, leave, and halt.
-- [ ] Prove generic append, scoped-block, branch, switch, and loop composition.
+- [x] Prove generic append, scoped-block, branch, switch, and loop composition.
   The Structured-to-TypedCfg path now instantiates `OutcomeRel` with concrete
   continuation and halt contracts, proves all `For.Eval` loop constructors,
   composes outcome-indexed statement lists, and closes the mutual statement/
-  block proof for every non-call source constructor. Concrete calls remain.
+  block proof for every source constructor, including concrete call entry,
+  recursive callee outcomes, and selected return dispatch.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
@@ -627,13 +629,18 @@ Latest verified checkpoint:
   abrupt head outcomes and the compiler's static no-tail branch;
 - the mutual Structured statement/block theorem now covers code, both
   conditional paths, arbitrary switch outcomes, all loop outcomes,
-  break/continue/leave, and terminal execution through one outcome-indexed
-  certificate. Procedure calls are isolated behind one explicitly temporary
-  internal premise rather than another recursive proof family;
+  break/continue/leave, terminal execution, and procedure calls through one
+  outcome-indexed certificate;
 - generated call entry and return restoration now have checked relational stack
   theorems, global dispatch lookup follows from an executable token-uniqueness
   gate, and recursive procedure lowering exposes one fragment certificate that
-  covers both direct and allocation-driven relabel entries;
+  covers both direct and allocation-driven relabel entries. The concrete
+  mutual proof recursively preserves selected callees, dispatches regular and
+  leave returns, propagates halts with existentially hidden active return
+  tokens, and eliminates the temporary `CallCertificate`;
+- successful generation and checked artifacts now project a source-facing
+  Structured-to-TypedCfg outcome path without exposing compiler results, call
+  tables, or generated-context witnesses;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -643,7 +650,8 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 93,461 Lean lines;
+- retained architecture metrics: 79 modules, 95,382 Lean lines, 65 compiler
+  variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -658,9 +666,9 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Prove concrete call/return dispatch, remove the temporary internal call
-   premise, and compose the public source-to-artifact theorem; then discharge
-   the remaining certificate safety projections.
+2. Compose the checked Structured-to-TypedCfg artifact path into the public
+   source-to-Assembly artifact theorem, then discharge the remaining
+   certificate safety projections.
 3. Finish outcome-indexed projections/composition, then rerun the final
    verification, frontend, benchmark, and architecture gates.
 

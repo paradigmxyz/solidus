@@ -28061,3 +28061,35 @@ uniqueness, call entry/return restoration, and direct-or-adapted procedure
 fragment provenance complete. The active task is threading that generated
 context through the mutual source-fuel theorem, composing callee outcomes with
 selected dispatch, and deleting `CallCertificate`.
+
+## 2026-06-11 - Compaction resume: source-facing call closure
+
+Resumed from the fully checked concrete-call mutual theorem: generated
+procedure entry, direct/relabel routes, regular/leave return dispatch, nested
+halt propagation, and artifact-facing Structured-to-TypedCfg preservation are
+complete. The immediate task is updating the roadmap/log, committing this
+verified checkpoint, then composing the theorem into the public Assembly
+artifact surface.
+
+## 2026-06-11 07:44 PDT - Concrete Structured call preservation
+
+- Proved that every nonhalting Structured evaluation preserves the source
+  ghost return stack, including nested regular and leave-returning calls.
+- Added checked whole-program generated context and source-call provenance,
+  exposing selected direct or zero-byte-relabel procedure entries and exact
+  return-dispatch blocks without caller-supplied lookup evidence.
+- Theorem-boundary correction: a halted callee retains its active ghost return
+  frame because source semantics does not pop after halt. Halt simulation now
+  existentially hides active concrete return tokens, while regular, break,
+  continue, and leave outcomes retain the exact token relation.
+- Closed concrete recursive call preservation for regular, leave, and halt
+  callee outcomes, including call-entry execution, adapted procedure entry,
+  selected token erasure, caller-stack restoration, and generated return
+  dispatch. Deleted the temporary `CallCertificate`.
+- Added successful-generation and checked-artifact wrappers that expose a
+  source-facing Structured-to-TypedCfg outcome path while hiding compiler
+  results, call tables, and generated-context witnesses.
+- Verification passed: focused Structured syntax, semantics, and preservation
+  checks; all 1,156 `EvmCompiler.Verification` jobs; touched-file proof-hole
+  scan; architecture metrics; and `git diff --check`. Fresh metrics are 79
+  modules, 95,382 Lean lines, 65 compiler variants, and one outcome relation.

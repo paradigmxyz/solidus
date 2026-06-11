@@ -424,6 +424,21 @@ theorem name_of_lookup? {procs : List Proc} {name : Name} {proc : Proc}
       · simp [hEq] at hLookup
         exact ih hLookup
 
+theorem mem_of_lookup? {procs : List Proc} {name : Name} {proc : Proc}
+    (hLookup : lookup? name procs = some proc) :
+    proc ∈ procs := by
+  induction procs with
+  | nil =>
+      simp [lookup?] at hLookup
+  | cons head rest ih =>
+      unfold lookup? at hLookup
+      by_cases hEq : head.name = name
+      · simp [hEq] at hLookup
+        cases hLookup
+        simp
+      · simp [hEq] at hLookup
+        exact List.mem_cons_of_mem head (ih hLookup)
+
 end ProcList
 
 mutual
@@ -566,6 +581,13 @@ theorem procWF_of_lookup? {program : Program} {name : Name} {proc : Proc}
     (hLookup : ProcList.lookup? name program.procs = some proc) :
     proc.WF :=
   ProcList.WF_of_lookup? hWF.2.1 hLookup
+
+theorem procCallsResolved_of_lookup?
+    {program : Program} {name : Name} {proc : Proc}
+    (hWF : program.WF)
+    (hLookup : ProcList.lookup? name program.procs = some proc) :
+    ProcList.BlockCallsResolved program.procs proc.body :=
+  hWF.2.2.1 proc (ProcList.mem_of_lookup? hLookup)
 
 end Program
 

@@ -64,6 +64,33 @@ def runConditionState (code : Code) (state : RunState) :
   let (evm, cond) ← runCondition code state.evm
   .ok (state.withEVM evm, cond)
 
+theorem runState_returns_eq
+    {code : Code} {state final : RunState}
+    (hRun : runState code state = .ok final) :
+    final.returns = state.returns := by
+  unfold runState at hRun
+  cases hCode : run code state.evm with
+  | error err =>
+      simp [hCode, Bind.bind, Except.bind] at hRun
+  | ok evm =>
+      simp [hCode, Bind.bind, Except.bind] at hRun
+      cases hRun
+      rfl
+
+theorem runConditionState_returns_eq
+    {code : Code} {state final : RunState} {cond : Bool}
+    (hRun : runConditionState code state = .ok (final, cond)) :
+    final.returns = state.returns := by
+  unfold runConditionState at hRun
+  cases hCondition : runCondition code state.evm with
+  | error err =>
+      simp [hCondition, Bind.bind, Except.bind] at hRun
+  | ok result =>
+      rcases result with ⟨evm, condition⟩
+      simp [hCondition, Bind.bind, Except.bind] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      rfl
+
 end Code
 
 namespace Code
@@ -579,6 +606,187 @@ mutual
           (Outcome.halt kind postState)
 end
 
+namespace Outcome
+
+/-- A non-halting outcome cannot retain an unpopped procedure frame. -/
+def Nonhalting (outcome : Outcome) : Prop :=
+  match outcome.mode with
+  | .halt _ => False
+  | _ => True
+
+end Outcome
+
+mutual
+
+  /--
+  Structured block evaluation preserves the ghost return stack whenever it
+  does not halt inside a procedure call.
+  -/
+  theorem Block.Eval.returns_eq_of_nonhalting
+      {program : Program} {fuel : Nat} {block : Block}
+      {state : RunState} {outcome : Outcome}
+      (hEval : Block.Eval program fuel block state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.returns = state.returns := by
+    cases hEval with
+    | nil =>
+        rfl
+    | cons_regular hStmt hRest =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hRest hNonhalting).trans
+            (Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+              simp [Outcome.Nonhalting]))
+    | cons_brk hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_cont hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_leave hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_halt hStmt =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+  /--
+  Structured statement evaluation preserves the ghost return stack for every
+  regular or lexical-control outcome.
+  -/
+  theorem Stmt.Eval.returns_eq_of_nonhalting
+      {program : Program} {fuel : Nat} {stmt : Stmt}
+      {state : RunState} {outcome : Outcome}
+      (hEval : Stmt.Eval program fuel stmt state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.returns = state.returns := by
+    cases hEval with
+    | code hCode =>
+        exact Code.runState_returns_eq hCode
+    | if_false hCond =>
+        exact Code.runConditionState_returns_eq hCond
+    | if_true hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hBody hNonhalting).trans
+            (Code.runConditionState_returns_eq hCond)
+    | switch_none hScrutinee hPop hSelect =>
+        simpa [RunState.withEVM] using Code.runState_returns_eq hScrutinee
+    | switch_some hScrutinee hPop hStateAfterPop hSelect hBody =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody hNonhalting
+        exact
+          hBodyReturns.trans
+            (by
+              simpa [hStateAfterPop, RunState.withEVM] using
+                Code.runState_returns_eq hScrutinee)
+    | for_init_regular hInit hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting hLoop hNonhalting).trans
+            (Block.Eval.returns_eq_of_nonhalting hInit (by
+              simp [Outcome.Nonhalting]))
+    | for_init_leave hInit =>
+        exact
+          Block.Eval.returns_eq_of_nonhalting hInit (by
+            simp [Outcome.Nonhalting])
+    | for_init_halt hInit =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | brk =>
+        rfl
+    | cont =>
+        rfl
+    | leave hReturns =>
+        rfl
+    | call_regular hLookup hSplit hBody hPop hAttach =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])
+        simp only [Outcome.regular_state, RunState.pushReturn_returns,
+          RunState.withEVM_returns] at hBodyReturns
+        unfold RunState.popReturn? at hPop
+        rw [hBodyReturns] at hPop
+        simp at hPop
+        exact (congrArg RunState.returns hPop.2).symm
+    | call_leave hLookup hSplit hBody hPop hAttach =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])
+        simp only [Outcome.leave_state, RunState.pushReturn_returns,
+          RunState.withEVM_returns] at hBodyReturns
+        unfold RunState.popReturn? at hPop
+        rw [hBodyReturns] at hPop
+        simp at hPop
+        exact (congrArg RunState.returns hPop.2).symm
+    | call_halt hLookup hSplit hBody =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | terminal hStep =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+  /--
+  Loop evaluation preserves the ghost return stack for every non-halting
+  outcome, including break-to-regular and continue recursion.
+  -/
+  theorem For.Eval.returns_eq_of_nonhalting
+      {program : Program} {fuel : Nat} {cond : Code}
+      {post body : Block} {state : RunState} {outcome : Outcome}
+      (hEval : For.Eval program fuel cond post body state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.returns = state.returns := by
+    cases hEval with
+    | false hCond =>
+        exact Code.runConditionState_returns_eq hCond
+    | body_brk hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])).trans
+            (Code.runConditionState_returns_eq hCond)
+    | body_leave hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])).trans
+            (Code.runConditionState_returns_eq hCond)
+    | body_halt hCond hBody =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | regular_post_regular hCond hBody hPost hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting hLoop hNonhalting).trans
+            ((Block.Eval.returns_eq_of_nonhalting hPost (by
+              simp [Outcome.Nonhalting])).trans
+              ((Block.Eval.returns_eq_of_nonhalting hBody (by
+                simp [Outcome.Nonhalting])).trans
+                (Code.runConditionState_returns_eq hCond)))
+    | cont_post_regular hCond hBody hPost hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting hLoop hNonhalting).trans
+            ((Block.Eval.returns_eq_of_nonhalting hPost (by
+              simp [Outcome.Nonhalting])).trans
+              ((Block.Eval.returns_eq_of_nonhalting hBody (by
+                simp [Outcome.Nonhalting])).trans
+                (Code.runConditionState_returns_eq hCond)))
+    | regular_post_leave hCond hBody hPost =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hPost (by
+            simp [Outcome.Nonhalting])).trans
+            ((Block.Eval.returns_eq_of_nonhalting hBody (by
+              simp [Outcome.Nonhalting])).trans
+              (Code.runConditionState_returns_eq hCond))
+    | cont_post_leave hCond hBody hPost =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hPost (by
+            simp [Outcome.Nonhalting])).trans
+            ((Block.Eval.returns_eq_of_nonhalting hBody (by
+              simp [Outcome.Nonhalting])).trans
+              (Code.runConditionState_returns_eq hCond))
+    | regular_post_halt hCond hBody hPost =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | cont_post_halt hCond hBody hPost =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+end
+
 set_option linter.unusedSimpArgs false in
 mutual
   theorem Block.eval_of_run {program : Program} {fuel : Nat} {block : Block}
@@ -1074,12 +1282,36 @@ def FrameSafe : List Proc → Prop
   | [] => True
   | proc :: rest => proc.FrameSafe ∧ FrameSafe rest
 
+theorem FrameSafe_of_lookup?
+    {procs : List Proc} {name : Name} {proc : Proc}
+    (hFrameSafe : FrameSafe procs)
+    (hLookup : lookup? name procs = some proc) :
+    proc.FrameSafe := by
+  induction procs with
+  | nil =>
+      simp [lookup?] at hLookup
+  | cons head rest ih =>
+      unfold lookup? at hLookup
+      by_cases hName : head.name = name
+      · simp [hName] at hLookup
+        cases hLookup
+        exact hFrameSafe.1
+      · simp [hName] at hLookup
+        exact ih hFrameSafe.2 hLookup
+
 end ProcList
 
 namespace Program
 
 def FrameSafe (program : Program) : Prop :=
   ProcList.FrameSafe program.procs ∧ program.body.FrameSafe
+
+theorem procFrameSafe_of_lookup?
+    {program : Program} {name : Name} {proc : Proc}
+    (hFrameSafe : program.FrameSafe)
+    (hLookup : ProcList.lookup? name program.procs = some proc) :
+    proc.FrameSafe :=
+  ProcList.FrameSafe_of_lookup? hFrameSafe.1 hLookup
 
 end Program
 
