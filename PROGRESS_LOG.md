@@ -28621,3 +28621,33 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   `git diff --check`, and focused axiom audit pass. The new terminal-totality
   and backward terminal theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 15:53:00 PDT `compaction-resume`: Resumed the active
+  Structured-to-TypedCfg observer adequacy proof from the clean terminal-leaf
+  checkpoint. The next slice discharges terminal suffix preservation as an
+  owned semantic fact, then uses it to strengthen adjacent backward results
+  without introducing cross-pass reasoning.
+
+- 2026-06-11 16:04:53 PDT `consolidation`: Proved terminal stack-suffix
+  preservation and control-erased congruence in `Structured.EffectSemantics`,
+  then proved ghost-frame realization preservation once in
+  `Structured.TypedCfgPreservation.Core`. Removed both duplicated
+  `Terminal.RelSafe` definitions and every `hTerminal` premise from ordinary,
+  observer, whole-program, and public verification surfaces.
+
+- 2026-06-11 16:04:53 PDT `proof`: Added checked no-frame backward adequacy
+  for observer straight-line code and conditions, compiler-facing code
+  reflection from the real `TypedCfg.Program.step`, terminal reflection from
+  the existing compiler and CFG typing, and the first structured control case:
+  false-if reflection under the local generated-label distinctness fact.
+
+- 2026-06-11 16:04:53 PDT `architecture`: Added a guard preventing terminal
+  frame safety from returning as a public `RelSafe` premise. New adequacy
+  proofs remain in the adjacent Structured-to-TypedCfg owner and use the
+  existing compiler, shared effect semantics, and state relation only.
+
+- 2026-06-11 16:05:42 PDT `verification`: The 1,177-job verification root,
+  focused Structured adequacy build, architecture guard, scoped no-hole scan,
+  terminal-premise grep, and `git diff --check` pass. Focused axiom audit for
+  the new semantic, frame-relation, code, condition, false-if, and terminal
+  theorems reports only `propext`, `Classical.choice`, and `Quot.sound`.

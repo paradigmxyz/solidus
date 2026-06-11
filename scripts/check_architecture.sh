@@ -199,6 +199,13 @@ report_matches \
   '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
   EvmCompiler/Structured/ObserverAdequacy.lean
 
+report_matches \
+  'Structured terminal frame safety must remain a proved semantic fact, not a public premise:' \
+  'Terminal\.RelSafe|hTerminal[[:space:]]*:[[:space:]]*.*RelSafe' \
+  EvmCompiler/Structured/TypedCfgPreservation.lean \
+  EvmCompiler/Structured/ObserverPreservation.lean \
+  EvmCompiler/PublicVerification.lean
+
 if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
     EvmCompiler/Functions.lean ||
     ! rg -q '^namespace Canonical$' \

@@ -49,6 +49,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCode
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCondition
+#check EvmCompiler.Structured.ObserverPreservation.StateRel.terminal
 #check EvmCompiler.Structured.ObserverPreservation.Code.run_jumpi_toCfg
 #check EvmCompiler.Structured.ObserverPreservation.Stmt.regular_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverPreservation.Stmt.regular_if_false_of_compileStmtFuel?
@@ -57,7 +58,13 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.outcome_block_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
+#check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.Code.runCondition_of_runBody_toCfg_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_outcome_of_wellTyped_halt
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_terminal_of_compileStmtFuel?
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

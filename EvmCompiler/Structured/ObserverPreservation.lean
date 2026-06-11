@@ -586,6 +586,31 @@ theorem targetStack_eq_source_append_hidden
         ⟨hidden,
           by simpa using Assembly.SameRuntimeData.stack_eq hSame⟩
 
+/--
+Observer-aware terminal execution lifts the ordinary frame-realization theorem;
+terminal operations do not consume resource observations.
+-/
+theorem terminal
+    {transcript : Trace} {kind : Assembly.HaltKind}
+    {source : ObserverSemantics.State transcript}
+    {sourceFinal target : EVMState}
+    {tokens : List Word} {trace : Trace}
+    (hRel : StateRel source tokens target trace)
+    (hStep :
+      Structured.Terminal.step kind source.source.evm =
+        .ok sourceFinal) :
+    ∃ targetFinal,
+      Structured.Terminal.step kind target = .ok targetFinal ∧
+        StateRel
+          (source.withSource
+            (source.source.withEVM sourceFinal))
+          tokens targetFinal trace := by
+  obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
+    TypedCfgPreservation.StateRel.terminal hRel.1 hStep
+  exact
+    ⟨targetFinal, hTargetStep, hFinalRel,
+      by simpa using hRel.2⟩
+
 theorem popCondition
     {transcript : Trace}
     {source final : ObserverSemantics.State transcript}
@@ -1829,25 +1854,6 @@ theorem outcome_if_true_of_compileStmtFuel?
                 exact
                   ⟨{ output with slots := output.slots.tail }, rfl⟩
 
-namespace Terminal
-
-def RelSafe (kind : Assembly.HaltKind) : Prop :=
-  ∀ {transcript : Trace}
-    {source : ObserverSemantics.State transcript}
-    {sourceFinal target : EVMState}
-    {tokens : List Word} {trace : Trace},
-    StateRel source tokens target trace →
-      Structured.Terminal.step kind source.source.evm =
-        .ok sourceFinal →
-      ∃ targetFinal,
-        Structured.Terminal.step kind target = .ok targetFinal ∧
-          StateRel
-            (source.withSource
-              (source.source.withEVM sourceFinal))
-            tokens targetFinal trace
-
-end Terminal
-
 theorem outcome_brk_of_compileStmtFuel?
     {transcript : Trace} {fuel : Nat}
     {ctx : TypedCfgCompiler.Context}
@@ -2000,7 +2006,6 @@ theorem outcome_terminal_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {source : ObserverSemantics.State transcript}
     {sourceFinal : EVMState} {tokens : List Word}
-    (hSafe : Terminal.RelSafe kind)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (fuel + 1)
         (.terminal kind) ctx supply entry input regular =
@@ -2025,7 +2030,7 @@ theorem outcome_terminal_of_compileStmtFuel?
       (by intro hMode; cases hMode)
   intro target trace hRel
   obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
-    hSafe hRel hStep
+    StateRel.terminal hRel hStep
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -4094,8 +4099,6 @@ mutual
         TypedCfgPreservation.OutcomeSimulation.ContextSupports ctx
           canBreak canContinue canLeave)
       (hProcs : ctx.procs = program.procs)
-      (hTerminal :
-        ∀ kind, Stmt.Terminal.RelSafe kind)
       (hProgramWF : program.WF)
       (hProgramFrameSafe : ObserverSemantics.Program.FrameSafe program) :
       OutcomeSimulation.Preserves result cfg entry
@@ -4139,7 +4142,7 @@ mutual
                                           generated hHeadCompile hHeadBlocks
                                           hHeadCalls hHeadEval hStmtWF
                                           hStmtFrameSafe hStmtCalls hSupports
-                                          hProcs hTerminal hProgramWF
+                                          hProcs hProgramWF
                                           hProgramFrameSafe
                                     · intro headResult tailResult tailInput
                                         tailFuel tailSource tailOutcome
@@ -4163,7 +4166,7 @@ mutual
                                           hTailBlocks hTailCalls hTailEval
                                           hRestWF hRestFrameSafe
                                           (.mk hRestCalls) hSupports hProcs
-                                          hTerminal hProgramWF
+                                          hProgramWF
                                           hProgramFrameSafe
   termination_by sourceFuel
 
@@ -4203,8 +4206,6 @@ mutual
         TypedCfgPreservation.OutcomeSimulation.ContextSupports ctx
           canBreak canContinue canLeave)
       (hProcs : ctx.procs = program.procs)
-      (hTerminal :
-        ∀ kind, Stmt.Terminal.RelSafe kind)
       (hProgramWF : program.WF)
       (hProgramFrameSafe : ObserverSemantics.Program.FrameSafe program) :
       OutcomeSimulation.Preserves result cfg entry
@@ -4245,7 +4246,7 @@ mutual
                             generated hBodyCompile hBodyBlocks
                             hBodyResultCalls hBodyEval hBodyWF
                             hBodyFrameSafe hBodyCalls hSupports hProcs
-                            hTerminal hProgramWF hProgramFrameSafe).1
+                            hProgramWF hProgramFrameSafe).1
         | switch_none hScrutinee hPop hSelect =>
             cases hFrameSafe with
             | switch hScrutineeSafe hCaseSafe hDefaultSafe =>
@@ -4297,7 +4298,7 @@ mutual
                                 generated hBodyCompile hBodyBlocks
                                 hBodyResultCalls hBodyEval hSelectedWF
                                 hSelectedFrameSafe hSelectedCalls hSupports
-                                hProcs hTerminal hProgramWF
+                                hProcs hProgramWF
                                 hProgramFrameSafe).1
         | @for_init_regular fuel _ _ _ _ _ _ _ hInitEval hLoopEval =>
             cases hWF with
@@ -4321,7 +4322,7 @@ mutual
                               hInitCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro initResult bodyResult condOutput bodyFuel
                             bodySource bodyOutcome hBodyCompile hBodyBlocks
@@ -4335,7 +4336,7 @@ mutual
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
                                 (LabelSupply.label supply 2))
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro bodyResult postResult condOutput postFuel
                             postSource postOutcome hPostCompile hPostBlocks
@@ -4348,7 +4349,7 @@ mutual
                               hPostCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
         | @for_init_leave fuel _ _ _ _ _ _ hInitEval =>
             cases hWF with
@@ -4372,7 +4373,7 @@ mutual
                               hInitCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro initResult bodyResult condOutput bodyFuel
                             bodySource bodyOutcome hBodyCompile hBodyBlocks
@@ -4386,7 +4387,7 @@ mutual
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
                                 (LabelSupply.label supply 2))
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro bodyResult postResult condOutput postFuel
                             postSource postOutcome hPostCompile hPostBlocks
@@ -4399,7 +4400,7 @@ mutual
                               hPostCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
         | @for_init_halt fuel _ _ _ _ _ _ _ hInitEval =>
             cases hWF with
@@ -4423,7 +4424,7 @@ mutual
                               hInitCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro initResult bodyResult condOutput bodyFuel
                             bodySource bodyOutcome hBodyCompile hBodyBlocks
@@ -4437,7 +4438,7 @@ mutual
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
                                 (LabelSupply.label supply 2))
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
                         · intro bodyResult postResult condOutput postFuel
                             postSource postOutcome hPostCompile hPostBlocks
@@ -4450,7 +4451,7 @@ mutual
                               hPostCalls
                               (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
                                 hSupports)
-                              hProcs hTerminal hProgramWF
+                              hProcs hProgramWF
                               hProgramFrameSafe).1
         | brk =>
             cases hWF with
@@ -4529,7 +4530,7 @@ mutual
                 (tokens := Structured.Stmt.callToken supply :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
-                hProcSupports (by rfl) hTerminal
+                hProcSupports (by rfl)
                 hProgramWF hProgramFrameSafe
             have hName :=
               Structured.ProcList.name_of_lookup? hLookup
@@ -4630,7 +4631,7 @@ mutual
                 (tokens := Structured.Stmt.callToken supply :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
-                hProcSupports (by rfl) hTerminal
+                hProcSupports (by rfl)
                 hProgramWF hProgramFrameSafe
             have hName :=
               Structured.ProcList.name_of_lookup? hLookup
@@ -4721,7 +4722,7 @@ mutual
                 (tokens := Structured.Stmt.callToken supply :: tokens)
                 generated hFragmentCompile hFragmentBlocks hFragmentCalls
                 hBody hProcWF.2.2 hProcFrameSafe hProcCalls
-                hProcSupports (by rfl) hTerminal
+                hProcSupports (by rfl)
                 hProgramWF hProgramFrameSafe
             have hName :=
               Structured.ProcList.name_of_lookup? hLookup
@@ -4756,7 +4757,7 @@ mutual
         | terminal hStep =>
             exact
               Stmt.outcome_terminal_of_compileStmtFuel?
-                (hTerminal _) hCompile hBlocks hStep
+                hCompile hBlocks hStep
   termination_by sourceFuel
   decreasing_by
     all_goals simp_wf
@@ -4785,7 +4786,6 @@ theorem path_of_generateWithProcEntryShapes?_and_eval
     (hWellTyped : cfg.WellTyped)
     (hWF : sourceProgram.WF)
     (hFrameSafe : ObserverSemantics.Program.FrameSafe sourceProgram)
-    (hTerminal : ∀ kind, Stmt.Terminal.RelSafe kind)
     (hEval :
       ObserverSemantics.Block.Eval sourceProgram sourceFuel
         sourceProgram.body source outcome) :
@@ -4815,7 +4815,7 @@ theorem path_of_generateWithProcEntryShapes?_and_eval
     (outcome_block_of_compileFuel?_and_eval_with_calls
       (tokens := []) generated hMainCompile generated.mainBlocks
       generated.mainCalls hEval hWF.2.2.2.2 hFrameSafe.2
-      hWF.2.2.2.1 hSupports (by rfl) hTerminal hWF hFrameSafe).1
+      hWF.2.2.2.1 hSupports (by rfl) hWF hFrameSafe).1
 
 /--
 Artifact-facing observer preservation with the generated well-typedness proof
@@ -4835,7 +4835,6 @@ theorem path_of_artifactWithProcEntryShapes?_and_eval
         some artifact)
     (hWF : sourceProgram.WF)
     (hFrameSafe : ObserverSemantics.Program.FrameSafe sourceProgram)
-    (hTerminal : ∀ kind, Stmt.Terminal.RelSafe kind)
     (hEval :
       ObserverSemantics.Block.Eval sourceProgram sourceFuel
         sourceProgram.body source outcome) :
@@ -4857,7 +4856,7 @@ theorem path_of_artifactWithProcEntryShapes?_and_eval
           path_of_generateWithProcEntryShapes?_and_eval
             hGenerate
             (TypedCfg.Program.wellTyped_of_check hCheck)
-            hWF hFrameSafe hTerminal hEval
+            hWF hFrameSafe hEval
       · simp [hGenerate, hCheck] at hArtifact
 
 end Program

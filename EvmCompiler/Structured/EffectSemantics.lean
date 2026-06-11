@@ -79,6 +79,87 @@ theorem exists_step_of_argCount_le
           | cons recipient tail =>
               exact ⟨_, rfl⟩
 
+/--
+Terminal operations consume only their declared stack prefix. Appending a
+compiler-owned suffix therefore appends the same suffix to the final stack
+without changing any source-visible runtime data.
+-/
+theorem step_append_stack
+    (kind : Assembly.HaltKind) (state final : EVMState)
+    (hidden : EvmYul.Stack Word)
+    (hStep : step kind state = .ok final) :
+    step kind { state with stack := state.stack ++ hidden } =
+      .ok { final with stack := final.stack ++ hidden } := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases kind with
+      | stop =>
+          cases hStep
+          rfl
+      | «return» =>
+          cases stack with
+          | nil =>
+              contradiction
+          | cons first rest =>
+              cases rest with
+              | nil =>
+                  contradiction
+              | cons second tail =>
+                  cases hStep
+                  rfl
+      | revert =>
+          cases stack with
+          | nil =>
+              contradiction
+          | cons first rest =>
+              cases rest with
+              | nil =>
+                  contradiction
+              | cons second tail =>
+                  cases hStep
+                  rfl
+      | selfdestruct =>
+          cases stack with
+          | nil =>
+              contradiction
+          | cons recipient tail =>
+              cases hStep
+              rfl
+
+/--
+Terminal execution is congruent when states differ only in compiler-owned
+control counters.
+-/
+theorem step_map_eraseRuntimeControl
+    (kind : Assembly.HaltKind) {target source : EVMState}
+    (hRel : Assembly.SameRuntimeData target source) :
+    (step kind target).map Assembly.eraseRuntimeControl =
+      (step kind source).map Assembly.eraseRuntimeControl := by
+  cases target with
+  | mk targetShared targetPc targetStack targetExecLength =>
+      cases source with
+      | mk sourceShared sourcePc sourceStack sourceExecLength =>
+          simp [Assembly.SameRuntimeData,
+            Assembly.eraseRuntimeControl] at hRel
+          rcases hRel with ⟨rfl, rfl⟩
+          cases kind with
+          | stop =>
+              rfl
+          | «return» =>
+              cases targetStack with
+              | nil =>
+                  rfl
+              | cons first rest =>
+                  cases rest <;> rfl
+          | revert =>
+              cases targetStack with
+              | nil =>
+                  rfl
+              | cons first rest =>
+                  cases rest <;> rfl
+          | selfdestruct =>
+              cases targetStack <;> rfl
+
 end Terminal
 
 namespace StackFrame

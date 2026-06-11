@@ -71,6 +71,54 @@ theorem targetCongr
     ⟨realized, hRealize,
       SameRuntimeData.trans hSame hTarget⟩
 
+/--
+Terminal execution preserves realization of ghost return frames. The terminal
+operation consumes only source stack operands, so compiler-owned return data
+remains an untouched suffix.
+-/
+theorem terminal
+    {kind : Assembly.HaltKind}
+    {source : RunState} {sourceFinal target : EVMState}
+    {tokens : List Word}
+    (hRel : StateRel source tokens target)
+    (hStep :
+      Structured.Terminal.step kind source.evm = .ok sourceFinal) :
+    ∃ targetFinal,
+      Structured.Terminal.step kind target = .ok targetFinal ∧
+        StateRel (source.withEVM sourceFinal) tokens targetFinal := by
+  rcases hRel with ⟨realized, hRealize, hSame⟩
+  have hAppend :=
+    realizeStack_append_prefix source.evm.stack []
+      source.returns tokens
+  cases hHidden : realizeStack [] source.returns tokens with
+  | none =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+  | some hidden =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+      have hFramed :=
+        Structured.Terminal.step_append_stack
+          kind source.evm sourceFinal hidden hStep
+      have hCongruence :=
+        Structured.Terminal.step_map_eraseRuntimeControl kind hSame
+      rw [hFramed] at hCongruence
+      cases hTarget :
+          Structured.Terminal.step kind target with
+      | error err =>
+          simp [hTarget, Except.map] at hCongruence
+      | ok targetFinal =>
+          simp [hTarget, Except.map] at hCongruence
+          refine ⟨targetFinal, rfl, ?_⟩
+          refine ⟨sourceFinal.stack ++ hidden, ?_, ?_⟩
+          · have hFinalAppend :=
+              realizeStack_append_prefix sourceFinal.stack []
+                source.returns tokens
+            simpa [RunState.withEVM, hHidden] using hFinalAppend
+          · simpa [RunState.withEVM] using hCongruence
+
 theorem stackView_of_pop
     {source : RunState} {tokens : List Word} {target : EVMState}
     {stack : EvmYul.Stack Word} {value : Word}

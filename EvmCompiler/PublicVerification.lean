@@ -57,8 +57,6 @@ def StructuredEvaluation (artifact : Artifact)
         some expressions ∧
       expressions.toStructured.WF ∧
       expressions.toStructured.FrameSafe ∧
-      (∀ kind,
-        Structured.TypedCfgPreservation.Stmt.Terminal.RelSafe kind) ∧
       Structured.Block.Eval expressions.toStructured fuel
         expressions.toStructured.body
         (Structured.Program.initialState initial) outcome
@@ -155,8 +153,7 @@ theorem structuredSimulation_of_loweredFrom
     ⟨loweredExpressions, compiled, _hCompatible, hExpressions, hCfg,
       hCompile, hExecutable, hCertificate⟩
   rcases hEvaluation with
-    ⟨evaluatedExpressions, hEvaluatedExpressions, hWF, hFrameSafe,
-      hTerminal, hEval⟩
+    ⟨evaluatedExpressions, hEvaluatedExpressions, hWF, hFrameSafe, hEval⟩
   have hExpressionsEq : evaluatedExpressions = loweredExpressions := by
     unfold plannedFor at hEvaluatedExpressions
     rw [hExpressions] at hEvaluatedExpressions
@@ -168,7 +165,7 @@ theorem structuredSimulation_of_loweredFrom
       hSourceCfg⟩
   have hSourcePath :=
     Structured.TypedCfgPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
-      hSourceArtifact hWF hFrameSafe hTerminal hEval
+      hSourceArtifact hWF hFrameSafe hEval
   have hSourcePath' :
       Structured.TypedCfgPreservation.OutcomeSimulation.Path
         artifact.metadata.typedCfg
