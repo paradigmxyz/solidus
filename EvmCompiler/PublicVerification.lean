@@ -180,7 +180,7 @@ theorem structuredSimulation_of_loweredFrom
     simpa [hSourceCfg] using hSourcePath
   have hWellTyped : artifact.metadata.typedCfg.WellTyped :=
     (Compiler.AllocatedTypedCfg.Program.compileCertified?_certificateValid
-      hCompile).2.2.2.1
+      hCompile).2.2.2.2.1
   have hEntry :
       artifact.metadata.typedCfg.entry =
         Structured.TypedCfgCompiler.entryLabel := by
@@ -255,7 +255,7 @@ theorem compileArtifactWithPolicy?_entrySimulation
   rcases hValid.1 with
     ⟨hBackend, hAllocation, hTypedCfg⟩
   have hWellTyped : artifact.metadata.typedCfg.WellTyped :=
-    hTypedCfg.2.2.2.1
+    hTypedCfg.2.2.2.2.1
   cases hFind :
       artifact.metadata.typedCfg.findBlock?
         artifact.metadata.typedCfg.entry with

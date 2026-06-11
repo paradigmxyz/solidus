@@ -75,6 +75,8 @@ def runState (instr : Instr) (shape : Shape) (state : EVMState) :
       | 14 => Assembly.PrimOp.swap15.step state
       | 15 => Assembly.PrimOp.swap16.step state
       | _ => .error .InvalidInstruction
+  | .bindLocals _offset _names =>
+      .ok state
   | .relabel _target =>
       .ok state
   | .unwind target =>

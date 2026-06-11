@@ -21,6 +21,8 @@ def step : BasicInstr → EVMState → Except EVMException EVMState
       Assembly.Target.stepInstr (Assembly.TargetInstr.push32 value) state
   | .op basicOp, state =>
       basicOp.step state
+  | .bindLocals _offset _names, state =>
+      .ok state
 
 end BasicInstr
 

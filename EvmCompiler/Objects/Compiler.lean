@@ -295,23 +295,17 @@ theorem lowerArtifact?_metadataValid
         | some cfg =>
             rw [hCfg] at hCompile
             simp only [Option.bind_some] at hCompile
-            simp only
-              [Compiler.AllocatedTypedCfg.Program.ofAllocation]
-              at hCompile
-            unfold
-              Compiler.AllocatedTypedCfg.Program.compileCertified?
-              at hCompile
-            rw [if_pos hValid] at hCompile
-            rw [if_pos rfl] at hCompile
-            cases hCfgCompiled : cfg.compileCertified? with
+            cases hAllocated :
+                (Compiler.AllocatedTypedCfg.Program.ofAllocation
+                  planned.allocation cfg).compileCertified? with
             | none =>
-                rw [hCfgCompiled] at hCompile
+                rw [hAllocated] at hCompile
                 simp at hCompile
-            | some cfgCompiled =>
-                rw [hCfgCompiled] at hCompile
-                simp at hCompile
+            | some compiled =>
+                rw [hAllocated] at hCompile
+                simp only [Option.bind_some] at hCompile
                 cases hTarget :
-                    Assembly.compileExecutable? cfgCompiled.target with
+                    Assembly.compileExecutable? compiled.target with
                 | none =>
                     rw [hTarget] at hCompile
                     simp at hCompile
@@ -319,19 +313,14 @@ theorem lowerArtifact?_metadataValid
                     rw [hTarget] at hCompile
                     simp only [Option.bind_some, Option.some.injEq] at hCompile
                     cases hCompile
-                    have hAllocation :=
-                      Locals.Allocation.ProgramPlan.wellFormed_of_check
-                        hValid
-                    have hCfgCertificate :
-                        TypedCfg.Program.ProgramCert.ValidFor
-                          cfgCompiled.metadata cfg :=
-                      ⟨TypedCfg.Program.compileCertified?_wellTyped
-                          hCfgCompiled,
-                        TypedCfg.Program.compileCertified?_certificate
-                          hCfgCompiled⟩
+                    have hCertificate :=
+                      Compiler.AllocatedTypedCfg.Program.compileCertified?_certificateValid
+                        hAllocated
                     exact
-                      ⟨hAllocation,
-                        ⟨hAllocation, rfl, rfl, hCfgCertificate⟩⟩
+                      ⟨hCertificate.1, by
+                        simpa [CompileMetadata.TypedCfgValid,
+                          Compiler.AllocatedTypedCfg.Program.ofAllocation]
+                          using hCertificate⟩
   · simp [hValid] at hCompile
 
 end PlannedProgram
@@ -384,23 +373,17 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
         | some cfg =>
             rw [hCfg] at hCompile
             simp only [Option.bind_some] at hCompile
-            simp only
-              [Compiler.AllocatedTypedCfg.Program.ofAllocation]
-              at hCompile
-            unfold
-              Compiler.AllocatedTypedCfg.Program.compileCertified?
-              at hCompile
-            rw [if_pos hValid] at hCompile
-            rw [if_pos rfl] at hCompile
-            cases hCfgCompiled : cfg.compileCertified? with
+            cases hAllocated :
+                (Compiler.AllocatedTypedCfg.Program.ofAllocation
+                  planned.allocation cfg).compileCertified? with
             | none =>
-                rw [hCfgCompiled] at hCompile
+                rw [hAllocated] at hCompile
                 simp at hCompile
-            | some cfgCompiled =>
-                rw [hCfgCompiled] at hCompile
-                simp at hCompile
+            | some compiled =>
+                rw [hAllocated] at hCompile
+                simp only [Option.bind_some] at hCompile
                 cases hTarget :
-                    Assembly.compileExecutable? cfgCompiled.target with
+                    Assembly.compileExecutable? compiled.target with
                 | none =>
                     rw [hTarget] at hCompile
                     simp at hCompile
@@ -408,23 +391,10 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                     rw [hTarget] at hCompile
                     simp only [Option.bind_some, Option.some.injEq] at hCompile
                     cases hCompile
-                    let compiled :
-                        Compiler.AllocatedTypedCfg.CertifiedArtifact :=
-                      { target := cfgCompiled.target
-                        metadata :=
-                          { scopeLayouts :=
-                              Compiler.AllocatedTypedCfg.scopeLayoutsOf
-                                planned.allocation
-                            cfg := cfgCompiled.metadata } }
                     exact
                       ⟨expressions, compiled, by
                           simp [lowerWithAllocation?, hLower, expressions],
-                        hCfg,
-                        by
-                          simp [compiled,
-                            Compiler.AllocatedTypedCfg.Program.ofAllocation,
-                            Compiler.AllocatedTypedCfg.Program.compileCertified?,
-                            hValid, hCfgCompiled],
+                        hCfg, hAllocated,
                         hTarget, rfl⟩
   · simp [hValid] at hCompile
 

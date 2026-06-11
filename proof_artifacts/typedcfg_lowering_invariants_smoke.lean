@@ -10,6 +10,7 @@ namespace TypedCfgLoweringInvariantsSmoke
 #check TypedCfg.Preservation.Instr.lowerAt_source_runNResult
 #check TypedCfg.Program.compileCertified?_step_eventually
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayouts
+#check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayoutsWitnessed
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
 
 def genericEntryShape : TypedCfg.Shape :=
@@ -37,6 +38,13 @@ example :
       none := by
   native_decide
 
+example :
+    TypedCfg.Instr.lowerAt?
+        (.bindLocals 0 ["value"])
+        (TypedCfg.Shape.closed [.word]) =
+      some ([], TypedCfg.Shape.closed [.local "value"]) := by
+  native_decide
+
 def allocationDrivenProcShapeRecorded : Bool :=
   let source :=
     Functions.ScratchFrameSpill.AllocationExamples.program
@@ -60,6 +68,30 @@ def allocationDrivenProcShapeRecorded : Bool :=
                       tail := .caller })
 
 example : allocationDrivenProcShapeRecorded = true := by
+  native_decide
+
+def allocationDrivenLexicalShapeRecorded : Bool :=
+  let source :=
+    Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
+  match
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source with
+  | none => false
+  | some allocation =>
+      let planned : Objects.Program.PlannedProgram :=
+        { source := source
+          allocation := allocation }
+      match planned.lowerWithAllocation? with
+      | none => false
+      | some expressions =>
+          match planned.lowerTypedCfg? expressions with
+          | none => false
+          | some cfg =>
+              Compiler.AllocatedTypedCfg.cfgWitnessesLocalLayout
+                  cfg ["nested"] &&
+                Compiler.AllocatedTypedCfg.scopeLayoutsWitnessed?
+                  (Compiler.AllocatedTypedCfg.scopeLayoutsOf allocation) cfg
+
+example : allocationDrivenLexicalShapeRecorded = true := by
   native_decide
 
 def firstLabel : Assembly.Label :=

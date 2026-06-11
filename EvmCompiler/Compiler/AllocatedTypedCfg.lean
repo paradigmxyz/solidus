@@ -30,6 +30,47 @@ end ScopeLayout
 def scopeLayoutsOf (plan : Locals.Allocation.ProgramPlan) : List ScopeLayout :=
   plan.scopes.map ScopeLayout.ofScopePlan
 
+def shapeHasLocalPrefix (shape : TypedCfg.Shape)
+    (names : List Locals.Name) : Bool :=
+  decide
+    (shape.slots.take names.length =
+      names.map TypedCfg.Slot.local)
+
+def instrBindsLocals (instr : TypedCfg.Instr)
+    (names : List Locals.Name) : Bool :=
+  match instr with
+  | .bindLocals 0 bound => decide (bound = names)
+  | _ => false
+
+def blockWitnessesLocalLayout (block : TypedCfg.Block)
+    (names : List Locals.Name) : Bool :=
+  shapeHasLocalPrefix block.input names ||
+    shapeHasLocalPrefix block.output names ||
+    block.body.any fun instr => instrBindsLocals instr names
+
+def cfgWitnessesLocalLayout (program : TypedCfg.Program)
+    (names : List Locals.Name) : Bool :=
+  names.isEmpty ||
+    program.blocks.any fun block => blockWitnessesLocalLayout block names
+
+namespace ScopeLayout
+
+def stackNames (layout : ScopeLayout) : List Locals.Name :=
+  layout.stackShape.slots.filterMap fun slot =>
+    match slot with
+    | .local name => some name
+    | _ => none
+
+def WitnessedBy (layout : ScopeLayout) (cfg : TypedCfg.Program) : Prop :=
+  cfgWitnessesLocalLayout cfg layout.stackNames = true
+
+end ScopeLayout
+
+def scopeLayoutsWitnessed? (layouts : List ScopeLayout)
+    (cfg : TypedCfg.Program) : Bool :=
+  layouts.all fun layout =>
+    cfgWitnessesLocalLayout cfg layout.stackNames
+
 structure Program where
   allocation : Locals.Allocation.ProgramPlan
   cfg : TypedCfg.Program
@@ -46,6 +87,7 @@ namespace Certificate
 def ValidFor (certificate : Certificate) (program : Program) : Prop :=
   program.allocation.WellFormed ∧
     program.scopeLayouts = scopeLayoutsOf program.allocation ∧
+    scopeLayoutsWitnessed? program.scopeLayouts program.cfg = true ∧
     certificate.scopeLayouts = program.scopeLayouts ∧
     TypedCfg.Program.ProgramCert.ValidFor certificate.cfg program.cfg
 
@@ -68,6 +110,10 @@ def compileCertified? (program : Program) : Option CertifiedArtifact := do
     pure ()
   else
     none
+  if scopeLayoutsWitnessed? program.scopeLayouts program.cfg then
+    pure ()
+  else
+    none
   let compiled ← program.cfg.compileCertified?
   some
     { target := compiled.target
@@ -85,6 +131,7 @@ def compileContract :
   Accepted := fun program =>
     program.allocation.WellFormed ∧
       program.scopeLayouts = scopeLayoutsOf program.allocation ∧
+      scopeLayoutsWitnessed? program.scopeLayouts program.cfg = true ∧
       program.cfg.WellTyped
   MetaValid := fun program artifact =>
     artifact.metadata.ValidFor program
@@ -106,18 +153,38 @@ theorem compileCertified?_scopeLayouts
       artifact.metadata.scopeLayouts = program.scopeLayouts := by
   unfold compileCertified? at hCompile
   by_cases hAllocation : program.allocation.wellFormed? = true
-  · simp [hAllocation] at hCompile
-    by_cases hLayouts :
+  · by_cases hLayouts :
         program.scopeLayouts = scopeLayoutsOf program.allocation
-    · simp [hLayouts] at hCompile
-      cases hCfg : program.cfg.compileCertified? with
-      | none =>
-          simp [hCfg] at hCompile
-      | some compiled =>
-          simp [hCfg] at hCompile
-          cases hCompile
-          exact ⟨hLayouts, hLayouts.symm⟩
-    · simp [hLayouts] at hCompile
+    · by_cases hBindings :
+          scopeLayoutsWitnessed?
+              (scopeLayoutsOf program.allocation) program.cfg =
+            true
+      · cases hCfg : program.cfg.compileCertified? with
+        | none =>
+            simp [hAllocation, hLayouts, hBindings, hCfg] at hCompile
+        | some compiled =>
+            simp [hAllocation, hLayouts, hBindings, hCfg] at hCompile
+            cases hCompile
+            exact ⟨hLayouts, hLayouts.symm⟩
+      · simp [hAllocation, hLayouts, hBindings] at hCompile
+    · simp [hAllocation, hLayouts] at hCompile
+  · simp [hAllocation] at hCompile
+
+theorem compileCertified?_scopeLayoutsWitnessed
+    {program : Program} {artifact : CertifiedArtifact}
+    (hCompile : program.compileCertified? = some artifact) :
+    scopeLayoutsWitnessed? program.scopeLayouts program.cfg = true := by
+  unfold compileCertified? at hCompile
+  by_cases hAllocation : program.allocation.wellFormed? = true
+  · by_cases hLayouts :
+        program.scopeLayouts = scopeLayoutsOf program.allocation
+    · by_cases hBindings :
+          scopeLayoutsWitnessed?
+              (scopeLayoutsOf program.allocation) program.cfg =
+            true
+      · simpa [hLayouts] using hBindings
+      · simp [hAllocation, hLayouts, hBindings] at hCompile
+    · simp [hAllocation, hLayouts] at hCompile
   · simp [hAllocation] at hCompile
 
 theorem compileCertified?_cfg
@@ -131,9 +198,16 @@ theorem compileCertified?_cfg
     Locals.Allocation.ProgramPlan.check_of_wellFormed
       (compileCertified?_allocationWellFormed hCompile)
   have hLayouts := (compileCertified?_scopeLayouts hCompile).1
+  have hBindings := compileCertified?_scopeLayoutsWitnessed hCompile
+  have hBindings' :
+      scopeLayoutsWitnessed?
+          (scopeLayoutsOf program.allocation) program.cfg =
+        true := by
+    simpa [hLayouts] using hBindings
   cases hCfg : program.cfg.compileCertified? with
   | none =>
-      simp [compileCertified?, hAllocation, hLayouts, hCfg] at hCompile
+      unfold compileCertified? at hCompile
+      simp [hAllocation, hLayouts, hBindings', hCfg] at hCompile
   | some compiled =>
       have hArtifact :
           ({ target := compiled.target
@@ -141,7 +215,9 @@ theorem compileCertified?_cfg
                { scopeLayouts := program.scopeLayouts
                  cfg := compiled.metadata } } :
             CertifiedArtifact) = artifact := by
-        simpa [compileCertified?, hAllocation, hLayouts, hCfg] using hCompile
+        unfold compileCertified? at hCompile
+        simp [hAllocation, hLayouts, hBindings', hCfg] at hCompile
+        simpa [hLayouts] using hCompile
       rw [← hArtifact]
 
 theorem compileCertified?_certificateValid
@@ -151,6 +227,7 @@ theorem compileCertified?_certificateValid
   refine
     ⟨compileCertified?_allocationWellFormed hCompile,
       (compileCertified?_scopeLayouts hCompile).1,
+      compileCertified?_scopeLayoutsWitnessed hCompile,
       (compileCertified?_scopeLayouts hCompile).2, ?_⟩
   have hCfg := compileCertified?_cfg hCompile
   exact
@@ -163,7 +240,9 @@ theorem compileCertified?_checked
     Compiler.PassContract.Checked compileContract program artifact := by
   have hValid := compileCertified?_certificateValid hCompile
   exact
-    { accepted := ⟨hValid.1, hValid.2.1, hValid.2.2.2.1⟩
+    { accepted :=
+        ⟨hValid.1, hValid.2.1, hValid.2.2.1,
+          hValid.2.2.2.2.1⟩
       compiles := hCompile
       metadataValid := hValid }
 
@@ -220,6 +299,15 @@ def localAllocation : Locals.Allocation.Plan :=
 def allocation : Locals.Allocation.ProgramPlan :=
   Locals.Allocation.ProgramPlan.main localAllocation
 
+def namedLocalAllocation : Locals.Allocation.Plan :=
+  { sourceScope := ["value"]
+    stackOrder := ["value"]
+    bindings := [("value", .stack 0)]
+    scratchRegion? := none }
+
+def namedAllocation : Locals.Allocation.ProgramPlan :=
+  Locals.Allocation.ProgramPlan.main namedLocalAllocation
+
 def duplicateScopeAllocation : Locals.Allocation.ProgramPlan :=
   { scopes :=
       [{ scope := .main
@@ -238,10 +326,16 @@ def staleLayoutProgram : Program :=
          stackShape := TypedCfg.Shape.closed [.local "stale"]
          scratchBindings := [] }] }
 
+def unwitnessedNamedProgram : Program :=
+  Program.ofAllocation namedAllocation cfg
+
 example : program.compileCertified?.isSome = true := by
   native_decide
 
 example : staleLayoutProgram.compileCertified? = none := by
+  native_decide
+
+example : unwitnessedNamedProgram.compileCertified? = none := by
   native_decide
 
 example : duplicateScopeAllocation.wellFormed? = false := by

@@ -67,6 +67,17 @@ def pop (n : Nat) (shape : Shape) : Shape :=
 def pushWords (n : Nat) (shape : Shape) : Shape :=
   { shape with slots := List.replicate n Slot.word ++ shape.slots }
 
+def bindLocals? (offset : Nat) (names : List String)
+    (shape : Shape) : Option Shape :=
+  if offset + names.length ≤ shape.length then
+    some
+      { shape with
+        slots :=
+          shape.slots.take offset ++ names.map Slot.local ++
+            shape.slots.drop (offset + names.length) }
+  else
+    none
+
 def hasPrefix (prefixShape shape : Shape) : Prop :=
   prefixShape.tail = shape.tail ∧
     ∃ suffix, shape.slots = prefixShape.slots ++ suffix
@@ -136,6 +147,7 @@ inductive Instr where
   | pop
   | dup (depth : Nat)
   | swap (depth : Nat)
+  | bindLocals (offset : Nat) (names : List String)
   | relabel (target : Shape)
   | unwind (target : Shape)
   deriving DecidableEq, Repr

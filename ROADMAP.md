@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 08:06 PDT.
+Last updated: 2026-06-11 08:20 PDT.
 
 ## Objective
 
@@ -95,6 +95,12 @@ Implemented in this migration:
   derived inline procedure adapters: calls retain generic row-polymorphic entry
   shapes while canonical parameter locations name the internal body shape and
   subsequent symbolic value flow;
+- zero-byte, preservation-proved local-binding instructions emitted at
+  declaration and assignment boundaries, so canonical main, function, and
+  lexical stack-local identities survive source lowering into TypedCfg;
+- an allocated-pass witness gate that rejects every nonempty canonical stack
+  layout unless the generated CFG exposes the same symbolic local prefix or an
+  exact local-binding instruction;
 - a primitive stack-contract interface independent of the historical
   closed-world proof whitelist, so `gas`, `msize`, and call/create operations
   can be typed without duplicating the CFG compiler;
@@ -105,8 +111,9 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Extend canonical location binding from inline procedure parameters to
-   main/lexical local transitions and arbitrary mixed stack/scratch plans.
+1. Generalize allocation-derived lowering beyond the two retained all-stack or
+   all-scratch plan families, and make canonical scratch locations operational
+   in the generated CFG rather than certificate metadata only.
 2. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 3. Run the final frontend, benchmark, deletion, proof-hole, and architecture
@@ -115,7 +122,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 95,640 Lean lines across 79 modules, down by about 926K lines from the
+tree is 95,840 Lean lines across 79 modules, down by about 926K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -455,8 +462,13 @@ Goal: make stack/control invariants explicit before Assembly.
   certificate, and rejects stale layouts. Inline procedure parameters now
   enter the generated CFG through a checked zero-byte relabel adapter whose
   named body shape is derived from the function allocation. Procedure shape
-  selection is allocation-derived rather than backend-tag-driven; main/lexical
-  local transitions and fully generic arbitrary-plan lowering remain.
+  selection is allocation-derived rather than backend-tag-driven. Declaration
+  and assignment lowering now emits zero-byte local-binding instructions, so
+  main, function, and nested lexical stack-local identities are retained in
+  TypedCfg. The allocated pass rejects canonical nonempty stack layouts that
+  are not witnessed by generated block shapes or binding instructions.
+  Canonical scratch bindings remain certificate metadata rather than
+  operational CFG locations, and fully generic mixed-plan lowering remains.
 - [x] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
   DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies,
@@ -677,7 +689,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules, 95,708 Lean lines, 66 compiler
+- retained architecture metrics: 79 modules, 95,840 Lean lines, 66 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -691,9 +703,9 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Make canonical allocation locations determine main/lexical generated CFG
-   values and block shapes, then generalize the lowerer beyond the two retained
-   source-derived allocation families.
+1. Generalize the lowerer beyond the two retained source-derived allocation
+   families, make scratch bindings operational in TypedCfg, and prove lowering
+   once for arbitrary well-formed mixed stack/scratch plans.
 2. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
 3. Rerun the final verification, frontend, benchmark, deletion, proof-hole,

@@ -80,6 +80,14 @@ end Program
 def codeStmt (code : Structured.Code) : List Expressions.Stmt :=
   [Expressions.Stmt.code code]
 
+def bindLocals (offset : Nat) (layout : Layout) : Structured.Code :=
+  [Structured.BasicInstr.bindLocals offset layout]
+
+theorem bindLocals_noCallCreate (offset : Nat) (layout : Layout) :
+    (bindLocals offset layout).usesCallCreate = false := by
+  simp [bindLocals, Structured.Code.usesCallCreate,
+    Structured.BasicInstr.usesCallCreate]
+
 def finishTo (final : Ctx) (targetDepth : Nat)
     (stmts : List Expressions.Stmt) :
     Option Expressions.Block := do
@@ -154,7 +162,8 @@ mutual
         some (codeStmt code, ctx)
     | .let_ name value => do
         let code ← Expr.compileCode ctx 0 value
-        some (codeStmt code, ctx.withLayout (name :: ctx.layout))
+        let layout := name :: ctx.layout
+        some (codeStmt (code ++ bindLocals 0 layout), ctx.withLayout layout)
     | .assign name value => do
         let depth ← Layout.lookupDepth? name ctx.layout
         let valueCode ← Expr.compileCode ctx 0 value
@@ -162,17 +171,17 @@ mutual
         let code :=
           valueCode ++
             [Structured.BasicInstr.op swapOp, Structured.BasicInstr.op .pop]
-        some (codeStmt code, ctx)
+        some (codeStmt (code ++ bindLocals 0 ctx.layout), ctx)
     | .assignTop name => do
         let depth ← Layout.lookupDepth? name ctx.layout
         let swapOp ← StackOp.swap? depth
         let code := [Structured.BasicInstr.op swapOp, Structured.BasicInstr.op .pop]
-        some (codeStmt code, ctx)
+        some (codeStmt (code ++ bindLocals 0 ctx.layout), ctx)
     | .assignTopWithOffset offset name => do
         let depth ← Layout.lookupDepth? name ctx.layout
         let swapOp ← StackOp.swap? (offset + depth)
         let code := [Structured.BasicInstr.op swapOp, Structured.BasicInstr.op .pop]
-        some (codeStmt code, ctx)
+        some (codeStmt (code ++ bindLocals offset ctx.layout), ctx)
     | .promoteName name => do
         let (code, promoted) ← ctx.promoteNameStackOnly? name
         some (codeStmt code, ctx.withLayout promoted)
@@ -827,11 +836,14 @@ mutual
             simp [hCode] at hCompile
         | some code =>
             simp [hCode] at hCompile
+            have hCodeNo :=
+              Expr.compileCode_noCallCreate ctx 0 value
+                (by simpa [Stmt.usesCallCreate] using hStmt) hCode
             cases hCompile
             try subst stmts
             exact codeStmt_noCallCreate
-              (Expr.compileCode_noCallCreate ctx 0 value
-                (by simpa [Stmt.usesCallCreate] using hStmt) hCode)
+              (Structured.Code.usesCallCreate_append_eq_false hCodeNo
+                (bindLocals_noCallCreate 0 (name :: ctx.layout)))
     | assign name value =>
         have hValue : value.usesCallCreate = false := by
           simpa [Stmt.usesCallCreate] using hStmt

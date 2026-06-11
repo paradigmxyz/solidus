@@ -49,6 +49,7 @@ def lower? : Instr → Option Assembly.Program
       | 14 => some [.prim .swap15]
       | 15 => some [.prim .swap16]
       | _ => none
+  | .bindLocals _offset _names => some []
   | .relabel _target => some []
   | .unwind _target => none
 

@@ -82,6 +82,7 @@ namespace BasicInstr
 def toCfg : BasicInstr → TypedCfg.Instr
   | .push value => .push value
   | .op op => .prim op.toPrimOp
+  | .bindLocals offset names => .bindLocals offset names
 
 end BasicInstr
 

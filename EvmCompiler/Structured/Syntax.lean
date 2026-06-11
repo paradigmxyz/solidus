@@ -273,6 +273,7 @@ end BasicOp
 inductive BasicInstr where
   | push (value : Word)
   | op (op : BasicOp)
+  | bindLocals (offset : Nat) (names : List Name)
   deriving DecidableEq, Repr
 
 abbrev Code := List BasicInstr
@@ -282,6 +283,7 @@ namespace BasicInstr
 def usesCallCreate : BasicInstr → Bool
   | .push _ => false
   | BasicInstr.op basicOp => basicOp.toPrimOp.isCallCreate
+  | .bindLocals _ _ => false
 
 end BasicInstr
 
@@ -593,21 +595,24 @@ end Program
 
 namespace BasicInstr
 
-def toAssembly : BasicInstr → Assembly.Instr
-  | .push value => .push value
-  | .op basicOp => .prim basicOp.toPrimOp
+def toAssembly : BasicInstr → Assembly.Program
+  | .push value => [.push value]
+  | .op basicOp => [.prim basicOp.toPrimOp]
+  | .bindLocals _ _ => []
 
 theorem toAssembly_usesCallCreate (instr : BasicInstr) :
-    instr.toAssembly.usesCallCreate = instr.usesCallCreate := by
-  cases instr <;> simp [toAssembly, usesCallCreate,
-    Assembly.Instr.usesCallCreate]
+    Assembly.Program.usesCallCreate instr.toAssembly =
+      instr.usesCallCreate := by
+  cases instr <;>
+    simp [toAssembly, usesCallCreate, Assembly.Program.usesCallCreate,
+      Assembly.Instr.usesCallCreate]
 
 end BasicInstr
 
 namespace Code
 
 def toAssembly (code : Code) : Assembly.Program :=
-  code.map BasicInstr.toAssembly
+  code.flatMap BasicInstr.toAssembly
 
 theorem toAssembly_usesCallCreate (code : Code) :
     Assembly.Program.usesCallCreate code.toAssembly = usesCallCreate code := by
@@ -615,9 +620,15 @@ theorem toAssembly_usesCallCreate (code : Code) :
   | nil =>
       rfl
   | cons instr rest ih =>
-      simpa [toAssembly, usesCallCreate, Assembly.Program.usesCallCreate,
-        BasicInstr.toAssembly_usesCallCreate, Function.comp] using
-        congrArg (fun value => instr.usesCallCreate || value) ih
+      have ih' :
+          Assembly.Program.usesCallCreate
+              (List.flatMap BasicInstr.toAssembly rest) =
+            Code.usesCallCreate rest := by
+        simpa [toAssembly] using ih
+      rw [toAssembly, List.flatMap_cons,
+        Assembly.Program.usesCallCreate_append,
+        BasicInstr.toAssembly_usesCallCreate, ih']
+      rfl
 
 end Code
 

@@ -28159,3 +28159,31 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
 - Fresh metrics: 79 modules, 95,708 Lean lines, 66 broad compiler-variant
   declarations, and one outcome relation. Remaining allocation work is
   arbitrary mixed-plan lowering plus main/lexical CFG location binding.
+
+## 2026-06-11 08:20 PDT - Allocation-witnessed CFG local bindings
+
+- Added a zero-byte `bindLocals` instruction through Structured and TypedCfg
+  syntax, typing, semantics, Assembly lowering, and preservation.
+- Changed Locals lowering to bind authoritative local identities after
+  declaration and assignment stack transformations, including offset-aware
+  assignment with retained temporary values.
+- Strengthened `AllocatedTypedCfg` certification so every canonical nonempty
+  stack layout must be witnessed by a generated block shape or exact binding
+  instruction. A named allocation paired with an unannotated CFG is now an
+  executable rejection regression.
+- Refactored Objects lowering proofs to consume the public allocated-pass
+  certificate instead of unfolding its implementation.
+- Added a nested lexical regression proving that source-derived allocation and
+  generated CFG agree on the canonical local name and that all scope layouts
+  satisfy the witness gate.
+- Verification passed: focused compiler, preservation, and allocation smokes;
+  allocator, TypedCfg, proof, and frontend layer gates; all 1,156
+  `EvmCompiler.Verification` jobs; architecture dependency checks; proof-hole
+  and whitespace scans; Aave v3 math/interest smokes; and Permit2 bytecode/call
+  comparisons. Permit2 retains only the known independent `solc_validation`
+  frontend limitation.
+- Fresh metrics: 79 modules, 95,840 Lean lines, 3,977 declarations, 66 broad
+  compiler-variant declarations, and one outcome relation. Main, function, and
+  lexical stack binding are complete for retained plans; the remaining
+  allocation gap is arbitrary mixed stack/scratch lowering and operational
+  scratch locations in TypedCfg.

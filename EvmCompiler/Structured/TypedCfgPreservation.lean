@@ -555,6 +555,12 @@ theorem step_map_eraseCfgControl
                 EvmYul.EVM.State.incrPC]
   | op op =>
       exact BasicOp.step_map_eraseCfgControl hRel
+  | bindLocals offset names =>
+      simpa [Structured.BasicInstr.step, Except.map] using
+        congrArg
+          (fun state =>
+            (Except.ok state : Except EVMException EVMState))
+          hRel
 
 end BasicInstr
 
