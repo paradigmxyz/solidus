@@ -28133,3 +28133,29 @@ artifact surface.
   `EvmCompiler.Verification` jobs, touched-file proof-hole scan, architecture
   metrics, and `git diff --check`. Fresh metrics are 79 modules, 95,640 Lean
   lines, 65 compiler variants, and one outcome relation.
+## 2026-06-11 - Compaction resume: plan-derived backend deletion
+
+Resumed with the generic allocation lowerer and plan-derived procedure entry shapes implemented and aggregate-verified. The active uncommitted refactor removes `PlannedProgram.backend`, records the strategy returned by allocation lowering, and makes backend policy validate rather than select emission.
+
+## 2026-06-11 08:06 PDT - Plan-derived lowering strategy
+
+- Removed the redundant backend discriminator from `PlannedProgram`; planned
+  compilation now carries only Functions source plus canonical allocation.
+- Replaced backend-selected lowering with one allocation lowerer that derives
+  the inline-stack or scratch-frame strategy from the accepted plan and returns
+  it alongside the emitted Expressions program.
+- Changed backend policy into a post-lowering validator, so public artifact
+  metadata records the strategy that actually emitted the program.
+- Made procedure TypedCfg entry-shape selection derive from the canonical
+  allocation rather than a caller-supplied backend tag, and updated public
+  Structured evaluation plus allocation/TypedCfg regressions to reconstruct
+  planned programs without strategy metadata.
+- Verification passed: focused compiler and proof artifacts; allocator,
+  TypedCfg, proof, and frontend layer gates; all 1,156
+  `EvmCompiler.Verification` jobs; architecture dependency/retired-route
+  checks; proof-hole and whitespace scans; Aave v3 math/interest smokes; and
+  Permit2 bytecode/call comparisons. Permit2 retains only the known independent
+  `solc_validation` frontend limitation.
+- Fresh metrics: 79 modules, 95,708 Lean lines, 66 broad compiler-variant
+  declarations, and one outcome relation. Remaining allocation work is
+  arbitrary mixed-plan lowering plus main/lexical CFG location binding.

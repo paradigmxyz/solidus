@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 07:58 PDT.
+Last updated: 2026-06-11 08:06 PDT.
 
 ## Objective
 
@@ -37,6 +37,9 @@ Implemented in this migration:
   canonical allocation, never an already emitted Expressions program;
 - one generic allocation lowerer, with an executable `LoweredFrom` certificate
   proving that the selected plan was consumed by the successful public route;
+- lowering strategy is now derived from the accepted allocation plan and
+  returned with the emitted Expressions program; backend policy validates that
+  result instead of selecting a separate emitter or asserting metadata;
 - a code-free scratch-frame `Allocation.Planner` that computes exact
   per-function/main slot bindings and frame size before emission, paired with a
   shared-interface lowerer that emits once and rejects allocation drift;
@@ -103,8 +106,7 @@ Implemented in this migration:
 The remaining critical path is deliberately narrow and explicit:
 
 1. Extend canonical location binding from inline procedure parameters to
-   main/lexical local transitions and the remaining generic-plan lowering
-   boundary.
+   main/lexical local transitions and arbitrary mixed stack/scratch plans.
 2. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 3. Run the final frontend, benchmark, deletion, proof-hole, and architecture
@@ -379,10 +381,13 @@ inductive LocalLocation
 - [x] Introduce a scoped `ProgramPlan` with unique main/function/lexical scope
   IDs and per-scope `Plan.WellFormed`.
 - [ ] Make one lowerer consume any well-formed plan.
-  The public generic lowerer now consumes a checked scoped plan, and successful
-  artifacts carry an executable `LoweredFrom` certificate. It still accepts
-  backend-shaped plan subsets rather than lowering arbitrary canonical
-  per-local placements.
+  The public generic lowerer consumes only Functions source plus a checked
+  scoped plan, derives the actual inline-stack or scratch-frame strategy, and
+  returns that strategy with the emitted Expressions program. Successful
+  artifacts carry an executable `LoweredFrom` certificate, and backend policy
+  only validates the returned strategy. The lowerer still accepts two
+  source-derived plan subsets rather than arbitrary canonical per-local
+  placements.
 - [x] Convert every retained allocation policy into a plan generator.
   Ordinary stack and scratch-frame allocation have code-free shared-interface
   planners with source-derived main/function/nested lexical bindings;
@@ -390,7 +395,9 @@ inductive LocalLocation
   and CallAware policies were removed rather than preserved as parallel
   compilers.
 - [x] Remove post-hoc plan projection from retained public artifacts. The
-  scratch-frame route plans first, emits once, and rejects allocation drift.
+  scratch-frame route plans first, emits once, and rejects allocation drift;
+  `PlannedProgram` has no backend discriminator that can disagree with the
+  emitted strategy.
 - [ ] Prove one lowering theorem quantified over a well-formed plan.
   Exact executable plan-consumption theorems exist for each public backend,
   but semantic preservation for arbitrary well-formed plans does not.
@@ -447,7 +454,8 @@ Goal: make stack/control invariants explicit before Assembly.
   shapes and scratch bindings from `ProgramPlan`, stores them in the
   certificate, and rejects stale layouts. Inline procedure parameters now
   enter the generated CFG through a checked zero-byte relabel adapter whose
-  named body shape is derived from the function allocation; main/lexical
+  named body shape is derived from the function allocation. Procedure shape
+  selection is allocation-derived rather than backend-tag-driven; main/lexical
   local transitions and fully generic arbitrary-plan lowering remain.
 - [x] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
@@ -669,7 +677,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules, 95,640 Lean lines, 65 compiler
+- retained architecture metrics: 79 modules, 95,708 Lean lines, 66 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -683,8 +691,9 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Make canonical allocation locations determine generated CFG values and block
-   shapes instead of certifying a separately generated CFG.
+1. Make canonical allocation locations determine main/lexical generated CFG
+   values and block shapes, then generalize the lowerer beyond the two retained
+   source-derived allocation families.
 2. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
 3. Rerun the final verification, frontend, benchmark, deletion, proof-hole,

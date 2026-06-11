@@ -42,7 +42,6 @@ abbrev EntrySimulation (artifact : Artifact)
 def plannedFor (artifact : Artifact)
     (source : Functions.Program) : Objects.Program.PlannedProgram :=
   { source := source
-    backend := artifact.metadata.backend
     allocation := artifact.metadata.allocation }
 
 /--

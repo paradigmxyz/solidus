@@ -46,7 +46,6 @@ def allocationDrivenProcShapeRecorded : Bool :=
   | some allocation =>
       let planned : Objects.Program.PlannedProgram :=
         { source := source
-          backend := .inlineStack
           allocation := allocation }
       match planned.lowerWithAllocation? with
       | none => false

@@ -67,7 +67,6 @@ abbrev CompileArtifact :=
 
 structure PlannedProgram where
   source : Functions.Program
-  backend : Backend
   allocation : Locals.Allocation.ProgramPlan
 
 namespace PlannedProgram
@@ -77,76 +76,104 @@ def mainAllocation? (planned : PlannedProgram) :
   planned.allocation.find? .main
 
 /--
+Result of the single allocation-driven Functions-to-Expressions lowerer.
+
+The selected backend is an output derived from the accepted canonical plan,
+not an input that chooses a separate lowering implementation.
+-/
+structure AllocationLoweringResult where
+  backend : Backend
+  expressions : Expressions.Program
+
+/--
 The single allocation-aware Functions-to-Expressions lowerer.
 
-The planner no longer hands this boundary an already emitted Expressions
-program. Scratch placement parameters are recovered from the canonical
-allocation plan, and call-aware lowering must reproduce the exact planned
-layout before its output is accepted.
+It first recognizes the exact canonical stack plan. Every other accepted plan
+is offered to the scratch-capable allocation lowerer, which independently
+checks that the plan is the source-derived scratch recipe. Backend policy does
+not participate in this choice.
 -/
-def lowerExpressions? (planned : PlannedProgram) :
-    Option Expressions.Program :=
-  match planned.backend with
-  | .inlineStack => do
-      let allocation ←
-        Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-          planned.source
-      if allocation = planned.allocation then
-        Functions.Inline.Program.toExpressions? planned.source
-      else
-        none
-  | .scratchFrameSpill =>
+def lowerAllocation? (source : Functions.Program)
+    (allocation : Locals.Allocation.ProgramPlan) :
+    Option AllocationLoweringResult :=
+  if
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source =
+        some allocation
+  then do
+    let expressions ← Functions.Inline.Program.toExpressions? source
+    some { backend := .inlineStack, expressions := expressions }
+  else do
+    let expressions ←
       Functions.ScratchFrameSpill.allocationLowerer.lower?
-        planned.source planned.allocation
-
-theorem lowerExpressions?_inlineStack_allocation
-    {planned : PlannedProgram} {expressions : Expressions.Program}
-    (hBackend : planned.backend = .inlineStack)
-    (hLower : planned.lowerExpressions? = some expressions) :
-    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-        planned.source =
-      some planned.allocation := by
-  unfold lowerExpressions? at hLower
-  rw [hBackend] at hLower
-  cases hPlan :
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-        planned.source with
-  | none =>
-      simp [hPlan] at hLower
-  | some allocation =>
-      by_cases hAllocation : allocation = planned.allocation
-      · simpa [hPlan, hAllocation]
-      · simp [hPlan, hAllocation] at hLower
-
-theorem lowerExpressions?_scratchFrame_exact
-    {planned : PlannedProgram} {expressions : Expressions.Program}
-    (hBackend : planned.backend = .scratchFrameSpill)
-    (hLower : planned.lowerExpressions? = some expressions) :
-    Functions.ScratchFrameSpill.allocationLowerer.lower?
-        planned.source planned.allocation =
-      some expressions := by
-  unfold lowerExpressions? at hLower
-  rw [hBackend] at hLower
-  exact hLower
-
-structure LoweringInput where
-  source : Functions.Program
-  backend : Backend
-
-def loweringInput (planned : PlannedProgram) : LoweringInput :=
-  { source := planned.source, backend := planned.backend }
+        source allocation
+    some { backend := .scratchFrameSpill, expressions := expressions }
 
 def allocationLowerer :
-    Locals.Allocation.Lowerer LoweringInput Expressions.Program where
-  lower? input allocation :=
-    PlannedProgram.lowerExpressions?
-      { source := input.source
-        backend := input.backend
-        allocation := allocation }
+    Locals.Allocation.Lowerer Functions.Program AllocationLoweringResult where
+  lower? := lowerAllocation?
+
+def loweringResult? (planned : PlannedProgram) :
+    Option AllocationLoweringResult :=
+  allocationLowerer.lower? planned.source planned.allocation
 
 def lowerWithAllocation? (planned : PlannedProgram) :
     Option Expressions.Program :=
-  allocationLowerer.lower? planned.loweringInput planned.allocation
+  planned.loweringResult?.map AllocationLoweringResult.expressions
+
+def lowerExpressions? (planned : PlannedProgram) :
+    Option Expressions.Program :=
+  planned.lowerWithAllocation?
+
+theorem loweringResult?_inlineStack_allocation
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    (hLower :
+      planned.loweringResult? =
+        some { backend := .inlineStack, expressions := expressions }) :
+    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+        planned.source =
+      some planned.allocation := by
+  unfold loweringResult? allocationLowerer lowerAllocation? at hLower
+  by_cases hPlan :
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+          planned.source =
+        some planned.allocation
+  · exact hPlan
+  · cases hScratch :
+        Functions.ScratchFrameSpill.allocationLowerer.lower?
+          planned.source planned.allocation with
+    | none =>
+        simp [hPlan, hScratch] at hLower
+    | some scratchExpressions =>
+        simp [hPlan, hScratch] at hLower
+
+theorem loweringResult?_scratchFrame_exact
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    (hLower :
+      planned.loweringResult? =
+        some { backend := .scratchFrameSpill, expressions := expressions }) :
+    Functions.ScratchFrameSpill.allocationLowerer.lower?
+        planned.source planned.allocation =
+      some expressions := by
+  unfold loweringResult? allocationLowerer lowerAllocation? at hLower
+  by_cases hPlan :
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+          planned.source =
+        some planned.allocation
+  · cases hInline :
+        Functions.Inline.Program.toExpressions? planned.source with
+    | none =>
+        simp [hPlan, hInline] at hLower
+    | some inlineExpressions =>
+        simp [hPlan, hInline] at hLower
+  · cases hScratch :
+        Functions.ScratchFrameSpill.allocationLowerer.lower?
+          planned.source planned.allocation with
+    | none =>
+        simp [hPlan, hScratch] at hLower
+    | some scratchExpressions =>
+        simp [hPlan, hScratch] at hLower
+        cases hLower
+        rfl
 
 theorem lowerWithAllocation?_eq (planned : PlannedProgram) :
     planned.lowerWithAllocation? = planned.lowerExpressions? := by
@@ -177,14 +204,24 @@ def inlineProcEntryShapes?
       let tail ← inlineProcEntryShapes? allocation rest
       some (entry :: tail)
 
+def procEntryShapesFromAllocation?
+    (source : Functions.Program)
+    (allocation : Locals.Allocation.ProgramPlan)
+    (expressions : Expressions.Program) :
+    Option Structured.TypedCfgCompiler.ProcEntryShapes :=
+  if
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source =
+        some allocation
+  then
+    inlineProcEntryShapes? allocation expressions.procs
+  else
+    some []
+
 def procEntryShapes? (planned : PlannedProgram)
     (expressions : Expressions.Program) :
     Option Structured.TypedCfgCompiler.ProcEntryShapes :=
-  match planned.backend with
-  | .inlineStack =>
-      inlineProcEntryShapes? planned.allocation expressions.procs
-  | .scratchFrameSpill =>
-      some []
+  procEntryShapesFromAllocation?
+    planned.source planned.allocation expressions
 
 def lowerTypedCfg? (planned : PlannedProgram)
     (expressions : Expressions.Program) : Option TypedCfg.Program := do
@@ -222,7 +259,8 @@ theorem lowerTypedCfg?_sourceArtifact
 def lowerArtifact? (planned : PlannedProgram) :
     Option CompileArtifact := do
   if planned.allocation.wellFormed? then pure () else none
-  let expressions ← planned.lowerWithAllocation?
+  let lowered ← planned.loweringResult?
+  let expressions := lowered.expressions
   let cfg ← planned.lowerTypedCfg? expressions
   let allocated :=
     Compiler.AllocatedTypedCfg.Program.ofAllocation planned.allocation cfg
@@ -231,7 +269,7 @@ def lowerArtifact? (planned : PlannedProgram) :
   some
     { target := target
       metadata :=
-        { backend := planned.backend
+        { backend := lowered.backend
           allocation := planned.allocation
           typedCfg := cfg
           certificate := compiled.metadata } }
@@ -239,17 +277,17 @@ def lowerArtifact? (planned : PlannedProgram) :
 theorem lowerArtifact?_metadataValid
     {planned : PlannedProgram} {artifact : CompileArtifact}
     (hCompile : planned.lowerArtifact? = some artifact) :
-    artifact.metadata.backend = planned.backend ∧
-      artifact.metadata.AllocationValid ∧
+    artifact.metadata.AllocationValid ∧
       artifact.metadata.TypedCfgValid := by
   unfold lowerArtifact? at hCompile
   by_cases hValid : planned.allocation.wellFormed? = true
   · simp [hValid] at hCompile
-    cases hLower : planned.lowerWithAllocation? with
+    cases hLower : planned.loweringResult? with
     | none =>
         simp [hLower] at hCompile
-    | some expressions =>
+    | some lowered =>
         simp [hLower] at hCompile
+        let expressions := lowered.expressions
         cases hCfg : planned.lowerTypedCfg? expressions with
         | none =>
             rw [hCfg] at hCompile
@@ -292,7 +330,7 @@ theorem lowerArtifact?_metadataValid
                         TypedCfg.Program.compileCertified?_certificate
                           hCfgCompiled⟩
                     exact
-                      ⟨rfl, hAllocation,
+                      ⟨hAllocation,
                         ⟨hAllocation, rfl, rfl, hCfgCertificate⟩⟩
   · simp [hValid] at hCompile
 
@@ -313,7 +351,6 @@ def LoweredFrom (artifact : CompileArtifact)
   ∃ expressions compiled,
     let planned : PlannedProgram :=
       { source := source
-        backend := artifact.metadata.backend
         allocation := artifact.metadata.allocation }
     planned.lowerWithAllocation? = some expressions ∧
       planned.lowerTypedCfg? expressions = some artifact.metadata.typedCfg ∧
@@ -334,11 +371,12 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
   unfold PlannedProgram.lowerArtifact? at hCompile
   by_cases hValid : planned.allocation.wellFormed? = true
   · simp [hValid] at hCompile
-    cases hLower : planned.lowerWithAllocation? with
+    cases hLower : planned.loweringResult? with
     | none =>
         simp [hLower] at hCompile
-    | some expressions =>
+    | some lowered =>
         simp [hLower] at hCompile
+        let expressions := lowered.expressions
         cases hCfg : planned.lowerTypedCfg? expressions with
         | none =>
             rw [hCfg] at hCompile
@@ -379,7 +417,9 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                                 planned.allocation
                             cfg := cfgCompiled.metadata } }
                     exact
-                      ⟨expressions, compiled, hLower, hCfg,
+                      ⟨expressions, compiled, by
+                          simp [lowerWithAllocation?, hLower, expressions],
+                        hCfg,
                         by
                           simp [compiled,
                             Compiler.AllocatedTypedCfg.Program.ofAllocation,
@@ -394,28 +434,12 @@ def planInlineStack? (program : Program) : Option PlannedProgram := do
       program.toFunctions
   some
     { source := program.toFunctions
-      backend := .inlineStack
       allocation := allocation }
 
 theorem planInlineStack?_source
     {program : Program} {planned : PlannedProgram}
     (hPlan : planInlineStack? program = some planned) :
     planned.source = program.toFunctions := by
-  unfold planInlineStack? at hPlan
-  cases hAllocation :
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-        program.toFunctions with
-  | none =>
-      simp [hAllocation] at hPlan
-  | some allocation =>
-      simp [hAllocation] at hPlan
-      cases hPlan
-      rfl
-
-theorem planInlineStack?_backend
-    {program : Program} {planned : PlannedProgram}
-    (hPlan : planInlineStack? program = some planned) :
-    planned.backend = .inlineStack := by
   unfold planInlineStack? at hPlan
   cases hAllocation :
       Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
@@ -434,19 +458,42 @@ def planScratchFrame? (config : BackendConfig) (program : Program) :
       config.scratchFrameWords).plan? program.toFunctions
   some
     { source := program.toFunctions
-      backend := .scratchFrameSpill
       allocation := allocation }
+
+theorem planScratchFrame?_source
+    {config : BackendConfig} {program : Program}
+    {planned : PlannedProgram}
+    (hPlan : planScratchFrame? config program = some planned) :
+    planned.source = program.toFunctions := by
+  unfold planScratchFrame? at hPlan
+  cases hAllocation :
+      (Functions.ScratchFrameSpill.allocationPlanner
+        config.scratchFrameWords).plan? program.toFunctions with
+  | none =>
+      simp [hAllocation] at hPlan
+  | some allocation =>
+      simp [hAllocation] at hPlan
+      cases hPlan
+      rfl
+
+def compilePlannedAs? (backend : Backend)
+    (planned : PlannedProgram) : Option CompileArtifact := do
+  let artifact ← planned.lowerArtifact?
+  if artifact.metadata.backend = backend then
+    some artifact
+  else
+    none
 
 def Backend.compileArtifact? (config : BackendConfig) (program : Program) :
     Backend → Option CompileArtifact
   | .inlineStack =>
       match planInlineStack? program with
       | none => none
-      | some planned => planned.lowerArtifact?
+      | some planned => compilePlannedAs? .inlineStack planned
   | .scratchFrameSpill =>
       match planScratchFrame? config program with
       | none => none
-      | some planned => planned.lowerArtifact?
+      | some planned => compilePlannedAs? .scratchFrameSpill planned
 
 theorem Backend.compileArtifact?_metadataValid
     {config : BackendConfig} {program : Program} {backend : Backend}
@@ -463,10 +510,19 @@ theorem Backend.compileArtifact?_metadataValid
           simp [hPlan] at hCompile
       | some planned =>
           simp [hPlan] at hCompile
-          have hMetadata :=
-            PlannedProgram.lowerArtifact?_metadataValid hCompile
-          have hBackend := planInlineStack?_backend hPlan
-          simpa [hBackend] using hMetadata
+          unfold compilePlannedAs? at hCompile
+          cases hArtifact : planned.lowerArtifact? with
+          | none =>
+              simp [hArtifact] at hCompile
+          | some selected =>
+              by_cases hBackend :
+                  selected.metadata.backend = .inlineStack
+              · simp [hArtifact, hBackend] at hCompile
+                cases hCompile
+                exact
+                  ⟨hBackend,
+                    PlannedProgram.lowerArtifact?_metadataValid hArtifact⟩
+              · simp [hArtifact, hBackend] at hCompile
   | scratchFrameSpill =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planScratchFrame? config program with
@@ -474,18 +530,19 @@ theorem Backend.compileArtifact?_metadataValid
           simp [hPlan] at hCompile
       | some planned =>
           simp [hPlan] at hCompile
-          have hMetadata :=
-            PlannedProgram.lowerArtifact?_metadataValid hCompile
-          unfold planScratchFrame? at hPlan
-          cases hAllocation :
-              (Functions.ScratchFrameSpill.allocationPlanner
-                config.scratchFrameWords).plan? program.toFunctions with
+          unfold compilePlannedAs? at hCompile
+          cases hArtifact : planned.lowerArtifact? with
           | none =>
-              simp [hAllocation] at hPlan
-          | some allocation =>
-              simp [hAllocation] at hPlan
-              cases hPlan
-              exact hMetadata
+              simp [hArtifact] at hCompile
+          | some selected =>
+              by_cases hBackend :
+                  selected.metadata.backend = .scratchFrameSpill
+              · simp [hArtifact, hBackend] at hCompile
+                cases hCompile
+                exact
+                  ⟨hBackend,
+                    PlannedProgram.lowerArtifact?_metadataValid hArtifact⟩
+              · simp [hArtifact, hBackend] at hCompile
 
 theorem Backend.compileArtifact?_loweredFrom
     {config : BackendConfig} {program : Program} {backend : Backend}
@@ -500,10 +557,20 @@ theorem Backend.compileArtifact?_loweredFrom
           simp [hPlan] at hCompile
       | some planned =>
           simp [hPlan] at hCompile
-          have hLowered :=
-            PlannedProgram.lowerArtifact?_loweredFrom hCompile
-          rw [planInlineStack?_source hPlan] at hLowered
-          exact hLowered
+          unfold compilePlannedAs? at hCompile
+          cases hArtifact : planned.lowerArtifact? with
+          | none =>
+              simp [hArtifact] at hCompile
+          | some selected =>
+            by_cases hBackend :
+                selected.metadata.backend = .inlineStack
+            · simp [hArtifact, hBackend] at hCompile
+              cases hCompile
+              have hLowered :=
+                PlannedProgram.lowerArtifact?_loweredFrom hArtifact
+              rw [planInlineStack?_source hPlan] at hLowered
+              exact hLowered
+            · simp [hArtifact, hBackend] at hCompile
   | scratchFrameSpill =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planScratchFrame? config program with
@@ -511,18 +578,20 @@ theorem Backend.compileArtifact?_loweredFrom
           simp [hPlan] at hCompile
       | some planned =>
           simp [hPlan] at hCompile
-          have hLowered :=
-            PlannedProgram.lowerArtifact?_loweredFrom hCompile
-          unfold planScratchFrame? at hPlan
-          cases hAllocation :
-              (Functions.ScratchFrameSpill.allocationPlanner
-                config.scratchFrameWords).plan? program.toFunctions with
+          unfold compilePlannedAs? at hCompile
+          cases hArtifact : planned.lowerArtifact? with
           | none =>
-              simp [hAllocation] at hPlan
-          | some allocation =>
-              simp [hAllocation] at hPlan
-              cases hPlan
+              simp [hArtifact] at hCompile
+          | some selected =>
+            by_cases hBackend :
+                selected.metadata.backend = .scratchFrameSpill
+            · simp [hArtifact, hBackend] at hCompile
+              cases hCompile
+              have hLowered :=
+                PlannedProgram.lowerArtifact?_loweredFrom hArtifact
+              rw [planScratchFrame?_source hPlan] at hLowered
               exact hLowered
+            · simp [hArtifact, hBackend] at hCompile
 
 def compileFirst? (config : BackendConfig) (program : Program) :
     List Backend → Option CompileArtifact

@@ -14,10 +14,13 @@ def sourceDerivedLexicalPlanRecorded : Bool :=
   match Objects.Program.planInlineStack? objectProgram with
   | none => false
   | some planned =>
-      decide
-        (planned.backend = .inlineStack ∧
-          planned.allocation.find? (.lexical .main 0) =
-            some Functions.ScratchFrameSpill.AllocationExamples.nestedStackAllocationExpected)
+      match planned.loweringResult? with
+      | none => false
+      | some lowered =>
+          decide
+            (planned.allocation.find? (.lexical .main 0) =
+              some Functions.ScratchFrameSpill.AllocationExamples.nestedStackAllocationExpected) &&
+            decide (lowered.backend = .inlineStack)
 
 example : sourceDerivedLexicalPlanRecorded = true := by
   native_decide
