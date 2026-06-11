@@ -65,11 +65,12 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Convert the remaining live and call-aware allocation backends into true
-   plan generators. Ordinary stack and scratch-frame planning are now
-   code-free with source-derived main/function/nested lexical bindings.
-   Call-aware planning still runs the legacy emitter once to discover its
-   layout and then re-emits while checking exact agreement.
+1. Finish retiring or migrating the remaining live-layout corridor. Ordinary
+   stack and scratch-frame planning are code-free with source-derived
+   main/function/nested lexical bindings. The emitter-derived CallAware
+   backends have been removed from the stable Objects policy and imports; their
+   implementation remains only under `Legacy` until theorem consumers are
+   deleted.
 2. Make canonical per-local locations directly drive Expressions/TypedCfg
    generation and CFG shapes across main and function scopes.
 3. Finish source-to-CFG semantic composition and make generated fragment
@@ -341,13 +342,15 @@ inductive LocalLocation
   and scratch-frame allocation into plan generators.
   Ordinary stack and scratch-frame allocation now have code-free
   shared-interface planners with source-derived main/function/nested lexical
-  bindings; scratch-frame also computes exact frame sizing. The live and
-  call-aware families remain.
+  bindings; scratch-frame also computes exact frame sizing. CallAware was
+  retired from the stable policy instead of receiving another parallel
+  planner. Live layout remains.
 - [ ] Remove post-hoc plan projection from CallAware/ScratchFrame artifacts:
   planners must produce the canonical plan before any code is emitted.
-  Call-aware planning currently emits once to discover a plan and re-emits
-  through the checked lowerer. Scratch-frame no longer uses post-hoc projection
-  or its historical probe/recompile cycle on the public path.
+  Scratch-frame no longer uses post-hoc projection or its historical
+  probe/recompile cycle on the public path. The old CallAware module still
+  projects plans after emission, but it is now reachable only through
+  `EvmCompiler.Legacy`.
 - [ ] Prove one lowering theorem quantified over a well-formed plan.
   Exact executable plan-consumption theorems exist for each public backend,
   but semantic preservation for arbitrary well-formed plans does not.
@@ -357,7 +360,8 @@ Stack-too-deep validation:
 
 - [x] Existing ordinary programs produce stack-only plans.
 - [ ] Former live-layout successes produce equivalent canonical plans.
-- [x] Call-aware examples use mixed stack/scratch plans.
+- [x] A 17-local public regression rejects inline planning and selects the
+  source-derived scratch-frame backend.
 - [x] Scratch-frame examples use source-derived root and lexical slot plans,
   reject insufficient frame bounds, lower in one emission pass, and reject
   altered allocations.
@@ -515,7 +519,9 @@ Exit gate:
 ## Phase 9: Final Cutover And Deletion
 
 - [x] Freeze old public routes. Unused Objects compatibility target emitters
-  were removed and an architecture guard pins the TypedCfg route.
+  were removed, the CallAware backends were retired from the stable policy,
+  and architecture guards pin both the TypedCfg route and the two-planner
+  inline/scratch-frame policy.
 - [x] Run output comparisons on representative contracts. The post-cutover
   Permit2 smoke passed 3 SafeCast, 5 NonceBitmap, and 3
   SignatureVerification call comparisons; Aave math and interest runtime
@@ -528,6 +534,9 @@ Exit gate:
   architecture.
 - [ ] Delete old replay interpreters.
 - [ ] Delete parallel allocation compilers.
+  CallAware is no longer imported by the stable Objects/Public compiler, but
+  its 65K-line implementation and the live-layout corridors remain in
+  `EvmCompiler.Legacy`.
 - [ ] Delete direct Structured-to-Assembly control lowering.
 - [ ] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The initial
@@ -550,13 +559,16 @@ Completion evidence:
 
 Latest verified checkpoint:
 
-- public/legacy aggregate build: pass (1,197 jobs);
-- allocator and Objects compiler layer after code-free ordinary-stack planning:
-  pass (1,150 jobs);
+- stable public build after CallAware retirement: pass (1,141 jobs);
+- legacy aggregate, including the quarantined CallAware proofs: pass (1,197
+  jobs);
+- focused Objects compiler after deleting 362 lines of parallel backend policy:
+  pass (1,137 jobs);
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
   regressions;
-- source-derived inline-allocation public-boundary proof artifact: pass;
+- source-derived inline-allocation and 17-local scratch fallback proof artifact:
+  pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - `EvmCompiler.Legacy`: pass;
 - resource-observer proof artifact and axiom print: pass;
@@ -571,9 +583,9 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Replace emitter-derived CallAware plans with pure scoped plan generators,
-   migrate live allocation, and make canonical locations drive lowering and
-   CFG shapes.
+1. Migrate or retire live allocation, make canonical locations drive lowering
+   and CFG shapes, then delete the now-quarantined CallAware/live compiler and
+   proof modules.
 2. Finish source-to-CFG semantic composition and enrich generated fragment
    certificates with exact code spans and safety projections.
 3. Finish the generic effect/outcome migrations and remove replay evaluators.

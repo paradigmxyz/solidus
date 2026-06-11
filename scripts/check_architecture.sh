@@ -114,6 +114,10 @@ report_matches \
   'stackOnlyProgramAllocation|stackOnlyAllocation' \
   EvmCompiler/Objects/Compiler.lean
 report_matches \
+  'The stable Objects compiler must not restore parallel CallAware emitters or planner discovery:' \
+  'CallAwareSpill|callAwareSpill|callAwareSwitchSpill|compileCallAwareCandidates' \
+  EvmCompiler/Objects/Compiler.lean
+report_matches \
   'Successful public compiler metadata must not make allocation or TypedCfg certificates optional:' \
   '(allocation|typedCfg)\?[[:space:]]*:[[:space:]]*Option' \
   EvmCompiler/Objects/Compiler.lean

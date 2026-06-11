@@ -20,8 +20,8 @@ Record reproducible architecture metrics with:
 ```sh
 scripts/architecture_metrics.sh \
   --cache-label warm \
-  --build EvmCompiler.Yul.ObserverOracle \
-  --build EvmCompiler.Functions.CallAwareSpill \
+  --build EvmCompiler.Public \
+  --build EvmCompiler.Compiler.AllocatedTypedCfg \
   --build EvmCompiler.Objects.Compiler
 ```
 

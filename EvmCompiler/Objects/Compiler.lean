@@ -1,7 +1,6 @@
 import EvmCompiler.Objects.Syntax
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.Artifact
-import EvmCompiler.Functions.CallAwareSpill
 import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.ScratchFrameSpill
 
@@ -24,21 +23,15 @@ namespace Program
 def toExpressions? (program : Program) : Option Expressions.Program :=
   Functions.Inline.Program.toExpressions? program.toFunctions
 
-def callAwareSpillFallbackScratchWords : Nat :=
-  64
-
 def scratchFrameSpillFallbackWords : Nat :=
   8192
 
 inductive Backend where
   | inlineStack
-  | callAwareSpill
-  | callAwareSwitchSpill
   | scratchFrameSpill
   deriving DecidableEq, Repr
 
 structure BackendConfig where
-  callAwareScratchWords : Nat := callAwareSpillFallbackScratchWords
   scratchFrameWords : Nat := scratchFrameSpillFallbackWords
   deriving DecidableEq, Repr
 
@@ -48,9 +41,7 @@ structure BackendPolicy where
   deriving DecidableEq, Repr
 
 def defaultBackendPolicy : BackendPolicy where
-  order :=
-    [.inlineStack, .callAwareSpill, .callAwareSwitchSpill,
-      .scratchFrameSpill]
+  order := [.inlineStack, .scratchFrameSpill]
 
 structure CompileMetadata where
   backend : Backend
@@ -85,16 +76,6 @@ def mainAllocation? (planned : PlannedProgram) :
     Option Locals.Allocation.Plan :=
   planned.allocation.find? .main
 
-def absoluteScratchRange? (planned : PlannedProgram) :
-    Option Functions.CallAwareSpill.ScratchRange :=
-  match planned.mainAllocation? with
-  | some allocation =>
-      match allocation.scratchRegion? with
-      | some { base := .absolute base, words := words } =>
-          some { base := base, words := words }
-      | _ => none
-  | _ => none
-
 /--
 The single allocation-aware Functions-to-Expressions lowerer.
 
@@ -112,28 +93,6 @@ def lowerExpressions? (planned : PlannedProgram) :
           planned.source
       if allocation = planned.allocation then
         Functions.Inline.Program.toExpressions? planned.source
-      else
-        none
-  | .callAwareSpill => do
-      let range ← planned.absoluteScratchRange?
-      if range.preallocFits? then pure () else none
-      let (generated, expressions) ←
-        Functions.CallAwareSpill.compileExpressionsProgram?
-          range planned.source
-      if Locals.Allocation.ProgramPlan.main
-          (generated.toAllocationPlan range) = planned.allocation then
-        some expressions
-      else
-        none
-  | .callAwareSwitchSpill => do
-      let range ← planned.absoluteScratchRange?
-      if range.preallocFits? then pure () else none
-      let (generated, expressions) ←
-        Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-          range planned.source
-      if Locals.Allocation.ProgramPlan.main
-          (generated.toAllocationPlan range) = planned.allocation then
-        some expressions
       else
         none
   | .scratchFrameSpill =>
@@ -169,86 +128,6 @@ theorem lowerExpressions?_scratchFrame_exact
   unfold lowerExpressions? at hLower
   rw [hBackend] at hLower
   exact hLower
-
-theorem lowerExpressions?_callAware_exact
-    {planned : PlannedProgram} {expressions : Expressions.Program}
-    (hBackend : planned.backend = .callAwareSpill)
-    (hLower : planned.lowerExpressions? = some expressions) :
-    ∃ range generated,
-      planned.absoluteScratchRange? = some range ∧
-        range.preallocFits? = true ∧
-        Functions.CallAwareSpill.compileExpressionsProgram?
-            range planned.source =
-          some (generated, expressions) ∧
-        Locals.Allocation.ProgramPlan.main
-            (generated.toAllocationPlan range) =
-          planned.allocation := by
-  unfold lowerExpressions? at hLower
-  rw [hBackend] at hLower
-  cases hRange : planned.absoluteScratchRange? with
-  | none =>
-      simp [hRange] at hLower
-  | some range =>
-      by_cases hFits : range.preallocFits? = true
-      · simp [hRange, hFits] at hLower
-        cases hGenerated :
-            Functions.CallAwareSpill.compileExpressionsProgram?
-              range planned.source with
-        | none =>
-            simp [hGenerated] at hLower
-        | some result =>
-            rcases result with ⟨generated, generatedExpressions⟩
-            by_cases hAllocation :
-                Locals.Allocation.ProgramPlan.main
-                    (generated.toAllocationPlan range) =
-                  planned.allocation
-            · simp [hGenerated, hAllocation] at hLower
-              cases hLower
-              exact
-                ⟨range, generated, rfl, hFits, hGenerated,
-                  hAllocation⟩
-            · simp [hGenerated, hAllocation] at hLower
-      · simp [hRange, hFits] at hLower
-
-theorem lowerExpressions?_callAwareSwitch_exact
-    {planned : PlannedProgram} {expressions : Expressions.Program}
-    (hBackend : planned.backend = .callAwareSwitchSpill)
-    (hLower : planned.lowerExpressions? = some expressions) :
-    ∃ range generated,
-      planned.absoluteScratchRange? = some range ∧
-        range.preallocFits? = true ∧
-        Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-            range planned.source =
-          some (generated, expressions) ∧
-        Locals.Allocation.ProgramPlan.main
-            (generated.toAllocationPlan range) =
-          planned.allocation := by
-  unfold lowerExpressions? at hLower
-  rw [hBackend] at hLower
-  cases hRange : planned.absoluteScratchRange? with
-  | none =>
-      simp [hRange] at hLower
-  | some range =>
-      by_cases hFits : range.preallocFits? = true
-      · simp [hRange, hFits] at hLower
-        cases hGenerated :
-            Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-              range planned.source with
-        | none =>
-            simp [hGenerated] at hLower
-        | some result =>
-            rcases result with ⟨generated, generatedExpressions⟩
-            by_cases hAllocation :
-                Locals.Allocation.ProgramPlan.main
-                    (generated.toAllocationPlan range) =
-                  planned.allocation
-            · simp [hGenerated, hAllocation] at hLower
-              cases hLower
-              exact
-                ⟨range, generated, rfl, hFits, hGenerated,
-                  hAllocation⟩
-            · simp [hGenerated, hAllocation] at hLower
-      · simp [hRange, hFits] at hLower
 
 structure LoweringInput where
   source : Functions.Program
@@ -472,83 +351,6 @@ theorem planInlineStack?_backend
       cases hPlan
       rfl
 
-def planCallAwareAt? (backend : Backend) (words : Nat)
-    (program : Program) : Option PlannedProgram := do
-  let range ←
-    Functions.CallAwareSpill.plannedScratchRangeChecked? words
-  let plan ←
-    match backend with
-    | .callAwareSpill => do
-        let (plan, _expressions) ←
-          Functions.CallAwareSpill.compileExpressionsProgram?
-            range program.toFunctions
-        some plan
-    | .callAwareSwitchSpill => do
-        let (plan, _expressions) ←
-          Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-            range program.toFunctions
-        some plan
-    | _ => none
-  some
-    { source := program.toFunctions
-      backend := backend
-      allocation :=
-        Locals.Allocation.ProgramPlan.main
-          (plan.toAllocationPlan range) }
-
-theorem planCallAwareAt?_source_backend
-    {backend : Backend} {words : Nat} {program : Program}
-    {planned : PlannedProgram}
-    (hPlan : planCallAwareAt? backend words program = some planned) :
-    planned.source = program.toFunctions ∧ planned.backend = backend := by
-  unfold planCallAwareAt? at hPlan
-  cases hRange :
-      Functions.CallAwareSpill.plannedScratchRangeChecked? words with
-  | none =>
-      simp [hRange] at hPlan
-  | some range =>
-      cases backend with
-      | inlineStack =>
-          simp [hRange] at hPlan
-      | scratchFrameSpill =>
-          simp [hRange] at hPlan
-      | callAwareSpill =>
-          cases hGenerated :
-              Functions.CallAwareSpill.compileExpressionsProgram?
-                range program.toFunctions with
-          | none =>
-              simp [hRange, hGenerated] at hPlan
-          | some generated =>
-              rcases generated with ⟨generatedPlan, expressions⟩
-              simp [hRange, hGenerated] at hPlan
-              cases hPlan
-              exact ⟨rfl, rfl⟩
-      | callAwareSwitchSpill =>
-          cases hGenerated :
-              Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-                range program.toFunctions with
-          | none =>
-              simp [hRange, hGenerated] at hPlan
-          | some generated =>
-              rcases generated with ⟨generatedPlan, expressions⟩
-              simp [hRange, hGenerated] at hPlan
-              cases hPlan
-              exact ⟨rfl, rfl⟩
-
-theorem planCallAwareAt?_source
-    {backend : Backend} {words : Nat} {program : Program}
-    {planned : PlannedProgram}
-    (hPlan : planCallAwareAt? backend words program = some planned) :
-    planned.source = program.toFunctions :=
-  (planCallAwareAt?_source_backend hPlan).1
-
-theorem planCallAwareAt?_backend
-    {backend : Backend} {words : Nat} {program : Program}
-    {planned : PlannedProgram}
-    (hPlan : planCallAwareAt? backend words program = some planned) :
-    planned.backend = backend :=
-  (planCallAwareAt?_source_backend hPlan).2
-
 def planScratchFrame? (config : BackendConfig) (program : Program) :
     Option PlannedProgram := do
   let allocation ←
@@ -559,139 +361,12 @@ def planScratchFrame? (config : BackendConfig) (program : Program) :
       backend := .scratchFrameSpill
       allocation := allocation }
 
-def compileCallAwareCandidates? (backend : Backend)
-    (program : Program) :
-    Nat → Nat → Option CompileArtifact
-  | remaining, words =>
-      match planCallAwareAt? backend words program with
-      | some planned =>
-          match planned.lowerArtifact? with
-          | some artifact => some artifact
-          | none =>
-              match remaining with
-              | 0 => none
-              | remaining + 1 =>
-                  compileCallAwareCandidates? backend
-                    program remaining (words + 1)
-      | none =>
-          match remaining with
-          | 0 => none
-          | remaining + 1 =>
-              compileCallAwareCandidates? backend
-                program remaining (words + 1)
-
-theorem compileCallAwareCandidates?_metadataValid
-    {backend : Backend} {program : Program} {remaining words : Nat}
-    {artifact : CompileArtifact}
-    (hCompile :
-      compileCallAwareCandidates? backend program remaining words =
-        some artifact) :
-    artifact.metadata.backend = backend ∧
-      artifact.metadata.AllocationValid ∧
-      artifact.metadata.TypedCfgValid := by
-  induction remaining generalizing words with
-  | zero =>
-      unfold compileCallAwareCandidates? at hCompile
-      cases hPlan :
-          planCallAwareAt? backend words program with
-      | none =>
-          simp [hPlan] at hCompile
-      | some planned =>
-          cases hLower : planned.lowerArtifact? with
-          | none =>
-              simp [hPlan, hLower] at hCompile
-          | some candidate =>
-              simp [hPlan, hLower] at hCompile
-              cases hCompile
-              have hMetadata :=
-                PlannedProgram.lowerArtifact?_metadataValid hLower
-              have hBackend : planned.backend = backend :=
-                planCallAwareAt?_backend hPlan
-              simpa [hBackend] using hMetadata
-  | succ remaining ih =>
-      unfold compileCallAwareCandidates? at hCompile
-      cases hPlan :
-          planCallAwareAt? backend words program with
-      | none =>
-          simp [hPlan] at hCompile
-          exact ih hCompile
-      | some planned =>
-          cases hLower : planned.lowerArtifact? with
-          | none =>
-              simp [hPlan, hLower] at hCompile
-              exact ih hCompile
-          | some candidate =>
-              simp [hPlan, hLower] at hCompile
-              cases hCompile
-              have hMetadata :=
-                PlannedProgram.lowerArtifact?_metadataValid hLower
-              have hBackend : planned.backend = backend :=
-                planCallAwareAt?_backend hPlan
-              simpa [hBackend] using hMetadata
-
-theorem compileCallAwareCandidates?_loweredFrom
-    {backend : Backend} {program : Program} {remaining words : Nat}
-    {artifact : CompileArtifact}
-    (hCompile :
-      compileCallAwareCandidates? backend program remaining words =
-        some artifact) :
-    artifact.LoweredFrom program.toFunctions := by
-  induction remaining generalizing words with
-  | zero =>
-      unfold compileCallAwareCandidates? at hCompile
-      cases hPlan : planCallAwareAt? backend words program with
-      | none =>
-          simp [hPlan] at hCompile
-      | some planned =>
-          cases hLower : planned.lowerArtifact? with
-          | none =>
-              simp [hPlan, hLower] at hCompile
-          | some candidate =>
-              simp [hPlan, hLower] at hCompile
-              cases hCompile
-              have hLowered :=
-                PlannedProgram.lowerArtifact?_loweredFrom hLower
-              rw [planCallAwareAt?_source hPlan] at hLowered
-              exact hLowered
-  | succ remaining ih =>
-      unfold compileCallAwareCandidates? at hCompile
-      cases hPlan : planCallAwareAt? backend words program with
-      | none =>
-          simp [hPlan] at hCompile
-          exact ih hCompile
-      | some planned =>
-          cases hLower : planned.lowerArtifact? with
-          | none =>
-              simp [hPlan, hLower] at hCompile
-              exact ih hCompile
-          | some candidate =>
-              simp [hPlan, hLower] at hCompile
-              cases hCompile
-              have hLowered :=
-                PlannedProgram.lowerArtifact?_loweredFrom hLower
-              rw [planCallAwareAt?_source hPlan] at hLowered
-              exact hLowered
-
 def Backend.compileArtifact? (config : BackendConfig) (program : Program) :
     Backend → Option CompileArtifact
   | .inlineStack =>
       match planInlineStack? program with
       | none => none
       | some planned => planned.lowerArtifact?
-  | .callAwareSpill =>
-      if Functions.CallAwareSpill.programOpenSupported?
-          program.toFunctions then
-        compileCallAwareCandidates? .callAwareSpill program
-          config.callAwareScratchWords 0
-      else
-        none
-  | .callAwareSwitchSpill =>
-      if Functions.SourceAcceptedCheck.Program.sourceAccepted?
-          program.toFunctions then
-        compileCallAwareCandidates? .callAwareSwitchSpill program
-          config.callAwareScratchWords 0
-      else
-        none
   | .scratchFrameSpill =>
       match planScratchFrame? config program with
       | none => none
@@ -716,24 +391,6 @@ theorem Backend.compileArtifact?_metadataValid
             PlannedProgram.lowerArtifact?_metadataValid hCompile
           have hBackend := planInlineStack?_backend hPlan
           simpa [hBackend] using hMetadata
-  | callAwareSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      by_cases hSupported :
-          Functions.CallAwareSpill.programOpenSupported?
-              program.toFunctions =
-            true
-      · simp [hSupported] at hCompile
-        exact compileCallAwareCandidates?_metadataValid hCompile
-      · simp [hSupported] at hCompile
-  | callAwareSwitchSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      by_cases hSupported :
-          Functions.SourceAcceptedCheck.Program.sourceAccepted?
-              program.toFunctions =
-            true
-      · simp [hSupported] at hCompile
-        exact compileCallAwareCandidates?_metadataValid hCompile
-      · simp [hSupported] at hCompile
   | scratchFrameSpill =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planScratchFrame? config program with
@@ -771,24 +428,6 @@ theorem Backend.compileArtifact?_loweredFrom
             PlannedProgram.lowerArtifact?_loweredFrom hCompile
           rw [planInlineStack?_source hPlan] at hLowered
           exact hLowered
-  | callAwareSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      by_cases hSupported :
-          Functions.CallAwareSpill.programOpenSupported?
-              program.toFunctions =
-            true
-      · simp [hSupported] at hCompile
-        exact compileCallAwareCandidates?_loweredFrom hCompile
-      · simp [hSupported] at hCompile
-  | callAwareSwitchSpill =>
-      unfold Backend.compileArtifact? at hCompile
-      by_cases hSupported :
-          Functions.SourceAcceptedCheck.Program.sourceAccepted?
-              program.toFunctions =
-            true
-      · simp [hSupported] at hCompile
-        exact compileCallAwareCandidates?_loweredFrom hCompile
-      · simp [hSupported] at hCompile
   | scratchFrameSpill =>
       unfold Backend.compileArtifact? at hCompile
       cases hPlan : planScratchFrame? config program with

@@ -27631,3 +27631,29 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - remaining allocator boundary: live allocation and CallAware planning still
   need pure scoped plan generators; CallAware still emits code to discover its
   main-scope plan.
+
+## 2026-06-10 17:31 PDT - Retired CallAware from the stable compiler
+
+- architecture: removed both CallAware backend constructors, candidate search,
+  emitter-derived planning, lowering branches, and the `CallAwareSpill` import
+  from `Objects.Compiler`. The default public policy is now exactly
+  source-derived inline planning followed by source-derived scratch-frame
+  planning.
+- deletion: the stable Objects compiler shrank by 362 lines and no longer
+  depends on the 65K-line CallAware emitter. That module remains available only
+  through `EvmCompiler.Legacy` while its theorem consumers are removed.
+- regression: extended
+  `proof_artifacts/inline_allocation_planner_smoke.lean` with a 17-local
+  program that proves inline rejection and successful public selection of the
+  scratch-frame backend.
+- verification: focused Objects passed 1,137 jobs; stable Public passed 1,141
+  jobs; Legacy passed all 1,197 jobs; the proof artifact, architecture guard,
+  and diff checks pass.
+- contract validation: Aave v3 math and interest public backend smokes pass.
+  Permit2 passes all 3 SafeCast, 5 NonceBitmap, and 3
+  SignatureVerification call comparisons; the pre-existing legacy
+  `live_layout_to_locals` diagnostic remains.
+- metrics: refreshed `proof_artifacts/architecture_current.json`;
+  `Objects/Compiler.lean` fell from 983 to 675 lines, direct imports from 6 to
+  5, declarations from 66 to 55, and counted compiler variants from 160 to
+  159.

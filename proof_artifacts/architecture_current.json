@@ -1,16 +1,16 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-06-10T21:45:31Z",
+  "generated_at": "2026-06-11T00:31:43Z",
   "git": {
-    "commit": "448eaa408b76674f23e05c30635567bb1b54c13b",
+    "commit": "86a4e3aa95ad75f368c812f0a0684a441a041b2c",
     "branch": "codex/architecture-migration"
   },
   "totals": {
-    "module_count": 108,
-    "source_lines": 1023236,
-    "direct_imports": 332,
-    "declarations": 18653,
-    "compiler_variant_declarations": 160,
+    "module_count": 111,
+    "source_lines": 1027507,
+    "direct_imports": 338,
+    "declarations": 18785,
+    "compiler_variant_declarations": 159,
     "outcome_relation_declarations": 43,
     "layer_audit_abbrevs": 613,
     "layer_audit_examples": 425
@@ -26,9 +26,9 @@
     {
       "path": "EvmCompiler/Assembly/Accepted.lean",
       "module": "EvmCompiler.Assembly.Accepted",
-      "source_lines": 279,
+      "source_lines": 386,
       "direct_imports": 2,
-      "declarations": 24
+      "declarations": 31
     },
     {
       "path": "EvmCompiler/Assembly/Assembler.lean",
@@ -47,7 +47,7 @@
     {
       "path": "EvmCompiler/Assembly/GasAware.lean",
       "module": "EvmCompiler.Assembly.GasAware",
-      "source_lines": 15515,
+      "source_lines": 15519,
       "direct_imports": 1,
       "declarations": 563
     },
@@ -68,23 +68,37 @@
     {
       "path": "EvmCompiler/Assembly/PrimSemantics.lean",
       "module": "EvmCompiler.Assembly.PrimSemantics",
-      "source_lines": 1945,
+      "source_lines": 1954,
       "direct_imports": 4,
       "declarations": 36
     },
     {
       "path": "EvmCompiler/Assembly/Semantics.lean",
       "module": "EvmCompiler.Assembly.Semantics",
-      "source_lines": 256,
+      "source_lines": 432,
       "direct_imports": 4,
-      "declarations": 31
+      "declarations": 48
+    },
+    {
+      "path": "EvmCompiler/Assembly/StackShuffle.lean",
+      "module": "EvmCompiler.Assembly.StackShuffle",
+      "source_lines": 61,
+      "direct_imports": 1,
+      "declarations": 5
+    },
+    {
+      "path": "EvmCompiler/Assembly/StackShufflePreservation.lean",
+      "module": "EvmCompiler.Assembly.StackShufflePreservation",
+      "source_lines": 799,
+      "direct_imports": 2,
+      "declarations": 20
     },
     {
       "path": "EvmCompiler/Assembly/Syntax.lean",
       "module": "EvmCompiler.Assembly.Syntax",
-      "source_lines": 305,
+      "source_lines": 401,
       "direct_imports": 2,
-      "declarations": 30
+      "declarations": 41
     },
     {
       "path": "EvmCompiler/Assembly/TopLevel.lean",
@@ -103,9 +117,9 @@
     {
       "path": "EvmCompiler/Compiler/AllocatedTypedCfg.lean",
       "module": "EvmCompiler.Compiler.AllocatedTypedCfg",
-      "source_lines": 146,
+      "source_lines": 163,
       "direct_imports": 3,
-      "declarations": 17
+      "declarations": 18
     },
     {
       "path": "EvmCompiler/Compiler/Artifact.lean",
@@ -243,9 +257,9 @@
     {
       "path": "EvmCompiler/Functions/ScratchFrameSpill.lean",
       "module": "EvmCompiler.Functions.ScratchFrameSpill",
-      "source_lines": 6044,
+      "source_lines": 6118,
       "direct_imports": 3,
-      "declarations": 185
+      "declarations": 194
     },
     {
       "path": "EvmCompiler/Functions/Semantics.lean",
@@ -383,9 +397,9 @@
     {
       "path": "EvmCompiler/Objects/Compiler.lean",
       "module": "EvmCompiler.Objects.Compiler",
-      "source_lines": 983,
-      "direct_imports": 6,
-      "declarations": 66
+      "source_lines": 675,
+      "direct_imports": 5,
+      "declarations": 55
     },
     {
       "path": "EvmCompiler/Objects/Layout.lean",
@@ -523,7 +537,7 @@
     {
       "path": "EvmCompiler/Structured/TypedCfgCompiler.lean",
       "module": "EvmCompiler.Structured.TypedCfgCompiler",
-      "source_lines": 589,
+      "source_lines": 598,
       "direct_imports": 2,
       "declarations": 41
     },
@@ -544,37 +558,44 @@
     {
       "path": "EvmCompiler/TypedCfg/Certificate.lean",
       "module": "EvmCompiler.TypedCfg.Certificate",
-      "source_lines": 266,
-      "direct_imports": 3,
-      "declarations": 24
+      "source_lines": 351,
+      "direct_imports": 2,
+      "declarations": 27
     },
     {
       "path": "EvmCompiler/TypedCfg/Lower.lean",
       "module": "EvmCompiler.TypedCfg.Lower",
-      "source_lines": 166,
-      "direct_imports": 1,
-      "declarations": 14
+      "source_lines": 475,
+      "direct_imports": 2,
+      "declarations": 25
+    },
+    {
+      "path": "EvmCompiler/TypedCfg/Preservation.lean",
+      "module": "EvmCompiler.TypedCfg.Preservation",
+      "source_lines": 2788,
+      "direct_imports": 4,
+      "declarations": 50
     },
     {
       "path": "EvmCompiler/TypedCfg/Semantics.lean",
       "module": "EvmCompiler.TypedCfg.Semantics",
-      "source_lines": 150,
+      "source_lines": 156,
       "direct_imports": 2,
-      "declarations": 9
+      "declarations": 11
     },
     {
       "path": "EvmCompiler/TypedCfg/Syntax.lean",
       "module": "EvmCompiler.TypedCfg.Syntax",
-      "source_lines": 169,
+      "source_lines": 183,
       "direct_imports": 1,
-      "declarations": 24
+      "declarations": 26
     },
     {
       "path": "EvmCompiler/TypedCfg/Typing.lean",
       "module": "EvmCompiler.TypedCfg.Typing",
-      "source_lines": 180,
+      "source_lines": 202,
       "direct_imports": 2,
-      "declarations": 18
+      "declarations": 23
     },
     {
       "path": "EvmCompiler/Yul.lean",
@@ -684,7 +705,7 @@
     {
       "path": "EvmCompiler/Yul/OpenLowering.lean",
       "module": "EvmCompiler.Yul.OpenLowering",
-      "source_lines": 98007,
+      "source_lines": 98010,
       "direct_imports": 3,
       "declarations": 898
     },
