@@ -27657,3 +27657,29 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   `Objects/Compiler.lean` fell from 983 to 675 lines, direct imports from 6 to
   5, declarations from 66 to 55, and counted compiler variants from 160 to
   159.
+
+## 2026-06-10 17:33 PDT - Compaction resume: retire legacy bridge diagnostics
+
+- resume: CallAware retirement is committed at `7ccc13a17`; the active
+  checkpoint removes remaining LiveLayout and CallAware diagnostics from the
+  Solidity bridge before quarantining or deleting their legacy proof corridor.
+
+## 2026-06-10 18:04 PDT - Retired parallel backend bridge diagnostics
+
+- deletion: removed 432 lines of Solidity backend-check runner code for
+  LiveLayout, adaptive spill, CallAware, and the old two-pass scratch-frame
+  emitter, including CallAware statement traces and their JSON schema fields.
+- boundary: backend diagnostics now exercise ordinary layer handoffs and the
+  public object-image compiler only; the architecture guard rejects restoring
+  retired backend imports or stage names in the user-facing bridge.
+- verification: the bundled-Python importer/schema suite passes all 244 tests,
+  the generated `Simple.sol` Lean runner passes, and the architecture guard
+  and diff checks pass.
+- contract validation: both Aave v3 runtime checks pass; Permit2 passes all 3
+  SafeCast, 5 NonceBitmap, and 3 SignatureVerification call comparisons. The
+  SignatureVerification runtime's sole remaining diagnostic is the independent
+  `solc_validation` frontend round-trip stage.
+- architecture-risk: `Solidity.Frontend` still imports
+  `Objects.Preservation`, so the stable public import graph transitively retains
+  the legacy LiveLayout/CallAware theorem corridor. That dependency is the next
+  deletion boundary.

@@ -5265,7 +5265,6 @@ def render_json_file_object_image_runner(
     )
     return f"""import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.Bytecode
-import EvmCompiler.Functions.LiveLayout
 
 def evmCompilerRunnerBridgeJsonPath : String :=
   {lean_string(str(json_path))}
@@ -5356,8 +5355,6 @@ def render_json_file_backend_check_runner(
     )
     return f"""import EvmCompiler.Solidity.BridgeJson
 import EvmCompiler.Assembly.Bytecode
-import EvmCompiler.Functions.CallAwareSpill
-import EvmCompiler.Functions.ScratchFrameSpill
 import EvmCompiler.Objects.Compiler
 
 def evmCompilerRunnerBridgeJsonPath : String :=
@@ -5366,9 +5363,6 @@ def evmCompilerRunnerBridgeJsonPath : String :=
 def evmCompilerRunnerLinkerSymbols :
     List (EvmCompiler.Solidity.Frontend.Name × EvmCompiler.Solidity.Frontend.Word) :=
   {linker_symbols_rendered}
-
-def evmCompilerRunnerScratchFrameWords : Nat :=
-  EvmCompiler.Objects.Program.scratchFrameSpillFallbackWords
 
 def evmCompilerRunnerStageSome {{α : Type}} (value : Option α) : Bool :=
   match value with
@@ -5528,87 +5522,6 @@ partial def evmCompilerRunnerPrintLocalsStmtTrace
               | none => pure ()
           | _ => pure ()
 
-def evmCompilerRunnerFunctionsStmtKind :
-    EvmCompiler.Functions.Stmt → String
-  | .expr _ => "expr"
-  | .let_ name _ => "let:" ++ name
-  | .assign name _ => "assign:" ++ name
-  | .block _ => "block"
-  | .if_ _ _ => "if"
-  | .switch _ _ _ => "switch"
-  | .for_ _ _ _ _ => "for"
-  | .brk => "break"
-  | .cont => "continue"
-  | .leave => "leave"
-  | .call _ name _ => "call:" ++ name
-  | .terminal _ => "terminal"
-  | .terminalArgs _ _ => "terminalArgs"
-
-def evmCompilerRunnerPrintCallAwareSwitchLayout
-    (owner : String) (idx : Nat)
-    (plan : EvmCompiler.Functions.CallAwareSpill.Plan) : IO Unit := do
-  IO.println
-    ("call_aware_switch_layout\\t" ++ owner ++ "\\t" ++
-      toString idx ++ "\\t" ++ toString plan.sourceScope.length ++
-      "\\t" ++ toString plan.stackLayout.length ++ "\\t" ++
-      toString plan.layout.length)
-
-partial def evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-    (range : EvmCompiler.Functions.CallAwareSpill.ScratchRange)
-    (program : EvmCompiler.Functions.Program) (owner : String) (idx : Nat)
-    (returns : List EvmCompiler.Functions.Name)
-    (plan : EvmCompiler.Functions.CallAwareSpill.Plan)
-    (stmts : List EvmCompiler.Functions.Stmt) : IO Unit := do
-  match stmts with
-  | [] => pure ()
-  | stmt :: rest =>
-      let result :=
-        EvmCompiler.Functions.CallAwareSpill.compileStmtWithSwitchFallback?
-          range program {{}} returns plan.sourceScope plan.stackLayout
-          plan.layout stmt
-      IO.println
-        ("call_aware_switch_stmt\\t" ++ owner ++ "\\t" ++
-          toString idx ++ "\\t" ++
-          evmCompilerRunnerFunctionsStmtKind stmt ++ "\\t" ++
-          if result.isSome then "some" else "none")
-      match result with
-      | some nextPlan =>
-          evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-            range program owner (idx + 1) returns nextPlan rest
-      | none =>
-          evmCompilerRunnerPrintCallAwareSwitchLayout owner idx plan
-          match stmt with
-          | .block body =>
-              evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                range program (owner ++ "/" ++ toString idx ++ ".block") 0
-                returns plan body.stmts
-          | .if_ _ body =>
-              evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                range program (owner ++ "/" ++ toString idx ++ ".if") 0
-                returns plan body.stmts
-          | .switch _ cases defaultBody =>
-              for pair in cases do
-                evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                  range program (owner ++ "/" ++ toString idx ++ ".switch") 0
-                  returns plan pair.snd.stmts
-              match defaultBody with
-              | some body =>
-                  evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                    range program (owner ++ "/" ++ toString idx ++ ".default") 0
-                    returns plan body.stmts
-              | none => pure ()
-          | .for_ init _ post body =>
-              evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                range program (owner ++ "/" ++ toString idx ++ ".for.init") 0
-                returns plan init.stmts
-              evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                range program (owner ++ "/" ++ toString idx ++ ".for.post") 0
-                returns plan post.stmts
-              evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-                range program (owner ++ "/" ++ toString idx ++ ".for.body") 0
-                returns plan body.stmts
-          | _ => pure ()
-
 def evmCompilerRunnerFirstNone :
     List (String × Bool) → String
   | [] => "none"
@@ -5674,8 +5587,6 @@ def main : IO Unit := do
   let lowerCodeUnchecked? ←
     evmCompilerRunnerTimedPure "lower_code_unchecked" (fun _ =>
       object.lowerCodeUnchecked?)
-  let spillScratchRange :=
-    EvmCompiler.Functions.CallAwareSpill.plannedScratchRange 64
   let functionsCompile? ←
     evmCompilerRunnerTimedPure "functions_compile" (fun _ => do
     let lower ← lowerCodeUnchecked?
@@ -5703,60 +5614,6 @@ def main : IO Unit := do
     evmCompilerRunnerTimedPure "expressions_compile" (fun _ => do
     let expressions ← localsToExpressions?
     expressions.compile?)
-  let liveLayoutToLocals? ←
-    evmCompilerRunnerTimedPure "live_layout_to_locals" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    EvmCompiler.Functions.LiveLayout.Lower.Program.toLocals? lower)
-  let liveLayoutToExpressions? ←
-    evmCompilerRunnerTimedPure "live_layout_to_expressions" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    EvmCompiler.Functions.LiveLayout.Lower.Program.toExpressions? lower)
-  let liveLayoutCompile? ←
-    evmCompilerRunnerTimedPure "live_layout_compile" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    EvmCompiler.Functions.LiveLayout.Lower.Program.compile? lower)
-  let localsAdaptiveSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "locals_adaptive_spill_to_expressions" (fun _ => do
-    let locals ← functionsToLocals?
-    let (_plan, expressions) ←
-      EvmCompiler.Locals.SourceLowering.StateRel.SpillScratch.SpillPlan.compileProgramBodyWithAdaptiveSpillExpressions?
-        spillScratchRange locals
-    some expressions)
-  let localsAdaptiveSpillCompile? ←
-    evmCompilerRunnerTimedPure "locals_adaptive_spill_compile" (fun _ => do
-    let expressions ← localsAdaptiveSpillToExpressions?
-    expressions.compile?)
-  let callAwareSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "call_aware_spill_to_expressions" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    let (_plan, expressions) ←
-      EvmCompiler.Functions.CallAwareSpill.compileExpressionsProgram?
-        spillScratchRange lower
-    some expressions)
-  let callAwareSpillCompile? ←
-    evmCompilerRunnerTimedPure "call_aware_spill_compile" (fun _ => do
-    let expressions ← callAwareSpillToExpressions?
-    expressions.compile?)
-  let callAwareSwitchSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "call_aware_switch_spill_to_expressions" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    let (_plan, expressions) ←
-      EvmCompiler.Functions.CallAwareSpill.compileExpressionsProgramWithSwitchFallback?
-        spillScratchRange lower
-    some expressions)
-  let callAwareSwitchSpillCompile? ←
-    evmCompilerRunnerTimedPure "call_aware_switch_spill_compile" (fun _ => do
-    let expressions ← callAwareSwitchSpillToExpressions?
-    expressions.compile?)
-  let scratchFrameSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "scratch_frame_spill_to_expressions" (fun _ => do
-    let lower ← lowerCodeUnchecked?
-    EvmCompiler.Functions.ScratchFrameSpill.compileExpressionsProgram?
-      evmCompilerRunnerScratchFrameWords lower)
-  let scratchFrameSpillCompile? ←
-    evmCompilerRunnerTimedPure "scratch_frame_spill_compile" (fun _ => do
-    let expressions ← scratchFrameSpillToExpressions?
-    expressions.compileExecutable?)
   let childImages? ←
     evmCompilerRunnerTimedPure "child_images" (fun _ =>
     EvmCompiler.Solidity.Frontend.Object.List.bytecodeImagesUncheckedWithLinkerSymbols?
@@ -5845,84 +5702,6 @@ def main : IO Unit := do
     evmCompilerRunnerTimedPure "placeholder_expressions_compile" (fun _ => do
     let expressions ← placeholderLocalsToExpressions?
     expressions.compile?)
-  let placeholderLiveLayoutCompile? ←
-    evmCompilerRunnerTimedPure "placeholder_live_layout_compile" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    EvmCompiler.Functions.LiveLayout.Lower.Program.compile? lower)
-  let placeholderScratchFrameSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_frame_spill_to_expressions" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    EvmCompiler.Functions.ScratchFrameSpill.compileExpressionsProgram?
-      evmCompilerRunnerScratchFrameWords lower)
-  let placeholderScratchNamesNodup? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_names_nodup" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    if (lower.functions.map (fun fn => fn.name)).Nodup then some () else none)
-  let placeholderScratchSignatures? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_signatures" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    some
-      (EvmCompiler.Functions.ScratchFrameSpill.allocateFunctionSignatures
-        lower.functions
-        ({{ env := [], nextSlot := 0 }} :
-          EvmCompiler.Functions.ScratchFrameSpill.CompileState)))
-  let placeholderScratchProbeFunctions? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_probe_functions" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    let (functionSlots, stateAfterSignatures) ← placeholderScratchSignatures?
-    let ctx : EvmCompiler.Functions.ScratchFrameSpill.CompileCtx :=
-      {{ functions := functionSlots, frameWords := 0 }}
-    EvmCompiler.Functions.ScratchFrameSpill.compileFunctions?
-      ctx stateAfterSignatures lower.functions)
-  let placeholderScratchMainProbe? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_main_probe" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    let (functionSlots, _stateAfterSignatures) ← placeholderScratchSignatures?
-    let (_procs, stateAfterFunctions) ← placeholderScratchProbeFunctions?
-    let ctx : EvmCompiler.Functions.ScratchFrameSpill.CompileCtx :=
-      {{ functions := functionSlots, frameWords := 0 }}
-    let mainStart : EvmCompiler.Functions.ScratchFrameSpill.CompileState :=
-      {{ env := [], nextSlot := stateAfterFunctions.nextSlot }}
-    EvmCompiler.Functions.ScratchFrameSpill.compileMain?
-      ctx 0 mainStart lower.body)
-  let placeholderScratchFrameBudget? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_frame_budget" (fun _ => do
-    let mainProbe ← placeholderScratchMainProbe?
-    if mainProbe.state.nextSlot ≤ evmCompilerRunnerScratchFrameWords then
-      some ()
-    else
-      none)
-  let placeholderScratchFrameFunctions? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_frame_functions" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    let (functionSlots, stateAfterSignatures) ← placeholderScratchSignatures?
-    let mainProbe ← placeholderScratchMainProbe?
-    if mainProbe.state.nextSlot ≤ evmCompilerRunnerScratchFrameWords then
-      let ctx : EvmCompiler.Functions.ScratchFrameSpill.CompileCtx :=
-        {{ functions := functionSlots, frameWords := mainProbe.state.nextSlot }}
-      EvmCompiler.Functions.ScratchFrameSpill.compileFunctions?
-        ctx stateAfterSignatures lower.functions
-    else
-      none)
-  let placeholderScratchFrameMain? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_frame_main" (fun _ => do
-    let lower ← placeholderLowerUnchecked?
-    let (functionSlots, _stateAfterSignatures) ← placeholderScratchSignatures?
-    let (_procs, stateAfterFunctions) ← placeholderScratchFrameFunctions?
-    let mainProbe ← placeholderScratchMainProbe?
-    if mainProbe.state.nextSlot ≤ evmCompilerRunnerScratchFrameWords then
-      let ctx : EvmCompiler.Functions.ScratchFrameSpill.CompileCtx :=
-        {{ functions := functionSlots, frameWords := mainProbe.state.nextSlot }}
-      let mainStart : EvmCompiler.Functions.ScratchFrameSpill.CompileState :=
-        {{ env := [], nextSlot := stateAfterFunctions.nextSlot }}
-      EvmCompiler.Functions.ScratchFrameSpill.compileMain?
-        ctx mainProbe.state.nextSlot mainStart lower.body
-    else
-      none)
-  let placeholderScratchFrameSpillCompile? ←
-    evmCompilerRunnerTimedPure "placeholder_scratch_frame_spill_compile" (fun _ => do
-    let expressions ← placeholderScratchFrameSpillToExpressions?
-    expressions.compileExecutable?)
   let placeholderCode? ←
     evmCompilerRunnerTimedPure "placeholder_code" (fun _ => do
     let context ← placeholderContext?
@@ -5990,19 +5769,6 @@ def main : IO Unit := do
     evmCompilerRunnerTimedPure "code_expressions_compile" (fun _ => do
     let expressions ← codeLocalsToExpressions?
     expressions.compile?)
-  let codeLiveLayoutCompile? ←
-    evmCompilerRunnerTimedPure "code_live_layout_compile" (fun _ => do
-    let lower ← codeLowerUnchecked?
-    EvmCompiler.Functions.LiveLayout.Lower.Program.compile? lower)
-  let codeScratchFrameSpillToExpressions? ←
-    evmCompilerRunnerTimedPure "code_scratch_frame_spill_to_expressions" (fun _ => do
-    let lower ← codeLowerUnchecked?
-    EvmCompiler.Functions.ScratchFrameSpill.compileExpressionsProgram?
-      evmCompilerRunnerScratchFrameWords lower)
-  let codeScratchFrameSpillCompile? ←
-    evmCompilerRunnerTimedPure "code_scratch_frame_spill_compile" (fun _ => do
-    let expressions ← codeScratchFrameSpillToExpressions?
-    expressions.compileExecutable?)
   let code? ←
     evmCompilerRunnerTimedPure "code" (fun _ => do
     let context ← codeContext?
@@ -6050,17 +5816,6 @@ def main : IO Unit := do
     , ("locals_compile", evmCompilerRunnerStageSome localsCompile?)
     , ("expressions_compile", evmCompilerRunnerStageSome expressionsCompile?)
     , ("functions_compile", evmCompilerRunnerStageSome functionsCompile?)
-    , ("live_layout_to_locals", evmCompilerRunnerStageSome liveLayoutToLocals?)
-    , ("live_layout_to_expressions", evmCompilerRunnerStageSome liveLayoutToExpressions?)
-    , ("live_layout_compile", evmCompilerRunnerStageSome liveLayoutCompile?)
-    , ("locals_adaptive_spill_to_expressions", evmCompilerRunnerStageSome localsAdaptiveSpillToExpressions?)
-    , ("locals_adaptive_spill_compile", evmCompilerRunnerStageSome localsAdaptiveSpillCompile?)
-    , ("call_aware_spill_to_expressions", evmCompilerRunnerStageSome callAwareSpillToExpressions?)
-    , ("call_aware_spill_compile", evmCompilerRunnerStageSome callAwareSpillCompile?)
-    , ("call_aware_switch_spill_to_expressions", evmCompilerRunnerStageSome callAwareSwitchSpillToExpressions?)
-    , ("call_aware_switch_spill_compile", evmCompilerRunnerStageSome callAwareSwitchSpillCompile?)
-    , ("scratch_frame_spill_to_expressions", evmCompilerRunnerStageSome scratchFrameSpillToExpressions?)
-    , ("scratch_frame_spill_compile", evmCompilerRunnerStageSome scratchFrameSpillCompile?)
     , ("child_images", evmCompilerRunnerStageSome childImages?)
     , ("payload_items", evmCompilerRunnerStageSome items?)
     , ("data_sizes", evmCompilerRunnerStageSome dataSizes?)
@@ -6075,16 +5830,6 @@ def main : IO Unit := do
     , ("placeholder_locals_compile", evmCompilerRunnerStageSome placeholderLocalsCompile?)
     , ("placeholder_expressions_compile", evmCompilerRunnerStageSome placeholderExpressionsCompile?)
     , ("placeholder_functions_compile", evmCompilerRunnerStageSome placeholderFunctionsCompile?)
-    , ("placeholder_live_layout_compile", evmCompilerRunnerStageSome placeholderLiveLayoutCompile?)
-    , ("placeholder_scratch_names_nodup", evmCompilerRunnerStageSome placeholderScratchNamesNodup?)
-    , ("placeholder_scratch_signatures", evmCompilerRunnerStageSome placeholderScratchSignatures?)
-    , ("placeholder_scratch_probe_functions", evmCompilerRunnerStageSome placeholderScratchProbeFunctions?)
-    , ("placeholder_scratch_main_probe", evmCompilerRunnerStageSome placeholderScratchMainProbe?)
-    , ("placeholder_scratch_frame_budget", evmCompilerRunnerStageSome placeholderScratchFrameBudget?)
-    , ("placeholder_scratch_frame_functions", evmCompilerRunnerStageSome placeholderScratchFrameFunctions?)
-    , ("placeholder_scratch_frame_main", evmCompilerRunnerStageSome placeholderScratchFrameMain?)
-    , ("placeholder_scratch_frame_spill_to_expressions", evmCompilerRunnerStageSome placeholderScratchFrameSpillToExpressions?)
-    , ("placeholder_scratch_frame_spill_compile", evmCompilerRunnerStageSome placeholderScratchFrameSpillCompile?)
     , ("placeholder_code", evmCompilerRunnerStageSome placeholderCode?)
     , ("layout", evmCompilerRunnerStageSome layout?)
     , ("data_offsets", evmCompilerRunnerStageSome dataOffsets?)
@@ -6096,9 +5841,6 @@ def main : IO Unit := do
     , ("code_locals_compile", evmCompilerRunnerStageSome codeLocalsCompile?)
     , ("code_expressions_compile", evmCompilerRunnerStageSome codeExpressionsCompile?)
     , ("code_functions_compile", evmCompilerRunnerStageSome codeFunctionsCompile?)
-    , ("code_live_layout_compile", evmCompilerRunnerStageSome codeLiveLayoutCompile?)
-    , ("code_scratch_frame_spill_to_expressions", evmCompilerRunnerStageSome codeScratchFrameSpillToExpressions?)
-    , ("code_scratch_frame_spill_compile", evmCompilerRunnerStageSome codeScratchFrameSpillCompile?)
     , ("code", evmCompilerRunnerStageSome code?)
     , ("marker_code", evmCompilerRunnerStageSome markerCode?)
     , ("computed_object_data", evmCompilerRunnerStageSome computedObjectData?)
@@ -6121,83 +5863,6 @@ def main : IO Unit := do
   IO.println ("object=" ++ object.name)
   for stage in stages do
     evmCompilerRunnerPrintStage stage.fst stage.snd
-  match lowerCodeUnchecked? with
-  | none => pure ()
-  | some lower =>
-      IO.println
-        ("call_aware_switch_body\\tmain\\t" ++
-          if
-            (EvmCompiler.Functions.CallAwareSpill.compileMainBodyWithSwitchFallback?
-              spillScratchRange lower).isSome
-          then
-            "some"
-          else
-            "none")
-      evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-        spillScratchRange lower "main" 0 []
-        {{ sourceScope := []
-          stackLayout := []
-          layout := []
-          block := {{ stmts := [] }} }}
-        lower.body.stmts
-      for fn in lower.functions do
-        IO.println
-          ("call_aware_switch_proc\\t" ++ fn.name ++ "\\t" ++
-            if
-              (EvmCompiler.Functions.CallAwareSpill.compileFunDefWithSwitchFallback?
-                spillScratchRange lower fn).isSome
-            then
-              "some"
-            else
-              "none")
-        let entryStack := fn.params.reverse
-        match
-            EvmCompiler.Functions.CallAwareSpill.compileLocalsBlockSpan?
-              spillScratchRange fn.params entryStack
-              (EvmCompiler.Functions.CallAwareSpill.layoutOfParamStack
-                fn.params)
-              {{ stmts :=
-                  EvmCompiler.Functions.CallAwareSpill.initReturnsInSourceScopeOrder
-                    fn.returns }} with
-        | none =>
-            IO.println
-              ("call_aware_switch_proc_component\\t" ++ fn.name ++
-                "\\tinit_none")
-        | some init =>
-            match
-                EvmCompiler.Functions.CallAwareSpill.compileBlockOpenWithSwitchFallback?
-                  spillScratchRange lower {{}} fn.returns init.sourceScope
-                  init.stackLayout init.layout fn.body with
-            | none =>
-                IO.println
-                  ("call_aware_switch_proc_component\\t" ++ fn.name ++
-                    "\\tbody_none")
-            | some body =>
-                let combined :=
-                  {{ sourceScope := body.sourceScope
-                    stackLayout := body.stackLayout
-                    layout := body.layout
-                    block :=
-                      EvmCompiler.Functions.CallAwareSpill.ExpressionsBlock.append
-                        init.block body.block }}
-                IO.println
-                  ("call_aware_switch_proc_component\\t" ++ fn.name ++ "\\t" ++
-                    if
-                      (EvmCompiler.Functions.CallAwareSpill.appendReturnFallthrough?
-                        spillScratchRange fn.returns combined).isSome
-                    then
-                      "return_some"
-                    else
-                      "return_none")
-            evmCompilerRunnerPrintCallAwareSwitchStmtTrace
-              spillScratchRange lower fn.name 0 fn.returns init
-              fn.body.stmts
-  match placeholderScratchMainProbe? with
-  | some mainProbe =>
-      IO.println
-        ("placeholder_scratch_frame_words=" ++
-          toString mainProbe.state.nextSlot)
-  | none => pure ()
   match functionsToLocals? with
   | none => pure ()
   | some locals =>
@@ -6422,11 +6087,6 @@ def parse_backend_check_output(output: str) -> Json:
         "localsLayouts": [],
         "localsVars": [],
         "localsTargets": [],
-        "callAwareSwitchBodies": {},
-        "callAwareSwitchProcs": {},
-        "callAwareSwitchProcComponents": {},
-        "callAwareSwitchStmtTrace": [],
-        "callAwareSwitchLayouts": [],
     }
     numeric_fields = {"bytecode_bytes"}
     for line in lines:
@@ -6495,93 +6155,6 @@ def parse_backend_check_output(output: str) -> Json:
                     "index": index,
                     "kind": parts[3],
                     "status": parts[4],
-                }
-            )
-            continue
-        if line.startswith("call_aware_switch_body\t"):
-            parts = line.split("\t")
-            if len(parts) != 3 or not parts[1] or parts[2] not in {"some", "none"}:
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch body: {line!r}"
-                )
-            summary["callAwareSwitchBodies"][parts[1]] = parts[2]
-            continue
-        if line.startswith("call_aware_switch_proc\t"):
-            parts = line.split("\t")
-            if len(parts) != 3 or not parts[1] or parts[2] not in {"some", "none"}:
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch proc: {line!r}"
-                )
-            summary["callAwareSwitchProcs"][parts[1]] = parts[2]
-            continue
-        if line.startswith("call_aware_switch_proc_component\t"):
-            parts = line.split("\t")
-            if (
-                len(parts) != 3
-                or not parts[1]
-                or parts[2]
-                not in {"init_none", "body_none", "return_none", "return_some"}
-            ):
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch proc component: {line!r}"
-                )
-            summary["callAwareSwitchProcComponents"][parts[1]] = parts[2]
-            continue
-        if line.startswith("call_aware_switch_stmt\t"):
-            parts = line.split("\t")
-            if (
-                len(parts) != 5
-                or not parts[1]
-                or not parts[3]
-                or parts[4] not in {"some", "none"}
-            ):
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch stmt: {line!r}"
-                )
-            try:
-                index = int(parts[2])
-            except ValueError:
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch stmt index: {line!r}"
-                )
-            summary["callAwareSwitchStmtTrace"].append(
-                {
-                    "owner": parts[1],
-                    "index": index,
-                    "kind": parts[3],
-                    "status": parts[4],
-                }
-            )
-            continue
-        if line.startswith("call_aware_switch_layout\t"):
-            parts = line.split("\t")
-            if len(parts) != 6 or not parts[1]:
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch layout: {line!r}"
-                )
-            try:
-                index = int(parts[2])
-                source_len = int(parts[3])
-                stack_len = int(parts[4])
-                layout_len = int(parts[5])
-            except ValueError:
-                fail(
-                    "Lean backend check runner produced malformed call-aware "
-                    f"switch layout number: {line!r}"
-                )
-            summary["callAwareSwitchLayouts"].append(
-                {
-                    "owner": parts[1],
-                    "index": index,
-                    "sourceLength": source_len,
-                    "stackLength": stack_len,
-                    "layoutLength": layout_len,
                 }
             )
             continue
@@ -7453,11 +7026,6 @@ def render_lean_backend_check_outputs(
             "localsLayouts",
             "localsVars",
             "localsTargets",
-            "callAwareSwitchBodies",
-            "callAwareSwitchProcs",
-            "callAwareSwitchProcComponents",
-            "callAwareSwitchStmtTrace",
-            "callAwareSwitchLayouts",
         ]:
             value = artifact.summary.get(key)
             if value:

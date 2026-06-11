@@ -534,7 +534,7 @@ if (
     signature_runtime_backend[0] == "fail"
     and signature_runtime_backend[1] not in {
         "lower_code_unchecked",
-        "live_layout_to_locals",
+        "solc_validation",
     }
 ):
     raise SystemExit(

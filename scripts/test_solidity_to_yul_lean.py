@@ -3439,6 +3439,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn('"object_image"', rendered)
         self.assertNotIn('"checked_computed_object_data"', rendered)
         self.assertNotIn('"checked_object_image"', rendered)
+        self.assertNotIn("Functions.LiveLayout", rendered)
+        self.assertNotIn("Functions.CallAwareSpill", rendered)
+        self.assertNotIn("Functions.ScratchFrameSpill", rendered)
+        self.assertNotIn('"live_layout_', rendered)
+        self.assertNotIn('"call_aware_', rendered)
+        self.assertNotIn('"adaptive_spill', rendered)
+        self.assertNotIn('"scratch_frame_spill', rendered)
         self.assertIn('"lean_backend_check="', rendered)
         self.assertIn('("MathLib.sol:MathLib", EvmYul.UInt256.ofNat 42)', rendered)
 
@@ -4622,9 +4629,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
                             "contract": "A",
                             "object": "A_1_deployed",
                             "status": "fail",
-                            "first_none": "live_layout_to_locals",
+                            "first_none": "functions_compile",
                             "stages": {
-                                "live_layout_to_locals": "none",
+                                "functions_compile": "none",
                                 "object_image": "some",
                             },
                             "bytecode_bytes": 7,

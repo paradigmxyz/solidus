@@ -536,7 +536,9 @@ Exit gate:
 - [ ] Delete parallel allocation compilers.
   CallAware is no longer imported by the stable Objects/Public compiler, but
   its 65K-line implementation and the live-layout corridors remain in
-  `EvmCompiler.Legacy`.
+  `EvmCompiler.Legacy`. User-facing Solidity bridge diagnostics no longer
+  import or execute LiveLayout, adaptive-spill, CallAware, or the old
+  two-pass scratch-frame emitter.
 - [ ] Delete direct Structured-to-Assembly control lowering.
 - [ ] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The initial
@@ -575,17 +577,18 @@ Latest verified checkpoint:
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
-  5 NonceBitmap, and 3 SignatureVerification call comparisons. The existing
-  SignatureVerification diagnostic still reports `live_layout_to_locals` for
-  one legacy backend check, while the overall public smoke passes.
+  5 NonceBitmap, and 3 SignatureVerification call comparisons. The
+  SignatureVerification runtime now reports only the independent
+  `solc_validation` frontend round-trip limitation; no retired compiler is
+  present in the backend diagnostic path.
 
 ## Execution Order
 
 The remaining critical path is:
 
-1. Migrate or retire live allocation, make canonical locations drive lowering
-   and CFG shapes, then delete the now-quarantined CallAware/live compiler and
-   proof modules.
+1. Remove the stable Solidity frontend's remaining dependency on
+   `Objects.Preservation`, then delete the now-unreachable CallAware/live
+   compiler and proof modules.
 2. Finish source-to-CFG semantic composition and enrich generated fragment
    certificates with exact code spans and safety projections.
 3. Finish the generic effect/outcome migrations and remove replay evaluators.

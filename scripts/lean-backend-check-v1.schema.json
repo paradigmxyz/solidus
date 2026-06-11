@@ -104,19 +104,6 @@
         "$ref": "#/$defs/stageStatus"
       }
     },
-    "callAwareSwitchStatusMap": {
-      "type": "object",
-      "additionalProperties": {
-        "$ref": "#/$defs/stageStatus"
-      }
-    },
-    "callAwareSwitchProcComponentMap": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "string",
-        "enum": ["init_none", "body_none", "return_none", "return_some"]
-      }
-    },
     "localsStmtTraceEntry": {
       "type": "object",
       "additionalProperties": false,
@@ -196,28 +183,6 @@
         }
       }
     },
-    "callAwareSwitchLayoutEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["owner", "index", "sourceLength", "stackLength", "layoutLength"],
-      "properties": {
-        "owner": {
-          "$ref": "#/$defs/nonemptyString"
-        },
-        "index": {
-          "$ref": "#/$defs/nonnegativeInteger"
-        },
-        "sourceLength": {
-          "$ref": "#/$defs/nonnegativeInteger"
-        },
-        "stackLength": {
-          "$ref": "#/$defs/nonnegativeInteger"
-        },
-        "layoutLength": {
-          "$ref": "#/$defs/nonnegativeInteger"
-        }
-      }
-    },
     "frontend": {
       "type": "object",
       "additionalProperties": false,
@@ -293,27 +258,6 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/localsTargetEntry"
-          }
-        },
-        "callAwareSwitchBodies": {
-          "$ref": "#/$defs/callAwareSwitchStatusMap"
-        },
-        "callAwareSwitchProcs": {
-          "$ref": "#/$defs/callAwareSwitchStatusMap"
-        },
-        "callAwareSwitchProcComponents": {
-          "$ref": "#/$defs/callAwareSwitchProcComponentMap"
-        },
-        "callAwareSwitchStmtTrace": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/localsStmtTraceEntry"
-          }
-        },
-        "callAwareSwitchLayouts": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/callAwareSwitchLayoutEntry"
           }
         },
         "frontend": {
