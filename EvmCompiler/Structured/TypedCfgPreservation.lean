@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.TypedCfgCompiler
+import EvmCompiler.Simulation.Outcome
 import EvmCompiler.TypedCfg.Preservation
 
 namespace EvmCompiler
@@ -1076,6 +1077,384 @@ theorem of_regular
   exact ⟨targetFinal, hEventually, hFinalRel⟩
 
 end PathPreserves
+
+namespace OutcomeSimulation
+
+/--
+Control mode extracted from a concrete TypedCfg outcome.
+
+The pass-specific relation below maps Structured's lexical control modes to
+these CFG modes through the continuation labels supplied to the compiler.
+-/
+inductive TargetMode where
+  | fallthrough
+  | jump (target : Assembly.Label)
+  | returnDispatch
+  | halt (kind : Assembly.HaltKind)
+  | invalid
+  deriving DecidableEq
+
+def sourceView :
+    Simulation.OutcomeView Structured.Outcome RunState Structured.Mode where
+  state := Structured.Outcome.state
+  mode := Structured.Outcome.mode
+
+def targetState : TypedCfg.Outcome → EVMState
+  | .fallthrough state
+  | .jump _ state
+  | .returnDispatch state
+  | .halt _ state
+  | .invalid state => state
+
+def targetMode : TypedCfg.Outcome → TargetMode
+  | .fallthrough _ => .fallthrough
+  | .jump target _ => .jump target
+  | .returnDispatch _ => .returnDispatch
+  | .halt kind _ => .halt kind
+  | .invalid _ => .invalid
+
+def targetView :
+    Simulation.OutcomeView TypedCfg.Outcome EVMState TargetMode where
+  state := targetState
+  mode := targetMode
+
+/--
+Lexical control destinations owned by a compiled Structured fragment.
+-/
+structure Continuations where
+  regular : Assembly.Label
+  breakLabel? : Option Assembly.Label := none
+  continueLabel? : Option Assembly.Label := none
+  leaveLabel? : Option Assembly.Label := none
+
+def Continuations.ofContext
+    (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label) :
+    Continuations where
+  regular := regular
+  breakLabel? := ctx.breakLabel?
+  continueLabel? := ctx.continueLabel?
+  leaveLabel? := ctx.leaveLabel?
+
+/--
+Mode-indexed Structured-to-TypedCfg outcome policy.
+
+Regular and lexical control outcomes select their compiler-owned continuation.
+TypedCfg halt outcomes retain the state immediately before the terminal opcode,
+so the halt branch executes that opcode before applying `StateRel`.
+-/
+def contract (continuations : Continuations) (tokens : List Word) :
+    Simulation.OutcomeContract Structured.Mode TargetMode RunState EVMState where
+  relate sourceMode targetMode source target :=
+    match sourceMode, targetMode with
+    | .regular, .jump label =>
+        label = continuations.regular ∧ StateRel source tokens target
+    | .brk, .jump label =>
+        continuations.breakLabel? = some label ∧ StateRel source tokens target
+    | .cont, .jump label =>
+        continuations.continueLabel? = some label ∧
+          StateRel source tokens target
+    | .leave, .jump label =>
+        continuations.leaveLabel? = some label ∧ StateRel source tokens target
+    | .halt kind, .halt targetKind =>
+        targetKind = kind ∧
+          ∃ targetFinal,
+            Structured.Terminal.step kind target = .ok targetFinal ∧
+              StateRel source tokens targetFinal
+    | _, _ => False
+
+abbrev Rel (continuations : Continuations) (tokens : List Word) :=
+  Simulation.OutcomeRel sourceView targetView
+    (contract continuations tokens)
+
+namespace Rel
+
+theorem regular_iff
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {label : Assembly.Label} {target : EVMState} :
+    Rel continuations tokens (Structured.Outcome.regular source)
+        (.jump label target) ↔
+      label = continuations.regular ∧ StateRel source tokens target :=
+  Iff.rfl
+
+theorem brk_iff
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {label : Assembly.Label} {target : EVMState} :
+    Rel continuations tokens (Structured.Outcome.brk source)
+        (.jump label target) ↔
+      continuations.breakLabel? = some label ∧
+        StateRel source tokens target :=
+  Iff.rfl
+
+theorem cont_iff
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {label : Assembly.Label} {target : EVMState} :
+    Rel continuations tokens (Structured.Outcome.cont source)
+        (.jump label target) ↔
+      continuations.continueLabel? = some label ∧
+        StateRel source tokens target :=
+  Iff.rfl
+
+theorem leave_iff
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {label : Assembly.Label} {target : EVMState} :
+    Rel continuations tokens (Structured.Outcome.leave source)
+        (.jump label target) ↔
+      continuations.leaveLabel? = some label ∧
+        StateRel source tokens target :=
+  Iff.rfl
+
+theorem halt_iff
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {kind targetKind : Assembly.HaltKind}
+    {target : EVMState} :
+    Rel continuations tokens (Structured.Outcome.halt kind source)
+        (.halt targetKind target) ↔
+      targetKind = kind ∧
+        ∃ targetFinal,
+          Structured.Terminal.step kind target = .ok targetFinal ∧
+            StateRel source tokens targetFinal :=
+  Iff.rfl
+
+theorem regular_elim
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {targetOutcome : TypedCfg.Outcome}
+    (hRel :
+      Rel continuations tokens
+        (Structured.Outcome.regular source) targetOutcome) :
+    ∃ target,
+      targetOutcome = .jump continuations.regular target ∧
+        StateRel source tokens target := by
+  cases targetOutcome with
+  | jump label target =>
+      rcases regular_iff.mp hRel with ⟨rfl, hState⟩
+      exact ⟨target, rfl, hState⟩
+  | fallthrough _ | returnDispatch _ | halt _ _ | invalid _ =>
+      exact False.elim hRel
+
+theorem brk_elim
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {targetOutcome : TypedCfg.Outcome}
+    (hRel :
+      Rel continuations tokens
+        (Structured.Outcome.brk source) targetOutcome) :
+    ∃ label target,
+      continuations.breakLabel? = some label ∧
+        targetOutcome = .jump label target ∧
+          StateRel source tokens target := by
+  cases targetOutcome with
+  | jump label target =>
+      rcases brk_iff.mp hRel with ⟨hLabel, hState⟩
+      exact ⟨label, target, hLabel, rfl, hState⟩
+  | fallthrough _ | returnDispatch _ | halt _ _ | invalid _ =>
+      exact False.elim hRel
+
+theorem cont_elim
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {targetOutcome : TypedCfg.Outcome}
+    (hRel :
+      Rel continuations tokens
+        (Structured.Outcome.cont source) targetOutcome) :
+    ∃ label target,
+      continuations.continueLabel? = some label ∧
+        targetOutcome = .jump label target ∧
+          StateRel source tokens target := by
+  cases targetOutcome with
+  | jump label target =>
+      rcases cont_iff.mp hRel with ⟨hLabel, hState⟩
+      exact ⟨label, target, hLabel, rfl, hState⟩
+  | fallthrough _ | returnDispatch _ | halt _ _ | invalid _ =>
+      exact False.elim hRel
+
+theorem leave_elim
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {targetOutcome : TypedCfg.Outcome}
+    (hRel :
+      Rel continuations tokens
+        (Structured.Outcome.leave source) targetOutcome) :
+    ∃ label target,
+      continuations.leaveLabel? = some label ∧
+        targetOutcome = .jump label target ∧
+          StateRel source tokens target := by
+  cases targetOutcome with
+  | jump label target =>
+      rcases leave_iff.mp hRel with ⟨hLabel, hState⟩
+      exact ⟨label, target, hLabel, rfl, hState⟩
+  | fallthrough _ | returnDispatch _ | halt _ _ | invalid _ =>
+      exact False.elim hRel
+
+theorem halt_elim
+    {continuations : Continuations} {tokens : List Word}
+    {source : RunState} {kind : Assembly.HaltKind}
+    {targetOutcome : TypedCfg.Outcome}
+    (hRel :
+      Rel continuations tokens
+        (Structured.Outcome.halt kind source) targetOutcome) :
+    ∃ target targetFinal,
+      targetOutcome = .halt kind target ∧
+        Structured.Terminal.step kind target = .ok targetFinal ∧
+          StateRel source tokens targetFinal := by
+  cases targetOutcome with
+  | halt targetKind target =>
+      rcases halt_iff.mp hRel with
+        ⟨rfl, targetFinal, hStep, hState⟩
+      exact ⟨target, targetFinal, rfl, hStep, hState⟩
+  | fallthrough _ | jump _ _ | returnDispatch _ | invalid _ =>
+      exact False.elim hRel
+
+end Rel
+
+/--
+Relational execution of a Structured outcome through an ambient TypedCfg.
+
+This is the common composition unit for statement lists, loops, switches, and
+procedure calls. Compiler-result ownership and fallthrough metadata remain
+separate from semantic path composition.
+-/
+def Path (program : TypedCfg.Program) (entry : Assembly.Label)
+    (continuations : Continuations) (source : RunState)
+    (outcome : Structured.Outcome) (tokens : List Word) : Prop :=
+  ∀ target,
+    StateRel source tokens target →
+      ∃ targetOutcome,
+        program.Eventually entry target targetOutcome ∧
+          Rel continuations tokens outcome targetOutcome
+
+namespace Path
+
+theorem to_regular
+    {program : TypedCfg.Program} {entry : Assembly.Label}
+    {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hPath :
+      Path program entry continuations source
+        (Structured.Outcome.regular final) tokens) :
+    PathPreserves program entry continuations.regular source final tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.regular_elim hOutcomeRel with
+    ⟨targetFinal, rfl, hFinalRel⟩
+  exact ⟨targetFinal, hEventually, hFinalRel⟩
+
+theorem to_brk
+    {program : TypedCfg.Program} {entry targetLabel : Assembly.Label}
+    {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hTarget : continuations.breakLabel? = some targetLabel)
+    (hPath :
+      Path program entry continuations source
+        (Structured.Outcome.brk final) tokens) :
+    PathPreserves program entry targetLabel source final tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.brk_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  rw [hTarget] at hLabel
+  cases hLabel
+  exact ⟨targetFinal, hEventually, hFinalRel⟩
+
+theorem to_cont
+    {program : TypedCfg.Program} {entry targetLabel : Assembly.Label}
+    {continuations : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hTarget : continuations.continueLabel? = some targetLabel)
+    (hPath :
+      Path program entry continuations source
+        (Structured.Outcome.cont final) tokens) :
+    PathPreserves program entry targetLabel source final tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.cont_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  rw [hTarget] at hLabel
+  cases hLabel
+  exact ⟨targetFinal, hEventually, hFinalRel⟩
+
+theorem transport_leave
+    {program : TypedCfg.Program} {entry : Assembly.Label}
+    {left right : Continuations}
+    {source final : RunState} {tokens : List Word}
+    (hLeave : left.leaveLabel? = right.leaveLabel?)
+    (hPath :
+      Path program entry left source
+        (Structured.Outcome.leave final) tokens) :
+    Path program entry right source
+      (Structured.Outcome.leave final) tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.leave_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  refine ⟨.jump label targetFinal, hEventually, ?_⟩
+  exact Rel.leave_iff.mpr ⟨hLeave ▸ hLabel, hFinalRel⟩
+
+theorem transport_halt
+    {program : TypedCfg.Program} {entry : Assembly.Label}
+    {left right : Continuations}
+    {source final : RunState} {tokens : List Word}
+    {kind : Assembly.HaltKind}
+    (hPath :
+      Path program entry left source
+        (Structured.Outcome.halt kind final) tokens) :
+    Path program entry right source
+      (Structured.Outcome.halt kind final) tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetOutcome, hEventually, hOutcomeRel⟩
+  rcases Rel.halt_elim hOutcomeRel with
+    ⟨targetBefore, targetFinal, rfl, hStep, hFinalRel⟩
+  refine ⟨.halt kind targetBefore, hEventually, ?_⟩
+  exact Rel.halt_iff.mpr ⟨rfl, targetFinal, hStep, hFinalRel⟩
+
+theorem regular_of_path
+    {program : TypedCfg.Program} {entry regular : Assembly.Label}
+    {source final : RunState} {tokens : List Word}
+    {continuations : Continuations}
+    (hRegular : continuations.regular = regular)
+    (hPath : PathPreserves program entry regular source final tokens) :
+    Path program entry continuations source
+      (Structured.Outcome.regular final) tokens := by
+  intro target hRel
+  rcases hPath target hRel with
+    ⟨targetFinal, hEventually, hFinalRel⟩
+  refine ⟨.jump regular targetFinal, hEventually, ?_⟩
+  exact ⟨hRegular.symm, hFinalRel⟩
+
+theorem regular_of_regular
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {source final : RunState} {tokens : List Word}
+    {continuations : Continuations}
+    (hRegular : continuations.regular = regular)
+    (hPreserves :
+      RegularPreserves result program entry regular source final tokens) :
+    Path program entry continuations source
+      (Structured.Outcome.regular final) tokens :=
+  regular_of_path hRegular (PathPreserves.of_regular hPreserves)
+
+theorem bind_jump
+    {program : TypedCfg.Program} {entry next : Assembly.Label}
+    {source middle : RunState} {outcome : Structured.Outcome}
+    {tokens : List Word} {continuations : Continuations}
+    (hFirst : PathPreserves program entry next source middle tokens)
+    (hNext : Path program next continuations middle outcome tokens) :
+    Path program entry continuations source outcome tokens := by
+  intro target hRel
+  rcases hFirst target hRel with
+    ⟨targetMiddle, hFirstEventually, hMiddleRel⟩
+  rcases hNext targetMiddle hMiddleRel with
+    ⟨targetOutcome, hNextEventually, hOutcomeRel⟩
+  exact
+    ⟨targetOutcome,
+      TypedCfg.Program.Eventually.bind_jump
+        hFirstEventually hNextEventually,
+      hOutcomeRel⟩
+
+end Path
+
+end OutcomeSimulation
 
 namespace Program
 
@@ -2738,6 +3117,20 @@ end Switch
 
 namespace Loop
 
+def bodyContinuations (endLabel postLabel : Assembly.Label)
+    (outer : OutcomeSimulation.Continuations) :
+    OutcomeSimulation.Continuations where
+  regular := postLabel
+  breakLabel? := some endLabel
+  continueLabel? := some postLabel
+  leaveLabel? := outer.leaveLabel?
+
+def postContinuations (loopLabel : Assembly.Label)
+    (outer : OutcomeSimulation.Continuations) :
+    OutcomeSimulation.Continuations where
+  regular := loopLabel
+  leaveLabel? := outer.leaveLabel?
+
 /--
 The generated loop-condition block follows the independent source condition
 and preserves the concrete procedure-frame relation.
@@ -2778,6 +3171,195 @@ theorem eventually_condition
     (Code.run_jumpi_toCfg
       (target := bodyLabel) (fallthrough := endLabel)
       hType hTargetCond)
+
+/--
+Path form of generated loop-condition preservation.
+-/
+theorem preserves_condition
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {cond : Structured.Code} {condValue : Bool}
+    {source afterCond : RunState} {tokens : List Word}
+    (hBlocks : BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : cond.FrameSafe)
+    (hCond :
+      Structured.Code.runConditionState cond source =
+        .ok (afterCond, condValue)) :
+    PathPreserves cfg loopLabel
+      (if condValue then bodyLabel else endLabel)
+      source afterCond tokens := by
+  intro target hRel
+  exact
+    eventually_condition hBlocks hMem hType hFrameSafe hCond hRel
+
+/--
+Compositional loop preservation over the independent `For.Eval` relation.
+
+Recursive body and post obligations use the shared outcome path interface.
+Every source loop constructor then reduces to label-path composition; break is
+caught at the loop exit, continue selects the post entry, and leave/halt are
+transported through the inherited procedure continuation.
+-/
+theorem path_of_eval
+    {program : Structured.Program} {fuel : Nat}
+    {cond : Structured.Code} {post body : Structured.Block}
+    {source : RunState} {outcome : Structured.Outcome}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel postLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {tokens : List Word}
+    {outer : OutcomeSimulation.Continuations}
+    (hBlocks : BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : cond.FrameSafe)
+    (hOuterRegular : outer.regular = endLabel)
+    (hEval :
+      Structured.For.Eval program fuel cond post body source outcome)
+    (hBodyPath :
+      ∀ {bodyFuel : Nat} {bodySource : RunState}
+        {bodyOutcome : Structured.Outcome},
+        Structured.Block.Eval program bodyFuel body
+            bodySource bodyOutcome →
+          OutcomeSimulation.Path cfg bodyLabel
+            (bodyContinuations endLabel postLabel outer)
+            bodySource bodyOutcome tokens)
+    (hPostPath :
+      ∀ {postFuel : Nat} {postSource : RunState}
+        {postOutcome : Structured.Outcome},
+        Structured.Block.Eval program postFuel post
+            postSource postOutcome →
+          OutcomeSimulation.Path cfg postLabel
+            (postContinuations loopLabel outer)
+            postSource postOutcome tokens) :
+    OutcomeSimulation.Path cfg loopLabel outer source outcome tokens := by
+  cases hEval with
+  | false hCond =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.regular_of_path hOuterRegular
+      simpa using hCondition
+  | body_brk hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      have hBodyBreak :=
+        OutcomeSimulation.Path.to_brk
+          (by rfl) (hBodyPath hBody)
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.regular_of_path
+          hOuterRegular hBodyBreak
+  | body_leave hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hBodyPath hBody)
+  | body_halt hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hBodyPath hBody)
+  | regular_post_regular hCond hBody hPost hLoop =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular (hBodyPath hBody))
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular (hPostPath hPost))
+      exact
+        path_of_eval hBlocks hMem hType hFrameSafe hOuterRegular
+          hLoop hBodyPath hPostPath
+  | cont_post_regular hCond hBody hPost hLoop =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont (by rfl) (hBodyPath hBody))
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular (hPostPath hPost))
+      exact
+        path_of_eval hBlocks hMem hType hFrameSafe hOuterRegular
+          hLoop hBodyPath hPostPath
+  | regular_post_leave hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular (hBodyPath hBody))
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hPostPath hPost)
+  | cont_post_leave hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont (by rfl) (hBodyPath hBody))
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hPostPath hPost)
+  | regular_post_halt hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular (hBodyPath hBody))
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hPostPath hPost)
+  | cont_post_halt hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont (by rfl) (hBodyPath hBody))
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hPostPath hPost)
+termination_by fuel
 
 end Loop
 

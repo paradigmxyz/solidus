@@ -272,8 +272,11 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
   modes.
 - [x] Package mode-specific cleanup, target shape, and state relation in an
   `OutcomeContract`.
-- [ ] Provide projections for regular, break, continue, leave, and halt.
+- [x] Provide projections for regular, break, continue, leave, and halt.
 - [ ] Prove generic append, scoped-block, branch, switch, and loop composition.
+  The Structured-to-TypedCfg path now instantiates `OutcomeRel` with concrete
+  continuation and halt contracts and proves all `For.Eval` loop constructors;
+  the full statement/block and call lift remains.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
@@ -595,16 +598,19 @@ Latest verified checkpoint:
 - stable verification aggregate, including observer, scratch-frame, object
   semantics, public API, public artifact simulation, generic Yul effects, and
   relational Structured-to-TypedCfg code/condition/switch preservation: pass
-  (1,155 jobs);
+  (1,156 jobs);
 - nonempty switch dispatch now has reusable checked certificates for generated
   test execution, matched-head selection, skipped-head delegation, and both
   empty and nonempty default paths; source `Switch.select` is lifted through
   the generated case chain, and top-level regular switch outcomes compose
   through the scrutinee block and selected/default body path;
-- loop preservation now has a checked relational condition-block theorem: the
-  generated `jumpi` follows the independent Structured condition result and
-  preserves concrete return-frame realization on both the body and exit paths;
-  init/body/post/backedge and nonregular outcome composition remain;
+- Structured-to-TypedCfg preservation now instantiates the shared
+  outcome-indexed simulation interface with concrete regular, break, continue,
+  leave, and halt contracts. Reusable projections turn related outcomes back
+  into CFG paths, and all ten independent `For.Eval` constructors compose
+  condition, body, post, break/continue handling, leave/halt propagation, and
+  recursive backedges. The remaining loop work is the actual `.for_` compiler
+  decomposition and init-fragment lift;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -614,7 +620,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 90,704 Lean lines;
+- retained architecture metrics: 79 modules and 91,286 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,

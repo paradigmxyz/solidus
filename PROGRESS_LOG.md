@@ -27949,3 +27949,25 @@ Resumed from commit `92acedc39` with source-selected regular switch preservation
   outcome relation. Remaining loop work is init/body/post/backedge composition
   through the shared outcome interface; calls/returns and the public artifact
   theorem follow.
+
+## 2026-06-11 06:34 PDT - Uniform outcome paths and complete loop recursion
+
+- Instantiated the shared `Simulation.OutcomeRel` for Structured and TypedCfg
+  outcomes instead of defining another pass-specific outcome relation.
+  Continuation records now map regular, break, continue, and leave modes to
+  compiler-owned labels; halt records the TypedCfg pre-op/source post-op
+  contract.
+- Added reusable outcome projections and path operations: regular, break, and
+  continue become relational CFG paths; leave and halt transport across
+  continuation scopes; sequential paths compose through `Eventually`.
+- Proved all ten independent `For.Eval` constructors, including condition
+  false, caught break, propagated leave/halt, regular and continue post paths,
+  and recursive backedges. The proof recurses on source semantic fuel and adds
+  no loop-specific interpreter or replay relation.
+- Verification passed: focused preservation check, full 1,156-job
+  `EvmCompiler.Verification`, architecture dependency/retired-route guard,
+  proof-hole scan, and `git diff --check`.
+- Fresh metrics: 79 modules, 91,286 Lean lines, 65 compiler variants, and one
+  outcome relation. Next is lifting this theorem through the concrete `.for_`
+  compiler result and init fragment, then reusing the same outcome interface
+  for calls and whole-block preservation.
