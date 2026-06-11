@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 22:46 PDT.
+Last updated: 2026-06-10 23:15 PDT.
 
 ## Objective
 
@@ -59,9 +59,19 @@ Implemented in this migration:
   loop, break, nonzero-arity internal-call, resource-observer, and external-call
   smokes;
 - an independent fuel-indexed TypedCfg multi-block interpreter whose residual
-  jump boundary composes with source continuations, plus checked
-  Structured-to-TypedCfg semantic preservation for primitive instructions,
-  straight-line code, compiled code statements, and empty statement lists;
+  jump boundary composes with source continuations;
+- certified ambient-fragment containment derived from final CFG label
+  uniqueness and generated block membership, so source theorems do not expose
+  caller-supplied lookup evidence;
+- compositional regular-execution certificates carrying both compiler
+  fallthrough shape and finite CFG execution, with checked append and
+  statement-list composition;
+- checked Structured-to-TypedCfg semantic preservation for primitive
+  instructions, straight-line code, both `if` branches, compiled code
+  statements, empty statement lists, and break/continue/leave/terminal leaves;
+- a source-to-CFG state relation that realizes ghost procedure frames as
+  concrete return-token/caller-stack suffixes while preserving gas and erasing
+  only lowering-owned control counters;
 - a zero-byte, preservation-proved CFG relabel instruction plus allocation-
   derived inline procedure adapters: calls retain generic row-polymorphic entry
   shapes while canonical parameter locations name the internal body shape and
@@ -79,16 +89,16 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Extend the checked source-to-CFG semantic leaves through recursive statement
-   lists, structured control, loops, and procedures, then compose the result
-   into the public artifact theorem.
+2. Extend the checked source-to-CFG semantic package through switch dispatch,
+   loops, and procedure calls/return dispatch, then compose the result into the
+   public artifact theorem.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 87,838 Lean lines across 79 modules, down by about 933K lines from the
+tree is 88,771 Lean lines across 79 modules, down by about 932K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -557,7 +567,7 @@ Exit gate:
   preservation, spill-source, stack-resource, and call-depth proof cone.
 - [x] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The current
-  snapshot records 79 modules, 87,838 source lines, 65 compiler-variant
+  snapshot records 79 modules, 88,771 source lines, 65 compiler-variant
   declarations, and one outcome-relation declaration, versus 104 modules,
   1,021,199 lines, 145 variants, and 43 outcome relations at baseline.
 
@@ -592,7 +602,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 87,838 Lean lines;
+- retained architecture metrics: 79 modules and 88,771 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,

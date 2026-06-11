@@ -27842,3 +27842,27 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   public artifact simulation, and resource-observer proof smokes passed with
   only standard Lean axioms; `git diff --check` passed. Fresh metrics record 79
   modules, 87,838 Lean lines, 65 compiler variants, and one outcome relation.
+
+## 2026-06-10 23:15 PDT - Compositional Structured CFG preservation
+
+- Added `TypedCfg.Program.Eventually` with residual-jump identity and checked
+  jump binding, making finite multi-block CFG execution compositional without
+  manual fuel arithmetic at every source construct.
+- Added label-unique membership lookup and `BlocksInProgram`; successful
+  whole-program generation now derives main-fragment containment in the final
+  certified CFG, keeping generated lookup evidence out of public premises.
+- Added `RegularExecution`, which packages compiler fallthrough shape with
+  semantic execution and composes across appended compiler results.
+- Checked source/compiler leaves now cover straight-line code, both `if`
+  branches, break, continue, leave, terminal halt, empty blocks, and generic
+  regular statement-list composition.
+- Added the procedure-state relation that realizes ghost return frames as
+  concrete token/caller-stack suffixes. It uses the shared control-erased data
+  relation but retains exact available gas for the Structured `gas` primitive.
+- Verification passed: focused Structured preservation, full 1,155-job
+  `EvmCompiler.Verification`, architecture checks, TypedCfg proof smoke, no
+  proof holes in touched modules, and `git diff --check`. Fresh metrics are 79
+  modules, 88,771 Lean lines, 65 compiler variants, and one outcome relation.
+- Remaining source-to-CFG proof frontier is switch dispatch, loop recursion,
+  concrete call/return-token execution, and composition into the public
+  source-facing artifact theorem.

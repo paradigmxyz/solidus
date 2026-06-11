@@ -141,6 +141,37 @@ namespace Program
 def LabelsUnique (program : Program) : Prop :=
   program.blocks.Pairwise (fun left right => left.label ≠ right.label)
 
+theorem findBlock?_eq_some_of_mem
+    {program : Program} {block : Block}
+    (hUnique : program.LabelsUnique)
+    (hMem : block ∈ program.blocks) :
+    program.findBlock? block.label = some block := by
+  unfold findBlock?
+  unfold LabelsUnique at hUnique
+  have aux :
+      ∀ blocks : List Block,
+        blocks.Pairwise (fun left right => left.label ≠ right.label) →
+        ∀ candidate : Block, candidate ∈ blocks →
+          blocks.find? (fun current => current.label == candidate.label) =
+            some candidate := by
+    intro blocks hPairwise candidate hMember
+    induction blocks with
+    | nil =>
+        simp at hMember
+    | cons head tail ih =>
+        rw [List.pairwise_cons] at hPairwise
+        simp only [List.mem_cons] at hMember
+        cases hMember with
+        | inl hHead =>
+            subst head
+            simp
+        | inr hTail =>
+            have hNe : head.label ≠ candidate.label :=
+              hPairwise.1 candidate hTail
+            rw [List.find?_cons, beq_false_of_ne hNe]
+            exact ih hPairwise.2 hTail
+  exact aux program.blocks hUnique block hMem
+
 def EmittedLabels (program : Program) : List Label :=
   program.blocks.flatMap fun block =>
     block.label :: block.term.definedLabels

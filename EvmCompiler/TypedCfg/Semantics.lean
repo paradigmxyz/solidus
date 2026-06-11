@@ -213,6 +213,67 @@ theorem runN_succ_of_step_terminal
   | fallthrough state' | returnDispatch state' | halt _ state' | invalid state' =>
       rfl
 
+/--
+Successful finite execution from a semantic block entry.
+
+This relation deliberately permits residual jumps. It is the CFG-level
+composition interface: one generated fragment can establish that it reaches a
+continuation, and another can continue execution from that label.
+-/
+def Eventually (program : Program) (label : Label) (state : EVMState)
+    (outcome : Outcome) : Prop :=
+  ∃ fuel, program.runN fuel label state = .ok outcome
+
+namespace Eventually
+
+theorem residual (program : Program) (label : Label) (state : EVMState) :
+    program.Eventually label state (.jump label state) :=
+  ⟨0, rfl⟩
+
+theorem of_runN
+    {program : Program} {fuel : Nat} {label : Label}
+    {state : EVMState} {outcome : Outcome}
+    (hRun : program.runN fuel label state = .ok outcome) :
+    program.Eventually label state outcome :=
+  ⟨fuel, hRun⟩
+
+theorem bind_jump
+    {program : Program} {entry next : Label}
+    {initial middle : EVMState} {outcome : Outcome}
+    (hFirst : program.Eventually entry initial (.jump next middle))
+    (hNext : program.Eventually next middle outcome) :
+    program.Eventually entry initial outcome := by
+  rcases hFirst with ⟨firstFuel, hFirst⟩
+  rcases hNext with ⟨nextFuel, hNext⟩
+  refine ⟨firstFuel + nextFuel, ?_⟩
+  induction firstFuel generalizing entry initial with
+  | zero =>
+      simp only [runN_zero] at hFirst
+      cases hFirst
+      simpa using hNext
+  | succ firstFuel ih =>
+      rw [Nat.succ_add, runN_succ]
+      rw [runN_succ] at hFirst
+      cases hStep : program.step entry initial with
+      | error err =>
+          simp [hStep, Bind.bind, Except.bind] at hFirst
+      | ok stepOutcome =>
+          rw [hStep] at hFirst
+          simp only [Bind.bind, Except.bind] at hFirst ⊢
+          cases stepOutcome with
+          | jump target stepped =>
+              exact ih hFirst
+          | fallthrough stepped =>
+              cases hFirst
+          | returnDispatch stepped =>
+              cases hFirst
+          | halt kind stepped =>
+              cases hFirst
+          | invalid stepped =>
+              cases hFirst
+
+end Eventually
+
 end Program
 
 end TypedCfg
