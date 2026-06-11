@@ -717,6 +717,334 @@ theorem runCondition
 
 end StateRel
 
+namespace CallStack
+
+theorem splitArgs?_eq_some
+    {argc : Nat} {stack args callerStack : EvmYul.Stack Word}
+    (hSplit :
+      Structured.StackFrame.splitArgs? argc stack =
+        some (args, callerStack)) :
+    args.length = argc ∧ stack = args ++ callerStack := by
+  unfold Structured.StackFrame.splitArgs? at hSplit
+  by_cases hBound : argc ≤ stack.length
+  · simp [hBound] at hSplit
+    rcases hSplit with ⟨rfl, rfl⟩
+    constructor
+    · simp [List.length_take, Nat.min_eq_left hBound]
+    · exact (List.take_append_drop argc stack).symm
+  · simp [hBound] at hSplit
+
+theorem runState_swap_eq_swap
+    {depth : Nat} {shape : TypedCfg.Shape} {state : EVMState}
+    (hBound : depth < 16) :
+    TypedCfg.Instr.runState (.swap depth) shape state =
+      EvmYul.swap (depth + 1) state := by
+  interval_cases depth <;> rfl
+
+/--
+The call-entry shuffle moves a freshly pushed return token below exactly the
+visible argument prefix, preserving all runtime data other than CFG control.
+-/
+theorem runBody_sinkTopUnder
+    {input output : TypedCfg.Shape} {state : EVMState}
+    (args suffix : EvmYul.Stack Word) (token : Word)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.sinkTopUnder args.length) input =
+        some output)
+    (hBound : args.length ≤ 16) :
+    ∃ final,
+      TypedCfg.Block.runBody
+          (TypedCfgCompiler.sinkTopUnder args.length) input
+          { state with stack := token :: args ++ suffix } =
+        .ok (final, output) ∧
+      final.stack = args ++ [token] ++ suffix ∧
+      SameRuntimeData final
+        { state with stack := args ++ [token] ++ suffix } := by
+  induction args using List.reverseRecOn generalizing input output state token suffix with
+  | nil =>
+      simp [TypedCfgCompiler.sinkTopUnder,
+        TypedCfg.Block.bodyType?, TypedCfg.Block.runBody] at hType
+      cases hType
+      exact
+        ⟨{ state with stack := [token] ++ suffix }, rfl, rfl,
+          SameRuntimeData.refl _⟩
+  | append_singleton front last ih =>
+      have hSwapBound : front.length < 16 := by
+        simp [List.length_append] at hBound
+        omega
+      have hFrontBound : front.length ≤ 16 := by omega
+      simp only [List.length_append, List.length_singleton,
+        Nat.add_one, TypedCfgCompiler.sinkTopUnder,
+        TypedCfg.Block.bodyType?] at hType
+      cases hHeadType :
+          TypedCfg.Instr.type? (.swap front.length) input with
+      | none =>
+          simp [hHeadType] at hType
+      | some middle =>
+          simp [hHeadType] at hType
+          let before : EVMState :=
+            { state with stack := token :: front ++ [last] ++ suffix }
+          let afterSwap : EVMState :=
+            before.replaceStackAndIncrPC
+              (last :: front ++ [token] ++ suffix)
+          have hRunSwap :
+              TypedCfg.Instr.runAt (.swap front.length) input before =
+                .ok (afterSwap, middle) := by
+            unfold TypedCfg.Instr.runAt
+            rw [hHeadType]
+            simp only [Bind.bind, Except.bind]
+            rw [runState_swap_eq_swap hSwapBound]
+            rw [Assembly.StackShuffle.swap_snoc
+              (state := before) (front := front) (suffix := suffix)
+              (top := token) (last := last)]
+            rfl
+          rcases
+              ih (input := middle) (output := output)
+                (state := afterSwap) (token := last)
+                (suffix := token :: suffix) hType hFrontBound with
+            ⟨final, hRunTail, hStack, hSame⟩
+          refine ⟨final, ?_, ?_, ?_⟩
+          · rw [show
+              TypedCfgCompiler.sinkTopUnder (front ++ [last]).length =
+                .swap front.length ::
+                  TypedCfgCompiler.sinkTopUnder front.length by
+                simp [TypedCfgCompiler.sinkTopUnder]]
+            unfold TypedCfg.Block.runBody
+            have hRunSwap' :
+                TypedCfg.Instr.runAt (.swap front.length) input
+                    { state with
+                      stack := token :: (front ++ [last]) ++ suffix } =
+                  .ok (afterSwap, middle) := by
+              simpa [before, List.append_assoc] using hRunSwap
+            rw [hRunSwap']
+            simp only [Bind.bind, Except.bind]
+            simpa [before, afterSwap,
+              EvmYul.EVM.State.replaceStackAndIncrPC] using hRunTail
+          · simpa [List.append_assoc] using hStack
+          · apply SameRuntimeData.trans hSame
+            simp [before, afterSwap, SameRuntimeData, eraseCfgControl,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC, List.append_assoc]
+
+/--
+Execute the complete generated call-entry body: push a return token, then move
+it below the visible argument prefix.
+-/
+theorem runBody_callEntry
+    {input output : TypedCfg.Shape} {state : EVMState}
+    (args suffix : EvmYul.Stack Word) (token : Word)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (.returnToken token ::
+            TypedCfgCompiler.sinkTopUnder args.length) input =
+        some output)
+    (hBound : args.length ≤ 16) :
+    ∃ final,
+      TypedCfg.Block.runBody
+          (.returnToken token ::
+            TypedCfgCompiler.sinkTopUnder args.length) input
+          { state with stack := args ++ suffix } =
+        .ok (final, output) ∧
+      final.stack = args ++ [token] ++ suffix ∧
+      SameRuntimeData final
+        { state with stack := args ++ [token] ++ suffix } := by
+  cases hHeadType :
+      TypedCfg.Instr.type? (.returnToken token) input with
+  | none =>
+      simp [TypedCfg.Block.bodyType?, hHeadType] at hType
+  | some middle =>
+      simp [TypedCfg.Block.bodyType?, hHeadType] at hType
+      let before : EVMState :=
+        { state with stack := args ++ suffix }
+      let afterPush : EVMState :=
+        before.replaceStackAndIncrPC
+          (token :: args ++ suffix) (pcΔ := 33)
+      have hRunState :
+          TypedCfg.Instr.runState (.returnToken token) input before =
+            .ok afterPush := by
+        simp [TypedCfg.Instr.runState, EvmYul.Stack.push,
+          before, afterPush]
+      have hRunToken :
+          TypedCfg.Instr.runAt (.returnToken token) input before =
+            .ok (afterPush, middle) := by
+        unfold TypedCfg.Instr.runAt
+        rw [hHeadType, hRunState]
+        rfl
+      rcases
+          runBody_sinkTopUnder (input := middle) (output := output)
+            (state := afterPush) args suffix token hType hBound with
+        ⟨final, hRunTail, hStack, hSame⟩
+      refine ⟨final, ?_, hStack, ?_⟩
+      · unfold TypedCfg.Block.runBody
+        have hRunToken' :
+            TypedCfg.Instr.runAt (.returnToken token) input
+                { state with stack := args ++ suffix } =
+              .ok (afterPush, middle) := by
+          simpa [before] using hRunToken
+        rw [hRunToken']
+        simp only [Bind.bind, Except.bind]
+        simpa [afterPush,
+          EvmYul.EVM.State.replaceStackAndIncrPC] using hRunTail
+      · apply SameRuntimeData.trans hSame
+        simp [before, afterPush, SameRuntimeData, eraseCfgControl,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
+
+/--
+Call-entry execution realizes the new source ghost frame with the generated
+return token while retaining the older concrete frame suffix.
+-/
+theorem runBody_callEntry_preserves
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    {argc retc : Nat} {args callerStack : EvmYul.Stack Word}
+    {token : Word} {input output : TypedCfg.Shape}
+    (hRel : StateRel source tokens target)
+    (hSplit :
+      Structured.StackFrame.splitArgs? argc source.evm.stack =
+        some (args, callerStack))
+    (hType :
+      TypedCfg.Block.bodyType?
+          (.returnToken token ::
+            TypedCfgCompiler.sinkTopUnder argc) input =
+        some output)
+    (hBound : argc ≤ 16) :
+    ∃ targetFinal,
+      TypedCfg.Block.runBody
+          (.returnToken token ::
+            TypedCfgCompiler.sinkTopUnder argc) input target =
+        .ok (targetFinal, output) ∧
+      StateRel
+        ((source.withEVM { source.evm with stack := args }).pushReturn
+          callerStack retc)
+        (token :: tokens) targetFinal := by
+  rcases splitArgs?_eq_some hSplit with
+    ⟨hArgsLength, hSourceStack⟩
+  rcases hRel with ⟨realized, hRealize, hSame⟩
+  rw [hSourceStack] at hRealize
+  rw [realizeStack_append_prefix] at hRealize
+  cases hCallerRealize :
+      realizeStack callerStack source.returns tokens with
+  | none =>
+      simp [hCallerRealize] at hRealize
+  | some hidden =>
+      simp [hCallerRealize] at hRealize
+      subst realized
+      have hTargetStack : target.stack = args ++ hidden := by
+        simpa using SameRuntimeData.stack_eq hSame
+      have hTargetRecord :
+          { target with stack := args ++ hidden } = target := by
+        cases target
+        simp at hTargetStack ⊢
+        exact hTargetStack.symm
+      have hCallType :
+          TypedCfg.Block.bodyType?
+              (.returnToken token ::
+                TypedCfgCompiler.sinkTopUnder args.length) input =
+            some output := by
+        simpa [hArgsLength] using hType
+      rcases
+          runBody_callEntry (input := input) (output := output)
+            (state := target) args hidden token hCallType
+            (by simpa [hArgsLength] using hBound) with
+        ⟨targetFinal, hRun, hFinalStack, hFinalSame⟩
+      have hRun' :
+          TypedCfg.Block.runBody
+              (.returnToken token ::
+                TypedCfgCompiler.sinkTopUnder argc) input target =
+            .ok (targetFinal, output) := by
+        simpa [hArgsLength, hTargetRecord] using hRun
+      refine ⟨targetFinal, hRun', ?_⟩
+      have hPushedRealize :
+          realizeStack
+              (args ++ [token] ++ callerStack)
+              source.returns tokens =
+            some (args ++ [token] ++ hidden) := by
+        rw [realizeStack_append_prefix]
+        simp [hCallerRealize, List.append_assoc]
+      have hUpdatedSame :
+          SameRuntimeData
+            { target with stack := args ++ [token] ++ hidden }
+            { source.evm with stack := args ++ [token] ++ hidden } := by
+        simpa using
+          SameRuntimeData.replaceStack hSame
+            (targetStack := args ++ [token] ++ hidden)
+            (sourceStack := args ++ [token] ++ hidden) rfl
+      exact
+        StateRel.pushReturn hPushedRealize
+          (SameRuntimeData.trans hFinalSame hUpdatedSame)
+
+/--
+Erasing the selected concrete return token realizes the source operation that
+pops the ghost return frame and reattaches the caller stack.
+-/
+theorem eraseReturnToken_preserves
+    {bodyState returned : RunState} {frame : ReturnDest}
+    {stack : EvmYul.Stack Word} {token : Word}
+    {tokens : List Word} {target : EVMState}
+    (hRel : StateRel bodyState (token :: tokens) target)
+    (hPop : bodyState.popReturn? = some (frame, returned))
+    (hAttach :
+      Structured.StackFrame.attachReturns? frame bodyState.evm.stack =
+        some stack) :
+    target.stack[frame.retc]? = some token ∧
+      StateRel
+        (returned.withEVM { bodyState.evm with stack := stack })
+        tokens
+        { target with stack := target.stack.eraseIdx frame.retc } := by
+  cases hReturns : bodyState.returns with
+  | nil =>
+      simp [RunState.popReturn?, hReturns] at hPop
+  | cons head rest =>
+      simp [RunState.popReturn?, hReturns] at hPop
+      rcases hPop with ⟨rfl, rfl⟩
+      by_cases hLength :
+          bodyState.evm.stack.length = head.retc
+      · simp [Structured.StackFrame.attachReturns?, hLength] at hAttach
+        subst stack
+        rcases hRel with ⟨realized, hRealize, hSame⟩
+        rw [hReturns] at hRealize
+        simp only [realizeStack] at hRealize
+        rw [realizeStack_append_prefix] at hRealize
+        cases hCallerRealize :
+            realizeStack head.callerStack rest tokens with
+        | none =>
+            simp [hCallerRealize] at hRealize
+        | some hidden =>
+            simp [hCallerRealize] at hRealize
+            subst realized
+            have hTargetStack :
+                target.stack =
+                  bodyState.evm.stack ++ [token] ++ hidden := by
+              simpa using SameRuntimeData.stack_eq hSame
+            constructor
+            · rw [hTargetStack, ← hLength]
+              simp
+            · refine ⟨bodyState.evm.stack ++ hidden, ?_, ?_⟩
+              · change
+                  realizeStack
+                      (bodyState.evm.stack ++ head.callerStack)
+                      rest tokens =
+                    some (bodyState.evm.stack ++ hidden)
+                rw [realizeStack_append_prefix]
+                simp [hCallerRealize]
+              · have hErase :
+                    target.stack.eraseIdx head.retc =
+                      bodyState.evm.stack ++ hidden := by
+                  rw [hTargetStack, ← hLength]
+                  simpa [List.append_assoc] using
+                    (TypedCfg.Preservation.List.eraseIdx_append_at_length
+                      bodyState.evm.stack hidden token)
+                have hAfter :=
+                  SameRuntimeData.replaceStack hSame
+                    (targetStack := target.stack.eraseIdx head.retc)
+                    (sourceStack := bodyState.evm.stack ++ hidden)
+                    hErase
+                simpa [RunState.withEVM, hReturns] using hAfter
+      · simp [Structured.StackFrame.attachReturns?, hLength] at hAttach
+
+end CallStack
+
 namespace Code
 
 /--
@@ -1627,6 +1955,320 @@ end OutcomeSimulation
 namespace Program
 
 /--
+Compiler-generated procedure fragment, independent of where the procedure
+appears in the source list.
+
+The route is either a direct body entry or the checked relabel adapter used by
+allocation-derived procedure shapes.
+-/
+structure ProcFragment
+    (entryShapes : TypedCfgCompiler.ProcEntryShapes)
+    (allProcs : List Structured.Proc) (proc : Structured.Proc)
+    (procBlocks : List TypedCfg.Block)
+    (procCalls : List TypedCfgCompiler.DispatchSite) where
+  supply : LabelSupply
+  input : TypedCfg.Shape
+  entry : Assembly.Label
+  result : TypedCfgCompiler.Result
+  compile :
+    TypedCfgCompiler.compileBlock? proc.body
+        { procs := allProcs
+          leaveLabel? := some (ProcLabel.exit proc.name) }
+        supply entry input (ProcLabel.exit proc.name) =
+      some result
+  blocks :
+    ∀ block, block ∈ result.blocks → block ∈ procBlocks
+  calls :
+    ∀ site, site ∈ result.calls → site ∈ procCalls
+  route :
+    (entry = ProcLabel.entry proc.name ∧
+      input = TypedCfgCompiler.Shape.procEntry proc) ∨
+    (∃ adapter,
+      entry = ProcLabel.body proc.name ∧
+      entryShapes.find? proc.name = some input ∧
+      TypedCfgCompiler.mkBlock?
+          (ProcLabel.entry proc.name)
+          (TypedCfgCompiler.Shape.procEntry proc)
+          [.relabel input] (.jump (ProcLabel.body proc.name)) =
+        some adapter ∧
+      adapter ∈ procBlocks)
+
+/--
+Successful recursive procedure lowering yields a fragment certificate for the
+procedure selected by source lookup.
+-/
+def procFragment_of_lowerProcBodiesWithShapes?
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs procs : List Structured.Proc}
+    {supply next : LabelSupply}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    {name : Structured.Name} {proc : Structured.Proc}
+    (hLower :
+      TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes allProcs
+          procs supply =
+        some (procBlocks, next, procCalls))
+    (hLookup : Structured.ProcList.lookup? name procs = some proc) :
+    ProcFragment entryShapes allProcs proc procBlocks procCalls := by
+  induction procs generalizing supply next procBlocks procCalls with
+  | nil =>
+      simp [Structured.ProcList.lookup?] at hLookup
+  | cons head rest ih =>
+      unfold Structured.ProcList.lookup? at hLookup
+      by_cases hName : head.name = name
+      · simp [hName] at hLookup
+        subst proc
+        unfold TypedCfgCompiler.lowerProcBodiesWithShapes? at hLower
+        cases hShape : entryShapes.find? head.name with
+        | none =>
+            cases hBody :
+                TypedCfgCompiler.compileBlock? head.body
+                  { procs := allProcs
+                    leaveLabel? := some (ProcLabel.exit head.name) }
+                  supply (ProcLabel.entry head.name)
+                  (TypedCfgCompiler.Shape.procEntry head)
+                  (ProcLabel.exit head.name) with
+            | none =>
+                simp [hShape, hBody] at hLower
+            | some bodyResult =>
+                cases hTail :
+                    TypedCfgCompiler.lowerProcBodiesWithShapes?
+                      entryShapes allProcs rest bodyResult.next with
+                | none =>
+                    simp [hShape, hBody, hTail] at hLower
+                | some tailResult =>
+                    rcases tailResult with
+                      ⟨tailBlocks, tailNext, tailCalls⟩
+                    simp [hShape, hBody, hTail] at hLower
+                    rcases hLower with ⟨rfl, rfl, rfl⟩
+                    exact
+                      { supply := supply
+                        input := TypedCfgCompiler.Shape.procEntry head
+                        entry := ProcLabel.entry head.name
+                        result := bodyResult
+                        compile := hBody
+                        blocks := by
+                          intro block hMem
+                          exact List.mem_append.mpr (Or.inl hMem)
+                        calls := by
+                          intro site hMem
+                          exact List.mem_append.mpr (Or.inl hMem)
+                        route := Or.inl ⟨rfl, rfl⟩ }
+        | some bodyInput =>
+            cases hAdapter :
+                TypedCfgCompiler.mkBlock?
+                  (ProcLabel.entry head.name)
+                  (TypedCfgCompiler.Shape.procEntry head)
+                  [.relabel bodyInput]
+                  (.jump (ProcLabel.body head.name)) with
+            | none =>
+                simp [hShape, hAdapter] at hLower
+            | some adapter =>
+                cases hBody :
+                    TypedCfgCompiler.compileBlock? head.body
+                      { procs := allProcs
+                        leaveLabel? := some (ProcLabel.exit head.name) }
+                      supply (ProcLabel.body head.name) bodyInput
+                      (ProcLabel.exit head.name) with
+                | none =>
+                    simp [hShape, hAdapter, hBody] at hLower
+                | some bodyResult =>
+                    cases hTail :
+                        TypedCfgCompiler.lowerProcBodiesWithShapes?
+                          entryShapes allProcs rest bodyResult.next with
+                    | none =>
+                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                    | some tailResult =>
+                        rcases tailResult with
+                          ⟨tailBlocks, tailNext, tailCalls⟩
+                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        rcases hLower with ⟨rfl, rfl, rfl⟩
+                        exact
+                          { supply := supply
+                            input := bodyInput
+                            entry := ProcLabel.body head.name
+                            result := bodyResult
+                            compile := hBody
+                            blocks := by
+                              intro block hMem
+                              exact
+                                List.mem_append.mpr
+                                  (Or.inl
+                                    (List.mem_cons_of_mem adapter hMem))
+                            calls := by
+                              intro site hMem
+                              exact List.mem_append.mpr (Or.inl hMem)
+                            route :=
+                              Or.inr
+                                ⟨adapter, rfl, hShape, hAdapter,
+                                  List.mem_append.mpr
+                                    (Or.inl (List.mem_cons_self))⟩ }
+      · simp [hName] at hLookup
+        unfold TypedCfgCompiler.lowerProcBodiesWithShapes? at hLower
+        cases hShape : entryShapes.find? head.name with
+        | none =>
+            cases hBody :
+                TypedCfgCompiler.compileBlock? head.body
+                  { procs := allProcs
+                    leaveLabel? := some (ProcLabel.exit head.name) }
+                  supply (ProcLabel.entry head.name)
+                  (TypedCfgCompiler.Shape.procEntry head)
+                  (ProcLabel.exit head.name) with
+            | none =>
+                simp [hShape, hBody] at hLower
+            | some bodyResult =>
+                cases hTail :
+                    TypedCfgCompiler.lowerProcBodiesWithShapes?
+                      entryShapes allProcs rest bodyResult.next with
+                | none =>
+                    simp [hShape, hBody, hTail] at hLower
+                | some tailResult =>
+                    rcases tailResult with
+                      ⟨tailBlocks, tailNext, tailCalls⟩
+                    simp [hShape, hBody, hTail] at hLower
+                    rcases hLower with ⟨rfl, rfl, rfl⟩
+                    let fragment :=
+                      ih hTail hLookup
+                    exact
+                      { fragment with
+                        blocks := by
+                          intro block hMem
+                          exact
+                            List.mem_append.mpr
+                              (Or.inr (fragment.blocks block hMem))
+                        calls := by
+                          intro site hMem
+                          exact
+                            List.mem_append.mpr
+                              (Or.inr (fragment.calls site hMem))
+                        route := by
+                          rcases fragment.route with hDirect | hAdapter
+                          · exact Or.inl hDirect
+                          · rcases hAdapter with
+                              ⟨adapter, hEntry, hInput,
+                                hAdapterCompile, hAdapterMem⟩
+                            exact
+                              Or.inr
+                                ⟨adapter, hEntry, hInput,
+                                  hAdapterCompile,
+                                  List.mem_append.mpr (Or.inr hAdapterMem)⟩ }
+        | some bodyInput =>
+            cases hAdapter :
+                TypedCfgCompiler.mkBlock?
+                  (ProcLabel.entry head.name)
+                  (TypedCfgCompiler.Shape.procEntry head)
+                  [.relabel bodyInput]
+                  (.jump (ProcLabel.body head.name)) with
+            | none =>
+                simp [hShape, hAdapter] at hLower
+            | some adapter =>
+                cases hBody :
+                    TypedCfgCompiler.compileBlock? head.body
+                      { procs := allProcs
+                        leaveLabel? := some (ProcLabel.exit head.name) }
+                      supply (ProcLabel.body head.name) bodyInput
+                      (ProcLabel.exit head.name) with
+                | none =>
+                    simp [hShape, hAdapter, hBody] at hLower
+                | some bodyResult =>
+                    cases hTail :
+                        TypedCfgCompiler.lowerProcBodiesWithShapes?
+                          entryShapes allProcs rest bodyResult.next with
+                    | none =>
+                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                    | some tailResult =>
+                        rcases tailResult with
+                          ⟨tailBlocks, tailNext, tailCalls⟩
+                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        rcases hLower with ⟨rfl, rfl, rfl⟩
+                        let fragment :=
+                          ih hTail hLookup
+                        exact
+                          { fragment with
+                            blocks := by
+                              intro block hMem
+                              exact
+                                List.mem_cons_of_mem adapter
+                                  (List.mem_append.mpr
+                                    (Or.inr (fragment.blocks block hMem)))
+                            calls := by
+                              intro site hMem
+                              exact
+                                List.mem_append.mpr
+                                  (Or.inr (fragment.calls site hMem))
+                            route := by
+                              rcases fragment.route with
+                                hDirect | hFragmentAdapter
+                              · exact Or.inl hDirect
+                              · rcases hFragmentAdapter with
+                                  ⟨fragmentAdapter, hEntry, hInput,
+                                    hAdapterCompile, hAdapterMem⟩
+                                exact
+                                  Or.inr
+                                    ⟨fragmentAdapter, hEntry, hInput,
+                                      hAdapterCompile,
+                                      List.mem_cons_of_mem adapter
+                                        (List.mem_append.mpr
+                                          (Or.inr hAdapterMem))⟩ }
+
+/--
+Successful generation exposes all compiler-produced whole-program fragments and
+the checked global return-token uniqueness invariant.
+-/
+theorem components_of_generateWithProcEntryShapes?
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (hGenerate :
+      TypedCfgCompiler.generateWithProcEntryShapes? source entryShapes =
+        some cfg) :
+    ∃ main procBlocks next procCalls,
+      TypedCfgCompiler.compileBlock? source.body
+          { procs := source.procs } 0 TypedCfgCompiler.entryLabel
+          TypedCfg.Shape.caller ProcLabel.programEnd =
+        some main ∧
+      TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
+          source.procs source.procs main.next =
+        some (procBlocks, next, procCalls) ∧
+      ((main.calls ++ procCalls).map
+        TypedCfgCompiler.DispatchSite.token).Nodup ∧
+      cfg =
+        { entry := TypedCfgCompiler.entryLabel
+          blocks :=
+            main.blocks ++ procBlocks ++
+              TypedCfgCompiler.dispatchBlocks source.procs
+                (main.calls ++ procCalls) ++
+              [{ label := ProcLabel.programEnd
+                 input :=
+                   main.fallthrough?.getD TypedCfg.Shape.caller
+                 body := []
+                 output :=
+                   main.fallthrough?.getD TypedCfg.Shape.caller
+                 term := .invalid }] } := by
+  unfold TypedCfgCompiler.generateWithProcEntryShapes? at hGenerate
+  cases hMain :
+      TypedCfgCompiler.compileBlock? source.body
+        { procs := source.procs } 0 TypedCfgCompiler.entryLabel
+        TypedCfg.Shape.caller ProcLabel.programEnd with
+  | none =>
+      simp [hMain] at hGenerate
+  | some main =>
+      cases hProcs :
+          TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
+            source.procs source.procs main.next with
+      | none =>
+          simp [hMain, hProcs] at hGenerate
+      | some procResult =>
+          rcases procResult with ⟨procBlocks, next, procCalls⟩
+          simp [hMain, hProcs] at hGenerate
+          rcases hGenerate with ⟨hTokens, hCfg⟩
+          refine
+            ⟨main, procBlocks, next, procCalls,
+              rfl, hProcs, ?_, ?_⟩
+          · simpa using hTokens
+          · simpa [List.append_assoc] using hCfg.symm
+
+/--
 Successful whole-program generation exposes the exact main-fragment compiler
 result, and TypedCfg well-typedness turns its obvious block-list inclusion into
 ambient lookup containment.
@@ -1645,27 +2287,13 @@ theorem main_result_of_generateWithProcEntryShapes?
           TypedCfg.Shape.caller ProcLabel.programEnd =
         some main ∧
       BlocksInProgram main cfg := by
-  unfold TypedCfgCompiler.generateWithProcEntryShapes? at hGenerate
-  cases hMain :
-      TypedCfgCompiler.compileBlock? source.body
-        { procs := source.procs } 0 TypedCfgCompiler.entryLabel
-        TypedCfg.Shape.caller ProcLabel.programEnd with
-  | none =>
-      simp [hMain] at hGenerate
-  | some main =>
-      cases hProcs :
-          TypedCfgCompiler.lowerProcBodiesWithShapes? entryShapes
-            source.procs source.procs main.next with
-      | none =>
-          simp [hMain, hProcs] at hGenerate
-      | some procResult =>
-          rcases procResult with ⟨procBlocks, next, procCalls⟩
-          simp [hMain, hProcs] at hGenerate
-          cases hGenerate
-          refine ⟨main, by simpa using hMain, ?_⟩
-          apply BlocksInProgram.of_subset_of_wellTyped hWellTyped
-          intro block hMem
-          simp [hMem]
+  rcases components_of_generateWithProcEntryShapes? hGenerate with
+    ⟨main, procBlocks, next, procCalls,
+      hMain, hProcs, hTokens, rfl⟩
+  refine ⟨main, hMain, ?_⟩
+  apply BlocksInProgram.of_subset_of_wellTyped hWellTyped
+  intro block hMem
+  simp [hMem, List.append_assoc]
 
 theorem main_result_of_artifactWithProcEntryShapes?
     {source : Structured.Program}
@@ -5115,6 +5743,159 @@ theorem switch_property_of_select
         · intro caseValue caseBody hMem
           exact hCases caseValue caseBody (by simp [hMem])
         · simpa [Structured.Switch.select, hEq] using hSelect
+
+namespace Call
+
+/--
+Global token uniqueness makes every generated dispatch site select its own
+return label after filtering to the callee's exit block.
+-/
+theorem findTarget?_returnSitesFor_of_mem
+    {calls : List TypedCfgCompiler.DispatchSite}
+    {site : TypedCfgCompiler.DispatchSite}
+    (hUnique :
+      (calls.map TypedCfgCompiler.DispatchSite.token).Nodup)
+    (hMem : site ∈ calls) :
+    TypedCfg.Block.ReturnSite.findTarget? site.token
+        (TypedCfgCompiler.returnSitesFor site.procName calls) =
+      some site.returnLabel := by
+  induction calls with
+  | nil =>
+      simp at hMem
+  | cons head tail ih =>
+      have hHeadNot :
+          head.token ∉
+            tail.map TypedCfgCompiler.DispatchSite.token := by
+        exact (List.nodup_cons.mp hUnique).1
+      have hTailUnique :
+          (tail.map TypedCfgCompiler.DispatchSite.token).Nodup :=
+        (List.nodup_cons.mp hUnique).2
+      simp only [List.mem_cons] at hMem
+      cases hMem with
+      | inl hHead =>
+          subst site
+          simp [TypedCfgCompiler.returnSitesFor,
+            TypedCfg.Block.ReturnSite.findTarget?]
+      | inr hTail =>
+          have hTokenNe : head.token ≠ site.token := by
+            intro hEq
+            apply hHeadNot
+            exact List.mem_map.mpr ⟨site, hTail, hEq.symm⟩
+          have hFound := ih hTailUnique hTail
+          by_cases hName : head.procName = site.procName
+          · unfold TypedCfgCompiler.returnSitesFor
+            simp [hName, TypedCfg.Block.ReturnSite.findTarget?, hTokenNe]
+            simpa [TypedCfgCompiler.returnSitesFor] using hFound
+          · unfold TypedCfgCompiler.returnSitesFor
+            simp [hName]
+            simpa [TypedCfgCompiler.returnSitesFor] using hFound
+
+/--
+Canonical decomposition of successful call-statement compilation.
+-/
+theorem components_of_compileStmtFuel?_call
+    {compilerFuel : Nat} {name : Structured.Name}
+    {proc : Structured.Proc} {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    (hLookup : Structured.ProcList.lookup? name ctx.procs = some proc)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular =
+        some result) :
+    ∃ returnShape output,
+      TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc =
+          some returnShape ∧
+      TypedCfg.Block.bodyType?
+          (.returnToken (Structured.Stmt.callToken supply) ::
+            TypedCfgCompiler.sinkTopUnder proc.argc) input =
+        some output ∧
+      result =
+        { blocks :=
+            [{ label := entry
+               input := input
+               body :=
+                 .returnToken (Structured.Stmt.callToken supply) ::
+                   TypedCfgCompiler.sinkTopUnder proc.argc
+               output := output
+               term := .jump (ProcLabel.entry name) }]
+          next := supply + 1
+          calls :=
+            [{ procName := name
+               token := Structured.Stmt.callToken supply
+               returnLabel := regular
+               caseLabel := .generated supply 10000 }]
+          fallthrough? := some returnShape } := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  simp [hLookup] at hCompile
+  cases hReturnShape :
+      TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc with
+  | none =>
+      simp [hReturnShape] at hCompile
+  | some returnShape =>
+      cases hType :
+          TypedCfg.Block.bodyType?
+            (.returnToken (Structured.Stmt.callToken supply) ::
+              TypedCfgCompiler.sinkTopUnder proc.argc) input with
+      | none =>
+          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
+      | some output =>
+          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
+          cases hCompile
+          exact ⟨returnShape, output, rfl, rfl, rfl⟩
+
+/--
+The generated call block reaches the procedure entry with the source call
+frame realized by its compiler-generated return token.
+-/
+theorem entry_eventually_of_compileStmtFuel?
+    {compilerFuel : Nat} {name : Structured.Name}
+    {proc : Structured.Proc} {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program} {source : RunState}
+    {tokens : List Word} {target : EVMState}
+    {args callerStack : EvmYul.Stack Word}
+    (hLookup : Structured.ProcList.lookup? name ctx.procs = some proc)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular =
+        some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hRel : StateRel source tokens target)
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+        some (args, callerStack))
+    (hProcWF : proc.WF) :
+    ∃ targetFinal,
+      cfg.Eventually entry target
+          (.jump (ProcLabel.entry name) targetFinal) ∧
+      StateRel
+        ((source.withEVM { source.evm with stack := args }).pushReturn
+          callerStack proc.retc)
+        (Structured.Stmt.callToken supply :: tokens) targetFinal := by
+  rcases components_of_compileStmtFuel?_call hLookup hCompile with
+    ⟨returnShape, output, hReturnShape, hType, rfl⟩
+  rcases
+      CallStack.runBody_callEntry_preserves hRel hSplit hType hProcWF.1 with
+    ⟨targetFinal, hRunBody, hFinalRel⟩
+  refine ⟨targetFinal, ?_, hFinalRel⟩
+  refine
+    BlocksInProgram.eventually_of_run
+      (block :=
+        { label := entry
+          input := input
+          body :=
+            .returnToken (Structured.Stmt.callToken supply) ::
+              TypedCfgCompiler.sinkTopUnder proc.argc
+          output := output
+          term := .jump (ProcLabel.entry name) })
+      hBlocks ?_ ?_
+  · simp
+  · simp [TypedCfg.Block.run, hRunBody, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+
+end Call
 
 /--
 Temporary internal call boundary for the mutual Structured proof.

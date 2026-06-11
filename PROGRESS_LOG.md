@@ -28024,3 +28024,40 @@ Resumed with uniform statement, loop, and nonregular switch certificates impleme
 - Closed the mutual statement/block preservation theorem for every non-call Structured constructor over the single shared outcome relation. Calls remain isolated behind the explicitly temporary internal `CallCertificate` boundary.
 - Verification passed: focused `EvmCompiler.Structured.TypedCfgPreservation`, all 1,156 `EvmCompiler.Verification` jobs, architecture dependency and retired-route checks, touched-file proof-hole scan, architecture metrics, and `git diff --check`.
 - Fresh metrics: 79 modules, 93,461 Lean lines, 65 compiler variants, and one outcome relation. The next proof boundary is concrete procedure-call and return-token dispatch, followed by removal of `CallCertificate` and public artifact composition.
+
+## 2026-06-11 - Compaction resume: concrete call preservation
+
+Resumed from verified commit `e0f3b2658` with every non-call Structured
+constructor covered by the shared outcome theorem. The active boundary is
+replacing temporary `CallCertificate` with generated whole-program provenance,
+concrete call-entry stack realization, callee recursion, and selected return
+dispatch.
+
+## 2026-06-11 07:22 PDT - Concrete call protocol and generated provenance
+
+- Proved source argument splitting, TypedCfg swap agreement, return-token
+  sinking, complete call-entry body execution, and realization of the newly
+  pushed source ghost frame.
+- Proved the inverse return protocol: source `popReturn?` plus
+  `attachReturns?` corresponds to erasing the selected concrete token while
+  restoring the caller stack and outer token relation.
+- Added an executable whole-program return-token uniqueness gate. This closes
+  the previously implicit `UInt256.ofNat` wraparound assumption and yields a
+  checked theorem that each generated dispatch site resolves to its own return
+  label.
+- Added canonical call-compilation decomposition, ambient call-entry execution,
+  whole-generation decomposition, and a recursive procedure-fragment
+  certificate covering direct entries and allocation-driven relabel adapters.
+- Verification passed: focused compiler and preservation checks, all 1,156
+  `EvmCompiler.Verification` jobs, touched-file proof-hole scan, and
+  `git diff --check`. The remaining call milestone is to thread this generated
+  context through the mutual source-fuel proof, compose callee outcomes with
+  dispatch, and delete `CallCertificate`.
+
+## 2026-06-11 - Compaction resume: generated call context
+
+Resumed from the verified call-protocol checkpoint with executable token
+uniqueness, call entry/return restoration, and direct-or-adapted procedure
+fragment provenance complete. The active task is threading that generated
+context through the mutual source-fuel theorem, composing callee outcomes with
+selected dispatch, and deleting `CallCertificate`.

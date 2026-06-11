@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 06:59 PDT.
+Last updated: 2026-06-11 07:22 PDT.
 
 ## Objective
 
@@ -74,6 +74,10 @@ Implemented in this migration:
   including arbitrary selected switch-body outcomes and complete loop
   recursion; the only temporary internal premise is concrete procedure-call
   preservation;
+- concrete call-entry stack execution, ghost-frame realization, source
+  pop/attach restoration, and globally unique return-token dispatch lookup;
+  successful whole-program generation now rejects duplicate return tokens and
+  exposes checked direct-or-relabel-adapted procedure-fragment provenance;
 - a source-to-CFG state relation that realizes ghost procedure frames as
   concrete return-token/caller-stack suffixes while preserving gas and erasing
   only lowering-owned control counters, with reusable primitive, code,
@@ -626,6 +630,10 @@ Latest verified checkpoint:
   break/continue/leave, and terminal execution through one outcome-indexed
   certificate. Procedure calls are isolated behind one explicitly temporary
   internal premise rather than another recursive proof family;
+- generated call entry and return restoration now have checked relational stack
+  theorems, global dispatch lookup follows from an executable token-uniqueness
+  gate, and recursive procedure lowering exposes one fragment certificate that
+  covers both direct and allocation-driven relabel entries;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant

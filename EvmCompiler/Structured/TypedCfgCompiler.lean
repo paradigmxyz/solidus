@@ -469,19 +469,22 @@ def generateWithProcEntryShapes? (program : Program)
     lowerProcBodiesWithShapes? entryShapes program.procs program.procs
       main.next
   let calls := main.calls ++ procCalls
-  let endInput := main.fallthrough?.getD mainInput
-  let endBlock : CfgBlock :=
-    { label := ProcLabel.programEnd
-      input := endInput
-      body := []
-      output := endInput
-      term := .invalid }
-  let cfg : TypedCfg.Program :=
-    { entry := entryLabel
-      blocks :=
-        main.blocks ++ procBlocks ++
-          dispatchBlocks program.procs calls ++ [endBlock] }
-  some cfg
+  if (calls.map DispatchSite.token).Nodup then
+    let endInput := main.fallthrough?.getD mainInput
+    let endBlock : CfgBlock :=
+      { label := ProcLabel.programEnd
+        input := endInput
+        body := []
+        output := endInput
+        term := .invalid }
+    let cfg : TypedCfg.Program :=
+      { entry := entryLabel
+        blocks :=
+          main.blocks ++ procBlocks ++
+            dispatchBlocks program.procs calls ++ [endBlock] }
+    some cfg
+  else
+    none
 
 def generate? (program : Program) : Option TypedCfg.Program :=
   generateWithProcEntryShapes? program []
