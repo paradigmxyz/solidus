@@ -596,6 +596,9 @@ Latest verified checkpoint:
   semantics, public API, public artifact simulation, generic Yul effects, and
   relational Structured-to-TypedCfg code/condition/switch preservation: pass
   (1,155 jobs);
+- nonempty switch dispatch now has reusable checked certificates for generated
+  test execution, matched-head selection, skipped-head delegation, and both
+  empty and nonempty default paths;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -605,7 +608,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 89,725 Lean lines;
+- retained architecture metrics: 79 modules and 90,165 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -620,7 +623,8 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Finish nonempty-switch, loop, and call/return source-to-CFG semantic
+2. Lift the reusable nonempty-switch case/default certificates through source
+   selection, then finish loop and call/return source-to-CFG semantic
    composition and remaining certificate safety projections.
 3. Finish outcome-indexed projections/composition, then rerun the final
    verification, frontend, benchmark, and architecture gates.

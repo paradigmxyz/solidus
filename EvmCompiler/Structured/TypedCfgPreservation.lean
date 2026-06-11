@@ -145,6 +145,48 @@ theorem initial (state : EVMState) :
     StateRel (RunState.initial state) [] state :=
   ⟨state.stack, rfl, rfl⟩
 
+theorem targetCongr
+    {source : RunState} {tokens : List Word}
+    {target targetFinal : EVMState}
+    (hSame : SameRuntimeData targetFinal target)
+    (hRel : StateRel source tokens target) :
+    StateRel source tokens targetFinal := by
+  rcases hRel with ⟨realized, hRealize, hTarget⟩
+  exact
+    ⟨realized, hRealize,
+      SameRuntimeData.trans hSame hTarget⟩
+
+theorem stackView_of_pop
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hRel : StateRel source tokens target)
+    (hPop : source.evm.stack.pop = some (stack, value)) :
+    ∃ realizedTail,
+      realizeStack stack source.returns tokens = some realizedTail ∧
+        target.stack = value :: realizedTail := by
+  rcases hRel with ⟨realized, hRealize, hSame⟩
+  cases hSourceStack : source.evm.stack with
+  | nil =>
+      simp [hSourceStack, EvmYul.Stack.pop] at hPop
+  | cons head tail =>
+      simp [hSourceStack, EvmYul.Stack.pop] at hPop
+      rcases hPop with ⟨rfl, rfl⟩
+      rw [hSourceStack] at hRealize
+      change
+        realizeStack ([head] ++ tail) source.returns tokens =
+          some realized at hRealize
+      rw [realizeStack_append_prefix] at hRealize
+      cases hTailRealize :
+          realizeStack tail source.returns tokens with
+      | none =>
+          simp [hTailRealize] at hRealize
+      | some realizedTail =>
+          simp [hTailRealize] at hRealize
+          subst realized
+          exact
+            ⟨realizedTail, rfl,
+              by simpa using SameRuntimeData.stack_eq hSame⟩
+
 theorem pushReturn
     {source : RunState} {tokens : List Word} {target : EVMState}
     {args callerStack realized : EvmYul.Stack Word}
@@ -1677,6 +1719,344 @@ end Stmt
 
 namespace Switch
 
+def testOutput (valueShape : TypedCfg.Shape) : TypedCfg.Shape :=
+  { valueShape with slots := .word :: valueShape.slots }
+
+def nextTestLabel (base idx : Nat) :
+    List (Word × Structured.Block) → Assembly.Label
+  | [] => LabelSupply.label base 1
+  | _ => TypedCfgCompiler.switchTestLabel base (idx + 1)
+
+theorem testBody_type
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue : Word}
+    (hHead : valueShape.slots.head? = some slot) :
+    TypedCfg.Block.bodyType?
+        [.dup 0, .push caseValue, .prim .eq] valueShape =
+      some (testOutput valueShape) := by
+  cases valueShape with
+  | mk slots tail =>
+      cases slots with
+      | nil =>
+          simp at hHead
+      | cons head rest =>
+          simp [TypedCfg.Block.bodyType?, TypedCfg.Instr.type?,
+            TypedCfg.Shape.get?, TypedCfg.Shape.length,
+            TypedCfg.Shape.pop, TypedCfg.Shape.pushWords,
+            Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
+            EvmYul.EVM.δ, EvmYul.EVM.α, testOutput]
+
+/--
+One generated switch test preserves the retained scrutinee and chooses the
+case-entry or next-test label according to the source value comparison.
+-/
+theorem eventually_test
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {testLabel caseLabel nextTest : Assembly.Label}
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue value : Word}
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    {stack : EvmYul.Stack Word}
+    (hBlocks : BlocksInProgram result cfg)
+    (hMem :
+      { label := testLabel
+        input := valueShape
+        body := [.dup 0, .push caseValue, .prim .eq]
+        output := testOutput valueShape
+        term := .jumpi caseLabel nextTest } ∈ result.blocks)
+    (hHead : valueShape.slots.head? = some slot)
+    (hRel : StateRel source tokens target)
+    (hPop : source.evm.stack.pop = some (stack, value)) :
+    ∃ targetFinal,
+      cfg.Eventually testLabel target
+          (.jump
+            (if caseValue = value then caseLabel else nextTest)
+            targetFinal) ∧
+        StateRel source tokens targetFinal := by
+  let dupShape : TypedCfg.Shape :=
+    { valueShape with slots := slot :: valueShape.slots }
+  let pushShape : TypedCfg.Shape :=
+    { dupShape with slots := .literal caseValue :: dupShape.slots }
+  have hGet :
+      valueShape.get? 0 = some slot := by
+    rw [TypedCfg.Shape.get?, ← List.head?_eq_getElem?]
+    exact hHead
+  have hDupType :
+      TypedCfg.Instr.type? (.dup 0) valueShape = some dupShape := by
+    simp [TypedCfg.Instr.type?, hGet, dupShape]
+  have hPushType :
+      TypedCfg.Instr.type? (.push caseValue) dupShape =
+        some pushShape := by
+    rfl
+  have hEqType :
+      TypedCfg.Instr.type? (.prim .eq) pushShape =
+        some (testOutput valueShape) := by
+    have hTestType :=
+      testBody_type (caseValue := caseValue) hHead
+    simp [TypedCfg.Block.bodyType?, hDupType, hPushType] at hTestType
+    exact hTestType
+  rcases StateRel.stackView_of_pop hRel hPop with
+    ⟨realizedTail, _hTailRealize, hTargetStack⟩
+  let afterDup :=
+    target.replaceStackAndIncrPC
+      (value :: value :: realizedTail)
+  let afterPush :=
+    afterDup.replaceStackAndIncrPC
+      (caseValue :: value :: value :: realizedTail) (pcΔ := 33)
+  let afterEq :=
+    afterPush.replaceStackAndIncrPC
+      (EvmYul.UInt256.eq caseValue value :: value :: realizedTail)
+  let targetFinal : EVMState :=
+    { afterEq with stack := value :: realizedTail }
+  have hFinalSame :
+      SameRuntimeData targetFinal target := by
+    cases target
+    simp [targetFinal, afterEq, afterPush, afterDup,
+      SameRuntimeData, eraseCfgControl,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] at hTargetStack ⊢
+    exact hTargetStack.symm
+  have hDupRun :
+      TypedCfg.Instr.runAt (.dup 0) valueShape target =
+        .ok (afterDup, dupShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hDupType]
+    simp [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      EvmYul.dup, hTargetStack, afterDup,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hPushRun :
+      TypedCfg.Instr.runAt (.push caseValue) dupShape afterDup =
+        .ok (afterPush, pushShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hPushType]
+    simp [TypedCfg.Instr.runState, afterPush, afterDup, EvmYul.Stack.push,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hEqRun :
+      TypedCfg.Instr.runAt (.prim .eq) pushShape afterPush =
+        .ok (afterEq, testOutput valueShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hEqType]
+    simp [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      EvmYul.EVM.execBinOp, EvmYul.Stack.pop2, EvmYul.Stack.push,
+      afterPush, afterDup, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hBodyRun :
+      TypedCfg.Block.runBody
+          [.dup 0, .push caseValue, .prim .eq] valueShape target =
+        .ok (afterEq, testOutput valueShape) := by
+    simp only [TypedCfg.Block.runBody]
+    rw [hDupRun]
+    simp only [Bind.bind, Except.bind]
+    rw [hPushRun]
+    simp only [Bind.bind, Except.bind]
+    rw [hEqRun]
+  refine
+    ⟨targetFinal, ?_,
+      StateRel.targetCongr hFinalSame hRel⟩
+  apply BlocksInProgram.eventually_of_run hBlocks hMem
+  simp only [TypedCfg.Block.run, hBodyRun, Bind.bind, Except.bind,
+    if_pos rfl]
+  have hOneNeZero :
+      EvmYul.UInt256.ofNat 1 ≠ EvmYul.UInt256.ofNat 0 := by
+    decide
+  by_cases hEq : caseValue = value
+  · simp [TypedCfg.Block.runTerm, EvmYul.Stack.pop,
+      EvmYul.UInt256.eq, hEq, hOneNeZero,
+      targetFinal, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+  · simp [TypedCfg.Block.runTerm, EvmYul.Stack.pop,
+      EvmYul.UInt256.eq, hEq,
+      targetFinal, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+
+/--
+When the first case matches, the generated test selects that case, its entry
+removes the retained scrutinee, and execution continues through the compiled
+case body.
+-/
+theorem regular_cases_head_of_compileCasesFuel?
+    {compilerFuel : Nat} {caseValue value : Word}
+    {body : Structured.Block} {rest : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+          ((caseValue, body) :: rest) ctx base supply idx valueShape
+            bodyShape regular =
+        some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hEq : caseValue = value)
+    (hBodyPreserves :
+      ∀ {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx supply
+            (.generated base (2000 + idx)) bodyShape regular =
+          some bodyResult →
+        BlocksInProgram bodyResult cfg →
+        RegularPreserves bodyResult cfg
+          (.generated base (2000 + idx)) regular
+          (source.withEVM { source.evm with stack := stack }) final tokens) :
+    RegularPreserves result cfg
+      (TypedCfgCompiler.switchTestLabel base idx) regular
+      source final tokens := by
+  have hPopBodyType :
+      TypedCfg.Block.bodyType? [.pop] valueShape = some bodyShape := by
+    simp [TypedCfg.Block.bodyType?, hPopType]
+  unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+  simp only at hCompile
+  simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+    hPopBodyType, Bind.bind, Option.bind] at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx supply
+        (.generated base (2000 + idx)) bodyShape regular with
+  | none =>
+      simp [hBody] at hCompile
+  | some bodyResult =>
+      simp only [hBody] at hCompile
+      cases hTail :
+          TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+            bodyResult.next (idx + 1) valueShape bodyShape regular with
+      | none =>
+          simp [hTail] at hCompile
+      | some tail =>
+          simp only [hTail] at hCompile
+          cases hCompile
+          have hBodyBlocks : BlocksInProgram bodyResult cfg := by
+            intro block hMem
+            apply hBlocks block
+            simp [hMem]
+          intro target hRel
+          rcases
+              eventually_test
+                (testLabel := TypedCfgCompiler.switchTestLabel base idx)
+                (caseLabel := LabelSupply.label base (idx + 2))
+                (nextTest := nextTestLabel base idx rest)
+                (caseValue := caseValue) (value := value)
+                hBlocks
+                (by
+                  left)
+                hHead hRel hPop with
+            ⟨targetAfterTest, hTestEventually, hAfterTestRel⟩
+          have hSelected :
+              cfg.Eventually (TypedCfgCompiler.switchTestLabel base idx)
+                target
+                (.jump (LabelSupply.label base (idx + 2))
+                  targetAfterTest) := by
+            simpa [hEq] using hTestEventually
+          rcases
+              BlocksInProgram.eventually_pop_jump
+                (entry := LabelSupply.label base (idx + 2))
+                (regular := .generated base (2000 + idx))
+                (input := valueShape) (output := bodyShape)
+                hBlocks (by simp) hPopType hAfterTestRel hPop with
+            ⟨targetAfterPop, hEntryEventually, hAfterPopRel⟩
+          rcases
+              hBodyPreserves hBody hBodyBlocks
+                targetAfterPop hAfterPopRel with
+            ⟨targetFinal, hBodyExecution, hFinalRel⟩
+          rcases hBodyExecution with
+            ⟨_bodyOutput, _hBodyFallthrough, hBodyEventually⟩
+          refine ⟨targetFinal, ?_, hFinalRel⟩
+          refine ⟨bodyShape, rfl, ?_⟩
+          exact
+            TypedCfg.Program.Eventually.bind_jump hSelected
+              (TypedCfg.Program.Eventually.bind_jump
+                hEntryEventually hBodyEventually)
+
+/--
+When the first case does not match, its test preserves the retained scrutinee
+and delegates to a supplied proof for the next test or the default entry.
+-/
+theorem regular_cases_tail_of_compileCasesFuel?
+    {compilerFuel : Nat} {caseValue value : Word}
+    {body : Structured.Block} {rest : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+          ((caseValue, body) :: rest) ctx base supply idx valueShape
+            bodyShape regular =
+        some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hNe : caseValue ≠ value)
+    (hNextPreserves :
+      ∀ target,
+        StateRel source tokens target →
+          ∃ targetFinal,
+            cfg.Eventually (nextTestLabel base idx rest) target
+                (.jump regular targetFinal) ∧
+              StateRel final tokens targetFinal) :
+    RegularPreserves result cfg
+      (TypedCfgCompiler.switchTestLabel base idx) regular
+      source final tokens := by
+  have hPopBodyType :
+      TypedCfg.Block.bodyType? [.pop] valueShape = some bodyShape := by
+    simp [TypedCfg.Block.bodyType?, hPopType]
+  unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+  simp only at hCompile
+  simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+    hPopBodyType, Bind.bind, Option.bind] at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx supply
+        (.generated base (2000 + idx)) bodyShape regular with
+  | none =>
+      simp [hBody] at hCompile
+  | some bodyResult =>
+      simp only [hBody] at hCompile
+      cases hTail :
+          TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+            bodyResult.next (idx + 1) valueShape bodyShape regular with
+      | none =>
+          simp [hTail] at hCompile
+      | some tail =>
+          simp only [hTail] at hCompile
+          cases hCompile
+          intro target hRel
+          rcases
+              eventually_test
+                (testLabel := TypedCfgCompiler.switchTestLabel base idx)
+                (caseLabel := LabelSupply.label base (idx + 2))
+                (nextTest := nextTestLabel base idx rest)
+                (caseValue := caseValue) (value := value)
+                hBlocks
+                (by
+                  left)
+                hHead hRel hPop with
+            ⟨targetAfterTest, hTestEventually, hAfterTestRel⟩
+          have hSkipped :
+              cfg.Eventually (TypedCfgCompiler.switchTestLabel base idx)
+                target
+                (.jump (nextTestLabel base idx rest)
+                  targetAfterTest) := by
+            simpa [hNe] using hTestEventually
+          rcases hNextPreserves targetAfterTest hAfterTestRel with
+            ⟨targetFinal, hNextEventually, hFinalRel⟩
+          refine ⟨targetFinal, ?_, hFinalRel⟩
+          refine ⟨bodyShape, rfl, ?_⟩
+          exact
+            TypedCfg.Program.Eventually.bind_jump
+              hSkipped hNextEventually
+
 /--
 When a switch has no default body, the generated default block removes the
 retained scrutinee and reaches the regular continuation.
@@ -1705,6 +2085,66 @@ theorem regular_default_none_of_compileDefaultFuel?
   · rfl
   · exact hType
   · exact hPop
+
+/--
+A generated nonempty default first removes the retained scrutinee, then
+delegates to the compiled default body.
+-/
+theorem regular_default_some_of_compileDefaultFuel?
+    {compilerFuel : Nat} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1) (some body) ctx
+        supply entry valueShape bodyShape regular = some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hBodyPreserves :
+      ∀ {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+            (supply + 1) (.generated supply 2000) bodyShape regular =
+          some bodyResult →
+        BlocksInProgram bodyResult cfg →
+        RegularPreserves bodyResult cfg (.generated supply 2000) regular
+          (source.withEVM { source.evm with stack := stack }) final tokens) :
+    RegularPreserves result cfg entry regular source final tokens := by
+  unfold TypedCfgCompiler.compileDefaultFuel? at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        (supply + 1) (.generated supply 2000) bodyShape regular with
+  | none =>
+      simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
+        hBody] at hCompile
+  | some bodyResult =>
+      simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
+        hBody] at hCompile
+      cases hCompile
+      have hBodyBlocks : BlocksInProgram bodyResult cfg := by
+        intro block hMem
+        apply hBlocks block
+        simp [hMem]
+      intro target hRel
+      rcases
+          BlocksInProgram.eventually_pop_jump
+            (entry := entry) (regular := .generated supply 2000)
+            (input := valueShape) (output := bodyShape)
+            hBlocks (by simp) hType hRel hPop with
+        ⟨targetAfterPop, hEntryEventually, hAfterPopRel⟩
+      rcases
+          hBodyPreserves hBody hBodyBlocks targetAfterPop hAfterPopRel with
+        ⟨targetFinal, hBodyExecution, hFinalRel⟩
+      rcases hBodyExecution with
+        ⟨_bodyOutput, _hBodyFallthrough, hBodyEventually⟩
+      refine ⟨targetFinal, ?_, hFinalRel⟩
+      refine ⟨bodyShape, rfl, ?_⟩
+      exact
+        TypedCfg.Program.Eventually.bind_jump
+          hEntryEventually hBodyEventually
 
 /--
 An empty switch without a default body executes the scrutinee, removes its

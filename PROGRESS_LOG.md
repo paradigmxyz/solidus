@@ -27892,3 +27892,25 @@ Resumed the active architecture-migration goal from commit `4c173b4d1`. The imme
   compiler variants, and one outcome relation.
 - Remaining source-to-CFG frontier is nonempty switch case recursion, loops,
   concrete call/return-token execution, and public artifact composition.
+## 2026-06-10 - Compaction resume: nonempty switch dispatch
+
+Resumed from commit `484ff1510` with the migration goal active. The current uncommitted checkpoint adds reusable switch-test typing and relational execution support in `Structured/TypedCfgPreservation.lean`; next is to compile and finish that theorem, then compose it through nonempty cases/defaults before moving on to loops and calls.
+
+## 2026-06-11 06:16 PDT - Reusable nonempty switch preservation
+
+- Added target-control congruence and a source-pop/realized-target-stack view to
+  the shared Structured-to-TypedCfg state relation.
+- Proved generated switch-test typing and relational execution: the comparison
+  preserves the retained scrutinee and reaches the selected case entry or next
+  test while preserving the source/target relation.
+- Added compiler-level relational certificates for matched-head cases,
+  skipped-head delegation, defaults without bodies, and defaults with compiled
+  bodies. These compose through ambient CFG containment and `Eventually`
+  rather than introducing a switch-specific interpreter or fuel proof.
+- Verification passed: focused preservation check, full 1,155-job
+  `EvmCompiler.Verification`, architecture dependency/retired-route guard,
+  proof-hole scan, and `git diff --check`.
+- Fresh metrics: 79 modules, 90,165 Lean lines, 65 compiler variants, and one
+  outcome relation. Remaining switch work is the source-selection induction
+  and top-level statement lift; loops, concrete calls/returns, and public
+  artifact composition follow.
