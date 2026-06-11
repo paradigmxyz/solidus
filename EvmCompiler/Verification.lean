@@ -3,6 +3,7 @@ import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Functions.ScratchFrameSpill
 import EvmCompiler.Locals.EffectSemantics
+import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.ObjectSemantics

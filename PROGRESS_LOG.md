@@ -27818,3 +27818,27 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - remaining allocation work is main/lexical transition naming and the generic
   arbitrary-plan lowerer; source-to-CFG semantic composition remains the next
   major proof phase.
+## 2026-06-10 — resumed after context compaction
+
+- Resumed the active architecture-migration goal after the TypedCfg whole-program runner and initial Structured-to-TypedCfg semantic bridge were added.
+- Immediate next steps: finish aggregate verification, correct the CFG runner boundary if needed, extend source-level preservation through compiled control flow, and update the completion audit.
+
+## 2026-06-10 22:46 PDT - Structured-to-TypedCfg semantic composition leaves
+
+- Corrected `TypedCfg.Program.runN` to consume semantic block-input states
+  directly; emitted Assembly label-byte PC movement remains confined to the
+  TypedCfg-to-Assembly preservation boundary.
+- Added checked semantic equality for Structured primitive instructions and
+  arbitrary straight-line code lowered to TypedCfg bodies.
+- Added the first compiler-level source preservation theorems: successfully
+  compiled code statements and empty statement lists execute their generated
+  CFG block and reach the supplied regular continuation with the exact source
+  EVM state.
+- Focused `EvmCompiler.Structured.TypedCfgPreservation` build passed. Remaining
+  semantic critical path is recursive statement-list/control/function
+  preservation, followed by composition into the public artifact theorem.
+- Verification gates passed: `EvmCompiler.Verification` built all 1,155 jobs;
+  architecture dependency and retired-route checks passed; TypedCfg lowering,
+  public artifact simulation, and resource-observer proof smokes passed with
+  only standard Lean axioms; `git diff --check` passed. Fresh metrics record 79
+  modules, 87,838 Lean lines, 65 compiler variants, and one outcome relation.

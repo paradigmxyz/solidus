@@ -152,6 +152,67 @@ def step (program : Program) (label : Label) (state : EVMState) :
   | none => .ok (.invalid state)
   | some block => block.run state
 
+/--
+Fuel-indexed multi-block execution.
+
+Fuel exhaustion leaves the current control point as a residual jump. This is
+the compositional boundary used by source proofs: a compiled source fragment
+may establish that execution reaches its continuation label without executing
+the continuation's sentinel block. The input state is already at the semantic
+entry to the block; consuming the emitted Assembly label byte belongs to the
+TypedCfg-to-Assembly preservation theorem, not this IR interpreter.
+-/
+def runN (program : Program) : Nat → Label → EVMState →
+    Except EVMException Outcome
+  | 0, label, state => .ok (.jump label state)
+  | fuel + 1, label, state => do
+      let outcome ← program.step label state
+      match outcome with
+      | .jump next state' => runN program fuel next state'
+      | .fallthrough state' => .ok (.fallthrough state')
+      | .returnDispatch state' => .ok (.returnDispatch state')
+      | .halt kind state' => .ok (.halt kind state')
+      | .invalid state' => .ok (.invalid state')
+
+@[simp] theorem runN_zero (program : Program) (label : Label)
+    (state : EVMState) :
+    program.runN 0 label state = .ok (.jump label state) := rfl
+
+theorem runN_succ (program : Program) (fuel : Nat) (label : Label)
+    (state : EVMState) :
+    program.runN (fuel + 1) label state =
+      (do
+        let outcome ← program.step label state
+        match outcome with
+        | .jump next state' => program.runN fuel next state'
+        | .fallthrough state' => .ok (.fallthrough state')
+        | .returnDispatch state' => .ok (.returnDispatch state')
+        | .halt kind state' => .ok (.halt kind state')
+        | .invalid state' => .ok (.invalid state')) := rfl
+
+theorem runN_succ_of_step_jump
+    {program : Program} {fuel : Nat} {label next : Label}
+    {state state' : EVMState} {outcome : Outcome}
+    (hStep :
+      program.step label state = .ok (.jump next state'))
+    (hRun : program.runN fuel next state' = .ok outcome) :
+    program.runN (fuel + 1) label state = .ok outcome := by
+  rw [runN_succ, hStep]
+  exact hRun
+
+theorem runN_succ_of_step_terminal
+    {program : Program} {fuel : Nat} {label : Label}
+    {state : EVMState} {outcome : Outcome}
+    (hStep : program.step label state = .ok outcome)
+    (hTerminal : ∀ next state', outcome ≠ .jump next state') :
+    program.runN (fuel + 1) label state = .ok outcome := by
+  rw [runN_succ, hStep]
+  cases outcome with
+  | jump next state' =>
+      exact False.elim (hTerminal next state' rfl)
+  | fallthrough state' | returnDispatch state' | halt _ state' | invalid state' =>
+      rfl
+
 end Program
 
 end TypedCfg
