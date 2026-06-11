@@ -27774,3 +27774,16 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   tree has 78 modules, 87,391 Lean lines, 65 compiler variants, and one outcome
   relation, versus baseline 104 modules, 1,021,199 lines, 145 variants, and 43
   outcome relations.
+
+## 2026-06-10 22:18 PDT - Allocation-derived scope layouts
+
+- allocated IR: added canonical `ScopeLayout` projections from every scoped
+  `ProgramPlan`, including symbolic stack shapes and exact scratch bindings.
+- enforcement: `AllocatedTypedCfg.Program.compileCertified?` now rejects a
+  program whose stored scope layouts differ from the allocation projection;
+  the certificate preserves both layout equalities and the CFG certificate.
+- public route: Objects constructs allocated programs only through
+  `Program.ofAllocation`, and architecture checks pin that constructor.
+- regression: a deliberately stale layout is rejected by `native_decide`;
+  allocated TypedCfg, Objects, public verification, the TypedCfg smoke, and the
+  1,154-job proof aggregate pass.

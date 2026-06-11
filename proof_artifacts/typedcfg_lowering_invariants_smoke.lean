@@ -7,6 +7,7 @@ namespace TypedCfgLoweringInvariantsSmoke
 
 #check TypedCfg.Preservation.Program.lower?_step_eventually
 #check TypedCfg.Program.compileCertified?_step_eventually
+#check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayouts
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
 
 def firstLabel : Assembly.Label :=

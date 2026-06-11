@@ -158,8 +158,8 @@ def lowerArtifact? (planned : PlannedProgram) :
   let expressions ← planned.lowerWithAllocation?
   let cfg ←
     Structured.TypedCfgCompiler.compile? expressions.toStructured
-  let allocated : Compiler.AllocatedTypedCfg.Program :=
-    { allocation := planned.allocation, cfg := cfg }
+  let allocated :=
+    Compiler.AllocatedTypedCfg.Program.ofAllocation planned.allocation cfg
   let compiled ← allocated.compileCertified?
   let target ← Assembly.compileExecutable? compiled.target
   some
@@ -192,10 +192,14 @@ theorem lowerArtifact?_metadataValid
         | some cfg =>
             rw [hCfg] at hCompile
             simp only [Option.bind_some] at hCompile
+            simp only
+              [Compiler.AllocatedTypedCfg.Program.ofAllocation]
+              at hCompile
             unfold
               Compiler.AllocatedTypedCfg.Program.compileCertified?
               at hCompile
             rw [if_pos hValid] at hCompile
+            rw [if_pos rfl] at hCompile
             cases hCfgCompiled : cfg.compileCertified? with
             | none =>
                 rw [hCfgCompiled] at hCompile
@@ -224,7 +228,7 @@ theorem lowerArtifact?_metadataValid
                           hCfgCompiled⟩
                     exact
                       ⟨rfl, hAllocation,
-                        ⟨hAllocation, hCfgCertificate⟩⟩
+                        ⟨hAllocation, rfl, rfl, hCfgCertificate⟩⟩
   · simp [hValid] at hCompile
 
 end PlannedProgram
@@ -249,9 +253,9 @@ def LoweredFrom (artifact : CompileArtifact)
     planned.lowerWithAllocation? = some expressions ∧
       Structured.TypedCfgCompiler.compile? expressions.toStructured =
         some artifact.metadata.typedCfg ∧
-      ({ allocation := artifact.metadata.allocation
-         cfg := artifact.metadata.typedCfg } :
-          Compiler.AllocatedTypedCfg.Program).compileCertified? =
+      (Compiler.AllocatedTypedCfg.Program.ofAllocation
+        artifact.metadata.allocation
+        artifact.metadata.typedCfg).compileCertified? =
         some compiled ∧
       Assembly.compileExecutable? compiled.target =
         some artifact.target ∧
@@ -279,10 +283,14 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
         | some cfg =>
             rw [hCfg] at hCompile
             simp only [Option.bind_some] at hCompile
+            simp only
+              [Compiler.AllocatedTypedCfg.Program.ofAllocation]
+              at hCompile
             unfold
               Compiler.AllocatedTypedCfg.Program.compileCertified?
               at hCompile
             rw [if_pos hValid] at hCompile
+            rw [if_pos rfl] at hCompile
             cases hCfgCompiled : cfg.compileCertified? with
             | none =>
                 rw [hCfgCompiled] at hCompile
@@ -302,11 +310,16 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                     let compiled :
                         Compiler.AllocatedTypedCfg.CertifiedArtifact :=
                       { target := cfgCompiled.target
-                        metadata := { cfg := cfgCompiled.metadata } }
+                        metadata :=
+                          { scopeLayouts :=
+                              Compiler.AllocatedTypedCfg.scopeLayoutsOf
+                                planned.allocation
+                            cfg := cfgCompiled.metadata } }
                     exact
                       ⟨expressions, compiled, hLower, hCfg,
                         by
                           simp [compiled,
+                            Compiler.AllocatedTypedCfg.Program.ofAllocation,
                             Compiler.AllocatedTypedCfg.Program.compileCertified?,
                             hValid, hCfgCompiled],
                         hTarget, rfl⟩

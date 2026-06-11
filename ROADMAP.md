@@ -398,7 +398,10 @@ Goal: make stack/control invariants explicit before Assembly.
   certification.
 - [ ] Make CFG value locations and block shapes derive directly from the
   canonical allocation rather than pairing the plan with a separately
-  generated CFG.
+  generated CFG. The allocated IR now materializes canonical per-scope stack
+  shapes and scratch bindings from `ProgramPlan`, stores them in the
+  certificate, and rejects stale layouts; binding those scope shapes to
+  concrete CFG labels and instruction-produced values remains.
 - [x] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
   DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies,

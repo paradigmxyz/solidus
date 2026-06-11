@@ -98,7 +98,7 @@ theorem compileArtifactWithPolicy?_entrySimulation
   rcases hValid.1 with
     ⟨hBackend, hAllocation, hTypedCfg⟩
   have hWellTyped : artifact.metadata.typedCfg.WellTyped :=
-    hTypedCfg.2.1
+    hTypedCfg.2.2.2.1
   cases hFind :
       artifact.metadata.typedCfg.findBlock?
         artifact.metadata.typedCfg.entry with

@@ -116,10 +116,12 @@ report_matches \
 
 if ! rg -q 'Structured\.TypedCfgCompiler\.compile\?' \
     EvmCompiler/Objects/Compiler.lean ||
+    ! rg -q 'AllocatedTypedCfg\.Program\.ofAllocation' \
+      EvmCompiler/Objects/Compiler.lean ||
     ! rg -q 'AllocatedTypedCfg\.Program\.compileCertified\?' \
       EvmCompiler/Objects/Compiler.lean; then
   printf '%s\n\n' \
-    'The Objects public compiler must lower through the certified allocated TypedCfg pass.' \
+    'The Objects public compiler must construct and lower through the certified allocation-derived TypedCfg pass.' \
     >&2
   failed=1
 fi
