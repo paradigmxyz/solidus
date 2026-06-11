@@ -127,8 +127,41 @@ def type? (program : Program) (shape : Shape) : Terminator → Option Unit
         some ()
       else
         none
-  | .halt _ => some ()
+  | .halt kind =>
+      if kind.argCount ≤ shape.length then some () else none
   | .invalid => some ()
+
+@[simp] theorem type?_halt_eq_some_iff
+    {program : Program} {shape : Shape} {kind : Assembly.HaltKind} :
+    type? program shape (.halt kind) = some () ↔
+      kind.argCount ≤ shape.length := by
+  simp [type?]
+
+@[simp] theorem type?_halt_eq_none_iff
+    {program : Program} {shape : Shape} {kind : Assembly.HaltKind} :
+    type? program shape (.halt kind) = none ↔
+      shape.length < kind.argCount := by
+  simp [type?, Nat.not_le]
+
+@[simp] theorem type?_halt_stop_empty
+    {program : Program} :
+    type? program (Shape.closed []) (.halt .stop) = some () := by
+  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+
+@[simp] theorem type?_halt_return_empty
+    {program : Program} :
+    type? program (Shape.closed []) (.halt .return) = none := by
+  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+
+@[simp] theorem type?_halt_revert_empty
+    {program : Program} :
+    type? program (Shape.closed []) (.halt .revert) = none := by
+  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
+
+@[simp] theorem type?_halt_selfdestruct_empty
+    {program : Program} :
+    type? program (Shape.closed []) (.halt .selfdestruct) = none := by
+  simp [type?, Assembly.HaltKind.argCount, Shape.length, Shape.closed]
 
 end Terminator
 
@@ -137,6 +170,15 @@ namespace Block
 def WellTyped (program : Program) (block : Block) : Prop :=
   bodyType? block.body block.input = some block.output ∧
     block.term.type? program block.output = some ()
+
+theorem halt_argCount_le_of_wellTyped
+    {program : Program} {block : Block} {kind : Assembly.HaltKind}
+    (hTyped : block.WellTyped program)
+    (hTerm : block.term = .halt kind) :
+    kind.argCount ≤ block.output.length := by
+  have hTermType := hTyped.2
+  rw [hTerm] at hTermType
+  exact Terminator.type?_halt_eq_some_iff.mp hTermType
 
 end Block
 

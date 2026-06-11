@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 15:07 PDT.
+Last updated: 2026-06-11 15:50 PDT.
 
 ## Objective
 
@@ -99,14 +99,13 @@ Adjacent boundary status:
   exist, but observer-aware forward/backward theorems remain.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains.
-- [ ] Structured -> TypedCfg: ordinary outcome-indexed path preservation is
-  complete; Structured ordinary and observer execution now specialize one
-  shared parameterized control interpreter. Observer-aware instruction and
-  code lowering, hidden-frame replay congruence, condition selection,
-  effectful CFG path composition, straight-line statement preservation, and
-  both conditional branches are checked. The outcome-indexed observer path
-  relation and generic statement-list composition are also checked; recursive
-  switch, loop, call, halt, whole-program, and backward theorems remain.
+- [ ] Structured -> TypedCfg: complete observer-aware forward preservation is
+  checked for statements, blocks, recursive switch/loop/call control, halts,
+  and whole-program artifacts. Backward straight-line code and condition
+  leaves are checked. Halt typing now enforces operand arity, and a checked
+  shape-indexed terminal leaf prevents compiler-owned return data from
+  satisfying missing source operands. Recursive control, internal calls, and
+  whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

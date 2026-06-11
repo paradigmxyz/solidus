@@ -12,6 +12,7 @@ import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
+import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -56,6 +57,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.outcome_block_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

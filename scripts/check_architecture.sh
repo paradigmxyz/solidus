@@ -189,6 +189,16 @@ report_matches \
   '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
   EvmCompiler/Structured/ObserverPreservation.lean
 
+report_matches \
+  'Structured observer adequacy must remain owned by the adjacent TypedCfg boundary:' \
+  '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
+  EvmCompiler/Structured/ObserverAdequacy.lean
+
+report_matches \
+  'Structured observer adequacy must not reason through Assembly execution or lower-pass preservation:' \
+  '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
+  EvmCompiler/Structured/ObserverAdequacy.lean
+
 if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
     EvmCompiler/Functions.lean ||
     ! rg -q '^namespace Canonical$' \

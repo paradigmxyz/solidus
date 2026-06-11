@@ -431,9 +431,116 @@ theorem runBody_toCfg
               rw [ih hTailType]
               simp [hHead, Except.map, Bind.bind, Except.bind]
 
+/--
+Backward adequacy for the straight-line portion of the adjacent pass.
+
+When the existing TypedCfg lowering executes successfully from the exact
+Structured replay state, the shared effect semantics reconstructs the
+corresponding Structured code execution. No compiler certificate or replay
+witness is accepted.
+-/
+theorem run_of_runBody_toCfg
+    {transcript : Trace} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {state : ObserverSemantics.State transcript}
+    {targetFinal : EVMState} {traceFinal : Trace}
+    (hType : TypedCfgCompiler.Code.type? code input = some output)
+    (hRun :
+      TypedCfg.ObserverSemantics.Block.runBody
+          (TypedCfgCompiler.Code.toCfg code) input
+          state.source.evm state.remaining =
+        .ok ((targetFinal, output), traceFinal)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Code.run code state = .ok final ∧
+        final.source.evm = targetFinal ∧
+        final.remaining = traceFinal := by
+  rw [runBody_toCfg hType] at hRun
+  cases hSource : ObserverSemantics.Code.run code state with
+  | error err =>
+      simp [hSource, Except.map] at hRun
+  | ok final =>
+      simp [hSource, Except.map] at hRun
+      rcases hRun with ⟨hEVM, hTrace⟩
+      exact ⟨final, rfl, hEVM, hTrace⟩
+
+/--
+Backward adequacy for a compiled Structured condition.
+
+The generated body and its ordinary condition pop recover both the source
+branch decision and the exact remaining observer suffix.
+-/
+theorem runCondition_of_runBody_toCfg
+    {transcript : Trace} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {state : ObserverSemantics.State transcript}
+    {targetAfterCode targetFinal : EVMState}
+    {traceFinal : Trace} {cond : Bool}
+    (hType : TypedCfgCompiler.Code.type? code input = some output)
+    (hBody :
+      TypedCfg.ObserverSemantics.Block.runBody
+          (TypedCfgCompiler.Code.toCfg code) input
+          state.source.evm state.remaining =
+        .ok ((targetAfterCode, output), traceFinal))
+    (hPop :
+      Structured.Code.popCondition targetAfterCode =
+        .ok (targetFinal, cond)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Code.runCondition code state =
+          .ok (final, cond) ∧
+        final.source.evm = targetFinal ∧
+        final.remaining = traceFinal := by
+  obtain ⟨afterCode, hCode, hEVM, hTrace⟩ :=
+    run_of_runBody_toCfg hType hBody
+  unfold Structured.Code.popCondition
+    EffectSemantics.Code.popCondition at hPop
+  cases hTargetPop : targetAfterCode.stack.pop with
+  | none =>
+      simp [hTargetPop] at hPop
+  | some popped =>
+      rcases popped with ⟨stack, value⟩
+      simp [hTargetPop] at hPop
+      rcases hPop with ⟨rfl, rfl⟩
+      let final : ObserverSemantics.State transcript :=
+        afterCode.withSource
+          (afterCode.source.withEVM
+            { targetAfterCode with stack := stack })
+      refine ⟨final, ?_, ?_, ?_⟩
+      · unfold ObserverSemantics.Code.runCondition
+          EffectSemantics.Code.runCondition
+        have hEffectCode :
+            EffectSemantics.Code.run
+                (ObserverSemantics.stateModel transcript)
+                (ObserverSemantics.handler transcript) code state =
+              .ok afterCode :=
+          hCode
+        rw [hEffectCode]
+        simp only [Bind.bind, Except.bind]
+        unfold EffectSemantics.Code.popCondition
+        simp only [ObserverSemantics.stateModel_evm,
+          ObserverSemantics.stateModel_withEVM]
+        rw [hEVM, hTargetPop]
+      · simp [final]
+      · simpa [final] using hTrace
+
 end Code
 
 namespace StateRel
+
+/--
+Backward-execution state relation at a checked symbolic stack shape.
+
+`StateRel` relates the runtime data and realizes ghost return frames. The
+additional source-facing length fact says every symbolic slot is backed by a
+real source stack value, so target execution cannot satisfy a source operand
+by reading a hidden return token or caller suffix.
+-/
+structure At {transcript : Trace}
+    (shape : TypedCfg.Shape)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word) (target : EVMState) (trace : Trace) : Prop where
+  rel : StateRel source tokens target trace
+  sourceStack :
+    shape.length ≤ source.source.evm.stack.length
 
 theorem initial (state : EVMState) (transcript : Trace) :
     StateRel
@@ -443,6 +550,41 @@ theorem initial (state : EVMState) (transcript : Trace) :
   exact
     ⟨TypedCfgPreservation.StateRel.initial state,
       by simp [Simulation.ResourceReplay.State.remaining]⟩
+
+theorem At.initial (state : EVMState) (transcript : Trace) :
+    At TypedCfg.Shape.caller
+      (transcript := transcript)
+      { source := RunState.initial state }
+      [] state transcript := by
+  exact
+    ⟨ObserverPreservation.StateRel.initial state transcript,
+      by simp [TypedCfg.Shape.caller, TypedCfg.Shape.length]⟩
+
+theorem targetStack_eq_source_append_hidden
+    {transcript : Trace} {shape : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    (hRel : At shape source tokens target trace) :
+    ∃ hidden : EvmYul.Stack Word,
+      target.stack = source.source.evm.stack ++ hidden := by
+  rcases hRel.rel.1 with ⟨realized, hRealize, hSame⟩
+  have hAppend :=
+    TypedCfgPreservation.realizeStack_append_prefix
+      source.source.evm.stack [] source.source.returns tokens
+  cases hHidden :
+      TypedCfgPreservation.realizeStack
+        [] source.source.returns tokens with
+  | none =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+  | some hidden =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+      exact
+        ⟨hidden,
+          by simpa using Assembly.SameRuntimeData.stack_eq hSame⟩
 
 theorem popCondition
     {transcript : Trace}

@@ -35,6 +35,50 @@ def step (kind : Assembly.HaltKind) (state : EVMState) :
   Assembly.Target.stepInstr
     (Assembly.TargetInstr.prim kind.toPrimOp) state
 
+/--
+Terminal execution is defined whenever the source stack contains the operands
+declared by the halt kind.
+
+This is the source-owned fact used by backward compiler proofs: symbolic typing
+must establish the arity bound, while the terminal semantics itself constructs
+the resulting EVM state.
+-/
+theorem exists_step_of_argCount_le
+    (kind : Assembly.HaltKind) (state : EVMState)
+    (hStack : kind.argCount ≤ state.stack.length) :
+    ∃ final, step kind state = .ok final := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases kind with
+      | stop =>
+          exact ⟨_, rfl⟩
+      | «return» =>
+          cases stack with
+          | nil =>
+              simp [Assembly.HaltKind.argCount] at hStack
+          | cons first rest =>
+              cases rest with
+              | nil =>
+                  simp [Assembly.HaltKind.argCount] at hStack
+              | cons second tail =>
+                  exact ⟨_, rfl⟩
+      | revert =>
+          cases stack with
+          | nil =>
+              simp [Assembly.HaltKind.argCount] at hStack
+          | cons first rest =>
+              cases rest with
+              | nil =>
+                  simp [Assembly.HaltKind.argCount] at hStack
+              | cons second tail =>
+                  exact ⟨_, rfl⟩
+      | selfdestruct =>
+          cases stack with
+          | nil =>
+              simp [Assembly.HaltKind.argCount] at hStack
+          | cons recipient tail =>
+              exact ⟨_, rfl⟩
+
 end Terminal
 
 namespace StackFrame

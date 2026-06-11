@@ -28593,3 +28593,31 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   focused 1,129-job owner build, architecture guard, scoped no-hole scan,
   `git diff --check`, and focused axiom audit pass. The complete forward
   boundary depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 15:46:29 PDT `compaction-resume`: Resumed the
+  Structured-to-TypedCfg backward-adequacy proof after introducing the
+  shape-indexed source-stack invariant and correcting halt typing so hidden
+  return data cannot satisfy missing Structured operands.
+
+- 2026-06-11 15:50:37 PDT `theorem-boundary`: Corrected TypedCfg halt typing
+  to require the halt kind's operand arity. The previous unconditional rule
+  made backward adequacy false inside procedures because hidden return data
+  could satisfy an otherwise underflowing Structured halt.
+
+- 2026-06-11 15:50:37 PDT `proof`: Added the source-owned theorem that every
+  terminal operation executes when its declared operands fit the real stack,
+  plus a pass-owned Structured-to-TypedCfg backward terminal leaf using the
+  shape-indexed state relation. Straight-line code and condition converse
+  leaves are also checked.
+
+- 2026-06-11 15:50:37 PDT `architecture`: Split new converse work into
+  `Structured.ObserverAdequacy` and added guards preventing that module from
+  importing or reasoning through Assembly or lower-pass preservation. The
+  attempted external proof oracle was unavailable because its quota was
+  exhausted, so no oracle output was used.
+
+- 2026-06-11 15:50:37 PDT `verification`: The 1,177-job verification root,
+  focused Structured adequacy build, architecture guard, scoped no-hole scan,
+  `git diff --check`, and focused axiom audit pass. The new terminal-totality
+  and backward terminal theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.
