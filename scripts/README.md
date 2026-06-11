@@ -43,10 +43,11 @@ allocation-consuming Objects lowerer. The `typedcfg` layer includes both the
 Structured-to-TypedCfg compiler and the checked `AllocatedTypedCfg` pass that
 pairs a well-formed program allocation with its CFG certificate.
 
-The public scratch-frame fallback uses
-`Functions.ScratchFrameSpill.allocationPlanner` followed by
-`allocationLowerer`: planning computes exact scoped slots and frame size without
-emitting code, and lowering performs one checked emission pass from that plan.
+The public stack and scratch-frame policies use
+`Functions.MixedAllocation` planners followed by the shared
+`Functions.AllocationLowering.allocationLowerer`: planning computes exact
+scoped locations and frame size without emitting code, and lowering performs
+one checked emission pass from the selected plan.
 
 To share dependency package builds across worktrees while retaining a local
 `.lake/build`, run:

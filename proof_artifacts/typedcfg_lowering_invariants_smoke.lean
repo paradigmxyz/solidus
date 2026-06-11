@@ -75,7 +75,7 @@ def allocationDrivenProcShapeRecorded : Bool :=
   let source :=
     Functions.ScratchFrameSpill.AllocationExamples.program
   match
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source with
+      Functions.MixedAllocation.allStackPlanner.plan? source with
   | none => false
   | some allocation =>
       let planned : Objects.Program.PlannedProgram :=
@@ -87,11 +87,10 @@ def allocationDrivenProcShapeRecorded : Bool :=
           match planned.lowerTypedCfg? expressions with
           | none => false
           | some cfg =>
-              decide
-                (cfg.labelShape? (Structured.ProcLabel.body "f") =
-                  some
-                    { slots := [.local "p", .returnToken]
-                      tail := .caller })
+              Compiler.AllocatedTypedCfg.cfgWitnessesLocalLayout
+                  cfg ["p"] &&
+                Compiler.AllocatedTypedCfg.scopeLayoutsWitnessed?
+                  (Compiler.AllocatedTypedCfg.scopeLayoutsOf allocation) cfg
 
 example : allocationDrivenProcShapeRecorded = true := by
   native_decide
@@ -100,7 +99,7 @@ def allocationDrivenLexicalShapeRecorded : Bool :=
   let source :=
     Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
   match
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source with
+      Functions.MixedAllocation.allStackPlanner.plan? source with
   | none => false
   | some allocation =>
       let planned : Objects.Program.PlannedProgram :=
@@ -124,7 +123,7 @@ def allocationDrivenScratchBindingRecorded : Bool :=
   let source :=
     Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
   match
-      (Functions.ScratchFrameSpill.allocationPlanner 1).plan? source with
+      (Functions.MixedAllocation.allScratchPlanner 1).plan? source with
   | none => false
   | some allocation =>
       let planned : Objects.Program.PlannedProgram :=

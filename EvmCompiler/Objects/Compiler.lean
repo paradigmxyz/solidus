@@ -2,7 +2,7 @@ import EvmCompiler.Objects.Syntax
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.Artifact
 import EvmCompiler.Functions.Compiler
-import EvmCompiler.Functions.ScratchFrameSpill
+import EvmCompiler.Functions.AllocationLowering
 
 namespace EvmCompiler
 namespace Objects
@@ -85,28 +85,33 @@ structure AllocationLoweringResult where
   backend : Backend
   expressions : Expressions.Program
 
+def allocationUsesScratch
+    (allocation : Locals.Allocation.ProgramPlan) : Bool :=
+  allocation.scopes.any fun scopePlan =>
+    scopePlan.allocation.bindings.any fun binding =>
+      match binding.2 with
+      | .stack _ => false
+      | .scratch _ => true
+
 /--
 The single allocation-aware Functions-to-Expressions lowerer.
 
-It first recognizes the exact canonical stack plan. Every other accepted plan
-is offered to the scratch-capable allocation lowerer, which independently
-checks that the plan is the source-derived scratch recipe. Backend policy does
-not participate in this choice.
+Every accepted canonical plan, including the all-stack and all-scratch
+extremes, is consumed by the same Functions-to-Locals implementation. The
+backend tag is derived from the plan only after successful lowering.
 -/
 def lowerAllocation? (source : Functions.Program)
     (allocation : Locals.Allocation.ProgramPlan) :
-    Option AllocationLoweringResult :=
-  if
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source =
-        some allocation
-  then do
-    let expressions ← Functions.Inline.Program.toExpressions? source
-    some { backend := .inlineStack, expressions := expressions }
-  else do
-    let expressions ←
-      Functions.ScratchFrameSpill.allocationLowerer.lower?
-        source allocation
-    some { backend := .scratchFrameSpill, expressions := expressions }
+    Option AllocationLoweringResult := do
+  let expressions ←
+    Functions.AllocationLowering.allocationLowerer.lower?
+      source allocation
+  let backend :=
+    if allocationUsesScratch allocation then
+      Backend.scratchFrameSpill
+    else
+      Backend.inlineStack
+  some { backend := backend, expressions := expressions }
 
 def allocationLowerer :
     Locals.Allocation.Lowerer Functions.Program AllocationLoweringResult where
@@ -124,56 +129,28 @@ def lowerExpressions? (planned : PlannedProgram) :
     Option Expressions.Program :=
   planned.lowerWithAllocation?
 
-theorem loweringResult?_inlineStack_allocation
-    {planned : PlannedProgram} {expressions : Expressions.Program}
+theorem loweringResult?_lowerer_exact
+    {planned : PlannedProgram} {backend : Backend}
+    {expressions : Expressions.Program}
     (hLower :
       planned.loweringResult? =
-        some { backend := .inlineStack, expressions := expressions }) :
-    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-        planned.source =
-      some planned.allocation := by
-  unfold loweringResult? allocationLowerer lowerAllocation? at hLower
-  by_cases hPlan :
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-          planned.source =
-        some planned.allocation
-  · exact hPlan
-  · cases hScratch :
-        Functions.ScratchFrameSpill.allocationLowerer.lower?
-          planned.source planned.allocation with
-    | none =>
-        simp [hPlan, hScratch] at hLower
-    | some scratchExpressions =>
-        simp [hPlan, hScratch] at hLower
-
-theorem loweringResult?_scratchFrame_exact
-    {planned : PlannedProgram} {expressions : Expressions.Program}
-    (hLower :
-      planned.loweringResult? =
-        some { backend := .scratchFrameSpill, expressions := expressions }) :
-    Functions.ScratchFrameSpill.allocationLowerer.lower?
+        some { backend := backend, expressions := expressions }) :
+    Functions.AllocationLowering.allocationLowerer.lower?
         planned.source planned.allocation =
       some expressions := by
   unfold loweringResult? allocationLowerer lowerAllocation? at hLower
-  by_cases hPlan :
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
-          planned.source =
-        some planned.allocation
-  · cases hInline :
-        Functions.Inline.Program.toExpressions? planned.source with
+  cases hGeneric :
+      Functions.AllocationLowering.allocationLowerer.lower?
+        planned.source planned.allocation with
     | none =>
-        simp [hPlan, hInline] at hLower
-    | some inlineExpressions =>
-        simp [hPlan, hInline] at hLower
-  · cases hScratch :
-        Functions.ScratchFrameSpill.allocationLowerer.lower?
-          planned.source planned.allocation with
-    | none =>
-        simp [hPlan, hScratch] at hLower
-    | some scratchExpressions =>
-        simp [hPlan, hScratch] at hLower
-        cases hLower
-        rfl
+        simp [hGeneric] at hLower
+    | some lowered =>
+        by_cases hScratch :
+            allocationUsesScratch planned.allocation = true
+        · simp [hGeneric, hScratch] at hLower
+          exact congrArg some hLower.2
+        · simp [hGeneric, hScratch] at hLower
+          exact congrArg some hLower.2
 
 theorem lowerWithAllocation?_eq (planned : PlannedProgram) :
     planned.lowerWithAllocation? = planned.lowerExpressions? := by
@@ -205,17 +182,11 @@ def inlineProcEntryShapes?
       some (entry :: tail)
 
 def procEntryShapesFromAllocation?
-    (source : Functions.Program)
-    (allocation : Locals.Allocation.ProgramPlan)
-    (expressions : Expressions.Program) :
+    (_source : Functions.Program)
+    (_allocation : Locals.Allocation.ProgramPlan)
+    (_expressions : Expressions.Program) :
     Option Structured.TypedCfgCompiler.ProcEntryShapes :=
-  if
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source =
-        some allocation
-  then
-    inlineProcEntryShapes? allocation expressions.procs
-  else
-    some []
+  some []
 
 def procEntryShapes? (planned : PlannedProgram)
     (expressions : Expressions.Program) :
@@ -400,7 +371,7 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
 
 def planInlineStack? (program : Program) : Option PlannedProgram := do
   let allocation ←
-    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+    Functions.MixedAllocation.allStackPlanner.plan?
       program.toFunctions
   some
     { source := program.toFunctions
@@ -412,7 +383,7 @@ theorem planInlineStack?_source
     planned.source = program.toFunctions := by
   unfold planInlineStack? at hPlan
   cases hAllocation :
-      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+      Functions.MixedAllocation.allStackPlanner.plan?
         program.toFunctions with
   | none =>
       simp [hAllocation] at hPlan
@@ -424,7 +395,7 @@ theorem planInlineStack?_source
 def planScratchFrame? (config : BackendConfig) (program : Program) :
     Option PlannedProgram := do
   let allocation ←
-    (Functions.ScratchFrameSpill.allocationPlanner
+    (Functions.MixedAllocation.allScratchPlanner
       config.scratchFrameWords).plan? program.toFunctions
   some
     { source := program.toFunctions
@@ -437,7 +408,7 @@ theorem planScratchFrame?_source
     planned.source = program.toFunctions := by
   unfold planScratchFrame? at hPlan
   cases hAllocation :
-      (Functions.ScratchFrameSpill.allocationPlanner
+      (Functions.MixedAllocation.allScratchPlanner
         config.scratchFrameWords).plan? program.toFunctions with
   | none =>
       simp [hAllocation] at hPlan

@@ -28214,3 +28214,33 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   `solc_validation` frontend limitation.
 - Fresh metrics: 79 modules, 96,108 Lean lines, 3,998 declarations, 66 broad
   compiler-variant declarations, and one outcome relation.
+
+## 2026-06-11 09:10 PDT - Shared mixed-allocation lowering
+
+- Added a canonical `MixedAllocation` planner for source-derived all-stack,
+  all-scratch, and mixed stack/scratch placements across main, function, and
+  lexical scopes. Successful planning now proves `ProgramPlan.WellFormed`.
+- Added one shared allocation-driven Functions-to-Locals lowerer with
+  conditional frame ABI, mixed parameter/return handling, scratch loads and
+  stores, call-target assignment, explicit local/scratch witnesses, and
+  allocated TypedCfg certification.
+- Routed both public inline and scratch fallback policies through the shared
+  lowerer; backend metadata is now derived from the accepted plan after
+  successful emission.
+- Fixed multi-result call assignment by consuming return targets with the
+  correct descending values-above count. Added a permanent two-return
+  allocated regression, plus mixed 17-local and mixed-call regressions.
+- Removed all public/proof/script references to the superseded
+  ScratchFrameSpill planner/lowerer APIs and updated the architecture guard and
+  developer documentation.
+- Verification passed: focused mixed modules and proof artifacts; allocator,
+  TypedCfg, proof, and frontend layer gates; architecture and proof-hole
+  checks; a serial 1,158-target `EvmCompiler.Verification` build; Aave v3 math
+  and interest smokes; all 11 Permit2 bytecode/call comparisons; and the full
+  bundled-Python importer/schema suite with 244 tests. Permit2
+  SignatureVerification again reports only the independent `solc_validation`
+  round-trip limitation.
+- Fresh source metrics: 81 modules and 96,972 Lean lines. The remaining
+  allocation gap is the stronger theorem and implementation interface for
+  every abstract well-formed plan, followed by splitting the reusable recipe
+  helpers out of `ScratchFrameSpill` and deleting its superseded emitter.

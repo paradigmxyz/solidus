@@ -165,12 +165,12 @@ if ! rg -q 'def lowerExpressions\?' EvmCompiler/Objects/Compiler.lean ||
     >&2
   failed=1
 fi
-if ! rg -q 'ScratchFrameSpill\.allocationPlanner' \
+if ! rg -q 'MixedAllocation\.allScratchPlanner' \
       EvmCompiler/Objects/Compiler.lean ||
-    ! rg -q 'ScratchFrameSpill\.allocationLowerer' \
+    ! rg -q 'AllocationLowering\.allocationLowerer' \
       EvmCompiler/Objects/Compiler.lean; then
   printf '%s\n\n' \
-    'The public scratch-frame route must use code-free scoped planning and allocation-driven single-pass lowering.' \
+    'The public scratch-frame route must use canonical scoped planning and the shared allocation-driven lowerer.' \
     >&2
   failed=1
 fi

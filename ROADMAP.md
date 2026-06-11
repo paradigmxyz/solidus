@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 08:36 PDT.
+Last updated: 2026-06-11 09:10 PDT.
 
 ## Objective
 
@@ -37,6 +37,10 @@ Implemented in this migration:
   canonical allocation, never an already emitted Expressions program;
 - one generic allocation lowerer, with an executable `LoweredFrom` certificate
   proving that the selected plan was consumed by the successful public route;
+- one canonical mixed-allocation planner and shared Functions-to-Locals
+  lowerer for all source-derived stack/scratch mixtures, including conditional
+  scratch-frame procedure ABI, mixed parameters/returns/call targets, and
+  allocation-witnessed TypedCfg output;
 - lowering strategy is now derived from the accepted allocation plan and
   returned with the emitted Expressions program; backend policy validates that
   result instead of selecting a separate emitter or asserting metadata;
@@ -118,9 +122,9 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Generalize allocation-derived lowering beyond the two retained all-stack or
-   all-scratch plan families and prove it once for arbitrary well-formed mixed
-   stack/scratch plans.
+1. Generalize allocation-derived lowering beyond canonical source-recipe plans
+   to every abstract well-formed plan and prove semantic preservation once for
+   that quantified interface.
 2. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
 3. Run the final frontend, benchmark, deletion, proof-hole, and architecture
@@ -129,7 +133,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 96,108 Lean lines across 79 modules, down by about 926K lines from the
+tree is 96,972 Lean lines across 81 modules, down by about 925K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -395,26 +399,25 @@ inductive LocalLocation
 - [x] Introduce a scoped `ProgramPlan` with unique main/function/lexical scope
   IDs and per-scope `Plan.WellFormed`.
 - [ ] Make one lowerer consume any well-formed plan.
-  The public generic lowerer consumes only Functions source plus a checked
-  scoped plan, derives the actual inline-stack or scratch-frame strategy, and
-  returns that strategy with the emitted Expressions program. Successful
-  artifacts carry an executable `LoweredFrom` certificate, and backend policy
-  only validates the returned strategy. The lowerer still accepts two
-  source-derived plan subsets rather than arbitrary canonical per-local
-  placements.
+  The public generic lowerer now consumes Functions source plus one checked
+  scoped plan for every source-derived mixed placement expressible by the
+  canonical allocation recipe, including all-stack and all-scratch extremes.
+  It derives the backend tag after emission, and successful artifacts carry an
+  executable `LoweredFrom` certificate. It still requires equality with the
+  source recipe rather than accepting every abstract `ProgramPlan.WellFormed`.
 - [x] Convert every retained allocation policy into a plan generator.
-  Ordinary stack and scratch-frame allocation have code-free shared-interface
-  planners with source-derived main/function/nested lexical bindings;
-  scratch-frame also computes exact frame sizing. Live-layout, adaptive-spill,
-  and CallAware policies were removed rather than preserved as parallel
-  compilers.
+  Ordinary stack, scratch-frame, and explicit mixed allocation use code-free
+  `MixedAllocation` planners with source-derived main/function/nested lexical
+  bindings and exact frame sizing. Live-layout, adaptive-spill, and CallAware
+  policies were removed rather than preserved as parallel compilers.
 - [x] Remove post-hoc plan projection from retained public artifacts. The
   scratch-frame route plans first, emits once, and rejects allocation drift;
   `PlannedProgram` has no backend discriminator that can disagree with the
   emitted strategy.
 - [ ] Prove one lowering theorem quantified over a well-formed plan.
-  Exact executable plan-consumption theorems exist for each public backend,
-  but semantic preservation for arbitrary well-formed plans does not.
+  Successful mixed planning now proves `ProgramPlan.WellFormed`, and the
+  public route proves exact shared-lowerer consumption, but semantic
+  preservation for arbitrary well-formed plans does not yet exist.
 - [x] Add deterministic planner selection/fallback policy.
 
 Stack-too-deep validation:
@@ -423,6 +426,10 @@ Stack-too-deep validation:
 - [ ] Former live-layout successes produce equivalent canonical plans.
 - [x] A 17-local public regression rejects inline planning and selects the
   source-derived scratch-frame backend.
+- [x] A 17-local mixed regression retains 14 stack locals and spills three
+  canonical scratch locations through the shared lowerer.
+- [x] Mixed procedure calls cover stack/scratch parameters, return values, and
+  multi-result target assignment through the allocated TypedCfg pass.
 - [x] Scratch-frame examples use source-derived root and lexical slot plans,
   reject insufficient frame bounds, lower in one emission pass, and reject
   altered allocations.
@@ -436,9 +443,11 @@ Cutover gate:
 Deletion gate:
 
 - Delete independent compiler frontends after their planners and proof
-  obligations have migrated. CallAware is deleted; ScratchFrameSpill now owns
-  the retained scratch planner/lowerer implementation rather than a public
-  compiler entry point.
+  obligations have migrated. CallAware is deleted, and no public route calls
+  the old ScratchFrameSpill planner/lowerer. `ScratchFrameSpill` still contains
+  the retained allocation-recipe and frame-code helpers plus its superseded
+  emitter; split those helpers and delete the emitter after the quantified
+  theorem no longer depends on that implementation corridor.
 
 ## Phase 5: Complete Allocated TypedCfg
 
@@ -714,14 +723,14 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Generalize the lowerer beyond the two retained source-derived allocation
-   families and prove lowering once for arbitrary well-formed mixed
-   stack/scratch plans.
+1. Generalize the shared lowerer from canonical source-recipe mixed plans to
+   arbitrary well-formed `ProgramPlan`s and prove the quantified lowering
+   theorem.
 2. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
-3. Split the remaining oversized proof/compiler modules, then rerun the final
-   verification, frontend, benchmark, deletion, proof-hole, and architecture
-   gates.
+3. Split and delete the superseded ScratchFrameSpill emitter and remaining
+   oversized proof/compiler modules, then rerun the final verification,
+   frontend, benchmark, deletion, proof-hole, and architecture gates.
 
 ## Progress Discipline
 
