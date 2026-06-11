@@ -146,7 +146,7 @@ Roadmap:
   for both `gas()` and `msize()` are checked.
 - [ ] Prove allocation-driven Functions-to-Locals/Expressions preservation
   under the same observation protocol.
-- [ ] Lift observer-aware semantics through Structured-to-TypedCfg using the
+- [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
 - [x] Prove exact observer-aware Assembly-step/assembled-target-block
   equivalence, including target `runN`, oracle remainder, errors, and the

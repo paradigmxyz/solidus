@@ -36,6 +36,43 @@ def runAt (instr : TypedCfg.Instr) (shape : Shape)
   let (state', trace') ← runState instr shape state trace
   .ok ((state', output), trace')
 
+theorem runAt_of_observer?_eq_none
+    {instr : TypedCfg.Instr} {shape : Shape}
+    {state : EVMState} {trace : Trace}
+    (hObserver : observer? instr = none) :
+    runAt instr shape state trace =
+      (TypedCfg.Instr.runAt instr shape state).map
+        (fun result => (result, trace)) := by
+  unfold runAt TypedCfg.Instr.runAt
+  cases hType : instr.type? shape with
+  | none =>
+      simp [hType, Except.map, Bind.bind, Except.bind]
+  | some output =>
+      cases hRun : TypedCfg.Instr.runState instr shape state with
+      | error err =>
+          simp [hType, runState, hRun, Except.map,
+            Bind.bind, Except.bind]
+      | ok final =>
+          have hHandler :
+              handler.afterInstr instr final trace =
+                .ok (final, trace) := by
+            change
+              (match observer? instr with
+              | some kind =>
+                  Assembly.ResourceObserver.applyOracleFromPostState
+                    kind final trace
+              | none => .ok (final, trace)) =
+                .ok (final, trace)
+            rw [hObserver]
+          have hObservedRun :
+              runState instr shape state trace =
+                .ok (final, trace) := by
+            unfold runState
+            rw [hRun]
+            exact hHandler
+          simp [hType, hRun, hObservedRun, Except.map,
+            Bind.bind, Except.bind]
+
 theorem runState_eq_effectSemantics
     (instr : TypedCfg.Instr) (shape : Shape)
     (state : EVMState) (trace : Trace) :
@@ -178,6 +215,35 @@ theorem runBody_eq_effectSemantics
         Instr.handler rest shape' state' trace') = _
   rw [← Instr.runAt_eq_effectSemantics]
   simp only [runBody_eq_effectSemantics]
+
+theorem runBody_of_forall_observer?_eq_none
+    {body : List TypedCfg.Instr} {shape : Shape}
+    {state : EVMState} {trace : Trace}
+    (hSilent :
+      ∀ instr, instr ∈ body → Instr.observer? instr = none) :
+    runBody body shape state trace =
+      (TypedCfg.Block.runBody body shape state).map
+        (fun result => (result, trace)) := by
+  induction body generalizing shape state trace with
+  | nil =>
+      rfl
+  | cons instr rest ih =>
+      rw [runBody_cons,
+        Instr.runAt_of_observer?_eq_none
+          (hSilent instr (by simp))]
+      unfold TypedCfg.Block.runBody
+      cases hRun : TypedCfg.Instr.runAt instr shape state with
+      | error err =>
+          simp [hRun, Except.map, Bind.bind, Except.bind]
+      | ok result =>
+          rcases result with ⟨state', shape'⟩
+          simp only [hRun, Except.map, Bind.bind, Except.bind]
+          rw [ih]
+          · cases hRest :
+                TypedCfg.Block.runBody rest shape' state' <;>
+              simp [hRest, Except.map, Bind.bind, Except.bind]
+          · intro restInstr hMem
+            exact hSilent restInstr (by simp [hMem])
 
 def run (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
     Except EVMException (TypedCfg.Outcome × Trace) := do

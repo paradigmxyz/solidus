@@ -59,6 +59,26 @@ def stateModel (transcript : Trace) :
     (stateModel transcript).withEVM state evm =
       state.withSource (state.source.withEVM evm) := rfl
 
+theorem stateModel_popReturn?_eq_some
+    {transcript : Trace} {state returned : State transcript}
+    {frame : Structured.ReturnDest}
+    (hPop :
+      (stateModel transcript).popReturn? state =
+        some (frame, returned)) :
+    state.source.popReturn? = some (frame, returned.source) ∧
+      returned.cursor = state.cursor := by
+  unfold stateModel at hPop
+  cases hSource : state.source.popReturn? with
+  | none =>
+      simp [hSource] at hPop
+  | some result =>
+      rcases result with ⟨sourceFrame, sourceReturned⟩
+      simp [hSource] at hPop
+      rcases hPop with ⟨rfl, rfl⟩
+      exact
+        ⟨by simpa using hSource,
+          by simp⟩
+
 def handler (transcript : Trace) :
     Structured.EffectSemantics.Handler (State transcript) where
   afterInstr instr state :=
@@ -83,6 +103,57 @@ def observed {transcript : Trace}
 def remaining {transcript : Trace}
     (outcome : Outcome (transcript := transcript)) : Trace :=
   outcome.state.remaining
+
+def Nonhalting {transcript : Trace}
+    (outcome : Outcome (transcript := transcript)) : Prop :=
+  match outcome.mode with
+  | .halt _ => False
+  | _ => True
+
+@[simp] theorem regular_state {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.regular state).state = state := rfl
+
+@[simp] theorem regular_mode {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.regular state).mode =
+      Structured.Mode.regular := rfl
+
+@[simp] theorem brk_state {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.brk state).state = state := rfl
+
+@[simp] theorem brk_mode {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.brk state).mode =
+      Structured.Mode.brk := rfl
+
+@[simp] theorem cont_state {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.cont state).state = state := rfl
+
+@[simp] theorem cont_mode {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.cont state).mode =
+      Structured.Mode.cont := rfl
+
+@[simp] theorem leave_state {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.leave state).state = state := rfl
+
+@[simp] theorem leave_mode {transcript : Trace}
+    (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.leave state).mode =
+      Structured.Mode.leave := rfl
+
+@[simp] theorem halt_state {transcript : Trace}
+    (kind : Assembly.HaltKind) (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.halt kind state).state = state := rfl
+
+@[simp] theorem halt_mode {transcript : Trace}
+    (kind : Assembly.HaltKind) (state : State transcript) :
+    (Structured.EffectSemantics.Outcome.halt kind state).mode =
+      Structured.Mode.halt kind := rfl
 
 theorem observed_eq_transcript_of_consumedExactly
     {transcript : Trace} {outcome : Outcome (transcript := transcript)}
@@ -220,6 +291,32 @@ theorem run_returns_eq
                                 rfl
               exact (ih hRun).trans hMiddle
 
+theorem runCondition_returns_eq
+    {transcript : Trace} {code : Structured.Code}
+    {state final : State transcript} {cond : Bool}
+    (hRun : runCondition code state = .ok (final, cond)) :
+    final.source.returns = state.source.returns := by
+  unfold runCondition Structured.EffectSemantics.Code.runCondition at hRun
+  cases hCode :
+      Structured.EffectSemantics.Code.run
+        (stateModel transcript) (handler transcript) code state with
+  | error err =>
+      simp [hCode, Bind.bind, Except.bind] at hRun
+  | ok middle =>
+      simp only [hCode, Bind.bind, Except.bind] at hRun
+      unfold Structured.EffectSemantics.Code.popCondition at hRun
+      cases hPop : middle.source.evm.stack.pop with
+      | none =>
+          simp [hPop] at hRun
+      | some result =>
+          rcases result with ⟨stack, value⟩
+          simp [hPop] at hRun
+          have hReturns :
+              middle.source.returns = state.source.returns :=
+            run_returns_eq (by simpa [run] using hCode)
+          rcases hRun with ⟨rfl, rfl⟩
+          exact hReturns
+
 end Code
 
 namespace Block
@@ -288,6 +385,255 @@ abbrev Eval {transcript : Trace} :=
     (stateModel transcript) (handler transcript)
 
 end For
+
+mutual
+
+  theorem Block.Eval.returns_eq_of_nonhalting
+      {transcript : Trace} {program : Structured.Program}
+      {fuel : Nat} {block : Structured.Block}
+      {state : State transcript}
+      {outcome : Outcome (transcript := transcript)}
+      (hEval : Block.Eval program fuel block state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.source.returns = state.source.returns := by
+    cases hEval with
+    | nil =>
+        rfl
+    | cons_regular hStmt hRest =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting
+            hRest hNonhalting).trans
+            (Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+              simp [Outcome.Nonhalting]))
+    | cons_brk hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_cont hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_leave hStmt =>
+        exact
+          Stmt.Eval.returns_eq_of_nonhalting hStmt (by
+            simp [Outcome.Nonhalting])
+    | cons_halt hStmt =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+  theorem Stmt.Eval.returns_eq_of_nonhalting
+      {transcript : Trace} {program : Structured.Program}
+      {fuel : Nat} {stmt : Structured.Stmt}
+      {state : State transcript}
+      {outcome : Outcome (transcript := transcript)}
+      (hEval : Stmt.Eval program fuel stmt state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.source.returns = state.source.returns := by
+    cases hEval with
+    | code hCode =>
+        exact Code.run_returns_eq hCode
+    | if_false hCond =>
+        exact Code.runCondition_returns_eq hCond
+    | if_true hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting
+            hBody hNonhalting).trans
+            (Code.runCondition_returns_eq hCond)
+    | switch_none hScrutinee hPop hSelect =>
+        simpa using Code.run_returns_eq hScrutinee
+    | switch_some hScrutinee hPop hStateAfterPop hSelect hBody =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody hNonhalting
+        exact
+          hBodyReturns.trans
+            (by
+              subst hStateAfterPop
+              simpa using Code.run_returns_eq hScrutinee)
+    | for_init_regular hInit hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting
+            hLoop hNonhalting).trans
+            (Block.Eval.returns_eq_of_nonhalting hInit (by
+              simp [Outcome.Nonhalting]))
+    | for_init_leave hInit =>
+        exact
+          Block.Eval.returns_eq_of_nonhalting hInit (by
+            simp [Outcome.Nonhalting])
+    | for_init_halt hInit =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | brk =>
+        rfl
+    | cont =>
+        rfl
+    | leave hReturns =>
+        rfl
+    | call_regular hLookup hSplit hBody hPop hAttach =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])
+        simp [stateModel] at hBodyReturns
+        obtain ⟨hSourcePop, hCursor⟩ :=
+          stateModel_popReturn?_eq_some hPop
+        unfold Structured.RunState.popReturn? at hSourcePop
+        rw [hBodyReturns] at hSourcePop
+        simp at hSourcePop
+        simpa using
+          (congrArg Structured.RunState.returns hSourcePop.2).symm
+    | call_leave hLookup hSplit hBody hPop hAttach =>
+        have hBodyReturns :=
+          Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])
+        simp [stateModel] at hBodyReturns
+        obtain ⟨hSourcePop, hCursor⟩ :=
+          stateModel_popReturn?_eq_some hPop
+        unfold Structured.RunState.popReturn? at hSourcePop
+        rw [hBodyReturns] at hSourcePop
+        simp at hSourcePop
+        simpa using
+          (congrArg Structured.RunState.returns hSourcePop.2).symm
+    | call_halt hLookup hSplit hBody =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | terminal hStep =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+  theorem For.Eval.returns_eq_of_nonhalting
+      {transcript : Trace} {program : Structured.Program}
+      {fuel : Nat} {cond : Structured.Code}
+      {post body : Structured.Block}
+      {state : State transcript}
+      {outcome : Outcome (transcript := transcript)}
+      (hEval : For.Eval program fuel cond post body state outcome)
+      (hNonhalting : outcome.Nonhalting) :
+      outcome.state.source.returns = state.source.returns := by
+    cases hEval with
+    | false hCond =>
+        exact Code.runCondition_returns_eq hCond
+    | body_brk hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])).trans
+            (Code.runCondition_returns_eq hCond)
+    | body_leave hCond hBody =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hBody (by
+            simp [Outcome.Nonhalting])).trans
+            (Code.runCondition_returns_eq hCond)
+    | body_halt hCond hBody =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | regular_post_regular hCond hBody hPost hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting
+            hLoop hNonhalting).trans
+            ((Block.Eval.returns_eq_of_nonhalting hPost (by
+              simp [Outcome.Nonhalting])).trans
+              ((Block.Eval.returns_eq_of_nonhalting hBody (by
+                simp [Outcome.Nonhalting])).trans
+                (Code.runCondition_returns_eq hCond)))
+    | cont_post_regular hCond hBody hPost hLoop =>
+        exact
+          (For.Eval.returns_eq_of_nonhalting
+            hLoop hNonhalting).trans
+            ((Block.Eval.returns_eq_of_nonhalting hPost (by
+              simp [Outcome.Nonhalting])).trans
+              ((Block.Eval.returns_eq_of_nonhalting hBody (by
+                simp [Outcome.Nonhalting])).trans
+                (Code.runCondition_returns_eq hCond)))
+    | regular_post_leave hCond hBody hPost =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hPost (by
+            simp [Outcome.Nonhalting])).trans
+            ((Block.Eval.returns_eq_of_nonhalting hBody (by
+              simp [Outcome.Nonhalting])).trans
+              (Code.runCondition_returns_eq hCond))
+    | cont_post_leave hCond hBody hPost =>
+        exact
+          (Block.Eval.returns_eq_of_nonhalting hPost (by
+            simp [Outcome.Nonhalting])).trans
+            ((Block.Eval.returns_eq_of_nonhalting hBody (by
+              simp [Outcome.Nonhalting])).trans
+              (Code.runCondition_returns_eq hCond))
+    | regular_post_halt hCond hBody hPost =>
+        simp [Outcome.Nonhalting] at hNonhalting
+    | cont_post_halt hCond hBody hPost =>
+        simp [Outcome.Nonhalting] at hNonhalting
+  termination_by fuel
+
+end
+
+namespace CallStack
+
+/--
+An observer-replayed procedure body that returns regularly pops exactly the
+source frame introduced at its call boundary.
+-/
+theorem poppedFrame_eq_of_regular_eval
+    {transcript : Trace} {program : Structured.Program}
+    {fuel retc : Nat} {body : Structured.Block}
+    {source bodyState returned : State transcript}
+    {args callerStack : EvmYul.Stack Word}
+    {frame : Structured.ReturnDest}
+    (hBody :
+      Block.Eval program fuel body
+        ((stateModel transcript).pushReturn
+          ((stateModel transcript).withEVM source
+            { source.source.evm with stack := args })
+          callerStack retc)
+        (Structured.EffectSemantics.Outcome.regular bodyState))
+    (hPop :
+      (stateModel transcript).popReturn? bodyState =
+        some (frame, returned)) :
+    frame = { callerStack := callerStack, retc := retc } := by
+  have hReturns :=
+    Block.Eval.returns_eq_of_nonhalting hBody (by
+      simp [Outcome.Nonhalting])
+  simp only [Outcome.regular_state, stateModel,
+    Simulation.ResourceReplay.State.withSource_source,
+    Structured.RunState.pushReturn_returns,
+    Structured.RunState.withEVM_returns] at hReturns
+  obtain ⟨hSourcePop, _hCursor⟩ :=
+    stateModel_popReturn?_eq_some hPop
+  unfold Structured.RunState.popReturn? at hSourcePop
+  rw [hReturns] at hSourcePop
+  simp at hSourcePop
+  exact hSourcePop.1.symm
+
+/--
+An observer-replayed procedure body that exits with `leave` pops the same
+source call frame as ordinary fallthrough.
+-/
+theorem poppedFrame_eq_of_leave_eval
+    {transcript : Trace} {program : Structured.Program}
+    {fuel retc : Nat} {body : Structured.Block}
+    {source bodyState returned : State transcript}
+    {args callerStack : EvmYul.Stack Word}
+    {frame : Structured.ReturnDest}
+    (hBody :
+      Block.Eval program fuel body
+        ((stateModel transcript).pushReturn
+          ((stateModel transcript).withEVM source
+            { source.source.evm with stack := args })
+          callerStack retc)
+        (Structured.EffectSemantics.Outcome.leave bodyState))
+    (hPop :
+      (stateModel transcript).popReturn? bodyState =
+        some (frame, returned)) :
+    frame = { callerStack := callerStack, retc := retc } := by
+  have hReturns :=
+    Block.Eval.returns_eq_of_nonhalting hBody (by
+      simp [Outcome.Nonhalting])
+  simp only [Outcome.leave_state, stateModel,
+    Simulation.ResourceReplay.State.withSource_source,
+    Structured.RunState.pushReturn_returns,
+    Structured.RunState.withEVM_returns] at hReturns
+  obtain ⟨hSourcePop, _hCursor⟩ :=
+    stateModel_popReturn?_eq_some hPop
+  unfold Structured.RunState.popReturn? at hSourcePop
+  rw [hReturns] at hSourcePop
+  simp at hSourcePop
+  exact hSourcePop.1.symm
+
+end CallStack
 
 namespace Proc
 

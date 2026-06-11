@@ -28571,3 +28571,25 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   scan, `git diff --check`, and focused axiom audit pass. The new leaves and
   observer frame-safety lookup depend only on `propext`, `Classical.choice`,
   and `Quot.sound`.
+
+- 2026-06-11 15:31:17 PDT `compaction-resume`: Resumed while completing the
+  pass-owned Structured-to-TypedCfg observer theorem. The source-semantic
+  return-stack invariant is present; next is its focused build and integration
+  into the mutual compiler-preservation proof.
+
+- 2026-06-11 15:36:52 PDT `proof`: Checked the complete forward
+  Structured-to-TypedCfg observer boundary. The fuel-founded block/statement
+  theorem covers code, conditionals, switches, loops, lexical control,
+  recursive procedure calls and dispatch, and terminal halts; whole-program
+  generation and artifact wrappers construct all compiler context internally.
+
+- 2026-06-11 15:36:52 PDT `architecture`: Moved switch, loop, and call compiler
+  decomposition facts into `Structured.TypedCfgCompilerFacts`; added
+  parameterized source-semantic return-stack and exact popped-frame theorems;
+  and kept the observer proof on the existing compiler, generated context,
+  shared effects, and outcome-indexed relation.
+
+- 2026-06-11 15:36:52 PDT `verification`: The 1,176-job verification root,
+  focused 1,129-job owner build, architecture guard, scoped no-hole scan,
+  `git diff --check`, and focused axiom audit pass. The complete forward
+  boundary depends only on `propext`, `Classical.choice`, and `Quot.sound`.

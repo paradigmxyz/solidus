@@ -1,4 +1,4 @@
-import EvmCompiler.Structured.TypedCfgCompiler
+import EvmCompiler.Structured.TypedCfgCompilerFacts
 import EvmCompiler.Simulation.Outcome
 import EvmCompiler.TypedCfg.Preservation
 
@@ -1892,6 +1892,22 @@ theorem to_regular_path
   Path.to_regular hPreserves.1
 
 end Preserves
+
+namespace Loop
+
+def bodyContinuations (endLabel postLabel : Assembly.Label)
+    (outer : Continuations) : Continuations where
+  regular := postLabel
+  breakLabel? := some endLabel
+  continueLabel? := some postLabel
+  leaveLabel? := outer.leaveLabel?
+
+def postContinuations (loopLabel : Assembly.Label)
+    (outer : Continuations) : Continuations where
+  regular := loopLabel
+  leaveLabel? := outer.leaveLabel?
+
+end Loop
 
 end OutcomeSimulation
 

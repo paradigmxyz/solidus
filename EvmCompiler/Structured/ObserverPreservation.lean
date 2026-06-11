@@ -9,6 +9,8 @@ namespace ObserverPreservation
 
 abbrev Trace := Assembly.ResourceTrace
 
+attribute [local simp] Assembly.PrimStep.idRun_eq
+
 def RunStateRel (left right : Structured.RunState) : Prop :=
   left.returns = right.returns ∧
     Assembly.SameRuntimeData left.evm right.evm
@@ -633,6 +635,59 @@ theorem eventually_of_run
   rw [hRun]
   cases outcome <;> rfl
 
+theorem eventually_pop_jump
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {input output : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result program)
+    (hMem :
+      { label := entry
+        input := input
+        body := [.pop]
+        output := output
+        term := .jump regular } ∈ result.blocks)
+    (hType : TypedCfg.Instr.type? .pop input = some output)
+    (hRel : StateRel source tokens target trace)
+    (hPop : source.source.evm.stack.pop = some (stack, value)) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.Eventually program
+        entry target trace (.jump regular targetFinal) trace ∧
+      StateRel
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack }))
+        tokens targetFinal trace := by
+  rcases
+      TypedCfgPreservation.StateRel.pop
+        (shape := input) hRel.1 hPop with
+    ⟨targetFinal, hRunPop, hFinalRel⟩
+  have hPlainRunAt :
+      TypedCfg.Instr.runAt .pop input target =
+        .ok (targetFinal, output) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hType]
+    simp [hRunPop, Bind.bind, Except.bind]
+  have hObserverRunAt :
+      TypedCfg.ObserverSemantics.Instr.runAt
+          .pop input target trace =
+        .ok ((targetFinal, output), trace) := by
+    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+      (by rfl), hPlainRunAt]
+    rfl
+  refine
+    ⟨targetFinal, ?_,
+      ⟨by simpa using hFinalRel, hRel.2⟩⟩
+  apply eventually_of_run hBlocks hMem
+  unfold TypedCfg.ObserverSemantics.Block.run
+  rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+    hObserverRunAt]
+  simp [TypedCfg.ObserverSemantics.Block.runBody_nil,
+    TypedCfg.Block.runTerm, Bind.bind, Except.bind]
+
 end BlocksInProgram
 
 def RegularExecution (result : TypedCfgCompiler.Result)
@@ -913,6 +968,83 @@ def PathPreserves {transcript : Trace}
         StateRel final tokens targetFinal traceFinal
 
 namespace Path
+
+theorem to_regular
+    {transcript : Trace} {program : TypedCfg.Program}
+    {entry : Assembly.Label} {continuations : Continuations}
+    {source final : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hPath :
+      Path program entry continuations source
+        (Structured.OutcomeT.regular final) tokens) :
+    PathPreserves program entry continuations.regular
+      source final tokens := by
+  intro target trace hRel
+  rcases hPath target trace hRel with
+    ⟨targetOutcome, traceFinal, hEventually, hOutcomeRel⟩
+  rcases Rel.regular_elim hOutcomeRel with
+    ⟨targetFinal, rfl, hFinalRel⟩
+  exact ⟨targetFinal, traceFinal, hEventually, hFinalRel⟩
+
+theorem to_brk
+    {transcript : Trace} {program : TypedCfg.Program}
+    {entry targetLabel : Assembly.Label}
+    {continuations : Continuations}
+    {source final : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : continuations.breakLabel? = some targetLabel)
+    (hPath :
+      Path program entry continuations source
+        (Structured.OutcomeT.brk final) tokens) :
+    PathPreserves program entry targetLabel source final tokens := by
+  intro target trace hRel
+  rcases hPath target trace hRel with
+    ⟨targetOutcome, traceFinal, hEventually, hOutcomeRel⟩
+  rcases Rel.brk_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  rw [hTarget] at hLabel
+  cases hLabel
+  exact ⟨targetFinal, traceFinal, hEventually, hFinalRel⟩
+
+theorem to_cont
+    {transcript : Trace} {program : TypedCfg.Program}
+    {entry targetLabel : Assembly.Label}
+    {continuations : Continuations}
+    {source final : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : continuations.continueLabel? = some targetLabel)
+    (hPath :
+      Path program entry continuations source
+        (Structured.OutcomeT.cont final) tokens) :
+    PathPreserves program entry targetLabel source final tokens := by
+  intro target trace hRel
+  rcases hPath target trace hRel with
+    ⟨targetOutcome, traceFinal, hEventually, hOutcomeRel⟩
+  rcases Rel.cont_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  rw [hTarget] at hLabel
+  cases hLabel
+  exact ⟨targetFinal, traceFinal, hEventually, hFinalRel⟩
+
+theorem to_leave
+    {transcript : Trace} {program : TypedCfg.Program}
+    {entry targetLabel : Assembly.Label}
+    {continuations : Continuations}
+    {source final : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : continuations.leaveLabel? = some targetLabel)
+    (hPath :
+      Path program entry continuations source
+        (Structured.OutcomeT.leave final) tokens) :
+    PathPreserves program entry targetLabel source final tokens := by
+  intro target trace hRel
+  rcases hPath target trace hRel with
+    ⟨targetOutcome, traceFinal, hEventually, hOutcomeRel⟩
+  rcases Rel.leave_elim hOutcomeRel with
+    ⟨label, targetFinal, hLabel, rfl, hFinalRel⟩
+  rw [hTarget] at hLabel
+  cases hLabel
+  exact ⟨targetFinal, traceFinal, hEventually, hFinalRel⟩
 
 theorem regular_of_path
     {transcript : Trace} {program : TypedCfg.Program}
@@ -1777,6 +1909,1758 @@ theorem outcome_terminal_of_compileStmtFuel?
 
 end Stmt
 
+namespace Switch
+
+abbrev testOutput :=
+  TypedCfgCompilerFacts.Switch.testOutput
+
+abbrev casesEntryLabel :=
+  TypedCfgCompilerFacts.Switch.casesEntryLabel
+
+abbrev nextTestLabel :=
+  TypedCfgCompilerFacts.Switch.nextTestLabel
+
+theorem testBody_type
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue : Word}
+    (hHead : valueShape.slots.head? = some slot) :
+    TypedCfg.Block.bodyType?
+        [.dup 0, .push caseValue, .prim .eq] valueShape =
+      some (testOutput valueShape) :=
+  TypedCfgCompilerFacts.Switch.testBody_type hHead
+
+theorem eventually_test
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {testLabel caseLabel nextTest : Assembly.Label}
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue value : Word}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    {stack : EvmYul.Stack Word}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := testLabel
+        input := valueShape
+        body := [.dup 0, .push caseValue, .prim .eq]
+        output := testOutput valueShape
+        term := .jumpi caseLabel nextTest } ∈ result.blocks)
+    (hHead : valueShape.slots.head? = some slot)
+    (hRel : StateRel source tokens target trace)
+    (hPop : source.source.evm.stack.pop = some (stack, value)) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.Eventually cfg
+        testLabel target trace
+        (.jump
+          (if caseValue = value then caseLabel else nextTest)
+          targetFinal)
+        trace ∧
+      StateRel source tokens targetFinal trace := by
+  let dupShape : TypedCfg.Shape :=
+    { valueShape with slots := slot :: valueShape.slots }
+  let pushShape : TypedCfg.Shape :=
+    { dupShape with slots := .literal caseValue :: dupShape.slots }
+  have hGet :
+      valueShape.get? 0 = some slot := by
+    rw [TypedCfg.Shape.get?, ← List.head?_eq_getElem?]
+    exact hHead
+  have hDupType :
+      TypedCfg.Instr.type? (.dup 0) valueShape = some dupShape := by
+    simp [TypedCfg.Instr.type?, hGet, dupShape]
+  have hPushType :
+      TypedCfg.Instr.type? (.push caseValue) dupShape =
+        some pushShape := by
+    rfl
+  have hEqType :
+      TypedCfg.Instr.type? (.prim .eq) pushShape =
+        some (testOutput valueShape) := by
+    have hTestType :=
+      TypedCfgCompilerFacts.Switch.testBody_type
+        (caseValue := caseValue) hHead
+    simp [TypedCfg.Block.bodyType?, hDupType, hPushType] at hTestType
+    exact hTestType
+  rcases
+      TypedCfgPreservation.StateRel.stackView_of_pop
+        hRel.1 hPop with
+    ⟨realizedTail, _hTailRealize, hTargetStack⟩
+  let afterDup :=
+    target.replaceStackAndIncrPC
+      (value :: value :: realizedTail)
+  let afterPush :=
+    afterDup.replaceStackAndIncrPC
+      (caseValue :: value :: value :: realizedTail) (pcΔ := 33)
+  let afterEq :=
+    afterPush.replaceStackAndIncrPC
+      (EvmYul.UInt256.eq caseValue value :: value :: realizedTail)
+  let targetFinal : EVMState :=
+    { afterEq with stack := value :: realizedTail }
+  have hFinalSame :
+      Assembly.SameRuntimeData targetFinal target := by
+    cases target
+    simp [targetFinal, afterEq, afterPush, afterDup,
+      Assembly.SameRuntimeData, Assembly.eraseRuntimeControl,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] at hTargetStack ⊢
+    exact hTargetStack.symm
+  have hDupRun :
+      TypedCfg.Instr.runAt (.dup 0) valueShape target =
+        .ok (afterDup, dupShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hDupType]
+    simp [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      EvmYul.dup, hTargetStack, afterDup,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hPushRun :
+      TypedCfg.Instr.runAt (.push caseValue) dupShape afterDup =
+        .ok (afterPush, pushShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hPushType]
+    simp [TypedCfg.Instr.runState, afterPush, afterDup, EvmYul.Stack.push,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hEqRun :
+      TypedCfg.Instr.runAt (.prim .eq) pushShape afterPush =
+        .ok (afterEq, testOutput valueShape) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hEqType]
+    simp [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      EvmYul.EVM.execBinOp, EvmYul.Stack.pop2, EvmYul.Stack.push,
+      afterPush, afterDup, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Bind.bind, Except.bind]
+  have hDupObserver :
+      TypedCfg.ObserverSemantics.Instr.runAt
+          (.dup 0) valueShape target trace =
+        .ok ((afterDup, dupShape), trace) := by
+    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+      (by rfl), hDupRun]
+    rfl
+  have hPushObserver :
+      TypedCfg.ObserverSemantics.Instr.runAt
+          (.push caseValue) dupShape afterDup trace =
+        .ok ((afterPush, pushShape), trace) := by
+    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+      (by rfl), hPushRun]
+    rfl
+  have hEqObserver :
+      TypedCfg.ObserverSemantics.Instr.runAt
+          (.prim .eq) pushShape afterPush trace =
+        .ok ((afterEq, testOutput valueShape), trace) := by
+    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+      (by rfl), hEqRun]
+    rfl
+  have hBodyRun :
+      TypedCfg.ObserverSemantics.Block.runBody
+          [.dup 0, .push caseValue, .prim .eq]
+          valueShape target trace =
+        .ok ((afterEq, testOutput valueShape), trace) := by
+    rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+      hDupObserver]
+    simp only [Bind.bind, Except.bind]
+    rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+      hPushObserver]
+    simp only [Bind.bind, Except.bind]
+    rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+      hEqObserver]
+    rfl
+  refine
+    ⟨targetFinal, ?_,
+      ⟨TypedCfgPreservation.StateRel.targetCongr
+          hFinalSame hRel.1,
+        hRel.2⟩⟩
+  apply BlocksInProgram.eventually_of_run hBlocks hMem
+  simp only [TypedCfg.ObserverSemantics.Block.run, hBodyRun,
+    Bind.bind, Except.bind, if_pos rfl]
+  have hOneNeZero :
+      EvmYul.UInt256.ofNat 1 ≠ EvmYul.UInt256.ofNat 0 := by
+    decide
+  by_cases hEq : caseValue = value
+  · simp [TypedCfg.Block.runTerm, EvmYul.Stack.pop,
+      EvmYul.UInt256.eq, hEq, hOneNeZero,
+      targetFinal, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+  · simp [TypedCfg.Block.runTerm, EvmYul.Stack.pop,
+      EvmYul.UInt256.eq, hEq,
+      targetFinal, afterEq,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
+
+theorem outcome_cases_some_of_compileCasesFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {selected : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {tokens : List Word}
+    {continuations : OutcomeSimulation.Continuations}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+        base supply idx valueShape bodyShape regular =
+      some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody =
+        some selected)
+    (hCasePath :
+      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            caseSupply (.generated base (2000 + caseIdx))
+            bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          bodyResult globalCalls →
+        OutcomeSimulation.Path cfg
+          (.generated base (2000 + caseIdx)) continuations
+          (source.withSource
+            (source.source.withEVM
+              { source.source.evm with stack := stack }))
+          outcome tokens)
+    (hDefaultPath :
+      defaultBody = some selected →
+        OutcomeSimulation.Path cfg (LabelSupply.label base 1)
+          continuations source outcome tokens) :
+    OutcomeSimulation.Path cfg (casesEntryLabel base idx cases)
+      continuations source outcome tokens := by
+  induction cases generalizing compilerFuel supply idx result selected with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          have hDefault : defaultBody = some selected := by
+            simpa [Structured.Switch.select] using hSelect
+          simpa [casesEntryLabel] using hDefaultPath hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ bodyCompilerFuel =>
+          have hPopBodyType :
+              TypedCfg.Block.bodyType? [.pop] valueShape =
+                some bodyShape := by
+            simp [TypedCfg.Block.bodyType?, hPopType]
+          unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+          simp only at hCompile
+          simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+            hPopBodyType, Bind.bind, Option.bind] at hCompile
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+                supply (.generated base (2000 + idx))
+                bodyShape regular with
+          | none =>
+              simp [hBody] at hCompile
+          | some bodyResult =>
+              simp only [hBody] at hCompile
+              cases hTail :
+                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                    base bodyResult.next (idx + 1)
+                    valueShape bodyShape regular with
+              | none =>
+                  simp [hTail] at hCompile
+              | some tail =>
+                  simp only [hTail] at hCompile
+                  cases hCompile
+                  have hBodyBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        bodyResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hTailBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        tail cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hBodyCalls :
+                      TypedCfgPreservation.CallsInProgram
+                        bodyResult globalCalls := by
+                    intro site hMem
+                    apply hCalls site
+                    simp [hMem]
+                  have hTailCalls :
+                      TypedCfgPreservation.CallsInProgram
+                        tail globalCalls := by
+                    intro site hMem
+                    apply hCalls site
+                    simp [hMem]
+                  by_cases hEq : caseValue = value
+                  · have hSelected : body = selected := by
+                      simpa [Structured.Switch.select, hEq] using hSelect
+                    subst selected
+                    intro target trace hRel
+                    rcases
+                        eventually_test
+                          (testLabel :=
+                            TypedCfgCompiler.switchTestLabel base idx)
+                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (nextTest := nextTestLabel base idx rest)
+                          (caseValue := caseValue) (value := value)
+                          hBlocks (by left) hHead hRel hPop with
+                      ⟨targetAfterTest, hTestEventually,
+                        hAfterTestRel⟩
+                    have hSelectedTest :
+                        TypedCfg.ObserverSemantics.Program.Eventually cfg
+                          (TypedCfgCompiler.switchTestLabel base idx)
+                          target trace
+                          (.jump (LabelSupply.label base (idx + 2))
+                            targetAfterTest)
+                          trace := by
+                      simpa [hEq] using hTestEventually
+                    rcases
+                        BlocksInProgram.eventually_pop_jump
+                          (entry := LabelSupply.label base (idx + 2))
+                          (regular := .generated base (2000 + idx))
+                          (input := valueShape) (output := bodyShape)
+                          hBlocks (by simp) hPopType
+                          hAfterTestRel hPop with
+                      ⟨targetAfterPop, hEntryEventually,
+                        hAfterPopRel⟩
+                    rcases
+                        hCasePath hBody hBodyBlocks hBodyCalls
+                          targetAfterPop trace hAfterPopRel with
+                      ⟨targetOutcome, traceFinal,
+                        hBodyEventually, hOutcomeRel⟩
+                    exact
+                      ⟨targetOutcome, traceFinal,
+                        TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                          hSelectedTest
+                          (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                            hEntryEventually hBodyEventually),
+                        hOutcomeRel⟩
+                  · have hTailSelect :
+                        Structured.Switch.select value rest defaultBody =
+                          some selected := by
+                      simpa [Structured.Switch.select, hEq] using hSelect
+                    have hTailPath :=
+                      ih hTail hTailBlocks hTailCalls hTailSelect
+                        hCasePath hDefaultPath
+                    intro target trace hRel
+                    rcases
+                        eventually_test
+                          (testLabel :=
+                            TypedCfgCompiler.switchTestLabel base idx)
+                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (nextTest := nextTestLabel base idx rest)
+                          (caseValue := caseValue) (value := value)
+                          hBlocks (by left) hHead hRel hPop with
+                      ⟨targetAfterTest, hTestEventually,
+                        hAfterTestRel⟩
+                    have hSkipped :
+                        TypedCfg.ObserverSemantics.Program.Eventually cfg
+                          (TypedCfgCompiler.switchTestLabel base idx)
+                          target trace
+                          (.jump (nextTestLabel base idx rest)
+                            targetAfterTest)
+                          trace := by
+                      simpa [hEq] using hTestEventually
+                    rcases
+                        hTailPath targetAfterTest trace hAfterTestRel with
+                      ⟨targetOutcome, traceFinal,
+                        hTailEventually, hOutcomeRel⟩
+                    exact
+                      ⟨targetOutcome, traceFinal,
+                        TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                          hSkipped hTailEventually,
+                        hOutcomeRel⟩
+
+theorem outcome_default_some_of_compileDefaultFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {body : Structured.Block} {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {tokens : List Word}
+    {continuations : OutcomeSimulation.Continuations}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          (some body) ctx supply entry valueShape bodyShape regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.source.evm.stack.pop = some (stack, value))
+    (hBodyPath :
+      ∀ {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+            (supply + 1) (.generated supply 2000)
+            bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          bodyResult globalCalls →
+        OutcomeSimulation.Path cfg (.generated supply 2000)
+          continuations
+          (source.withSource
+            (source.source.withEVM
+              { source.source.evm with stack := stack }))
+          outcome tokens) :
+    OutcomeSimulation.Path cfg entry continuations
+      source outcome tokens := by
+  unfold TypedCfgCompiler.compileDefaultFuel? at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        (supply + 1) (.generated supply 2000)
+        bodyShape regular with
+  | none =>
+      simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?,
+        hType, hBody] at hCompile
+  | some bodyResult =>
+      simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?,
+        hType, hBody] at hCompile
+      cases hCompile
+      have hBodyBlocks :
+          TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+        intro block hMem
+        apply hBlocks block
+        simp [hMem]
+      have hBodyCalls :
+          TypedCfgPreservation.CallsInProgram
+            bodyResult globalCalls := by
+        intro site hMem
+        apply hCalls site
+        simpa using hMem
+      intro target trace hRel
+      rcases
+          BlocksInProgram.eventually_pop_jump
+            (entry := entry) (regular := .generated supply 2000)
+            (input := valueShape) (output := bodyShape)
+            hBlocks (by simp) hType hRel hPop with
+        ⟨targetAfterPop, hEntryEventually, hAfterPopRel⟩
+      rcases
+          hBodyPath hBody hBodyBlocks hBodyCalls
+            targetAfterPop trace hAfterPopRel with
+        ⟨targetOutcome, traceFinal,
+          hBodyEventually, hOutcomeRel⟩
+      exact
+        ⟨targetOutcome, traceFinal,
+          TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+            hEntryEventually hBodyEventually,
+          hOutcomeRel⟩
+
+theorem outcome_default_none_of_compileDefaultFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {continuations : OutcomeSimulation.Continuations}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          none ctx supply entry valueShape bodyShape regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.source.evm.stack.pop = some (stack, value))
+    (hRegular : continuations.regular = regular) :
+    OutcomeSimulation.Path cfg entry continuations source
+      (Structured.OutcomeT.regular
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack })))
+      tokens := by
+  unfold TypedCfgCompiler.compileDefaultFuel? at hCompile
+  simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?,
+    hType] at hCompile
+  cases hCompile
+  intro target trace hRel
+  rcases
+      BlocksInProgram.eventually_pop_jump
+        (entry := entry) (regular := regular)
+        (input := valueShape) (output := bodyShape)
+        hBlocks (by simp) hType hRel hPop with
+    ⟨targetFinal, hEventually, hFinalRel⟩
+  exact
+    ⟨.jump regular targetFinal, trace, hEventually,
+      OutcomeSimulation.Rel.regular_iff.mpr
+        ⟨hRegular.symm, hFinalRel⟩⟩
+
+theorem outcome_cases_none_of_compileCasesFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {continuations : OutcomeSimulation.Continuations}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+        base supply idx valueShape bodyShape regular =
+      some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody = none)
+    (hDefaultPath :
+      defaultBody = none →
+        OutcomeSimulation.Path cfg (LabelSupply.label base 1)
+          continuations source
+          (Structured.OutcomeT.regular
+            (source.withSource
+              (source.source.withEVM
+                { source.source.evm with stack := stack })))
+          tokens) :
+    OutcomeSimulation.Path cfg (casesEntryLabel base idx cases)
+      continuations source
+      (Structured.OutcomeT.regular
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack })))
+      tokens := by
+  induction cases generalizing compilerFuel supply idx result with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          have hDefault : defaultBody = none := by
+            simpa [Structured.Switch.select] using hSelect
+          simpa [casesEntryLabel] using hDefaultPath hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ bodyCompilerFuel =>
+          have hPopBodyType :
+              TypedCfg.Block.bodyType? [.pop] valueShape =
+                some bodyShape := by
+            simp [TypedCfg.Block.bodyType?, hPopType]
+          unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+          simp only at hCompile
+          simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+            hPopBodyType, Bind.bind, Option.bind] at hCompile
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+                supply (.generated base (2000 + idx))
+                bodyShape regular with
+          | none =>
+              simp [hBody] at hCompile
+          | some bodyResult =>
+              simp only [hBody] at hCompile
+              cases hTail :
+                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                    base bodyResult.next (idx + 1)
+                    valueShape bodyShape regular with
+              | none =>
+                  simp [hTail] at hCompile
+              | some tail =>
+                  simp only [hTail] at hCompile
+                  cases hCompile
+                  have hTailBlocks :
+                      TypedCfgPreservation.BlocksInProgram tail cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  by_cases hEq : caseValue = value
+                  · simp [Structured.Switch.select, hEq] at hSelect
+                  · have hTailSelect :
+                        Structured.Switch.select value rest defaultBody =
+                          none := by
+                      simpa [Structured.Switch.select, hEq] using hSelect
+                    have hTailPath :=
+                      ih hTail hTailBlocks hTailSelect
+                    intro target trace hRel
+                    rcases
+                        eventually_test
+                          (testLabel :=
+                            TypedCfgCompiler.switchTestLabel base idx)
+                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (nextTest := nextTestLabel base idx rest)
+                          (caseValue := caseValue) (value := value)
+                          hBlocks (by left) hHead hRel hPop with
+                      ⟨targetAfterTest, hTestEventually,
+                        hAfterTestRel⟩
+                    have hSkipped :
+                        TypedCfg.ObserverSemantics.Program.Eventually cfg
+                          (TypedCfgCompiler.switchTestLabel base idx)
+                          target trace
+                          (.jump (nextTestLabel base idx rest)
+                            targetAfterTest)
+                          trace := by
+                      simpa [hEq] using hTestEventually
+                    rcases
+                        hTailPath targetAfterTest trace hAfterTestRel with
+                      ⟨targetOutcome, traceFinal,
+                        hTailEventually, hOutcomeRel⟩
+                    exact
+                      ⟨targetOutcome, traceFinal,
+                        TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                          hSkipped hTailEventually,
+                        hOutcomeRel⟩
+
+theorem outcome_some_of_compileStmtFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {selected : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source afterScrutinee : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hFrameSafe : ObserverSemantics.Code.FrameSafe scrutinee)
+    (hScrutinee :
+      ObserverSemantics.Code.run scrutinee source =
+        .ok afterScrutinee)
+    (hPop :
+      afterScrutinee.source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody =
+        some selected)
+    (hSelectedPath :
+      ∀ {bodyCompilerFuel bodySupply : Nat}
+        {bodyEntry : Assembly.Label} {bodyShape : TypedCfg.Shape}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            bodySupply bodyEntry bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          bodyResult globalCalls →
+        OutcomeSimulation.Path cfg bodyEntry
+          (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+            ctx regular)
+          (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack }))
+          outcome tokens) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source outcome tokens := by
+  have hFallthrough :=
+    TypedCfgCompilerFacts.Switch.fallthrough_of_compileStmtFuel?_switch
+      hCompile
+  refine ⟨?_, fun _hRegular => hFallthrough⟩
+  intro target trace hRel
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+  | none =>
+      simp [hType] at hCompile
+  | some valueShape =>
+      rcases
+          StateRel.runCode hType hFrameSafe hScrutinee hRel with
+        ⟨targetAfterScrutinee, traceAfterScrutinee,
+          hTargetScrutinee, hAfterScrutineeRel⟩
+      cases hValue : valueShape.slots.head? with
+      | none =>
+          simp [hType, hValue] at hCompile
+      | some valueSlot =>
+          let bodyShape : TypedCfg.Shape :=
+            { valueShape with slots := valueShape.slots.tail }
+          have hPopType :
+              TypedCfg.Instr.type? .pop valueShape =
+                some bodyShape := by
+            cases valueShape with
+            | mk slots tail =>
+                cases slots with
+                | nil =>
+                    simp at hValue
+                | cons slot rest =>
+                    simp [bodyShape, TypedCfg.Instr.type?]
+          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+            Bind.bind, Option.bind] at hCompile
+          cases hCasesCompileRaw :
+              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                cases ctx supply (supply + 1) 0 valueShape
+                { valueShape with slots := valueShape.slots.tail }
+                regular with
+          | none =>
+              simp [hCasesCompileRaw] at hCompile
+          | some caseResult =>
+              simp only [hCasesCompileRaw] at hCompile
+              have hCasesCompile :
+                  TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                      cases ctx supply (supply + 1) 0
+                      valueShape bodyShape regular =
+                    some caseResult := by
+                simpa [bodyShape] using hCasesCompileRaw
+              cases hDefaultCompileRaw :
+                  TypedCfgCompiler.compileDefaultFuel?
+                    (compilerFuel + 1) defaultBody ctx
+                    caseResult.next (LabelSupply.label supply 1)
+                    valueShape
+                    { valueShape with slots := valueShape.slots.tail }
+                    regular with
+              | none =>
+                  simp [hDefaultCompileRaw] at hCompile
+              | some defaultResult =>
+                  simp only [hDefaultCompileRaw] at hCompile
+                  have hDefaultCompile :
+                      TypedCfgCompiler.compileDefaultFuel?
+                          (compilerFuel + 1) defaultBody ctx
+                          caseResult.next
+                          (LabelSupply.label supply 1)
+                          valueShape bodyShape regular =
+                        some defaultResult := by
+                    simpa [bodyShape] using hDefaultCompileRaw
+                  cases hCompile
+                  have hCaseBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        caseResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDefaultBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        defaultResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hCaseCalls :
+                      TypedCfgPreservation.CallsInProgram
+                        caseResult globalCalls := by
+                    intro site hMem
+                    apply hCalls site
+                    simp [hMem]
+                  have hDefaultCalls :
+                      TypedCfgPreservation.CallsInProgram
+                        defaultResult globalCalls := by
+                    intro site hMem
+                    apply hCalls site
+                    simp [hMem]
+                  have hDispatch :
+                      OutcomeSimulation.Path cfg
+                        (casesEntryLabel supply 0 cases)
+                        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                          ctx regular)
+                        afterScrutinee outcome tokens := by
+                    apply outcome_cases_some_of_compileCasesFuel?
+                      hCasesCompile hCaseBlocks hCaseCalls
+                      hValue hPopType hPop hSelect
+                    · intro bodyCompilerFuel caseSupply caseIdx
+                        bodyResult hBodyCompile hBodyBlocks hBodyCalls
+                      exact
+                        hSelectedPath hBodyCompile hBodyBlocks hBodyCalls
+                    · intro hDefault
+                      have hDefaultSelected :
+                          TypedCfgCompiler.compileDefaultFuel?
+                              (compilerFuel + 1) (some selected) ctx
+                              caseResult.next
+                              (LabelSupply.label supply 1)
+                              valueShape bodyShape regular =
+                            some defaultResult := by
+                        simpa [hDefault] using hDefaultCompile
+                      apply outcome_default_some_of_compileDefaultFuel?
+                        hDefaultSelected hDefaultBlocks hDefaultCalls
+                        hPopType hPop
+                      intro bodyResult hBodyCompile hBodyBlocks
+                        hBodyCalls
+                      exact
+                        hSelectedPath hBodyCompile hBodyBlocks hBodyCalls
+                  let firstTest := casesEntryLabel supply 0 cases
+                  let head : TypedCfg.Block :=
+                    { label := entry
+                      input := input
+                      body := TypedCfgCompiler.Code.toCfg scrutinee
+                      output := valueShape
+                      term := .jump firstTest }
+                  have hHeadRun :
+                      TypedCfg.ObserverSemantics.Block.run
+                          head target trace =
+                        .ok
+                          (.jump firstTest targetAfterScrutinee,
+                            traceAfterScrutinee) := by
+                    unfold TypedCfg.ObserverSemantics.Block.run
+                    rw [hTargetScrutinee]
+                    simp [head, TypedCfg.Block.runTerm,
+                      Bind.bind, Except.bind]
+                  have hHeadEventually :
+                      TypedCfg.ObserverSemantics.Program.Eventually cfg
+                        entry target trace
+                        (.jump firstTest targetAfterScrutinee)
+                        traceAfterScrutinee := by
+                    apply BlocksInProgram.eventually_of_run hBlocks
+                      (block := head)
+                    · simp only [head, firstTest, casesEntryLabel,
+                        List.mem_cons]
+                      left
+                    · exact hHeadRun
+                  rcases
+                      hDispatch targetAfterScrutinee
+                        traceAfterScrutinee hAfterScrutineeRel with
+                    ⟨targetOutcome, traceFinal,
+                      hDispatchEventually, hOutcomeRel⟩
+                  exact
+                    ⟨targetOutcome, traceFinal,
+                      TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                        hHeadEventually hDispatchEventually,
+                      hOutcomeRel⟩
+
+theorem outcome_none_of_compileStmtFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source afterScrutinee : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFrameSafe : ObserverSemantics.Code.FrameSafe scrutinee)
+    (hScrutinee :
+      ObserverSemantics.Code.run scrutinee source =
+        .ok afterScrutinee)
+    (hPop :
+      afterScrutinee.source.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Structured.Switch.select value cases defaultBody = none) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source
+      (Structured.OutcomeT.regular
+        (afterScrutinee.withSource
+          (afterScrutinee.source.withEVM
+            { afterScrutinee.source.evm with stack := stack })))
+      tokens := by
+  have hFallthrough :=
+    TypedCfgCompilerFacts.Switch.fallthrough_of_compileStmtFuel?_switch
+      hCompile
+  refine ⟨?_, fun _hRegular => hFallthrough⟩
+  intro target trace hRel
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+  | none =>
+      simp [hType] at hCompile
+  | some valueShape =>
+      rcases
+          StateRel.runCode hType hFrameSafe hScrutinee hRel with
+        ⟨targetAfterScrutinee, traceAfterScrutinee,
+          hTargetScrutinee, hAfterScrutineeRel⟩
+      cases hValue : valueShape.slots.head? with
+      | none =>
+          simp [hType, hValue] at hCompile
+      | some valueSlot =>
+          let bodyShape : TypedCfg.Shape :=
+            { valueShape with slots := valueShape.slots.tail }
+          have hPopType :
+              TypedCfg.Instr.type? .pop valueShape =
+                some bodyShape := by
+            cases valueShape with
+            | mk slots tail =>
+                cases slots with
+                | nil =>
+                    simp at hValue
+                | cons slot rest =>
+                    simp [bodyShape, TypedCfg.Instr.type?]
+          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+            Bind.bind, Option.bind] at hCompile
+          cases hCasesCompileRaw :
+              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                cases ctx supply (supply + 1) 0 valueShape
+                { valueShape with slots := valueShape.slots.tail }
+                regular with
+          | none =>
+              simp [hCasesCompileRaw] at hCompile
+          | some caseResult =>
+              simp only [hCasesCompileRaw] at hCompile
+              have hCasesCompile :
+                  TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                      cases ctx supply (supply + 1) 0
+                      valueShape bodyShape regular =
+                    some caseResult := by
+                simpa [bodyShape] using hCasesCompileRaw
+              cases hDefaultCompileRaw :
+                  TypedCfgCompiler.compileDefaultFuel?
+                    (compilerFuel + 1) defaultBody ctx
+                    caseResult.next (LabelSupply.label supply 1)
+                    valueShape
+                    { valueShape with slots := valueShape.slots.tail }
+                    regular with
+              | none =>
+                  simp [hDefaultCompileRaw] at hCompile
+              | some defaultResult =>
+                  simp only [hDefaultCompileRaw] at hCompile
+                  have hDefaultCompile :
+                      TypedCfgCompiler.compileDefaultFuel?
+                          (compilerFuel + 1) defaultBody ctx
+                          caseResult.next
+                          (LabelSupply.label supply 1)
+                          valueShape bodyShape regular =
+                        some defaultResult := by
+                    simpa [bodyShape] using hDefaultCompileRaw
+                  cases hCompile
+                  have hCaseBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        caseResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDefaultBlocks :
+                      TypedCfgPreservation.BlocksInProgram
+                        defaultResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDispatch :
+                      OutcomeSimulation.Path cfg
+                        (casesEntryLabel supply 0 cases)
+                        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                          ctx regular)
+                        afterScrutinee
+                        (Structured.OutcomeT.regular
+                          (afterScrutinee.withSource
+                            (afterScrutinee.source.withEVM
+                              { afterScrutinee.source.evm with
+                                stack := stack })))
+                        tokens := by
+                    apply outcome_cases_none_of_compileCasesFuel?
+                      hCasesCompile hCaseBlocks hValue hPopType
+                      hPop hSelect
+                    intro hDefault
+                    have hDefaultNone :
+                        TypedCfgCompiler.compileDefaultFuel?
+                            (compilerFuel + 1) none ctx
+                            caseResult.next
+                            (LabelSupply.label supply 1)
+                            valueShape bodyShape regular =
+                          some defaultResult := by
+                      simpa [hDefault] using hDefaultCompile
+                    exact
+                      outcome_default_none_of_compileDefaultFuel?
+                        hDefaultNone hDefaultBlocks hPopType hPop rfl
+                  let firstTest := casesEntryLabel supply 0 cases
+                  let head : TypedCfg.Block :=
+                    { label := entry
+                      input := input
+                      body := TypedCfgCompiler.Code.toCfg scrutinee
+                      output := valueShape
+                      term := .jump firstTest }
+                  have hHeadRun :
+                      TypedCfg.ObserverSemantics.Block.run
+                          head target trace =
+                        .ok
+                          (.jump firstTest targetAfterScrutinee,
+                            traceAfterScrutinee) := by
+                    unfold TypedCfg.ObserverSemantics.Block.run
+                    rw [hTargetScrutinee]
+                    simp [head, TypedCfg.Block.runTerm,
+                      Bind.bind, Except.bind]
+                  have hHeadEventually :
+                      TypedCfg.ObserverSemantics.Program.Eventually cfg
+                        entry target trace
+                        (.jump firstTest targetAfterScrutinee)
+                        traceAfterScrutinee := by
+                    apply BlocksInProgram.eventually_of_run hBlocks
+                      (block := head)
+                    · simp only [head, firstTest, casesEntryLabel,
+                        List.mem_cons]
+                      left
+                    · exact hHeadRun
+                  rcases
+                      hDispatch targetAfterScrutinee
+                        traceAfterScrutinee hAfterScrutineeRel with
+                    ⟨targetOutcome, traceFinal,
+                      hDispatchEventually, hOutcomeRel⟩
+                  exact
+                    ⟨targetOutcome, traceFinal,
+                      TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                        hHeadEventually hDispatchEventually,
+                      hOutcomeRel⟩
+
+end Switch
+
+namespace Loop
+
+abbrev bodyContinuations :=
+  TypedCfgPreservation.OutcomeSimulation.Loop.bodyContinuations
+
+abbrev postContinuations :=
+  TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations
+
+theorem eventually_condition
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {cond : Structured.Code} {condValue : Bool}
+    {source afterCond : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
+    (hCond :
+      ObserverSemantics.Code.runCondition cond source =
+        .ok (afterCond, condValue))
+    (hRel : StateRel source tokens target trace) :
+    ∃ targetAfterCond traceAfterCond,
+      TypedCfg.ObserverSemantics.Program.Eventually cfg
+        loopLabel target trace
+        (.jump (if condValue then bodyLabel else endLabel)
+          targetAfterCond)
+        traceAfterCond ∧
+      StateRel afterCond tokens targetAfterCond traceAfterCond := by
+  obtain
+      ⟨targetAfterCond, traceAfterCond,
+        hBlockRun, hAfterCondRel⟩ :=
+    Code.run_jumpi_toCfg
+      (jumpTarget := bodyLabel) (fallthrough := endLabel)
+      hType hFrameSafe hCond hRel
+  exact
+    ⟨targetAfterCond, traceAfterCond,
+      BlocksInProgram.eventually_of_run hBlocks hMem hBlockRun,
+      hAfterCondRel⟩
+
+theorem preserves_condition
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {cond : Structured.Code} {condValue : Bool}
+    {source afterCond : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
+    (hCond :
+      ObserverSemantics.Code.runCondition cond source =
+        .ok (afterCond, condValue)) :
+    OutcomeSimulation.PathPreserves cfg loopLabel
+      (if condValue then bodyLabel else endLabel)
+      source afterCond tokens := by
+  intro target trace hRel
+  exact
+    eventually_condition hBlocks hMem hType hFrameSafe hCond hRel
+
+theorem path_of_eval
+    {transcript : Trace}
+    {program : Structured.Program} {fuel bound : Nat}
+    {cond : Structured.Code} {post body : Structured.Block}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {loopLabel bodyLabel postLabel endLabel : Assembly.Label}
+    {loopInput condOutput : TypedCfg.Shape}
+    {tokens : List Word}
+    {outer : OutcomeSimulation.Continuations}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := loopLabel
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi bodyLabel endLabel } ∈ result.blocks)
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput)
+    (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
+    (hOuterRegular : outer.regular = endLabel)
+    (hFuelLt : fuel < bound)
+    (hEval :
+      ObserverSemantics.For.Eval program fuel
+        cond post body source outcome)
+    (hBodyPath :
+      ∀ {bodyFuel : Nat}
+        {bodySource : ObserverSemantics.State transcript}
+        {bodyOutcome :
+          ObserverSemantics.Outcome (transcript := transcript)},
+        ObserverSemantics.Block.Eval program bodyFuel body
+            bodySource bodyOutcome →
+        bodyFuel < bound →
+        OutcomeSimulation.Path cfg bodyLabel
+          (bodyContinuations endLabel postLabel outer)
+          bodySource bodyOutcome tokens)
+    (hPostPath :
+      ∀ {postFuel : Nat}
+        {postSource : ObserverSemantics.State transcript}
+        {postOutcome :
+          ObserverSemantics.Outcome (transcript := transcript)},
+        ObserverSemantics.Block.Eval program postFuel post
+            postSource postOutcome →
+        postFuel < bound →
+        OutcomeSimulation.Path cfg postLabel
+          (postContinuations loopLabel outer)
+          postSource postOutcome tokens) :
+    OutcomeSimulation.Path cfg loopLabel outer
+      source outcome tokens := by
+  cases hEval with
+  | false hCond =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.regular_of_path hOuterRegular
+      simpa using hCondition
+  | body_brk hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      have hBodyBreak :=
+        OutcomeSimulation.Path.to_brk
+          (by rfl) (hBodyPath hBody (by omega))
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.regular_of_path
+          hOuterRegular hBodyBreak
+  | body_leave hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hBodyPath hBody (by omega))
+  | body_halt hCond hBody =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hBodyPath hBody (by omega))
+  | regular_post_regular hCond hBody hPost hLoop =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hBodyPath hBody (by omega)))
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hPostPath hPost (by omega)))
+      exact
+        path_of_eval hBlocks hMem hType hFrameSafe hOuterRegular
+          (by omega) hLoop hBodyPath hPostPath
+  | cont_post_regular hCond hBody hPost hLoop =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont
+          (by rfl) (hBodyPath hBody (by omega)))
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hPostPath hPost (by omega)))
+      exact
+        path_of_eval hBlocks hMem hType hFrameSafe hOuterRegular
+          (by omega) hLoop hBodyPath hPostPath
+  | regular_post_leave hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hBodyPath hBody (by omega)))
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hPostPath hPost (by omega))
+  | cont_post_leave hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont
+          (by rfl) (hBodyPath hBody (by omega)))
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl) (hPostPath hPost (by omega))
+  | regular_post_halt hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hBodyPath hBody (by omega)))
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hPostPath hPost (by omega))
+  | cont_post_halt hCond hBody hPost =>
+      have hCondition :=
+        preserves_condition (tokens := tokens)
+          hBlocks hMem hType hFrameSafe hCond
+      apply OutcomeSimulation.Path.bind_jump
+        (by simpa using hCondition)
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_cont
+          (by rfl) (hBodyPath hBody (by omega)))
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hPostPath hPost (by omega))
+termination_by fuel
+
+theorem outcome_of_compileStmtFuel?_and_eval
+    {transcript : Trace} {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {init post body : Structured.Block} {cond : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+        (.for_ init cond post body) ctx supply entry input regular =
+      some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hCondSafe : ObserverSemantics.Code.FrameSafe cond)
+    (hEval :
+      ObserverSemantics.Stmt.Eval program sourceFuel
+        (.for_ init cond post body) source outcome)
+    (hInitPath :
+      ∀ {initResult : TypedCfgCompiler.Result}
+        {loopInput : TypedCfg.Shape}
+        {initFuel : Nat}
+        {initSource : ObserverSemantics.State transcript}
+        {initOutcome :
+          ObserverSemantics.Outcome (transcript := transcript)},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel init
+            { ctx with breakLabel? := none, continueLabel? := none }
+            (supply + 1) entry input (LabelSupply.label supply 0) =
+          some initResult →
+        initResult.fallthrough? = some loopInput →
+        TypedCfgPreservation.BlocksInProgram initResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          initResult globalCalls →
+        ObserverSemantics.Block.Eval program initFuel init
+          initSource initOutcome →
+        initFuel < sourceFuel →
+        OutcomeSimulation.Path cfg entry
+          (postContinuations (LabelSupply.label supply 0)
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular))
+          initSource initOutcome tokens)
+    (hBodyPath :
+      ∀ {initResult bodyResult : TypedCfgCompiler.Result}
+        {condOutput : TypedCfg.Shape}
+        {bodyFuel : Nat}
+        {bodySource : ObserverSemantics.State transcript}
+        {bodyOutcome :
+          ObserverSemantics.Outcome (transcript := transcript)},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with
+              breakLabel? := some regular
+              continueLabel? := some (LabelSupply.label supply 2) }
+            initResult.next (LabelSupply.label supply 1)
+            { condOutput with slots := condOutput.slots.tail }
+            (LabelSupply.label supply 2) =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          bodyResult globalCalls →
+        ObserverSemantics.Block.Eval program bodyFuel body
+          bodySource bodyOutcome →
+        bodyFuel < sourceFuel →
+        OutcomeSimulation.Path cfg (LabelSupply.label supply 1)
+          (bodyContinuations regular (LabelSupply.label supply 2)
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular))
+          bodySource bodyOutcome tokens)
+    (hPostPath :
+      ∀ {bodyResult postResult : TypedCfgCompiler.Result}
+        {condOutput : TypedCfg.Shape}
+        {postFuel : Nat}
+        {postSource : ObserverSemantics.State transcript}
+        {postOutcome :
+          ObserverSemantics.Outcome (transcript := transcript)},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel post
+            { ctx with breakLabel? := none, continueLabel? := none }
+            bodyResult.next (LabelSupply.label supply 2)
+            (bodyResult.fallthrough?.getD
+              { condOutput with slots := condOutput.slots.tail })
+            (LabelSupply.label supply 0) =
+          some postResult →
+        TypedCfgPreservation.BlocksInProgram postResult cfg →
+        TypedCfgPreservation.CallsInProgram
+          postResult globalCalls →
+        ObserverSemantics.Block.Eval program postFuel post
+          postSource postOutcome →
+        postFuel < sourceFuel →
+        OutcomeSimulation.Path cfg (LabelSupply.label supply 2)
+          (postContinuations (LabelSupply.label supply 0)
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular))
+          postSource postOutcome tokens) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source outcome tokens := by
+  rcases
+      TypedCfgCompilerFacts.Loop.components_of_compileStmtFuel?_for
+        hCompile with
+    ⟨initResult, loopInput, condOutput, _condition,
+      bodyResult, postResult, hInitCompile, hInitFallthrough,
+      hType, _hHead, hBodyCompile, hPostCompile, rfl⟩
+  have hInitBlocks :
+      TypedCfgPreservation.BlocksInProgram initResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hBodyBlocks :
+      TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hPostBlocks :
+      TypedCfgPreservation.BlocksInProgram postResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hInitCalls :
+      TypedCfgPreservation.CallsInProgram
+        initResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram
+        bodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hPostCalls :
+      TypedCfgPreservation.CallsInProgram
+        postResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hLoopMem :
+      { label := LabelSupply.label supply 0
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi (LabelSupply.label supply 1) regular } ∈
+        (initResult.blocks ++
+          [{ label := LabelSupply.label supply 0
+             input := loopInput
+             body := TypedCfgCompiler.Code.toCfg cond
+             output := condOutput
+             term := .jumpi (LabelSupply.label supply 1) regular }] ++
+          bodyResult.blocks ++ postResult.blocks) := by
+    simp
+  refine ⟨?_, ?_⟩
+  · cases hEval with
+    | @for_init_regular fuel _ _ _ _ _ _ _ hInit hLoop =>
+        apply OutcomeSimulation.Path.bind_jump
+          (OutcomeSimulation.Path.to_regular
+            (hInitPath hInitCompile hInitFallthrough
+              hInitBlocks hInitCalls hInit (by omega)))
+        apply path_of_eval (bound := fuel + 1)
+          hBlocks hLoopMem hType hCondSafe rfl
+          (by omega) hLoop
+        · intro bodyFuel bodySource bodyOutcome hBody hBodyFuel
+          exact
+            hBodyPath hBodyCompile hBodyBlocks hBodyCalls
+              hBody hBodyFuel
+        · intro postFuel postSource postOutcome hPost hPostFuel
+          exact
+            hPostPath hPostCompile hPostBlocks hPostCalls
+              hPost hPostFuel
+    | for_init_leave hInit =>
+        exact
+          OutcomeSimulation.Path.transport_leave
+            (by rfl)
+            (hInitPath hInitCompile hInitFallthrough
+              hInitBlocks hInitCalls hInit (by omega))
+    | for_init_halt hInit =>
+        exact
+          OutcomeSimulation.Path.transport_halt
+            (hInitPath hInitCompile hInitFallthrough
+              hInitBlocks hInitCalls hInit (by omega))
+  · intro _hRegular
+    exact
+      ⟨{ condOutput with slots := condOutput.slots.tail }, rfl⟩
+
+end Loop
+
+namespace Call
+
+theorem eventually_procEntry
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext
+        sourceProgram entryShapes cfg)
+    {proc : Structured.Proc}
+    {fragment :
+      TypedCfgPreservation.Program.ProcFragment
+        entryShapes sourceProgram.procs proc
+        context.procBlocks context.procCalls}
+    (state : EVMState) (trace : Trace) :
+    TypedCfg.ObserverSemantics.Program.Eventually cfg
+      (ProcLabel.entry proc.name) state trace
+      (.jump fragment.entry state) trace := by
+  rcases fragment.route with hDirect | hAdapterRoute
+  · rcases hDirect with ⟨hEntry, hInput⟩
+    simpa [hEntry] using
+      TypedCfg.ObserverSemantics.Program.Eventually.residual
+        cfg (ProcLabel.entry proc.name) state trace
+  · rcases hAdapterRoute with
+      ⟨adapter, hEntry, hInput, hAdapterCompile, hAdapterMem⟩
+    have hMem : adapter ∈ cfg.blocks := by
+      have hBlocksEq :
+          cfg.blocks =
+            context.main.blocks ++ context.procBlocks ++
+              TypedCfgCompiler.dispatchBlocks sourceProgram.procs
+                (context.main.calls ++ context.procCalls) ++
+              [{ label := ProcLabel.programEnd
+                 input :=
+                   context.main.fallthrough?.getD TypedCfg.Shape.caller
+                 body := []
+                 output :=
+                   context.main.fallthrough?.getD TypedCfg.Shape.caller
+                 term := .invalid }] :=
+        congrArg TypedCfg.Program.blocks context.cfgEq
+      rw [hBlocksEq]
+      simp [hAdapterMem]
+    have hFind :=
+      TypedCfg.Program.findBlock?_eq_some_of_mem
+        context.wellTyped.1 hMem
+    unfold TypedCfgCompiler.mkBlock? at hAdapterCompile
+    cases hType :
+        TypedCfg.Instr.type? (.relabel fragment.input)
+          (TypedCfgCompiler.Shape.procEntry proc) with
+    | none =>
+        simp [TypedCfg.Block.bodyType?, hType] at hAdapterCompile
+    | some output =>
+        simp [TypedCfg.Block.bodyType?, hType] at hAdapterCompile
+        cases hAdapterCompile
+        have hPlainRunAt :
+            TypedCfg.Instr.runAt (.relabel fragment.input)
+                (TypedCfgCompiler.Shape.procEntry proc) state =
+              .ok (state, output) := by
+          unfold TypedCfg.Instr.runAt
+          rw [hType]
+          simp [TypedCfg.Instr.runState, Bind.bind, Except.bind]
+        have hObserverRunAt :
+            TypedCfg.ObserverSemantics.Instr.runAt
+                (.relabel fragment.input)
+                (TypedCfgCompiler.Shape.procEntry proc)
+                state trace =
+              .ok ((state, output), trace) := by
+          rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+            (by rfl), hPlainRunAt]
+          rfl
+        let generated : TypedCfg.Block :=
+          { label := ProcLabel.entry proc.name
+            input := TypedCfgCompiler.Shape.procEntry proc
+            body := [.relabel fragment.input]
+            output := output
+            term := .jump (ProcLabel.body proc.name) }
+        have hRun :
+            TypedCfg.ObserverSemantics.Block.run
+                generated state trace =
+              .ok
+                (.jump (ProcLabel.body proc.name) state, trace) := by
+          unfold TypedCfg.ObserverSemantics.Block.run
+          rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+            hObserverRunAt]
+          simp [TypedCfg.ObserverSemantics.Block.runBody_nil,
+            generated, TypedCfg.Block.runTerm,
+            Bind.bind, Except.bind]
+        let singleton : TypedCfgCompiler.Result :=
+          { blocks := [generated]
+            next := 0
+            calls := []
+            fallthrough? := none }
+        have hContains :
+            TypedCfgPreservation.BlocksInProgram singleton cfg := by
+          intro block hMem
+          have hEq : block = generated := by
+            simpa [singleton] using hMem
+          subst block
+          simpa [generated] using hFind
+        rw [hEntry]
+        exact
+          BlocksInProgram.eventually_of_run hContains
+            (block := generated) (by simp [singleton]) hRun
+
+theorem entry_eventually_of_compileStmtFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {name : Structured.Name} {proc : Structured.Proc}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    {args callerStack : EvmYul.Stack Word}
+    (hLookup :
+      Structured.ProcList.lookup? name ctx.procs = some proc)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.call name) ctx supply entry input regular =
+        some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hRel : StateRel source tokens target trace)
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc
+          source.source.evm.stack =
+        some (args, callerStack))
+    (hProcWF : proc.WF) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.Eventually cfg
+        entry target trace
+        (.jump (ProcLabel.entry name) targetFinal) trace ∧
+      StateRel
+        (source.withSource
+          ((source.source.withEVM
+            { source.source.evm with stack := args }).pushReturn
+              callerStack proc.retc))
+        (Structured.Stmt.callToken supply :: tokens)
+        targetFinal trace := by
+  rcases
+      TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+        hLookup hCompile with
+    ⟨returnShape, output, hReturnShape, hType, rfl⟩
+  rcases
+      TypedCfgPreservation.CallStack.runBody_callEntry_preserves
+        (retc := proc.retc)
+        (token := Structured.Stmt.callToken supply)
+        hRel.1 hSplit hType hProcWF.1 with
+    ⟨targetFinal, hPlainBody, hFinalRel⟩
+  have hSilentSink :
+      ∀ depth instr,
+        instr ∈ TypedCfgCompiler.sinkTopUnder depth →
+          TypedCfg.ObserverSemantics.Instr.observer? instr = none := by
+    intro depth
+    induction depth with
+    | zero =>
+        intro instr hMem
+        simp [TypedCfgCompiler.sinkTopUnder] at hMem
+    | succ depth ih =>
+        intro instr hMem
+        simp [TypedCfgCompiler.sinkTopUnder] at hMem
+        rcases hMem with rfl | hMem
+        · rfl
+        · exact ih instr hMem
+  have hSilent :
+      ∀ instr,
+        instr ∈
+            (.returnToken (Structured.Stmt.callToken supply) ::
+              TypedCfgCompiler.sinkTopUnder proc.argc) →
+          TypedCfg.ObserverSemantics.Instr.observer? instr = none := by
+    intro instr hMem
+    simp only [List.mem_cons] at hMem
+    rcases hMem with rfl | hMem
+    · rfl
+    · exact hSilentSink proc.argc instr hMem
+  have hObserverBody :
+      TypedCfg.ObserverSemantics.Block.runBody
+          (.returnToken (Structured.Stmt.callToken supply) ::
+            TypedCfgCompiler.sinkTopUnder proc.argc)
+          input target trace =
+        .ok ((targetFinal, output), trace) := by
+    rw [TypedCfg.ObserverSemantics.Block.runBody_of_forall_observer?_eq_none
+      hSilent,
+      hPlainBody]
+    rfl
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body :=
+        .returnToken (Structured.Stmt.callToken supply) ::
+          TypedCfgCompiler.sinkTopUnder proc.argc
+      output := output
+      term := .jump (ProcLabel.entry name) }
+  have hBlockRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated target trace =
+        .ok (.jump (ProcLabel.entry name) targetFinal, trace) := by
+    unfold TypedCfg.ObserverSemantics.Block.run
+    rw [hObserverBody]
+    simp [generated, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+  exact
+    ⟨targetFinal,
+      BlocksInProgram.eventually_of_run hBlocks
+        (block := generated) (by simp [generated]) hBlockRun,
+      ⟨by simpa using hFinalRel, hRel.2⟩⟩
+
+theorem dispatch_eventually
+    {transcript : Trace}
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context :
+      TypedCfgPreservation.Program.GeneratedContext
+        sourceProgram entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    {site : TypedCfgCompiler.DispatchSite}
+    {bodyState returned : ObserverSemantics.State transcript}
+    {frame : ReturnDest} {stack : EvmYul.Stack Word}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    (hLookup :
+      Structured.ProcList.lookup? name sourceProgram.procs =
+        some proc)
+    (hSiteProc : site.procName = proc.name)
+    (hSiteMem : site ∈ context.calls)
+    (hRel :
+      StateRel bodyState (site.token :: tokens) target trace)
+    (hPop :
+      bodyState.source.popReturn? =
+        some (frame, returned.source))
+    (hCursor : returned.cursor = bodyState.cursor)
+    (hAttach :
+      Structured.StackFrame.attachReturns? frame
+          bodyState.source.evm.stack =
+        some stack)
+    (hRetc : frame.retc = proc.retc) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.Eventually cfg
+        (ProcLabel.exit proc.name) target trace
+        (.jump site.returnLabel targetFinal) trace ∧
+      StateRel
+        (returned.withSource
+          (returned.source.withEVM
+            { bodyState.source.evm with stack := stack }))
+        tokens targetFinal trace := by
+  rcases
+      TypedCfgPreservation.CallStack.eraseReturnToken_preserves
+        hRel.1 hPop hAttach with
+    ⟨hToken, hFinalRel⟩
+  have hFind :
+      TypedCfg.Block.ReturnSite.findTarget? site.token
+          (TypedCfgCompiler.returnSitesFor proc.name context.calls) =
+        some site.returnLabel := by
+    simpa [hSiteProc] using
+      TypedCfgCompilerFacts.Call.findTarget?_returnSitesFor_of_mem
+        context.tokensUnique hSiteMem
+  have hSitesNonempty :
+      (TypedCfgCompiler.returnSitesFor
+        proc.name context.calls).isEmpty = false := by
+    cases hSites :
+        TypedCfgCompiler.returnSitesFor proc.name context.calls with
+    | nil =>
+        simp [hSites, TypedCfg.Block.ReturnSite.findTarget?] at hFind
+    | cons head rest =>
+        rfl
+  have hBlock := context.dispatchBlock hLookup
+  let targetFinal : EVMState :=
+    { target with stack := target.stack.eraseIdx proc.retc }
+  let generated := TypedCfgCompiler.dispatchBlock proc context.calls
+  have hRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated target trace =
+        .ok (.jump site.returnLabel targetFinal, trace) := by
+    rw [hRetc] at hToken hFinalRel
+    simp [generated, TypedCfg.ObserverSemantics.Block.run,
+      TypedCfg.ObserverSemantics.Block.runBody_nil,
+      TypedCfgCompiler.dispatchBlock, hSitesNonempty,
+      TypedCfg.Block.runTerm,
+      TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit,
+      hToken, hFind, targetFinal, Bind.bind, Except.bind]
+  let singleton : TypedCfgCompiler.Result :=
+    { blocks := [generated]
+      next := 0
+      calls := []
+      fallthrough? := none }
+  have hContains :
+      TypedCfgPreservation.BlocksInProgram singleton cfg := by
+    intro block hMem
+    have hEq : block = generated := by
+      simpa [singleton] using hMem
+    subst block
+    simpa [generated] using hBlock
+  refine
+    ⟨targetFinal,
+      BlocksInProgram.eventually_of_run hContains
+        (block := generated) (by simp [singleton]) hRun,
+      ?_⟩
+  rw [hRetc] at hFinalRel
+  refine ⟨?_, ?_⟩
+  simpa using hFinalRel
+  simpa [Simulation.ResourceReplay.State.remaining, hCursor] using hRel.2
+
+end Call
+
 namespace Block
 
 /--
@@ -2029,6 +3913,812 @@ theorem preserves_cons_of_compileStmtListFuel?_and_eval
             hHeadPreserves.1
 
 end Block
+
+mutual
+
+  /--
+  Observer-preserving compilation for a complete Structured block in a checked
+  generated whole-program context.
+  -/
+  theorem outcome_block_of_compileFuel?_and_eval_with_calls
+      {transcript : Trace} {compilerFuel sourceFuel : Nat}
+      {program : Structured.Program} {block : Structured.Block}
+      {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+      {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+      {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+      {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+      {source : ObserverSemantics.State transcript}
+      {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+      {tokens : List Word}
+      {canBreak canContinue canLeave : Bool}
+      (generated :
+        TypedCfgPreservation.Program.GeneratedContext
+          program entryShapes cfg)
+      (hCompile :
+        TypedCfgCompiler.compileBlockFuel? compilerFuel block ctx
+            supply entry input regular =
+          some result)
+      (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+      (hResultCalls :
+        TypedCfgPreservation.CallsInProgram result generated.calls)
+      (hEval :
+        ObserverSemantics.Block.Eval program sourceFuel block source outcome)
+      (hWF :
+        Structured.Block.WF canBreak canContinue canLeave block)
+      (hFrameSafe : ObserverSemantics.Block.FrameSafe block)
+      (hCalls :
+        Structured.ProcList.BlockCallsResolved program.procs block)
+      (hSupports :
+        TypedCfgPreservation.OutcomeSimulation.ContextSupports ctx
+          canBreak canContinue canLeave)
+      (hProcs : ctx.procs = program.procs)
+      (hTerminal :
+        ∀ kind, Stmt.Terminal.RelSafe kind)
+      (hProgramWF : program.WF)
+      (hProgramFrameSafe : ObserverSemantics.Program.FrameSafe program) :
+      OutcomeSimulation.Preserves result cfg entry
+        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+          ctx regular)
+        source outcome tokens := by
+    cases compilerFuel with
+    | zero =>
+        simp [TypedCfgCompiler.compileBlockFuel?] at hCompile
+    | succ blockFuel =>
+        unfold TypedCfgCompiler.compileBlockFuel? at hCompile
+        cases blockFuel with
+        | zero =>
+            simp [TypedCfgCompiler.compileStmtListFuel?] at hCompile
+        | succ listFuel =>
+            cases block with
+            | mk stmts =>
+                cases stmts with
+                | nil =>
+                    cases hEval
+                    exact
+                      Block.preserves_nil_of_compileStmtListFuel?
+                        hCompile hBlocks
+                | cons stmt rest =>
+                    cases hWF with
+                    | cons hStmtWF hRestWF =>
+                        cases hFrameSafe with
+                        | cons hStmtFrameSafe hRestFrameSafe =>
+                            cases hCalls with
+                            | mk hStmtListCalls =>
+                                cases hStmtListCalls with
+                                | cons hStmtCalls hRestCalls =>
+                                    apply
+                                      Block.preserves_cons_of_compileStmtListFuel?_and_eval
+                                        hCompile hBlocks hResultCalls hEval
+                                    · intro headResult stmtFuel stmtSource
+                                        stmtOutcome hHeadCompile hHeadBlocks
+                                        hHeadCalls hHeadEval hFuelLt
+                                      exact
+                                        outcome_stmt_of_compileFuel?_and_eval_with_calls
+                                          generated hHeadCompile hHeadBlocks
+                                          hHeadCalls hHeadEval hStmtWF
+                                          hStmtFrameSafe hStmtCalls hSupports
+                                          hProcs hTerminal hProgramWF
+                                          hProgramFrameSafe
+                                    · intro headResult tailResult tailInput
+                                        tailFuel tailSource tailOutcome
+                                        hFallthrough hTailCompile hTailBlocks
+                                        hTailCalls hTailEval hFuelLt
+                                      have hTailBlockCompile :
+                                          TypedCfgCompiler.compileBlockFuel?
+                                              (listFuel + 1)
+                                              { stmts := rest } ctx
+                                              headResult.next
+                                              (TypedCfgCompiler.restLabel
+                                                supply)
+                                              tailInput regular =
+                                            some tailResult := by
+                                        simpa
+                                          [TypedCfgCompiler.compileBlockFuel?]
+                                          using hTailCompile
+                                      exact
+                                        outcome_block_of_compileFuel?_and_eval_with_calls
+                                          generated hTailBlockCompile
+                                          hTailBlocks hTailCalls hTailEval
+                                          hRestWF hRestFrameSafe
+                                          (.mk hRestCalls) hSupports hProcs
+                                          hTerminal hProgramWF
+                                          hProgramFrameSafe
+  termination_by sourceFuel
+
+  /--
+  Observer-preserving compilation for every Structured statement, including
+  generated procedure entry, body, exit, and return dispatch.
+  -/
+  theorem outcome_stmt_of_compileFuel?_and_eval_with_calls
+      {transcript : Trace} {compilerFuel sourceFuel : Nat}
+      {program : Structured.Program} {stmt : Structured.Stmt}
+      {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+      {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+      {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+      {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+      {source : ObserverSemantics.State transcript}
+      {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+      {tokens : List Word}
+      {canBreak canContinue canLeave : Bool}
+      (generated :
+        TypedCfgPreservation.Program.GeneratedContext
+          program entryShapes cfg)
+      (hCompile :
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx
+            supply entry input regular =
+          some result)
+      (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+      (hResultCalls :
+        TypedCfgPreservation.CallsInProgram result generated.calls)
+      (hEval :
+        ObserverSemantics.Stmt.Eval program sourceFuel stmt source outcome)
+      (hWF :
+        Structured.Stmt.WF canBreak canContinue canLeave stmt)
+      (hFrameSafe : ObserverSemantics.Stmt.FrameSafe stmt)
+      (hCalls :
+        Structured.ProcList.StmtCallsResolved program.procs stmt)
+      (hSupports :
+        TypedCfgPreservation.OutcomeSimulation.ContextSupports ctx
+          canBreak canContinue canLeave)
+      (hProcs : ctx.procs = program.procs)
+      (hTerminal :
+        ∀ kind, Stmt.Terminal.RelSafe kind)
+      (hProgramWF : program.WF)
+      (hProgramFrameSafe : ObserverSemantics.Program.FrameSafe program) :
+      OutcomeSimulation.Preserves result cfg entry
+        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+          ctx regular)
+        source outcome tokens := by
+    cases compilerFuel with
+    | zero =>
+        simp [TypedCfgCompiler.compileStmtFuel?] at hCompile
+    | succ compilerFuel =>
+        cases hEval with
+        | code hRun =>
+            cases hFrameSafe with
+            | code hCodeSafe =>
+                exact
+                  Stmt.outcome_code_of_compileStmtFuel?
+                    hCompile hBlocks hCodeSafe hRun
+        | if_false hCond =>
+            cases hFrameSafe with
+            | if_ hCondSafe hBodySafe =>
+                exact
+                  Stmt.outcome_if_false_of_compileStmtFuel?
+                    hCompile hBlocks hCondSafe hCond
+        | @if_true fuel _ _ _ _ _ hCond hBodyEval =>
+            cases hWF with
+            | if_ hBodyWF =>
+                cases hFrameSafe with
+                | if_ hCondSafe hBodyFrameSafe =>
+                    cases hCalls with
+                    | if_ hBodyCalls =>
+                        apply
+                          Stmt.outcome_if_true_of_compileStmtFuel?
+                            hCompile hBlocks hResultCalls hCondSafe hCond
+                        intro bodyInput bodyResult hBodyCompile hBodyBlocks
+                          hBodyResultCalls
+                        exact
+                          (outcome_block_of_compileFuel?_and_eval_with_calls
+                            generated hBodyCompile hBodyBlocks
+                            hBodyResultCalls hBodyEval hBodyWF
+                            hBodyFrameSafe hBodyCalls hSupports hProcs
+                            hTerminal hProgramWF hProgramFrameSafe).1
+        | switch_none hScrutinee hPop hSelect =>
+            cases hFrameSafe with
+            | switch hScrutineeSafe hCaseSafe hDefaultSafe =>
+                cases compilerFuel with
+                | zero =>
+                    rw [
+                      TypedCfgCompilerFacts.Switch.compileStmtFuel?_switch_one_eq_none]
+                      at hCompile
+                    cases hCompile
+                | succ switchFuel =>
+                    exact
+                      Switch.outcome_none_of_compileStmtFuel?
+                        hCompile hBlocks hScrutineeSafe
+                        hScrutinee hPop hSelect
+        | @switch_some fuel _ _ _ _ _ _ _ _ _ _ hScrutinee hPop
+            hStateAfterPop hSelect hBodyEval =>
+            subst hStateAfterPop
+            cases hWF with
+            | switch hCaseWF hDefaultWF =>
+                cases hFrameSafe with
+                | switch hScrutineeSafe hCaseSafe hDefaultSafe =>
+                    cases hCalls with
+                    | switch hCaseCalls hDefaultCalls =>
+                        cases compilerFuel with
+                        | zero =>
+                            rw [
+                              TypedCfgCompilerFacts.Switch.compileStmtFuel?_switch_one_eq_none]
+                              at hCompile
+                            cases hCompile
+                        | succ switchFuel =>
+                            apply
+                              Switch.outcome_some_of_compileStmtFuel?
+                                hCompile hBlocks hResultCalls hScrutineeSafe
+                                hScrutinee hPop hSelect
+                            intro bodyCompilerFuel bodySupply bodyEntry
+                              bodyShape bodyResult hBodyCompile hBodyBlocks
+                              hBodyResultCalls
+                            have hSelectedWF :=
+                              Structured.Switch.wf_of_select
+                                hCaseWF hDefaultWF hSelect
+                            have hSelectedFrameSafe :=
+                              TypedCfgCompilerFacts.switch_property_of_select
+                                hCaseSafe hDefaultSafe hSelect
+                            have hSelectedCalls :=
+                              TypedCfgCompilerFacts.switch_property_of_select
+                                hCaseCalls hDefaultCalls hSelect
+                            exact
+                              (outcome_block_of_compileFuel?_and_eval_with_calls
+                                generated hBodyCompile hBodyBlocks
+                                hBodyResultCalls hBodyEval hSelectedWF
+                                hSelectedFrameSafe hSelectedCalls hSupports
+                                hProcs hTerminal hProgramWF
+                                hProgramFrameSafe).1
+        | @for_init_regular fuel _ _ _ _ _ _ _ hInitEval hLoopEval =>
+            cases hWF with
+            | for_ hInitWF hPostWF hBodyWF =>
+                cases hFrameSafe with
+                | for_ hInitSafe hCondSafe hPostSafe hBodySafe =>
+                    cases hCalls with
+                    | for_ hInitCalls hPostCalls hBodyCalls =>
+                        apply
+                          Loop.outcome_of_compileStmtFuel?_and_eval
+                            hCompile hBlocks hResultCalls hCondSafe
+                            (.for_init_regular hInitEval hLoopEval)
+                        · intro initResult loopInput initFuel initSource
+                            initOutcome hInitCompile hInitFallthrough
+                            hInitBlocks hInitResultCalls hInitEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hInitCompile hInitBlocks
+                              hInitResultCalls hInitEval' hInitWF hInitSafe
+                              hInitCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro initResult bodyResult condOutput bodyFuel
+                            bodySource bodyOutcome hBodyCompile hBodyBlocks
+                            hBodyResultCalls hBodyEval' hFuelLt
+                          simpa [Loop.bodyContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hBodyCompile hBodyBlocks
+                              hBodyResultCalls hBodyEval' hBodyWF hBodySafe
+                              hBodyCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                                hSupports regular
+                                (LabelSupply.label supply 2))
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro bodyResult postResult condOutput postFuel
+                            postSource postOutcome hPostCompile hPostBlocks
+                            hPostResultCalls hPostEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hPostCompile hPostBlocks
+                              hPostResultCalls hPostEval' hPostWF hPostSafe
+                              hPostCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+        | @for_init_leave fuel _ _ _ _ _ _ hInitEval =>
+            cases hWF with
+            | for_ hInitWF hPostWF hBodyWF =>
+                cases hFrameSafe with
+                | for_ hInitSafe hCondSafe hPostSafe hBodySafe =>
+                    cases hCalls with
+                    | for_ hInitCalls hPostCalls hBodyCalls =>
+                        apply
+                          Loop.outcome_of_compileStmtFuel?_and_eval
+                            hCompile hBlocks hResultCalls hCondSafe
+                            (.for_init_leave hInitEval)
+                        · intro initResult loopInput initFuel initSource
+                            initOutcome hInitCompile hInitFallthrough
+                            hInitBlocks hInitResultCalls hInitEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hInitCompile hInitBlocks
+                              hInitResultCalls hInitEval' hInitWF hInitSafe
+                              hInitCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro initResult bodyResult condOutput bodyFuel
+                            bodySource bodyOutcome hBodyCompile hBodyBlocks
+                            hBodyResultCalls hBodyEval' hFuelLt
+                          simpa [Loop.bodyContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hBodyCompile hBodyBlocks
+                              hBodyResultCalls hBodyEval' hBodyWF hBodySafe
+                              hBodyCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                                hSupports regular
+                                (LabelSupply.label supply 2))
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro bodyResult postResult condOutput postFuel
+                            postSource postOutcome hPostCompile hPostBlocks
+                            hPostResultCalls hPostEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hPostCompile hPostBlocks
+                              hPostResultCalls hPostEval' hPostWF hPostSafe
+                              hPostCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+        | @for_init_halt fuel _ _ _ _ _ _ _ hInitEval =>
+            cases hWF with
+            | for_ hInitWF hPostWF hBodyWF =>
+                cases hFrameSafe with
+                | for_ hInitSafe hCondSafe hPostSafe hBodySafe =>
+                    cases hCalls with
+                    | for_ hInitCalls hPostCalls hBodyCalls =>
+                        apply
+                          Loop.outcome_of_compileStmtFuel?_and_eval
+                            hCompile hBlocks hResultCalls hCondSafe
+                            (.for_init_halt hInitEval)
+                        · intro initResult loopInput initFuel initSource
+                            initOutcome hInitCompile hInitFallthrough
+                            hInitBlocks hInitResultCalls hInitEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hInitCompile hInitBlocks
+                              hInitResultCalls hInitEval' hInitWF hInitSafe
+                              hInitCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro initResult bodyResult condOutput bodyFuel
+                            bodySource bodyOutcome hBodyCompile hBodyBlocks
+                            hBodyResultCalls hBodyEval' hFuelLt
+                          simpa [Loop.bodyContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hBodyCompile hBodyBlocks
+                              hBodyResultCalls hBodyEval' hBodyWF hBodySafe
+                              hBodyCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.loopBody
+                                hSupports regular
+                                (LabelSupply.label supply 2))
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+                        · intro bodyResult postResult condOutput postFuel
+                            postSource postOutcome hPostCompile hPostBlocks
+                            hPostResultCalls hPostEval' hFuelLt
+                          simpa [Loop.postContinuations,
+                            TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+                            (outcome_block_of_compileFuel?_and_eval_with_calls
+                              generated hPostCompile hPostBlocks
+                              hPostResultCalls hPostEval' hPostWF hPostSafe
+                              hPostCalls
+                              (TypedCfgPreservation.OutcomeSimulation.ContextSupports.withoutLoop
+                                hSupports)
+                              hProcs hTerminal hProgramWF
+                              hProgramFrameSafe).1
+        | brk =>
+            cases hWF with
+            | brk hAllowed =>
+                rcases hSupports.breakLabel hAllowed with
+                  ⟨target, hTarget⟩
+                exact
+                  Stmt.outcome_brk_of_compileStmtFuel?
+                    hTarget hCompile hBlocks
+        | cont =>
+            cases hWF with
+            | cont hAllowed =>
+                rcases hSupports.continueLabel hAllowed with
+                  ⟨target, hTarget⟩
+                exact
+                  Stmt.outcome_cont_of_compileStmtFuel?
+                    hTarget hCompile hBlocks
+        | leave hReturns =>
+            cases hWF with
+            | leave hAllowed =>
+                rcases hSupports.leaveLabel hAllowed with
+                  ⟨target, hTarget⟩
+                exact
+                  Stmt.outcome_leave_of_compileStmtFuel?
+                    hTarget hCompile hBlocks
+        | @call_regular fuel name state proc args callerStack stack
+            bodyState returned frame hLookup hSplit hBody hPop hAttach =>
+            have hCompilerLookup :
+                Structured.ProcList.lookup? name ctx.procs = some proc := by
+              simpa [hProcs] using hLookup
+            have hProcWF :=
+              Structured.Program.procWF_of_lookup? hProgramWF hLookup
+            have hProcFrameSafe :=
+              ObserverSemantics.Program.procFrameSafe_of_lookup?
+                hProgramFrameSafe hLookup
+            have hProcCalls :=
+              Structured.Program.procCallsResolved_of_lookup?
+                hProgramWF hLookup
+            rcases
+                TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+                  hCompilerLookup hCompile with
+              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+            subst result
+            let site : TypedCfgCompiler.DispatchSite :=
+              { procName := name
+                token := Structured.Stmt.callToken supply
+                returnLabel := regular
+                caseLabel := .generated supply 10000 }
+            have hSiteMem : site ∈ generated.calls := by
+              apply hResultCalls site
+              simp [site]
+            rcases generated.procFragment_of_lookup? hLookup with
+              ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
+            let procCtx : TypedCfgCompiler.Context :=
+              { procs := program.procs
+                leaveLabel? := some (ProcLabel.exit proc.name) }
+            have hFragmentCompile :
+                TypedCfgCompiler.compileBlockFuel?
+                    (TypedCfgCompiler.blockFuel proc.body + 1)
+                    proc.body procCtx fragment.supply fragment.entry
+                    fragment.input (ProcLabel.exit proc.name) =
+                  some fragment.result := by
+              simpa [TypedCfgCompiler.compileBlock?, procCtx] using
+                fragment.compile
+            have hProcSupports :
+                TypedCfgPreservation.OutcomeSimulation.ContextSupports
+                  procCtx false false true := by
+              exact
+                { breakLabel := by simp
+                  continueLabel := by simp
+                  leaveLabel := by
+                    intro _hAllowed
+                    exact ⟨ProcLabel.exit proc.name, rfl⟩ }
+            have hBodyPreserves :=
+              outcome_block_of_compileFuel?_and_eval_with_calls
+                (tokens := Structured.Stmt.callToken supply :: tokens)
+                generated hFragmentCompile hFragmentBlocks hFragmentCalls
+                hBody hProcWF.2.2 hProcFrameSafe hProcCalls
+                hProcSupports (by rfl) hTerminal
+                hProgramWF hProgramFrameSafe
+            have hName :=
+              Structured.ProcList.name_of_lookup? hLookup
+            have hFrameEq :=
+              ObserverSemantics.CallStack.poppedFrame_eq_of_regular_eval
+                hBody hPop
+            obtain ⟨hSourcePop, hCursor⟩ :=
+              ObserverSemantics.stateModel_popReturn?_eq_some hPop
+            refine ⟨?_, ?_⟩
+            · intro target trace hRel
+              rcases
+                  Call.entry_eventually_of_compileStmtFuel?
+                    hCompilerLookup hCompile hBlocks hRel hSplit hProcWF with
+                ⟨targetAtEntry, hCallEntry, hCallRel⟩
+              have hAdapter :
+                  TypedCfg.ObserverSemantics.Program.Eventually cfg
+                    (ProcLabel.entry name) targetAtEntry trace
+                    (.jump fragment.entry targetAtEntry) trace := by
+                simpa [hName] using
+                  Call.eventually_procEntry generated
+                    (fragment := fragment) targetAtEntry trace
+              rcases
+                  hBodyPreserves.to_regular_path
+                    targetAtEntry trace hCallRel with
+                ⟨targetAtExit, traceAtExit,
+                  hBodyEventually, hBodyRel⟩
+              have hSiteProc : site.procName = proc.name := by
+                simp [site, hName]
+              have hRetc : frame.retc = proc.retc := by
+                rw [hFrameEq]
+              rcases
+                  Call.dispatch_eventually generated hLookup hSiteProc
+                    hSiteMem hBodyRel hSourcePop hCursor hAttach hRetc with
+                ⟨targetFinal, hDispatchEventually, hFinalRel⟩
+              refine ⟨.jump regular targetFinal, traceAtExit, ?_, ?_⟩
+              · exact
+                  TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                    hCallEntry
+                    (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                      hAdapter
+                      (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                        hBodyEventually hDispatchEventually))
+              · exact
+                  OutcomeSimulation.Rel.regular_iff.mpr
+                    ⟨rfl, hFinalRel⟩
+            · intro _hRegular
+              exact ⟨returnShape, rfl⟩
+        | @call_leave fuel name state proc args callerStack stack
+            bodyState returned frame hLookup hSplit hBody hPop hAttach =>
+            have hCompilerLookup :
+                Structured.ProcList.lookup? name ctx.procs = some proc := by
+              simpa [hProcs] using hLookup
+            have hProcWF :=
+              Structured.Program.procWF_of_lookup? hProgramWF hLookup
+            have hProcFrameSafe :=
+              ObserverSemantics.Program.procFrameSafe_of_lookup?
+                hProgramFrameSafe hLookup
+            have hProcCalls :=
+              Structured.Program.procCallsResolved_of_lookup?
+                hProgramWF hLookup
+            rcases
+                TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+                  hCompilerLookup hCompile with
+              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+            subst result
+            let site : TypedCfgCompiler.DispatchSite :=
+              { procName := name
+                token := Structured.Stmt.callToken supply
+                returnLabel := regular
+                caseLabel := .generated supply 10000 }
+            have hSiteMem : site ∈ generated.calls := by
+              apply hResultCalls site
+              simp [site]
+            rcases generated.procFragment_of_lookup? hLookup with
+              ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
+            let procCtx : TypedCfgCompiler.Context :=
+              { procs := program.procs
+                leaveLabel? := some (ProcLabel.exit proc.name) }
+            have hFragmentCompile :
+                TypedCfgCompiler.compileBlockFuel?
+                    (TypedCfgCompiler.blockFuel proc.body + 1)
+                    proc.body procCtx fragment.supply fragment.entry
+                    fragment.input (ProcLabel.exit proc.name) =
+                  some fragment.result := by
+              simpa [TypedCfgCompiler.compileBlock?, procCtx] using
+                fragment.compile
+            have hProcSupports :
+                TypedCfgPreservation.OutcomeSimulation.ContextSupports
+                  procCtx false false true := by
+              exact
+                { breakLabel := by simp
+                  continueLabel := by simp
+                  leaveLabel := by
+                    intro _hAllowed
+                    exact ⟨ProcLabel.exit proc.name, rfl⟩ }
+            have hBodyPreserves :=
+              outcome_block_of_compileFuel?_and_eval_with_calls
+                (tokens := Structured.Stmt.callToken supply :: tokens)
+                generated hFragmentCompile hFragmentBlocks hFragmentCalls
+                hBody hProcWF.2.2 hProcFrameSafe hProcCalls
+                hProcSupports (by rfl) hTerminal
+                hProgramWF hProgramFrameSafe
+            have hName :=
+              Structured.ProcList.name_of_lookup? hLookup
+            have hFrameEq :=
+              ObserverSemantics.CallStack.poppedFrame_eq_of_leave_eval
+                hBody hPop
+            obtain ⟨hSourcePop, hCursor⟩ :=
+              ObserverSemantics.stateModel_popReturn?_eq_some hPop
+            refine ⟨?_, ?_⟩
+            · intro target trace hRel
+              rcases
+                  Call.entry_eventually_of_compileStmtFuel?
+                    hCompilerLookup hCompile hBlocks hRel hSplit hProcWF with
+                ⟨targetAtEntry, hCallEntry, hCallRel⟩
+              have hAdapter :
+                  TypedCfg.ObserverSemantics.Program.Eventually cfg
+                    (ProcLabel.entry name) targetAtEntry trace
+                    (.jump fragment.entry targetAtEntry) trace := by
+                simpa [hName] using
+                  Call.eventually_procEntry generated
+                    (fragment := fragment) targetAtEntry trace
+              have hBodyPath :=
+                OutcomeSimulation.Path.to_leave
+                  (program := cfg)
+                  (targetLabel := ProcLabel.exit proc.name)
+                  (by rfl) hBodyPreserves.1
+              rcases hBodyPath targetAtEntry trace hCallRel with
+                ⟨targetAtExit, traceAtExit,
+                  hBodyEventually, hBodyRel⟩
+              have hSiteProc : site.procName = proc.name := by
+                simp [site, hName]
+              have hRetc : frame.retc = proc.retc := by
+                rw [hFrameEq]
+              rcases
+                  Call.dispatch_eventually generated hLookup hSiteProc
+                    hSiteMem hBodyRel hSourcePop hCursor hAttach hRetc with
+                ⟨targetFinal, hDispatchEventually, hFinalRel⟩
+              refine ⟨.jump regular targetFinal, traceAtExit, ?_, ?_⟩
+              · exact
+                  TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                    hCallEntry
+                    (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                      hAdapter
+                      (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                        hBodyEventually hDispatchEventually))
+              · exact
+                  OutcomeSimulation.Rel.regular_iff.mpr
+                    ⟨rfl, hFinalRel⟩
+            · intro _hRegular
+              exact ⟨returnShape, rfl⟩
+        | @call_halt fuel name state proc args callerStack bodyState kind
+            hLookup hSplit hBody =>
+            have hCompilerLookup :
+                Structured.ProcList.lookup? name ctx.procs = some proc := by
+              simpa [hProcs] using hLookup
+            have hProcWF :=
+              Structured.Program.procWF_of_lookup? hProgramWF hLookup
+            have hProcFrameSafe :=
+              ObserverSemantics.Program.procFrameSafe_of_lookup?
+                hProgramFrameSafe hLookup
+            have hProcCalls :=
+              Structured.Program.procCallsResolved_of_lookup?
+                hProgramWF hLookup
+            rcases generated.procFragment_of_lookup? hLookup with
+              ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
+            let procCtx : TypedCfgCompiler.Context :=
+              { procs := program.procs
+                leaveLabel? := some (ProcLabel.exit proc.name) }
+            have hFragmentCompile :
+                TypedCfgCompiler.compileBlockFuel?
+                    (TypedCfgCompiler.blockFuel proc.body + 1)
+                    proc.body procCtx fragment.supply fragment.entry
+                    fragment.input (ProcLabel.exit proc.name) =
+                  some fragment.result := by
+              simpa [TypedCfgCompiler.compileBlock?, procCtx] using
+                fragment.compile
+            have hProcSupports :
+                TypedCfgPreservation.OutcomeSimulation.ContextSupports
+                  procCtx false false true := by
+              exact
+                { breakLabel := by simp
+                  continueLabel := by simp
+                  leaveLabel := by
+                    intro _hAllowed
+                    exact ⟨ProcLabel.exit proc.name, rfl⟩ }
+            have hBodyPreserves :=
+              outcome_block_of_compileFuel?_and_eval_with_calls
+                (tokens := Structured.Stmt.callToken supply :: tokens)
+                generated hFragmentCompile hFragmentBlocks hFragmentCalls
+                hBody hProcWF.2.2 hProcFrameSafe hProcCalls
+                hProcSupports (by rfl) hTerminal
+                hProgramWF hProgramFrameSafe
+            have hName :=
+              Structured.ProcList.name_of_lookup? hLookup
+            apply OutcomeSimulation.Preserves.of_path_of_nonregular
+              (by simp)
+            intro target trace hRel
+            rcases
+                Call.entry_eventually_of_compileStmtFuel?
+                  hCompilerLookup hCompile hBlocks hRel hSplit hProcWF with
+              ⟨targetAtEntry, hCallEntry, hCallRel⟩
+            have hAdapter :
+                TypedCfg.ObserverSemantics.Program.Eventually cfg
+                  (ProcLabel.entry name) targetAtEntry trace
+                  (.jump fragment.entry targetAtEntry) trace := by
+              simpa [hName] using
+                Call.eventually_procEntry generated
+                  (fragment := fragment) targetAtEntry trace
+            rcases hBodyPreserves.1 targetAtEntry trace hCallRel with
+              ⟨targetOutcome, traceAtExit,
+                hBodyEventually, hOutcomeRel⟩
+            rcases OutcomeSimulation.Rel.halt_elim hOutcomeRel with
+              ⟨targetBefore, targetFinal, rfl, hTargetStep, hFinalRel⟩
+            refine ⟨.halt kind targetBefore, traceAtExit, ?_, ?_⟩
+            · exact
+                TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                  hCallEntry
+                  (TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+                    hAdapter hBodyEventually)
+            · exact
+                OutcomeSimulation.Rel.halt_iff.mpr
+                  ⟨rfl, targetFinal, hTargetStep, hFinalRel⟩
+        | terminal hStep =>
+            exact
+              Stmt.outcome_terminal_of_compileStmtFuel?
+                (hTerminal _) hCompile hBlocks hStep
+  termination_by sourceFuel
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+
+end
+
+namespace Program
+
+/--
+Checked generation preserves a complete observer-replayed Structured main
+block through the generated TypedCfg program.
+-/
+theorem path_of_generateWithProcEntryShapes?_and_eval
+    {transcript : Trace}
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {sourceFuel : Nat}
+    (hGenerate :
+      TypedCfgCompiler.generateWithProcEntryShapes?
+          sourceProgram entryShapes =
+        some cfg)
+    (hWellTyped : cfg.WellTyped)
+    (hWF : sourceProgram.WF)
+    (hFrameSafe : ObserverSemantics.Program.FrameSafe sourceProgram)
+    (hTerminal : ∀ kind, Stmt.Terminal.RelSafe kind)
+    (hEval :
+      ObserverSemantics.Block.Eval sourceProgram sourceFuel
+        sourceProgram.body source outcome) :
+    OutcomeSimulation.Path cfg TypedCfgCompiler.entryLabel
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        { procs := sourceProgram.procs } ProcLabel.programEnd)
+      source outcome [] := by
+  let generated :=
+    TypedCfgPreservation.Program.GeneratedContext.of_generate
+      hGenerate hWellTyped
+  have hMainCompile :
+      TypedCfgCompiler.compileBlockFuel?
+          (TypedCfgCompiler.blockFuel sourceProgram.body + 1)
+          sourceProgram.body { procs := sourceProgram.procs }
+          0 TypedCfgCompiler.entryLabel TypedCfg.Shape.caller
+          ProcLabel.programEnd =
+        some generated.main := by
+    simpa [TypedCfgCompiler.compileBlock?] using generated.mainCompile
+  have hSupports :
+      TypedCfgPreservation.OutcomeSimulation.ContextSupports
+        { procs := sourceProgram.procs } false false false := by
+    exact
+      { breakLabel := by simp
+        continueLabel := by simp
+        leaveLabel := by simp }
+  exact
+    (outcome_block_of_compileFuel?_and_eval_with_calls
+      (tokens := []) generated hMainCompile generated.mainBlocks
+      generated.mainCalls hEval hWF.2.2.2.2 hFrameSafe.2
+      hWF.2.2.2.1 hSupports (by rfl) hTerminal hWF hFrameSafe).1
+
+/--
+Artifact-facing observer preservation with the generated well-typedness proof
+recovered from the existing compiler check.
+-/
+theorem path_of_artifactWithProcEntryShapes?_and_eval
+    {transcript : Trace}
+    {sourceProgram : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {artifact : TypedCfgCompiler.CompileArtifact}
+    {source : ObserverSemantics.State transcript}
+    {outcome : ObserverSemantics.Outcome (transcript := transcript)}
+    {sourceFuel : Nat}
+    (hArtifact :
+      TypedCfgCompiler.artifactWithProcEntryShapes?
+          sourceProgram entryShapes =
+        some artifact)
+    (hWF : sourceProgram.WF)
+    (hFrameSafe : ObserverSemantics.Program.FrameSafe sourceProgram)
+    (hTerminal : ∀ kind, Stmt.Terminal.RelSafe kind)
+    (hEval :
+      ObserverSemantics.Block.Eval sourceProgram sourceFuel
+        sourceProgram.body source outcome) :
+    OutcomeSimulation.Path artifact.cfg TypedCfgCompiler.entryLabel
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        { procs := sourceProgram.procs } ProcLabel.programEnd)
+      source outcome [] := by
+  unfold TypedCfgCompiler.artifactWithProcEntryShapes? at hArtifact
+  cases hGenerate :
+      TypedCfgCompiler.generateWithProcEntryShapes?
+        sourceProgram entryShapes with
+  | none =>
+      simp [hGenerate] at hArtifact
+  | some cfg =>
+      by_cases hCheck : cfg.wellTyped? = true
+      · simp [hGenerate, hCheck] at hArtifact
+        cases hArtifact
+        exact
+          path_of_generateWithProcEntryShapes?_and_eval
+            hGenerate
+            (TypedCfg.Program.wellTyped_of_check hCheck)
+            hWF hFrameSafe hTerminal hEval
+      · simp [hGenerate, hCheck] at hArtifact
+
+end Program
 
 end ObserverPreservation
 end Structured

@@ -53,6 +53,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.Stmt.regular_if_false_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverPreservation.Stmt.outcome_if_true_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverPreservation.Block.preserves_cons_of_compileStmtListFuel?_and_eval
+#check EvmCompiler.Structured.ObserverPreservation.outcome_block_of_compileFuel?_and_eval_with_calls
+#check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
+#check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

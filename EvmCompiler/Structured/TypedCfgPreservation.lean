@@ -905,17 +905,14 @@ end Stmt
 
 namespace Switch
 
-def testOutput (valueShape : TypedCfg.Shape) : TypedCfg.Shape :=
-  { valueShape with slots := .word :: valueShape.slots }
+abbrev testOutput :=
+  TypedCfgCompilerFacts.Switch.testOutput
 
-def casesEntryLabel (base idx : Nat) :
-    List (Word × Structured.Block) → Assembly.Label
-  | [] => LabelSupply.label base 1
-  | _ => TypedCfgCompiler.switchTestLabel base idx
+abbrev casesEntryLabel :=
+  TypedCfgCompilerFacts.Switch.casesEntryLabel
 
-def nextTestLabel (base idx : Nat)
-    (rest : List (Word × Structured.Block)) : Assembly.Label :=
-  casesEntryLabel base (idx + 1) rest
+abbrev nextTestLabel :=
+  TypedCfgCompilerFacts.Switch.nextTestLabel
 
 theorem testBody_type
     {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -923,18 +920,8 @@ theorem testBody_type
     (hHead : valueShape.slots.head? = some slot) :
     TypedCfg.Block.bodyType?
         [.dup 0, .push caseValue, .prim .eq] valueShape =
-      some (testOutput valueShape) := by
-  cases valueShape with
-  | mk slots tail =>
-      cases slots with
-      | nil =>
-          simp at hHead
-      | cons head rest =>
-          simp [TypedCfg.Block.bodyType?, TypedCfg.Instr.type?,
-            TypedCfg.Shape.get?, TypedCfg.Shape.length,
-            TypedCfg.Shape.pop, TypedCfg.Shape.pushWords,
-            Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
-            EvmYul.EVM.δ, EvmYul.EVM.α, testOutput]
+      some (testOutput valueShape) :=
+  TypedCfgCompilerFacts.Switch.testBody_type hHead
 
 /--
 One generated switch test preserves the retained scrutinee and chooses the
@@ -1801,43 +1788,9 @@ theorem fallthrough_of_compileStmtFuel?_switch
           (.switch scrutinee cases defaultBody) ctx
           supply entry input regular =
         some result) :
-    ∃ output, result.fallthrough? = some output := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input with
-  | none =>
-      simp [hType] at hCompile
-  | some valueShape =>
-      cases hValue : valueShape.slots.head? with
-      | none =>
-          simp [hType, hValue] at hCompile
-      | some valueSlot =>
-          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
-            Bind.bind, Option.bind] at hCompile
-          cases hCases :
-              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
-                cases ctx supply (supply + 1) 0 valueShape
-                { valueShape with slots := valueShape.slots.tail }
-                regular with
-          | none =>
-              simp [hCases] at hCompile
-          | some caseResult =>
-              simp only [hCases] at hCompile
-              cases hDefault :
-                  TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-                    defaultBody ctx caseResult.next
-                    (LabelSupply.label supply 1) valueShape
-                    { valueShape with slots := valueShape.slots.tail }
-                    regular with
-              | none =>
-                  simp [hDefault] at hCompile
-              | some defaultResult =>
-                  simp only [hDefault] at hCompile
-                  cases hCompile
-                  exact
-                    ⟨{ valueShape with slots := valueShape.slots.tail },
-                      rfl⟩
+    ∃ output, result.fallthrough? = some output :=
+  TypedCfgCompilerFacts.Switch.fallthrough_of_compileStmtFuel?_switch
+    hCompile
 
 /--
 One unit of compiler fuel cannot compile a switch because case generation
@@ -1852,13 +1805,8 @@ theorem compileStmtFuel?_switch_one_eq_none
     TypedCfgCompiler.compileStmtFuel? 1
         (.switch scrutinee cases defaultBody) ctx
         supply entry input regular =
-      none := by
-  unfold TypedCfgCompiler.compileStmtFuel?
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input <;>
-    simp [hType, TypedCfgCompiler.mkBlock?,
-      TypedCfgCompiler.compileCasesFuel?]
+      none :=
+  TypedCfgCompilerFacts.Switch.compileStmtFuel?_switch_one_eq_none
 
 /--
 Outcome-indexed preservation for a switch that selects a source body.
