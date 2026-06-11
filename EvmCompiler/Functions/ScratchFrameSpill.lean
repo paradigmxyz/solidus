@@ -1123,6 +1123,27 @@ def storeTopSlotCode? (valuesAboveBase slot : Nat) :
   let addr ← slotAddressCode? valuesAboveBase slot
   some (addr ++ [Structured.BasicInstr.op .mstore])
 
+def bindScratchCode (baseDepth : Nat) (name : Name) (slot : Nat) :
+    Structured.Code :=
+  [Structured.BasicInstr.bindScratch baseDepth name slot]
+
+def bindScratchBindingsCode (baseDepth : Nat)
+    (bindings : SlotEnv) : Structured.Code :=
+  bindings.map fun binding =>
+    Structured.BasicInstr.bindScratch baseDepth binding.1 binding.2
+
+def loadNamedSlotCode? (name : Name) (valuesAboveBase slot : Nat) :
+    Option Structured.Code := do
+  let load ← loadSlotCode? valuesAboveBase slot
+  some
+    (bindScratchCode valuesAboveBase name slot ++ load ++
+      [Structured.BasicInstr.bindLocals 0 [name]])
+
+def storeNamedTopSlotCode? (name : Name) (valuesAboveBase slot : Nat) :
+    Option Structured.Code := do
+  let store ← storeTopSlotCode? valuesAboveBase slot
+  some (bindScratchCode valuesAboveBase name slot ++ store)
+
 def liftBuriedToTopCode? : Nat → Option Structured.Code
   | 0 => some []
   | depth + 1 => do
@@ -1142,7 +1163,7 @@ mutual
     | .lit value => some [Structured.BasicInstr.push value]
     | .var name => do
         let slot ← lookupSlot? name env
-        loadSlotCode? valuesAboveBase slot
+        loadNamedSlotCode? name valuesAboveBase slot
     | .code _code => none
     | .prim op args => do
         let argsCode ← compileExprSeqCode? env valuesAboveBase args
@@ -1228,12 +1249,17 @@ def compileStoreTopSlots? : Nat → List Nat → Option Structured.Code
       let tail ← compileStoreTopSlots? (valuesAboveBase - 1) rest
       some (head ++ tail)
 
+def bindScratchTargetsCode (baseDepth : Nat)
+    (names : List Name) (slots : List Nat) : Structured.Code :=
+  (List.zip names slots).map fun binding =>
+    Structured.BasicInstr.bindScratch baseDepth binding.1 binding.2
+
 def compileCallArgsToSlots? (env : SlotEnv) :
     List (Expr 1) → List (Name × Nat) → Option Structured.Code
   | [], [] => some []
-  | arg :: args, (_name, slot) :: slots => do
+  | arg :: args, (name, slot) :: slots => do
       let argCode ← compileExprCode? env 0 arg
-      let storeCode ← storeTopSlotCode? 2 slot
+      let storeCode ← storeNamedTopSlotCode? name 2 slot
       let tail ← compileCallArgsToSlots? env args slots
       some (argCode ++ storeCode ++ tail)
   | _, _ => none
@@ -1243,7 +1269,7 @@ def compileReturnLoadsCode? (env : SlotEnv) :
   | _valuesAboveBase, [] => some []
   | valuesAboveBase, name :: rest => do
       let slot ← lookupSlot? name env
-      let head ← loadSlotCode? valuesAboveBase slot
+      let head ← loadNamedSlotCode? name valuesAboveBase slot
       let tail ← compileReturnLoadsCode? env (valuesAboveBase + 1) rest
       some (head ++ tail)
 
@@ -1315,6 +1341,42 @@ theorem storeTopSlotCode?_eq_some_inv
       cases hCode
       exact ⟨addr, rfl, rfl⟩
 
+theorem loadNamedSlotCode?_eq_some_inv
+    {name : Name} {valuesAboveBase slot : Nat}
+    {code : Structured.Code}
+    (hCode :
+      loadNamedSlotCode? name valuesAboveBase slot = some code) :
+    ∃ load,
+      loadSlotCode? valuesAboveBase slot = some load ∧
+        code =
+          bindScratchCode valuesAboveBase name slot ++ load ++
+            [Structured.BasicInstr.bindLocals 0 [name]] := by
+  unfold loadNamedSlotCode? at hCode
+  cases hLoad : loadSlotCode? valuesAboveBase slot with
+  | none =>
+      simp [hLoad] at hCode
+  | some load =>
+      simp [hLoad] at hCode
+      cases hCode
+      exact ⟨load, rfl, rfl⟩
+
+theorem storeNamedTopSlotCode?_eq_some_inv
+    {name : Name} {valuesAboveBase slot : Nat}
+    {code : Structured.Code}
+    (hCode :
+      storeNamedTopSlotCode? name valuesAboveBase slot = some code) :
+    ∃ store,
+      storeTopSlotCode? valuesAboveBase slot = some store ∧
+        code = bindScratchCode valuesAboveBase name slot ++ store := by
+  unfold storeNamedTopSlotCode? at hCode
+  cases hStore : storeTopSlotCode? valuesAboveBase slot with
+  | none =>
+      simp [hStore] at hCode
+  | some store =>
+      simp [hStore] at hCode
+      cases hCode
+      exact ⟨store, rfl, rfl⟩
+
 theorem compileExprCode?_var_load_slot_bounded {env : SlotEnv}
     {valuesAboveBase limit : Nat} {name : Name}
     {code : Structured.Code}
@@ -1324,7 +1386,7 @@ theorem compileExprCode?_var_load_slot_bounded {env : SlotEnv}
     ∃ slot,
       lookupSlot? name env = some slot ∧
         slot < limit ∧
-        loadSlotCode? valuesAboveBase slot = some code := by
+        loadNamedSlotCode? name valuesAboveBase slot = some code := by
   simp [compileExprCode?] at hCompile
   cases hSlot : lookupSlot? name env with
   | none =>
@@ -1350,7 +1412,8 @@ theorem compileReturnLoadsCode?_namesResolveBounded_of_envSlotsBounded :
       | none =>
           simp [hSlot] at hCode
       | some slot =>
-          cases hHead : loadSlotCode? valuesAboveBase slot with
+          cases hHead :
+              loadNamedSlotCode? name valuesAboveBase slot with
           | none =>
               simp [hSlot, hHead] at hCode
           | some head =>
@@ -1475,6 +1538,52 @@ theorem storeTopSlotCode?_noCallCreate {valuesAboveBase slot : Nat}
             simp [Structured.Code.usesCallCreate,
               Structured.BasicInstr.usesCallCreate,
               Structured.BasicOp.toPrimOp, Assembly.PrimOp.isCallCreate])
+
+theorem bindScratchCode_noCallCreate
+    (baseDepth : Nat) (name : Name) (slot : Nat) :
+    (bindScratchCode baseDepth name slot).usesCallCreate = false := by
+  simp [bindScratchCode, Structured.Code.usesCallCreate,
+    Structured.BasicInstr.usesCallCreate]
+
+theorem bindScratchBindingsCode_noCallCreate
+    (baseDepth : Nat) (bindings : SlotEnv) :
+    (bindScratchBindingsCode baseDepth bindings).usesCallCreate = false := by
+  simp [bindScratchBindingsCode, Structured.Code.usesCallCreate,
+    Structured.BasicInstr.usesCallCreate]
+
+theorem bindScratchTargetsCode_noCallCreate
+    (baseDepth : Nat) (names : List Name) (slots : List Nat) :
+    (bindScratchTargetsCode baseDepth names slots).usesCallCreate = false := by
+  simp [bindScratchTargetsCode, Structured.Code.usesCallCreate,
+    Structured.BasicInstr.usesCallCreate]
+
+theorem loadNamedSlotCode?_noCallCreate
+    {name : Name} {valuesAboveBase slot : Nat} {code : Structured.Code}
+    (hCode :
+      loadNamedSlotCode? name valuesAboveBase slot = some code) :
+    code.usesCallCreate = false := by
+  rcases loadNamedSlotCode?_eq_some_inv hCode with
+    ⟨load, hLoad, rfl⟩
+  exact
+    structuredCode_append_noCallCreate
+      (structuredCode_append_noCallCreate
+        (bindScratchCode_noCallCreate valuesAboveBase name slot)
+        (loadSlotCode?_noCallCreate hLoad))
+      (by
+        simp [Structured.Code.usesCallCreate,
+          Structured.BasicInstr.usesCallCreate])
+
+theorem storeNamedTopSlotCode?_noCallCreate
+    {name : Name} {valuesAboveBase slot : Nat} {code : Structured.Code}
+    (hCode :
+      storeNamedTopSlotCode? name valuesAboveBase slot = some code) :
+    code.usesCallCreate = false := by
+  rcases storeNamedTopSlotCode?_eq_some_inv hCode with
+    ⟨store, hStore, rfl⟩
+  exact
+    structuredCode_append_noCallCreate
+      (bindScratchCode_noCallCreate valuesAboveBase name slot)
+      (storeTopSlotCode?_noCallCreate hStore)
 
 theorem liftBuriedToTopCode?_noCallCreate :
     ∀ {depth : Nat} {code : Structured.Code},
@@ -1611,7 +1720,7 @@ mutual
             simp [hSlot] at hCompile
         | some slot =>
             simp [hSlot] at hCompile
-            exact loadSlotCode?_noCallCreate hCompile
+            exact loadNamedSlotCode?_noCallCreate hCompile
     | code raw =>
         simp [compileExprCode?] at hCompile
     | prim op args =>
@@ -1752,7 +1861,7 @@ theorem compileCallArgsToSlots?_noCallCreate {env : SlotEnv} :
       simp [compileCallArgsToSlots?] at hCode
   | arg :: args, [], code, _hArgs, hCode => by
       simp [compileCallArgsToSlots?] at hCode
-  | arg :: args, (_name, slot) :: slots, code, hArgs, hCode => by
+  | arg :: args, (name, slot) :: slots, code, hArgs, hCode => by
       have hParts :
           arg.usesCallCreate = false ∧
             ExprList.usesCallCreate args = false := by
@@ -1762,7 +1871,7 @@ theorem compileCallArgsToSlots?_noCallCreate {env : SlotEnv} :
       | none =>
           simp [hArg] at hCode
       | some argCode =>
-          cases hStore : storeTopSlotCode? 2 slot with
+          cases hStore : storeNamedTopSlotCode? name 2 slot with
           | none =>
               simp [hArg, hStore] at hCode
           | some storeCode =>
@@ -1776,7 +1885,7 @@ theorem compileCallArgsToSlots?_noCallCreate {env : SlotEnv} :
                     structuredCode_append_noCallCreate
                       (compileExprCode?_noCallCreate hParts.1 hArg)
                       (structuredCode_append_noCallCreate
-                        (storeTopSlotCode?_noCallCreate hStore)
+                        (storeNamedTopSlotCode?_noCallCreate hStore)
                         (compileCallArgsToSlots?_noCallCreate hParts.2 hTail))
 
 theorem compileReturnLoadsCode?_noCallCreate :
@@ -1794,7 +1903,8 @@ theorem compileReturnLoadsCode?_noCallCreate :
       | none =>
           simp [hSlot] at hCode
       | some slot =>
-          cases hHead : loadSlotCode? valuesAboveBase slot with
+          cases hHead :
+              loadNamedSlotCode? name valuesAboveBase slot with
           | none =>
               simp [hSlot, hHead] at hCode
           | some head =>
@@ -1807,7 +1917,7 @@ theorem compileReturnLoadsCode?_noCallCreate :
                   cases hCode
                   exact
                     structuredCode_append_noCallCreate
-                      (loadSlotCode?_noCallCreate hHead)
+                      (loadNamedSlotCode?_noCallCreate hHead)
                       (compileReturnLoadsCode?_noCallCreate hTail)
 
 theorem compileReturnCode?_noCallCreate {env : SlotEnv}
@@ -1876,12 +1986,12 @@ mutual
     | .let_ name value => do
         let code ← compileExprCode? state.env 0 value
         let (slot, state') := allocateName name state
-        let store ← storeTopSlotCode? 1 slot
+        let store ← storeNamedTopSlotCode? name 1 slot
         some { state := state', block := Block.ofCode (code ++ store) }
     | .assign name value => do
         let slot ← lookupSlot? name state.env
         let code ← compileExprCode? state.env 0 value
-        let store ← storeTopSlotCode? 1 slot
+        let store ← storeNamedTopSlotCode? name 1 slot
         some { state := state, block := Block.ofCode (code ++ store) }
     | .block body =>
         compileBlockScoped? ctx returns state body
@@ -1936,6 +2046,8 @@ mutual
         let argCode ← compileCallArgsToSlots? state.env args fn.params
         let calleeBaseTop ← swapTopTwoCode?
         let targetSlots ← targets.mapM (fun name => lookupSlot? name state.env)
+        let targetBindings :=
+          bindScratchTargetsCode targets.length targets targetSlots
         let storeReturns ←
           compileStoreTopSlots? targets.length targetSlots.reverse
         some
@@ -1946,6 +2058,7 @@ mutual
                 Block.ofCode argCode,
                 Block.ofCode calleeBaseTop,
                 { stmts := [Expressions.Stmt.call functionName] },
+                Block.ofCode targetBindings,
                 Block.ofCode storeReturns ] }
     | .terminal kind =>
         some { state := state, block := { stmts := [Expressions.Stmt.terminal kind] } }
@@ -1969,7 +2082,7 @@ theorem compileStmt?_assign_target_slot_bounded
       lookupSlot? name state.env = some slot ∧
         slot < state.nextSlot ∧
         compileExprCode? state.env 0 value = some valueCode ∧
-        storeTopSlotCode? 1 slot = some storeCode ∧
+        storeNamedTopSlotCode? name 1 slot = some storeCode ∧
         plan.state = state ∧
         plan.block = Block.ofCode (valueCode ++ storeCode) := by
   simp [compileStmt?] at hCompile
@@ -1981,7 +2094,7 @@ theorem compileStmt?_assign_target_slot_bounded
       | none =>
           simp [hSlot, hCode] at hCompile
       | some valueCode =>
-          cases hStore : storeTopSlotCode? 1 slot with
+          cases hStore : storeNamedTopSlotCode? name 1 slot with
           | none =>
               simp [hSlot, hCode, hStore] at hCompile
           | some storeCode =>
@@ -2195,7 +2308,7 @@ mutual
         | some code =>
             cases hAlloc : allocateName name state with
             | mk slot state' =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hCode, hAlloc, hStore] at hCompile
                 | some store =>
@@ -2216,7 +2329,7 @@ mutual
             | none =>
                 simp [hSlot, hCode] at hCompile
             | some code =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hSlot, hCode, hStore] at hCompile
                 | some store =>
@@ -2530,7 +2643,7 @@ mutual
         | some code =>
             cases hAlloc : allocateName name state with
             | mk slot state' =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hCode, hAlloc, hStore] at hCompile
                 | some store =>
@@ -2548,7 +2661,7 @@ mutual
             | none =>
                 simp [hSlot, hCode] at hCompile
             | some code =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hSlot, hCode, hStore] at hCompile
                 | some store =>
@@ -2881,7 +2994,7 @@ mutual
         | some code =>
             cases hAlloc : allocateName name state with
             | mk slot state' =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hCode, hAlloc, hStore] at hCompile
                 | some store =>
@@ -2899,7 +3012,7 @@ mutual
             | none =>
                 simp [hSlot, hCode] at hCompile
             | some code =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hSlot, hCode, hStore] at hCompile
                 | some store =>
@@ -3298,7 +3411,7 @@ mutual
         | some code =>
             cases hAlloc : allocateName name state with
             | mk slot state' =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hCode, hAlloc, hStore] at hLeft
                 | some store =>
@@ -3316,7 +3429,7 @@ mutual
             | none =>
                 simp [hSlot, hCode] at hLeft
             | some code =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hSlot, hCode, hStore] at hLeft
                 | some store =>
@@ -3782,7 +3895,7 @@ mutual
         | some code =>
             cases hAlloc : allocateName name state with
             | mk slot state' =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hCode, hAlloc, hStore] at hCompile
                 | some store =>
@@ -3792,7 +3905,7 @@ mutual
                       block_ofCode_noCallCreate
                         (structuredCode_append_noCallCreate
                           (compileExprCode?_noCallCreate hValue hCode)
-                          (storeTopSlotCode?_noCallCreate hStore))
+                          (storeNamedTopSlotCode?_noCallCreate hStore))
     | assign name value =>
         have hValue : value.usesCallCreate = false := by
           simpa [Stmt.usesCallCreate] using hStmt
@@ -3805,7 +3918,7 @@ mutual
             | none =>
                 simp [hSlot, hCode] at hCompile
             | some code =>
-                cases hStore : storeTopSlotCode? 1 slot with
+                cases hStore : storeNamedTopSlotCode? name 1 slot with
                 | none =>
                     simp [hSlot, hCode, hStore] at hCompile
                 | some store =>
@@ -3815,7 +3928,7 @@ mutual
                       block_ofCode_noCallCreate
                         (structuredCode_append_noCallCreate
                           (compileExprCode?_noCallCreate hValue hCode)
-                          (storeTopSlotCode?_noCallCreate hStore))
+                          (storeNamedTopSlotCode?_noCallCreate hStore))
     | block body =>
         exact
           compileBlockScoped?_noCallCreate
@@ -4033,9 +4146,17 @@ mutual
                                                       · subst block
                                                         exact
                                                           block_ofCode_noCallCreate
+                                                            (bindScratchTargetsCode_noCallCreate
+                                                              fn.returns.length
+                                                              targets
+                                                              targetSlots)
+                                                      · rcases hMem with hMem | hMem
+                                                        · subst block
+                                                          exact
+                                                            block_ofCode_noCallCreate
                                                             (compileStoreTopSlots?_noCallCreate
                                                               hStoreReturns)
-                                                      · contradiction)
+                                                        · contradiction)
                 · simp [hFn, hArgsLen, hTargetsLen, hTargetsNodup]
                     at hCompile
               · simp [hFn, hArgsLen, hTargetsLen] at hCompile
@@ -4079,7 +4200,11 @@ def compileFunction? (ctx : CompileCtx) (state : CompileState)
   let bodyPlan ← compileBlockOpen? ctx fn.returns bodyStart fn.body
   let retCode ← compileReturnCode? bodyPlan.state.env fn.returns
   let fullBody :=
-    Block.append bodyPlan.block (Block.ofCode retCode)
+    Block.seqList
+      [ Block.ofCode
+          (bindScratchBindingsCode 0 (functionEnv slots)),
+        bodyPlan.block,
+        Block.ofCode retCode ]
   some
     ({ name := fn.name
        argc := 1
@@ -5421,7 +5546,23 @@ theorem compileFunction?_noCallCreate {ctx : CompileCtx}
                     block_ofCode_noCallCreate
                       (compileReturnCode?_noCallCreate hRetCode)
                   simpa [Expressions.Proc.usesCallCreate] using
-                    block_append_noCallCreate hBodyNo hRetNo
+                    block_seqList_noCallCreate
+                      (by
+                        intro block hMem
+                        simp only [List.mem_cons, List.not_mem_nil] at hMem
+                        rcases hMem with hMem | hMem
+                        · subst block
+                          exact
+                            block_ofCode_noCallCreate
+                              (bindScratchBindingsCode_noCallCreate
+                                0 (functionEnv slots))
+                        · rcases hMem with hMem | hMem
+                          · subst block
+                            exact hBodyNo
+                          · rcases hMem with hMem | hMem
+                            · subst block
+                              exact hRetNo
+                            · contradiction)
     · simp [hRetBound] at hCompile
   · simp [hSigNodup] at hCompile
 

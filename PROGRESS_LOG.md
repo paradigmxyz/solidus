@@ -28187,3 +28187,30 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   lexical stack binding are complete for retained plans; the remaining
   allocation gap is arbitrary mixed stack/scratch lowering and operational
   scratch locations in TypedCfg.
+
+## 2026-06-11 08:36 PDT - Operational scratch locations in TypedCfg
+
+- Added a symbolic `scratchBase` slot and zero-byte `bindScratch` instruction
+  through Structured and TypedCfg syntax, typing, semantics, lowering, and
+  preservation.
+- Instrumented the retained scratch-frame lowerer at variable loads,
+  declaration/assignment stores, call argument/return stores, return loads,
+  and procedure entry. Scratch loads also relabel the loaded word with its
+  canonical local identity.
+- Changed Structured `POP`, `DUP`, and `SWAP` lowering to use TypedCfg's
+  dedicated stack instructions rather than generic primitives, preserving
+  symbolic local and scratch-base identities without changing Assembly.
+- Strengthened `AllocatedTypedCfg` certification so every canonical scratch
+  `(name, slot)` binding must be witnessed in the generated CFG. Added an
+  executable negative regression for an unannotated scratch plan plus positive
+  direct and source-derived scratch-shape regressions.
+- Closed Phase 5, Complete Allocated TypedCfg. The remaining allocation work is
+  now isolated to Phase 4: one lowerer and one theorem for arbitrary
+  well-formed mixed stack/scratch plans.
+- Verification passed: all 1,156 `EvmCompiler.Verification` jobs; allocator,
+  TypedCfg, proof, and frontend layer gates; architecture dependency checks;
+  proof-hole and whitespace scans; Aave v3 math/interest smokes; and Permit2
+  bytecode/call comparisons. Permit2 retains only the known independent
+  `solc_validation` frontend limitation.
+- Fresh metrics: 79 modules, 96,108 Lean lines, 3,998 declarations, 66 broad
+  compiler-variant declarations, and one outcome relation.

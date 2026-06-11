@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-06-11T15:20:12Z",
+  "generated_at": "2026-06-11T15:35:48Z",
   "git": {
-    "commit": "ea0a635c88950464a9369a348f265edbb78ed1d2",
+    "commit": "2146a07aca7e1d47b12d504beb65d8f8f613e22b",
     "branch": "codex/architecture-migration"
   },
   "totals": {
     "module_count": 79,
-    "source_lines": 95840,
+    "source_lines": 96108,
     "direct_imports": 201,
-    "declarations": 3977,
+    "declarations": 3998,
     "compiler_variant_declarations": 66,
     "outcome_relation_declarations": 1,
     "verification_root_imports": 10,
@@ -117,9 +117,9 @@
     {
       "path": "EvmCompiler/Compiler/AllocatedTypedCfg.lean",
       "module": "EvmCompiler.Compiler.AllocatedTypedCfg",
-      "source_lines": 348,
+      "source_lines": 389,
       "direct_imports": 3,
-      "declarations": 36
+      "declarations": 43
     },
     {
       "path": "EvmCompiler/Compiler/Artifact.lean",
@@ -187,9 +187,9 @@
     {
       "path": "EvmCompiler/Functions/ScratchFrameSpill.lean",
       "module": "EvmCompiler.Functions.ScratchFrameSpill",
-      "source_lines": 5988,
+      "source_lines": 6129,
       "direct_imports": 4,
-      "declarations": 183
+      "declarations": 195
     },
     {
       "path": "EvmCompiler/Functions/Semantics.lean",
@@ -383,28 +383,28 @@
     {
       "path": "EvmCompiler/Structured/Semantics.lean",
       "module": "EvmCompiler.Structured.Semantics",
-      "source_lines": 1331,
+      "source_lines": 1333,
       "direct_imports": 2,
       "declarations": 29
     },
     {
       "path": "EvmCompiler/Structured/Syntax.lean",
       "module": "EvmCompiler.Structured.Syntax",
-      "source_lines": 636,
+      "source_lines": 639,
       "direct_imports": 3,
       "declarations": 47
     },
     {
       "path": "EvmCompiler/Structured/TypedCfgCompiler.lean",
       "module": "EvmCompiler.Structured.TypedCfgCompiler",
-      "source_lines": 711,
+      "source_lines": 748,
       "direct_imports": 2,
-      "declarations": 52
+      "declarations": 53
     },
     {
       "path": "EvmCompiler/Structured/TypedCfgPreservation.lean",
       "module": "EvmCompiler.Structured.TypedCfgPreservation",
-      "source_lines": 7363,
+      "source_lines": 7373,
       "direct_imports": 3,
       "declarations": 173
     },
@@ -425,35 +425,35 @@
     {
       "path": "EvmCompiler/TypedCfg/Lower.lean",
       "module": "EvmCompiler.TypedCfg.Lower",
-      "source_lines": 477,
+      "source_lines": 478,
       "direct_imports": 2,
       "declarations": 25
     },
     {
       "path": "EvmCompiler/TypedCfg/Preservation.lean",
       "module": "EvmCompiler.TypedCfg.Preservation",
-      "source_lines": 2820,
+      "source_lines": 2839,
       "direct_imports": 4,
       "declarations": 50
     },
     {
       "path": "EvmCompiler/TypedCfg/Semantics.lean",
       "module": "EvmCompiler.TypedCfg.Semantics",
-      "source_lines": 282,
+      "source_lines": 284,
       "direct_imports": 2,
       "declarations": 19
     },
     {
       "path": "EvmCompiler/TypedCfg/Syntax.lean",
       "module": "EvmCompiler.TypedCfg.Syntax",
-      "source_lines": 201,
+      "source_lines": 211,
       "direct_imports": 1,
-      "declarations": 28
+      "declarations": 29
     },
     {
       "path": "EvmCompiler/TypedCfg/Typing.lean",
       "module": "EvmCompiler.TypedCfg.Typing",
-      "source_lines": 237,
+      "source_lines": 239,
       "direct_imports": 2,
       "declarations": 24
     },
@@ -570,5 +570,30 @@
       "declarations": 9
     }
   ],
-  "build_measurements": []
+  "build_measurements": [
+    {
+      "module": "EvmCompiler.Public",
+      "started_at": "2026-06-11T15:35:42Z",
+      "cache_state": "warm",
+      "exit_status": 0,
+      "real_seconds": 2.01,
+      "peak_rss_bytes": 712228864
+    },
+    {
+      "module": "EvmCompiler.Compiler.AllocatedTypedCfg",
+      "started_at": "2026-06-11T15:35:44Z",
+      "cache_state": "warm",
+      "exit_status": 0,
+      "real_seconds": 1.99,
+      "peak_rss_bytes": 711901184
+    },
+    {
+      "module": "EvmCompiler.Objects.Compiler",
+      "started_at": "2026-06-11T15:35:46Z",
+      "cache_state": "warm",
+      "exit_status": 0,
+      "real_seconds": 1.97,
+      "peak_rss_bytes": 712523776
+    }
+  ]
 }

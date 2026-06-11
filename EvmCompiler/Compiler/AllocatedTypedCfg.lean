@@ -53,6 +53,22 @@ def cfgWitnessesLocalLayout (program : TypedCfg.Program)
   names.isEmpty ||
     program.blocks.any fun block => blockWitnessesLocalLayout block names
 
+def instrBindsScratch (instr : TypedCfg.Instr)
+    (binding : Locals.Name × Nat) : Bool :=
+  match instr with
+  | .bindScratch _baseDepth name slot =>
+      decide ((name, slot) = binding)
+  | _ => false
+
+def blockWitnessesScratchBinding (block : TypedCfg.Block)
+    (binding : Locals.Name × Nat) : Bool :=
+  block.body.any fun instr => instrBindsScratch instr binding
+
+def cfgWitnessesScratchBinding (program : TypedCfg.Program)
+    (binding : Locals.Name × Nat) : Bool :=
+  program.blocks.any fun block =>
+    blockWitnessesScratchBinding block binding
+
 namespace ScopeLayout
 
 def stackNames (layout : ScopeLayout) : List Locals.Name :=
@@ -62,14 +78,21 @@ def stackNames (layout : ScopeLayout) : List Locals.Name :=
     | _ => none
 
 def WitnessedBy (layout : ScopeLayout) (cfg : TypedCfg.Program) : Prop :=
-  cfgWitnessesLocalLayout cfg layout.stackNames = true
+  cfgWitnessesLocalLayout cfg layout.stackNames = true ∧
+    layout.scratchBindings.Forall fun binding =>
+      cfgWitnessesScratchBinding cfg binding = true
 
 end ScopeLayout
 
+def scopeLayoutWitnessed? (layout : ScopeLayout)
+    (cfg : TypedCfg.Program) : Bool :=
+  cfgWitnessesLocalLayout cfg layout.stackNames &&
+    layout.scratchBindings.all fun binding =>
+      cfgWitnessesScratchBinding cfg binding
+
 def scopeLayoutsWitnessed? (layouts : List ScopeLayout)
     (cfg : TypedCfg.Program) : Bool :=
-  layouts.all fun layout =>
-    cfgWitnessesLocalLayout cfg layout.stackNames
+  layouts.all fun layout => scopeLayoutWitnessed? layout cfg
 
 structure Program where
   allocation : Locals.Allocation.ProgramPlan
@@ -308,6 +331,18 @@ def namedLocalAllocation : Locals.Allocation.Plan :=
 def namedAllocation : Locals.Allocation.ProgramPlan :=
   Locals.Allocation.ProgramPlan.main namedLocalAllocation
 
+def scratchLocalAllocation : Locals.Allocation.Plan :=
+  { sourceScope := ["value"]
+    stackOrder := []
+    bindings := [("value", .scratch 0)]
+    scratchRegion? :=
+      some
+        { base := .freeMemoryPointer
+          words := 1 } }
+
+def scratchAllocation : Locals.Allocation.ProgramPlan :=
+  Locals.Allocation.ProgramPlan.main scratchLocalAllocation
+
 def duplicateScopeAllocation : Locals.Allocation.ProgramPlan :=
   { scopes :=
       [{ scope := .main
@@ -329,6 +364,9 @@ def staleLayoutProgram : Program :=
 def unwitnessedNamedProgram : Program :=
   Program.ofAllocation namedAllocation cfg
 
+def unwitnessedScratchProgram : Program :=
+  Program.ofAllocation scratchAllocation cfg
+
 example : program.compileCertified?.isSome = true := by
   native_decide
 
@@ -336,6 +374,9 @@ example : staleLayoutProgram.compileCertified? = none := by
   native_decide
 
 example : unwitnessedNamedProgram.compileCertified? = none := by
+  native_decide
+
+example : unwitnessedScratchProgram.compileCertified? = none := by
   native_decide
 
 example : duplicateScopeAllocation.wellFormed? = false := by

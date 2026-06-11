@@ -314,8 +314,12 @@ theorem runAt_toCfg
       (instr.step state).map fun final => (final, output) := by
   unfold TypedCfg.Instr.runAt
   rw [hType]
-  cases instr <;>
-    rfl
+  cases instr with
+  | push value => rfl
+  | op op =>
+      cases op <;> rfl
+  | bindLocals offset names => rfl
+  | bindScratch baseDepth name slot => rfl
 
 end BasicInstr
 
@@ -556,6 +560,12 @@ theorem step_map_eraseCfgControl
   | op op =>
       exact BasicOp.step_map_eraseCfgControl hRel
   | bindLocals offset names =>
+      simpa [Structured.BasicInstr.step, Except.map] using
+        congrArg
+          (fun state =>
+            (Except.ok state : Except EVMException EVMState))
+          hRel
+  | bindScratch baseDepth name slot =>
       simpa [Structured.BasicInstr.step, Except.map] using
         congrArg
           (fun state =>

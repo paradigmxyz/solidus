@@ -45,6 +45,32 @@ example :
       some ([], TypedCfg.Shape.closed [.local "value"]) := by
   native_decide
 
+example :
+    TypedCfg.Instr.lowerAt?
+        (.bindScratch 0 "value" 0)
+        (TypedCfg.Shape.closed [.word]) =
+      some ([], TypedCfg.Shape.closed [.scratchBase]) := by
+  native_decide
+
+def typedScratchLoad : List TypedCfg.Instr :=
+  [ .bindScratch 0 "value" 0,
+    .dup 0,
+    .push (Functions.ScratchFrameSpill.slotOffset 0),
+    .prim .add,
+    .prim .mload,
+    .bindLocals 0 ["value"] ]
+
+example :
+    TypedCfg.Block.bodyType? typedScratchLoad
+        (TypedCfg.Shape.closed [.word]) =
+      some (TypedCfg.Shape.closed [.local "value", .scratchBase]) := by
+  native_decide
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.unwitnessedScratchProgram.compileCertified? =
+      none := by
+  native_decide
+
 def allocationDrivenProcShapeRecorded : Bool :=
   let source :=
     Functions.ScratchFrameSpill.AllocationExamples.program
@@ -92,6 +118,30 @@ def allocationDrivenLexicalShapeRecorded : Bool :=
                   (Compiler.AllocatedTypedCfg.scopeLayoutsOf allocation) cfg
 
 example : allocationDrivenLexicalShapeRecorded = true := by
+  native_decide
+
+def allocationDrivenScratchBindingRecorded : Bool :=
+  let source :=
+    Functions.ScratchFrameSpill.AllocationExamples.nestedProgram
+  match
+      (Functions.ScratchFrameSpill.allocationPlanner 1).plan? source with
+  | none => false
+  | some allocation =>
+      let planned : Objects.Program.PlannedProgram :=
+        { source := source
+          allocation := allocation }
+      match planned.lowerWithAllocation? with
+      | none => false
+      | some expressions =>
+          match planned.lowerTypedCfg? expressions with
+          | none => false
+          | some cfg =>
+              Compiler.AllocatedTypedCfg.cfgWitnessesScratchBinding
+                  cfg ("nested", 0) &&
+                Compiler.AllocatedTypedCfg.scopeLayoutsWitnessed?
+                  (Compiler.AllocatedTypedCfg.scopeLayoutsOf allocation) cfg
+
+example : allocationDrivenScratchBindingRecorded = true := by
   native_decide
 
 def firstLabel : Assembly.Label :=

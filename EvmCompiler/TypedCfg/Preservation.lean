@@ -622,6 +622,13 @@ theorem runState_pc_of_lowerAt
           simp [TypedCfg.Instr.runState] at hRun
           cases hRun
           exact (uint256_add_zero state.pc).symm
+      | bindScratch baseDepth name slot =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simp [TypedCfg.Instr.runState] at hRun
+          cases hRun
+          exact (uint256_add_zero state.pc).symm
       | relabel target =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
@@ -762,6 +769,11 @@ theorem lowerAt_source_runN
             at hLower
           rcases hLower with ⟨rfl, rfl⟩
           simp [Assembly.Source.runN, TypedCfg.Instr.runState]
+      | bindScratch baseDepth name slot =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simp [Assembly.Source.runN, TypedCfg.Instr.runState]
       | relabel target =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
@@ -877,6 +889,13 @@ theorem lowerAt_source_runNResult
           rw [hRun]
           exact map_map_fst_running _
       | bindLocals offset names =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rw [runAt_map_running_fst hType]
+          simp [Assembly.Source.runNResult, TypedCfg.Instr.runState]
+          rfl
+      | bindScratch baseDepth name slot =>
           simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
             at hLower
           rcases hLower with ⟨rfl, rfl⟩

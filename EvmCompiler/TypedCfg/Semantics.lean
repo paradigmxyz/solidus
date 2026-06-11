@@ -77,6 +77,8 @@ def runState (instr : Instr) (shape : Shape) (state : EVMState) :
       | _ => .error .InvalidInstruction
   | .bindLocals _offset _names =>
       .ok state
+  | .bindScratch _baseDepth _name _slot =>
+      .ok state
   | .relabel _target =>
       .ok state
   | .unwind target =>

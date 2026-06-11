@@ -23,6 +23,8 @@ def step : BasicInstr → EVMState → Except EVMException EVMState
       basicOp.step state
   | .bindLocals _offset _names, state =>
       .ok state
+  | .bindScratch _baseDepth _name _slot, state =>
+      .ok state
 
 end BasicInstr
 

@@ -17,6 +17,7 @@ inductive Slot where
   | word
   | literal (value : Word)
   | local (name : String)
+  | scratchBase
   | temp (scope : Nat) (index : Nat)
   | returnToken
   | returnPC (site : Nat)
@@ -77,6 +78,14 @@ def bindLocals? (offset : Nat) (names : List String)
             shape.slots.drop (offset + names.length) }
   else
     none
+
+def bindScratch? (baseDepth : Nat) (shape : Shape) : Option Shape :=
+  match shape.slots[baseDepth]? with
+  | none => none
+  | some _ =>
+      some
+        { shape with
+          slots := shape.slots.set baseDepth .scratchBase }
 
 def hasPrefix (prefixShape shape : Shape) : Prop :=
   prefixShape.tail = shape.tail ∧
@@ -148,6 +157,7 @@ inductive Instr where
   | dup (depth : Nat)
   | swap (depth : Nat)
   | bindLocals (offset : Nat) (names : List String)
+  | bindScratch (baseDepth : Nat) (name : String) (slot : Nat)
   | relabel (target : Shape)
   | unwind (target : Shape)
   deriving DecidableEq, Repr

@@ -274,6 +274,7 @@ inductive BasicInstr where
   | push (value : Word)
   | op (op : BasicOp)
   | bindLocals (offset : Nat) (names : List Name)
+  | bindScratch (baseDepth : Nat) (name : Name) (slot : Nat)
   deriving DecidableEq, Repr
 
 abbrev Code := List BasicInstr
@@ -284,6 +285,7 @@ def usesCallCreate : BasicInstr → Bool
   | .push _ => false
   | BasicInstr.op basicOp => basicOp.toPrimOp.isCallCreate
   | .bindLocals _ _ => false
+  | .bindScratch _ _ _ => false
 
 end BasicInstr
 
@@ -599,6 +601,7 @@ def toAssembly : BasicInstr → Assembly.Program
   | .push value => [.push value]
   | .op basicOp => [.prim basicOp.toPrimOp]
   | .bindLocals _ _ => []
+  | .bindScratch _ _ _ => []
 
 theorem toAssembly_usesCallCreate (instr : BasicInstr) :
     Assembly.Program.usesCallCreate instr.toAssembly =

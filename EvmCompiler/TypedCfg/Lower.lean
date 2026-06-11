@@ -50,6 +50,7 @@ def lower? : Instr → Option Assembly.Program
       | 15 => some [.prim .swap16]
       | _ => none
   | .bindLocals _offset _names => some []
+  | .bindScratch _baseDepth _name _slot => some []
   | .relabel _target => some []
   | .unwind _target => none
 

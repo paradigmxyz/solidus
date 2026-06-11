@@ -79,10 +79,47 @@ end Shape
 
 namespace BasicInstr
 
+def basicOpToCfg : BasicOp → TypedCfg.Instr
+  | .pop => .pop
+  | .dup1 => .dup 0
+  | .dup2 => .dup 1
+  | .dup3 => .dup 2
+  | .dup4 => .dup 3
+  | .dup5 => .dup 4
+  | .dup6 => .dup 5
+  | .dup7 => .dup 6
+  | .dup8 => .dup 7
+  | .dup9 => .dup 8
+  | .dup10 => .dup 9
+  | .dup11 => .dup 10
+  | .dup12 => .dup 11
+  | .dup13 => .dup 12
+  | .dup14 => .dup 13
+  | .dup15 => .dup 14
+  | .dup16 => .dup 15
+  | .swap1 => .swap 0
+  | .swap2 => .swap 1
+  | .swap3 => .swap 2
+  | .swap4 => .swap 3
+  | .swap5 => .swap 4
+  | .swap6 => .swap 5
+  | .swap7 => .swap 6
+  | .swap8 => .swap 7
+  | .swap9 => .swap 8
+  | .swap10 => .swap 9
+  | .swap11 => .swap 10
+  | .swap12 => .swap 11
+  | .swap13 => .swap 12
+  | .swap14 => .swap 13
+  | .swap15 => .swap 14
+  | .swap16 => .swap 15
+  | op => .prim op.toPrimOp
+
 def toCfg : BasicInstr → TypedCfg.Instr
   | .push value => .push value
-  | .op op => .prim op.toPrimOp
+  | .op op => basicOpToCfg op
   | .bindLocals offset names => .bindLocals offset names
+  | .bindScratch baseDepth name slot => .bindScratch baseDepth name slot
 
 end BasicInstr
 

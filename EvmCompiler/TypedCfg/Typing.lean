@@ -44,6 +44,8 @@ def type? (instr : Instr) (shape : Shape) : Option Shape :=
         none
   | .bindLocals offset names =>
       shape.bindLocals? offset names
+  | .bindScratch baseDepth _name _slot =>
+      shape.bindScratch? baseDepth
   | .relabel target =>
       if shape.relabelCompatible target then some target else none
   | .unwind target =>
