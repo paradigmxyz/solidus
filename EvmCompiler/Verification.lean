@@ -47,6 +47,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.EffectSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
+#check EvmCompiler.Structured.ObserverSemantics.Code.FrameReflecting
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCode
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCondition
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.terminal
@@ -58,9 +59,11 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.outcome_block_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
+#check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg
 #check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Code.runCondition_of_runBody_toCfg_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_outcome_of_wellTyped_halt

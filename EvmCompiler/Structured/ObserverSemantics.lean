@@ -193,6 +193,22 @@ def FrameSafe (code : Structured.Code) : Prop :=
       run code (withHidden state hidden) =
         .ok (withHidden final hidden)
 
+/--
+Semantic converse to `FrameSafe`.
+
+If code succeeds with a compiler-owned hidden stack suffix, the same source
+code succeeds without that suffix and the hidden execution is exactly the
+framed source result. Backward compiler adequacy requires this source-facing
+property at procedure boundaries.
+-/
+def FrameReflecting (code : Structured.Code) : Prop :=
+  ∀ (transcript : Trace) (state framedFinal : State transcript)
+      (hidden : EvmYul.Stack Word),
+    run code (withHidden state hidden) = .ok framedFinal →
+      ∃ final,
+        run code state = .ok final ∧
+          framedFinal = withHidden final hidden
+
 @[simp] theorem withHidden_source
     {transcript : Trace} (state : State transcript)
     (hidden : EvmYul.Stack Word) :

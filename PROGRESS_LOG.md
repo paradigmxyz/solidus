@@ -28651,3 +28651,20 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   terminal-premise grep, and `git diff --check` pass. Focused axiom audit for
   the new semantic, frame-relation, code, condition, false-if, and terminal
   theorems reports only `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 16:08:25 PDT `theorem-boundary`: Named
+  `ObserverSemantics.Code.FrameReflecting`, the exact source-semantic converse
+  needed to remove concrete return-frame suffixes during backward adequacy.
+  This is source-facing rather than compiler-generated, but remains an interim
+  interface until it is derived structurally for checked code.
+
+- 2026-06-11 16:08:25 PDT `proof`: Generalized straight-line and
+  compiler-facing code backward adequacy across active realized procedure
+  frames using `FrameReflecting`. Return tokens and caller stacks remain
+  private to the Structured-to-TypedCfg state relation; no replay certificate
+  or generated-code premise was added.
+
+- 2026-06-11 16:08:59 PDT `verification`: The 1,177-job verification root,
+  focused semantics/adequacy build, architecture guard, scoped no-hole scan,
+  and `git diff --check` pass. The framed code converse and its compiler-facing
+  wrapper depend only on `propext`, `Classical.choice`, and `Quot.sound`.

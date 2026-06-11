@@ -17,6 +17,93 @@ abbrev Trace := Assembly.ResourceTrace
 namespace Code
 
 /--
+Backward straight-line adequacy across realized procedure frames.
+
+The target run is transported to the source state with its concrete hidden
+suffix, then `FrameReflecting` removes only that compiler-owned suffix. This
+keeps return-frame representation entirely inside the adjacent pass proof.
+-/
+theorem run_of_runBody_toCfg
+    {transcript : Trace} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {target targetFinal : EVMState}
+    {trace traceFinal : Trace}
+    (hType : TypedCfgCompiler.Code.type? code input = some output)
+    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
+    (hRel :
+      ObserverPreservation.StateRel
+        source tokens target trace)
+    (hRun :
+      TypedCfg.ObserverSemantics.Block.runBody
+          (TypedCfgCompiler.Code.toCfg code) input target trace =
+        .ok ((targetFinal, output), traceFinal)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Code.run code source = .ok final ∧
+        ObserverPreservation.StateRel
+          final tokens targetFinal traceFinal := by
+  rcases hRel.1 with ⟨realized, hRealize, hSame⟩
+  have hAppend :=
+    TypedCfgPreservation.realizeStack_append_prefix
+      source.source.evm.stack [] source.source.returns tokens
+  cases hHidden :
+      TypedCfgPreservation.realizeStack
+        [] source.source.returns tokens with
+  | none =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+  | some hidden =>
+      simp [hHidden] at hAppend
+      rw [hAppend] at hRealize
+      cases hRealize
+      let targetState : ObserverSemantics.State transcript :=
+        source.withSource (source.source.withEVM target)
+      let framedSource :=
+        ObserverSemantics.Code.withHidden source hidden
+      have hReplay :
+          ObserverPreservation.ReplayStateRel targetState framedSource := by
+        exact
+          ⟨rfl, by simp [targetState, framedSource],
+            by simpa [targetState, framedSource,
+                ObserverSemantics.Code.withHidden,
+                RunState.withEVM] using hSame⟩
+      have hTargetBody :
+          TypedCfg.ObserverSemantics.Block.runBody
+              (TypedCfgCompiler.Code.toCfg code) input
+              targetState.source.evm targetState.remaining =
+            .ok ((targetFinal, output), traceFinal) := by
+        simpa [targetState, hRel.2] using hRun
+      obtain
+          ⟨targetFinalState, hTargetCode, hTargetEVM, hTargetTrace⟩ :=
+        ObserverPreservation.Code.run_of_runBody_toCfg
+          hType hTargetBody
+      obtain ⟨framedFinal, hFramedRun, hFinalReplay⟩ :=
+        ObserverPreservation.Code.run_of_rel hReplay hTargetCode
+      obtain ⟨final, hSourceRun, hFramedFinal⟩ :=
+        hFrameReflecting transcript source framedFinal hidden
+          (by simpa [framedSource] using hFramedRun)
+      subst framedFinal
+      have hFinalReturns :
+          final.source.returns = source.source.returns :=
+        ObserverSemantics.Code.run_returns_eq hSourceRun
+      refine ⟨final, hSourceRun, ?_⟩
+      refine ⟨?_, ?_⟩
+      · refine ⟨final.source.evm.stack ++ hidden, ?_, ?_⟩
+        · have hFinalAppend :=
+            TypedCfgPreservation.realizeStack_append_prefix
+              final.source.evm.stack [] final.source.returns tokens
+          simpa [hFinalReturns, hHidden] using hFinalAppend
+        · rw [← hTargetEVM]
+          simpa [ObserverSemantics.Code.withHidden,
+              RunState.withEVM] using hFinalReplay.source.2
+      · rw [← hTargetTrace]
+        exact
+          (ObserverPreservation.ReplayStateRel.remaining_eq
+            hFinalReplay).symm
+
+/--
 Backward straight-line adequacy at a source boundary with no active ghost
 return frames. This is the top-level case used by the first closed-program
 theorem; recursive procedure frames require the stronger shape-indexed
@@ -157,6 +244,91 @@ theorem runCondition_of_runBody_toCfg_noFrames
 end Code
 
 namespace Stmt
+
+/--
+Compiler-facing backward adequacy for a straight-line statement across active
+procedure frames.
+-/
+theorem outcome_code_of_compileStmtFuel?_and_step
+    {transcript : Trace} {fuel : Nat}
+    {program : Structured.Program} {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target targetFinal : EVMState}
+    {trace traceFinal : Trace}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
+    (hRel :
+      ObserverPreservation.StateRel.At
+        input source tokens target trace)
+    (hStep :
+      TypedCfg.ObserverSemantics.Program.step
+          cfg entry target trace =
+        .ok (.jump regular targetFinal, traceFinal)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Stmt.Eval program fuel
+          (.code code) source
+          (Structured.OutcomeT.regular final) ∧
+        ObserverPreservation.StateRel
+          final tokens targetFinal traceFinal := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg code) input with
+  | none =>
+      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+  | some output =>
+      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      cases hCompile
+      let generated : TypedCfg.Block :=
+        { label := entry
+          input := input
+          body := TypedCfgCompiler.Code.toCfg code
+          output := output
+          term := .jump regular }
+      have hFind :
+          cfg.findBlock? entry = some generated :=
+        hBlocks generated (by simp [generated])
+      unfold TypedCfg.ObserverSemantics.Program.step at hStep
+      rw [hFind] at hStep
+      change
+        TypedCfg.ObserverSemantics.Block.run generated target trace =
+          .ok (.jump regular targetFinal, traceFinal) at hStep
+      unfold TypedCfg.ObserverSemantics.Block.run at hStep
+      dsimp [generated] at hStep
+      cases hBody :
+          TypedCfg.ObserverSemantics.Block.runBody
+            (TypedCfgCompiler.Code.toCfg code) input target trace with
+      | error err =>
+          rw [hBody] at hStep
+          simp [generated, Bind.bind, Except.bind] at hStep
+      | ok bodyResult =>
+          rcases bodyResult with ⟨⟨bodyFinal, bodyOutput⟩, bodyTrace⟩
+          rw [hBody] at hStep
+          simp only [Bind.bind, Except.bind] at hStep
+          by_cases hOutput : bodyOutput = output
+          · simp [generated, hOutput] at hStep
+            rcases hStep with ⟨hFinal, hTrace⟩
+            subst bodyOutput
+            simp [TypedCfg.Block.runTerm] at hFinal
+            subst targetFinal
+            subst traceFinal
+            obtain ⟨final, hSourceRun, hFinalRel⟩ :=
+              Code.run_of_runBody_toCfg
+                (by simpa [TypedCfgCompiler.Code.type?] using hType)
+                hFrameReflecting hRel.rel hBody
+            exact
+              ⟨final,
+                Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
+                hFinalRel⟩
+          · simp [generated, hOutput] at hStep
 
 /--
 Compiler-facing backward adequacy for a straight-line statement at a boundary

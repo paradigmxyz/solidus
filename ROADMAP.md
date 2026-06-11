@@ -103,11 +103,13 @@ Adjacent boundary status:
   checked for statements, blocks, recursive switch/loop/call control, halts,
   and whole-program artifacts. Terminal stack-suffix preservation is now a
   checked shared semantic theorem rather than a public premise. Backward
-  straight-line code, condition, compiler-facing code, terminal, and false-if
-  leaves are checked at the closed no-frame boundary. Halt typing enforces
-  operand arity, so compiler-owned return data cannot satisfy missing source
-  operands. General framed code, true branches, recursive control, internal
-  calls, and whole-program backward adequacy remain.
+  straight-line code and compiler-facing code are checked across active frames
+  under the source-semantic `Code.FrameReflecting` interface; condition,
+  terminal, and false-if leaves are checked at the closed no-frame boundary.
+  Halt typing enforces operand arity, so compiler-owned return data cannot
+  satisfy missing source operands. Deriving `FrameReflecting` structurally,
+  framed conditions, true branches, recursive control, internal calls, and
+  whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
