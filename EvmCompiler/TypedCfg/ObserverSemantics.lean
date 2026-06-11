@@ -1,5 +1,5 @@
 import EvmCompiler.Assembly.Observer
-import EvmCompiler.TypedCfg.Preservation
+import EvmCompiler.TypedCfg.EffectSemantics
 
 namespace EvmCompiler
 namespace TypedCfg
@@ -9,20 +9,23 @@ abbrev Trace := Assembly.ResourceTrace
 
 namespace Instr
 
+@[simp] def handler : EffectSemantics.Handler Trace where
+  afterInstr instr final trace :=
+    match instr with
+    | .prim op =>
+        match Assembly.ResourceObserver.ofPrimOp? op with
+        | some kind =>
+            Assembly.ResourceObserver.applyOracleFromPostState
+              kind final trace
+        | none => .ok (final, trace)
+    | _ => .ok (final, trace)
+
 def runState (instr : TypedCfg.Instr) (shape : Shape)
     (state : EVMState) (trace : Trace) :
     Except EVMException (EVMState × Trace) :=
   match TypedCfg.Instr.runState instr shape state with
   | .error err => .error err
-  | .ok final =>
-      match instr with
-      | .prim op =>
-          match Assembly.ResourceObserver.ofPrimOp? op with
-          | some kind =>
-              Assembly.ResourceObserver.applyOracleFromPostState
-                kind final trace
-          | none => .ok (final, trace)
-      | _ => .ok (final, trace)
+  | .ok final => handler.afterInstr instr final trace
 
 def runAt (instr : TypedCfg.Instr) (shape : Shape)
     (state : EVMState) (trace : Trace) :
@@ -31,6 +34,22 @@ def runAt (instr : TypedCfg.Instr) (shape : Shape)
     (instr.type? shape).elim (.error .InvalidInstruction) .ok
   let (state', trace') ← runState instr shape state trace
   .ok ((state', output), trace')
+
+theorem runState_eq_effectSemantics
+    (instr : TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (trace : Trace) :
+    runState instr shape state trace =
+      EffectSemantics.Instr.runState handler instr shape state trace := by
+  unfold runState EffectSemantics.Instr.runState
+  cases TypedCfg.Instr.runState instr shape state <;> rfl
+
+theorem runAt_eq_effectSemantics
+    (instr : TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (trace : Trace) :
+    runAt instr shape state trace =
+      EffectSemantics.Instr.runAt handler instr shape state trace := by
+  unfold runAt EffectSemantics.Instr.runAt
+  rw [runState_eq_effectSemantics]
 
 theorem runAt_map_running
     {instr : TypedCfg.Instr} {shape output : Shape}
@@ -56,9 +75,9 @@ theorem runState_plain_pc
   unfold runState at hRun
   cases hPlain : TypedCfg.Instr.runState instr shape state with
   | error err =>
-      simp [hPlain] at hRun
+      simp [hPlain, Bind.bind, Except.bind] at hRun
   | ok plain =>
-      simp only [hPlain] at hRun
+      simp only [hPlain, handler, Bind.bind, Except.bind] at hRun
       cases instr with
       | prim op =>
         cases hObserver : Assembly.ResourceObserver.ofPrimOp? op with
@@ -121,29 +140,43 @@ theorem runState_plain_pc
           cases hRun
           exact ⟨final, rfl, rfl⟩
 
-theorem runState_pc_of_lowerAt
-    {instr : TypedCfg.Instr} {shape output : Shape}
-    {code : Assembly.Program} {state final : EVMState}
-    {trace trace' : Trace}
-    (hLower : instr.lowerAt? shape = some (code, output))
-    (hRun : runState instr shape state trace = .ok (final, trace')) :
-    final.pc =
-      state.pc + EvmYul.UInt256.ofNat code.byteLength := by
-  rcases runState_plain_pc hRun with ⟨plain, hPlain, hPc⟩
-  rw [hPc]
-  exact Preservation.Instr.runState_pc_of_lowerAt hLower hPlain
-
 end Instr
 
 namespace Block
 
 def runBody : List TypedCfg.Instr → Shape → EVMState → Trace →
-    Except EVMException ((EVMState × Shape) × Trace)
-  | [], shape, state, trace => .ok ((state, shape), trace)
-  | instr :: rest, shape, state, trace => do
+    Except EVMException ((EVMState × Shape) × Trace) :=
+  EffectSemantics.Block.runBody Instr.handler
+
+theorem runBody_eq_effectSemantics
+    (body : List TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (trace : Trace) :
+    runBody body shape state trace =
+      EffectSemantics.Block.runBody
+        Instr.handler body shape state trace := by
+  rfl
+
+@[simp] theorem runBody_nil (shape : Shape) (state : EVMState)
+    (trace : Trace) :
+    runBody [] shape state trace = .ok ((state, shape), trace) := rfl
+
+@[simp] theorem runBody_cons (instr : TypedCfg.Instr)
+    (rest : List TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (trace : Trace) :
+    runBody (instr :: rest) shape state trace =
+      (do
+        let ((state', shape'), trace') ←
+          Instr.runAt instr shape state trace
+        runBody rest shape' state' trace') := by
+  change
+    (do
       let ((state', shape'), trace') ←
-        Instr.runAt instr shape state trace
-      runBody rest shape' state' trace'
+        EffectSemantics.Instr.runAt
+          Instr.handler instr shape state trace
+      EffectSemantics.Block.runBody
+        Instr.handler rest shape' state' trace') = _
+  rw [← Instr.runAt_eq_effectSemantics]
+  simp only [runBody_eq_effectSemantics]
 
 def run (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
     Except EVMException (TypedCfg.Outcome × Trace) := do
@@ -153,6 +186,12 @@ def run (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
     .ok (TypedCfg.Block.runTerm block.output block.term state', trace')
   else
     .error .InvalidInstruction
+
+theorem run_eq_effectSemantics
+    (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
+    run block state trace =
+      EffectSemantics.Block.run Instr.handler block state trace := by
+  rfl
 
 end Block
 
@@ -165,20 +204,18 @@ def step (program : TypedCfg.Program) (label : Label)
   | none => .ok (.invalid state, trace)
   | some block => Block.run block state trace
 
+theorem step_eq_effectSemantics
+    (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (trace : Trace) :
+    step program label state trace =
+      EffectSemantics.Program.step Instr.handler
+        program label state trace := by
+  rfl
+
 def runN (program : TypedCfg.Program) :
     Nat → Label → EVMState → Trace →
-      Except EVMException (TypedCfg.Outcome × Trace)
-  | 0, label, state, trace => .ok (.jump label state, trace)
-  | fuel + 1, label, state, trace =>
-      match step program label state trace with
-      | .error err => .error err
-      | .ok (outcome, trace') =>
-          match outcome with
-          | .jump next state' => runN program fuel next state' trace'
-          | .fallthrough state' => .ok (.fallthrough state', trace')
-          | .returnDispatch state' => .ok (.returnDispatch state', trace')
-          | .halt kind state' => .ok (.halt kind state', trace')
-          | .invalid state' => .ok (.invalid state', trace')
+      Except EVMException (TypedCfg.Outcome × Trace) :=
+  EffectSemantics.Program.runN Instr.handler program
 
 end Program
 

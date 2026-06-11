@@ -90,6 +90,8 @@ retired_modules=(
   EvmCompiler/Yul/OpenRuntime.lean
   EvmCompiler/Yul/ObjectPreservation.lean
   EvmCompiler/Yul/ObjectRuntime.lean
+  EvmCompiler/Yul/ObserverOracle.lean
+  EvmCompiler/Yul/ObserverPreservation.lean
   EvmCompiler/LayerAudit.lean
   EvmCompiler/StackGuardAudit.lean
   EvmCompiler/Legacy.lean
@@ -111,6 +113,61 @@ report_matches \
   'The observer specialization must not define another Yul control evaluator:' \
   '^[[:space:]]*def (evalTail|evalArgs|evalValues|eval|call|callDispatcher|execSeq|exec|loop)[[:space:]]' \
   EvmCompiler/Yul/ObserverOracle.lean
+
+report_matches \
+  'Observer modules must not define observer-specific compiler implementations:' \
+  '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]].*(compile|lower|emit|assemble)[^:]*[:=]' \
+  EvmCompiler -g '*Observer*.lean'
+
+report_matches \
+  'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
+  '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+
+report_matches \
+  'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
+  '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+
+report_matches \
+  'Retired vertical observer namespaces must not remain in checked Lean artifacts:' \
+  'EvmCompiler\.Yul\.(ObserverOracle|ObserverPreservation)' \
+  EvmCompiler proof_artifacts -g '*.lean'
+
+report_matches \
+  'The end-to-end theorem must compose public adjacent boundaries, not import lower pass proofs:' \
+  '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|ObserverPreservation|StackShuffle))' \
+  EvmCompiler/Yul/EndToEnd.lean
+
+report_matches \
+  'The end-to-end theorem must not perform recursive lower-pass execution reasoning:' \
+  '(TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation)|runNResultWithOracle|lowerBodyFrom\?)' \
+  EvmCompiler/Yul/EndToEnd.lean
+
+if ! rg -q '^import EvmCompiler\.TypedCfg\.EffectSemantics$' \
+    EvmCompiler/TypedCfg/ObserverSemantics.lean ||
+    ! rg -q 'EffectSemantics\.Program\.runN' \
+      EvmCompiler/TypedCfg/ObserverSemantics.lean; then
+  printf '%s\n\n' \
+    'TypedCfg observer execution must specialize the shared effect interpreter.' \
+    >&2
+  failed=1
+fi
+
+report_matches \
+  'TypedCfg observer semantics must not restore a recursive observer-only control interpreter:' \
+  '^[[:space:]]*\|[[:space:]]*(fuel[[:space:]]*\+[[:space:]]*1|instr[[:space:]]*::[[:space:]]*rest)' \
+  EvmCompiler/TypedCfg/ObserverSemantics.lean
+
+if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
+    EvmCompiler/Functions.lean ||
+    ! rg -q '^namespace Canonical$' \
+      EvmCompiler/Functions/EffectSemantics.lean; then
+  printf '%s\n\n' \
+    'Functions.Source.Effectful must remain the canonical exported parameterized semantics.' \
+    >&2
+  failed=1
+fi
 
 report_matches \
   'The stable Solidity frontend must compile through public artifacts, not legacy preservation corridors:' \

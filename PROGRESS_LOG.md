@@ -28440,3 +28440,34 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   aggregate, focused resource-observer axiom audit, and `git diff --check`
   pass. The new positive-fuel and backward-classification theorems depend only
   on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 13:41:09 PDT `compaction-resume`: Resumed the active end-to-end
+  observer theorem at runtime-state congruence. The current checkpoint
+  canonicalizes the gas-preserving, control-erased relation and proves exact
+  transcript replay for TypedCfg primitives while ruling out `pc` and
+  uncontrolled external calls through checked effects.
+
+- 2026-06-11 13:55:50 PDT `compaction-resume`: Resumed after migrating the
+  observer proof into adjacent pass-owned modules. The next checked boundary
+  is whole-run TypedCfg-to-Assembly backward adequacy over the shared effect
+  semantics and canonical control-erased runtime-state relation.
+
+- 2026-06-11 14:03:00 PDT `architecture-audit`: The prior observer corridor
+  mixed imported-Yul replay with public bytecode execution, let the Yul proof
+  depend directly on Locals, duplicated recursive TypedCfg control execution,
+  and left effect/certificate facts outside their owning passes. Its axiom
+  smoke also named the now-retired vertical modules.
+
+- 2026-06-11 14:03:00 PDT `architecture-migration`: Split source replay into
+  `Yul.ObserverSemantics`, target replay into `Public.Observer`, and
+  Yul-to-Functions facts into `Yul.FunctionsObserverPreservation`; introduced
+  the generic adjacent `Simulation.ObserverPass` contract, canonical
+  `Functions.Source.Effectful` exports, shared `TypedCfg.EffectSemantics`, and
+  canonical Assembly runtime-state relations. Architecture guards now reject
+  observer-specific compilers, restored vertical modules, lower-pass imports
+  from Yul/EndToEnd, and duplicate TypedCfg control interpreters.
+
+- 2026-06-11 14:03:00 PDT `verification`: The 1,172-job verification
+  aggregate, resource/public proof smokes, focused axiom audit, architecture
+  checks, scoped no-hole scan, and `git diff --check` pass. Audited observer
+  theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.

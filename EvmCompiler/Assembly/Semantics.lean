@@ -6,7 +6,6 @@ import EvmYul.EVM.StateOps
 namespace EvmCompiler
 namespace Assembly
 
-abbrev EVMState := EvmYul.EVM.State
 abbrev EVMException := EvmYul.EVM.ExecutionException
 
 structure Halt where
@@ -374,79 +373,6 @@ def runNResult (program : Program) : Nat → EVMState → Except EVMException St
       | .halted halt => .ok (.halted halt)
 
 end Compiled
-
-/--
-The observable state relation for the gasless layer.
-
-The first verified slice actually proves exact equality against the gasless
-target semantics. This projection names the intended claim boundary for the
-later full-EVM theorem, where EVM gas accounting and execution counters will be
-erased before comparison.
--/
-def eraseGas (state : EVMState) : EVMState :=
-  { state with
-    gasAvailable := EvmYul.UInt256.ofNat 0
-    execLength := 0
-  }
-
-/--
-Erase lowering-only control position and accounting fields while retaining the
-ordinary EVM data observed by adjacent compiler IRs.
-
-Structured and TypedCfg control transfers are atomic, while their Assembly
-lowerings may execute labels, stack shuffles, and dispatch tests. Those hidden
-instructions legitimately change `pc` and `execLength`.
--/
-def eraseControl (state : EVMState) : EVMState :=
-  { eraseGas state with pc := EvmYul.UInt256.ofNat 0 }
-
-def SameData (target source : EVMState) : Prop :=
-  eraseControl target = eraseControl source
-
-theorem eraseControl_with_pc (state : EVMState) (pc : Word) :
-    eraseControl { state with pc := pc } = eraseControl state := by
-  cases state
-  rfl
-
-theorem eraseControl_with_stack (state : EVMState)
-    (stack : EvmYul.Stack Word) :
-    eraseControl { state with stack := stack } =
-      { eraseControl state with stack := stack } := by
-  cases state
-  rfl
-
-theorem eraseControl_with_stack_congr {left right : EVMState}
-    {stack : EvmYul.Stack Word}
-    (hEq : eraseControl left = eraseControl right) :
-    eraseControl { left with stack := stack } =
-      eraseControl { right with stack := stack } := by
-  cases left
-  cases right
-  simp [eraseControl, eraseGas] at hEq ⊢
-  exact hEq.1
-
-theorem eraseControl_replaceStackAndIncrPC_of_eq
-    {left right : EVMState}
-    {leftStack rightStack : EvmYul.Stack Word} {pcΔ : Nat}
-    (hEq : eraseControl left = eraseControl right)
-    (hStack : leftStack = rightStack) :
-    eraseControl
-        (left.replaceStackAndIncrPC leftStack (pcΔ := pcΔ)) =
-      eraseControl
-        (right.replaceStackAndIncrPC rightStack (pcΔ := pcΔ)) := by
-  cases left
-  cases right
-  simp [eraseControl, eraseGas] at hEq ⊢
-  exact ⟨hEq.1, hStack⟩
-
-theorem SameData.refl (state : EVMState) :
-    SameData state state := rfl
-
-theorem SameData.trans {first second third : EVMState}
-    (hFirst : SameData first second)
-    (hSecond : SameData second third) :
-    SameData first third :=
-  Eq.trans hFirst hSecond
 
 theorem SameData.jumpPc (dest : Nat) (state : EVMState) :
     SameData (Source.jumpPc dest state) state := by

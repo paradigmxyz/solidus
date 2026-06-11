@@ -1,4 +1,5 @@
 import EvmCompiler.Public
+import EvmCompiler.Public.Observer
 import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Functions.AllocationLowering
@@ -6,14 +7,15 @@ import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.ObserverSemantics
+import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObjectSemantics
-import EvmCompiler.Yul.ObserverOracle
-import EvmCompiler.Yul.ObserverPreservation
+import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.StateRelation
 
 /-!

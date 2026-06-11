@@ -1,11 +1,11 @@
 import EvmCompiler.Assembly.Observer
-import EvmCompiler.PublicVerification
 import EvmCompiler.Simulation.ResourceReplay
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.Primitive
 
 namespace EvmCompiler
 namespace Yul
-namespace ObserverOracle
+namespace ObserverSemantics
 
 /-!
 Resource-observer support over the common compiler architecture.
@@ -68,22 +68,6 @@ def yulPrimObserver? (prim : EvmYul.Operation .Yul) : Option Observer :=
     Assembly.ResourceObserver.ofPrimOp? op.toPrimOp =
       basicOpObserver? op := by
   cases op <;> rfl
-
-@[simp] theorem typedCfgEffects_gas :
-    (TypedCfg.Effects.ofPrim .gas).observesResources = true := by
-  native_decide
-
-@[simp] theorem typedCfgEffects_msize :
-    (TypedCfg.Effects.ofPrim .msize).observesResources = true := by
-  native_decide
-
-@[simp] theorem typedCfgEffects_gas_noExternal :
-    (TypedCfg.Effects.ofPrim .gas).callsOrCreates = false := by
-  native_decide
-
-@[simp] theorem typedCfgEffects_msize_noExternal :
-    (TypedCfg.Effects.ofPrim .msize).callsOrCreates = false := by
-  native_decide
 
 namespace SourceReplay
 
@@ -473,74 +457,6 @@ theorem ExactTerminates.remaining_eq_nil
 end Program
 end SourceReplay
 
-namespace PublicArtifact
-
-def NoExternalEffects (artifact : Public.Artifact) : Prop :=
-  artifact.metadata.certificate.cfg.safety.noCallCreate = true
-
-def noExternalEffects? (artifact : Public.Artifact) : Bool :=
-  artifact.metadata.certificate.cfg.safety.noCallCreate
-
-theorem noExternalEffects_of_check
-    {artifact : Public.Artifact}
-    (hCheck : noExternalEffects? artifact = true) :
-    NoExternalEffects artifact :=
-  hCheck
-
-def TerminalObserverRun (artifact : Public.Artifact) (fuel : Nat)
-    (initial : Assembly.EVMState) (result : Assembly.StepResult)
-    (trace : Trace) : Prop :=
-  Assembly.Target.runNResultWithObservers artifact.target fuel initial =
-      .ok (result, trace) ∧
-    result.IsTerminal
-
-def ObserverReplay (artifact : Public.Artifact) (fuel : Nat)
-    (initial : Assembly.EVMState) (result : Assembly.StepResult)
-    (trace : Trace) : Prop :=
-  Assembly.Target.runNResultWithObservers artifact.target fuel initial =
-      .ok (result, trace) ∧
-    Assembly.Target.runNResultWithOracle artifact.target fuel initial trace =
-      .ok (result, [])
-
-theorem observerReplay_of_run
-    {artifact : Public.Artifact} {fuel : Nat}
-    {initial : Assembly.EVMState} {result : Assembly.StepResult}
-    {trace : Trace}
-    (hRun :
-      Assembly.Target.runNResultWithObservers artifact.target fuel initial =
-        .ok (result, trace)) :
-    ObserverReplay artifact fuel initial result trace := by
-  refine ⟨hRun, ?_⟩
-  simpa using
-    (Assembly.Target.runNResultWithOracle_of_withObservers
-      (rest := []) hRun)
-
-theorem terminalObserverRun_observerReplay
-    {artifact : Public.Artifact} {fuel : Nat}
-    {initial : Assembly.EVMState} {result : Assembly.StepResult}
-    {trace : Trace}
-    (hRun : TerminalObserverRun artifact fuel initial result trace) :
-    ObserverReplay artifact fuel initial result trace :=
-  observerReplay_of_run hRun.1
-
-end PublicArtifact
-
-theorem compileResourceArtifactWithPolicy?_verifiedObserverRun
-    {policy : Public.BackendPolicy} {source : Public.Source}
-    {artifact : Public.Artifact} {initial : Assembly.EVMState}
-    {fuel : Nat} {result : Assembly.StepResult} {trace : Trace}
-    (hCompile :
-      Public.compileArtifactWithPolicy? policy
-        .resourceObservers source = some artifact)
-    (hRun :
-      Assembly.Target.runNResultWithObservers artifact.target fuel initial =
-        .ok (result, trace)) :
-    artifact.EntrySimulation initial ∧
-      PublicArtifact.ObserverReplay artifact fuel initial result trace := by
-  exact
-    ⟨Public.compileArtifactWithPolicy?_entrySimulation hCompile,
-      PublicArtifact.observerReplay_of_run hRun⟩
-
-end ObserverOracle
+end ObserverSemantics
 end Yul
 end EvmCompiler

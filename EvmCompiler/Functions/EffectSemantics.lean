@@ -358,6 +358,32 @@ def runState {σ : Type} (model : StateModel σ)
 end Program
 
 end Effectful
+
+/-!
+Canonical Functions semantics.
+
+New compiler-pass preservation and effect specializations use this
+parameterized interpreter. `Functions.SourceSemantics` remains available as a
+compatibility semantics for existing non-effect proofs, but it is not the
+semantic authority for observer-aware boundaries.
+-/
+namespace Canonical
+
+abbrev StateModel := Effectful.StateModel
+abbrev PrimitiveSemantics := Effectful.PrimitiveSemantics
+abbrev Outcome := Effectful.Outcome
+
+namespace Program
+
+abbrev runState {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (fuel : Nat)
+    (program : Functions.Program) (state : σ) :
+    Except EVMException (Outcome σ) :=
+  Effectful.Program.runState model prim fuel program state
+
+end Program
+
+end Canonical
 end Source
 end Functions
 end EvmCompiler

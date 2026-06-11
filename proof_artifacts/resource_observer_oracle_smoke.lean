@@ -1,7 +1,9 @@
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.ObserverSemantics
-import EvmCompiler.Yul.ObserverOracle
-import EvmCompiler.Yul.ObserverPreservation
+import EvmCompiler.Public.Observer
+import EvmCompiler.Simulation.ObserverPass
+import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.StateRelation
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.TypedCfg.ObserverPreservation
@@ -17,18 +19,20 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.ObserverSemantics.stmt_run_call_let_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.run
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.ExactReplay
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.ExactTerminates
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.ExactReplay.observed_eq_transcript
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.ExactReplay.remaining_eq_nil
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.evalValues_gas_cons
-#check EvmCompiler.Yul.ObserverOracle.SourceReplay.evalValues_msize_cons
-#check EvmCompiler.Yul.ObserverOracle.typedCfgEffects_gas
-#check EvmCompiler.Yul.ObserverOracle.typedCfgEffects_msize
-#check EvmCompiler.Yul.ObserverOracle.PublicArtifact.ObserverReplay
-#check EvmCompiler.Yul.ObserverOracle.PublicArtifact.TerminalObserverRun
-#check EvmCompiler.Yul.ObserverOracle.compileResourceArtifactWithPolicy?_verifiedObserverRun
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.run
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.ExactReplay
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.ExactTerminates
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.ExactReplay.observed_eq_transcript
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.ExactReplay.remaining_eq_nil
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_msize_cons
+#check EvmCompiler.TypedCfg.Effects.ofPrim_gas_observesResources
+#check EvmCompiler.TypedCfg.Effects.ofPrim_msize_observesResources
+#check EvmCompiler.Public.Observer.ExactReplay
+#check EvmCompiler.Public.Observer.TerminalRun
+#check EvmCompiler.Public.Observer.compileResourceArtifactWithPolicy?_verifiedRun
+#check EvmCompiler.Simulation.ObserverPass.ForwardPreservation
+#check EvmCompiler.Simulation.ObserverPass.BackwardAdequacy
 #check EvmCompiler.Assembly.Preservation.stepAt_emit_result_withOracle_eq
 #check EvmCompiler.Assembly.Preservation.target_runNResultWithOracle_eq_runList_of_emitInstr?
 #check EvmCompiler.Assembly.Preservation.assemble_target_runNResultWithOracle_source_step_exact
@@ -53,15 +57,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Yul.StateRelation.Replay.Rel
-#check EvmCompiler.Yul.ObserverPreservation.observerPrim
-#check EvmCompiler.Yul.ObserverPreservation.gas
-#check EvmCompiler.Yul.ObserverPreservation.msize
-#check EvmCompiler.Yul.ObserverPreservation.lowerEvalGas
-#check EvmCompiler.Yul.ObserverPreservation.lowerEvalMsize
-#check EvmCompiler.Yul.ObserverPreservation.lowerExecLetGas
-#check EvmCompiler.Yul.ObserverPreservation.lowerExecLetMsize
-#check EvmCompiler.Yul.ObserverPreservation.lowerExecLetGasFunctions
-#check EvmCompiler.Yul.ObserverPreservation.lowerExecLetMsizeFunctions
+#check EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim
+#check EvmCompiler.Yul.FunctionsObserverPreservation.gas
+#check EvmCompiler.Yul.FunctionsObserverPreservation.msize
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGas
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsize
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetGas
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #check EvmCompiler.Yul.EndToEnd.State.InitialRel
 #check EvmCompiler.Yul.EndToEnd.Result.Rel
 #check EvmCompiler.Yul.EndToEnd.Result.target_terminal
@@ -75,10 +77,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.ObserverSemantics.runBody_let_gas_cons
 #print axioms EvmCompiler.Functions.ObserverSemantics.stmt_run_call_let_gas_cons
 #print axioms EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
-#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.evalValues_gas_cons
-#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.evalValues_msize_cons
-#print axioms EvmCompiler.Yul.ObserverOracle.SourceReplay.Program.ExactReplay.observed_eq_transcript
-#print axioms EvmCompiler.Yul.ObserverOracle.compileResourceArtifactWithPolicy?_verifiedObserverRun
+#print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons
+#print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_msize_cons
+#print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.ExactReplay.observed_eq_transcript
+#print axioms EvmCompiler.Public.Observer.compileResourceArtifactWithPolicy?_verifiedRun
 #print axioms EvmCompiler.Assembly.Preservation.stepAt_emit_result_withOracle_eq
 #print axioms EvmCompiler.Assembly.Preservation.target_runNResultWithOracle_eq_runList_of_emitInstr?
 #print axioms EvmCompiler.Assembly.Preservation.compile_target_runNResultWithOracle_source_step_exact
@@ -95,14 +97,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_eventuallyWithOracle
 #print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
 #print axioms EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
-#print axioms EvmCompiler.Yul.ObserverPreservation.observerPrim
-#print axioms EvmCompiler.Yul.ObserverPreservation.gas
-#print axioms EvmCompiler.Yul.ObserverPreservation.msize
-#print axioms EvmCompiler.Yul.ObserverPreservation.lowerEvalGas
-#print axioms EvmCompiler.Yul.ObserverPreservation.lowerExecLetGas
-#print axioms EvmCompiler.Yul.ObserverPreservation.lowerExecLetMsize
-#print axioms EvmCompiler.Yul.ObserverPreservation.lowerExecLetGasFunctions
-#print axioms EvmCompiler.Yul.ObserverPreservation.lowerExecLetMsizeFunctions
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.gas
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.msize
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGas
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetGas
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

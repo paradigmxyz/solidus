@@ -1,4 +1,5 @@
 import EvmCompiler.Assembly.Assembler
+import EvmCompiler.Assembly.StateRelation
 import EvmYul.Semantics
 import EvmYul.EVM.State
 import EvmYul.EVM.StateOps
@@ -1777,6 +1778,193 @@ theorem run_suffix_exists_safe
             have hPopTarget := Stack.pop6_append_of_some (tail := base) hPop
             rw [hStack, hPopTarget] at hRun
             simp [hPop, hShared] at hIso hRun
+
+/--
+Continuing primitive semantics are congruent modulo compiler-owned control
+counters. This lower-layer theorem is shared by Structured and observer-aware
+TypedCfg semantics.
+-/
+theorem idRun_eq {α : Type} (value : α) :
+    Id.run value = value :=
+  rfl
+
+attribute [local simp] idRun_eq
+
+theorem run_map_eraseRuntimeControl
+    {step : PrimStep} {target source : EvmYul.EVM.State}
+    (hRel : SameRuntimeData target source) :
+    (step.run target).map eraseRuntimeControl =
+      (step.run source).map eraseRuntimeControl := by
+  cases target with
+  | mk targetShared targetPc targetStack targetExec =>
+      cases source with
+      | mk sourceShared sourcePc sourceStack sourceExec =>
+          simp [SameRuntimeData, eraseRuntimeControl] at hRel
+          rcases hRel with ⟨rfl, rfl⟩
+          cases step with
+          | bin f =>
+              cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.execBinOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | un f =>
+              cases hPop : targetStack.pop <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.execUnOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | tri f =>
+              cases hPop : targetStack.pop3 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.execTriOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | executionEnv f =>
+              simp [Except.map, PrimStep.run,
+                EvmYul.EVM.executionEnvOp,
+                eraseRuntimeControl,
+                EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC]
+          | unaryExecutionEnv f =>
+              cases hPop : targetStack.pop <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.unaryExecutionEnvOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | machineState f =>
+              simp [Except.map, PrimStep.run,
+                EvmYul.EVM.machineStateOp,
+                eraseRuntimeControl,
+                EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC]
+          | binaryMachineState f =>
+              cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.binaryMachineStateOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | binaryMachineStateWithResult f =>
+              cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.binaryMachineStateOp', hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | ternaryMachineState f =>
+              cases hPop : targetStack.pop3 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.ternaryMachineStateOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | state f =>
+              simp [Except.map, PrimStep.run, EvmYul.EVM.stateOp,
+                eraseRuntimeControl,
+                EvmYul.EVM.State.replaceStackAndIncrPC,
+                EvmYul.EVM.State.incrPC]
+          | unaryState f =>
+              cases hPop : targetStack.pop <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.unaryStateOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | binaryState f =>
+              cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.binaryStateOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | ternaryCopy f =>
+              cases hPop : targetStack.pop3 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.ternaryCopyOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | quaternaryCopy f =>
+              cases hPop : targetStack.pop4 <;>
+                simp [Except.map, PrimStep.run,
+                  EvmYul.EVM.quaternaryCopyOp, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | pop =>
+              cases hPop : targetStack.pop <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | mload =>
+              cases hPop : targetStack.pop <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | returndatacopy =>
+              cases hPop : targetStack.pop3 with
+              | none =>
+                  simp [Except.map, PrimStep.run, hPop,
+                    eraseRuntimeControl]
+              | some values =>
+                  by_cases hBounds :
+                      targetShared.returnData.size <
+                        values.2.2.1.toNat + values.2.2.2.toNat <;>
+                    simp [Except.map, PrimStep.run, hPop,
+                      hBounds, eraseRuntimeControl,
+                      EvmYul.EVM.State.replaceStackAndIncrPC,
+                      EvmYul.EVM.State.incrPC]
+          | dup n =>
+              by_cases hLength : n ≤ targetStack.length <;>
+                simp [Except.map, PrimStep.run, EvmYul.dup,
+                  hLength, eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | swap n =>
+              by_cases hLength : n + 1 ≤ targetStack.length <;>
+                simp [Except.map, PrimStep.run, EvmYul.swap,
+                  hLength, eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | log0 =>
+              cases hPop : targetStack.pop2 <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | log1 =>
+              cases hPop : targetStack.pop3 <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | log2 =>
+              cases hPop : targetStack.pop4 <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | log3 =>
+              cases hPop : targetStack.pop5 <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | log4 =>
+              cases hPop : targetStack.pop6 <;>
+                simp [Except.map, PrimStep.run, hPop,
+                  eraseRuntimeControl,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+          | invalid =>
+              rfl
 
 end PrimStep
 

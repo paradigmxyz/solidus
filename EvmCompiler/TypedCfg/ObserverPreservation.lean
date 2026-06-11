@@ -1,8 +1,28 @@
 import EvmCompiler.Assembly.StackShuffleObserverPreservation
 import EvmCompiler.TypedCfg.ObserverSemantics
+import EvmCompiler.TypedCfg.Preservation
 
 namespace EvmCompiler
 namespace TypedCfg
+
+namespace ObserverSemantics
+namespace Instr
+
+theorem runState_pc_of_lowerAt
+    {instr : TypedCfg.Instr} {shape output : Shape}
+    {code : Assembly.Program} {state final : EVMState}
+    {trace trace' : Assembly.ResourceTrace}
+    (hLower : instr.lowerAt? shape = some (code, output))
+    (hRun : runState instr shape state trace = .ok (final, trace')) :
+    final.pc =
+      state.pc + EvmYul.UInt256.ofNat code.byteLength := by
+  rcases runState_plain_pc hRun with ⟨plain, hPlain, hPc⟩
+  rw [hPc]
+  exact Preservation.Instr.runState_pc_of_lowerAt hLower hPlain
+
+end Instr
+end ObserverSemantics
+
 namespace ObserverPreservation
 
 abbrev Trace := Assembly.ResourceTrace
@@ -1808,7 +1828,7 @@ theorem runBody_output_of_lowerBodyFrom?
       shape output runOutput code state final trace trace' with
   | nil =>
       simp [TypedCfg.Block.lowerBodyFrom?,
-        ObserverSemantics.Block.runBody] at hLower hRun
+        ObserverSemantics.Block.runBody_nil] at hLower hRun
       exact hRun.1.2.symm.trans hLower.2
   | cons instr rest ih =>
       unfold TypedCfg.Block.lowerBodyFrom? at hLower
@@ -1828,8 +1848,8 @@ theorem runBody_output_of_lowerBodyFrom?
               have hType :
                   instr.type? shape = some headOutput :=
                 Preservation.Instr.type?_eq_some_of_lowerAt? hHead
-              unfold ObserverSemantics.Block.runBody
-                ObserverSemantics.Instr.runAt at hRun
+              rw [ObserverSemantics.Block.runBody_cons] at hRun
+              unfold ObserverSemantics.Instr.runAt at hRun
               rw [hType] at hRun
               cases hHeadRun :
                   ObserverSemantics.Instr.runState
@@ -1856,7 +1876,7 @@ theorem runBody_pc_of_lowerBodyFrom?
       shape code output state final trace trace' with
   | nil =>
       simp [TypedCfg.Block.lowerBodyFrom?,
-        ObserverSemantics.Block.runBody] at hLower hRun
+        ObserverSemantics.Block.runBody_nil] at hLower hRun
       rcases hLower with ⟨rfl, rfl⟩
       obtain ⟨⟨hState, _hShape⟩, _hTrace⟩ := hRun
       subst final
@@ -1879,8 +1899,8 @@ theorem runBody_pc_of_lowerBodyFrom?
               have hType :
                   instr.type? shape = some headOutput :=
                 Preservation.Instr.type?_eq_some_of_lowerAt? hHead
-              unfold ObserverSemantics.Block.runBody
-                ObserverSemantics.Instr.runAt at hRun
+              rw [ObserverSemantics.Block.runBody_cons] at hRun
+              unfold ObserverSemantics.Instr.runAt at hRun
               rw [hType] at hRun
               cases hHeadRun :
                   ObserverSemantics.Instr.runState
@@ -1985,7 +2005,7 @@ theorem lowerBodyFrom?_source_runNResultWithOracle
                     instr shape state trace with
               | error err =>
                   simp [ObserverSemantics.Instr.runAt,
-                    ObserverSemantics.Block.runBody, hType, hRunState,
+                    ObserverSemantics.Block.runBody_cons, hType, hRunState,
                     Bind.bind, Except.bind, Except.map]
               | ok runPair =>
                   rcases runPair with ⟨mid, traceMid⟩
@@ -2010,7 +2030,7 @@ theorem lowerBodyFrom?_source_runNResultWithOracle
                       (state := mid) (trace := traceMid)
                       hTail hTailFits hMidPc
                   simpa [List.append_assoc,
-                    ObserverSemantics.Block.runBody,
+                    ObserverSemantics.Block.runBody_cons,
                     ObserverSemantics.Instr.runAt, hType, hRunState,
                     Bind.bind, Except.bind, Except.map] using hTailRun
 

@@ -1,4 +1,6 @@
-import EvmCompiler.Yul.ObserverOracle
+import EvmCompiler.Public.Observer
+import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.StateRelation
 
 namespace EvmCompiler
@@ -15,7 +17,7 @@ current generated CFG represents program end with an invalid terminator.
 -/
 
 abbrev Trace := Assembly.ResourceTrace
-abbrev SourceResult := ObserverOracle.SourceReplay.Result
+abbrev SourceResult := ObserverSemantics.SourceReplay.Result
 
 namespace State
 
@@ -29,7 +31,7 @@ def InitialRel (codeRel : StateRelation.CodeRel)
     (program : Yul.Program) (source : EvmYul.Yul.State)
     (target : Assembly.EVMState) : Prop :=
   Rel codeRel
-    (ObserverOracle.SourceReplay.Program.installContract program
+    (ObserverSemantics.SourceReplay.Program.installContract program
       (transcript := ([] : Trace)) { source := source }).source
     target
 
@@ -77,7 +79,7 @@ structure ClosedArtifact (policy : Public.BackendPolicy)
     Public.compileArtifactWithPolicy? policy
       .resourceObservers (.yul program) = some artifact
   noExternalEffects :
-    ObserverOracle.PublicArtifact.NoExternalEffects artifact
+    Public.Observer.NoExternalEffects artifact
 
 theorem ClosedArtifact.valid
     {policy : Public.BackendPolicy} {program : Yul.Program}
@@ -94,11 +96,11 @@ theorem ClosedArtifact.observerReplay
     {transcript : Trace}
     (hArtifact : ClosedArtifact policy program artifact)
     (hRun :
-      ObserverOracle.PublicArtifact.TerminalObserverRun artifact fuel
+      Public.Observer.TerminalRun artifact fuel
         initial target transcript) :
-    ObserverOracle.PublicArtifact.ObserverReplay artifact fuel initial
+    Public.Observer.ExactReplay artifact fuel initial
       target transcript :=
-  ObserverOracle.PublicArtifact.terminalObserverRun_observerReplay hRun
+  hRun.exactReplay
 
 /--
 The exact proposition that the first end-to-end proof must establish.
@@ -114,10 +116,10 @@ def ClosedResourceCorrect : Prop :=
     (fuel : Nat) (target : Assembly.StepResult) (transcript : Trace),
     ClosedArtifact policy program artifact →
     State.InitialRel codeRel program source initial →
-    ObserverOracle.PublicArtifact.TerminalObserverRun artifact fuel
+    Public.Observer.TerminalRun artifact fuel
       initial target transcript →
     ∃ sourceResult : SourceResult transcript,
-      ObserverOracle.SourceReplay.Program.ExactTerminates
+      ObserverSemantics.SourceReplay.Program.ExactTerminates
         program source transcript sourceResult ∧
       Result.Rel codeRel sourceResult target
 

@@ -8,6 +8,7 @@ namespace ObserverSemantics
 abbrev Trace := Assembly.ResourceTrace
 abbrev State := Locals.ObserverSemantics.State
 abbrev Outcome := Locals.Source.Effectful.Outcome
+abbrev basicOpObserver? := Locals.ObserverSemantics.basicOpObserver?
 
 def stateModel (transcript : Trace) :
     Functions.Source.Effectful.StateModel (State transcript) :=
@@ -16,6 +17,153 @@ def stateModel (transcript : Trace) :
 def primitiveSemantics (transcript : Trace) :
     Functions.Source.Effectful.PrimitiveSemantics (State transcript) :=
   Locals.ObserverSemantics.primitiveSemantics transcript
+
+theorem primitiveSemantics_eval_observer
+    {transcript : Trace} {op : Structured.BasicOp}
+    {kind : Assembly.ResourceObserver}
+    {state state' : State transcript} {value : Assembly.Word}
+    (hObserver : basicOpObserver? op = some kind)
+    (hConsume :
+      Simulation.ResourceReplay.consume? kind state =
+        some (value, state')) :
+    (primitiveSemantics transcript).eval op state [] =
+      .ok (state', [value]) := by
+  simp [primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
+    basicOpObserver?, hObserver, hConsume]
+
+theorem expr_eval_gas
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (hConsume :
+      Simulation.ResourceReplay.consume? .gas state =
+        some (value, state')) :
+    Functions.Source.Effectful.Expr.eval
+        (stateModel transcript) (primitiveSemantics transcript)
+        (.prim .gas .nil : Functions.Expr 1) state =
+      .ok (state', [value]) := by
+  simp [Functions.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.ExprSeq.eval,
+    primitiveSemantics_eval_observer (op := .gas) (by rfl) hConsume]
+
+theorem expr_eval_msize
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (hConsume :
+      Simulation.ResourceReplay.consume? .msize state =
+        some (value, state')) :
+    Functions.Source.Effectful.Expr.eval
+        (stateModel transcript) (primitiveSemantics transcript)
+        (.prim .msize .nil : Functions.Expr 1) state =
+      .ok (state', [value]) := by
+  simp [Functions.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.ExprSeq.eval,
+    primitiveSemantics_eval_observer (op := .msize) (by rfl) hConsume]
+
+theorem expr_evalOne_gas
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (hConsume :
+      Simulation.ResourceReplay.consume? .gas state =
+        some (value, state')) :
+    Functions.Source.Effectful.Expr.evalOne
+        (stateModel transcript) (primitiveSemantics transcript)
+        (.prim .gas .nil : Functions.Expr 1) state =
+      .ok (state', value) := by
+  unfold Functions.Source.Effectful.Expr.evalOne
+  unfold Locals.Source.Effectful.Expr.evalOne
+  have hEval :
+      Locals.Source.Effectful.Expr.eval
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .gas .nil : Functions.Expr 1) state =
+        .ok (state', [value]) :=
+    expr_eval_gas hConsume
+  rw [hEval]
+  simp [Bind.bind, Except.bind]
+
+theorem expr_evalOne_msize
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (hConsume :
+      Simulation.ResourceReplay.consume? .msize state =
+        some (value, state')) :
+    Functions.Source.Effectful.Expr.evalOne
+        (stateModel transcript) (primitiveSemantics transcript)
+        (.prim .msize .nil : Functions.Expr 1) state =
+      .ok (state', value) := by
+  unfold Functions.Source.Effectful.Expr.evalOne
+  unfold Locals.Source.Effectful.Expr.evalOne
+  have hEval :
+      Locals.Source.Effectful.Expr.eval
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .msize .nil : Functions.Expr 1) state =
+        .ok (state', [value]) :=
+    expr_eval_msize hConsume
+  rw [hEval]
+  simp [Bind.bind, Except.bind]
+
+theorem stmt_run_let_gas
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name)
+    (hConsume :
+      Simulation.ResourceReplay.consume? .gas state =
+        some (value, state')) :
+    Functions.Source.Effectful.Stmt.run
+        (stateModel transcript) (primitiveSemantics transcript)
+        program ctx fuel (.let_ name (.prim .gas .nil : Functions.Expr 1))
+        state =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular
+          (state'.withSource (state'.source.insert name value)),
+          { ctx with scope := name :: ctx.scope }) := by
+  unfold Functions.Source.Effectful.Stmt.run
+  change
+    (do
+      let (stateAfterValue, value') ←
+        Functions.Source.Effectful.Expr.evalOne
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .gas .nil : Functions.Expr 1) state
+      .ok
+        (Functions.Source.Effectful.Outcome.regular
+          ((stateModel transcript).insert stateAfterValue name value'),
+          { ctx with scope := name :: ctx.scope })) =
+      _
+  rw [expr_evalOne_gas hConsume]
+  rfl
+
+theorem stmt_run_let_msize
+    {transcript : Trace} {state state' : State transcript}
+    {value : Assembly.Word}
+    (program : Functions.Program) (ctx : Functions.Source.Ctx)
+    (fuel : Nat) (name : Functions.Name)
+    (hConsume :
+      Simulation.ResourceReplay.consume? .msize state =
+        some (value, state')) :
+    Functions.Source.Effectful.Stmt.run
+        (stateModel transcript) (primitiveSemantics transcript)
+        program ctx fuel (.let_ name (.prim .msize .nil : Functions.Expr 1))
+        state =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular
+          (state'.withSource (state'.source.insert name value)),
+          { ctx with scope := name :: ctx.scope }) := by
+  unfold Functions.Source.Effectful.Stmt.run
+  change
+    (do
+      let (stateAfterValue, value') ←
+        Functions.Source.Effectful.Expr.evalOne
+          (stateModel transcript) (primitiveSemantics transcript)
+          (.prim .msize .nil : Functions.Expr 1) state
+      .ok
+        (Functions.Source.Effectful.Outcome.regular
+          ((stateModel transcript).insert stateAfterValue name value'),
+          { ctx with scope := name :: ctx.scope })) =
+      _
+  rw [expr_evalOne_msize hConsume]
+  rfl
 
 namespace Program
 

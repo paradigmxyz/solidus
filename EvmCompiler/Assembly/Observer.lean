@@ -101,6 +101,45 @@ theorem applyOracleFromPostState_pc
           subst state'
           exact overwriteTop_pc hOverwrite
 
+def eraseRuntimeStateTrace
+    (result : EVMState × ResourceTrace) :
+    EVMState × ResourceTrace :=
+  (eraseRuntimeControl result.1, result.2)
+
+theorem applyOracleFromPostState_map_eraseRuntimeControl
+    {kind : ResourceObserver} {target source : EVMState}
+    {trace : ResourceTrace}
+    (hRel : SameRuntimeData target source) :
+    (applyOracleFromPostState kind target trace).map
+        eraseRuntimeStateTrace =
+      (applyOracleFromPostState kind source trace).map
+        eraseRuntimeStateTrace := by
+  cases target with
+  | mk targetShared targetPc targetStack targetExec =>
+      cases source with
+      | mk sourceShared sourcePc sourceStack sourceExec =>
+          simp [SameRuntimeData, eraseRuntimeControl] at hRel
+          rcases hRel with ⟨rfl, rfl⟩
+          cases trace with
+          | nil =>
+              simp [applyOracleFromPostState, consume,
+                eraseRuntimeStateTrace, Bind.bind, Except.bind, Except.map]
+          | cons observation rest =>
+              rcases observation with ⟨observedKind, value⟩
+              by_cases hKind : observedKind = kind
+              · subst observedKind
+                cases targetStack with
+                | nil =>
+                    simp [applyOracleFromPostState, consume, overwriteTop,
+                      eraseRuntimeStateTrace, Bind.bind, Except.bind,
+                      Except.map]
+                | cons head tail =>
+                    simp [applyOracleFromPostState, consume, overwriteTop,
+                      eraseRuntimeStateTrace, eraseRuntimeControl,
+                      Bind.bind, Except.bind, Except.map]
+              · simp [applyOracleFromPostState, consume, hKind,
+                  eraseRuntimeStateTrace, Bind.bind, Except.bind, Except.map]
+
 theorem applyOracleFromPostState_recordFromPostState_append
     {kind : ResourceObserver} {state : EVMState}
     {rest : ResourceTrace} {value : Word} {stack : EvmYul.Stack Word}

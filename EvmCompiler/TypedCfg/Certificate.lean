@@ -8,6 +8,7 @@ structure Effects where
   readsMemory : Bool := false
   writesMemory : Bool := false
   observesResources : Bool := false
+  readsProgramCounter : Bool := false
   callsOrCreates : Bool := false
   deriving DecidableEq, Repr
 
@@ -20,6 +21,8 @@ def append (left right : Effects) : Effects where
   writesMemory := left.writesMemory || right.writesMemory
   observesResources :=
     left.observesResources || right.observesResources
+  readsProgramCounter :=
+    left.readsProgramCounter || right.readsProgramCounter
   callsOrCreates := left.callsOrCreates || right.callsOrCreates
 
 def ofPrim (op : Assembly.PrimOp) : Effects where
@@ -34,7 +37,24 @@ def ofPrim (op : Assembly.PrimOp) : Effects where
         op = .codecopy ∨ op = .extcodecopy ∨
         op = .returndatacopy ∨ op = .mcopy)
   observesResources := decide (op = .gas ∨ op = .msize)
+  readsProgramCounter := decide (op = .pc)
   callsOrCreates := op.isExternalCallCreate
+
+@[simp] theorem ofPrim_gas_observesResources :
+    (ofPrim .gas).observesResources = true := by
+  native_decide
+
+@[simp] theorem ofPrim_msize_observesResources :
+    (ofPrim .msize).observesResources = true := by
+  native_decide
+
+@[simp] theorem ofPrim_gas_noCallCreate :
+    (ofPrim .gas).callsOrCreates = false := by
+  native_decide
+
+@[simp] theorem ofPrim_msize_noCallCreate :
+    (ofPrim .msize).callsOrCreates = false := by
+  native_decide
 
 @[simp] theorem empty_append (effects : Effects) :
     empty.append effects = effects := by
@@ -73,6 +93,9 @@ def writesMemory (summary : SafetySummary) : Bool :=
 def observesResources (summary : SafetySummary) : Bool :=
   summary.effects.observesResources
 
+def readsProgramCounter (summary : SafetySummary) : Bool :=
+  summary.effects.readsProgramCounter
+
 def callsOrCreates (summary : SafetySummary) : Bool :=
   summary.effects.callsOrCreates
 
@@ -81,6 +104,9 @@ def memoryIndependent (summary : SafetySummary) : Bool :=
 
 def observerIndependent (summary : SafetySummary) : Bool :=
   !summary.observesResources
+
+def programCounterIndependent (summary : SafetySummary) : Bool :=
+  !summary.readsProgramCounter
 
 def noCallCreate (summary : SafetySummary) : Bool :=
   !summary.callsOrCreates

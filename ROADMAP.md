@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 13:31 PDT.
+Last updated: 2026-06-11 13:54 PDT.
 
 ## Objective
 
@@ -54,6 +54,59 @@ determinism is insufficient because it does not construct a source run from a
 target run. Each compiler boundary therefore needs a lower-to-upper
 no-extra-behavior theorem, and the final public theorem should be a short
 composition of those adjacent adequacy results.
+
+### Enforced Observer Architecture
+
+Observer verification is organized by adjacent compiler ownership:
+
+```text
+Yul.FunctionsObserverPreservation
+  -> Functions allocation observer preservation
+  -> Locals/Expressions observer preservation
+  -> Structured observer preservation
+  -> TypedCfg.ObserverPreservation
+  -> Assembly observer preservation
+  -> Public.Observer
+  -> Yul.EndToEnd
+```
+
+`Simulation.ObserverPass.Interface` is the stable common contract. Its
+forward-preservation and backward-adequacy interfaces expose only the actual
+compiler equality, related semantic inputs, source/target runs, and an
+outcome relation. Compiler-generated layouts, replay certificates, call
+oracles, and emitted-code witnesses are not part of that interface.
+
+Ownership rules now enforced by `scripts/check_architecture.sh`:
+
+- observer modules cannot define observer-specific compilers or lowerers;
+- the Yul observer proof cannot import or reason about Locals, Structured,
+  TypedCfg, Assembly preservation, or public target execution;
+- `Yul.EndToEnd` cannot import lower-pass preservation modules or perform
+  recursive lower-pass execution reasoning;
+- TypedCfg observer execution must specialize
+  `TypedCfg.EffectSemantics`, not define a second recursive CFG interpreter;
+- `Functions.Source.Effectful` is the canonical exported parameterized
+  Functions semantics for new pass and observer proofs;
+- the retired vertical `Yul.ObserverPreservation` and mixed
+  `Yul.ObserverOracle` modules cannot be restored.
+
+Adjacent boundary status:
+
+- [ ] Yul -> Functions: gas/msize primitive, expression, and let-statement
+  leaves are checked in the pass-owned module; complete expression,
+  statement, function, and program forward/backward theorems remain.
+- [ ] Functions -> allocated Locals/Expressions: shared allocation artifacts
+  exist, but observer-aware forward/backward theorems remain.
+- [ ] Locals/Expressions -> Structured: generic effect semantics exists;
+  complete allocation-sensitive observer theorem remains.
+- [ ] Structured -> TypedCfg: ordinary outcome-indexed path preservation is
+  complete; observer-aware adjacent lifting remains.
+- [ ] TypedCfg -> Assembly: instruction, body, terminator, block, and
+  one-step target accounting are checked; whole-run backward adequacy remains.
+- [x] Assembly -> bytecode: exact block simulation and terminal target-run
+  inversion are checked.
+- [ ] End-to-end: `ClosedResourceCorrect` remains an unproved proposition
+  until every unchecked adjacent boundary above is composed.
 
 The first exact Lean statement is now
 `Yul.EndToEnd.ClosedResourceCorrect`. It quantifies over a checked

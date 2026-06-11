@@ -17,8 +17,10 @@ case "$layer" in
   effects)
     modules=(
       EvmCompiler.Locals.EffectSemantics
+      EvmCompiler.Functions.EffectSemantics
+      EvmCompiler.Functions.ObserverSemantics
       EvmCompiler.Yul.EffectSemantics
-      EvmCompiler.Yul.ObserverOracle
+      EvmCompiler.Yul.ObserverSemantics
     )
     ;;
   allocator)
