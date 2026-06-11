@@ -1555,6 +1555,226 @@ theorem outcome_if_true_of_compileStmtFuel?
                 exact
                   ⟨{ output with slots := output.slots.tail }, rfl⟩
 
+namespace Terminal
+
+def RelSafe (kind : Assembly.HaltKind) : Prop :=
+  ∀ {transcript : Trace}
+    {source : ObserverSemantics.State transcript}
+    {sourceFinal target : EVMState}
+    {tokens : List Word} {trace : Trace},
+    StateRel source tokens target trace →
+      Structured.Terminal.step kind source.source.evm =
+        .ok sourceFinal →
+      ∃ targetFinal,
+        Structured.Terminal.step kind target = .ok targetFinal ∧
+          StateRel
+            (source.withSource
+              (source.source.withEVM sourceFinal))
+            tokens targetFinal trace
+
+end Terminal
+
+theorem outcome_brk_of_compileStmtFuel?
+    {transcript : Trace} {fuel : Nat}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry target regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : ctx.breakLabel? = some target)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1) .brk ctx
+        supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source (Structured.OutcomeT.brk source) tokens := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
+    TypedCfgCompiler.mkBlock?] at hCompile
+  cases hCompile
+  apply
+    OutcomeSimulation.Preserves.of_path_of_nonregular
+      (by intro hMode; cases hMode)
+  intro targetState trace hRel
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := []
+      output := input
+      term := .jump target }
+  have hRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated targetState trace =
+        .ok (.jump target targetState, trace) := by
+    unfold TypedCfg.ObserverSemantics.Block.run
+    rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
+    simp [generated, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+  have hEventually :=
+    BlocksInProgram.eventually_of_run
+      hBlocks (block := generated)
+        (by simp [generated]) hRun
+  exact
+    ⟨.jump target targetState, trace, hEventually,
+      OutcomeSimulation.Rel.brk_iff.mpr
+        ⟨hTarget, hRel⟩⟩
+
+theorem outcome_cont_of_compileStmtFuel?
+    {transcript : Trace} {fuel : Nat}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry target regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : ctx.continueLabel? = some target)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1) .cont ctx
+        supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source (Structured.OutcomeT.cont source) tokens := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
+    TypedCfgCompiler.mkBlock?] at hCompile
+  cases hCompile
+  apply
+    OutcomeSimulation.Preserves.of_path_of_nonregular
+      (by intro hMode; cases hMode)
+  intro targetState trace hRel
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := []
+      output := input
+      term := .jump target }
+  have hRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated targetState trace =
+        .ok (.jump target targetState, trace) := by
+    unfold TypedCfg.ObserverSemantics.Block.run
+    rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
+    simp [generated, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+  have hEventually :=
+    BlocksInProgram.eventually_of_run
+      hBlocks (block := generated)
+        (by simp [generated]) hRun
+  exact
+    ⟨.jump target targetState, trace, hEventually,
+      OutcomeSimulation.Rel.cont_iff.mpr
+        ⟨hTarget, hRel⟩⟩
+
+theorem outcome_leave_of_compileStmtFuel?
+    {transcript : Trace} {fuel : Nat}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry target regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : ctx.leaveLabel? = some target)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1) .leave ctx
+        supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source (Structured.OutcomeT.leave source) tokens := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
+    TypedCfgCompiler.mkBlock?] at hCompile
+  cases hCompile
+  apply
+    OutcomeSimulation.Preserves.of_path_of_nonregular
+      (by intro hMode; cases hMode)
+  intro targetState trace hRel
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := []
+      output := input
+      term := .jump target }
+  have hRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated targetState trace =
+        .ok (.jump target targetState, trace) := by
+    unfold TypedCfg.ObserverSemantics.Block.run
+    rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
+    simp [generated, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+  have hEventually :=
+    BlocksInProgram.eventually_of_run
+      hBlocks (block := generated)
+        (by simp [generated]) hRun
+  exact
+    ⟨.jump target targetState, trace, hEventually,
+      OutcomeSimulation.Rel.leave_iff.mpr
+        ⟨hTarget, hRel⟩⟩
+
+theorem outcome_terminal_of_compileStmtFuel?
+    {transcript : Trace} {fuel : Nat}
+    {kind : Assembly.HaltKind}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {sourceFinal : EVMState} {tokens : List Word}
+    (hSafe : Terminal.RelSafe kind)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1)
+        (.terminal kind) ctx supply entry input regular =
+      some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hStep :
+      Structured.Terminal.step kind source.source.evm =
+        .ok sourceFinal) :
+    OutcomeSimulation.Preserves result cfg entry
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      source
+      (Structured.OutcomeT.halt kind
+        (source.withSource
+          (source.source.withEVM sourceFinal)))
+      tokens := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  simp [TypedCfgCompiler.mkBlock?] at hCompile
+  cases hCompile
+  apply
+    OutcomeSimulation.Preserves.of_path_of_nonregular
+      (by intro hMode; cases hMode)
+  intro target trace hRel
+  obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
+    hSafe hRel hStep
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := []
+      output := input
+      term := .halt kind }
+  have hRun :
+      TypedCfg.ObserverSemantics.Block.run
+          generated target trace =
+        .ok (.halt kind target, trace) := by
+    unfold TypedCfg.ObserverSemantics.Block.run
+    rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
+    simp [generated, TypedCfg.Block.runTerm,
+      Bind.bind, Except.bind]
+  have hEventually :=
+    BlocksInProgram.eventually_of_run
+      hBlocks (block := generated)
+        (by simp [generated]) hRun
+  exact
+    ⟨.halt kind target, trace, hEventually,
+      OutcomeSimulation.Rel.halt_iff.mpr
+        ⟨rfl, targetFinal, hTargetStep, tokens, hFinalRel⟩⟩
+
 end Stmt
 
 namespace Block

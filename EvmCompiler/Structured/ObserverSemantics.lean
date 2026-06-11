@@ -238,6 +238,49 @@ abbrev Eval {transcript : Trace} :=
 
 end Stmt
 
+mutual
+
+  inductive Block.FrameSafe : Structured.Block → Prop where
+    | nil : Block.FrameSafe { stmts := [] }
+    | cons {stmt : Structured.Stmt} {rest : List Structured.Stmt}
+        (hStmt : Stmt.FrameSafe stmt)
+        (hRest : Block.FrameSafe { stmts := rest }) :
+        Block.FrameSafe { stmts := stmt :: rest }
+
+  inductive Stmt.FrameSafe : Structured.Stmt → Prop where
+    | code {code : Structured.Code} (hCode : Code.FrameSafe code) :
+        Stmt.FrameSafe (.code code)
+    | if_ {cond : Structured.Code} {body : Structured.Block}
+        (hCond : Code.FrameSafe cond)
+        (hBody : Block.FrameSafe body) :
+        Stmt.FrameSafe (.if_ cond body)
+    | switch {scrutinee : Structured.Code}
+        {cases : List (Word × Structured.Block)}
+        {defaultBody : Option Structured.Block}
+        (hScrutinee : Code.FrameSafe scrutinee)
+        (hCases :
+          ∀ value body, (value, body) ∈ cases →
+            Block.FrameSafe body)
+        (hDefault :
+          ∀ body, defaultBody = some body →
+            Block.FrameSafe body) :
+        Stmt.FrameSafe (.switch scrutinee cases defaultBody)
+    | for_ {init post body : Structured.Block}
+        {cond : Structured.Code}
+        (hInit : Block.FrameSafe init)
+        (hCond : Code.FrameSafe cond)
+        (hPost : Block.FrameSafe post)
+        (hBody : Block.FrameSafe body) :
+        Stmt.FrameSafe (.for_ init cond post body)
+    | brk : Stmt.FrameSafe .brk
+    | cont : Stmt.FrameSafe .cont
+    | leave : Stmt.FrameSafe .leave
+    | call {name : Structured.Name} : Stmt.FrameSafe (.call name)
+    | terminal {kind : Assembly.HaltKind} :
+        Stmt.FrameSafe (.terminal kind)
+
+end
+
 namespace For
 
 abbrev Eval {transcript : Trace} :=
@@ -246,7 +289,54 @@ abbrev Eval {transcript : Trace} :=
 
 end For
 
+namespace Proc
+
+def FrameSafe (proc : Structured.Proc) : Prop :=
+  ObserverSemantics.Block.FrameSafe proc.body
+
+end Proc
+
+namespace ProcList
+
+def FrameSafe : List Structured.Proc → Prop
+  | [] => True
+  | proc :: rest =>
+      ObserverSemantics.Proc.FrameSafe proc ∧ FrameSafe rest
+
+theorem FrameSafe_of_lookup?
+    {procs : List Structured.Proc} {name : Structured.Name}
+    {proc : Structured.Proc}
+    (hFrameSafe : FrameSafe procs)
+    (hLookup : Structured.ProcList.lookup? name procs = some proc) :
+    ObserverSemantics.Proc.FrameSafe proc := by
+  induction procs with
+  | nil =>
+      simp [Structured.ProcList.lookup?] at hLookup
+  | cons head rest ih =>
+      unfold Structured.ProcList.lookup? at hLookup
+      by_cases hName : head.name = name
+      · simp [hName] at hLookup
+        cases hLookup
+        exact hFrameSafe.1
+      · simp [hName] at hLookup
+        exact ih hFrameSafe.2 hLookup
+
+end ProcList
+
 namespace Program
+
+def FrameSafe (program : Structured.Program) : Prop :=
+  ProcList.FrameSafe program.procs ∧
+    ObserverSemantics.Block.FrameSafe program.body
+
+theorem procFrameSafe_of_lookup?
+    {program : Structured.Program} {name : Structured.Name}
+    {proc : Structured.Proc}
+    (hFrameSafe : FrameSafe program)
+    (hLookup :
+      Structured.ProcList.lookup? name program.procs = some proc) :
+    ObserverSemantics.Proc.FrameSafe proc :=
+  ProcList.FrameSafe_of_lookup? hFrameSafe.1 hLookup
 
 def initialState (initial : Structured.RunState) (transcript : Trace) :
     State transcript :=

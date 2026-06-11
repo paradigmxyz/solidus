@@ -28554,3 +28554,20 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   architecture guard, scoped no-hole scan, `git diff --check`, and focused
   axiom audit pass for the true-branch and statement-list theorems. They depend
   only on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 15:15:01 PDT `compaction-resume`: Resumed after the checked
+  observer outcome/path and generic statement-list checkpoint. Effect-free
+  controls and terminal leaves are in progress; next is to build and repair
+  them, then begin the mutual Structured-to-TypedCfg observer proof.
+
+- 2026-06-11 15:17:36 PDT `proof`: Checked observer-preserving compilation
+  leaves for `break`, `continue`, `leave`, and terminal statements. Added the
+  source-owned structural observer frame-safety contract for blocks,
+  statements, procedures, procedure lists, and programs, including checked
+  procedure lookup; the contract contains no compiler artifacts.
+
+- 2026-06-11 15:17:36 PDT `verification`: The 1,175-job verification root,
+  focused Structured observer builds, architecture guard, scoped no-hole
+  scan, `git diff --check`, and focused axiom audit pass. The new leaves and
+  observer frame-safety lookup depend only on `propext`, `Classical.choice`,
+  and `Quot.sound`.
