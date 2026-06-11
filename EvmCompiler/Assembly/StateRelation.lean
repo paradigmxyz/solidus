@@ -141,6 +141,23 @@ theorem eraseControl_with_stack_congr {left right : EVMState}
   simp [eraseControl, eraseGas] at hEq ⊢
   exact hEq.1
 
+theorem eraseRuntimeControl_with_stack (state : EVMState)
+    (stack : EvmYul.Stack Word) :
+    eraseRuntimeControl { state with stack := stack } =
+      { eraseRuntimeControl state with stack := stack } := by
+  cases state
+  rfl
+
+theorem eraseRuntimeControl_with_stack_congr {left right : EVMState}
+    {stack : EvmYul.Stack Word}
+    (hEq : eraseRuntimeControl left = eraseRuntimeControl right) :
+    eraseRuntimeControl { left with stack := stack } =
+      eraseRuntimeControl { right with stack := stack } := by
+  cases left
+  cases right
+  simp [eraseRuntimeControl] at hEq ⊢
+  exact hEq.1
+
 theorem eraseControl_replaceStackAndIncrPC_of_eq
     {left right : EVMState}
     {leftStack rightStack : EvmYul.Stack Word} {pcΔ : Nat}

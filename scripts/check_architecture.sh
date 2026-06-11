@@ -159,6 +159,11 @@ report_matches \
   '^[[:space:]]*\|[[:space:]]*(fuel[[:space:]]*\+[[:space:]]*1|instr[[:space:]]*::[[:space:]]*rest)' \
   EvmCompiler/TypedCfg/ObserverSemantics.lean
 
+report_matches \
+  'TypedCfg observer preservation must remain owned by the adjacent Assembly boundary:' \
+  '^import EvmCompiler\.(Structured|Expressions|Locals|Functions|Objects|Yul|Public)' \
+  EvmCompiler/TypedCfg/ObserverPreservation.lean
+
 if ! rg -q '^import EvmCompiler\.Functions\.EffectSemantics$' \
     EvmCompiler/Functions.lean ||
     ! rg -q '^namespace Canonical$' \

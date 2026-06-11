@@ -88,6 +88,31 @@ def runN {ε : Type} (handler : Handler ε)
           | .halt kind state' => .ok (.halt kind state', effect')
           | .invalid state' => .ok (.invalid state', effect')
 
+@[simp] theorem runN_zero {ε : Type} (handler : Handler ε)
+    (program : TypedCfg.Program) (label : Label)
+    (state : EVMState) (effect : ε) :
+    runN handler program 0 label state effect =
+      .ok (.jump label state, effect) := rfl
+
+theorem runN_succ {ε : Type} (handler : Handler ε)
+    (program : TypedCfg.Program) (fuel : Nat) (label : Label)
+    (state : EVMState) (effect : ε) :
+    runN handler program (fuel + 1) label state effect =
+      match step handler program label state effect with
+      | .error err => .error err
+      | .ok (outcome, effect') =>
+          match outcome with
+          | .jump next state' =>
+              runN handler program fuel next state' effect'
+          | .fallthrough state' =>
+              .ok (.fallthrough state', effect')
+          | .returnDispatch state' =>
+              .ok (.returnDispatch state', effect')
+          | .halt kind state' =>
+              .ok (.halt kind state', effect')
+          | .invalid state' =>
+              .ok (.invalid state', effect') := rfl
+
 end Program
 
 end EffectSemantics

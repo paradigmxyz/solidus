@@ -38,6 +38,8 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_positiveEventuallyWithOracle
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_eventuallyWithOracle
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_terminal_backward
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.compileCertified?_entry_terminal_backward
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

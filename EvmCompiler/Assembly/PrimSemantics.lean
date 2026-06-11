@@ -2167,6 +2167,40 @@ theorem step_eq_evm_step_of_not_continuing {op : PrimOp}
     simp [PrimOp.step, PrimOp.continuingStep?,
       PrimOp.isCallCreate] at hStep hNoCallCreate ⊢
 
+/--
+Every nonterminal primitive admitted by the checked no-external-effects
+boundary is congruent modulo compiler-owned control counters. This includes
+`gas`, whose value is runtime data retained by `SameRuntimeData`.
+-/
+theorem step_map_eraseRuntimeControl
+    {op : PrimOp} {target source : EVMState}
+    (hArity : ∃ arity, op.stackArity? = some arity)
+    (hNoPc : op ≠ .pc)
+    (hNoCall : op.isExternalCallCreate = false)
+    (hRel : SameRuntimeData target source) :
+    (op.step target).map eraseRuntimeControl =
+      (op.step source).map eraseRuntimeControl := by
+  cases hStep : op.continuingStep? with
+  | some step =>
+      rw [step_eq_continuingStep_run hStep target,
+        step_eq_continuingStep_run hStep source]
+      exact PrimStep.run_map_eraseRuntimeControl hRel
+  | none =>
+      rcases hArity with ⟨arity, hArity⟩
+      have hGas : op = .gas := by
+        cases op <;>
+          simp [PrimOp.stackArity?, PrimOp.continuingStep?,
+            PrimOp.isExternalCallCreate] at hArity hNoPc hNoCall hStep ⊢
+      subst op
+      change
+        (EvmYul.EVM.machineStateOp EvmYul.MachineState.gas target).map
+            eraseRuntimeControl =
+          (EvmYul.EVM.machineStateOp EvmYul.MachineState.gas source).map
+            eraseRuntimeControl
+      exact
+        PrimStep.run_map_eraseRuntimeControl
+          (step := .machineState EvmYul.MachineState.gas) hRel
+
 theorem step_pc_of_stackArity
     {op : PrimOp} {input output : Nat}
     {state final : EvmYul.EVM.State}

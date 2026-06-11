@@ -28471,3 +28471,28 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   aggregate, resource/public proof smokes, focused axiom audit, architecture
   checks, scoped no-hole scan, and `git diff --check` pass. Audited observer
   theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 14:05:57 PDT `compaction-resume`: Resumed after strengthening
+  the TypedCfg-to-Assembly outcome relation to `SameRuntimeData` and promoting
+  instruction-level `ReplaySafe` congruence. Next is lifting the checked
+  relation through bodies, blocks, program steps, and terminal runs.
+
+- 2026-06-11 14:23:13 PDT `theorem-boundary`: Terminal backward adequacy is
+  true only for execution at the compiled CFG entry. The TypedCfg checked
+  theorem now hides the generated entry offset inside `EntryTerminalRun`.
+  `Yul.EndToEnd.ClosedResourceCorrect` still uses a raw target run and must be
+  tightened to an entry-owned public run relation before final composition.
+
+- 2026-06-11 14:23:13 PDT `proof`: Completed TypedCfg-to-Assembly observer
+  backward adequacy. Checked `ReplaySafe` congruence now lifts through the
+  shared effect interpreter, terminators, blocks, program steps, and `runN`;
+  strict Assembly prefix fuel drives whole-run terminal inversion. The
+  checked-artifact wrapper derives lowering, acceptedness, PC fit, block
+  lookup, and entry offset internally and returns an outcome-indexed halt
+  relation with the exact remaining transcript.
+
+- 2026-06-11 14:23:13 PDT `verification`: The 1,172-job verification root,
+  focused resource-observer theorem/axiom smoke, architecture dependency and
+  no-hole checks, and `git diff --check` pass. The new whole-run and
+  checked-artifact backward-adequacy theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.

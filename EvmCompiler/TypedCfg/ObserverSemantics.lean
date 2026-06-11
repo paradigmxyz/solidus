@@ -217,6 +217,40 @@ def runN (program : TypedCfg.Program) :
       Except EVMException (TypedCfg.Outcome × Trace) :=
   EffectSemantics.Program.runN Instr.handler program
 
+@[simp] theorem runN_zero (program : TypedCfg.Program)
+    (label : Label) (state : EVMState) (trace : Trace) :
+    runN program 0 label state trace =
+      .ok (.jump label state, trace) := rfl
+
+theorem runN_succ (program : TypedCfg.Program)
+    (fuel : Nat) (label : Label) (state : EVMState) (trace : Trace) :
+    runN program (fuel + 1) label state trace =
+      match step program label state trace with
+      | .error err => .error err
+      | .ok (outcome, trace') =>
+          match outcome with
+          | .jump next state' =>
+              runN program fuel next state' trace'
+          | .fallthrough state' =>
+              .ok (.fallthrough state', trace')
+          | .returnDispatch state' =>
+              .ok (.returnDispatch state', trace')
+          | .halt kind state' =>
+              .ok (.halt kind state', trace')
+          | .invalid state' =>
+              .ok (.invalid state', trace') := by
+  unfold runN
+  rw [EffectSemantics.Program.runN_succ]
+  rw [step_eq_effectSemantics]
+  cases hStep :
+      EffectSemantics.Program.step
+        Instr.handler program label state trace with
+  | error err =>
+      simp [hStep]
+  | ok result =>
+      rcases result with ⟨outcome, trace'⟩
+      cases outcome <;> simp [hStep]
+
 end Program
 
 end ObserverSemantics

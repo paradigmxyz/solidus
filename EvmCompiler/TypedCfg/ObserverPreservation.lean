@@ -1,4 +1,5 @@
 import EvmCompiler.Assembly.StackShuffleObserverPreservation
+import EvmCompiler.TypedCfg.Certificate
 import EvmCompiler.TypedCfg.ObserverSemantics
 import EvmCompiler.TypedCfg.Preservation
 
@@ -26,6 +27,772 @@ end ObserverSemantics
 namespace ObserverPreservation
 
 abbrev Trace := Assembly.ResourceTrace
+
+namespace Instr
+
+def eraseRunState
+    (result : EVMState × Trace) : EVMState × Trace :=
+  (Assembly.eraseRuntimeControl result.1, result.2)
+
+/--
+Observer-aware primitive execution is congruent modulo compiler-owned control
+state for the effects admitted by the checked closed-program boundary.
+-/
+theorem prim_runState_map_eraseRuntimeControl
+    {op : Assembly.PrimOp} {shape : Shape}
+    {target source : EVMState} {trace : Trace}
+    {arity : Nat × Nat}
+    (hArity : op.stackArity? = some arity)
+    (hNoPc : op ≠ .pc)
+    (hNoCall : op.isExternalCallCreate = false)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Instr.runState
+        (.prim op) shape target trace).map eraseRunState =
+      (ObserverSemantics.Instr.runState
+        (.prim op) shape source trace).map eraseRunState := by
+  unfold ObserverSemantics.Instr.runState
+  simp only [TypedCfg.Instr.runState]
+  have hStep :=
+    Assembly.PrimOp.step_map_eraseRuntimeControl
+      (op := op) ⟨arity, hArity⟩ hNoPc hNoCall hRel
+  cases hTarget : op.step target with
+  | error targetErr =>
+      cases hSource : op.step source with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hStep ⊢
+          subst sourceErr
+          rfl
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hStep
+  | ok targetFinal =>
+      cases hSource : op.step source with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hStep
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hStep
+          cases hObserver :
+              Assembly.ResourceObserver.ofPrimOp? op with
+          | none =>
+              simpa [ObserverSemantics.Instr.handler, hObserver,
+                Except.map, eraseRunState] using
+                congrArg (fun state => (state, trace)) hStep
+          | some kind =>
+              simpa [ObserverSemantics.Instr.handler, hObserver,
+                eraseRunState] using
+                Assembly.ResourceObserver.applyOracleFromPostState_map_eraseRuntimeControl
+                  (kind := kind) (trace := trace) hStep
+
+theorem runPops_map_eraseRuntimeControl
+    (count : Nat) {target source : EVMState}
+    (hRel : Assembly.SameRuntimeData target source) :
+    (TypedCfg.Instr.runPops count target).map
+        Assembly.eraseRuntimeControl =
+      (TypedCfg.Instr.runPops count source).map
+        Assembly.eraseRuntimeControl := by
+  induction count generalizing target source with
+  | zero =>
+      simpa [TypedCfg.Instr.runPops, Except.map] using hRel
+  | succ count ih =>
+      have hPop :=
+        Assembly.PrimOp.step_map_eraseRuntimeControl
+          (op := .pop) ⟨(1, 0), by rfl⟩ (by decide) (by rfl) hRel
+      cases hTarget : Assembly.PrimOp.pop.step target with
+      | error targetErr =>
+          cases hSource : Assembly.PrimOp.pop.step source with
+          | error sourceErr =>
+              simp [TypedCfg.Instr.runPops, hTarget, hSource,
+                Except.map] at hPop ⊢
+              subst sourceErr
+              rfl
+          | ok sourceAfter =>
+              simp [hTarget, hSource, Except.map] at hPop
+      | ok targetAfter =>
+          cases hSource : Assembly.PrimOp.pop.step source with
+          | error sourceErr =>
+              simp [hTarget, hSource, Except.map] at hPop
+          | ok sourceAfter =>
+              simp [hTarget, hSource, Except.map] at hPop
+              simpa [TypedCfg.Instr.runPops, hTarget, hSource,
+                Bind.bind, Except.bind] using
+                  ih (target := targetAfter) (source := sourceAfter) hPop
+
+theorem plain_runState_map_eraseRuntimeControl
+    {instr : TypedCfg.Instr} {shape output : Shape}
+    {target source : EVMState}
+    (hType : instr.type? shape = some output)
+    (hSafe : instr.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (TypedCfg.Instr.runState instr shape target).map
+        Assembly.eraseRuntimeControl =
+      (TypedCfg.Instr.runState instr shape source).map
+        Assembly.eraseRuntimeControl := by
+  cases instr with
+  | push value =>
+      simpa [TypedCfg.Instr.runState, Except.map] using
+        Assembly.SameRuntimeData.replaceStackAndIncrPC hRel
+          (congrArg (fun stack => stack.push value)
+            (Assembly.SameRuntimeData.stack_eq hRel))
+  | returnToken value =>
+      simpa [TypedCfg.Instr.runState, Except.map] using
+        Assembly.SameRuntimeData.replaceStackAndIncrPC hRel
+          (congrArg (fun stack => stack.push value)
+            (Assembly.SameRuntimeData.stack_eq hRel))
+  | prim op =>
+      have hArity : ∃ arity, op.stackArity? = some arity := by
+        unfold TypedCfg.Instr.type? at hType
+        cases h : op.stackArity? with
+        | none => simp [h] at hType
+        | some arity => exact ⟨arity, rfl⟩
+      have hNoPc : op ≠ .pc := by
+        intro hEq
+        subst op
+        simp [TypedCfg.Instr.ReplaySafe, Effects.ReplaySafe,
+          TypedCfg.Instr.effects, Effects.ofPrim] at hSafe
+      have hNoCall : op.isExternalCallCreate = false := by
+        simpa [TypedCfg.Instr.ReplaySafe, Effects.ReplaySafe,
+          TypedCfg.Instr.effects, Effects.ofPrim] using hSafe.2
+      exact
+        Assembly.PrimOp.step_map_eraseRuntimeControl
+          hArity hNoPc hNoCall hRel
+  | pop =>
+      simpa [TypedCfg.Instr.runState] using
+        Assembly.PrimOp.step_map_eraseRuntimeControl
+          (op := .pop) ⟨(1, 0), by rfl⟩ (by decide) (by rfl) hRel
+  | dup depth =>
+      have hDepth : depth < 16 := by
+        by_contra hNot
+        simp [TypedCfg.Instr.type?, hNot] at hType
+      have hRun :=
+        Assembly.PrimStep.run_map_eraseRuntimeControl
+          (step := .dup (depth + 1)) hRel
+      interval_cases depth <;>
+        simp_all [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+          Assembly.PrimOp.continuingStep?]
+  | swap depth =>
+      have hDepth : depth < 16 := by
+        by_contra hNot
+        simp [TypedCfg.Instr.type?, hNot] at hType
+      have hRun :=
+        Assembly.PrimStep.run_map_eraseRuntimeControl
+          (step := .swap (depth + 1)) hRel
+      interval_cases depth <;>
+        simp_all [TypedCfg.Instr.runState, Assembly.PrimOp.step,
+          Assembly.PrimOp.continuingStep?]
+  | bindLocals offset names =>
+      simpa [TypedCfg.Instr.runState, Except.map] using hRel
+  | bindScratch baseDepth name slot =>
+      simpa [TypedCfg.Instr.runState, Except.map] using hRel
+  | relabel targetShape =>
+      simpa [TypedCfg.Instr.runState, Except.map] using hRel
+  | unwind targetShape =>
+      simpa [TypedCfg.Instr.runState] using
+        runPops_map_eraseRuntimeControl
+          (shape.length - targetShape.length) hRel
+
+/--
+One checked TypedCfg instruction has identical observer replay from
+runtime-related states, modulo compiler-owned control counters.
+-/
+theorem runState_map_eraseRuntimeControl
+    {instr : TypedCfg.Instr} {shape output : Shape}
+    {target source : EVMState} {trace : Trace}
+    (hType : instr.type? shape = some output)
+    (hSafe : instr.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Instr.runState instr shape target trace).map
+        eraseRunState =
+      (ObserverSemantics.Instr.runState instr shape source trace).map
+        eraseRunState := by
+  cases instr with
+  | prim op =>
+      have hArity : ∃ arity, op.stackArity? = some arity := by
+        unfold TypedCfg.Instr.type? at hType
+        cases h : op.stackArity? with
+        | none => simp [h] at hType
+        | some arity => exact ⟨arity, rfl⟩
+      rcases hArity with ⟨arity, hArity⟩
+      have hNoPc : op ≠ .pc := by
+        intro hEq
+        subst op
+        simp [TypedCfg.Instr.ReplaySafe, Effects.ReplaySafe,
+          TypedCfg.Instr.effects, Effects.ofPrim] at hSafe
+      have hNoCall : op.isExternalCallCreate = false := by
+        simpa [TypedCfg.Instr.ReplaySafe, Effects.ReplaySafe,
+          TypedCfg.Instr.effects, Effects.ofPrim] using hSafe.2
+      exact
+        prim_runState_map_eraseRuntimeControl
+          hArity hNoPc hNoCall hRel
+  | push value | returnToken value | pop | dup value | swap value
+  | bindLocals value names | bindScratch value name slot
+  | relabel targetShape | unwind targetShape =>
+      unfold ObserverSemantics.Instr.runState
+      simp only [ObserverSemantics.Instr.handler]
+      have hPlain :=
+        plain_runState_map_eraseRuntimeControl hType hSafe hRel
+      cases hTarget : TypedCfg.Instr.runState _ shape target with
+      | error targetErr =>
+          cases hSource : TypedCfg.Instr.runState _ shape source with
+          | error sourceErr =>
+              simp [hTarget, hSource, Except.map] at hPlain ⊢
+              subst sourceErr
+              rfl
+          | ok sourceFinal =>
+              simp [hTarget, hSource, Except.map] at hPlain
+      | ok targetFinal =>
+          cases hSource : TypedCfg.Instr.runState _ shape source with
+          | error sourceErr =>
+              simp [hTarget, hSource, Except.map] at hPlain
+          | ok sourceFinal =>
+              simp [hTarget, hSource, Except.map] at hPlain
+              simpa [hTarget, hSource, Except.map, eraseRunState] using
+                congrArg (fun state => (state, trace)) hPlain
+
+def eraseRunAt
+    (result : (EVMState × Shape) × Trace) :
+    (EVMState × Shape) × Trace :=
+  ((Assembly.eraseRuntimeControl result.1.1, result.1.2), result.2)
+
+theorem runAt_output
+    {instr : TypedCfg.Instr} {shape output actual : Shape}
+    {state final : EVMState} {trace trace' : Trace}
+    (hType : instr.type? shape = some output)
+    (hRun :
+      ObserverSemantics.Instr.runAt instr shape state trace =
+        .ok ((final, actual), trace')) :
+    actual = output := by
+  unfold ObserverSemantics.Instr.runAt at hRun
+  rw [hType] at hRun
+  simp only [Option.elim_some, Bind.bind, Except.bind] at hRun
+  cases hState :
+      ObserverSemantics.Instr.runState instr shape state trace with
+  | error err =>
+      simp [hState] at hRun
+  | ok result =>
+      rcases result with ⟨state', trace''⟩
+      simp [hState] at hRun
+      exact hRun.1.2.symm
+
+/--
+Checked instruction replay is insensitive to compiler-owned control counters,
+including the shape transition selected by the ordinary TypedCfg typechecker.
+-/
+theorem runAt_map_eraseRuntimeControl
+    {instr : TypedCfg.Instr} {shape output : Shape}
+    {target source : EVMState} {trace : Trace}
+    (hType : instr.type? shape = some output)
+    (hSafe : instr.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Instr.runAt instr shape target trace).map
+        eraseRunAt =
+      (ObserverSemantics.Instr.runAt instr shape source trace).map
+        eraseRunAt := by
+  unfold ObserverSemantics.Instr.runAt
+  rw [hType]
+  simp only [Option.elim_some, Bind.bind, Except.bind]
+  have hRun :=
+    runState_map_eraseRuntimeControl
+      (trace := trace) hType hSafe hRel
+  cases hTarget :
+      ObserverSemantics.Instr.runState instr shape target trace with
+  | error targetErr =>
+      cases hSource :
+          ObserverSemantics.Instr.runState instr shape source trace with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hRun ⊢
+          subst sourceErr
+          rfl
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+  | ok targetFinal =>
+      cases hSource :
+          ObserverSemantics.Instr.runState instr shape source trace with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hRun
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hRun
+          simpa [hTarget, hSource, Except.map, eraseRunAt,
+            eraseRunState] using
+              congrArg
+                (fun result =>
+                  ((result.1, output), result.2))
+                hRun
+
+end Instr
+
+namespace Outcome
+
+def eraseRuntimeControl : TypedCfg.Outcome → TypedCfg.Outcome
+  | .fallthrough state =>
+      .fallthrough (Assembly.eraseRuntimeControl state)
+  | .jump target state =>
+      .jump target (Assembly.eraseRuntimeControl state)
+  | .returnDispatch state =>
+      .returnDispatch (Assembly.eraseRuntimeControl state)
+  | .halt kind state =>
+      .halt kind (Assembly.eraseRuntimeControl state)
+  | .invalid state =>
+      .invalid (Assembly.eraseRuntimeControl state)
+
+def eraseWithTrace
+    (result : TypedCfg.Outcome × Trace) :
+    TypedCfg.Outcome × Trace :=
+  (eraseRuntimeControl result.1, result.2)
+
+/--
+A target halt matches a TypedCfg halt state when the ordinary lowering theorem
+can execute that halt from a runtime-related state.
+-/
+def HaltMatches (target : Assembly.Halt)
+    (kind : Assembly.HaltKind) (source : EVMState) : Prop :=
+  ∃ simulated,
+    Assembly.SameRuntimeData simulated source ∧
+      Assembly.Target.stepInstrResult
+          (.prim kind.toPrimOp) simulated =
+        .ok (.halted target)
+
+end Outcome
+
+namespace Block
+
+def eraseRunBody
+    (result : (EVMState × Shape) × Trace) :
+    (EVMState × Shape) × Trace :=
+  ((Assembly.eraseRuntimeControl result.1.1, result.1.2), result.2)
+
+/--
+The shared effect interpreter replays a well-typed, checked instruction body
+identically from states that differ only in compiler-owned control counters.
+-/
+theorem runBody_map_eraseRuntimeControl
+    {body : List TypedCfg.Instr} {input output : Shape}
+    {target source : EVMState} {trace : Trace}
+    (hType : TypedCfg.Block.bodyType? body input = some output)
+    (hSafe : body.Forall TypedCfg.Instr.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Block.runBody body input target trace).map
+        eraseRunBody =
+      (ObserverSemantics.Block.runBody body input source trace).map
+        eraseRunBody := by
+  induction body generalizing input target source trace with
+  | nil =>
+      change
+        Except.ok ((Assembly.eraseRuntimeControl target, input), trace) =
+          Except.ok ((Assembly.eraseRuntimeControl source, input), trace)
+      exact congrArg
+        (fun state =>
+          (Except.ok ((state, input), trace) :
+            Except EVMException ((EVMState × Shape) × Trace))) hRel
+  | cons instr rest ih =>
+      rcases
+          (List.forall_cons
+            TypedCfg.Instr.ReplaySafe instr rest).mp hSafe with
+        ⟨hHeadSafe, hRestSafe⟩
+      cases hHeadType : instr.type? input with
+      | none =>
+          simp [TypedCfg.Block.bodyType?, hHeadType] at hType
+      | some middle =>
+          have hTailType :
+              TypedCfg.Block.bodyType? rest middle = some output := by
+            simpa [TypedCfg.Block.bodyType?, hHeadType] using hType
+          have hHead :=
+            Instr.runAt_map_eraseRuntimeControl
+              (trace := trace) hHeadType hHeadSafe hRel
+          cases hTarget :
+              ObserverSemantics.Instr.runAt
+                instr input target trace with
+          | error targetErr =>
+              cases hSource :
+                  ObserverSemantics.Instr.runAt
+                    instr input source trace with
+              | error sourceErr =>
+                  simp [hTarget, hSource, Except.map] at hHead ⊢
+                  subst sourceErr
+                  rfl
+              | ok sourceFinal =>
+                  simp [hTarget, hSource, Except.map] at hHead
+          | ok targetFinal =>
+              cases hSource :
+                  ObserverSemantics.Instr.runAt
+                    instr input source trace with
+              | error sourceErr =>
+                  simp [hTarget, hSource, Except.map] at hHead
+              | ok sourceFinal =>
+                  simp [hTarget, hSource, Except.map, Instr.eraseRunAt]
+                    at hHead
+                  rcases targetFinal with ⟨⟨targetAfter, targetShape⟩,
+                    targetTrace⟩
+                  rcases sourceFinal with ⟨⟨sourceAfter, sourceShape⟩,
+                    sourceTrace⟩
+                  rcases hHead with
+                    ⟨⟨hAfter, hShape⟩, hTrace⟩
+                  simp only [Prod.fst, Prod.snd] at hAfter hShape hTrace
+                  have hTargetShape :
+                      targetShape = middle :=
+                    Instr.runAt_output hHeadType hTarget
+                  subst targetShape
+                  subst sourceShape
+                  subst sourceTrace
+                  have hTail :=
+                    ih (trace := targetTrace)
+                      hTailType hRestSafe hAfter
+                  simpa only [ObserverSemantics.Block.runBody_cons,
+                    hTarget, hSource, Bind.bind, Except.bind] using hTail
+
+/--
+TypedCfg terminators inspect only runtime data. Symbolic control outcomes are
+therefore identical after erasing compiler-owned concrete control counters.
+-/
+theorem runTerm_map_eraseRuntimeControl
+    {shape : Shape} {term : TypedCfg.Terminator}
+    {target source : EVMState}
+    (hRel : Assembly.SameRuntimeData target source) :
+    Outcome.eraseRuntimeControl
+        (TypedCfg.Block.runTerm shape term target) =
+      Outcome.eraseRuntimeControl
+        (TypedCfg.Block.runTerm shape term source) := by
+  have hStack :
+      target.stack = source.stack :=
+    Assembly.SameRuntimeData.stack_eq hRel
+  cases term with
+  | fallthrough next =>
+      simpa [TypedCfg.Block.runTerm, Outcome.eraseRuntimeControl] using
+        congrArg (TypedCfg.Outcome.jump next) hRel
+  | jump next =>
+      simpa [TypedCfg.Block.runTerm, Outcome.eraseRuntimeControl] using
+        congrArg (TypedCfg.Outcome.jump next) hRel
+  | jumpi targetLabel fallthroughLabel =>
+      simp only [TypedCfg.Block.runTerm]
+      rw [hStack]
+      cases hPop : source.stack.pop with
+      | none =>
+          simpa [TypedCfg.Block.runTerm, hPop,
+            Outcome.eraseRuntimeControl] using
+              congrArg TypedCfg.Outcome.invalid hRel
+      | some pair =>
+          rcases pair with ⟨stack, cond⟩
+          have hReplace :
+              Assembly.SameRuntimeData
+                { target with stack := stack }
+                { source with stack := stack } :=
+            Assembly.SameRuntimeData.replaceStack hRel rfl
+          by_cases hZero : cond = EvmYul.UInt256.ofNat 0
+          · simpa [TypedCfg.Block.runTerm, hPop, hZero,
+              Outcome.eraseRuntimeControl] using
+                congrArg
+                  (TypedCfg.Outcome.jump fallthroughLabel)
+                  hReplace
+          · simpa [TypedCfg.Block.runTerm, hPop, hZero,
+              Outcome.eraseRuntimeControl] using
+                congrArg
+                  (TypedCfg.Outcome.jump targetLabel)
+                  hReplace
+  | returnDispatch returnCount sites =>
+      simp only [TypedCfg.Block.runTerm]
+      rw [hStack]
+      cases hDepth : shape.returnTokenDepth? with
+      | none =>
+          simpa [TypedCfg.Block.runTerm, hDepth,
+            Outcome.eraseRuntimeControl] using
+              congrArg TypedCfg.Outcome.invalid hRel
+      | some depth =>
+          by_cases hCount : depth = returnCount
+          · subst depth
+            cases hToken : source.stack[returnCount]? with
+            | none =>
+                simpa [TypedCfg.Block.runTerm, hDepth, hToken,
+                  Outcome.eraseRuntimeControl] using
+                    congrArg TypedCfg.Outcome.invalid hRel
+            | some token =>
+                cases hFind :
+                    TypedCfg.Block.ReturnSite.findTarget? token sites with
+                | none =>
+                    simpa [TypedCfg.Block.runTerm, hDepth,
+                      hToken, hFind, Outcome.eraseRuntimeControl] using
+                        congrArg TypedCfg.Outcome.invalid hRel
+                | some next =>
+                    have hReplace :
+                        Assembly.SameRuntimeData
+                          { target with
+                            stack := source.stack.eraseIdx returnCount }
+                          { source with
+                            stack := source.stack.eraseIdx returnCount } :=
+                      Assembly.SameRuntimeData.replaceStack hRel rfl
+                    simpa [TypedCfg.Block.runTerm, hDepth,
+                      hToken, hFind, Outcome.eraseRuntimeControl] using
+                        congrArg
+                          (TypedCfg.Outcome.jump next)
+                          hReplace
+          · simpa [TypedCfg.Block.runTerm, hDepth, hCount,
+              Outcome.eraseRuntimeControl] using
+                congrArg TypedCfg.Outcome.invalid hRel
+  | halt kind =>
+      simpa [TypedCfg.Block.runTerm, Outcome.eraseRuntimeControl] using
+        congrArg (TypedCfg.Outcome.halt kind) hRel
+  | invalid =>
+      simpa [TypedCfg.Block.runTerm, Outcome.eraseRuntimeControl] using
+        congrArg TypedCfg.Outcome.invalid hRel
+
+/--
+One ordinary well-typed block has the same observer outcome and transcript
+from runtime-related states, modulo concrete compiler control counters.
+-/
+theorem run_map_eraseRuntimeControl
+    {program : TypedCfg.Program} {block : TypedCfg.Block}
+    {target source : EVMState} {trace : Trace}
+    (hTyped : block.WellTyped program)
+    (hSafe : block.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Block.run block target trace).map
+        Outcome.eraseWithTrace =
+      (ObserverSemantics.Block.run block source trace).map
+        Outcome.eraseWithTrace := by
+  have hBody :=
+    runBody_map_eraseRuntimeControl
+      (trace := trace) hTyped.1 hSafe hRel
+  cases hTarget :
+      ObserverSemantics.Block.runBody
+        block.body block.input target trace with
+  | error targetErr =>
+      cases hSource :
+          ObserverSemantics.Block.runBody
+            block.body block.input source trace with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hBody
+          subst sourceErr
+          simp [ObserverSemantics.Block.run, hTarget, hSource]
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map] at hBody
+  | ok targetFinal =>
+      cases hSource :
+          ObserverSemantics.Block.runBody
+            block.body block.input source trace with
+      | error sourceErr =>
+          simp [hTarget, hSource, Except.map] at hBody
+      | ok sourceFinal =>
+          simp [hTarget, hSource, Except.map, eraseRunBody] at hBody
+          rcases targetFinal with
+            ⟨⟨targetAfter, targetOutput⟩, targetTrace⟩
+          rcases sourceFinal with
+            ⟨⟨sourceAfter, sourceOutput⟩, sourceTrace⟩
+          rcases hBody with
+            ⟨⟨hAfter, hOutput⟩, hTrace⟩
+          simp only [Prod.fst, Prod.snd] at hAfter hOutput hTrace
+          subst sourceOutput
+          subst sourceTrace
+          have hTerm :=
+            runTerm_map_eraseRuntimeControl
+              (shape := targetOutput) (term := block.term) hAfter
+          unfold ObserverSemantics.Block.run
+          rw [hTarget, hSource]
+          simp only [Bind.bind, Except.bind]
+          by_cases hExpected : targetOutput = block.output
+          · subst targetOutput
+            simp [Except.map, Outcome.eraseWithTrace, hTerm]
+          · simp [hExpected, Except.map]
+
+end Block
+
+namespace Program
+
+/--
+One shared-semantics CFG step is congruent modulo concrete control counters.
+Both well-typedness and replay safety are ordinary checked program properties.
+-/
+theorem step_map_eraseRuntimeControl
+    {program : TypedCfg.Program} {label : Label}
+    {target source : EVMState} {trace : Trace}
+    (hTyped : program.WellTyped)
+    (hSafe : program.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Program.step
+        program label target trace).map Outcome.eraseWithTrace =
+      (ObserverSemantics.Program.step
+        program label source trace).map Outcome.eraseWithTrace := by
+  cases hFind : program.findBlock? label with
+  | none =>
+      simpa [ObserverSemantics.Program.step, hFind, Except.map,
+        Outcome.eraseWithTrace, Outcome.eraseRuntimeControl] using hRel
+  | some block =>
+      have hMem : block ∈ program.blocks := by
+        unfold TypedCfg.Program.findBlock? at hFind
+        exact List.mem_of_find?_eq_some hFind
+      have hBlockTyped : block.WellTyped program :=
+        (List.forall_iff_forall_mem.mp hTyped.2.1) block hMem
+      have hBlockSafe : block.ReplaySafe :=
+        (List.forall_iff_forall_mem.mp hSafe) block hMem
+      have hBlock :=
+        Block.run_map_eraseRuntimeControl
+          (trace := trace) hBlockTyped hBlockSafe hRel
+      simpa [ObserverSemantics.Program.step, hFind] using hBlock
+
+/--
+Fuel-indexed replay is a congruence under the pass-owned runtime-data relation.
+This is the stable forward-preservation interface for TypedCfg execution.
+-/
+theorem runN_map_eraseRuntimeControl
+    {program : TypedCfg.Program} {fuel : Nat} {label : Label}
+    {target source : EVMState} {trace : Trace}
+    (hTyped : program.WellTyped)
+    (hSafe : program.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData target source) :
+    (ObserverSemantics.Program.runN
+        program fuel label target trace).map Outcome.eraseWithTrace =
+      (ObserverSemantics.Program.runN
+        program fuel label source trace).map Outcome.eraseWithTrace := by
+  induction fuel generalizing label target source trace with
+  | zero =>
+      simpa [Except.map,
+        Outcome.eraseWithTrace, Outcome.eraseRuntimeControl] using hRel
+  | succ fuel ih =>
+      have hStep :=
+        step_map_eraseRuntimeControl
+          (label := label) (trace := trace) hTyped hSafe hRel
+      cases hTarget :
+          ObserverSemantics.Program.step
+            program label target trace with
+      | error targetErr =>
+          cases hSource :
+              ObserverSemantics.Program.step
+                program label source trace with
+          | error sourceErr =>
+              simp [hTarget, hSource, Except.map] at hStep
+              subst sourceErr
+              simp [ObserverSemantics.Program.runN_succ,
+                hTarget, hSource]
+          | ok sourceFinal =>
+              simp [hTarget, hSource, Except.map] at hStep
+      | ok targetFinal =>
+          cases hSource :
+              ObserverSemantics.Program.step
+                program label source trace with
+          | error sourceErr =>
+              simp [hTarget, hSource, Except.map] at hStep
+          | ok sourceFinal =>
+              rcases targetFinal with ⟨targetOutcome, targetTrace⟩
+              rcases sourceFinal with ⟨sourceOutcome, sourceTrace⟩
+              cases targetOutcome <;> cases sourceOutcome <;>
+                simp [hTarget, hSource, Except.map,
+                  Outcome.eraseWithTrace,
+                  Outcome.eraseRuntimeControl] at hStep
+              case jump.jump targetLabel targetState sourceLabel sourceState =>
+                rcases hStep with
+                  ⟨⟨hLabel, hState⟩, hTrace⟩
+                subst sourceLabel
+                subst sourceTrace
+                have hTail :=
+                  ih (label := targetLabel)
+                    (trace := targetTrace) hState
+                simpa [ObserverSemantics.Program.runN_succ,
+                  hTarget, hSource,
+                  Bind.bind, Except.bind] using hTail
+              all_goals
+                simp [ObserverSemantics.Program.runN_succ,
+                  hTarget, hSource,
+                  Bind.bind, Except.bind, Except.map,
+                  Outcome.eraseWithTrace,
+                  Outcome.eraseRuntimeControl, hStep]
+
+/--
+A successful observer-aware CFG jump retains the ordinary typing guarantee
+that its symbolic destination is a block in the same program.
+-/
+theorem findBlock?_exists_of_step_jump
+    {program : TypedCfg.Program} {label next : Label}
+    {state final : EVMState} {trace trace' : Trace}
+    (hTyped : program.WellTyped)
+    (hStep :
+      ObserverSemantics.Program.step program label state trace =
+        .ok (.jump next final, trace')) :
+    ∃ block, program.findBlock? next = some block := by
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp [ObserverSemantics.Program.step, hFind] at hStep
+  | some block =>
+      have hMem : block ∈ program.blocks := by
+        unfold TypedCfg.Program.findBlock? at hFind
+        exact List.mem_of_find?_eq_some hFind
+      have hBlockTyped : block.WellTyped program :=
+        (List.forall_iff_forall_mem.mp hTyped.2.1) block hMem
+      unfold ObserverSemantics.Program.step at hStep
+      rw [hFind] at hStep
+      unfold ObserverSemantics.Block.run at hStep
+      cases hBody :
+          ObserverSemantics.Block.runBody
+            block.body block.input state trace with
+      | error err =>
+          simp [hBody, Bind.bind, Except.bind] at hStep
+      | ok bodyResult =>
+          rcases bodyResult with
+            ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
+          by_cases hOutput : bodyOutput = block.output
+          · subst bodyOutput
+            simp [hBody, Bind.bind, Except.bind] at hStep
+            exact
+              TypedCfg.Block.findBlock?_exists_of_type?_runTerm_jump
+                hBlockTyped.2 hStep.1
+          · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
+
+theorem step_ne_fallthrough
+    {program : TypedCfg.Program} {label : Label}
+    {state final : EVMState} {trace trace' : Trace}
+    (hStep :
+      ObserverSemantics.Program.step program label state trace =
+        .ok (.fallthrough final, trace')) :
+    False := by
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp [ObserverSemantics.Program.step, hFind] at hStep
+  | some block =>
+      unfold ObserverSemantics.Program.step at hStep
+      rw [hFind] at hStep
+      unfold ObserverSemantics.Block.run at hStep
+      cases hBody :
+          ObserverSemantics.Block.runBody
+            block.body block.input state trace with
+      | error err =>
+          simp [hBody, Bind.bind, Except.bind] at hStep
+      | ok bodyResult =>
+          rcases bodyResult with
+            ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
+          by_cases hOutput : bodyOutput = block.output
+          · subst bodyOutput
+            simp [hBody, Bind.bind, Except.bind] at hStep
+            exact
+              TypedCfg.Block.runTerm_ne_fallthrough
+                block.output block.term bodyState final hStep.1
+          · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
+
+theorem step_ne_returnDispatch
+    {program : TypedCfg.Program} {label : Label}
+    {state final : EVMState} {trace trace' : Trace}
+    (hStep :
+      ObserverSemantics.Program.step program label state trace =
+        .ok (.returnDispatch final, trace')) :
+    False := by
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp [ObserverSemantics.Program.step, hFind] at hStep
+  | some block =>
+      unfold ObserverSemantics.Program.step at hStep
+      rw [hFind] at hStep
+      unfold ObserverSemantics.Block.run at hStep
+      cases hBody :
+          ObserverSemantics.Block.runBody
+            block.body block.input state trace with
+      | error err =>
+          simp [hBody, Bind.bind, Except.bind] at hStep
+      | ok bodyResult =>
+          rcases bodyResult with
+            ⟨⟨bodyState, bodyOutput⟩, bodyTrace⟩
+          by_cases hOutput : bodyOutput = block.output
+          · subst bodyOutput
+            simp [hBody, Bind.bind, Except.bind] at hStep
+            exact
+              TypedCfg.Block.runTerm_ne_returnDispatch
+                block.output block.term bodyState final hStep.1
+          · simp [hBody, hOutput, Bind.bind, Except.bind] at hStep
+
+end Program
 
 def PositiveEventually (program : Assembly.Program) (state : EVMState)
     (trace : Trace)
@@ -387,9 +1154,9 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_all_ne
       (fun outcome =>
         match outcome with
         | .ok (.running final, finalTrace) =>
-            finalTrace = trace ∧
+              finalTrace = trace ∧
               final.stack = front ++ token :: suffix ∧
-              Assembly.SameData final state ∧
+              Assembly.SameRuntimeData final state ∧
               final.pc = (pre ++ code).pcAfter
         | _ => False) := by
   subst code
@@ -398,7 +1165,7 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_all_ne
       exact Assembly.Source.EventuallyWithOracle.pure
         (by
           simp [TypedCfg.Terminator.returnDispatchTestCases,
-            Assembly.SameData.refl, hStack, hPc])
+            Assembly.SameRuntimeData.refl, hStack, hPc])
   | cons site rest ih =>
       let headCode := TypedCfg.Terminator.returnDispatchTest depth site
       let tailCode :=
@@ -448,9 +1215,9 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_all_ne
               TypedCfg.Terminator.returnDispatchTestCases depth
                 (site :: rest) ++ post)
           (middle := fun mid midTrace =>
-            midTrace = trace ∧
+              midTrace = trace ∧
               mid.stack = front ++ token :: suffix ∧
-              Assembly.SameData mid state ∧
+              Assembly.SameRuntimeData mid state ∧
               mid.pc = (pre ++ headCode).pcAfter)
           ?_ ?_
       · exact Assembly.Source.EventuallyWithOracle.mono
@@ -470,7 +1237,7 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_all_ne
                     rcases hOutcome with
                       ⟨hTrace, hStackMid, hData, hPcMid⟩
                     refine ⟨hTrace, hStackMid, ?_, ?_⟩
-                    · simpa [Assembly.SameData, hRecord] using hData
+                    · simpa [Assembly.SameRuntimeData, hRecord] using hData
                     · simpa [hSiteNe] using hPcMid)
       · intro mid midTrace hMid
         rcases hMid with ⟨hTrace, hStackMid, hDataMid, hPcMid⟩
@@ -511,7 +1278,7 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_all_ne
                     exact
                       ⟨hFinalTrace.trans hTrace,
                         hStackFinal,
-                        Assembly.SameData.trans hData hDataMid,
+                        Assembly.SameRuntimeData.trans hData hDataMid,
                         by
                           simpa [hCodeEq, List.append_assoc] using hPcFinal⟩)
 
@@ -551,7 +1318,7 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_selected
           | .ok (.running final, finalTrace) =>
               finalTrace = trace ∧
                 final.stack = front ++ token :: suffix ∧
-                Assembly.SameData final state ∧
+                Assembly.SameRuntimeData final state ∧
                 final.pc = EvmYul.UInt256.ofNat caseDest
           | _ => False) := by
   let prefixCode :=
@@ -610,7 +1377,7 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_selected
       (middle := fun mid midTrace =>
         midTrace = trace ∧
           mid.stack = front ++ token :: suffix ∧
-          Assembly.SameData mid state ∧
+          Assembly.SameRuntimeData mid state ∧
           mid.pc = (pre ++ prefixCode).pcAfter)
       ?_ ?_
   · exact Assembly.Source.EventuallyWithOracle.mono
@@ -668,8 +1435,10 @@ theorem returnDispatchTestCases_eventuallyWithOracle_of_selected
                 exact
                   ⟨hFinalTrace.trans hTrace,
                     hStackFinal,
-                    Assembly.SameData.trans
-                      (by simpa [Assembly.SameData, hMidRecord] using hData)
+                    Assembly.SameRuntimeData.trans
+                      (by
+                        simpa [Assembly.SameRuntimeData, hMidRecord] using
+                          hData)
                       hDataMid,
                     by simpa [hToken] using hPcFinal⟩)
 
@@ -842,7 +1611,7 @@ theorem returnDispatchCase_eventuallyWithOracle
         (middle := fun cleaned cleanedTrace =>
           cleanedTrace = trace ∧
             cleaned.stack = front ++ suffix ∧
-            Assembly.SameData cleaned
+            Assembly.SameRuntimeData cleaned
               { state with stack := front ++ suffix } ∧
             cleaned.pc =
               (pre ++ prefixCode ++
@@ -865,15 +1634,15 @@ theorem returnDispatchCase_eventuallyWithOracle
                     ⟨hTrace, hStackClean, hData, hPcClean⟩
                   refine ⟨hTrace, hStackClean, ?_, ?_⟩
                   · calc
-                      Assembly.eraseControl cleaned =
-                          Assembly.eraseControl
+                      Assembly.eraseRuntimeControl cleaned =
+                          Assembly.eraseRuntimeControl
                             { afterLabel with stack := front ++ suffix } :=
                         hData
                       _ =
-                          Assembly.eraseControl
+                          Assembly.eraseRuntimeControl
                             { state with stack := front ++ suffix } := by
-                        simp [afterLabel, Assembly.eraseControl,
-                          Assembly.eraseGas, EvmYul.EVM.State.incrPC]
+                        simp [afterLabel, Assembly.eraseRuntimeControl,
+                          EvmYul.EVM.State.incrPC]
                   · simpa [cleanup, hFront, List.append_assoc] using hPcClean)
     · intro cleaned cleanedTrace hCleaned
       rcases hCleaned with
@@ -942,8 +1711,8 @@ theorem returnDispatchCase_eventuallyWithOracle
       · exact
           ⟨hTraceClean,
             rfl,
-            Assembly.SameData.trans
-              (Assembly.SameData.jumpPc targetDest cleaned)
+            Assembly.SameRuntimeData.trans
+              (Assembly.SameRuntimeData.jumpPc targetDest cleaned)
               hDataClean⟩
 
 theorem returnDispatch_selected_eventuallyWithOracle
@@ -1095,7 +1864,7 @@ theorem returnDispatch_selected_eventuallyWithOracle
       (middle := fun selected selectedTrace =>
         selectedTrace = trace ∧
           selected.stack = front ++ token :: suffix ∧
-          Assembly.SameData selected state ∧
+          Assembly.SameRuntimeData selected state ∧
           selected.pc = EvmYul.UInt256.ofNat caseDest)
       ?_ ?_
   · exact Assembly.Source.EventuallyWithOracle.mono
@@ -1164,17 +1933,18 @@ theorem returnDispatch_selected_eventuallyWithOracle
                 rcases hOutcome with
                   ⟨hFinalTrace, hPcFinal, hData⟩
                 have hSelectedCleanData :
-                    Assembly.SameData
+                    Assembly.SameRuntimeData
                       { selected with stack := front ++ suffix }
                       { state with stack := front ++ suffix } :=
-                  Assembly.eraseControl_with_stack_congr
+                  Assembly.eraseRuntimeControl_with_stack_congr
                     hSelectedData
                 exact
                   ⟨hFinalTrace.trans hSelectedTrace,
                     targetDest, hTargetDestActual, hPcFinal,
                     by
                       simpa [hErase] using
-                        Assembly.SameData.trans hData hSelectedCleanData⟩)
+                        Assembly.SameRuntimeData.trans
+                          hData hSelectedCleanData⟩)
 
 theorem returnDispatch_unknown_token_eventuallyWithOracle
     {shape : Shape} {returnCount depth : Nat}
@@ -1249,7 +2019,7 @@ theorem returnDispatch_unknown_token_eventuallyWithOracle
       (middle := fun tested testedTrace =>
         testedTrace = trace ∧
           tested.stack = front ++ token :: suffix ∧
-          Assembly.SameData tested state ∧
+          Assembly.SameRuntimeData tested state ∧
           tested.pc = (pre ++ testCases).pcAfter)
       ?_ ?_
   · exact Assembly.Source.EventuallyWithOracle.mono
@@ -1407,7 +2177,7 @@ theorem lowerAt?_eventuallyWithOracle_of_direct
           Except.map]
       · exact
           ⟨rfl, dest, hDest, rfl,
-            Assembly.SameData.jumpPc dest state⟩
+            Assembly.SameRuntimeData.jumpPc dest state⟩
   | jump target =>
       simp [TypedCfg.Terminator.lowerAt?] at hLower
       subst code
@@ -1433,7 +2203,7 @@ theorem lowerAt?_eventuallyWithOracle_of_direct
           Except.map]
       · exact
           ⟨rfl, dest, hDest, rfl,
-            Assembly.SameData.jumpPc dest state⟩
+            Assembly.SameRuntimeData.jumpPc dest state⟩
   | jumpi target next =>
       simp [TypedCfg.Terminator.lowerAt?] at hLower
       subst code
@@ -1566,7 +2336,7 @@ theorem lowerAt?_eventuallyWithOracle_of_direct
                 Outcome.Simulates, Preservation.Outcome.Simulates]
               exact
                 ⟨nextDest, hNextDest', rfl,
-                  Assembly.SameData.jumpPc nextDest popped⟩
+                  Assembly.SameRuntimeData.jumpPc nextDest popped⟩
           · have hBne :
                 (cond != EvmYul.UInt256.ofNat 0) = true :=
               Preservation.uint256_bne_zero_of_ne cond hZero
@@ -1595,7 +2365,7 @@ theorem lowerAt?_eventuallyWithOracle_of_direct
                 Outcome.Simulates, Preservation.Outcome.Simulates]
               exact
                 ⟨targetDest, hTargetDest', rfl,
-                  Assembly.SameData.jumpPc targetDest popped⟩
+                  Assembly.SameRuntimeData.jumpPc targetDest popped⟩
   | returnDispatch _returnCount _sites =>
       simp [Preservation.Terminator.Direct] at hDirect
   | halt kind =>
@@ -2261,7 +3031,7 @@ def StepAccountsForHalt
               Assembly.Source.runNResultWithOracle
                   target prefixFuel initial initialTrace =
                 .ok (.running targetState, sourceTrace) ∧
-              Assembly.SameData targetState source
+              Assembly.SameRuntimeData targetState source
       | .jump next source =>
           ∃ prefixFuel targetState dest,
             0 < prefixFuel ∧
@@ -2271,7 +3041,7 @@ def StepAccountsForHalt
                 .ok (.running targetState, sourceTrace) ∧
               target.labelPc next = some dest ∧
               targetState.pc = EvmYul.UInt256.ofNat dest ∧
-              Assembly.SameData targetState source
+              Assembly.SameRuntimeData targetState source
       | .returnDispatch source =>
           ∃ prefixFuel targetState,
             0 < prefixFuel ∧
@@ -2279,7 +3049,7 @@ def StepAccountsForHalt
               Assembly.Source.runNResultWithOracle
                   target prefixFuel initial initialTrace =
                 .ok (.running targetState, sourceTrace) ∧
-              Assembly.SameData targetState source
+              Assembly.SameRuntimeData targetState source
       | .halt kind source =>
           sourceTrace = traceOut ∧
             Assembly.Target.stepInstrResult
@@ -2543,6 +3313,240 @@ theorem lower?_step_accountsForHalt
               cases prefixResult <;>
                 simp [Outcome.Simulates,
                   Preservation.Outcome.Simulates] at hSim
+
+/--
+Backward adequacy for a complete terminal Assembly run of a replay-safe
+TypedCfg program.
+
+The theorem constructs the CFG fuel and halt outcome. Its public inputs are
+ordinary source well-typedness/replay safety, the existing lowering, and a
+concrete target run; no compiler-generated proof object is accepted.
+-/
+theorem lower?_terminal_backward
+    {program : TypedCfg.Program} {target : Assembly.Program}
+    {label : Label} {block : TypedCfg.Block}
+    {targetInitial sourceInitial : EVMState} {entryPc fullFuel : Nat}
+    {trace traceOut : Trace} {halt : Assembly.Halt}
+    (hLower : program.lower? = some target)
+    (hAccepted : target.accepted = true)
+    (hFits : target.PCFits)
+    (hTyped : program.WellTyped)
+    (hSafe : program.ReplaySafe)
+    (hFind : program.findBlock? label = some block)
+    (hLabelPc : target.labelPc label = some entryPc)
+    (hPc :
+      targetInitial.pc = EvmYul.UInt256.ofNat entryPc)
+    (hRel :
+      Assembly.SameRuntimeData targetInitial sourceInitial)
+    (hFull :
+      Assembly.Source.runNResultWithOracle
+          target fullFuel targetInitial trace =
+        .ok (.halted halt, traceOut)) :
+    ∃ cfgFuel kind sourceFinal,
+      ObserverSemantics.Program.runN
+          program cfgFuel label sourceInitial trace =
+        .ok (.halt kind sourceFinal, traceOut) ∧
+      Outcome.HaltMatches halt kind sourceFinal := by
+  induction fullFuel using Nat.strong_induction_on generalizing
+      label block targetInitial sourceInitial entryPc trace with
+  | h fullFuel ih =>
+      have hAccounts :=
+        lower?_step_accountsForHalt
+          hLower hAccepted hFits hFind hLabelPc hPc hFull
+      have hCongruence :=
+        ObserverPreservation.Program.step_map_eraseRuntimeControl
+          (label := label) (trace := trace) hTyped hSafe
+          (Assembly.SameRuntimeData.incrPC_left hRel)
+      cases hTargetStep :
+          ObserverSemantics.Program.step
+            program label targetInitial.incrPC trace with
+      | error targetErr =>
+          unfold StepAccountsForHalt at hAccounts
+          rw [hTargetStep] at hAccounts
+          exact hAccounts.elim
+      | ok targetPair =>
+          rcases targetPair with ⟨targetOutcome, targetTrace⟩
+          unfold StepAccountsForHalt at hAccounts
+          rw [hTargetStep] at hAccounts
+          cases targetOutcome with
+          | fallthrough targetSource =>
+              exact
+                (ObserverPreservation.Program.step_ne_fallthrough
+                  hTargetStep).elim
+          | returnDispatch targetSource =>
+              exact
+                (ObserverPreservation.Program.step_ne_returnDispatch
+                  hTargetStep).elim
+          | invalid targetSource =>
+              exact hAccounts.elim
+          | halt kind simulated =>
+              cases hSourceStep :
+                  ObserverSemantics.Program.step
+                    program label sourceInitial trace with
+              | error sourceErr =>
+                  simp [hTargetStep, hSourceStep, Except.map] at hCongruence
+              | ok sourcePair =>
+                  rcases sourcePair with ⟨sourceOutcome, sourceTrace⟩
+                  cases sourceOutcome with
+                  | fallthrough source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | jump next source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | returnDispatch source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | invalid source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | halt sourceKind sourceFinal =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                      rcases hCongruence with
+                        ⟨⟨hKind, hState⟩, hTrace⟩
+                      subst sourceKind
+                      subst sourceTrace
+                      refine
+                        ⟨1, kind, sourceFinal, ?_,
+                          ⟨simulated, hState, hAccounts.2⟩⟩
+                      simpa [ObserverSemantics.Program.runN_succ,
+                        hSourceStep, hAccounts.1]
+          | jump next simulated =>
+              rcases hAccounts with
+                ⟨prefixFuel, targetNext, dest, hPrefixPositive,
+                  hPrefixLt, hPrefixRun, hDest, hTargetPc,
+                  hTargetRel⟩
+              cases hSourceStep :
+                  ObserverSemantics.Program.step
+                    program label sourceInitial trace with
+              | error sourceErr =>
+                  simp [hTargetStep, hSourceStep, Except.map] at hCongruence
+              | ok sourcePair =>
+                  rcases sourcePair with ⟨sourceOutcome, sourceTrace⟩
+                  cases sourceOutcome with
+                  | fallthrough source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | returnDispatch source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | halt sourceKind source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | invalid source =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                  | jump sourceNext sourceNextState =>
+                      simp [hTargetStep, hSourceStep, Except.map,
+                        Outcome.eraseWithTrace,
+                        Outcome.eraseRuntimeControl] at hCongruence
+                      rcases hCongruence with
+                        ⟨⟨hNext, hSourceRel⟩, hTrace⟩
+                      subst sourceNext
+                      subst sourceTrace
+                      rcases
+                          findBlock?_exists_of_step_jump
+                            hTyped hSourceStep with
+                        ⟨nextBlock, hFindNext⟩
+                      let restFuel := fullFuel - prefixFuel
+                      have hFuelEq :
+                          prefixFuel + restFuel = fullFuel :=
+                        Nat.add_sub_of_le (Nat.le_of_lt hPrefixLt)
+                      have hRestLt : restFuel < fullFuel := by
+                        dsimp [restFuel]
+                        omega
+                      have hRestRun :
+                          Assembly.Source.runNResultWithOracle
+                              target restFuel targetNext targetTrace =
+                            .ok (.halted halt, traceOut) := by
+                        have hRewritten :
+                            Assembly.Source.runNResultWithOracle
+                                target (prefixFuel + restFuel)
+                                  targetInitial trace =
+                              .ok (.halted halt, traceOut) := by
+                          simpa [hFuelEq] using hFull
+                        rw [
+                          Assembly.Source.runNResultWithOracle_add_of_running
+                            hPrefixRun] at hRewritten
+                        exact hRewritten
+                      have hNextRel :
+                          Assembly.SameRuntimeData
+                            targetNext sourceNextState :=
+                        Assembly.SameRuntimeData.trans
+                          hTargetRel hSourceRel
+                      rcases
+                          ih restFuel hRestLt
+                            hFindNext hDest hTargetPc hNextRel hRestRun with
+                        ⟨tailFuel, finalKind, sourceFinal,
+                          hTailRun, hHaltMatch⟩
+                      refine
+                        ⟨tailFuel + 1, finalKind, sourceFinal, ?_,
+                          hHaltMatch⟩
+                      simpa [ObserverSemantics.Program.runN_succ,
+                        hSourceStep] using hTailRun
+
+/--
+Terminal target execution at the checked program entry. The generated entry
+offset is hidden inside the semantic target-run relation.
+-/
+def EntryTerminalRun
+    (program : TypedCfg.Program) (artifact : TypedCfg.Program.CertifiedArtifact)
+    (fuel : Nat) (initial : EVMState) (trace traceOut : Trace)
+    (halt : Assembly.Halt) : Prop :=
+  ∃ entryPc,
+    artifact.target.labelPc program.entry = some entryPc ∧
+      Assembly.Source.runNResultWithOracle artifact.target fuel
+          { initial with pc := EvmYul.UInt256.ofNat entryPc } trace =
+        .ok (.halted halt, traceOut)
+
+/--
+Checked-artifact backward adequacy for the TypedCfg-to-Assembly boundary.
+
+Block lookup, entry offset, acceptedness, PC fit, and the concrete lowering are
+all recovered from the successful compiler. The only additional restriction
+is the source-facing replay-safety property that upper passes must establish.
+-/
+theorem compileCertified?_entry_terminal_backward
+    {program : TypedCfg.Program}
+    {artifact : TypedCfg.Program.CertifiedArtifact}
+    {fuel : Nat} {initial sourceInitial : EVMState}
+    {trace traceOut : Trace} {halt : Assembly.Halt}
+    (hCompile : program.compileCertified? = some artifact)
+    (hSafe : program.ReplaySafe)
+    (hRel : Assembly.SameRuntimeData initial sourceInitial)
+    (hRun :
+      EntryTerminalRun program artifact fuel initial trace traceOut halt) :
+    ∃ cfgFuel kind sourceFinal,
+      ObserverSemantics.Program.runN
+          program cfgFuel program.entry sourceInitial trace =
+        .ok (.halt kind sourceFinal, traceOut) ∧
+      Outcome.HaltMatches halt kind sourceFinal := by
+  have hTyped : program.WellTyped :=
+    TypedCfg.Program.compileCertified?_wellTyped hCompile
+  cases hFind : program.findBlock? program.entry with
+  | none =>
+      exact False.elim (hTyped.2.2.1 hFind)
+  | some block =>
+      rcases hRun with ⟨entryPc, hLabelPc, hTargetRun⟩
+      exact
+        lower?_terminal_backward
+          (TypedCfg.Program.compileCertified?_target hCompile)
+          (TypedCfg.Program.compileCertified?_targetAccepted hCompile)
+          (TypedCfg.Program.compileCertified?_pcFits hCompile)
+          hTyped hSafe hFind hLabelPc rfl
+          (Assembly.SameRuntimeData.with_pc_left
+            (EvmYul.UInt256.ofNat entryPc) hRel)
+          hTargetRun
 
 theorem lower?_step_eventuallyWithOracle
     {program : TypedCfg.Program} {target : Assembly.Program}

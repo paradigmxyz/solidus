@@ -223,8 +223,8 @@ theorem dispatchCondition_source_exists {state : EVMState}
         | .ok (.running final) =>
             final.stack =
                 EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
-              eraseControl final =
-                eraseControl
+              eraseRuntimeControl final =
+                eraseRuntimeControl
                   { state with stack :=
                       EvmYul.UInt256.eq probe token ::
                         front ++ token :: suffix } ∧
@@ -363,7 +363,7 @@ theorem dispatchCondition_source_exists {state : EVMState}
   · refine ⟨?_, ?_, ?_⟩
     · simp [finalState, afterPush, afterDup,
         EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
-    · simp [finalState, afterPush, afterDup, start, eraseControl, eraseGas,
+    · simp [finalState, afterPush, afterDup, start, eraseRuntimeControl,
         EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
     · calc
         finalState.pc = afterPush.pc + EvmYul.UInt256.ofNat 1 := by
@@ -407,8 +407,9 @@ theorem dispatchTest_source_exists {state : EVMState}
         match outcome with
         | .ok (.running final) =>
             final.stack = front ++ token :: suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := front ++ token :: suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := front ++ token :: suffix } ∧
               final.pc =
                 if probe = token then EvmYul.UInt256.ofNat dest
                 else
@@ -440,8 +441,8 @@ theorem dispatchTest_source_exists {state : EVMState}
       (middle := fun mid =>
         mid.stack =
             EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
-          eraseControl mid =
-            eraseControl
+          eraseRuntimeControl mid =
+            eraseRuntimeControl
               { state with stack :=
                   EvmYul.UInt256.eq probe token :: front ++ token :: suffix } ∧
           mid.pc = (pre ++ conditionCode).pcAfter)
@@ -509,13 +510,15 @@ theorem dispatchTest_source_exists {state : EVMState}
     · refine ⟨?_, ?_, ?_⟩
       · simp [final]
       · calc
-          eraseControl final =
-              eraseControl { mid with stack := front ++ token :: suffix } := by
-            simp [final, eraseControl, eraseGas]
+          eraseRuntimeControl final =
+              eraseRuntimeControl
+                { mid with stack := front ++ token :: suffix } := by
+            simp [final, eraseRuntimeControl]
           _ =
-              eraseControl { state with stack := front ++ token :: suffix } := by
+              eraseRuntimeControl
+                { state with stack := front ++ token :: suffix } := by
             simpa using
-              (eraseControl_with_stack_congr
+              (eraseRuntimeControl_with_stack_congr
                 (left := mid)
                 (right :=
                   { state with stack :=
@@ -548,8 +551,9 @@ theorem liftBuriedToTop_source_exists {state : EVMState}
         match outcome with
         | .ok (.running final) =>
             final.stack = token :: front ++ suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := token :: front ++ suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := token :: front ++ suffix } ∧
               final.pc = (pre ++ liftBuriedToTop front.length).pcAfter
         | _ => False) := by
   induction front using List.reverseRecOn generalizing state suffix token pre post with
@@ -585,8 +589,9 @@ theorem liftBuriedToTop_source_exists {state : EVMState}
           (program := pre ++ liftBuriedToTop (front ++ [last]).length ++ post)
           (middle := fun targetAfterLift =>
             targetAfterLift.stack = last :: front ++ token :: suffix ∧
-              eraseControl targetAfterLift =
-                eraseControl { state with stack := last :: front ++ token :: suffix } ∧
+              eraseRuntimeControl targetAfterLift =
+                eraseRuntimeControl
+                  { state with stack := last :: front ++ token :: suffix } ∧
               targetAfterLift.pc =
                 (pre ++ liftBuriedToTop front.length).pcAfter)
           ?_ ?_
@@ -642,17 +647,17 @@ theorem liftBuriedToTop_source_exists {state : EVMState}
           · simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC, List.append_assoc]
           · calc
-              eraseControl finalState =
-                  eraseControl
+              eraseRuntimeControl finalState =
+                  eraseRuntimeControl
                     { mid with stack := token :: front ++ [last] ++ suffix } := by
-                simp [finalState, eraseControl, eraseGas,
+                simp [finalState, eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
               _ =
-                  eraseControl
+                  eraseRuntimeControl
                     { state with stack := token :: front ++ [last] ++ suffix } := by
                 simpa [List.append_assoc] using
-                  (eraseControl_with_stack_congr
+                  (eraseRuntimeControl_with_stack_congr
                     (left := mid)
                     (right :=
                       { state with stack := last :: front ++ token :: suffix })
@@ -699,8 +704,8 @@ theorem removeBuriedUnder_source_exists {state : EVMState}
         match outcome with
         | .ok (.running final) =>
             final.stack = front ++ suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := front ++ suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl { state with stack := front ++ suffix } ∧
               final.pc = (pre ++ removeBuriedUnder front.length).pcAfter
         | _ => False) := by
   have hFitsLift :
@@ -721,8 +726,9 @@ theorem removeBuriedUnder_source_exists {state : EVMState}
       (program := pre ++ removeBuriedUnder front.length ++ post)
       (middle := fun mid =>
         mid.stack = token :: front ++ suffix ∧
-          eraseControl mid =
-            eraseControl { state with stack := token :: front ++ suffix } ∧
+          eraseRuntimeControl mid =
+            eraseRuntimeControl
+              { state with stack := token :: front ++ suffix } ∧
           mid.pc = (pre ++ liftBuriedToTop front.length).pcAfter)
       ?_ ?_
   · exact Source.Eventually.mono
@@ -764,15 +770,15 @@ theorem removeBuriedUnder_source_exists {state : EVMState}
       · simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC]
       · calc
-          eraseControl finalState =
-              eraseControl { mid with stack := front ++ suffix } := by
-            simp [finalState, eraseControl, eraseGas,
+          eraseRuntimeControl finalState =
+              eraseRuntimeControl { mid with stack := front ++ suffix } := by
+            simp [finalState, eraseRuntimeControl,
               EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC]
-          _ = eraseControl { state with stack := front ++ suffix } :=
+          _ = eraseRuntimeControl { state with stack := front ++ suffix } :=
             by
               simpa using
-                (eraseControl_with_stack_congr
+                (eraseRuntimeControl_with_stack_congr
                   (left := mid)
                   (right :=
                     { state with stack := token :: front ++ suffix })

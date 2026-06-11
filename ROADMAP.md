@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 13:54 PDT.
+Last updated: 2026-06-11 14:23 PDT.
 
 ## Objective
 
@@ -101,8 +101,10 @@ Adjacent boundary status:
   complete allocation-sensitive observer theorem remains.
 - [ ] Structured -> TypedCfg: ordinary outcome-indexed path preservation is
   complete; observer-aware adjacent lifting remains.
-- [ ] TypedCfg -> Assembly: instruction, body, terminator, block, and
-  one-step target accounting are checked; whole-run backward adequacy remains.
+- [x] TypedCfg -> Assembly: checked replay safety now lifts through
+  instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
+  execution, and whole-run terminal backward adequacy. The checked-artifact
+  theorem hides block lookup, entry offset, acceptedness, PC fit, and lowering.
 - [x] Assembly -> bytecode: exact block simulation and terminal target-run
   inversion are checked.
 - [ ] End-to-end: `ClosedResourceCorrect` remains an unproved proposition
@@ -146,7 +148,7 @@ Roadmap:
 - [x] Lift the exact Assembly block theorem to arbitrary terminal target runs
   by proving that completed source steps remain at source-instruction
   boundaries and recursively decomposing target fuel.
-- [x] Define an independent transcript-indexed TypedCfg interpreter and prove
+- [x] Specialize the shared parameterized TypedCfg effect interpreter and prove
   exact observer-aware lowering for every typed instruction and complete block
   body, including zero-byte bindings, stack shuffles, and unwind.
 - [x] Prove observer-aware lowering for every TypedCfg terminator, including
@@ -157,6 +159,9 @@ Roadmap:
   one-step backward classification against a concrete terminal Assembly run:
   every continuing step consumes a strict target-fuel prefix, while a halt
   agrees exactly on terminal result and transcript.
+- [x] Prove whole-run TypedCfg-to-Assembly terminal backward adequacy and a
+  checked-artifact entry theorem with no generated block, label, certificate,
+  or emitted-code premise.
 - [ ] Prove backward adequacy from target bytecode runs through Assembly,
   TypedCfg, Structured, allocation-lowered Locals, Functions, and imported Yul.
 - [ ] Compose the unconditional public Yul-to-bytecode theorem without replay,

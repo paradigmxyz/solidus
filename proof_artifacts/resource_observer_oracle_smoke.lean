@@ -55,6 +55,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_positiveEventuallyWithOracle
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_eventuallyWithOracle
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_terminal_backward
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.compileCertified?_entry_terminal_backward
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Yul.StateRelation.Replay.Rel
 #check EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim
@@ -96,6 +98,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_positiveEventuallyWithOracle
 #print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_eventuallyWithOracle
 #print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
+#print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_terminal_backward
+#print axioms EvmCompiler.TypedCfg.ObserverPreservation.Program.compileCertified?_entry_terminal_backward
 #print axioms EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.gas

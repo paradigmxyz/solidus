@@ -76,8 +76,8 @@ theorem dispatchCondition_source_exists_withOracle {state : EVMState}
             finalTrace = trace ∧
               final.stack =
                 EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
-              eraseControl final =
-                eraseControl
+              eraseRuntimeControl final =
+                eraseRuntimeControl
                   { state with stack :=
                       EvmYul.UInt256.eq probe token ::
                         front ++ token :: suffix } ∧
@@ -206,7 +206,7 @@ theorem dispatchCondition_source_exists_withOracle {state : EVMState}
   · refine ⟨rfl, ?_, ?_, ?_⟩
     · simp [finalState, afterPush, afterDup,
         EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
-    · simp [finalState, afterPush, afterDup, start, eraseControl, eraseGas,
+    · simp [finalState, afterPush, afterDup, start, eraseRuntimeControl,
         EvmYul.EVM.State.replaceStackAndIncrPC, EvmYul.EVM.State.incrPC]
     · calc
         finalState.pc = afterPush.pc + EvmYul.UInt256.ofNat 1 := by
@@ -253,8 +253,9 @@ theorem dispatchTest_source_exists_withOracle {state : EVMState}
         | .ok (.running final, finalTrace) =>
             finalTrace = trace ∧
               final.stack = front ++ token :: suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := front ++ token :: suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := front ++ token :: suffix } ∧
               final.pc =
                 if probe = token then EvmYul.UInt256.ofNat dest
                 else
@@ -287,8 +288,8 @@ theorem dispatchTest_source_exists_withOracle {state : EVMState}
         midTrace = trace ∧
           mid.stack =
             EvmYul.UInt256.eq probe token :: front ++ token :: suffix ∧
-          eraseControl mid =
-            eraseControl
+          eraseRuntimeControl mid =
+            eraseRuntimeControl
               { state with stack :=
                   EvmYul.UInt256.eq probe token ::
                     front ++ token :: suffix } ∧
@@ -378,13 +379,15 @@ theorem dispatchTest_source_exists_withOracle {state : EVMState}
     · refine ⟨rfl, ?_, ?_, ?_⟩
       · simp [final]
       · calc
-          eraseControl final =
-              eraseControl { mid with stack := front ++ token :: suffix } := by
-            simp [final, eraseControl, eraseGas]
+          eraseRuntimeControl final =
+              eraseRuntimeControl
+                { mid with stack := front ++ token :: suffix } := by
+            simp [final, eraseRuntimeControl]
           _ =
-              eraseControl { state with stack := front ++ token :: suffix } := by
+              eraseRuntimeControl
+                { state with stack := front ++ token :: suffix } := by
             simpa using
-              (eraseControl_with_stack_congr
+              (eraseRuntimeControl_with_stack_congr
                 (left := mid)
                 (right :=
                   { state with stack :=
@@ -418,15 +421,16 @@ theorem liftBuriedToTop_source_exists_withOracle {state : EVMState}
         | .ok (.running final, finalTrace) =>
             finalTrace = trace ∧
               final.stack = token :: front ++ suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := token :: front ++ suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl
+                  { state with stack := token :: front ++ suffix } ∧
               final.pc = (pre ++ liftBuriedToTop front.length).pcAfter
         | _ => False) := by
   induction front using List.reverseRecOn generalizing state suffix token pre post with
   | nil =>
       exact Source.EventuallyWithOracle.pure
         (by
-          simpa [liftBuriedToTop, Assembly.SameData.refl] using hPc)
+          simpa [liftBuriedToTop, Assembly.SameRuntimeData.refl] using hPc)
   | append_singleton front last ih =>
       have hSwapBound : front.length + 1 ≤ 16 := by
         simpa [List.length_append] using hBound
@@ -458,8 +462,8 @@ theorem liftBuriedToTop_source_exists_withOracle {state : EVMState}
           (middle := fun targetAfterLift midTrace =>
             midTrace = trace ∧
               targetAfterLift.stack = last :: front ++ token :: suffix ∧
-              eraseControl targetAfterLift =
-                eraseControl
+              eraseRuntimeControl targetAfterLift =
+                eraseRuntimeControl
                   { state with stack := last :: front ++ token :: suffix } ∧
               targetAfterLift.pc =
                 (pre ++ liftBuriedToTop front.length).pcAfter)
@@ -534,17 +538,17 @@ theorem liftBuriedToTop_source_exists_withOracle {state : EVMState}
           · simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC, List.append_assoc]
           · calc
-              eraseControl finalState =
-                  eraseControl
+              eraseRuntimeControl finalState =
+                  eraseRuntimeControl
                     { mid with stack := token :: front ++ [last] ++ suffix } := by
-                simp [finalState, eraseControl, eraseGas,
+                simp [finalState, eraseRuntimeControl,
                   EvmYul.EVM.State.replaceStackAndIncrPC,
                   EvmYul.EVM.State.incrPC]
               _ =
-                  eraseControl
+                  eraseRuntimeControl
                     { state with stack := token :: front ++ [last] ++ suffix } := by
                 simpa [List.append_assoc] using
-                  (eraseControl_with_stack_congr
+                  (eraseRuntimeControl_with_stack_congr
                     (left := mid)
                     (right :=
                       { state with stack := last :: front ++ token :: suffix })
@@ -586,8 +590,8 @@ theorem removeBuriedUnder_source_exists_withOracle {state : EVMState}
         | .ok (.running final, finalTrace) =>
             finalTrace = trace ∧
               final.stack = front ++ suffix ∧
-              eraseControl final =
-                eraseControl { state with stack := front ++ suffix } ∧
+              eraseRuntimeControl final =
+                eraseRuntimeControl { state with stack := front ++ suffix } ∧
               final.pc = (pre ++ removeBuriedUnder front.length).pcAfter
         | _ => False) := by
   have hFitsLift :
@@ -609,8 +613,9 @@ theorem removeBuriedUnder_source_exists_withOracle {state : EVMState}
       (middle := fun mid midTrace =>
         midTrace = trace ∧
           mid.stack = token :: front ++ suffix ∧
-          eraseControl mid =
-            eraseControl { state with stack := token :: front ++ suffix } ∧
+          eraseRuntimeControl mid =
+            eraseRuntimeControl
+              { state with stack := token :: front ++ suffix } ∧
           mid.pc = (pre ++ liftBuriedToTop front.length).pcAfter)
       ?_ ?_
   · exact Source.EventuallyWithOracle.mono
@@ -662,14 +667,14 @@ theorem removeBuriedUnder_source_exists_withOracle {state : EVMState}
       · simp [finalState, EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC]
       · calc
-          eraseControl finalState =
-              eraseControl { mid with stack := front ++ suffix } := by
-            simp [finalState, eraseControl, eraseGas,
+          eraseRuntimeControl finalState =
+              eraseRuntimeControl { mid with stack := front ++ suffix } := by
+            simp [finalState, eraseRuntimeControl,
               EvmYul.EVM.State.replaceStackAndIncrPC,
               EvmYul.EVM.State.incrPC]
-          _ = eraseControl { state with stack := front ++ suffix } := by
+          _ = eraseRuntimeControl { state with stack := front ++ suffix } := by
             simpa using
-              (eraseControl_with_stack_congr
+              (eraseRuntimeControl_with_stack_congr
                 (left := mid)
                 (right :=
                   { state with stack := token :: front ++ suffix })

@@ -56,6 +56,14 @@ def ofPrim (op : Assembly.PrimOp) : Effects where
     (ofPrim .msize).callsOrCreates = false := by
   native_decide
 
+/--
+Effects whose meaning is invariant under compiler-owned control counters and
+does not require an external call/create response.
+-/
+def ReplaySafe (effects : Effects) : Prop :=
+  effects.readsProgramCounter = false ∧
+    effects.callsOrCreates = false
+
 @[simp] theorem empty_append (effects : Effects) :
     empty.append effects = effects := by
   cases effects
@@ -197,6 +205,9 @@ def effects : Instr → Effects
   | .prim op => Effects.ofPrim op
   | _ => {}
 
+def ReplaySafe (instr : Instr) : Prop :=
+  instr.effects.ReplaySafe
+
 def certificate? (instr : Instr) (entry : Shape) :
     Option FragmentCert := do
   let exit ← instr.type? entry
@@ -237,6 +248,9 @@ def certificate (term : Terminator) (shape : Shape) : FragmentCert where
 end Terminator
 
 namespace Block
+
+def ReplaySafe (block : Block) : Prop :=
+  block.body.Forall Instr.ReplaySafe
 
 def bodyCertificate? : List Instr → Shape → Option FragmentCert
   | [], shape => some (FragmentCert.empty shape)
@@ -334,6 +348,9 @@ theorem append_assoc (first second third : ProgramCert) :
 end ProgramCert
 
 namespace Program
+
+def ReplaySafe (program : Program) : Prop :=
+  program.blocks.Forall Block.ReplaySafe
 
 def collectCertificates? : List Block → Option (List FragmentCert)
   | [] => some []

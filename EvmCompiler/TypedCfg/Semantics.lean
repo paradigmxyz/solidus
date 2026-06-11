@@ -138,6 +138,159 @@ def runTerm (shape : Shape) (term : Terminator) (state : EVMState) : Outcome :=
   | .halt kind => .halt kind state
   | .invalid => .invalid state
 
+theorem ReturnSite.mem_of_findTarget?_eq_some
+    {token : Word} {sites : List ReturnSite} {target : Label}
+    (hFind : ReturnSite.findTarget? token sites = some target) :
+    ∃ site ∈ sites, site.target = target := by
+  induction sites with
+  | nil =>
+      simp [ReturnSite.findTarget?] at hFind
+  | cons site rest ih =>
+      by_cases hToken : site.token = token
+      · simp [ReturnSite.findTarget?, hToken] at hFind
+        exact ⟨site, by simp, hFind⟩
+      · simp [ReturnSite.findTarget?, hToken] at hFind
+        rcases ih hFind with ⟨found, hMem, hTarget⟩
+        exact ⟨found, by simp [hMem], hTarget⟩
+
+theorem findBlock?_exists_of_targetsHaveShape?_eq_true
+    {program : Program} {shape : Shape} {sites : List ReturnSite}
+    (hShapes : Terminator.targetsHaveShape? program shape sites = true)
+    {site : ReturnSite} (hMem : site ∈ sites) :
+    ∃ block, program.findBlock? site.target = some block := by
+  induction sites with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp only [List.mem_cons] at hMem
+      cases hMem with
+      | inl hHead =>
+          subst head
+          cases hFind : program.findBlock? site.target with
+          | none =>
+              simp [Terminator.targetsHaveShape?,
+                Program.labelShape?, hFind] at hShapes
+          | some block =>
+              exact ⟨block, rfl⟩
+      | inr hRest =>
+          cases hHeadFind : program.findBlock? head.target with
+          | none =>
+              simp [Terminator.targetsHaveShape?,
+                Program.labelShape?, hHeadFind] at hShapes
+          | some headBlock =>
+              have hTail :
+                  Terminator.targetsHaveShape?
+                      program shape rest = true := by
+                have hCombined :
+                    shape.compatible headBlock.input = true ∧
+                      Terminator.targetsHaveShape?
+                        program shape rest = true := by
+                  simpa [Terminator.targetsHaveShape?,
+                    Program.labelShape?, hHeadFind] using hShapes
+                exact hCombined.2
+              exact ih hTail hRest
+
+/--
+An ordinary well-typed terminator can jump only to a block owned by the same
+TypedCfg program, including a target selected by return dispatch.
+-/
+theorem findBlock?_exists_of_type?_runTerm_jump
+    {program : Program} {shape : Shape} {term : Terminator}
+    {state final : EVMState} {next : Label}
+    (hType : term.type? program shape = some ())
+    (hRun : runTerm shape term state = .jump next final) :
+    ∃ block, program.findBlock? next = some block := by
+  cases term with
+  | fallthrough target =>
+      cases hFind : program.findBlock? target with
+      | none =>
+          simp [Terminator.type?, Program.labelShape?, hFind] at hType
+      | some block =>
+          simp [runTerm] at hRun
+          rcases hRun with ⟨rfl, _⟩
+          exact ⟨block, hFind⟩
+  | jump target =>
+      cases hFind : program.findBlock? target with
+      | none =>
+          simp [Terminator.type?, Program.labelShape?, hFind] at hType
+      | some block =>
+          simp [runTerm] at hRun
+          rcases hRun with ⟨rfl, _⟩
+          exact ⟨block, hFind⟩
+  | jumpi target fallthrough =>
+      cases hTarget : program.findBlock? target with
+      | none =>
+          simp [Terminator.type?, Program.labelShape?, hTarget] at hType
+      | some targetBlock =>
+          cases hFallthrough : program.findBlock? fallthrough with
+          | none =>
+              simp [Terminator.type?, Program.labelShape?,
+                hTarget, hFallthrough] at hType
+          | some fallthroughBlock =>
+              cases hPop : state.stack.pop with
+              | none =>
+                  simp [runTerm, hPop] at hRun
+              | some pair =>
+                  rcases pair with ⟨stack, cond⟩
+                  by_cases hZero : cond = EvmYul.UInt256.ofNat 0
+                  · simp [runTerm, hPop, hZero] at hRun
+                    rcases hRun with ⟨rfl, _⟩
+                    exact ⟨fallthroughBlock, hFallthrough⟩
+                  · simp [runTerm, hPop, hZero] at hRun
+                    rcases hRun with ⟨rfl, _⟩
+                    exact ⟨targetBlock, hTarget⟩
+  | returnDispatch returnCount sites =>
+      cases hDepth : shape.returnTokenDepth? with
+      | none =>
+          simp [Terminator.type?, hDepth] at hType
+      | some depth =>
+          by_cases hCount : depth = returnCount
+          · subst depth
+            have hShapes :
+                Terminator.targetsHaveShape?
+                    program (shape.erase returnCount) sites = true := by
+              have hChecked :
+                  sites ≠ [] ∧
+                    Terminator.targetsHaveShape?
+                      program (shape.erase returnCount) sites = true := by
+                simpa [Terminator.type?, hDepth] using hType
+              exact hChecked.2
+            cases hToken : state.stack[returnCount]? with
+            | none =>
+                simp [runTerm, hDepth, hToken] at hRun
+            | some token =>
+                cases hFind :
+                    ReturnSite.findTarget? token sites with
+                | none =>
+                    simp [runTerm, hDepth, hToken, hFind] at hRun
+                | some target =>
+                    simp [runTerm, hDepth, hToken, hFind] at hRun
+                    rcases hRun with ⟨rfl, _⟩
+                    rcases
+                        ReturnSite.mem_of_findTarget?_eq_some hFind with
+                      ⟨site, hMem, hSiteTarget⟩
+                    subst target
+                    exact
+                      findBlock?_exists_of_targetsHaveShape?_eq_true
+                        hShapes hMem
+          · simp [Terminator.type?, hDepth, hCount] at hType
+  | halt kind =>
+      simp [runTerm] at hRun
+  | invalid =>
+      simp [runTerm] at hRun
+
+theorem runTerm_ne_fallthrough
+    (shape : Shape) (term : Terminator)
+    (state final : EVMState) :
+    runTerm shape term state ≠ .fallthrough final := by
+  cases term <;> simp [runTerm] <;> aesop
+
+theorem runTerm_ne_returnDispatch
+    (shape : Shape) (term : Terminator)
+    (state final : EVMState) :
+    runTerm shape term state ≠ .returnDispatch final := by
+  cases term <;> simp [runTerm] <;> aesop
+
 def run (block : Block) (state : EVMState) :
     Except EVMException Outcome := do
   let (state', output) ← runBody block.body block.input state

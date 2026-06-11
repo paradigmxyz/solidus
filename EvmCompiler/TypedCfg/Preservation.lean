@@ -117,7 +117,7 @@ namespace Outcome
 /-- A running Assembly result with the same observable EVM data. -/
 def RunningData (source : EVMState) :
     Assembly.Source.ExecutionOutcome → Prop
-  | .ok (.running target) => Assembly.SameData target source
+  | .ok (.running target) => Assembly.SameRuntimeData target source
   | _ => False
 
 /--
@@ -128,7 +128,7 @@ def RunningAt (pc : Nat) (source : EVMState) :
     Assembly.Source.ExecutionOutcome → Prop
   | .ok (.running target) =>
       target.pc = EvmYul.UInt256.ofNat pc ∧
-        Assembly.SameData target source
+        Assembly.SameRuntimeData target source
   | _ => False
 
 /--
@@ -905,7 +905,7 @@ theorem returnDispatchTestCases_eventually_of_all_ne
         match outcome with
         | .ok (.running final) =>
             final.stack = front ++ token :: suffix ∧
-              Assembly.SameData final state ∧
+              Assembly.SameRuntimeData final state ∧
               final.pc = (pre ++ code).pcAfter
         | _ => False) := by
   subst code
@@ -914,7 +914,7 @@ theorem returnDispatchTestCases_eventually_of_all_ne
       exact Assembly.Source.Eventually.pure
         (by
           simp [TypedCfg.Terminator.returnDispatchTestCases,
-            Assembly.SameData.refl, hStack, hPc])
+            Assembly.SameRuntimeData.refl, hStack, hPc])
   | cons site rest ih =>
       let headCode := TypedCfg.Terminator.returnDispatchTest depth site
       let tailCode :=
@@ -965,7 +965,7 @@ theorem returnDispatchTestCases_eventually_of_all_ne
                 (site :: rest) ++ post)
           (middle := fun mid =>
             mid.stack = front ++ token :: suffix ∧
-              Assembly.SameData mid state ∧
+              Assembly.SameRuntimeData mid state ∧
               mid.pc = (pre ++ headCode).pcAfter)
           ?_ ?_
       · exact Assembly.Source.Eventually.mono
@@ -983,7 +983,7 @@ theorem returnDispatchTestCases_eventually_of_all_ne
                 | running mid =>
                     rcases hOutcome with ⟨hStackMid, hData, hPcMid⟩
                     refine ⟨hStackMid, ?_, ?_⟩
-                    · simpa [Assembly.SameData, hRecord] using hData
+                    · simpa [Assembly.SameRuntimeData, hRecord] using hData
                     · simpa [hSiteNe] using hPcMid)
       · intro mid hMid
         have hRestNe :
@@ -1019,7 +1019,7 @@ theorem returnDispatchTestCases_eventually_of_all_ne
                     rcases hOutcome with ⟨hStackFinal, hData, hPcFinal⟩
                     exact
                       ⟨hStackFinal,
-                        Assembly.SameData.trans hData hMid.2.1,
+                        Assembly.SameRuntimeData.trans hData hMid.2.1,
                         by
                           simpa [hCodeEq, List.append_assoc] using hPcFinal⟩)
 
@@ -1058,7 +1058,7 @@ theorem returnDispatchTestCases_eventually_of_selected
           match outcome with
           | .ok (.running final) =>
               final.stack = front ++ token :: suffix ∧
-                Assembly.SameData final state ∧
+                Assembly.SameRuntimeData final state ∧
                 final.pc = EvmYul.UInt256.ofNat caseDest
           | _ => False) := by
   let prefixCode :=
@@ -1115,7 +1115,7 @@ theorem returnDispatchTestCases_eventually_of_selected
             (before ++ site :: after) ++ post)
       (middle := fun mid =>
         mid.stack = front ++ token :: suffix ∧
-          Assembly.SameData mid state ∧
+          Assembly.SameRuntimeData mid state ∧
           mid.pc = (pre ++ prefixCode).pcAfter)
       ?_ ?_
   · exact Assembly.Source.Eventually.mono
@@ -1167,8 +1167,10 @@ theorem returnDispatchTestCases_eventually_of_selected
                 rcases hOutcome with ⟨hStackFinal, hData, hPcFinal⟩
                 exact
                   ⟨hStackFinal,
-                    Assembly.SameData.trans
-                      (by simpa [Assembly.SameData, hMidRecord] using hData)
+                    Assembly.SameRuntimeData.trans
+                      (by
+                        simpa [Assembly.SameRuntimeData, hMidRecord] using
+                          hData)
                       hMid.2.1,
                     by simpa [hToken] using hPcFinal⟩)
 
@@ -1336,7 +1338,7 @@ theorem returnDispatchCase_eventually
               (before ++ site :: after) ++ post)
         (middle := fun cleaned =>
           cleaned.stack = front ++ suffix ∧
-            Assembly.SameData cleaned
+            Assembly.SameRuntimeData cleaned
               { state with stack := front ++ suffix } ∧
             cleaned.pc =
               (pre ++ prefixCode ++
@@ -1357,15 +1359,15 @@ theorem returnDispatchCase_eventually
                   rcases hOutcome with ⟨hStackClean, hData, hPcClean⟩
                   refine ⟨hStackClean, ?_, ?_⟩
                   calc
-                    Assembly.eraseControl cleaned =
-                        Assembly.eraseControl
+                    Assembly.eraseRuntimeControl cleaned =
+                        Assembly.eraseRuntimeControl
                           { afterLabel with stack := front ++ suffix } :=
                       hData
                     _ =
-                        Assembly.eraseControl
+                        Assembly.eraseRuntimeControl
                           { state with stack := front ++ suffix } := by
-                      simp [afterLabel, Assembly.eraseControl,
-                        Assembly.eraseGas, EvmYul.EVM.State.incrPC]
+                      simp [afterLabel, Assembly.eraseRuntimeControl,
+                        EvmYul.EVM.State.incrPC]
                   · simpa [cleanup, hFront, List.append_assoc] using hPcClean)
     · intro cleaned hCleaned
       have hTargetDest'' :
@@ -1426,8 +1428,8 @@ theorem returnDispatchCase_eventually
           hJumpRunBase
       · exact
           ⟨rfl,
-            Assembly.SameData.trans
-              (Assembly.SameData.jumpPc targetDest cleaned)
+            Assembly.SameRuntimeData.trans
+              (Assembly.SameRuntimeData.jumpPc targetDest cleaned)
               hCleaned.2.1⟩
 
 theorem returnDispatch_selected_eventually
@@ -1577,7 +1579,7 @@ theorem returnDispatch_selected_eventually
             (before ++ site :: after) ++ post)
       (middle := fun selected =>
         selected.stack = front ++ token :: suffix ∧
-          Assembly.SameData selected state ∧
+          Assembly.SameRuntimeData selected state ∧
           selected.pc = EvmYul.UInt256.ofNat caseDest)
       ?_ ?_
   · exact Assembly.Source.Eventually.mono
@@ -1641,16 +1643,17 @@ theorem returnDispatch_selected_eventually
             | running final =>
                 rcases hOutcome with ⟨hPcFinal, hData⟩
                 have hSelectedCleanData :
-                    Assembly.SameData
+                    Assembly.SameRuntimeData
                       { selected with stack := front ++ suffix }
                       { state with stack := front ++ suffix } :=
-                  Assembly.eraseControl_with_stack_congr
+                  Assembly.eraseRuntimeControl_with_stack_congr
                     hSelectedState.2.1
                 exact
                   ⟨hPcFinal,
                     by
                       simpa [hErase] using
-                        Assembly.SameData.trans hData hSelectedCleanData⟩)
+                        Assembly.SameRuntimeData.trans
+                          hData hSelectedCleanData⟩)
 
 theorem returnDispatch_unknown_token_eventually
     {shape : Shape} {returnCount depth : Nat}
@@ -1723,7 +1726,7 @@ theorem returnDispatch_unknown_token_eventually
         pre ++ TypedCfg.Terminator.returnDispatchCode depth sites ++ post)
       (middle := fun tested =>
         tested.stack = front ++ token :: suffix ∧
-          Assembly.SameData tested state ∧
+          Assembly.SameRuntimeData tested state ∧
           tested.pc = (pre ++ testCases).pcAfter)
       ?_ ?_
   · exact Assembly.Source.Eventually.mono
@@ -1863,7 +1866,8 @@ theorem lowerAt?_eventually_of_direct
         simp [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
           Assembly.Instr.haltKind?, hDest', Assembly.Source.invalid]
       · exact
-          ⟨dest, hDest, rfl, Assembly.SameData.jumpPc dest state⟩
+          ⟨dest, hDest, rfl,
+            Assembly.SameRuntimeData.jumpPc dest state⟩
   | jump target =>
       simp [TypedCfg.Terminator.lowerAt?] at hLower
       subst code
@@ -1883,7 +1887,8 @@ theorem lowerAt?_eventually_of_direct
         simp [Assembly.Source.stepAtResult, Assembly.Source.stepAt,
           Assembly.Instr.haltKind?, hDest', Assembly.Source.invalid]
       · exact
-          ⟨dest, hDest, rfl, Assembly.SameData.jumpPc dest state⟩
+          ⟨dest, hDest, rfl,
+            Assembly.SameRuntimeData.jumpPc dest state⟩
   | jumpi target next =>
       simp [TypedCfg.Terminator.lowerAt?] at hLower
       subst code
@@ -2035,7 +2040,7 @@ theorem lowerAt?_eventually_of_direct
             · simp [Block.runTerm, hPop, popped, Outcome.Simulates]
               exact
                 ⟨nextDest, hNextDest', rfl,
-                  Assembly.SameData.jumpPc nextDest popped⟩
+                  Assembly.SameRuntimeData.jumpPc nextDest popped⟩
           · have hBne :
                 (cond != EvmYul.UInt256.ofNat 0) = true :=
               uint256_bne_zero_of_ne cond hZero
@@ -2062,7 +2067,7 @@ theorem lowerAt?_eventually_of_direct
                 Outcome.Simulates]
               exact
                 ⟨targetDest, hTargetDest', rfl,
-                  Assembly.SameData.jumpPc targetDest popped⟩
+                  Assembly.SameRuntimeData.jumpPc targetDest popped⟩
   | returnDispatch _returnCount _sites =>
       simp [Preservation.Terminator.Direct] at hDirect
   | halt kind =>

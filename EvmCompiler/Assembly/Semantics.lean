@@ -378,5 +378,9 @@ theorem SameData.jumpPc (dest : Nat) (state : EVMState) :
     SameData (Source.jumpPc dest state) state := by
   simp [SameData, Source.jumpPc, eraseControl_with_pc]
 
+theorem SameRuntimeData.jumpPc (dest : Nat) (state : EVMState) :
+    SameRuntimeData (Source.jumpPc dest state) state := by
+  exact SameRuntimeData.with_pc_left _ (SameRuntimeData.refl state)
+
 end Assembly
 end EvmCompiler
