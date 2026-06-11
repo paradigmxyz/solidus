@@ -173,37 +173,31 @@ print(runtime_checks[0].get("status", "missing"))
 PY
 )"
 
-if [[ "$RUNTIME_BACKEND_STATUS" == "pass" ]]; then
-  SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
-    "$FIXTURE" \
-    --solc "$SOLC_BIN" \
-    --lake "$LAKE_BIN" \
-    --lake-cwd "$ROOT" \
-    --forge "$FORGE_BIN" \
-    --contract ChainlinkCborBufferFallback \
-    --remapping "chainlink/=$REPO/" \
-    --calldata 0x00 \
-    --calldata 0x01 \
-    --calldata 0x02 \
-    --calldata 0x03aabbcc \
-    --calldata 0x04aabbcc \
-    --runtime-only > "$CALL_COMPARE"
+if [[ "$RUNTIME_BACKEND_STATUS" != "pass" ]]; then
+  printf 'error: Chainlink CBOR runtime backend did not pass: %s\n' \
+    "$RUNTIME_BACKEND_STATUS" >&2
+  exit 1
 fi
+
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$FIXTURE" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract ChainlinkCborBufferFallback \
+  --remapping "chainlink/=$REPO/" \
+  --calldata 0x00 \
+  --calldata 0x01 \
+  --calldata 0x02 \
+  --calldata 0x03aabbcc \
+  --calldata 0x04aabbcc \
+  --runtime-only > "$CALL_COMPARE"
 
 python3 - "$MANIFEST" "$SUMMARY" "$MANIFEST_CHECK" "$BACKEND_CHECK" "$CALL_COMPARE" <<'PY'
 import json
 import sys
 from pathlib import Path
-
-def has_deep_local(item, minimum=17):
-    for entry in item.get("localsVars", []):
-        try:
-            depth = int(entry.get("depth", "0"))
-        except ValueError:
-            continue
-        if depth >= minimum:
-            return True
-    return False
 
 manifest = json.load(open(sys.argv[1]))
 summary = json.load(open(sys.argv[2]))
@@ -328,74 +322,55 @@ if len(runtime_checks) != 1:
 runtime_check = runtime_checks[0]
 runtime_check_status = runtime_check.get("status")
 runtime_first_none = runtime_check.get("firstNone")
-if runtime_check_status == "pass":
-    if runtime_first_none != "none":
-        raise SystemExit(f"Chainlink runtime backend pass mismatch: {runtime_check!r}")
-    if call_compare.get("contract_call_compare") != "pass":
-        raise SystemExit(f"Chainlink runtime compare did not pass: {call_compare!r}")
-    if call_compare.get("calls") != "5":
-        raise SystemExit(f"Chainlink runtime compare call count mismatch: {call_compare!r}")
-    if call_compare.get("bridge_summary_count") != "1":
+if runtime_check_status != "pass" or runtime_first_none != "none":
+    raise SystemExit(f"Chainlink runtime backend did not pass: {runtime_check!r}")
+if call_compare.get("contract_call_compare") != "pass":
+    raise SystemExit(f"Chainlink runtime compare did not pass: {call_compare!r}")
+if call_compare.get("calls") != "5":
+    raise SystemExit(f"Chainlink runtime compare call count mismatch: {call_compare!r}")
+if call_compare.get("bridge_summary_count") != "1":
+    raise SystemExit(
+        f"Chainlink runtime compare summary count mismatch: {call_compare!r}"
+    )
+if call_compare.get("bridge_summary_1_backend_compatibility") != "ready":
+    raise SystemExit(
+        f"Chainlink runtime compare backend summary mismatch: {call_compare!r}"
+    )
+if call_compare.get("bridge_summary_1_objects") != "1":
+    raise SystemExit(
+        f"Chainlink runtime compare summary object mismatch: {call_compare!r}"
+    )
+if (
+    call_compare.get("bridge_summary_1_object_selectors")
+    != "ChainlinkCborBufferFallback:runtime"
+):
+    raise SystemExit(
+        f"Chainlink runtime compare summary selector mismatch: {call_compare!r}"
+    )
+if call_compare.get("bridge_summary_1_frontends") != "solc:irAst":
+    raise SystemExit(
+        f"Chainlink runtime compare frontend summary mismatch: {call_compare!r}"
+    )
+if call_compare.get("bridge_summary_1_unsupported_primitives") != "none":
+    raise SystemExit(
+        f"Chainlink runtime compare reported unsupported primitives: "
+        f"{call_compare!r}"
+    )
+for byte_key in ["full_runtime_bytes", "lean_runtime_bytes"]:
+    try:
+        byte_count = int(call_compare.get(byte_key, "0"))
+    except ValueError as exc:
         raise SystemExit(
-            f"Chainlink runtime compare summary count mismatch: {call_compare!r}"
-        )
-    if call_compare.get("bridge_summary_1_backend_compatibility") != "ready":
+            f"Chainlink runtime compare reported invalid {byte_key}: "
+            f"{call_compare!r}"
+        ) from exc
+    if byte_count <= 0:
         raise SystemExit(
-            f"Chainlink runtime compare backend summary mismatch: {call_compare!r}"
-        )
-    if call_compare.get("bridge_summary_1_objects") != "1":
-        raise SystemExit(
-            f"Chainlink runtime compare summary object mismatch: {call_compare!r}"
-        )
-    if (
-        call_compare.get("bridge_summary_1_object_selectors")
-        != "ChainlinkCborBufferFallback:runtime"
-    ):
-        raise SystemExit(
-            f"Chainlink runtime compare summary selector mismatch: {call_compare!r}"
-        )
-    if call_compare.get("bridge_summary_1_frontends") != "solc:irAst":
-        raise SystemExit(
-            f"Chainlink runtime compare frontend summary mismatch: {call_compare!r}"
-        )
-    if call_compare.get("bridge_summary_1_unsupported_primitives") != "none":
-        raise SystemExit(
-            f"Chainlink runtime compare reported unsupported primitives: "
+            f"Chainlink runtime compare reported empty {byte_key}: "
             f"{call_compare!r}"
         )
-    for byte_key in ["full_runtime_bytes", "lean_runtime_bytes"]:
-        try:
-            byte_count = int(call_compare.get(byte_key, "0"))
-        except ValueError as exc:
-            raise SystemExit(
-                f"Chainlink runtime compare reported invalid {byte_key}: "
-                f"{call_compare!r}"
-            ) from exc
-        if byte_count <= 0:
-            raise SystemExit(
-                f"Chainlink runtime compare reported empty {byte_key}: "
-                f"{call_compare!r}"
-            )
-    runtime_compare = "yes"
-    runtime_compare_calls = call_compare["calls"]
-elif runtime_check_status == "fail":
-    if runtime_first_none != "locals_to_expressions":
-        raise SystemExit(
-            f"unexpected Chainlink runtime backend blocker: {runtime_check!r}"
-        )
-    if not has_deep_local(runtime_check):
-        raise SystemExit(
-            "Chainlink runtime locals_to_expressions blocker did not report a "
-            f"deep local: {runtime_check!r}"
-        )
-    if call_compare:
-        raise SystemExit(
-            f"Chainlink runtime compare ran despite backend blocker: {call_compare!r}"
-        )
-    runtime_compare = "blocked"
-    runtime_compare_calls = "0"
-else:
-    raise SystemExit(f"unexpected Chainlink runtime backend status: {runtime_check!r}")
+runtime_compare = "yes"
+runtime_compare_calls = call_compare["calls"]
 
 print(f"chainlink_cbor_bridge_objects={entry_count}")
 print(f"chainlink_cbor_summary_objects={summary_count}")
@@ -618,25 +593,29 @@ word() {
 AGGREGATOR_ROUND_1="0x03$(word 1)"
 AGGREGATOR_ROUND_99="0x03$(word 99)"
 
-if [[ "$AGGREGATOR_RUNTIME_BACKEND_STATUS" == "pass" ]]; then
-  SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
-    "$AGGREGATOR_FIXTURE" \
-    --solc "$SOLC_BIN" \
-    --lake "$LAKE_BIN" \
-    --lake-cwd "$ROOT" \
-    --forge "$FORGE_BIN" \
-    --contract ChainlinkAggregatorRoundFallback \
-    --remapping "chainlink/=$REPO/" \
-    --calldata 0x01 \
-    --calldata 0x00 \
-    --calldata 0x04 \
-    --calldata "$AGGREGATOR_ROUND_1" \
-    --calldata 0x02 \
-    --calldata 0x00 \
-    --calldata "$AGGREGATOR_ROUND_99" \
-    --runtime-only \
-    --optimized > "$AGGREGATOR_COMPARE"
+if [[ "$AGGREGATOR_RUNTIME_BACKEND_STATUS" != "pass" ]]; then
+  printf 'error: Chainlink aggregator runtime backend did not pass: %s\n' \
+    "$AGGREGATOR_RUNTIME_BACKEND_STATUS" >&2
+  exit 1
 fi
+
+SOLC_VERSION="$CHAINLINK_SOLC_VERSION" python3 "$ROOT/scripts/compare_contract_call_bytecode.py" \
+  "$AGGREGATOR_FIXTURE" \
+  --solc "$SOLC_BIN" \
+  --lake "$LAKE_BIN" \
+  --lake-cwd "$ROOT" \
+  --forge "$FORGE_BIN" \
+  --contract ChainlinkAggregatorRoundFallback \
+  --remapping "chainlink/=$REPO/" \
+  --calldata 0x01 \
+  --calldata 0x00 \
+  --calldata 0x04 \
+  --calldata "$AGGREGATOR_ROUND_1" \
+  --calldata 0x02 \
+  --calldata 0x00 \
+  --calldata "$AGGREGATOR_ROUND_99" \
+  --runtime-only \
+  --optimized > "$AGGREGATOR_COMPARE"
 
 python3 - "$AGGREGATOR_CHECK" "$AGGREGATOR_SUMMARY" \
   "$AGGREGATOR_BACKEND_CHECK" "$AGGREGATOR_COMPARE" <<'PY'
@@ -748,38 +727,20 @@ if len(runtime_checks) != 1:
 runtime_check = runtime_checks[0]
 runtime_check_status = runtime_check.get("status")
 runtime_first_none = runtime_check.get("firstNone")
-if runtime_check_status == "pass":
-    if runtime_first_none != "none":
-        raise SystemExit(
-            f"Chainlink aggregator backend pass mismatch: {runtime_check!r}"
-        )
-    if call_compare.get("contract_call_compare") != "pass":
-        raise SystemExit(
-            f"Chainlink aggregator runtime compare did not pass: {call_compare!r}"
-        )
-    if call_compare.get("calls") != "7":
-        raise SystemExit(
-            f"Chainlink aggregator compare call count mismatch: {call_compare!r}"
-        )
-    runtime_compare = "yes"
-    runtime_compare_calls = call_compare["calls"]
-elif runtime_check_status == "fail":
-    if runtime_first_none in {"", None, "none"}:
-        raise SystemExit(
-            f"Chainlink aggregator backend failure missing firstNone: "
-            f"{runtime_check!r}"
-        )
-    if call_compare:
-        raise SystemExit(
-            f"Chainlink aggregator compare ran despite backend blocker: "
-            f"{call_compare!r}"
-        )
-    runtime_compare = "blocked"
-    runtime_compare_calls = "0"
-else:
+if runtime_check_status != "pass" or runtime_first_none != "none":
     raise SystemExit(
-        f"unexpected Chainlink aggregator backend status: {runtime_check!r}"
+        f"Chainlink aggregator runtime backend did not pass: {runtime_check!r}"
     )
+if call_compare.get("contract_call_compare") != "pass":
+    raise SystemExit(
+        f"Chainlink aggregator runtime compare did not pass: {call_compare!r}"
+    )
+if call_compare.get("calls") != "7":
+    raise SystemExit(
+        f"Chainlink aggregator compare call count mismatch: {call_compare!r}"
+    )
+runtime_compare = "yes"
+runtime_compare_calls = call_compare["calls"]
 
 print(f"chainlink_aggregator_decode_objects={checked_count}")
 print(f"chainlink_aggregator_summary_objects={summary_count}")

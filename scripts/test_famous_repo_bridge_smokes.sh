@@ -15,6 +15,7 @@ SMOKES=(
   test_solady_bridge_smoke.sh
   test_openzeppelin_bridge_smoke.sh
   test_chainlink_cbor_bridge_smoke.sh
+  test_additional_real_contracts_bridge_smoke.sh
 )
 
 printf 'famous_repo_bridge_smokes_start=%s\n' "${#SMOKES[@]}"

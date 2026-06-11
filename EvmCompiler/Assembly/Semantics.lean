@@ -18,6 +18,30 @@ inductive StepResult where
   | running (state : EVMState)
   | halted (halt : Halt)
 
+namespace StepResult
+
+def IsTerminal : StepResult → Prop
+  | .running _ => False
+  | .halted _ => True
+
+@[simp] theorem running_not_terminal (state : EVMState) :
+    ¬ (StepResult.running state).IsTerminal := by
+  simp [IsTerminal]
+
+@[simp] theorem halted_terminal (halt : Halt) :
+    (StepResult.halted halt).IsTerminal := by
+  simp [IsTerminal]
+
+theorem terminal_iff_exists_halt {result : StepResult} :
+    result.IsTerminal ↔ ∃ halt, result = .halted halt := by
+  cases result with
+  | running state =>
+      simp [IsTerminal]
+  | halted halt =>
+      simp [IsTerminal]
+
+end StepResult
+
 namespace HaltKind
 
 def output (kind : HaltKind) (state : EVMState) : ByteArray :=

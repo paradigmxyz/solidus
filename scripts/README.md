@@ -1182,13 +1182,36 @@ or `KEEP_TMP=1` to keep the generated bridge JSON files.
 
 The famous-repo smoke runner executes the pinned Uniswap v4 extload summary,
 Uniswap v4 bridge, Uniswap v4 Position, Uniswap Universal Router, Uniswap
-Permit2, Aave v3, Compound Comet, Solmate, Solady, OpenZeppelin, and Chainlink
-bridge smokes in one pass:
+Permit2, Aave v3, Compound Comet, Solmate, Solady, OpenZeppelin, Chainlink,
+PRBMath, Solbase, Balancer v3, and OpenSea Seaport bridge smokes in one pass:
 
 ```sh
 SOLC=/Users/dan/.local/bin/solc LAKE=/Users/dan/.elan/bin/lake \
   FORGE=/Users/dan/.foundry/bin/forge INSTALL_SOLC=0 \
   scripts/test_famous_repo_bridge_smokes.sh
+```
+
+The additional real-contract smoke pins four independent repositories and runs
+48 exact Forge call comparisons against wrappers that import their source
+unchanged:
+
+- PRBMath UD60x18 arithmetic, including custom value types, iterative `log2`,
+  exponentiation, square root, and a division-by-zero revert;
+- Solbase fixed-point arithmetic, including assembly-heavy `expWad`, `lnWad`,
+  `powWad`, rounding, signed results, and custom-error behavior;
+- Balancer v3 fixed-point and logarithmic exponentiation paths, including
+  rounding variants and zero-division behavior; and
+- OpenSea Seaport's Merkle helper, including dynamic arrays, internal function
+  pointers, root/proof generation, proof verification, and revert data.
+
+The Balancer comparison is runtime-only because the current unchecked fallback
+backend emits runtime bytecode above the EIP-170 deployment-size limit. The
+other three suites compare both creation and runtime behavior.
+
+Run that focused suite with:
+
+```sh
+scripts/test_additional_real_contracts_bridge_smoke.sh
 ```
 
 The Forge smoke gate goes one step further: it writes a temporary Foundry

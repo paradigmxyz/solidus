@@ -231,16 +231,6 @@ def collect_names(summary, kind):
                 names.add(entry["name"])
     return names
 
-def has_deep_local(item, minimum=17):
-    for entry in item.get("localsVars", []):
-        try:
-            depth = int(entry.get("depth"))
-        except (TypeError, ValueError):
-            continue
-        if depth >= minimum:
-            return True
-    return False
-
 def runtime_backend_status(report, contract):
     counts = report.get("counts", {})
     if (
@@ -261,20 +251,8 @@ def runtime_backend_status(report, contract):
     check = checks[0]
     status = check.get("status")
     first_none = check.get("firstNone")
-    if status not in {"pass", "fail"}:
-        raise SystemExit(f"unexpected {contract} backend status: {check!r}")
-    if status == "pass" and first_none != "none":
-        raise SystemExit(f"{contract} backend pass mismatch: {check!r}")
-    if status == "fail" and first_none in {"", None, "none"}:
-        raise SystemExit(f"{contract} backend failure missing firstNone: {check!r}")
-    if status == "fail":
-        if first_none != "locals_to_expressions":
-            raise SystemExit(f"unexpected {contract} backend blocker: {check!r}")
-        if not has_deep_local(check):
-            raise SystemExit(
-                f"{contract} locals_to_expressions blocker did not report a "
-                f"deep local: {check!r}"
-            )
+    if status != "pass" or first_none != "none":
+        raise SystemExit(f"{contract} runtime backend did not pass: {check!r}")
     return status, first_none
 
 math_summary_count = math_summary["counts"]["objects"]

@@ -164,6 +164,35 @@ mutual
 end
 
 mutual
+  /--
+  Maximum number of already-evaluated sibling values above a leaf while an
+  expression is evaluated in Yul's right-to-left argument order.
+
+  A scratch-frame load needs one `DUP` beyond this pending prefix to recover
+  the frame pointer. Keeping this value below 16 guarantees that the all-scratch
+  backend can still reach the frame with `DUP16`.
+  -/
+  def pendingStackDepth : AstExpr → Nat
+    | .Lit _value => 0
+    | .Var _name => 0
+    | .Call _kind args => List.pendingStackDepth args
+
+  def List.pendingStackDepth : List AstExpr → Nat
+    | [] => 0
+    | expr :: rest =>
+        max (pendingStackDepth expr + rest.length)
+          (List.pendingStackDepth rest)
+end
+
+def List.directPureArgsSafe? (args : List AstExpr) : Bool :=
+  List.pureAliasArgsSafe? args &&
+    decide (List.pendingStackDepth args < 16)
+
+def directPureArgSafeAt? (offset : Nat) (expr : AstExpr) : Bool :=
+  pureAliasArgSafe? expr &&
+    decide (pendingStackDepth expr + offset < 16)
+
+mutual
   def lower? (results : Nat) (state : Fresh.State) :
       AstExpr →
         Option (List Functions.Stmt × Locals.Expr results × Fresh.State)
@@ -289,7 +318,7 @@ mutual
     | .Call (.inl prim) args => do
         let op ← Prim.toUncheckedBasicOp? prim
         let (preArgs, argExprs, state') ←
-          if List.pureAliasArgsSafe? args then do
+          if List.directPureArgsSafe? args then do
             let argExprs ← List.toLocals1? args
             some ([], argExprs, state)
           else
@@ -318,8 +347,10 @@ mutual
         let (preRest, lowerRest, state') ← List.lowerBound1Unchecked? state rest
         let (preHead, lowerHead, state'') ← lowerUnchecked? 1 state' expr
         -- Wide EVM calls add stack offset to every direct argument lookup.
-        -- Materialize pure left-side arguments before they can require DUP17+.
-        if pureAliasArgSafe? expr && lowerRest.length < 4 then
+        -- Deep pure expressions can do the same internally, so include their
+        -- worst pending-stack depth in the direct-lowering guard.
+        if directPureArgSafeAt? lowerRest.length expr &&
+            lowerRest.length < 4 then
           some (preRest ++ preHead, lowerHead :: lowerRest, state'')
         else
           let (tmp, state''') ← Fresh.fresh? state''
@@ -359,7 +390,8 @@ theorem lower1Unchecked?_gas (state : Fresh.State) :
         (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []) =
       some ([], (.prim .gas .nil : Locals.Expr 1), state) := by
   simp [lower1Unchecked?, lowerUnchecked?, Prim.toUncheckedBasicOp?,
-    List.pureAliasArgsSafe?, List.toLocals1?, List.toStackSeq?,
+    List.directPureArgsSafe?, List.pureAliasArgsSafe?,
+    List.pendingStackDepth, List.toLocals1?, List.toStackSeq?,
     List.toSeq?, cast,
     Expressions.Structured.BasicOp.inputs,
     Expressions.Structured.BasicOp.outputs]
@@ -369,7 +401,8 @@ theorem lower1Unchecked?_msize (state : Fresh.State) :
         (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []) =
       some ([], (.prim .msize .nil : Locals.Expr 1), state) := by
   simp [lower1Unchecked?, lowerUnchecked?, Prim.toUncheckedBasicOp?,
-    List.pureAliasArgsSafe?, List.toLocals1?, List.toStackSeq?,
+    List.directPureArgsSafe?, List.pureAliasArgsSafe?,
+    List.pendingStackDepth, List.toLocals1?, List.toStackSeq?,
     List.toSeq?, cast,
     Expressions.Structured.BasicOp.inputs,
     Expressions.Structured.BasicOp.outputs]

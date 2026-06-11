@@ -30,6 +30,22 @@ theorem UInt256_ofNat_add (left right : Nat) :
   ext
   simp [Id.run, Fin.val_add, Nat.add_mod]
 
+theorem UInt256_add_assoc
+    (left middle right : EvmYul.UInt256) :
+    (left + middle) + right = left + (middle + right) := by
+  cases left with
+  | mk left =>
+      cases middle with
+      | mk middle =>
+          cases right with
+          | mk right =>
+              change
+                EvmYul.UInt256.mk ((left + middle) + right) =
+                  EvmYul.UInt256.mk (left + (middle + right))
+              exact
+                congrArg EvmYul.UInt256.mk
+                  (add_assoc left middle right)
+
 /--
 Primitive operations admitted directly into the first assembly layer.
 
@@ -88,6 +104,25 @@ def isCallCreate : PrimOp → Bool
       true
   | _ =>
       false
+
+/--
+True exactly for EVM operations that cross the external call/create boundary.
+
+`isCallCreate` is a historical closed-semantics classifier and also marks
+`gas`; certificates that describe external effects must use this predicate
+instead.
+-/
+def isExternalCallCreate : PrimOp → Bool
+  | .create | .call | .callcode | .delegatecall | .create2 | .staticcall =>
+      true
+  | _ =>
+      false
+
+@[simp] theorem isExternalCallCreate_gas :
+    PrimOp.gas.isExternalCallCreate = false := rfl
+
+@[simp] theorem isExternalCallCreate_msize :
+    PrimOp.msize.isExternalCallCreate = false := rfl
 
 def toEVM : PrimOp → EVMOp
   | .stop => EvmYul.Operation.STOP
@@ -244,28 +279,36 @@ end Instr
 
 namespace Program
 
-def byteLength : Program → Nat
-  | [] => 0
-  | instr :: rest => instr.byteSize + byteLength rest
+def byteLength (program : Program) : Nat :=
+  program.foldl (fun total instr => total + instr.byteSize) 0
+
+theorem foldl_byteSize_add (program : Program) (left right : Nat) :
+    program.foldl (fun total instr => total + instr.byteSize) (left + right) =
+      left + program.foldl (fun total instr => total + instr.byteSize) right := by
+  induction program generalizing left right with
+  | nil =>
+      simp
+  | cons instr rest ih =>
+      simpa [List.foldl, Nat.add_assoc] using
+        ih (left := left) (right := right + instr.byteSize)
 
 @[simp]
 theorem byteLength_nil : byteLength ([] : Program) = 0 := rfl
 
 @[simp]
 theorem byteLength_cons (instr : Instr) (rest : Program) :
-    byteLength (instr :: rest) = instr.byteSize + byteLength rest := rfl
+    byteLength (instr :: rest) = instr.byteSize + byteLength rest := by
+  simpa [byteLength, List.foldl] using
+    foldl_byteSize_add rest instr.byteSize 0
 
 theorem byteLength_append (left right : Program) :
     byteLength (left ++ right) = byteLength left + byteLength right := by
-  induction left with
-  | nil =>
-      simp [byteLength]
-  | cons instr rest ih =>
-      simp [byteLength, ih, Nat.add_assoc]
+  simpa [byteLength, List.foldl_append] using
+    foldl_byteSize_add right left.byteLength 0
 
 theorem byteLength_pos_of_cons (instr : Instr) (rest : Program) :
     0 < byteLength (instr :: rest) := by
-  simp [byteLength, Instr.byteSize_pos]
+  simp [Instr.byteSize_pos]
 
 def pcAfter (program : Program) : Word :=
   EvmYul.UInt256.ofNat (byteLength program)
@@ -311,20 +354,6 @@ instance pcFitsDecidable (program : Program) :
     Decidable program.PCFits := by
   unfold PCFits
   infer_instance
-
-def pcFitsFromDecidable (pre code : Program) :
-    Decidable (PCFitsFrom pre code) :=
-  match code with
-  | [] => pcFitsDecidable pre
-  | instr :: rest =>
-      @instDecidableAnd pre.PCFits
-        (PCFitsFrom (pre ++ [instr]) rest)
-        (pcFitsDecidable pre)
-        (pcFitsFromDecidable (pre ++ [instr]) rest)
-
-instance (pre code : Program) :
-    Decidable (PCFitsFrom pre code) :=
-  pcFitsFromDecidable pre code
 
 theorem PCFitsFrom.start {pre code : Program}
     (hFits : PCFitsFrom pre code) :
@@ -391,9 +420,20 @@ theorem PCFitsFrom.of_append {pre code post : Program}
       · exact
           PCFits.of_byteLength_le hFits
             (by
-              simp [byteLength_append, byteLength])
+              simp [byteLength_append])
       · apply ih (pre := pre ++ [instr]) (post := post)
         simpa [List.append_assoc] using hFits
+
+def pcFitsFromDecidable (pre code : Program) :
+    Decidable (PCFitsFrom pre code) :=
+  if hFits : (pre ++ code).PCFits then
+    isTrue (PCFitsFrom.of_append (post := []) (by simpa using hFits))
+  else
+    isFalse fun hPrefix => hFits (PCFitsFrom.end hPrefix)
+
+instance (pre code : Program) :
+    Decidable (PCFitsFrom pre code) :=
+  pcFitsFromDecidable pre code
 
 end Program
 

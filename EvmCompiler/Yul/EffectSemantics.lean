@@ -18,10 +18,21 @@ structure StateModel (σ : Type) where
   source : σ → EvmYul.Yul.State
   withSource : σ → EvmYul.Yul.State → σ
 
+structure Failure (σ : Type) where
+  exception : EvmYul.Yul.Exception
+  state : σ
+
+abbrev Result (σ α : Type) :=
+  Except (Failure σ) α
+
+def fail {σ α : Type} (state : σ) (exception : EvmYul.Yul.Exception) :
+    Result σ α :=
+  .error { exception := exception, state := state }
+
 structure PrimitiveSemantics (σ : Type) where
   eval :
     Nat → σ → EvmYul.Operation .Yul → List Word →
-      Except EvmYul.Yul.Exception (σ × List Word)
+      Result σ (σ × List Word)
 
 namespace StateModel
 
@@ -33,10 +44,9 @@ end StateModel
 
 def multifill {σ : Type} (model : StateModel σ)
     (vars : List EvmYul.Identifier) :
-    Except EvmYul.Yul.Exception (σ × List Word) →
-      Except EvmYul.Yul.Exception σ
+    Result σ (σ × List Word) → Result σ σ
   | .ok (state, values) => .ok (model.multifill vars state values)
-  | .error err => .error err
+  | .error failure => .error failure
 
 mutual
 
@@ -44,17 +54,17 @@ mutual
       (prim : PrimitiveSemantics σ) (fuel : Nat)
       (args : List EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-      (result : Except EvmYul.Yul.Exception (σ × Word)) :
-      Except EvmYul.Yul.Exception (σ × List Word) :=
+      (result : Result σ (σ × Word)) :
+      Result σ (σ × List Word) :=
     match result with
     | .ok (state, arg) =>
         match fuel with
-        | 0 => .error .OutOfFuel
+        | 0 => fail state .OutOfFuel
         | fuel' + 1 =>
             match evalArgs model prim fuel' args codeOverride state with
             | .ok (state', args') => .ok (state', arg :: args')
-            | .error err => .error err
-    | .error err => .error err
+            | .error failure => .error failure
+    | .error failure => .error failure
   termination_by (fuel, 0, sizeOf args)
 
   def evalArgs {σ : Type} (model : StateModel σ)
@@ -62,9 +72,9 @@ mutual
       (args : List EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception (σ × List Word) :=
+      Result σ (σ × List Word) :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         match args with
         | [] => .ok (state, [])
@@ -78,26 +88,26 @@ mutual
       (expr : EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception (σ × List Word) :=
+      Result σ (σ × List Word) :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         match expr with
         | .Call (.inl op) args =>
             match evalArgs model prim fuel' args.reverse codeOverride state with
             | .ok (stateAfterArgs, values) =>
                 prim.eval fuel' stateAfterArgs op values.reverse
-            | .error err => .error err
+            | .error failure => .error failure
         | .Call (.inr functionName) args =>
             match evalArgs model prim fuel' args.reverse codeOverride state with
             | .ok (stateAfterArgs, values) =>
                 call model prim fuel' values.reverse (some functionName)
                   codeOverride stateAfterArgs
-            | .error err => .error err
+            | .error failure => .error failure
         | .Var id =>
             match (model.source state).lookup? id with
             | some value => .ok (state, [value])
-            | none => .error (.UnknownIdentifier id)
+            | none => fail state (.UnknownIdentifier id)
         | .Lit value => .ok (state, [value])
   termination_by (fuel, 2, sizeOf expr)
 
@@ -106,10 +116,10 @@ mutual
       (expr : EvmYul.Yul.Ast.Expr)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception (σ × Word) :=
+      Result σ (σ × Word) :=
     match evalValues model prim fuel expr codeOverride state with
     | .ok (state', values) => .ok (state', values.head!)
-    | .error err => .error err
+    | .error failure => .error failure
   termination_by (fuel, 3, sizeOf expr)
 
   def call {σ : Type} (model : StateModel σ)
@@ -117,15 +127,15 @@ mutual
       (functionName? : Option EvmYul.Yul.Ast.YulFunctionName)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception (σ × List Word) :=
+      Result σ (σ × List Word) :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         match source.sharedState.accountMap.find?
             source.executionEnv.codeOwner with
         | none =>
-            .error (.MissingContract (s!"{source.executionEnv.codeOwner}"))
+            fail state (.MissingContract (s!"{source.executionEnv.codeOwner}"))
         | some yulContract =>
             let code : EvmYul.Yul.Ast.YulContract :=
               codeOverride.getD yulContract.code
@@ -139,7 +149,7 @@ mutual
                   code.functions.lookup functionName
             match function? with
             | none =>
-                .error
+                fail state
                   (.MissingContractFunction (functionName?.getD ".none"))
             | some function =>
                 match function with
@@ -149,7 +159,7 @@ mutual
                         (source.initcall params rets args)
                     match exec model prim fuel' (.Block body) codeOverride
                         (model.withSource state sourceAtEntry) with
-                    | .error err => .error err
+                    | .error failure => .error failure
                     | .ok stateAfterBody =>
                         let bodySource := model.source stateAfterBody
                         let sourceAfterCall :=
@@ -164,9 +174,9 @@ mutual
       (prim : PrimitiveSemantics σ) (fuel : Nat)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception (σ × List Word) :=
+      Result σ (σ × List Word) :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         let function :=
@@ -178,7 +188,7 @@ mutual
               EvmYul.Yul.State.mkOk (source.initcall params rets [])
             match exec model prim fuel' (.Block body) codeOverride
                 (model.withSource state sourceAtEntry) with
-            | .error err => .error err
+            | .error failure => .error failure
             | .ok stateAfterBody =>
                 let bodySource := model.source stateAfterBody
                 let sourceAfterCall :=
@@ -191,15 +201,15 @@ mutual
       (stmts : List EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception σ :=
+      Result σ σ :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         match stmts with
         | [] => .ok state
         | stmt :: stmts =>
             match exec model prim fuel' stmt codeOverride state with
-            | .error err => .error err
+            | .error failure => .error failure
             | .ok stateAfterStmt =>
                 match model.source stateAfterStmt with
                 | .Ok _ _ =>
@@ -213,22 +223,22 @@ mutual
       (stmt : EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception σ :=
+      Result σ σ :=
     match fuel with
-    | 0 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
     | fuel' + 1 =>
         let source := model.source state
         match stmt with
         | .Block stmts =>
             match execSeq model prim fuel' stmts codeOverride state with
-            | .error err => .error err
+            | .error failure => .error failure
             | .ok stateAfterBody =>
                 .ok
                   (model.withSource stateAfterBody
                     ((model.source stateAfterBody).restrictStoreTo source.store))
         | .Let vars expr? =>
             match EvmYul.Yul.checkDeclaration source vars with
-            | .error err => .error err
+            | .error err => fail state err
             | .ok () =>
                 match expr? with
                 | none =>
@@ -238,13 +248,13 @@ mutual
                       (evalValues model prim fuel' expr codeOverride state)
         | .Assign vars expr =>
             match EvmYul.Yul.checkAssignment source vars with
-            | .error err => .error err
+            | .error err => fail state err
             | .ok () =>
                 multifill model vars
                   (evalValues model prim fuel' expr codeOverride state)
         | .If cond body =>
             match eval model prim fuel' cond codeOverride state with
-            | .error err => .error err
+            | .error failure => .error failure
             | .ok (stateAfterCond, condValue) =>
                 if condValue ≠ ⟨0⟩ then
                   exec model prim fuel' (.Block body) codeOverride
@@ -260,23 +270,23 @@ mutual
                 | .ok (stateAfterArgs, values) =>
                     multifill model []
                       (prim.eval fuel' stateAfterArgs op values.reverse)
-                | .error err => .error err
+                | .error failure => .error failure
             | .Call (.inr functionName) args =>
                 match
                     evalArgs model prim fuel' args.reverse codeOverride state
                 with
                 | .ok (stateAfterArgs, values) =>
                     match fuel' with
-                    | 0 => .error .OutOfFuel
+                    | 0 => fail stateAfterArgs .OutOfFuel
                     | fuel'' + 1 =>
                         multifill model []
                           (call model prim fuel'' values.reverse
                             (some functionName) codeOverride stateAfterArgs)
-                | .error err => .error err
-            | _ => .error .InvalidExpression
+                | .error failure => .error failure
+            | _ => fail state .InvalidExpression
         | .Switch cond cases default =>
             match eval model prim fuel' cond codeOverride state with
-            | .error err => .error err
+            | .error failure => .error failure
             | .ok (stateAfterCond, condValue) =>
                 exec model prim fuel'
                   (.Block
@@ -304,17 +314,17 @@ mutual
       (post body : List EvmYul.Yul.Ast.Stmt)
       (codeOverride : Option EvmYul.Yul.Ast.YulContract)
       (state : σ) :
-      Except EvmYul.Yul.Exception σ :=
+      Result σ σ :=
     match fuel with
-    | 0 => .error .OutOfFuel
-    | 1 => .error .OutOfFuel
+    | 0 => fail state .OutOfFuel
+    | 1 => fail state .OutOfFuel
     | fuel' + 1 + 1 =>
         let source := model.source state
         match
             eval model prim fuel' cond codeOverride
               (model.withSource state (EvmYul.Yul.State.mkOk source))
         with
-        | .error err => .error err
+        | .error failure => .error failure
         | .ok (stateAfterCond, condValue) =>
             if condValue = ⟨0⟩ then
               .ok
@@ -325,7 +335,7 @@ mutual
                   exec model prim fuel' (.Block body) codeOverride
                     stateAfterCond
               with
-              | .error err => .error err
+              | .error failure => .error failure
               | .ok stateAfterBody =>
                   let bodySource := model.source stateAfterBody
                   match bodySource with
@@ -348,7 +358,7 @@ mutual
                             (model.withSource stateAfterBody
                               bodySource.reviveJump)
                       with
-                      | .error err => .error err
+                      | .error failure => .error failure
                       | .ok stateAfterPost =>
                           let postSource := model.source stateAfterPost
                           let sourceAfterPost := postSource.overwrite? source
@@ -368,7 +378,7 @@ mutual
                                     (model.withSource stateAfterPost
                                       sourceAfterPost)
                               with
-                              | .error err => .error err
+                              | .error failure => .error failure
                               | .ok stateAfterLoop =>
                                   .ok
                                     (model.withSource stateAfterLoop

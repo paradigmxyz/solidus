@@ -1,5 +1,6 @@
 import EvmCompiler.Assembly.Observer
 import EvmCompiler.PublicVerification
+import EvmCompiler.Simulation.ResourceReplay
 import EvmCompiler.Yul.EffectSemantics
 
 namespace EvmCompiler
@@ -76,121 +77,178 @@ def yulPrimObserver? (prim : EvmYul.Operation .Yul) : Option Observer :=
     (TypedCfg.Effects.ofPrim .msize).observesResources = true := by
   native_decide
 
+@[simp] theorem typedCfgEffects_gas_noExternal :
+    (TypedCfg.Effects.ofPrim .gas).callsOrCreates = false := by
+  native_decide
+
+@[simp] theorem typedCfgEffects_msize_noExternal :
+    (TypedCfg.Effects.ofPrim .msize).callsOrCreates = false := by
+  native_decide
+
 namespace SourceReplay
 
-structure State where
-  source : EvmYul.Yul.State
-  trace : Trace
+abbrev State :=
+  Simulation.ResourceReplay.State EvmYul.Yul.State
 
 namespace State
 
-def withSource (state : State) (source : EvmYul.Yul.State) : State :=
-  { state with source := source }
+def withSource {transcript : Trace} (state : State transcript)
+    (source : EvmYul.Yul.State) : State transcript :=
+  Simulation.ResourceReplay.State.withSource state source
 
-@[simp] theorem withSource_source (state : State)
+def afterException {transcript : Trace} (state : State transcript) :
+    EvmYul.Yul.Exception → State transcript
+  | .YulHalt source _value => state.withSource source
+  | .Revert source => state.withSource source
+  | _ => state
+
+def observed {transcript : Trace} (state : State transcript) : Trace :=
+  Simulation.ResourceReplay.State.observed state
+
+def remaining {transcript : Trace} (state : State transcript) : Trace :=
+  Simulation.ResourceReplay.State.remaining state
+
+def ConsumedExactly {transcript : Trace} (state : State transcript) : Prop :=
+  Simulation.ResourceReplay.State.ConsumedExactly state
+
+@[simp] theorem withSource_source {transcript : Trace}
+    (state : State transcript)
     (source : EvmYul.Yul.State) :
     (state.withSource source).source = source := rfl
 
-@[simp] theorem withSource_trace (state : State)
+@[simp] theorem withSource_cursor {transcript : Trace}
+    (state : State transcript)
     (source : EvmYul.Yul.State) :
-    (state.withSource source).trace = state.trace := rfl
+    (state.withSource source).cursor = state.cursor := rfl
+
+@[simp] theorem withSource_observed {transcript : Trace}
+    (state : State transcript)
+    (source : EvmYul.Yul.State) :
+    (state.withSource source).observed = state.observed := rfl
+
+@[simp] theorem withSource_remaining {transcript : Trace}
+    (state : State transcript)
+    (source : EvmYul.Yul.State) :
+    (state.withSource source).remaining = state.remaining := rfl
+
+theorem observed_eq_transcript_of_consumedExactly
+    {transcript : Trace} {state : State transcript}
+    (hConsumed : state.ConsumedExactly) :
+    state.observed = transcript :=
+  Simulation.ResourceReplay.State.observed_eq_transcript_of_consumedExactly
+    hConsumed
+
+theorem remaining_eq_nil_of_consumedExactly
+    {transcript : Trace} {state : State transcript}
+    (hConsumed : state.ConsumedExactly) :
+    state.remaining = [] :=
+  Simulation.ResourceReplay.State.remaining_eq_nil_of_consumedExactly
+    hConsumed
 
 end State
 
-def consume (kind : Observer) : Trace →
-    Except EvmYul.Yul.Exception (Word × Trace)
-  | [] => .error .InvalidInstruction
-  | observation :: rest =>
-      if observation.kind = kind then
-        .ok (observation.value, rest)
-      else
-        .error .InvalidInstruction
-
-def primCall (fuel : Nat) (state : State)
+def primCall {transcript : Trace} (fuel : Nat) (state : State transcript)
     (prim : EvmYul.Operation .Yul) (args : List Word) :
-    Except EvmYul.Yul.Exception (State × List Word) :=
+    Yul.Source.Effectful.Result (State transcript)
+      (State transcript × List Word) :=
   match fuel with
-  | 0 => .error .OutOfFuel
+  | 0 => Yul.Source.Effectful.fail state .OutOfFuel
   | fuel' + 1 =>
       match yulPrimObserver? prim with
       | some kind =>
           match args with
           | [] =>
-              match consume kind state.trace with
-              | .ok (value, trace') =>
-                  .ok ({ state with trace := trace' }, [value])
-              | .error err => .error err
-          | _ :: _ => .error .InvalidArguments
+              match Simulation.ResourceReplay.consume? kind state with
+              | some (value, state') => .ok (state', [value])
+              | none =>
+                  Yul.Source.Effectful.fail state .InvalidInstruction
+          | _ :: _ => Yul.Source.Effectful.fail state .InvalidArguments
       | none =>
           match EvmYul.Yul.primCall fuel' state.source prim args with
           | .ok (source', values) =>
               .ok ({ state with source := source' }, values)
-          | .error err => .error err
+          | .error err =>
+              Yul.Source.Effectful.fail (state.afterException err) err
 
-def stateModel : Yul.Source.Effectful.StateModel State where
-  source := State.source
+def stateModel (transcript : Trace) :
+    Yul.Source.Effectful.StateModel (State transcript) where
+  source := fun state => state.source
   withSource := State.withSource
 
-def primitiveSemantics : Yul.Source.Effectful.PrimitiveSemantics State where
+def primitiveSemantics (transcript : Trace) :
+    Yul.Source.Effectful.PrimitiveSemantics (State transcript) where
   eval := primCall
 
-abbrev evalArgs :=
-  Yul.Source.Effectful.evalArgs stateModel primitiveSemantics
+abbrev evalArgs {transcript : Trace} :=
+  Yul.Source.Effectful.evalArgs (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev evalValues :=
-  Yul.Source.Effectful.evalValues stateModel primitiveSemantics
+abbrev evalValues {transcript : Trace} :=
+  Yul.Source.Effectful.evalValues (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev eval :=
-  Yul.Source.Effectful.eval stateModel primitiveSemantics
+abbrev eval {transcript : Trace} :=
+  Yul.Source.Effectful.eval (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev call :=
-  Yul.Source.Effectful.call stateModel primitiveSemantics
+abbrev call {transcript : Trace} :=
+  Yul.Source.Effectful.call (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev callDispatcher :=
-  Yul.Source.Effectful.callDispatcher stateModel primitiveSemantics
+abbrev callDispatcher {transcript : Trace} :=
+  Yul.Source.Effectful.callDispatcher (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev execSeq :=
-  Yul.Source.Effectful.execSeq stateModel primitiveSemantics
+abbrev execSeq {transcript : Trace} :=
+  Yul.Source.Effectful.execSeq (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev exec :=
-  Yul.Source.Effectful.exec stateModel primitiveSemantics
+abbrev exec {transcript : Trace} :=
+  Yul.Source.Effectful.exec (stateModel transcript)
+    (primitiveSemantics transcript)
 
-abbrev loop :=
-  Yul.Source.Effectful.loop stateModel primitiveSemantics
+abbrev loop {transcript : Trace} :=
+  Yul.Source.Effectful.loop (stateModel transcript)
+    (primitiveSemantics transcript)
 
 @[simp] theorem primCall_gas_cons (fuel : Nat)
     (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
     primCall fuel.succ
-        { source := source,
-          trace := { kind := .gas, value := value } :: trace }
+        (transcript := { kind := .gas, value := value } :: trace)
+        { source := source }
         (.StackMemFlow .GAS) [] =
-      .ok ({ source := source, trace := trace }, [value]) := by
-  simp [primCall, consume]
+      .ok
+        ({ source := source, cursor := 1 },
+        [value]) := by
+  simp [primCall, Simulation.ResourceReplay.consume?]
 
 @[simp] theorem primCall_msize_cons (fuel : Nat)
     (source : EvmYul.Yul.State) (value : Word) (trace : Trace) :
     primCall fuel.succ
-        { source := source,
-          trace := { kind := .msize, value := value } :: trace }
+        (transcript := { kind := .msize, value := value } :: trace)
+        { source := source }
         (.StackMemFlow .MSIZE) [] =
-      .ok ({ source := source, trace := trace }, [value]) := by
-  simp [primCall, consume]
+      .ok
+        ({ source := source, cursor := 1 },
+        [value]) := by
+  simp [primCall, Simulation.ResourceReplay.consume?]
 
 theorem primCall_nonObserver_preserves_trace
-    {fuel : Nat} {state state' : State}
+    {transcript : Trace} {fuel : Nat}
+    {state state' : State transcript}
     {prim : EvmYul.Operation .Yul} {args values : List Word}
     (hObserver : yulPrimObserver? prim = none)
     (hRun : primCall fuel.succ state prim args = .ok (state', values)) :
     EvmYul.Yul.primCall fuel state.source prim args =
         .ok (state'.source, values) ∧
-      state'.trace = state.trace := by
+      state'.cursor = state.cursor := by
   unfold primCall at hRun
   simp [hObserver] at hRun
   generalize hPrim :
       EvmYul.Yul.primCall fuel state.source prim args = result at hRun ⊢
   cases result with
   | error err =>
-      simp at hRun
+      simp [Yul.Source.Effectful.fail] at hRun
   | ok result =>
       rcases result with ⟨source', values'⟩
       simp at hRun
@@ -198,11 +256,13 @@ theorem primCall_nonObserver_preserves_trace
       cases hValues
       have hSource :
           state'.source = source' := by
-        simpa using congrArg State.source hState.symm
-      have hTrace :
-          state'.trace = state.trace := by
-        simpa using congrArg State.trace hState.symm
-      exact ⟨by simpa [hSource] using hPrim, hTrace⟩
+        simpa using
+          congrArg (fun replay : State transcript => replay.source) hState.symm
+      have hCursor :
+          state'.cursor = state.cursor := by
+        simpa using
+          congrArg (fun replay : State transcript => replay.cursor) hState.symm
+      exact ⟨by simpa [hSource] using hPrim, hCursor⟩
 
 @[simp] theorem evalValues_gas_cons (fuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
@@ -210,12 +270,14 @@ theorem primCall_nonObserver_preserves_trace
     evalValues fuel.succ.succ
         (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])
         codeOverride
-        { source := source,
-          trace := { kind := .gas, value := value } :: trace } =
-      .ok ({ source := source, trace := trace }, [value]) := by
+        (transcript := { kind := .gas, value := value } :: trace)
+        { source := source } =
+      .ok
+        ({ source := source, cursor := 1 },
+        [value]) := by
   simp [evalValues, primitiveSemantics,
     Yul.Source.Effectful.evalValues, Yul.Source.Effectful.evalArgs,
-    primCall, consume]
+    primCall, Simulation.ResourceReplay.consume?]
 
 @[simp] theorem evalValues_msize_cons (fuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
@@ -223,12 +285,14 @@ theorem primCall_nonObserver_preserves_trace
     evalValues fuel.succ.succ
         (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])
         codeOverride
-        { source := source,
-          trace := { kind := .msize, value := value } :: trace } =
-      .ok ({ source := source, trace := trace }, [value]) := by
+        (transcript := { kind := .msize, value := value } :: trace)
+        { source := source } =
+      .ok
+        ({ source := source, cursor := 1 },
+        [value]) := by
   simp [evalValues, primitiveSemantics,
     Yul.Source.Effectful.evalValues, Yul.Source.Effectful.evalArgs,
-    primCall, consume]
+    primCall, Simulation.ResourceReplay.consume?]
 
 @[simp] theorem exec_let_gas_cons (fuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
@@ -240,13 +304,16 @@ theorem primCall_nonObserver_preserves_trace
           (some
             (.Call (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])))
         codeOverride
-        { source := source,
-          trace := { kind := .gas, value := value } :: trace } =
-      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+        (transcript := { kind := .gas, value := value } :: trace)
+        { source := source } =
+      .ok
+        { source := source.multifill [name] [value], cursor := 1 } := by
   simp [exec, hDecl, primitiveSemantics, stateModel, State.withSource,
+    Simulation.ResourceReplay.State.withSource,
     Yul.Source.Effectful.exec, Yul.Source.Effectful.evalValues,
     Yul.Source.Effectful.evalArgs, Yul.Source.Effectful.multifill,
-    Yul.Source.Effectful.StateModel.multifill, primCall, consume]
+    Yul.Source.Effectful.StateModel.multifill, primCall,
+    Simulation.ResourceReplay.consume?]
 
 @[simp] theorem exec_let_msize_cons (fuel : Nat)
     (codeOverride : Option EvmYul.Yul.Ast.YulContract)
@@ -258,22 +325,57 @@ theorem primCall_nonObserver_preserves_trace
           (some
             (.Call (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])))
         codeOverride
-        { source := source,
-          trace := { kind := .msize, value := value } :: trace } =
-      .ok ({ source := source.multifill [name] [value], trace := trace }) := by
+        (transcript := { kind := .msize, value := value } :: trace)
+        { source := source } =
+      .ok
+        { source := source.multifill [name] [value], cursor := 1 } := by
   simp [exec, hDecl, primitiveSemantics, stateModel, State.withSource,
+    Simulation.ResourceReplay.State.withSource,
     Yul.Source.Effectful.exec, Yul.Source.Effectful.evalValues,
     Yul.Source.Effectful.evalArgs, Yul.Source.Effectful.multifill,
-    Yul.Source.Effectful.StateModel.multifill, primCall, consume]
+    Yul.Source.Effectful.StateModel.multifill, primCall,
+    Simulation.ResourceReplay.consume?]
 
-inductive Result where
-  | regular (state : State)
-  | yulHalt (source : EvmYul.Yul.State) (value : Word)
-  | revert (sourceBeforeRevert : EvmYul.Yul.State)
+inductive Result (transcript : Trace) where
+  | regular (state : State transcript)
+  | yulHalt (state : State transcript) (value : Word)
+  | revert (stateBeforeRevert : State transcript)
+
+namespace Result
+
+def state {transcript : Trace} :
+    Result transcript → State transcript
+  | .regular state
+  | .yulHalt state _
+  | .revert state => state
+
+def ConsumedExactly {transcript : Trace} (result : Result transcript) : Prop :=
+  result.state.ConsumedExactly
+
+def observed {transcript : Trace} (result : Result transcript) : Trace :=
+  result.state.observed
+
+def remaining {transcript : Trace} (result : Result transcript) : Trace :=
+  result.state.remaining
+
+theorem observed_eq_transcript_of_consumedExactly
+    {transcript : Trace} {result : Result transcript}
+    (hConsumed : result.ConsumedExactly) :
+    result.observed = transcript :=
+  State.observed_eq_transcript_of_consumedExactly hConsumed
+
+theorem remaining_eq_nil_of_consumedExactly
+    {transcript : Trace} {result : Result transcript}
+    (hConsumed : result.ConsumedExactly) :
+    result.remaining = [] :=
+  State.remaining_eq_nil_of_consumedExactly hConsumed
+
+end Result
 
 namespace Program
 
-def installContract (program : Yul.Program) (state : State) : State :=
+def installContract {transcript : Trace} (program : Yul.Program)
+    (state : State transcript) : State transcript :=
   state.withSource
     (match state.source with
     | .Ok shared store =>
@@ -285,26 +387,112 @@ def installContract (program : Yul.Program) (state : State) : State :=
     | .OutOfFuel => .OutOfFuel
     | .Checkpoint jump => .Checkpoint jump)
 
-@[simp] theorem installContract_trace
-    (program : Yul.Program) (state : State) :
-    (installContract program state).trace = state.trace := rfl
+@[simp] theorem installContract_cursor
+    {transcript : Trace} (program : Yul.Program)
+    (state : State transcript) :
+    (installContract program state).cursor = state.cursor := rfl
+
+@[simp] theorem installContract_observed
+    {transcript : Trace} (program : Yul.Program)
+    (state : State transcript) :
+    (installContract program state).observed = state.observed := rfl
+
+@[simp] theorem installContract_remaining
+    {transcript : Trace} (program : Yul.Program)
+    (state : State transcript) :
+    (installContract program state).remaining = state.remaining := rfl
 
 def run (fuel : Nat) (program : Yul.Program)
     (source : EvmYul.Yul.State) (trace : Trace) :
-    Except EvmYul.Yul.Exception Result :=
+    Except EvmYul.Yul.Exception (Result trace) :=
   match
       callDispatcher fuel (some program.contract)
-        (installContract program { source := source, trace := trace }) with
+        (installContract program { source := source }) with
   | .ok (state', _rets) => .ok (.regular state')
-  | .error (.YulHalt source' value) => .ok (.yulHalt source' value)
-  | .error (.Revert sourceBeforeRevert) =>
-      .ok (.revert sourceBeforeRevert)
-  | .error err => .error err
+  | .error failure =>
+      match failure.exception with
+      | .YulHalt source' value =>
+          .ok (.yulHalt (failure.state.withSource source') value)
+      | .Revert sourceBeforeRevert =>
+          .ok (.revert (failure.state.withSource sourceBeforeRevert))
+      | err => .error err
+
+def ExactReplay (fuel : Nat) (program : Yul.Program)
+    (source : EvmYul.Yul.State) (transcript : Trace)
+    (result : Result transcript) : Prop :=
+  run fuel program source transcript = .ok result ∧
+    result.ConsumedExactly
+
+def ExactTerminates (program : Yul.Program)
+    (source : EvmYul.Yul.State) (transcript : Trace)
+    (result : Result transcript) : Prop :=
+  ∃ fuel, ExactReplay fuel program source transcript result
+
+theorem ExactReplay.exactTerminates
+    {fuel : Nat} {program : Yul.Program}
+    {source : EvmYul.Yul.State} {transcript : Trace}
+    {result : Result transcript}
+    (hReplay : ExactReplay fuel program source transcript result) :
+    ExactTerminates program source transcript result :=
+  ⟨fuel, hReplay⟩
+
+theorem ExactReplay.observed_eq_transcript
+    {fuel : Nat} {program : Yul.Program}
+    {source : EvmYul.Yul.State} {transcript : Trace}
+    {result : Result transcript}
+    (hReplay : ExactReplay fuel program source transcript result) :
+    result.observed = transcript :=
+  Result.observed_eq_transcript_of_consumedExactly hReplay.2
+
+theorem ExactReplay.remaining_eq_nil
+    {fuel : Nat} {program : Yul.Program}
+    {source : EvmYul.Yul.State} {transcript : Trace}
+    {result : Result transcript}
+    (hReplay : ExactReplay fuel program source transcript result) :
+    result.remaining = [] :=
+  Result.remaining_eq_nil_of_consumedExactly hReplay.2
+
+theorem ExactTerminates.observed_eq_transcript
+    {program : Yul.Program}
+    {source : EvmYul.Yul.State} {transcript : Trace}
+    {result : Result transcript}
+    (hTerminates : ExactTerminates program source transcript result) :
+    result.observed = transcript := by
+  rcases hTerminates with ⟨fuel, hReplay⟩
+  exact ExactReplay.observed_eq_transcript hReplay
+
+theorem ExactTerminates.remaining_eq_nil
+    {program : Yul.Program}
+    {source : EvmYul.Yul.State} {transcript : Trace}
+    {result : Result transcript}
+    (hTerminates : ExactTerminates program source transcript result) :
+    result.remaining = [] := by
+  rcases hTerminates with ⟨fuel, hReplay⟩
+  exact ExactReplay.remaining_eq_nil hReplay
 
 end Program
 end SourceReplay
 
 namespace PublicArtifact
+
+def NoExternalEffects (artifact : Public.Artifact) : Prop :=
+  artifact.metadata.certificate.cfg.safety.noCallCreate = true
+
+def noExternalEffects? (artifact : Public.Artifact) : Bool :=
+  artifact.metadata.certificate.cfg.safety.noCallCreate
+
+theorem noExternalEffects_of_check
+    {artifact : Public.Artifact}
+    (hCheck : noExternalEffects? artifact = true) :
+    NoExternalEffects artifact :=
+  hCheck
+
+def TerminalObserverRun (artifact : Public.Artifact) (fuel : Nat)
+    (initial : Assembly.EVMState) (result : Assembly.StepResult)
+    (trace : Trace) : Prop :=
+  Assembly.Target.runNResultWithObservers artifact.target fuel initial =
+      .ok (result, trace) ∧
+    result.IsTerminal
 
 def ObserverReplay (artifact : Public.Artifact) (fuel : Nat)
     (initial : Assembly.EVMState) (result : Assembly.StepResult)
@@ -326,6 +514,14 @@ theorem observerReplay_of_run
   simpa using
     (Assembly.Target.runNResultWithOracle_of_withObservers
       (rest := []) hRun)
+
+theorem terminalObserverRun_observerReplay
+    {artifact : Public.Artifact} {fuel : Nat}
+    {initial : Assembly.EVMState} {result : Assembly.StepResult}
+    {trace : Trace}
+    (hRun : TerminalObserverRun artifact fuel initial result trace) :
+    ObserverReplay artifact fuel initial result trace :=
+  observerReplay_of_run hRun.1
 
 end PublicArtifact
 

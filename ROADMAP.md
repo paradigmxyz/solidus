@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 09:21 PDT.
+Last updated: 2026-06-11 13:31 PDT.
 
 ## Objective
 
@@ -19,6 +19,99 @@ The migration is complete only when gas/msize support and stack-too-deep
 handling use the common architecture, the public compiler spine has cut over,
 superseded routes have been deleted, and the end-to-end Lean verification gates
 pass.
+
+## Active End-to-End Theorem
+
+The architecture migration is complete, but the stronger independent-Yul
+theorem is not. The current public resource theorem starts from compiler-owned
+Structured evaluation and target entry/block simulation. It does not yet prove
+that the original imported Yul program consumes the target's complete ordered
+`gas()`/`msize()` transcript or produces a related final result.
+
+Target public spine:
+
+```text
+imported Yul replay
+  -> observer-aware Functions semantics
+  -> allocation-lowered Locals/Expressions semantics
+  -> Structured outcome
+  -> TypedCfg whole-program path
+  -> Assembly whole-program execution
+  -> bytecode target observer result
+```
+
+Completion theorem shape:
+
+```text
+accepted Yul + successful compilation + related initial states
+  + concrete target observer run
+  => exact source transcript consumption
+  + related source/target outcomes
+```
+
+This is a backward adequacy theorem. Forward source preservation plus target
+determinism is insufficient because it does not construct a source run from a
+target run. Each compiler boundary therefore needs a lower-to-upper
+no-extra-behavior theorem, and the final public theorem should be a short
+composition of those adjacent adequacy results.
+
+The first exact Lean statement is now
+`Yul.EndToEnd.ClosedResourceCorrect`. It quantifies over a checked
+no-external-effects resource artifact, a related Yul/EVM initial state, and a
+concrete terminal target run. Its conclusion constructs a fuel-hidden exact
+Yul replay that consumes the full target transcript and satisfies the concrete
+terminal result relation. `Yul.EndToEnd.ClosedArtifact` packages the accepted
+source, successful compilation, and checked no-call/create boundary.
+
+Roadmap:
+
+- [x] Preserve effect state on Yul failures, halts, and reverts.
+- [x] Make replay state transcript-indexed and define checked exact
+  consumption for every source result.
+- [x] Define a concrete Yul/EVM world, machine, variable-store, and replay
+  relation, parameterized only by the unavoidable Yul-code/bytecode relation.
+- [x] Add generic effect-carrying Functions semantics and verify that resource
+  observations survive function-local store setup and caller-store restoration.
+- [x] Add fuel-hiding exact source termination and explicit target terminal-run
+  predicates. Regular program-end completion still needs a separate artifact
+  boundary because the generated CFG currently uses an invalid end terminator.
+- [x] State the first theorem for a checked no-external-effects fragment,
+  including concrete initial-state and terminal-result relations.
+- [ ] Freeze the open external call/create request-response protocol for the
+  later unrestricted theorem.
+- [ ] Prove observer-aware Yul-to-Functions lowering for every accepted Yul
+  expression, statement, function, control outcome, and primitive family.
+  Generic observer primitives, resource expressions, and `let` declarations
+  for both `gas()` and `msize()` are checked.
+- [ ] Prove allocation-driven Functions-to-Locals/Expressions preservation
+  under the same observation protocol.
+- [ ] Lift observer-aware semantics through Structured-to-TypedCfg using the
+  existing outcome-indexed path proof.
+- [x] Prove exact observer-aware Assembly-step/assembled-target-block
+  equivalence, including target `runN`, oracle remainder, errors, and the
+  two-instruction jump encodings.
+- [x] Lift the exact Assembly block theorem to arbitrary terminal target runs
+  by proving that completed source steps remain at source-instruction
+  boundaries and recursively decomposing target fuel.
+- [x] Define an independent transcript-indexed TypedCfg interpreter and prove
+  exact observer-aware lowering for every typed instruction and complete block
+  body, including zero-byte bindings, stack shuffles, and unwind.
+- [x] Prove observer-aware lowering for every TypedCfg terminator, including
+  generated return-dispatch tests, selected cleanup/jump, unknown-token
+  invalidation, and missing-token stack failure; compose this through complete
+  blocks and accepted resolved program steps.
+- [x] Strengthen compiled TypedCfg steps to positive target fuel and prove
+  one-step backward classification against a concrete terminal Assembly run:
+  every continuing step consumes a strict target-fuel prefix, while a halt
+  agrees exactly on terminal result and transcript.
+- [ ] Prove backward adequacy from target bytecode runs through Assembly,
+  TypedCfg, Structured, allocation-lowered Locals, Functions, and imported Yul.
+- [ ] Compose the unconditional public Yul-to-bytecode theorem without replay,
+  layout, call, or generated-code certificate premises.
+- [ ] Cover repeated observations, branches, switch, loops, internal calls,
+  halt, revert, stack fallback, and representative real contracts.
+- [ ] Run full build, proof-hole, axiom, architecture, importer, and
+  real-contract gates.
 
 ## Current Checkpoint
 

@@ -217,7 +217,7 @@ theorem labelPcFrom_append_label_eq
       some (base + byteLength pre) := by
   induction pre generalizing base with
   | nil =>
-      simp [labelPcFrom, byteLength]
+      simp [labelPcFrom]
   | cons instr rest ih =>
       cases instr with
       | label name =>
@@ -236,7 +236,7 @@ theorem labelPcFrom_append_label_eq
               (base + Instr.byteSize (.prim op)) target =
               some (base + byteLength (.prim op :: rest))
           rw [ih (base := base + Instr.byteSize (.prim op)) hNotMem]
-          simp [byteLength, Nat.add_assoc]
+          simp [byteLength_cons, Nat.add_assoc]
       | push value =>
           unfold labelPcFrom
           change
@@ -244,7 +244,7 @@ theorem labelPcFrom_append_label_eq
               (base + Instr.byteSize (.push value)) target =
               some (base + byteLength (.push value :: rest))
           rw [ih (base := base + Instr.byteSize (.push value)) hNotMem]
-          simp [byteLength, Nat.add_assoc]
+          simp [byteLength_cons, Nat.add_assoc]
       | jump target' =>
           unfold labelPcFrom
           change
@@ -252,7 +252,7 @@ theorem labelPcFrom_append_label_eq
               (base + Instr.byteSize (.jump target')) target =
               some (base + byteLength (.jump target' :: rest))
           rw [ih (base := base + Instr.byteSize (.jump target')) hNotMem]
-          simp [byteLength, Nat.add_assoc]
+          simp [byteLength_cons, Nat.add_assoc]
       | jumpi target' =>
           unfold labelPcFrom
           change
@@ -260,7 +260,7 @@ theorem labelPcFrom_append_label_eq
               (base + Instr.byteSize (.jumpi target')) target =
               some (base + byteLength (.jumpi target' :: rest))
           rw [ih (base := base + Instr.byteSize (.jumpi target')) hNotMem]
-          simp [byteLength, Nat.add_assoc]
+          simp [byteLength_cons, Nat.add_assoc]
 
 theorem labelPc_append_label_eq
     (pre suffix : Program) {target : Label}

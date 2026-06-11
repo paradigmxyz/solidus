@@ -28334,3 +28334,109 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   Aave v3 runtime backend checks, and all 11 Permit2 call comparisons. Permit2
   SignatureVerification reports only the documented independent
   `solc_validation` round-trip limitation.
+
+- 2026-06-11 12:00:35 PDT - compaction-resume - resumed the active
+  resource-observing end-to-end theorem goal at the source replay state
+  checkpoint; terminal Yul outcomes must preserve the remaining and consumed
+  observer transcript before a source-to-bytecode theorem can be stated
+  honestly.
+
+- 2026-06-11 12:13:24 PDT `compaction-resume`: Resumed the end-to-end observer theorem goal with transcript-indexed Yul/Locals replay and the concrete Yul-to-EVM state relation in place. Next checkpoint is the generic observer primitive preservation lemma, followed by composition across compiler layers.
+
+- 2026-06-11 12:14:52 PDT `proof`: Added the generic transcript consume relation theorem and `Yul.ObserverPreservation.observerPrim`; checked `gas` and `msize` instances now preserve cursor, returned value, and the concrete Yul-to-Locals state relation.
+
+- 2026-06-11 12:26:00 PDT `architecture`: External review confirmed the target-to-source theorem needs backward adequacy, not forward preservation plus determinism. Adopted its recommended generic `Functions.Source.Effectful` layer and common transcript-indexed replay state; deferred full external-call coverage to an explicit request/response protocol or a stated no-external-effects fragment.
+
+- 2026-06-11 12:26:00 PDT `proof`: Added effect-carrying Functions semantics and observer specialization. Checked a callee-local `gas()` run and a full internal call: the observer cursor crosses function-local store setup and caller-store restoration unchanged. Added Yul-to-Functions lowering/execution leaves for both `gas()` and `msize()` declarations.
+
+- 2026-06-11 12:35:00 PDT `theorem-boundary`: Added
+  `Yul.EndToEnd.ClosedResourceCorrect`, the exact target-to-source proposition
+  for the first no-external-effects theorem. The boundary packages accepted
+  resource-mode compilation, related installed Yul/EVM initial states, a
+  concrete terminal target observer run, fuel-hidden exact source transcript
+  consumption, and a concrete halt/revert result relation. Ordinary Yul
+  fallthrough remains explicitly separate because generated program end is
+  currently an invalid CFG terminator.
+
+- 2026-06-11 12:35:00 PDT `verification`: The complete
+  `EvmCompiler.Verification` target passed all 1,165 Lean jobs after adding the
+  transcript replay state, effectful Functions interpreter, observer
+  specializations, Yul-to-Functions gas/msize leaves, and exact theorem
+  boundary. The focused observer proof artifact and diff/proof-hole checks also
+  passed.
+
+- 2026-06-11 12:45:00 PDT `proof`: Closed the first exact
+  backward-capable compiler boundary. Assembly oracle execution of every
+  emitted instruction block is now equal to the labeled source step, including
+  errors; assembled target `runN` is equal to that emitted-block execution;
+  and `compile_target_runNResultWithOracle_source_step_exact` packages the
+  positive target-fuel witness. Added exact target fuel composition for
+  running, halted, and error prefixes, plus
+  `emitted_length_le_of_terminal_target_run`, which proves a terminal target
+  run cannot stop inside a two-instruction jump encoding.
+
+- 2026-06-11 12:45:00 PDT `verification`: The full 1,165-job
+  `EvmCompiler.Verification` build, focused resource-observer theorem/axiom
+  audit, scoped no-hole scan, and `git diff --check` pass. New Assembly
+  adequacy theorems report only `[propext, Classical.choice, Quot.sound]`.
+  Remaining Assembly obligation: prove completed source steps preserve a
+  source-instruction boundary, then recursively invert an arbitrary terminal
+  target run into a complete source oracle run.
+
+- 2026-06-11 12:45:51 PDT `compaction-resume`: Resumed the active end-to-end
+  observer-equivalence goal at the Assembly whole-run adequacy boundary. The
+  next proof establishes source-instruction-boundary closure for all running
+  Assembly steps, then combines it with exact emitted-block simulation and
+  target fuel decomposition to reconstruct arbitrary terminal source runs.
+
+- 2026-06-11 13:04:34 PDT `proof`: Closed arbitrary terminal target-to-Assembly
+  adequacy. A terminal assembled-bytecode oracle run now reconstructs a finite
+  Assembly source oracle run with the identical halt and remaining transcript;
+  successful running source steps are proved to land at the next instruction,
+  a resolved label, or exact code end.
+
+- 2026-06-11 13:04:34 PDT `proof`: Added an independent transcript-indexed
+  TypedCfg interpreter and exact observer-aware lowering for every instruction
+  and complete block body. The proof covers gas/msize, ordinary primitives,
+  zero-byte local/scratch/relabel metadata, DUP/SWAP/POP, and multi-pop unwind.
+  Remaining TypedCfg boundary: generated terminators and multi-block terminal
+  run reconstruction.
+
+- 2026-06-11 13:12:00 PDT `compaction-resume`: Resumed the active end-to-end
+  resource-observer theorem at TypedCfg return dispatch. Direct terminators,
+  complete blocks, and resolved one-block program steps are proved; the current
+  checkpoint is an observer-neutral execution argument for generated dispatch.
+
+- 2026-06-11 13:22:50 PDT `proof`: Closed observer-aware TypedCfg return
+  dispatch. Added transcript-neutral stack-shuffle execution, all-ne and
+  selected test scans, selected case cleanup/jump, unknown-token invalidation,
+  and missing-token stack failure. The unrestricted terminator, block, and
+  accepted resolved program-step theorems now cover every TypedCfg terminator.
+
+- 2026-06-11 13:22:50 PDT `verification`: The 1,168-job full verification
+  build and focused resource-observer axiom audit pass; the new TypedCfg
+  theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 13:22:50 PDT `theorem-boundary`: Multi-block composition cannot
+  naively identify symbolic TypedCfg jump states with Assembly destination
+  states because lowering resets numeric PC and hidden control counters.
+  Generated Structured/Yul code has no `pc` primitive, so the next theorem must
+  compose through the existing control-erased runtime-data relation rather
+  than assert exact state equality across block boundaries.
+
+- 2026-06-11 13:30:00 PDT `compaction-resume`: Resumed the active end-to-end
+  resource-observer goal at the TypedCfg terminal-run inversion boundary. The
+  immediate checkpoint is a positive-fuel one-step classification against a
+  known terminal Assembly run, followed by well-founded multi-block replay.
+
+- 2026-06-11 13:31:35 PDT `proof`: Added positive-fuel block and program-step
+  simulation, deterministic comparison with a known halted Assembly run, and
+  `Program.lower?_step_accountsForHalt`. A compiled TypedCfg step can now be
+  inverted inside any concrete terminal Assembly run: continuing outcomes use
+  a strictly smaller target-fuel prefix and preserve runtime data, while halt
+  outcomes agree exactly on the halt and remaining resource transcript.
+
+- 2026-06-11 13:31:35 PDT `verification`: The full 1,168-job verification
+  aggregate, focused resource-observer axiom audit, and `git diff --check`
+  pass. The new positive-fuel and backward-classification theorems depend only
+  on `propext`, `Classical.choice`, and `Quot.sound`.

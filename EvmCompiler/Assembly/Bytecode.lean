@@ -693,7 +693,7 @@ theorem emitFrom_byteLength {program suffix : Program} {base : Nat}
               cases hEmit
               have hHereLength := emitInstr_byteLength hHere
               have hThereLength := ih hThere
-              simp [codeByteLength_append, Program.byteLength,
+              simp [codeByteLength_append, Program.byteLength_cons,
                 hHereLength, hThereLength]
 
 theorem assemble_layout {program : Program} {target : TargetProgram}
@@ -735,6 +735,41 @@ theorem compile_codeByteLength {program : Program} {target : TargetProgram}
 theorem byteSize_pos (instr : TargetInstr) :
     0 < byteSize instr := by
   cases instr <;> simp [byteSize]
+
+theorem codeLayoutFrom_fetch_end_none
+    {code : List LocatedTarget} {base : Nat}
+    (hLayout : codeLayoutFrom code base) :
+    TargetProgram.fetch { code := code }
+        (base + codeByteLength code) = none := by
+  induction code generalizing base with
+  | nil =>
+      simp [TargetProgram.fetch, codeByteLength]
+  | cons located rest ih =>
+      simp [codeLayoutFrom] at hLayout
+      have hNe :
+          located.pc ≠
+            base + codeByteLength (located :: rest) := by
+        rw [hLayout.1]
+        have hPos := byteSize_pos located.instr
+        simp [codeByteLength]
+        omega
+      unfold TargetProgram.fetch
+      simp only [List.find?_cons]
+      simp only [show
+        (located.pc == base + codeByteLength (located :: rest)) = false by
+          simp [hNe]]
+      have hTail :=
+        ih (base := base + byteSize located.instr) hLayout.2
+      simpa [TargetProgram.fetch, codeByteLength, Nat.add_assoc] using hTail
+
+theorem assemble_fetch_byteLength_none
+    {program : Program} {target : TargetProgram}
+    (hAsm : assemble? program = some target) :
+    target.fetch (Program.byteLength program) = none := by
+  have hEnd :=
+    codeLayoutFrom_fetch_end_none (assemble_layout hAsm)
+  rw [assemble_codeByteLength hAsm] at hEnd
+  simpa using hEnd
 
 theorem codeLayoutFrom_member_end_le {code : List LocatedTarget} {base : Nat}
     (hLayout : codeLayoutFrom code base) :

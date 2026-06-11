@@ -243,6 +243,28 @@ def smokeWideUncheckedFunctionsProgram? : Option Functions.Program := do
     { functions := [smokeWideUncheckedAbiEncodeStringFn]
       body := { stmts := bodyStmts } }
 
+def smokeDeepPureAliasExpr : Nat → AstExpr
+  | 0 => .Var "deep"
+  | depth + 1 =>
+      .Call (.inl ((.StopArith .ADD : EvmYul.Operation .Yul)))
+        [smokeDeepPureAliasExpr depth, .Var "deep"]
+
+def smokeDeepPureAliasMaterializes : Bool :=
+  match
+      Expr.lower1Unchecked?
+        (Fresh.initial ["deep"])
+        (smokeDeepPureAliasExpr 16) with
+  | some (pre, _expr, _state) => !pre.isEmpty
+  | none => false
+
+def smokeShallowPureAliasStaysDirect : Bool :=
+  match
+      Expr.lower1Unchecked?
+        (Fresh.initial ["deep"])
+        (smokeDeepPureAliasExpr 4) with
+  | some (pre, _expr, _state) => pre.isEmpty
+  | none => false
+
 def smokeCreateExpr : AstExpr :=
   .Call (.inl ((.System .CREATE : EvmYul.Operation .Yul)))
     [.Lit smokeOne, .Lit smokeOne, .Lit smokeOne]
@@ -735,6 +757,18 @@ def smokeSetImmutableNoReferenceContext :
   smokeSome
     (smokeWideUncheckedFunctionsProgram? >>=
       Functions.Program.compile?) = true
+
+#guard
+  Expr.pendingStackDepth (smokeDeepPureAliasExpr 16) = 16
+
+#guard
+  Expr.List.directPureArgsSafe? [smokeDeepPureAliasExpr 16] = false
+
+#guard
+  smokeDeepPureAliasMaterializes = true
+
+#guard
+  smokeShallowPureAliasStaysDirect = true
 
 #guard
   smokeSome

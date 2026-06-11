@@ -9160,6 +9160,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("test_solady_bridge_smoke.sh", runner)
         self.assertIn("test_openzeppelin_bridge_smoke.sh", runner)
         self.assertIn("test_chainlink_cbor_bridge_smoke.sh", runner)
+        self.assertIn("test_additional_real_contracts_bridge_smoke.sh", runner)
 
         v4_extload_smoke = (
             scripts_dir / "test_uniswap_v4_extload_summary_smoke.sh"
@@ -9268,15 +9269,51 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "permit2_hash_backend_check_objects=",
             "permit2_hash_runtime_backend_check=",
             "permit2_hash_runtime_backend_first_none=",
-            "locals_to_expressions",
-            "localsTargets",
-            "has_deep_assignment_target",
+            'hash_runtime_backend != ("pass", "none")',
             "permit2_signature_backend_check_objects=",
             "permit2_signature_runtime_backend_check=",
             "permit2_signature_runtime_backend_first_none=",
             "lower_code_unchecked",
         ]:
             self.assertIn(behavior, permit2_smoke)
+
+    def test_additional_real_contract_smoke_keeps_pinned_behavior_coverage(self):
+        scripts_dir = Path(__file__).resolve().parent
+        smoke = (
+            scripts_dir / "test_additional_real_contracts_bridge_smoke.sh"
+        ).read_text()
+
+        for ref_name in [
+            "PRB_MATH_REF",
+            "SOLBASE_REF",
+            "BALANCER_V3_REF",
+            "SEAPORT_REF",
+        ]:
+            self.assertRegex(
+                smoke,
+                rf'{ref_name}="\$\{{{ref_name}:-[0-9a-f]{{40}}\}}"',
+            )
+
+        for behavior in [
+            "PRBMathRealWorldFallback",
+            "avg(wrap(2e18), wrap(4e18))",
+            "powu(wrap(2e18), 10)",
+            "SolbaseRealWorldFallback",
+            "FixedPointMathLib.expWad(1e18)",
+            "FixedPointMathLib.lnWad(0)",
+            "BalancerV3RealWorldFallback",
+            "FixedPoint.powUp(2e18, 1.5e18)",
+            "FixedPoint.divUp(1, 0)",
+            "runtime-only",
+            "SeaportMerkleRealWorldFallback",
+            "MerkleLib.getProof",
+            "MerkleLib.verifyProof",
+            "compare_contract_call_bytecode.py",
+            "--format lean-backend-check",
+            "real_contract_repositories=4",
+            "real_contract_compare_calls=48",
+        ]:
+            self.assertIn(behavior, smoke)
 
     def test_uniswap_universal_router_smoke_covers_command_byte_dispatch(self):
         scripts_dir = Path(__file__).resolve().parent
@@ -9394,8 +9431,7 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "aave_v3_math_summary_primitives=yes",
             "aave_v3_math_runtime_backend_check=",
             "aave_v3_math_runtime_backend_first_none=",
-            "locals_to_expressions",
-            "has_deep_local",
+            'status != "pass" or first_none != "none"',
             "aave_v3_interest_summary_primitives=yes",
             "aave_v3_interest_runtime_backend_check=",
             "aave_v3_interest_runtime_backend_first_none=",
@@ -9511,15 +9547,13 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "buf.truncate()",
             "compare_contract_call_bytecode.py",
             "--runtime-only",
-            "if [[ \"$RUNTIME_BACKEND_STATUS\" == \"pass\" ]]",
+            "if [[ \"$RUNTIME_BACKEND_STATUS\" != \"pass\" ]]",
             "--format lean-backend-check",
             "chainlink_cbor_runtime_backend_check=",
             "chainlink_cbor_runtime_backend_first_none=",
             "chainlink_cbor_runtime_compare_calls=",
             "runtime_compare = \"yes\"",
-            "runtime_compare = \"blocked\"",
-            "locals_to_expressions",
-            "has_deep_local",
+            'runtime_check_status != "pass" or runtime_first_none != "none"',
             "contract_call_compare",
             "full_runtime_bytes",
             "lean_runtime_bytes",

@@ -427,24 +427,6 @@ def backend_status(report, expected_count, label, contract):
         raise SystemExit(f"missing {label} runtime backend check: {statuses!r}")
     return counts, runtime
 
-def runtime_backend_object(report, contract):
-    for item in report.get("checkedObjects", []):
-        if item.get("contract") == contract and item.get("selector") == "runtime":
-            return item
-    raise SystemExit(f"missing runtime backend object for {contract}")
-
-def has_deep_assignment_target(item, name, minimum=17):
-    for entry in item.get("localsTargets", []):
-        if entry.get("name") != name:
-            continue
-        try:
-            access_depth = int(entry.get("accessDepth"))
-        except (TypeError, ValueError):
-            continue
-        if access_depth >= minimum:
-            return True
-    return False
-
 batch_count = batch["counts"]["checkedObjects"]
 replay_count = manifest_replay["counts"]["checkedObjects"]
 summary_count = summary["counts"]["objects"]
@@ -478,20 +460,10 @@ hash_backend_counts, hash_runtime_backend = backend_status(
     "PermitHash",
     "UniswapPermit2HashFallback",
 )
-hash_runtime_object = runtime_backend_object(
-    hash_backend_check,
-    "UniswapPermit2HashFallback",
-)
-if hash_runtime_backend[0] == "fail":
-    if hash_runtime_backend[1] != "locals_to_expressions":
-        raise SystemExit(
-            f"unexpected PermitHash runtime backend blocker: {hash_runtime_backend!r}"
-        )
-    if not has_deep_assignment_target(hash_runtime_object, "var_result"):
-        raise SystemExit(
-            "PermitHash locals_to_expressions blocker did not report deep "
-            f"assignment target var_result: {hash_runtime_object!r}"
-        )
+if hash_runtime_backend != ("pass", "none"):
+    raise SystemExit(
+        f"PermitHash runtime backend did not pass: {hash_runtime_backend!r}"
+    )
 
 signature_count = signature_check["counts"]["checkedObjects"]
 signature_summary_count = signature_summary["counts"]["objects"]

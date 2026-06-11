@@ -34,7 +34,7 @@ def ofPrim (op : Assembly.PrimOp) : Effects where
         op = .codecopy ∨ op = .extcodecopy ∨
         op = .returndatacopy ∨ op = .mcopy)
   observesResources := decide (op = .gas ∨ op = .msize)
-  callsOrCreates := op.isCallCreate
+  callsOrCreates := op.isExternalCallCreate
 
 @[simp] theorem empty_append (effects : Effects) :
     empty.append effects = effects := by

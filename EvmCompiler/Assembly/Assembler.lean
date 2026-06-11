@@ -116,14 +116,14 @@ theorem instrAtPcFrom_end_le_base_byteLength
         have hPair : (base, head) = (pc, instr) := by
           simpa using hAt
         cases hPair
-        simpa [byteLength, Nat.add_assoc] using
+        simpa [byteLength_cons, Nat.add_assoc] using
           Nat.le_add_right (base + head.byteSize) (byteLength rest)
       · simp [hQuery] at hAt
         have hTail :
             pc + instr.byteSize ≤
               (base + head.byteSize) + byteLength rest :=
           ih (base := base + head.byteSize) hAt
-        simpa [byteLength, Nat.add_assoc] using hTail
+        simpa [byteLength_cons, Nat.add_assoc] using hTail
 
 theorem instrAtPc_pc_eq {program : Program} {query pc : Nat}
     {instr : Instr}
@@ -138,6 +138,154 @@ theorem instrAtPc_end_le_byteLength {program : Program}
   simpa [instrAtPc] using
     instrAtPcFrom_end_le_base_byteLength (base := 0) hAt
 
+theorem instrAtPcFrom_next_or_end
+    {suffix : Program} {base query pc : Nat} {instr : Instr}
+    (hAt : instrAtPcFrom suffix base query = some (pc, instr)) :
+    pc + instr.byteSize = base + byteLength suffix ∨
+      ∃ nextPc nextInstr,
+        instrAtPcFrom suffix base (pc + instr.byteSize) =
+          some (nextPc, nextInstr) := by
+  induction suffix generalizing base with
+  | nil =>
+      simp [instrAtPcFrom] at hAt
+  | cons head rest ih =>
+      unfold instrAtPcFrom at hAt
+      by_cases hQuery : query = base
+      · simp [hQuery] at hAt
+        rcases hAt with ⟨rfl, rfl⟩
+        cases rest with
+        | nil =>
+            left
+            simp [byteLength_cons]
+        | cons next tail =>
+            right
+            refine ⟨base + head.byteSize, next, ?_⟩
+            have hNe : base + head.byteSize ≠ base := by
+              have hPos := Instr.byteSize_pos head
+              omega
+            unfold instrAtPcFrom
+            rw [if_neg hNe]
+            exact
+              instrAtPcFrom_at_head next tail
+                (base + head.byteSize)
+      · simp [hQuery] at hAt
+        rcases ih (base := base + head.byteSize) hAt with
+          hEnd | ⟨nextPc, nextInstr, hNext⟩
+        · left
+          simpa [byteLength_cons, Nat.add_assoc] using hEnd
+        · right
+          refine ⟨nextPc, nextInstr, ?_⟩
+          have hBaseLeQuery :
+              base + head.byteSize ≤ query :=
+            instrAtPcFrom_base_le_query
+              (suffix := rest) (base := base + head.byteSize)
+              (query := query) (pc := pc) (instr := instr) hAt
+          have hPc : pc = query :=
+            instrAtPcFrom_pc_eq hAt
+          have hBaseLe : base + head.byteSize ≤ pc := by
+            omega
+          have hNe : pc + instr.byteSize ≠ base := by
+            have hHeadPos := Instr.byteSize_pos head
+            have hInstrPos := Instr.byteSize_pos instr
+            omega
+          simpa [instrAtPcFrom, hNe] using hNext
+
+theorem instrAtPc_next_or_end
+    {program : Program} {query pc : Nat} {instr : Instr}
+    (hAt : instrAtPc program query = some (pc, instr)) :
+    pc + instr.byteSize = byteLength program ∨
+      ∃ nextPc nextInstr,
+        instrAtPc program (pc + instr.byteSize) =
+          some (nextPc, nextInstr) := by
+  simpa [instrAtPc] using
+    instrAtPcFrom_next_or_end (base := 0) hAt
+
+theorem instrAtPcFrom_of_labelPcFrom
+    {suffix : Program} {base pc : Nat} {target : Label}
+    (hLabel : labelPcFrom suffix base target = some pc) :
+    instrAtPcFrom suffix base pc = some (pc, .label target) := by
+  induction suffix generalizing base with
+  | nil =>
+      simp [labelPcFrom] at hLabel
+  | cons head rest ih =>
+      cases head with
+      | label name =>
+          by_cases hName : name = target
+          · subst name
+            simp [labelPcFrom] at hLabel
+            subst pc
+            exact instrAtPcFrom_at_head (.label target) rest base
+          · simp [labelPcFrom, hName] at hLabel
+            have hAt :=
+              ih (base := base + Instr.byteSize (.label name)) hLabel
+            have hBaseLe :
+                base + Instr.byteSize (.label name) ≤ pc :=
+              instrAtPcFrom_base_le_query hAt
+            have hNe : pc ≠ base := by
+              have hPos := Instr.byteSize_pos (.label name)
+              omega
+            simpa [instrAtPcFrom, hNe] using hAt
+      | prim op =>
+          change
+            labelPcFrom rest (base + Instr.byteSize (.prim op)) target =
+              some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize (.prim op)) hLabel
+          have hBaseLe :
+              base + Instr.byteSize (.prim op) ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos (.prim op)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
+      | push value =>
+          change
+            labelPcFrom rest (base + Instr.byteSize (.push value)) target =
+              some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize (.push value)) hLabel
+          have hBaseLe :
+              base + Instr.byteSize (.push value) ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos (.push value)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
+      | jump jumpTarget =>
+          change
+            labelPcFrom rest
+                (base + Instr.byteSize (.jump jumpTarget)) target =
+              some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize (.jump jumpTarget)) hLabel
+          have hBaseLe :
+              base + Instr.byteSize (.jump jumpTarget) ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos (.jump jumpTarget)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
+      | jumpi jumpTarget =>
+          change
+            labelPcFrom rest
+                (base + Instr.byteSize (.jumpi jumpTarget)) target =
+              some pc at hLabel
+          have hAt :=
+            ih (base := base + Instr.byteSize (.jumpi jumpTarget)) hLabel
+          have hBaseLe :
+              base + Instr.byteSize (.jumpi jumpTarget) ≤ pc :=
+            instrAtPcFrom_base_le_query hAt
+          have hNe : pc ≠ base := by
+            have hPos := Instr.byteSize_pos (.jumpi jumpTarget)
+            omega
+          simpa [instrAtPcFrom, hNe] using hAt
+
+theorem instrAtPc_of_labelPc
+    {program : Program} {pc : Nat} {target : Label}
+    (hLabel : labelPc program target = some pc) :
+    instrAtPc program pc = some (pc, .label target) := by
+  exact instrAtPcFrom_of_labelPcFrom hLabel
+
 theorem instrAtPcFrom_append_boundary
     (pre suffix : Program) (base : Nat) :
     instrAtPcFrom (pre ++ suffix) base (base + byteLength pre) =
@@ -145,12 +293,12 @@ theorem instrAtPcFrom_append_boundary
         (base + byteLength pre) := by
   induction pre generalizing base with
   | nil =>
-      simp [byteLength]
+      simp
   | cons instr rest ih =>
       unfold instrAtPcFrom
       have hByteNe : instr.byteSize ≠ 0 :=
         Nat.ne_of_gt (Instr.byteSize_pos instr)
-      simp [byteLength, hByteNe]
+      simp [byteLength_cons, hByteNe]
       rw [← Nat.add_assoc]
       cases suffix with
       | nil =>

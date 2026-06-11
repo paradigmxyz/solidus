@@ -2,12 +2,19 @@ import EvmCompiler.Public
 import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Functions.AllocationLowering
+import EvmCompiler.Functions.EffectSemantics
+import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
+import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.TypedCfg.Preservation
+import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.ObjectSemantics
 import EvmCompiler.Yul.ObserverOracle
+import EvmCompiler.Yul.ObserverPreservation
+import EvmCompiler.Yul.StateRelation
 
 /-!
 Stable verification aggregate.
@@ -16,3 +23,19 @@ This root checks the proof-bearing components used by the public compiler
 without restoring the retired replay runtimes, parallel allocation backends,
 or audit-alias corridor.
 -/
+
+#check EvmCompiler.TypedCfg.ObserverSemantics.Instr.runState
+#check EvmCompiler.TypedCfg.ObserverSemantics.Block.runBody
+#check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN
+#check EvmCompiler.TypedCfg.ObserverPreservation.Instr.lowerAt_source_runNResultWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Block.lowerBodyFrom?_source_runNResultWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Terminator.lowerAt?_eventuallyWithOracle_of_direct
+#check EvmCompiler.TypedCfg.ObserverPreservation.Terminator.lowerAt?_eventuallyWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Block.lower?_eventuallyWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Block.lower?_positiveEventuallyWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_positiveEventuallyWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_eventuallyWithOracle
+#check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
+#check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
+#check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
+#check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

@@ -402,6 +402,37 @@ def run (step : PrimStep) (state : EvmYul.EVM.State) :
       | none => .error .StackUnderflow
   | .invalid => .error .InvalidInstruction
 
+theorem run_pc {step : PrimStep}
+    {state final : EvmYul.EVM.State}
+    (hRun : step.run state = .ok final) :
+    final.pc = state.pc + EvmYul.UInt256.ofNat 1 := by
+  cases step <;>
+    simp [PrimStep.run, EvmYul.EVM.execBinOp,
+      EvmYul.EVM.execUnOp, EvmYul.EVM.execTriOp,
+      EvmYul.EVM.executionEnvOp, EvmYul.EVM.unaryExecutionEnvOp,
+      EvmYul.EVM.machineStateOp, EvmYul.EVM.binaryMachineStateOp,
+      EvmYul.EVM.binaryMachineStateOp',
+      EvmYul.EVM.ternaryMachineStateOp, EvmYul.EVM.stateOp,
+      EvmYul.EVM.unaryStateOp, EvmYul.EVM.binaryStateOp,
+      EvmYul.EVM.ternaryCopyOp, EvmYul.EVM.quaternaryCopyOp,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] at hRun ⊢
+  all_goals
+    try
+      cases hRun
+      rfl
+  all_goals
+    try
+      simp [EvmYul.dup, EvmYul.swap,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC] at hRun
+    repeat' split at hRun
+  all_goals
+    try simp_all
+  all_goals
+    cases hRun
+    rfl
+
 abbrev isoState (shared : EvmYul.SharedState .EVM)
     (stack : EvmYul.Stack Word) : EvmYul.EVM.State :=
   { toSharedState := shared,
@@ -1947,6 +1978,44 @@ theorem step_eq_evm_step_of_not_continuing {op : PrimOp}
   cases op <;>
     simp [PrimOp.step, PrimOp.continuingStep?,
       PrimOp.isCallCreate] at hStep hNoCallCreate ⊢
+
+theorem step_pc_of_stackArity
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hArity : op.stackArity? = some (input, output))
+    (hRun : op.step state = .ok final) :
+    final.pc = state.pc + EvmYul.UInt256.ofNat 1 := by
+  cases hCont : op.continuingStep? with
+  | some step =>
+      rw [step_eq_continuingStep_run hCont] at hRun
+      exact PrimStep.run_pc hRun
+  | none =>
+      cases op <;>
+        simp [PrimOp.continuingStep?] at hCont
+      case stop | «return» | revert | selfdestruct =>
+        simp [PrimOp.stackArity?] at hArity
+      case pc =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.pc)) =
+            Except.ok final at hRun
+        cases hRun
+        rfl
+      case gas =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.gasAvailable)) =
+            Except.ok final at hRun
+        cases hRun
+        rfl
+      case create | call | callcode | delegatecall | create2 | staticcall =>
+        change
+          (Except.error EvmYul.EVM.ExecutionException.InvalidInstruction :
+            Except EvmYul.EVM.ExecutionException EvmYul.EVM.State) =
+            Except.ok final at hRun
+        cases hRun
 
 end PrimOp
 
