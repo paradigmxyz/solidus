@@ -97,6 +97,16 @@ theorem compileCertified?_checked
       compiles := hCompile
       metadataValid := hValid }
 
+theorem compileCertified?_labelPc_exists
+    {program : Program} {artifact : CertifiedArtifact}
+    {label : Assembly.Label} {block : TypedCfg.Block}
+    (hCompile : program.compileCertified? = some artifact)
+    (hFind : program.cfg.findBlock? label = some block) :
+    ∃ entryPc, artifact.target.labelPc label = some entryPc := by
+  exact
+    TypedCfg.Program.compileCertified?_labelPc_exists
+      (compileCertified?_cfg hCompile) hFind
+
 theorem compileCertified?_step_eventually
     {program : Program} {artifact : CertifiedArtifact}
     {label : Assembly.Label} {block : TypedCfg.Block}

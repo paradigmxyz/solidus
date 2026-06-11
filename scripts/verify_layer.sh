@@ -15,7 +15,11 @@ case "$layer" in
     )
     ;;
   effects)
-    modules=(EvmCompiler.Locals.EffectSemantics EvmCompiler.Yul.ObserverOracle)
+    modules=(
+      EvmCompiler.Locals.EffectSemantics
+      EvmCompiler.Yul.EffectSemantics
+      EvmCompiler.Yul.ObserverOracle
+    )
     ;;
   allocator)
     modules=(
@@ -73,4 +77,9 @@ fi
 
 if [[ "$layer" == "typedcfg" || "$layer" == "all" ]]; then
   lake env lean proof_artifacts/typedcfg_lowering_invariants_smoke.lean
+fi
+
+if [[ "$layer" == "proofs" || "$layer" == "all" ]]; then
+  lake env lean proof_artifacts/public_artifact_simulation_smoke.lean
+  lake env lean proof_artifacts/resource_observer_oracle_smoke.lean
 fi

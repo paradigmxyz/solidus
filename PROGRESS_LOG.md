@@ -27722,3 +27722,36 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - verification: architecture checks passed, the retained-source stale-import
   scan was clean, `git diff --check` passed, and
   `lake build EvmCompiler.Verification` completed all 1,163 jobs.
+
+## 2026-06-10 20:20 PDT - Unified Yul effects and observer verification
+
+- effects: added `Yul.Source.Effectful`, a reusable imported-Yul evaluator
+  parameterized by source-state projection/update and primitive semantics.
+- observer migration: replaced the 55,316-line observer compatibility proof
+  module with a roughly 350-line handler specialization. Gas/msize
+  classification now delegates through the shared Yul-to-basic-op table, and
+  the TypedCfg effect certificate records both observers.
+- public proof surface: added a resource-mode theorem combining the unified
+  public entry simulation with Assembly target observation/oracle replay.
+- guardrails: verification and the effects layer now build the generic Yul
+  effect module directly, and the architecture check rejects any observer-local
+  Yul control evaluator definitions.
+- 2026-06-10 20:35 PDT - Compaction resume: fixing fully-qualified observer smoke names, rerunning aggregate verification, then continuing the remaining compiler-corridor migration.
+
+## 2026-06-10 21:54 PDT - Public simulation and generic observer phase verified
+
+- public semantics: added a hidden-witness artifact simulation relation and
+  entry theorem composing successful public compilation with certified
+  AllocatedTypedCfg block fragments, label PCs, executable target generation,
+  and Assembly execution simulation.
+- effects: verified the generic imported-Yul effect evaluator independently;
+  resource replay is now a handler specialization rather than a copied control
+  interpreter.
+- proof artifacts: both the public artifact simulation and resource-observer
+  smokes pass, with axiom prints limited to `propext`, `Classical.choice`, and
+  `Quot.sound`.
+- aggregate verification: `lake build EvmCompiler.Verification` completed all
+  1,159 jobs; `scripts/verify_layer.sh proofs`, the architecture dependency
+  check, and `git diff --check` all pass.
+- size: retained `EvmCompiler` Lean sources total 218,044 lines;
+  `Yul/ObserverOracle.lean` is 350 lines, down from 55,316.

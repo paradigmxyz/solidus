@@ -1,0 +1,7 @@
+import EvmCompiler.PublicVerification
+
+#check EvmCompiler.Public.Artifact.BlockSimulation
+#check EvmCompiler.Public.compileArtifactWithPolicy?_blockSimulation
+#check EvmCompiler.Public.compileArtifactWithPolicy?_entrySimulation
+
+#print axioms EvmCompiler.Public.compileArtifactWithPolicy?_entrySimulation

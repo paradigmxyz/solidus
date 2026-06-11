@@ -84,6 +84,11 @@ report_matches \
   EvmCompiler/Verification.lean
 
 report_matches \
+  'The observer specialization must not define another Yul control evaluator:' \
+  '^[[:space:]]*def (evalTail|evalArgs|evalValues|eval|call|callDispatcher|execSeq|exec|loop)[[:space:]]' \
+  EvmCompiler/Yul/ObserverOracle.lean
+
+report_matches \
   'The stable Solidity frontend must compile through public artifacts, not legacy preservation corridors:' \
   '^import EvmCompiler\..*Preservation|Objects\.Source\.Program\.compileChecked\?|Functions\.Source\.Program\.compileChecked\?' \
   EvmCompiler/Solidity/Frontend.lean
@@ -190,6 +195,7 @@ report_matches \
   EvmCompiler/Simulation \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
+  EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean
 

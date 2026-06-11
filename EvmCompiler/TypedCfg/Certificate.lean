@@ -315,6 +315,34 @@ theorem compileCertified?_pcFits {program : Program}
             · simp [hCert, hLower, hAccepted] at hCompile
   · simp [hTyped] at hCompile
 
+theorem compileCertified?_labelPc_exists
+    {program : Program} {artifact : CertifiedArtifact}
+    {label : Label} {block : Block}
+    (hCompile : program.compileCertified? = some artifact)
+    (hFind : program.findBlock? label = some block) :
+    ∃ entryPc, artifact.target.labelPc label = some entryPc := by
+  rcases
+      Program.lower?_fragment_of_findBlock?
+        (compileCertified?_target hCompile) hFind with
+    ⟨fragment⟩
+  have hBlockLabel : block.label = label := by
+    have hFound :
+        (block.label == label) = true :=
+      @List.find?_some Block
+        (fun candidate : Block => candidate.label == label)
+        block program.blocks hFind
+    exact beq_iff_eq.mp hFound
+  subst label
+  rcases Block.lower?_starts_with_label fragment.lower with
+    ⟨tail, hCode⟩
+  have hLabelMem :
+      Assembly.Instr.label block.label ∈ artifact.target := by
+    rw [fragment.target_eq]
+    simp [hCode]
+  exact
+    Assembly.Program.labelPc_exists_of_mem_labels artifact.target
+      (Assembly.Program.mem_labels_of_label_mem hLabelMem)
+
 theorem compileCertified?_checked {program : Program}
     {artifact : CertifiedArtifact}
     (hCompile : program.compileCertified? = some artifact) :

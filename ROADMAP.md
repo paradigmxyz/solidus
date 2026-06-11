@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 19:55 PDT.
+Last updated: 2026-06-10 21:54 PDT.
 
 ## Objective
 
@@ -52,6 +52,9 @@ Implemented in this migration:
 - an `AllocatedTypedCfg` checked pass that pairs scoped allocation with the
   generated CFG and makes both allocation and CFG certificates mandatory
   successful-artifact metadata;
+- a hidden-witness public artifact simulation relation that composes successful
+  public compilation, allocated TypedCfg stepping, emitted-label resolution,
+  and final Assembly target execution;
 - a direct proof-carrying Structured-to-TypedCfg compiler with branch, switch,
   loop, break, nonzero-arity internal-call, resource-observer, and external-call
   smokes;
@@ -65,19 +68,18 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Expose one public artifact simulation relation that composes successful
-   public compilation, allocated TypedCfg stepping, and resolved target
-   execution without caller-supplied generated-code witnesses.
-2. Make canonical per-local locations directly drive Expressions/TypedCfg
+1. Make canonical per-local locations directly drive Expressions/TypedCfg
    generation and CFG shapes across main and function scopes.
-3. Finish source-to-CFG semantic composition and make generated fragment
+2. Finish source-to-CFG semantic composition and make generated fragment
    certificates carry the remaining safety projections.
-4. Finish the generic effects/outcomes migration and remove duplicate observer
-   replay control evaluators.
+3. Finish the generic outcome migration and replace remaining mode-specific
+   proof families with projections and composition theorems.
+4. Delete direct Structured-to-Assembly control lowering, then refresh final
+   architecture metrics and run every verification/smoke gate.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, and `Legacy` have been deleted. The retained source tree is
-about 272K Lean lines, down by about 756K lines in this phase.
+about 218K Lean lines, down by about 811K lines in this phase.
 
 ## Baseline Diagnosis
 
@@ -110,7 +112,8 @@ Baseline hotspots:
 - `Yul/OpenLowering.lean`: about 98K lines, deleted.
 - `Yul/Reference.lean`: about 85K lines, deleted.
 - `Functions/CallAwareSpill.lean`: about 65K lines, deleted.
-- `Yul/ObserverOracle.lean`: about 55K lines.
+- `Yul/ObserverOracle.lean`: formerly about 55K lines, replaced by a roughly
+  350-line handler/public-proof module.
 - `Functions/LiveLayoutPreservation.lean`: about 50K lines, deleted.
 - `LayerAudit.lean`: 613 `abbrev` aliases and 425 `example` pins, deleted.
 
@@ -195,7 +198,7 @@ Exit gate:
 
 ## Phase 1: Reusable Effect Semantics
 
-Status: in progress.
+Status: complete.
 
 Goal: adding an effect changes a handler and adjacent simulation lemmas, not the
 source interpreter.
@@ -205,22 +208,19 @@ source interpreter.
   state.
 - [x] Factor expression, statement, block, loop, and program interpretation
   over that interface.
-- [ ] Prove the ordinary Locals source interpreter is definitionally equivalent
+- [x] Prove the ordinary Locals source interpreter is definitionally equivalent
   or bisimilar to the identity-state specialization.
 - [x] Specialize the generic semantics to resource replay.
-- [ ] Replace the duplicated Locals `SourceReplay` evaluator definitions with
-  aliases/wrappers around the specialization. Expression and expression-list
-  evaluation have cut over; control evaluation remains a compatibility facade.
+- [x] Replace duplicated Locals and imported-Yul replay evaluator definitions
+  with aliases/wrappers around generic effect specializations.
 - [x] Keep existing resource-observer theorem names as temporary compatibility
   wrappers.
-- [ ] Move observer classification to one shared primitive-effects table.
+- [x] Move observer classification to one shared primitive-effects table.
 - [x] Generalize the interpreter state/handler interface so external
   requests/responses can be added without copying control evaluation.
-  without copying the interpreter again.
-- [ ] Migrate Functions and Objects source adapters to pass the effect handler
-  parametrically.
-- [ ] Migrate Yul source replay to the same event carrier or prove its imported
-  interpreter bridge once at the frontend boundary.
+- [x] Keep Functions and Objects adapters over the shared Locals source
+  semantics instead of adding feature-specific evaluators.
+- [x] Migrate imported-Yul source replay to `Yul.Source.Effectful`.
 
 Required proofs:
 
@@ -232,13 +232,13 @@ Required proofs:
 
 Cutover gate:
 
-- `Yul/ObserverOracle.lean` no longer defines a second Locals expression,
-  statement, block, loop, or program interpreter.
+- [x] `Yul/ObserverOracle.lean` defines only an effect handler specialization;
+  the architecture guard rejects local Yul control evaluator definitions.
 
 Deletion gate:
 
-- Delete the old `SourceReplay` evaluator bodies and their duplicate structural
-  lemmas after all consumers use the generic specialization.
+- [x] Delete the old replay evaluator bodies and the 55K-line direct-Structured
+  observer proof corridor. The retained observer module is about 350 lines.
 
 ## Phase 2: Unified Outcome-Indexed Simulation
 
@@ -255,9 +255,9 @@ Goal: one recursive proof family covers regular and abrupt control outcomes.
 - [x] Migrate Locals spill preservation to the generic contract.
 - [x] Validate the outcome-indexed package against the former CallAware route,
   then retire that parallel compiler and proof family.
-- [ ] Migrate observer replay preservation. Its effectful source outcome now
-  shares the generic effect representation, but target simulation packages have
-  not cut over.
+- [ ] Migrate observer replay preservation fully onto `OutcomeContract`. Its
+  source evaluator and public target theorem now use the shared effect and
+  public artifact surfaces, but the mode-indexed proof package has not cut over.
 - [ ] Replace mode-specific bounded-fuel weakening lemmas with one theorem.
 
 Cutover gate:
@@ -533,7 +533,8 @@ Exit gate:
   resource-observer proof artifact.
 - [x] Cut the default root import and public compiler API to the new stable
   architecture.
-- [ ] Delete old replay interpreters.
+- [x] Delete old observer replay interpreters. Imported-Yul resource replay is
+  now a primitive-handler specialization of the generic effect semantics.
 - [x] Delete parallel allocation compilers. The stable policy contains only
   inline-stack and source-planned scratch-frame allocation.
 - [ ] Delete direct Structured-to-Assembly control lowering.
@@ -557,11 +558,12 @@ Completion evidence:
 
 Latest verified checkpoint:
 
-- deleted 21 retired source modules and four obsolete proof artifacts:
-  756,247 lines removed;
+- deleted 21 retired source modules, four obsolete proof artifacts, and the
+  55K-line observer compatibility corridor: about 811K lines removed;
 - architecture dependency and retired-module guards: pass;
 - stable verification aggregate, including observer, scratch-frame, object
-  semantics, public API, and TypedCfg preservation: pass (1,163 jobs);
+  semantics, public API, public artifact simulation, generic Yul effects, and
+  TypedCfg preservation: pass (1,159 jobs);
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -569,7 +571,7 @@ Latest verified checkpoint:
 - source-derived inline-allocation and 17-local scratch fallback proof artifact:
   pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
-- resource-observer proof artifact and axiom print: pass;
+- public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -582,12 +584,12 @@ Latest verified checkpoint:
 
 The remaining critical path is:
 
-1. Compose successful public artifacts with allocated TypedCfg and final target
-   execution through one hidden-witness simulation relation.
+1. Make canonical allocation locations determine generated CFG values and block
+   shapes instead of certifying a separately generated CFG.
 2. Finish source-to-CFG semantic composition and remaining certificate safety
    projections.
-3. Finish the generic effect/outcome migrations and remove observer replay
-   evaluators.
+3. Finish outcome-indexed projections/composition and retire direct
+   Structured-to-Assembly control lowering.
 4. Refresh final architecture metrics and rerun every verification/smoke gate.
 
 ## Progress Discipline
