@@ -27971,3 +27971,21 @@ Resumed from commit `92acedc39` with source-selected regular switch preservation
   outcome relation. Next is lifting this theorem through the concrete `.for_`
   compiler result and init fragment, then reusing the same outcome interface
   for calls and whole-block preservation.
+
+## 2026-06-11 06:37 PDT - Concrete compiler loop preservation
+
+- Added one canonical decomposition theorem for successful `.for_`
+  compilation. It exposes the init result and fallthrough shape, typed
+  condition block, body and post results, aggregate block/call lists, and final
+  branch shape without requiring downstream proofs to unfold the compiler.
+- Lifted the uniform loop theorem through that decomposition. Init regular
+  composes into the generated condition loop; init leave and halt bypass it
+  through the same outcome relation. Recursive body and post proofs receive
+  their exact compiler evidence and ambient block containment.
+- Verification passed: focused preservation check, full 1,156-job
+  `EvmCompiler.Verification`, architecture dependency/retired-route guard,
+  proof-hole scan, and `git diff --check`.
+- Fresh metrics: 79 modules, 91,535 Lean lines, 65 compiler variants, and one
+  outcome relation. Loop-specific source-to-CFG preservation is complete; the
+  next proof is the mutual statement/block lift and concrete call/return
+  dispatch.

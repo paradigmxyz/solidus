@@ -3132,6 +3132,121 @@ def postContinuations (loopLabel : Assembly.Label)
   leaveLabel? := outer.leaveLabel?
 
 /--
+Canonical decomposition of a successfully compiled `for` statement.
+
+Downstream semantic proofs consume these named fragments instead of unfolding
+the recursive compiler independently.
+-/
+theorem components_of_compileStmtFuel?_for
+    {compilerFuel : Nat} {init post body : Structured.Block}
+    {cond : Structured.Code} {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+        (.for_ init cond post body) ctx supply entry input regular =
+          some result) :
+    ∃ initResult loopInput condOutput condition bodyResult postResult,
+      TypedCfgCompiler.compileBlockFuel? compilerFuel init
+          { ctx with breakLabel? := none, continueLabel? := none }
+          (supply + 1) entry input (LabelSupply.label supply 0) =
+        some initResult ∧
+      initResult.fallthrough? = some loopInput ∧
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+        some condOutput ∧
+      condOutput.slots.head? = some condition ∧
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body
+          { ctx with
+            breakLabel? := some regular
+            continueLabel? := some (LabelSupply.label supply 2) }
+          initResult.next (LabelSupply.label supply 1)
+          { condOutput with slots := condOutput.slots.tail }
+          (LabelSupply.label supply 2) =
+        some bodyResult ∧
+      TypedCfgCompiler.compileBlockFuel? compilerFuel post
+          { ctx with breakLabel? := none, continueLabel? := none }
+          bodyResult.next (LabelSupply.label supply 2)
+          (bodyResult.fallthrough?.getD
+            { condOutput with slots := condOutput.slots.tail })
+          (LabelSupply.label supply 0) =
+        some postResult ∧
+      result =
+        { blocks :=
+            initResult.blocks ++
+              [{ label := LabelSupply.label supply 0
+                 input := loopInput
+                 body := TypedCfgCompiler.Code.toCfg cond
+                 output := condOutput
+                 term :=
+                   .jumpi (LabelSupply.label supply 1) regular }] ++
+              bodyResult.blocks ++ postResult.blocks
+          next := postResult.next
+          calls :=
+            initResult.calls ++ bodyResult.calls ++ postResult.calls
+          fallthrough? :=
+            some { condOutput with slots := condOutput.slots.tail } } := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hInit :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel init
+        { ctx with breakLabel? := none, continueLabel? := none }
+        (supply + 1) entry input (LabelSupply.label supply 0) with
+  | none =>
+      simp [hInit] at hCompile
+  | some initResult =>
+      cases hLoopInput : initResult.fallthrough? with
+      | none =>
+          simp [hInit, hLoopInput] at hCompile
+      | some loopInput =>
+          cases hType :
+              TypedCfg.Block.bodyType?
+                (TypedCfgCompiler.Code.toCfg cond) loopInput with
+          | none =>
+              simp [hInit, hLoopInput, hType] at hCompile
+          | some condOutput =>
+              cases hHead : condOutput.slots.head? with
+              | none =>
+                  simp [hInit, hLoopInput, hType, hHead] at hCompile
+              | some condition =>
+                  cases hBody :
+                      TypedCfgCompiler.compileBlockFuel? compilerFuel body
+                        { ctx with
+                          breakLabel? := some regular
+                          continueLabel? :=
+                            some (LabelSupply.label supply 2) }
+                        initResult.next (LabelSupply.label supply 1)
+                        { condOutput with
+                          slots := condOutput.slots.tail }
+                        (LabelSupply.label supply 2) with
+                  | none =>
+                      simp [hInit, hLoopInput, hType, hHead,
+                        TypedCfgCompiler.mkBlock?, hBody] at hCompile
+                  | some bodyResult =>
+                      cases hPost :
+                          TypedCfgCompiler.compileBlockFuel? compilerFuel post
+                            { ctx with
+                              breakLabel? := none
+                              continueLabel? := none }
+                            bodyResult.next
+                            (LabelSupply.label supply 2)
+                            (bodyResult.fallthrough?.getD
+                              { condOutput with
+                                slots := condOutput.slots.tail })
+                            (LabelSupply.label supply 0) with
+                      | none =>
+                          simp [hInit, hLoopInput, hType, hHead,
+                            TypedCfgCompiler.mkBlock?, hBody, hPost] at hCompile
+                      | some postResult =>
+                          simp [hInit, hLoopInput, hType, hHead,
+                            TypedCfgCompiler.mkBlock?, hBody, hPost] at hCompile
+                          cases hCompile
+                          refine
+                            ⟨initResult, loopInput, condOutput, condition,
+                              bodyResult, postResult, ?_⟩
+                          simp [hInit, hLoopInput, hType, hHead, hBody, hPost,
+                            List.append_assoc]
+
+/--
 The generated loop-condition block follows the independent source condition
 and preserves the concrete procedure-frame relation.
 -/
@@ -3360,6 +3475,140 @@ theorem path_of_eval
         OutcomeSimulation.Path.transport_halt
           (hPostPath hPost)
 termination_by fuel
+
+/--
+Compiler-facing `for` preservation.
+
+The compiler decomposition supplies the exact init/body/post fragments and
+generated condition block. Recursive block proofs remain abstracted behind the
+uniform outcome path interface.
+-/
+theorem path_of_compileStmtFuel?_and_eval
+    {compilerFuel sourceFuel : Nat}
+    {program : Structured.Program}
+    {init post body : Structured.Block} {cond : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : RunState} {outcome : Structured.Outcome}
+    {tokens : List Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+        (.for_ init cond post body) ctx supply entry input regular =
+          some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hCondSafe : cond.FrameSafe)
+    (hEval :
+      Structured.Stmt.Eval program sourceFuel
+        (.for_ init cond post body) source outcome)
+    (hInitPath :
+      ∀ {initResult : TypedCfgCompiler.Result}
+        {loopInput : TypedCfg.Shape}
+        {initFuel : Nat} {initSource : RunState}
+        {initOutcome : Structured.Outcome},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel init
+            { ctx with breakLabel? := none, continueLabel? := none }
+            (supply + 1) entry input (LabelSupply.label supply 0) =
+          some initResult →
+        initResult.fallthrough? = some loopInput →
+        BlocksInProgram initResult cfg →
+        Structured.Block.Eval program initFuel init
+            initSource initOutcome →
+        OutcomeSimulation.Path cfg entry
+          (postContinuations (LabelSupply.label supply 0)
+            (OutcomeSimulation.Continuations.ofContext ctx regular))
+          initSource initOutcome tokens)
+    (hBodyPath :
+      ∀ {initResult bodyResult : TypedCfgCompiler.Result}
+        {condOutput : TypedCfg.Shape}
+        {bodyFuel : Nat} {bodySource : RunState}
+        {bodyOutcome : Structured.Outcome},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body
+            { ctx with
+              breakLabel? := some regular
+              continueLabel? := some (LabelSupply.label supply 2) }
+            initResult.next (LabelSupply.label supply 1)
+            { condOutput with slots := condOutput.slots.tail }
+            (LabelSupply.label supply 2) =
+          some bodyResult →
+        BlocksInProgram bodyResult cfg →
+        Structured.Block.Eval program bodyFuel body
+            bodySource bodyOutcome →
+        OutcomeSimulation.Path cfg (LabelSupply.label supply 1)
+          (bodyContinuations regular (LabelSupply.label supply 2)
+            (OutcomeSimulation.Continuations.ofContext ctx regular))
+          bodySource bodyOutcome tokens)
+    (hPostPath :
+      ∀ {bodyResult postResult : TypedCfgCompiler.Result}
+        {condOutput : TypedCfg.Shape}
+        {postFuel : Nat} {postSource : RunState}
+        {postOutcome : Structured.Outcome},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel post
+            { ctx with breakLabel? := none, continueLabel? := none }
+            bodyResult.next (LabelSupply.label supply 2)
+            (bodyResult.fallthrough?.getD
+              { condOutput with slots := condOutput.slots.tail })
+            (LabelSupply.label supply 0) =
+          some postResult →
+        BlocksInProgram postResult cfg →
+        Structured.Block.Eval program postFuel post
+            postSource postOutcome →
+        OutcomeSimulation.Path cfg (LabelSupply.label supply 2)
+          (postContinuations (LabelSupply.label supply 0)
+            (OutcomeSimulation.Continuations.ofContext ctx regular))
+          postSource postOutcome tokens) :
+    OutcomeSimulation.Path cfg entry
+      (OutcomeSimulation.Continuations.ofContext ctx regular)
+      source outcome tokens := by
+  rcases components_of_compileStmtFuel?_for hCompile with
+    ⟨initResult, loopInput, condOutput, _condition, bodyResult,
+      postResult, hInitCompile, hInitFallthrough, hType, _hHead,
+      hBodyCompile, hPostCompile, rfl⟩
+  have hInitBlocks : BlocksInProgram initResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hBodyBlocks : BlocksInProgram bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hPostBlocks : BlocksInProgram postResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hLoopMem :
+      { label := LabelSupply.label supply 0
+        input := loopInput
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := condOutput
+        term := .jumpi (LabelSupply.label supply 1) regular } ∈
+        (initResult.blocks ++
+          [{ label := LabelSupply.label supply 0
+             input := loopInput
+             body := TypedCfgCompiler.Code.toCfg cond
+             output := condOutput
+             term := .jumpi (LabelSupply.label supply 1) regular }] ++
+          bodyResult.blocks ++ postResult.blocks) := by
+    simp
+  cases hEval with
+  | for_init_regular hInit hLoop =>
+      apply OutcomeSimulation.Path.bind_jump
+        (OutcomeSimulation.Path.to_regular
+          (hInitPath hInitCompile hInitFallthrough hInitBlocks hInit))
+      apply path_of_eval hBlocks hLoopMem hType hCondSafe rfl hLoop
+      · intro bodyFuel bodySource bodyOutcome hBody
+        exact hBodyPath hBodyCompile hBodyBlocks hBody
+      · intro postFuel postSource postOutcome hPost
+        exact hPostPath hPostCompile hPostBlocks hPost
+  | for_init_leave hInit =>
+      exact
+        OutcomeSimulation.Path.transport_leave
+          (by rfl)
+          (hInitPath hInitCompile hInitFallthrough hInitBlocks hInit)
+  | for_init_halt hInit =>
+      exact
+        OutcomeSimulation.Path.transport_halt
+          (hInitPath hInitCompile hInitFallthrough hInitBlocks hInit)
 
 end Loop
 

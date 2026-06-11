@@ -609,8 +609,9 @@ Latest verified checkpoint:
   leave, and halt contracts. Reusable projections turn related outcomes back
   into CFG paths, and all ten independent `For.Eval` constructors compose
   condition, body, post, break/continue handling, leave/halt propagation, and
-  recursive backedges. The remaining loop work is the actual `.for_` compiler
-  decomposition and init-fragment lift;
+  recursive backedges. A canonical `.for_` compiler decomposition and
+  compiler-facing theorem now add init regular/leave/halt and exact generated
+  fragment containment; loop-specific preservation is complete;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -620,7 +621,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules and 91,286 Lean lines;
+- retained architecture metrics: 79 modules and 91,535 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
