@@ -2210,7 +2210,7 @@ noncomputable def compileCodeArtifactIn? (object : Object)
 
 noncomputable def compileCodeCheckedIn? (object : Object)
     (context : ObjectBuiltinContext) : Option Assembly.TargetProgram :=
-  (object.compileCodeArtifactIn? context).map Compiler.Artifact.target
+  Compiler.Artifact.target? (object.compileCodeArtifactIn? context)
 
 noncomputable def codeBytesCheckedIn? (object : Object)
     (context : ObjectBuiltinContext) : Option (List UInt8) := do
@@ -2268,13 +2268,7 @@ theorem compileCodeCheckedIn?_some
     ∃ artifact : Objects.Program.CompileArtifact,
       object.compileCodeArtifactIn? context = some artifact ∧
         artifact.target = target := by
-  unfold compileCodeCheckedIn? at hCompile
-  cases hArtifact : object.compileCodeArtifactIn? context with
-  | none =>
-      simp [hArtifact] at hCompile
-  | some artifact =>
-      simp [hArtifact] at hCompile
-      exact ⟨artifact, rfl, hCompile⟩
+  exact Compiler.Artifact.target?_eq_some_iff.mp hCompile
 
 mutual
   noncomputable def toObjects? (object : Object) :
@@ -2979,7 +2973,7 @@ noncomputable def compileArtifactWithLayout? (program : Program)
 
 noncomputable def compileCheckedWithLayout? (program : Program)
     (layout : ObjectLayout) : Option Assembly.TargetProgram :=
-  (program.compileArtifactWithLayout? layout).map Compiler.Artifact.target
+  Compiler.Artifact.target? (program.compileArtifactWithLayout? layout)
 
 theorem compileArtifactWithLayout?_eq_some
     {program : Program} {layout : ObjectLayout}
@@ -2995,8 +2989,9 @@ theorem compileCheckedWithLayout?_eq_some
     (hLower : program.toObjectsWithLayout? layout = some lower)
     (hCompile : Objects.Program.compileArtifact? lower = some artifact) :
     program.compileCheckedWithLayout? layout = some artifact.target := by
-  simp [compileCheckedWithLayout?,
-    compileArtifactWithLayout?_eq_some hLower hCompile]
+  exact
+    Compiler.Artifact.target?_of_eq_some
+      (compileArtifactWithLayout?_eq_some hLower hCompile)
 
 theorem compileCheckedWithLayout?_some_lower
     {program : Program} {layout : ObjectLayout}
@@ -3006,19 +3001,15 @@ theorem compileCheckedWithLayout?_some_lower
       program.toObjectsWithLayout? layout = some lower ∧
         Objects.Program.compileArtifact? lower = some artifact ∧
           artifact.target = target := by
-  unfold compileCheckedWithLayout? at hCompile
-  cases hArtifact : program.compileArtifactWithLayout? layout with
+  rcases Compiler.Artifact.target?_eq_some_iff.mp hCompile with
+    ⟨artifact, hArtifact, hTarget⟩
+  unfold compileArtifactWithLayout? at hArtifact
+  cases hLower : program.toObjectsWithLayout? layout with
   | none =>
-      simp [hArtifact] at hCompile
-  | some artifact =>
-      simp [hArtifact] at hCompile
-      unfold compileArtifactWithLayout? at hArtifact
-      cases hLower : program.toObjectsWithLayout? layout with
-      | none =>
-          simp [hLower] at hArtifact
-      | some lower =>
-          simp [hLower] at hArtifact
-          exact ⟨lower, artifact, rfl, hArtifact, hCompile⟩
+      simp [hLower] at hArtifact
+  | some lower =>
+      simp [hLower] at hArtifact
+      exact ⟨lower, artifact, rfl, hArtifact, hTarget⟩
 
 def toObjectsUncheckedWithLayout? (program : Program)
     (layout : ObjectLayout) : Option Objects.Program := do
@@ -3060,8 +3051,8 @@ noncomputable def compileArtifactWithLocalDataBase? (program : Program)
 
 noncomputable def compileCheckedWithLocalDataBase? (program : Program)
     (layout : ObjectLayout) (base : Nat) : Option Assembly.TargetProgram :=
-  (program.compileArtifactWithLocalDataBase? layout base).map
-    Compiler.Artifact.target
+  Compiler.Artifact.target?
+    (program.compileArtifactWithLocalDataBase? layout base)
 
 theorem compileArtifactWithLocalDataBase?_eq_some
     {program : Program} {layout : ObjectLayout} {base : Nat}
@@ -3080,8 +3071,9 @@ theorem compileCheckedWithLocalDataBase?_eq_some
     (hCompile : Objects.Program.compileArtifact? lower = some artifact) :
     program.compileCheckedWithLocalDataBase? layout base =
       some artifact.target := by
-  simp [compileCheckedWithLocalDataBase?,
-    compileArtifactWithLocalDataBase?_eq_some hLower hCompile]
+  exact
+    Compiler.Artifact.target?_of_eq_some
+      (compileArtifactWithLocalDataBase?_eq_some hLower hCompile)
 
 theorem compileCheckedWithLocalDataBase?_some_lower
     {program : Program} {layout : ObjectLayout} {base : Nat}
@@ -3092,20 +3084,15 @@ theorem compileCheckedWithLocalDataBase?_some_lower
       program.toObjectsWithLocalDataBase? layout base = some lower ∧
         Objects.Program.compileArtifact? lower = some artifact ∧
           artifact.target = target := by
-  unfold compileCheckedWithLocalDataBase? at hCompile
-  cases hArtifact :
-      program.compileArtifactWithLocalDataBase? layout base with
+  rcases Compiler.Artifact.target?_eq_some_iff.mp hCompile with
+    ⟨artifact, hArtifact, hTarget⟩
+  unfold compileArtifactWithLocalDataBase? at hArtifact
+  cases hLower : program.toObjectsWithLocalDataBase? layout base with
   | none =>
-      simp [hArtifact] at hCompile
-  | some artifact =>
-      simp [hArtifact] at hCompile
-      unfold compileArtifactWithLocalDataBase? at hArtifact
-      cases hLower : program.toObjectsWithLocalDataBase? layout base with
-      | none =>
-          simp [hLower] at hArtifact
-      | some lower =>
-          simp [hLower] at hArtifact
-          exact ⟨lower, artifact, rfl, hArtifact, hCompile⟩
+      simp [hLower] at hArtifact
+  | some lower =>
+      simp [hLower] at hArtifact
+      exact ⟨lower, artifact, rfl, hArtifact, hTarget⟩
 
 def toObjectsUncheckedWithLocalDataBase? (program : Program)
     (layout : ObjectLayout) (base : Nat) : Option Objects.Program := do
@@ -3173,8 +3160,9 @@ noncomputable def compileArtifactWithComputedObjectData?
 noncomputable def compileCheckedWithComputedObjectDataAndLinkerSymbols?
     (program : Program) (linkerSymbols : List (Name × Word)) :
     Option Assembly.TargetProgram :=
-  (program.compileArtifactWithComputedObjectDataAndLinkerSymbols?
-      linkerSymbols).map Compiler.Artifact.target
+  Compiler.Artifact.target?
+    (program.compileArtifactWithComputedObjectDataAndLinkerSymbols?
+      linkerSymbols)
 
 noncomputable def compileCheckedWithComputedObjectData?
     (program : Program) : Option Assembly.TargetProgram :=
@@ -3201,9 +3189,10 @@ theorem compileCheckedWithComputedObjectDataAndLinkerSymbols?_eq_some
     (hCompile : Objects.Program.compileArtifact? lower = some artifact) :
     program.compileCheckedWithComputedObjectDataAndLinkerSymbols?
       linkerSymbols = some artifact.target := by
-  simp [compileCheckedWithComputedObjectDataAndLinkerSymbols?,
-    compileArtifactWithComputedObjectDataAndLinkerSymbols?_eq_some
-      hLower hCompile]
+  exact
+    Compiler.Artifact.target?_of_eq_some
+      (compileArtifactWithComputedObjectDataAndLinkerSymbols?_eq_some
+        hLower hCompile)
 
 theorem compileCheckedWithComputedObjectDataAndLinkerSymbols?_some_lower
     {program : Program} {linkerSymbols : List (Name × Word)}
@@ -3216,24 +3205,18 @@ theorem compileCheckedWithComputedObjectDataAndLinkerSymbols?_some_lower
         linkerSymbols = some lower ∧
         Objects.Program.compileArtifact? lower = some artifact ∧
           artifact.target = target := by
-  unfold compileCheckedWithComputedObjectDataAndLinkerSymbols? at hCompile
-  cases hArtifact :
-      program.compileArtifactWithComputedObjectDataAndLinkerSymbols?
+  rcases Compiler.Artifact.target?_eq_some_iff.mp hCompile with
+    ⟨artifact, hArtifact, hTarget⟩
+  unfold compileArtifactWithComputedObjectDataAndLinkerSymbols?
+    at hArtifact
+  cases hLower :
+      program.toObjectsWithComputedObjectDataAndLinkerSymbols?
         linkerSymbols with
   | none =>
-      simp [hArtifact] at hCompile
-  | some artifact =>
-      simp [hArtifact] at hCompile
-      unfold compileArtifactWithComputedObjectDataAndLinkerSymbols?
-        at hArtifact
-      cases hLower :
-          program.toObjectsWithComputedObjectDataAndLinkerSymbols?
-            linkerSymbols with
-      | none =>
-          simp [hLower] at hArtifact
-      | some lower =>
-          simp [hLower] at hArtifact
-          exact ⟨lower, artifact, rfl, hArtifact, hCompile⟩
+      simp [hLower] at hArtifact
+  | some lower =>
+      simp [hLower] at hArtifact
+      exact ⟨lower, artifact, rfl, hArtifact, hTarget⟩
 
 def toObjectsUncheckedWithComputedObjectDataAndLinkerSymbols?
     (program : Program) (linkerSymbols : List (Name × Word)) :

@@ -22,7 +22,7 @@ noncomputable def compileArtifact? (program : Program) :
 
 noncomputable def compile? (program : Program) :
     Option Assembly.TargetProgram :=
-  (program.compileArtifact?).map Compiler.Artifact.target
+  Compiler.Artifact.target? program.compileArtifact?
 
 end Program
 end Frontend

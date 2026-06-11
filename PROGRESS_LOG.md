@@ -28119,3 +28119,17 @@ artifact surface.
 - The completed oracle review independently recommended the same generated
   whole-program provenance and source-fuel recursion architecture used to
   eliminate `CallCertificate`; no corrective follow-up was needed.
+
+## 2026-06-11 07:58 PDT - Common checked-artifact target projection
+
+- Added `Compiler.Artifact.target?` with shared forward and inverse success
+  projections for APIs that expose only an artifact's executable target.
+- Migrated retained Objects, Public, Yul, Solidity public, and Solidity
+  frontend target wrappers to the common projection.
+- Replaced four frontend-specific option case splits with
+  `target?_eq_some_iff`, while the forward `compileChecked?_eq_some` theorems
+  now use `target?_of_eq_some`.
+- Verification passed: focused compiler/frontend builds, all 1,156
+  `EvmCompiler.Verification` jobs, touched-file proof-hole scan, architecture
+  metrics, and `git diff --check`. Fresh metrics are 79 modules, 95,640 Lean
+  lines, 65 compiler variants, and one outcome relation.

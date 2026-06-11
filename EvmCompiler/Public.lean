@@ -35,7 +35,7 @@ noncomputable def compileArtifact? (mode : SemanticMode)
 
 noncomputable def compile? (mode : SemanticMode)
     (source : Source) : Option Assembly.TargetProgram :=
-  (compileArtifact? mode source).map Compiler.Artifact.target
+  Compiler.Artifact.target? (compileArtifact? mode source)
 
 def SourceAccepted (mode : SemanticMode) (source : Source) : Prop :=
   ∃ objects,

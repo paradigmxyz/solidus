@@ -651,7 +651,7 @@ noncomputable def compileArtifact?
 
 noncomputable def compile?
     (program : Program) : Option Assembly.TargetProgram :=
-  (compileArtifact? program).map Compiler.Artifact.target
+  Compiler.Artifact.target? (compileArtifact? program)
 
 theorem compileArtifact?_valid
     {program : Program} {artifact : Objects.Program.CompileArtifact}

@@ -27,6 +27,34 @@ abbrev Result (Target Metadata : Type) :=
 
 namespace Artifact
 
+def target? {Target Metadata : Type}
+    (artifact? : Option (Artifact Target Metadata)) : Option Target :=
+  artifact?.map Artifact.target
+
+@[simp] theorem target?_none {Target Metadata : Type} :
+    target? (none : Option (Artifact Target Metadata)) = none :=
+  rfl
+
+@[simp] theorem target?_some
+    {Target Metadata : Type} (artifact : Artifact Target Metadata) :
+    target? (some artifact) = some artifact.target :=
+  rfl
+
+theorem target?_eq_some_iff
+    {Target Metadata : Type}
+    {artifact? : Option (Artifact Target Metadata)} {target : Target} :
+    target? artifact? = some target ↔
+      ∃ artifact, artifact? = some artifact ∧ artifact.target = target := by
+  cases artifact? <;> simp [target?]
+
+theorem target?_of_eq_some
+    {Target Metadata : Type}
+    {artifact? : Option (Artifact Target Metadata)}
+    {artifact : Artifact Target Metadata}
+    (hArtifact : artifact? = some artifact) :
+    target? artifact? = some artifact.target := by
+  simp [target?, hArtifact]
+
 def mapTarget {Target Target' Metadata : Type}
     (f : Target → Target') (artifact : Artifact Target Metadata) :
     Artifact Target' Metadata :=

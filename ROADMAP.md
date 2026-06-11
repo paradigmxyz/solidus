@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 07:53 PDT.
+Last updated: 2026-06-11 07:58 PDT.
 
 ## Objective
 
@@ -26,6 +26,8 @@ Implemented in this migration:
 
 - stable public root and a separate proof-bearing verification aggregate;
 - composable compiler passes, checked artifacts, and backend policy;
+- one shared checked-artifact target projection and success inversion theorem
+  used by Objects, Public, Yul, and Solidity wrappers;
 - generic effectful Locals semantics used by observer expression replay;
 - shared outcome-indexed simulation contracts;
 - canonical allocation-plan vocabulary and well-formedness checker;
@@ -111,7 +113,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 95,629 Lean lines across 79 modules, down by about 926K lines from the
+tree is 95,640 Lean lines across 79 modules, down by about 926K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -336,7 +338,11 @@ checked compiler.
   wrappers.
 - [x] Separate source well-formedness from backend/resource acceptance at the
   Objects/public boundary.
-- [ ] Replace all `compileChecked?_eq_some` boilerplate with common projections.
+- [x] Replace all `compileChecked?_eq_some` boilerplate with common projections.
+  `Compiler.Artifact.target?`, `target?_of_eq_some`, and
+  `target?_eq_some_iff` now own artifact-to-target projection and inversion;
+  retained Objects/Public/Yul/Solidity wrappers and frontend recovery theorems
+  use that shared API.
 - [x] Stop the stable public API from republishing every lower backend variant.
 - [x] Introduce one backend policy/configuration value at the public compiler
   entry point.
@@ -663,7 +669,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules, 95,629 Lean lines, 65 compiler
+- retained architecture metrics: 79 modules, 95,640 Lean lines, 65 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;

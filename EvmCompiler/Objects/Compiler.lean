@@ -615,7 +615,7 @@ def compilePass (policy : BackendPolicy) :
 
 def compile? (program : Program) :
     Option Assembly.TargetProgram :=
-  (compileArtifact? program).map Compiler.Artifact.target
+  Compiler.Artifact.target? (compileArtifact? program)
 
 theorem compileFirst?_head {config : BackendConfig} {program : Program}
     {backend : Backend} {rest : List Backend}
