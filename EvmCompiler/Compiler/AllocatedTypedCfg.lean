@@ -107,6 +107,15 @@ structure Certificate where
 
 namespace Certificate
 
+structure SafetyView where
+  cfg : TypedCfg.SafetySummary
+  scopeLayouts : List ScopeLayout
+  deriving DecidableEq, Repr
+
+def safety (certificate : Certificate) : SafetyView where
+  cfg := certificate.cfg.safety
+  scopeLayouts := certificate.scopeLayouts
+
 def ValidFor (certificate : Certificate) (program : Program) : Prop :=
   program.allocation.WellFormed ∧
     program.scopeLayouts = scopeLayoutsOf program.allocation ∧
@@ -257,6 +266,18 @@ theorem compileCertified?_certificateValid
     ⟨TypedCfg.Program.compileCertified?_wellTyped hCfg,
       TypedCfg.Program.compileCertified?_certificate hCfg⟩
 
+theorem compileCertified?_safety
+    {program : Program} {artifact : CertifiedArtifact}
+    (hCompile : program.compileCertified? = some artifact) :
+    artifact.metadata.ValidFor program ∧
+      artifact.metadata.safety.cfg =
+        artifact.metadata.cfg.safety ∧
+      artifact.metadata.safety.scopeLayouts =
+        program.scopeLayouts := by
+  exact
+    ⟨compileCertified?_certificateValid hCompile, rfl,
+      (compileCertified?_scopeLayouts hCompile).2⟩
+
 theorem compileCertified?_checked
     {program : Program} {artifact : CertifiedArtifact}
     (hCompile : program.compileCertified? = some artifact) :
@@ -366,21 +387,6 @@ def unwitnessedNamedProgram : Program :=
 
 def unwitnessedScratchProgram : Program :=
   Program.ofAllocation scratchAllocation cfg
-
-example : program.compileCertified?.isSome = true := by
-  native_decide
-
-example : staleLayoutProgram.compileCertified? = none := by
-  native_decide
-
-example : unwitnessedNamedProgram.compileCertified? = none := by
-  native_decide
-
-example : unwitnessedScratchProgram.compileCertified? = none := by
-  native_decide
-
-example : duplicateScopeAllocation.wellFormed? = false := by
-  native_decide
 
 end Examples
 

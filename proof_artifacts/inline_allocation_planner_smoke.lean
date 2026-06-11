@@ -4,6 +4,61 @@ open EvmCompiler
 
 namespace EvmCompiler.ProofArtifacts.InlineAllocationPlanner
 
+example : Functions.MixedAllocation.Examples.mixedMainRecorded = true := by
+  native_decide
+
+example :
+    (Functions.MixedAllocation.planAllStack?
+        Functions.MixedAllocation.Examples.nestedProgram).bind
+        (fun allocation =>
+          allocation.find? (.lexical .main 0)) =
+      some
+        Functions.MixedAllocation.Examples.nestedStackAllocationExpected := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.mixedWideExpressions.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.mixedWideAllocated.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.mixedCallExpressions.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.mixedCallAllocated.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.allStackCallAllocated.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.allScratchCallAllocated.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.twoReturnCallAllocated.isSome =
+      true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.alteredMixedWideRejected = true := by
+  native_decide
+
+example :
+    Functions.AllocationLowering.Examples.foreignPlanRejected = true := by
+  native_decide
+
 def sourceProgram : Functions.Program :=
   Functions.MixedAllocation.Examples.nestedProgram
 

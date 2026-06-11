@@ -13,6 +13,8 @@ structure Effects where
 
 namespace Effects
 
+def empty : Effects := {}
+
 def append (left right : Effects) : Effects where
   readsMemory := left.readsMemory || right.readsMemory
   writesMemory := left.writesMemory || right.writesMemory
@@ -34,7 +36,89 @@ def ofPrim (op : Assembly.PrimOp) : Effects where
   observesResources := decide (op = .gas ∨ op = .msize)
   callsOrCreates := op.isCallCreate
 
+@[simp] theorem empty_append (effects : Effects) :
+    empty.append effects = effects := by
+  cases effects
+  rfl
+
+@[simp] theorem append_empty (effects : Effects) :
+    effects.append empty = effects := by
+  cases effects
+  simp [append, empty]
+
+theorem append_assoc (first second third : Effects) :
+    (first.append second).append third =
+      first.append (second.append third) := by
+  cases first
+  cases second
+  cases third
+  simp [append, Bool.or_assoc]
+
 end Effects
+
+structure SafetySummary where
+  maxAdditionalStack : Nat
+  mayHalt : Bool
+  effects : Effects
+  deriving DecidableEq, Repr
+
+namespace SafetySummary
+
+def readsMemory (summary : SafetySummary) : Bool :=
+  summary.effects.readsMemory
+
+def writesMemory (summary : SafetySummary) : Bool :=
+  summary.effects.writesMemory
+
+def observesResources (summary : SafetySummary) : Bool :=
+  summary.effects.observesResources
+
+def callsOrCreates (summary : SafetySummary) : Bool :=
+  summary.effects.callsOrCreates
+
+def memoryIndependent (summary : SafetySummary) : Bool :=
+  !summary.readsMemory && !summary.writesMemory
+
+def observerIndependent (summary : SafetySummary) : Bool :=
+  !summary.observesResources
+
+def noCallCreate (summary : SafetySummary) : Bool :=
+  !summary.callsOrCreates
+
+def empty : SafetySummary where
+  maxAdditionalStack := 0
+  mayHalt := false
+  effects := Effects.empty
+
+def append (left right : SafetySummary) : SafetySummary where
+  maxAdditionalStack :=
+    max left.maxAdditionalStack right.maxAdditionalStack
+  mayHalt := left.mayHalt || right.mayHalt
+  effects := left.effects.append right.effects
+
+@[simp] theorem empty_append (summary : SafetySummary) :
+    empty.append summary = summary := by
+  cases summary with
+  | mk maxAdditionalStack mayHalt effects =>
+      cases effects
+      simp [empty, append, Effects.empty, Effects.append]
+
+@[simp] theorem append_empty (summary : SafetySummary) :
+    summary.append empty = summary := by
+  cases summary with
+  | mk maxAdditionalStack mayHalt effects =>
+      cases effects
+      simp [empty, append, Effects.empty, Effects.append]
+
+theorem append_assoc (first second third : SafetySummary) :
+    (first.append second).append third =
+      first.append (second.append third) := by
+  cases first
+  cases second
+  cases third
+  simp [append, max_assoc, Bool.or_assoc, Effects.append_assoc]
+
+end SafetySummary
 
 structure FragmentCert where
   entry : Shape
@@ -47,6 +131,11 @@ structure FragmentCert where
   deriving DecidableEq, Repr
 
 namespace FragmentCert
+
+def safety (cert : FragmentCert) : SafetySummary where
+  maxAdditionalStack := cert.maxAdditionalStack
+  mayHalt := cert.mayHalt
+  effects := cert.effects
 
 def empty (shape : Shape) : FragmentCert where
   entry := shape
@@ -152,6 +241,71 @@ structure ProgramCert where
   effects : Effects
   mayHalt : Bool
   deriving DecidableEq, Repr
+
+namespace ProgramCert
+
+def safety (cert : ProgramCert) : SafetySummary where
+  maxAdditionalStack := cert.maxAdditionalStack
+  mayHalt := cert.mayHalt
+  effects := cert.effects
+
+def empty (entry : Label) : ProgramCert where
+  entry := entry
+  blocks := []
+  definedLabels := []
+  referencedLabels := []
+  maxAdditionalStack := 0
+  effects := Effects.empty
+  mayHalt := false
+
+/--
+Combine independently generated CFG regions. The left entry remains the entry
+of the combined region; labels, block certificates, stack bounds, terminal
+behavior, and effects compose uniformly for branches, switch arms, loop
+fragments, and procedure bodies.
+-/
+def append (left right : ProgramCert) : ProgramCert where
+  entry := left.entry
+  blocks := left.blocks ++ right.blocks
+  definedLabels := left.definedLabels ++ right.definedLabels
+  referencedLabels := left.referencedLabels ++ right.referencedLabels
+  maxAdditionalStack :=
+    max left.maxAdditionalStack right.maxAdditionalStack
+  effects := left.effects.append right.effects
+  mayHalt := left.mayHalt || right.mayHalt
+
+def concat (entry : Label) (certs : List ProgramCert) : ProgramCert :=
+  certs.foldl append (empty entry)
+
+@[simp] theorem append_blocks (left right : ProgramCert) :
+    (left.append right).blocks = left.blocks ++ right.blocks :=
+  rfl
+
+@[simp] theorem append_definedLabels (left right : ProgramCert) :
+    (left.append right).definedLabels =
+      left.definedLabels ++ right.definedLabels :=
+  rfl
+
+@[simp] theorem append_referencedLabels (left right : ProgramCert) :
+    (left.append right).referencedLabels =
+      left.referencedLabels ++ right.referencedLabels :=
+  rfl
+
+@[simp] theorem append_safety (left right : ProgramCert) :
+    (left.append right).safety =
+      left.safety.append right.safety :=
+  rfl
+
+theorem append_assoc (first second third : ProgramCert) :
+    (first.append second).append third =
+      first.append (second.append third) := by
+  cases first
+  cases second
+  cases third
+  simp [append, max_assoc, Bool.or_assoc, Effects.append_assoc,
+    List.append_assoc]
+
+end ProgramCert
 
 namespace Program
 

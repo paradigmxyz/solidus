@@ -9,11 +9,114 @@ namespace TypedCfgLoweringInvariantsSmoke
 #check TypedCfg.Preservation.Program.lower?_step_eventually
 #check TypedCfg.Preservation.Instr.lowerAt_source_runNResult
 #check TypedCfg.Program.compileCertified?_step_eventually
+#check TypedCfg.ProgramCert.append
+#check TypedCfg.ProgramCert.append_assoc
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayouts
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayoutsWitnessed
+#check Compiler.AllocatedTypedCfg.Program.compileCertified?_safety
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
 #check Functions.AllocationLowering.lowerExpressionsFromAllocation?_contract
 #check Objects.Program.PlannedProgram.loweringResult?_allocationContract
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.program.compileCertified?.isSome =
+      true := by
+  native_decide
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.staleLayoutProgram.compileCertified? =
+      none := by
+  native_decide
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.unwitnessedNamedProgram.compileCertified? =
+      none := by
+  native_decide
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.unwitnessedScratchProgram.compileCertified? =
+      none := by
+  native_decide
+
+example :
+    Compiler.AllocatedTypedCfg.Examples.duplicateScopeAllocation.wellFormed? =
+      false := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.emptyProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.branchProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.switchProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.callProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.loopProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.breakLoopProgram).isSome = true := by
+  native_decide
+
+example :
+    (Structured.TypedCfgCompiler.compile?
+      Structured.TypedCfgCompiler.Examples.arityCallProgram).isSome = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.arityCallProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.namedArityCallBodyShapeRecorded =
+      true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.resourceObserverProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.externalCallProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.branchProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.switchProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.loopProgram = true := by
+  native_decide
+
+example :
+    Structured.TypedCfgCompiler.Examples.compilesCertified
+      Structured.TypedCfgCompiler.Examples.callProgram = true := by
+  native_decide
 
 def genericEntryShape : TypedCfg.Shape :=
   { slots := [.word, .returnToken]

@@ -234,16 +234,6 @@ def mixedMainRecorded : Bool :=
           decide (main.stackOrder.length = 14) &&
             decide (main.scratchSlots = [16, 15, 14])
 
-example : mixedMainRecorded = true := by
-  native_decide
-
-example :
-    (planAllStack? nestedProgram).bind
-        (fun allocation =>
-          allocation.find? (.lexical .main 0)) =
-      some nestedStackAllocationExpected := by
-  native_decide
-
 end Examples
 
 end MixedAllocation

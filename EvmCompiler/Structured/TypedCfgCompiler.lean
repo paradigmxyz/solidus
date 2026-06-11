@@ -708,39 +708,6 @@ def namedArityCallBodyShapeRecorded : Bool :=
           cfg.labelShape? (ProcLabel.body "identity") =
             some namedArityCallBodyShape)
 
-example : (compile? emptyProgram).isSome = true := by
-  native_decide
-
-example : (compile? branchProgram).isSome = true := by
-  native_decide
-
-example : (compile? switchProgram).isSome = true := by
-  native_decide
-
-example : (compile? callProgram).isSome = true := by
-  native_decide
-
-example : (compile? loopProgram).isSome = true := by
-  native_decide
-
-example : (compile? breakLoopProgram).isSome = true := by
-  native_decide
-
-example : (compile? arityCallProgram).isSome = true := by
-  native_decide
-
-example : compilesCertified arityCallProgram = true := by
-  native_decide
-
-example : namedArityCallBodyShapeRecorded = true := by
-  native_decide
-
-example : compilesCertified resourceObserverProgram = true := by
-  native_decide
-
-example : compilesCertified externalCallProgram = true := by
-  native_decide
-
 end Examples
 
 end TypedCfgCompiler

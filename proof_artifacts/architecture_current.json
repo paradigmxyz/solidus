@@ -1,15 +1,15 @@
 {
   "schema_version": 2,
-  "generated_at": "2026-06-11T16:26:28Z",
+  "generated_at": "2026-06-11T16:37:54Z",
   "git": {
-    "commit": "7cae910bea4ed58b6406e821b2054a7400612ade",
+    "commit": "23b348e7fe5495f96367867718af4cb6f6dddda8",
     "branch": "codex/architecture-migration"
   },
   "totals": {
-    "module_count": 74,
-    "source_lines": 45966,
-    "direct_imports": 188,
-    "declarations": 2327,
+    "module_count": 75,
+    "source_lines": 46066,
+    "direct_imports": 189,
+    "declarations": 2349,
     "compiler_variant_declarations": 59,
     "outcome_relation_declarations": 1,
     "verification_root_imports": 10,
@@ -110,9 +110,9 @@
     {
       "path": "EvmCompiler/Compiler/AllocatedTypedCfg.lean",
       "module": "EvmCompiler.Compiler.AllocatedTypedCfg",
-      "source_lines": 389,
+      "source_lines": 395,
       "direct_imports": 3,
-      "declarations": 43
+      "declarations": 46
     },
     {
       "path": "EvmCompiler/Compiler/Artifact.lean",
@@ -166,7 +166,7 @@
     {
       "path": "EvmCompiler/Functions/AllocationLowering.lean",
       "module": "EvmCompiler.Functions.AllocationLowering",
-      "source_lines": 844,
+      "source_lines": 817,
       "direct_imports": 2,
       "declarations": 66
     },
@@ -194,7 +194,7 @@
     {
       "path": "EvmCompiler/Functions/MixedAllocation.lean",
       "module": "EvmCompiler.Functions.MixedAllocation",
-      "source_lines": 251,
+      "source_lines": 241,
       "direct_imports": 1,
       "declarations": 30
     },
@@ -397,16 +397,23 @@
     {
       "path": "EvmCompiler/Structured/TypedCfgCompiler.lean",
       "module": "EvmCompiler.Structured.TypedCfgCompiler",
-      "source_lines": 748,
+      "source_lines": 715,
       "direct_imports": 2,
       "declarations": 53
     },
     {
       "path": "EvmCompiler/Structured/TypedCfgPreservation.lean",
       "module": "EvmCompiler.Structured.TypedCfgPreservation",
-      "source_lines": 7373,
+      "source_lines": 4693,
+      "direct_imports": 1,
+      "declarations": 65
+    },
+    {
+      "path": "EvmCompiler/Structured/TypedCfgPreservation/Core.lean",
+      "module": "EvmCompiler.Structured.TypedCfgPreservation.Core",
+      "source_lines": 2690,
       "direct_imports": 3,
-      "declarations": 173
+      "declarations": 108
     },
     {
       "path": "EvmCompiler/TypedCfg.lean",
@@ -418,9 +425,9 @@
     {
       "path": "EvmCompiler/TypedCfg/Certificate.lean",
       "module": "EvmCompiler.TypedCfg.Certificate",
-      "source_lines": 379,
+      "source_lines": 533,
       "direct_imports": 2,
-      "declarations": 28
+      "declarations": 47
     },
     {
       "path": "EvmCompiler/TypedCfg/Lower.lean",

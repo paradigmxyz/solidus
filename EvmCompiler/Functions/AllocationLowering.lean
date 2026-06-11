@@ -709,16 +709,10 @@ def mixedWideExpressions : Option Expressions.Program := do
   lowerExpressionsFromAllocation? allocation
     MixedAllocation.Examples.wideProgram
 
-example : mixedWideExpressions.isSome = true := by
-  native_decide
-
 def mixedWideAllocated :
     Option Compiler.AllocatedTypedCfg.CertifiedArtifact := do
   let allocation ← MixedAllocation.Examples.mixedWidePlan
   compileAllocated? allocation MixedAllocation.Examples.wideProgram
-
-example : mixedWideAllocated.isSome = true := by
-  native_decide
 
 def mixedCallProgram : Program :=
   { functions :=
@@ -744,16 +738,10 @@ def mixedCallExpressions : Option Expressions.Program := do
   let allocation ← mixedCallPlan
   lowerExpressionsFromAllocation? allocation mixedCallProgram
 
-example : mixedCallExpressions.isSome = true := by
-  native_decide
-
 def mixedCallAllocated :
     Option Compiler.AllocatedTypedCfg.CertifiedArtifact := do
   let allocation ← mixedCallPlan
   compileAllocated? allocation mixedCallProgram
-
-example : mixedCallAllocated.isSome = true := by
-  native_decide
 
 def allStackCallAllocated :
     Option Compiler.AllocatedTypedCfg.CertifiedArtifact := do
@@ -761,17 +749,11 @@ def allStackCallAllocated :
     MixedAllocation.planAllStack? mixedCallProgram
   compileAllocated? allocation mixedCallProgram
 
-example : allStackCallAllocated.isSome = true := by
-  native_decide
-
 def allScratchCallAllocated :
     Option Compiler.AllocatedTypedCfg.CertifiedArtifact := do
   let allocation ←
     MixedAllocation.planAllocation? 4 [] mixedCallProgram
   compileAllocated? allocation mixedCallProgram
-
-example : allScratchCallAllocated.isSome = true := by
-  native_decide
 
 def twoReturnCallProgram : Program :=
   { functions :=
@@ -799,9 +781,6 @@ def twoReturnCallAllocated :
     MixedAllocation.planAllocation? 5 [] twoReturnCallProgram
   compileAllocated? allocation twoReturnCallProgram
 
-example : twoReturnCallAllocated.isSome = true := by
-  native_decide
-
 def alterMainScratchWords (allocation : ProgramPlan) : ProgramPlan :=
   { scopes :=
       allocation.scopes.map fun scope =>
@@ -824,18 +803,12 @@ def alteredMixedWideRejected : Bool :=
         (alterMainScratchWords allocation)
         MixedAllocation.Examples.wideProgram).isNone
 
-example : alteredMixedWideRejected = true := by
-  native_decide
-
 def foreignPlanRejected : Bool :=
   match MixedAllocation.Examples.mixedWidePlan with
   | none => false
   | some allocation =>
       (lowerExpressionsFromAllocation?
         allocation mixedCallProgram).isNone
-
-example : foreignPlanRejected = true := by
-  native_decide
 
 end Examples
 

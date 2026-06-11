@@ -28308,3 +28308,29 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   deletion. Fresh metrics record 74 modules, 45,966 Lean lines, 2,327
   declarations, 59 compiler variants, and one outcome relation. Only
   `Structured/TypedCfgPreservation.lean` remains above the 5K soft limit.
+
+## 2026-06-11 09:36 PDT - Certificate and module migration complete
+
+- Added associative `Effects`, `SafetySummary`, and `ProgramCert` composition.
+  Generated CFG regions now expose one flat projection for stack bounds,
+  terminal behavior, memory effects, resource observation, and
+  call/create behavior.
+- Added `AllocatedTypedCfg.Certificate.SafetyView` and a successful-compilation
+  theorem combining CFG safety projections with validated source allocation,
+  scope layouts, and scratch-binding witnesses.
+- Extended the focused TypedCfg artifact to certify generated branch, switch,
+  loop, and procedure-call programs through the same certificate path.
+- Moved allocation, allocated-CFG, and TypedCfg compiler regression assertions
+  out of production modules and into the focused allocation/TypedCfg proof
+  artifacts.
+- Split `Structured/TypedCfgPreservation.lean` at the generated-context
+  boundary into a 2,690-line core module and a 4,693-line control-preservation
+  module. No retained Lean module now exceeds the 5K soft limit.
+- Verification passed: the complete 1,158-job Lean verification root, both
+  focused proof artifacts, architecture/dependency and proof-hole checks, and
+  diff validation. Fresh metrics record 75 modules, 46,066 Lean lines, 2,349
+  declarations, 59 compiler variants, and one outcome relation.
+- Final frontend validation also passed: all 244 bundled-Python tests, both
+  Aave v3 runtime backend checks, and all 11 Permit2 call comparisons. Permit2
+  SignatureVerification reports only the documented independent
+  `solc_validation` round-trip limitation.

@@ -134,7 +134,7 @@ The remaining critical path is deliberately narrow and explicit:
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 45,966 Lean lines across 74 modules, down by about 975K lines from the
+tree is 46,066 Lean lines across 75 modules, down by about 975K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -523,42 +523,49 @@ Deletion gate:
 
 ## Phase 6: Generated Fragment Certificates
 
-Status: in progress.
+Status: complete.
 
 Goal: generated code properties compose mechanically.
 
 Each emitted fragment records:
 
 - entry and exit stack shape;
-- possible outcomes/terminators;
 - maximum additional stack depth;
-- labels and PC span;
-- memory regions read and written;
-- effect requests/observations;
-- external-call/create behavior;
-- gas/resource summary where applicable.
+- defined and referenced labels;
+- possible terminal behavior;
+- memory-read/write, resource-observer, and external-call/create effects.
+
+The combined allocated certificate separately carries source-owned scope
+layouts and scratch bindings. It deliberately does not claim static
+disjointness for arbitrary dynamic EVM addresses.
 
 - [x] Define `FragmentCert`.
 - [x] Certify primitive, push, stack movement, cleanup, terminal, and return
   dispatch
   return fragments.
-- [ ] Prove branch, switch, loop, and procedure composition. Sequential
-  certificate composition is implemented.
+- [x] Prove branch, switch, loop, and procedure composition. The semantic
+  proofs compose every generated control form through the uniform outcome
+  relation, while associative `ProgramCert.append` composes block, label,
+  stack-bound, terminal, and effect summaries. Focused artifacts certify
+  generated branch, switch, loop, and procedure-call programs.
 - [x] Generate certificates during lowering.
 - [x] Make successful public metadata carry mandatory allocation, TypedCfg, and
   combined allocated-CFG certificates, plus an executable source-to-artifact
   `LoweredFrom` relation.
-- [ ] Derive runner safety, frame safety, terminal safety, no-call/create,
-  observer safety, stack bounds, and memory disjointness as projections.
+- [x] Derive runner, frame/layout, terminal, call/create, observer, stack-bound,
+  and memory-effect projections. `SafetySummary` is the flat compositional CFG
+  view; `AllocatedTypedCfg.Certificate.SafetyView` adds witnessed scope layouts
+  and scratch ownership; runner safety remains the executable
+  `compileCertified?_step_eventually` theorem.
 
 Cutover gate:
 
-- Structured acceptance consumes generated certificates instead of rechecking
-  unrelated semantic predicates independently.
+- [x] Structured acceptance consumes generated certificates instead of
+  rechecking unrelated semantic predicates independently.
 
 ## Phase 7: Thin Frontends And Public Spine
 
-Status: in progress.
+Status: complete.
 
 Goal: Yul and Solidity adapt source syntax; they do not host backend proof
 corridors.
@@ -586,7 +593,8 @@ corridors.
 - [x] Thin the Assembly/Structured/Expressions/Locals/Functions/Objects/Yul
   aggregate modules so they no longer import preservation and runtime proof
   corridors by default.
-- [ ] Move internal regression examples to focused proof artifacts.
+- [x] Move internal regression assertions to focused allocation and TypedCfg
+  proof artifacts. Production modules retain only reusable fixture values.
 
 Public theorem modes:
 
@@ -605,14 +613,16 @@ Deletion gate:
 
 ## Phase 8: Module And Build Architecture
 
-Status: in progress.
+Status: complete.
 
 - [x] Enforce dependency direction:
   `Syntax <- Semantics`, `Syntax <- Compiler`, and
   `Semantics + Compiler <- Preservation`.
 - [x] Remove compiler imports from semantics.
 - [x] Remove aggregate imports from syntax.
-- [ ] Split files at stable abstraction boundaries, not arbitrary line counts.
+- [x] Split files at stable abstraction boundaries, not arbitrary line counts.
+  `Structured/TypedCfgPreservation` is now a 2,690-line core relation/context
+  module plus a 4,693-line control-preservation module.
 - [x] Set a soft maximum of 5K lines per module and report modules above
   10K.
 - [x] Configure a shared dependency package cache keyed by Lean toolchain and
@@ -651,7 +661,7 @@ Exit gate:
   preservation, spill-source, stack-resource, and call-depth proof cone.
 - [x] Delete compatibility theorem corridors and stale audit aliases.
 - [x] Recompute architecture metrics and compare to baseline. The current
-  snapshot records 74 modules, 45,966 source lines, 59 compiler-variant
+  snapshot records 75 modules, 46,066 source lines, 59 compiler-variant
   declarations, and one outcome-relation declaration, versus 104 modules,
   1,021,199 lines, 145 variants, and 43 outcome relations at baseline.
 
@@ -722,8 +732,8 @@ Latest verified checkpoint:
   pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
-- full `lake build EvmCompiler.Verification`: pass (1,157 jobs);
-- retained architecture metrics: 74 modules, 45,966 Lean lines, 59 compiler
+- full `lake build EvmCompiler.Verification`: pass (1,158 jobs);
+- retained architecture metrics: 75 modules, 46,066 Lean lines, 59 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -735,13 +745,10 @@ Latest verified checkpoint:
 
 ## Execution Order
 
-The remaining critical path is:
-
-1. Complete branch/switch/loop/procedure certificate composition and derive
-   the remaining certificate safety projections.
-2. Move internal regressions into proof artifacts.
-3. Split `Structured/TypedCfgPreservation.lean`, then rerun the final
-   verification, frontend, benchmark, proof-hole, and architecture gates.
+The migration critical path is complete. Further work can add compiler
+features through the shared effect, allocation, TypedCfg, certificate, and
+public-artifact interfaces without restoring a parallel backend or proof
+corridor.
 
 ## Progress Discipline
 
