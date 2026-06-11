@@ -65,11 +65,11 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Convert the remaining legacy allocation backends into true plan generators.
-   Scratch-frame planning is now code-free with exact frame sizing and
-   main/function/nested lexical bindings. Call-aware planning still runs the
-   legacy emitter once to discover its layout and then re-emits while checking
-   exact agreement.
+1. Convert the remaining live and call-aware allocation backends into true
+   plan generators. Ordinary stack and scratch-frame planning are now
+   code-free with source-derived main/function/nested lexical bindings.
+   Call-aware planning still runs the legacy emitter once to discover its
+   layout and then re-emits while checking exact agreement.
 2. Make canonical per-local locations directly drive Expressions/TypedCfg
    generation and CFG shapes across main and function scopes.
 3. Finish source-to-CFG semantic composition and make generated fragment
@@ -339,9 +339,10 @@ inductive LocalLocation
   per-local placements.
 - [ ] Convert ordinary layout, live layout, adaptive spill, call-aware spill,
   and scratch-frame allocation into plan generators.
-  Scratch-frame allocation now has a code-free shared-interface planner with
-  exact frame sizing and main/function/nested lexical bindings. The
-  ordinary/live/call-aware families remain.
+  Ordinary stack and scratch-frame allocation now have code-free
+  shared-interface planners with source-derived main/function/nested lexical
+  bindings; scratch-frame also computes exact frame sizing. The live and
+  call-aware families remain.
 - [ ] Remove post-hoc plan projection from CallAware/ScratchFrame artifacts:
   planners must produce the canonical plan before any code is emitted.
   Call-aware planning currently emits once to discover a plan and re-emits
@@ -549,10 +550,13 @@ Completion evidence:
 
 Latest verified checkpoint:
 
-- stable/default build: pass (1,153 jobs);
-- allocator layer after code-free scratch-frame cutover: pass (1,146 jobs);
-- allocated TypedCfg focused layer: pass (1,117 jobs), including direct
-  instruction-lowering preservation and lowering-invariant regressions;
+- public/legacy aggregate build: pass (1,197 jobs);
+- allocator and Objects compiler layer after code-free ordinary-stack planning:
+  pass (1,150 jobs);
+- allocated TypedCfg layer: pass, including certified whole-program stepping,
+  emitted block fragments, label/PC projections, and lowering-invariant
+  regressions;
+- source-derived inline-allocation public-boundary proof artifact: pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - `EvmCompiler.Legacy`: pass;
 - resource-observer proof artifact and axiom print: pass;
@@ -568,10 +572,10 @@ Latest verified checkpoint:
 The remaining critical path is:
 
 1. Replace emitter-derived CallAware plans with pure scoped plan generators,
-   migrate ordinary/live allocation families, and make canonical locations
-   drive lowering and CFG shapes.
-2. Prove direct Structured-to-TypedCfg and TypedCfg-to-Assembly preservation,
-   including label/PC certificate projections.
+   migrate live allocation, and make canonical locations drive lowering and
+   CFG shapes.
+2. Finish source-to-CFG semantic composition and enrich generated fragment
+   certificates with exact code spans and safety projections.
 3. Finish the generic effect/outcome migrations and remove replay evaluators.
 4. Delete the legacy emitters, parallel backend compilers, and theorem
    corridors after their replacement gates pass.

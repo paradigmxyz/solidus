@@ -74,15 +74,6 @@ end CompileMetadata
 abbrev CompileArtifact :=
   Compiler.Artifact Assembly.TargetProgram CompileMetadata
 
-def stackOnlyAllocation : Locals.Allocation.Plan where
-  sourceScope := []
-  stackOrder := []
-  bindings := []
-  scratchRegion? := none
-
-def stackOnlyProgramAllocation : Locals.Allocation.ProgramPlan :=
-  Locals.Allocation.ProgramPlan.main stackOnlyAllocation
-
 structure PlannedProgram where
   source : Functions.Program
   backend : Backend
@@ -115,8 +106,11 @@ layout before its output is accepted.
 def lowerExpressions? (planned : PlannedProgram) :
     Option Expressions.Program :=
   match planned.backend with
-  | .inlineStack =>
-      if planned.allocation = stackOnlyProgramAllocation then
+  | .inlineStack => do
+      let allocation ←
+        Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+          planned.source
+      if allocation = planned.allocation then
         Functions.Inline.Program.toExpressions? planned.source
       else
         none
@@ -150,13 +144,20 @@ theorem lowerExpressions?_inlineStack_allocation
     {planned : PlannedProgram} {expressions : Expressions.Program}
     (hBackend : planned.backend = .inlineStack)
     (hLower : planned.lowerExpressions? = some expressions) :
-    planned.allocation = stackOnlyProgramAllocation := by
+    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+        planned.source =
+      some planned.allocation := by
   unfold lowerExpressions? at hLower
   rw [hBackend] at hLower
-  by_cases hAllocation :
-      planned.allocation = stackOnlyProgramAllocation
-  · exact hAllocation
-  · simp [hAllocation] at hLower
+  cases hPlan :
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+        planned.source with
+  | none =>
+      simp [hPlan] at hLower
+  | some allocation =>
+      by_cases hAllocation : allocation = planned.allocation
+      · simpa [hPlan, hAllocation]
+      · simp [hPlan, hAllocation] at hLower
 
 theorem lowerExpressions?_scratchFrame_exact
     {planned : PlannedProgram} {expressions : Expressions.Program}
@@ -432,10 +433,44 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                         hTarget, rfl⟩
   · simp [hValid] at hCompile
 
-def planInlineStack (program : Program) : PlannedProgram :=
-  { source := program.toFunctions
-    backend := .inlineStack
-    allocation := stackOnlyProgramAllocation }
+def planInlineStack? (program : Program) : Option PlannedProgram := do
+  let allocation ←
+    Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+      program.toFunctions
+  some
+    { source := program.toFunctions
+      backend := .inlineStack
+      allocation := allocation }
+
+theorem planInlineStack?_source
+    {program : Program} {planned : PlannedProgram}
+    (hPlan : planInlineStack? program = some planned) :
+    planned.source = program.toFunctions := by
+  unfold planInlineStack? at hPlan
+  cases hAllocation :
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+        program.toFunctions with
+  | none =>
+      simp [hAllocation] at hPlan
+  | some allocation =>
+      simp [hAllocation] at hPlan
+      cases hPlan
+      rfl
+
+theorem planInlineStack?_backend
+    {program : Program} {planned : PlannedProgram}
+    (hPlan : planInlineStack? program = some planned) :
+    planned.backend = .inlineStack := by
+  unfold planInlineStack? at hPlan
+  cases hAllocation :
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan?
+        program.toFunctions with
+  | none =>
+      simp [hAllocation] at hPlan
+  | some allocation =>
+      simp [hAllocation] at hPlan
+      cases hPlan
+      rfl
 
 def planCallAwareAt? (backend : Backend) (words : Nat)
     (program : Program) : Option PlannedProgram := do
@@ -640,7 +675,9 @@ theorem compileCallAwareCandidates?_loweredFrom
 def Backend.compileArtifact? (config : BackendConfig) (program : Program) :
     Backend → Option CompileArtifact
   | .inlineStack =>
-      (planInlineStack program).lowerArtifact?
+      match planInlineStack? program with
+      | none => none
+      | some planned => planned.lowerArtifact?
   | .callAwareSpill =>
       if Functions.CallAwareSpill.programOpenSupported?
           program.toFunctions then
@@ -670,7 +707,15 @@ theorem Backend.compileArtifact?_metadataValid
   cases backend with
   | inlineStack =>
       unfold Backend.compileArtifact? at hCompile
-      exact PlannedProgram.lowerArtifact?_metadataValid hCompile
+      cases hPlan : planInlineStack? program with
+      | none =>
+          simp [hPlan] at hCompile
+      | some planned =>
+          simp [hPlan] at hCompile
+          have hMetadata :=
+            PlannedProgram.lowerArtifact?_metadataValid hCompile
+          have hBackend := planInlineStack?_backend hPlan
+          simpa [hBackend] using hMetadata
   | callAwareSpill =>
       unfold Backend.compileArtifact? at hCompile
       by_cases hSupported :
@@ -717,7 +762,15 @@ theorem Backend.compileArtifact?_loweredFrom
   cases backend with
   | inlineStack =>
       unfold Backend.compileArtifact? at hCompile
-      exact PlannedProgram.lowerArtifact?_loweredFrom hCompile
+      cases hPlan : planInlineStack? program with
+      | none =>
+          simp [hPlan] at hCompile
+      | some planned =>
+          simp [hPlan] at hCompile
+          have hLowered :=
+            PlannedProgram.lowerArtifact?_loweredFrom hCompile
+          rw [planInlineStack?_source hPlan] at hLowered
+          exact hLowered
   | callAwareSpill =>
       unfold Backend.compileArtifact? at hCompile
       by_cases hSupported :

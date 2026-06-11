@@ -27601,3 +27601,33 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   `Compiler.AllocatedTypedCfg.Program.compileCertified?` now expose the
   stepping theorem without caller-supplied compiler certificates, prefixes, or
   generated-label tables.
+
+## 2026-06-10 17:12 PDT - Compaction resume: source-derived inline allocation
+
+- Resumed under `$verifiable-compiler` after committing certified whole-program
+  TypedCfg stepping at `3ab09cd63`. The ordinary inline path now derives its
+  allocation plan from code-free source scope analysis instead of a hard-coded
+  empty plan; the public and legacy aggregate build is being completed before
+  checkpointing this planner cutover.
+
+## 2026-06-10 17:18 PDT - Source-derived ordinary stack planning
+
+- architecture: refactored the scratch-frame scope traversal into a code-free
+  allocation recipe core and added a stack-only `ProgramPlan` projection for
+  main, function, and nested lexical scopes.
+- public boundary: deleted the hard-coded empty inline allocation. Objects
+  inline planning now runs the source-derived planner, and lowering rechecks
+  exact agreement with that plan before emitting Expressions.
+- regression: added
+  `proof_artifacts/inline_allocation_planner_smoke.lean`, which checks a nested
+  lexical binding at the Objects boundary and successful inline artifact
+  compilation.
+- verification: focused allocator/Objects builds passed all 1,150 jobs; the
+  public/legacy aggregate passed all 1,197 jobs; the proof artifact,
+  architecture guard, and `git diff --check` pass.
+- contract validation: Aave v3 math and interest public backend smokes pass.
+  Permit2 passes 3 SafeCast, 5 NonceBitmap, and 3 SignatureVerification call
+  comparisons; its existing `live_layout_to_locals` legacy diagnostic remains.
+- remaining allocator boundary: live allocation and CallAware planning still
+  need pure scoped plan generators; CallAware still emits code to discover its
+  main-scope plan.

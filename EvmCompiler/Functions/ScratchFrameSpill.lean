@@ -268,7 +268,7 @@ def planFunctions (functionSlots : List FunSlots) :
           lexicalScopes := bodyPlan.scopes ++ tail.lexicalScopes
           state := tail.state }
 
-def planRecipe? (maxFrameWords : Nat) (program : Program) :
+def planRecipeCore? (program : Program) :
     Option AllocationRecipe := do
   if (program.functions.map FunDef.name).Nodup then pure () else none
   let initial : CompileState := { env := [], nextSlot := 0 }
@@ -282,17 +282,19 @@ def planRecipe? (maxFrameWords : Nat) (program : Program) :
     planBlockOpen .main
       { allocation := mainStart, nextScope := 0, scopes := [] }
       program.body
-  if mainPlan.allocation.nextSlot ≤ maxFrameWords then
-    some
-      { functionSlots := functionSlots
-        stateAfterSignatures := stateAfterSignatures
-        stateAfterFunctions := functionPlan.state
-        functions := functionPlan.functions
-        lexicalScopes := mainPlan.scopes ++ functionPlan.lexicalScopes
-        main := mainPlan.allocation
-        frameWords := mainPlan.allocation.nextSlot }
-  else
-    none
+  some
+    { functionSlots := functionSlots
+      stateAfterSignatures := stateAfterSignatures
+      stateAfterFunctions := functionPlan.state
+      functions := functionPlan.functions
+      lexicalScopes := mainPlan.scopes ++ functionPlan.lexicalScopes
+      main := mainPlan.allocation
+      frameWords := mainPlan.allocation.nextSlot }
+
+def planRecipe? (maxFrameWords : Nat) (program : Program) :
+    Option AllocationRecipe := do
+  let recipe ← planRecipeCore? program
+  if recipe.frameWords ≤ maxFrameWords then some recipe else none
 
 def allocationOfState (frameWords : Nat) (state : CompileState) :
     Locals.Allocation.Plan where
@@ -305,6 +307,19 @@ def allocationOfState (frameWords : Nat) (state : CompileState) :
     some
       { base := .freeMemoryPointer
         words := frameWords }
+
+def stackBindingsFrom : Nat → List Name → List Locals.Allocation.Binding
+  | _, [] => []
+  | depth, name :: rest =>
+      (name, .stack depth) :: stackBindingsFrom (depth + 1) rest
+
+def stackAllocationOfState (state : CompileState) :
+    Locals.Allocation.Plan :=
+  let sourceScope := state.env.map Prod.fst
+  { sourceScope := sourceScope
+    stackOrder := sourceScope
+    bindings := stackBindingsFrom 0 sourceScope
+    scratchRegion? := none }
 
 namespace AllocationRecipe
 
@@ -320,7 +335,46 @@ def toProgramPlan (recipe : AllocationRecipe) :
         { scope := entry.scope
           allocation := allocationOfState recipe.frameWords entry.state }) }
 
+def toStackProgramPlan (recipe : AllocationRecipe) :
+    Locals.Allocation.ProgramPlan :=
+  { scopes :=
+      [{ scope := .main
+         allocation := stackAllocationOfState recipe.main }] ++
+      (recipe.functions.map fun fn =>
+        { scope := fn.scope
+          allocation := stackAllocationOfState fn.state }) ++
+      (recipe.lexicalScopes.map fun entry =>
+        { scope := entry.scope
+          allocation := stackAllocationOfState entry.state }) }
+
 end AllocationRecipe
+
+def planStackAllocation? (program : Program) :
+    Option Locals.Allocation.ProgramPlan := do
+  let recipe ← planRecipeCore? program
+  let allocation := recipe.toStackProgramPlan
+  if allocation.wellFormed? then some allocation else none
+
+theorem planStackAllocation?_wellFormed
+    {program : Program}
+    {allocation : Locals.Allocation.ProgramPlan}
+    (hPlan : planStackAllocation? program = some allocation) :
+    allocation.WellFormed := by
+  unfold planStackAllocation? at hPlan
+  cases hRecipe : planRecipeCore? program with
+  | none =>
+      simp [hRecipe] at hPlan
+  | some recipe =>
+      by_cases hWF : recipe.toStackProgramPlan.wellFormed? = true
+      · have hEq : recipe.toStackProgramPlan = allocation := by
+          simpa [hRecipe, hWF] using hPlan
+        rw [← hEq]
+        exact Locals.Allocation.ProgramPlan.wellFormed_of_check hWF
+      · simp [hRecipe, hWF] at hPlan
+
+def stackAllocationPlanner :
+    Locals.Allocation.Planner Program where
+  plan? := planStackAllocation?
 
 def planAllocation? (maxFrameWords : Nat) (program : Program) :
     Option Locals.Allocation.ProgramPlan := do
@@ -5976,6 +6030,12 @@ def nestedAllocationExpected : Locals.Allocation.Plan :=
         { base := .freeMemoryPointer
           words := 1 } }
 
+def nestedStackAllocationExpected : Locals.Allocation.Plan :=
+  { sourceScope := ["nested"]
+    stackOrder := ["nested"]
+    bindings := [("nested", .stack 0)]
+    scratchRegion? := none }
+
 def nestedAllocationRecorded : Bool :=
   match planAllocation? 1 nestedProgram with
   | none => false
@@ -5983,6 +6043,14 @@ def nestedAllocationRecorded : Bool :=
       decide
         (allocation.find? (.lexical .main 0) =
           some nestedAllocationExpected)
+
+def nestedStackAllocationRecorded : Bool :=
+  match planStackAllocation? nestedProgram with
+  | none => false
+  | some allocation =>
+      decide
+        (allocation.find? (.lexical .main 0) =
+          some nestedStackAllocationExpected)
 
 def nestedCompilationSucceeds : Bool :=
   match planAllocation? 1 nestedProgram with
@@ -6013,6 +6081,12 @@ example : planAllocation? 3 program = none := by
   native_decide
 
 example : nestedAllocationRecorded = true := by
+  native_decide
+
+example : nestedStackAllocationRecorded = true := by
+  native_decide
+
+example : (planStackAllocation? program).isSome = true := by
   native_decide
 
 example : nestedCompilationSucceeds = true := by

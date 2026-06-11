@@ -110,6 +110,10 @@ if ! rg -q 'ScratchFrameSpill\.allocationPlanner' \
   failed=1
 fi
 report_matches \
+  'Objects inline planning must not restore the hard-coded empty allocation:' \
+  'stackOnlyProgramAllocation|stackOnlyAllocation' \
+  EvmCompiler/Objects/Compiler.lean
+report_matches \
   'Successful public compiler metadata must not make allocation or TypedCfg certificates optional:' \
   '(allocation|typedCfg)\?[[:space:]]*:[[:space:]]*Option' \
   EvmCompiler/Objects/Compiler.lean
