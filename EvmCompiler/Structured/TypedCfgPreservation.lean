@@ -1047,6 +1047,36 @@ theorem pop_jump
 
 end RegularPreserves
 
+/--
+Relational execution from a CFG label to a regular continuation, independent
+of which compiler fragment owns the entry label.
+-/
+def PathPreserves (program : TypedCfg.Program)
+    (entry regular : Assembly.Label)
+    (source final : RunState) (tokens : List Word) : Prop :=
+  ∀ target,
+    StateRel source tokens target →
+      ∃ targetFinal,
+        program.Eventually entry target
+            (.jump regular targetFinal) ∧
+          StateRel final tokens targetFinal
+
+namespace PathPreserves
+
+theorem of_regular
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {source final : RunState} {tokens : List Word}
+    (hPreserves :
+      RegularPreserves result program entry regular source final tokens) :
+    PathPreserves program entry regular source final tokens := by
+  intro target hRel
+  rcases hPreserves target hRel with
+    ⟨targetFinal, ⟨_output, _hFallthrough, hEventually⟩, hFinalRel⟩
+  exact ⟨targetFinal, hEventually, hFinalRel⟩
+
+end PathPreserves
+
 namespace Program
 
 /--
@@ -1722,10 +1752,14 @@ namespace Switch
 def testOutput (valueShape : TypedCfg.Shape) : TypedCfg.Shape :=
   { valueShape with slots := .word :: valueShape.slots }
 
-def nextTestLabel (base idx : Nat) :
+def casesEntryLabel (base idx : Nat) :
     List (Word × Structured.Block) → Assembly.Label
   | [] => LabelSupply.label base 1
-  | _ => TypedCfgCompiler.switchTestLabel base (idx + 1)
+  | _ => TypedCfgCompiler.switchTestLabel base idx
+
+def nextTestLabel (base idx : Nat)
+    (rest : List (Word × Structured.Block)) : Assembly.Label :=
+  casesEntryLabel base (idx + 1) rest
 
 theorem testBody_type
     {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
@@ -2058,6 +2092,212 @@ theorem regular_cases_tail_of_compileCasesFuel?
               hSkipped hNextEventually
 
 /--
+Case-chain preservation follows the independent source selector. A matching
+case executes the selected compiled body; misses recurse through generated test
+labels; exhausting the list delegates to the default-entry certificate.
+-/
+theorem path_cases_some_of_compileCasesFuel?
+    {compilerFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block} {selected : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx base supply idx
+        valueShape bodyShape regular = some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hSelect : Switch.select value cases defaultBody = some selected)
+    (hCasePreserves :
+      ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            caseSupply (.generated base (2000 + caseIdx))
+            bodyShape regular =
+          some bodyResult →
+        BlocksInProgram bodyResult cfg →
+        RegularPreserves bodyResult cfg
+          (.generated base (2000 + caseIdx)) regular
+          (source.withEVM { source.evm with stack := stack }) final tokens)
+    (hDefaultPreserves :
+      defaultBody = some selected →
+        PathPreserves cfg (LabelSupply.label base 1) regular
+          source final tokens) :
+    PathPreserves cfg (casesEntryLabel base idx cases) regular
+      source final tokens := by
+  induction cases generalizing compilerFuel supply idx result selected with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          have hDefault : defaultBody = some selected := by
+            simpa [Switch.select] using hSelect
+          simpa [casesEntryLabel] using hDefaultPreserves hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ bodyCompilerFuel =>
+          have hCompileFull := hCompile
+          have hPopBodyType :
+              TypedCfg.Block.bodyType? [.pop] valueShape =
+                some bodyShape := by
+            simp [TypedCfg.Block.bodyType?, hPopType]
+          unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+          simp only at hCompile
+          simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+            hPopBodyType, Bind.bind, Option.bind] at hCompile
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+                supply (.generated base (2000 + idx))
+                bodyShape regular with
+          | none =>
+              simp [hBody] at hCompile
+          | some bodyResult =>
+              simp only [hBody] at hCompile
+              cases hTail :
+                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                    base bodyResult.next (idx + 1) valueShape bodyShape
+                    regular with
+              | none =>
+                  simp [hTail] at hCompile
+              | some tail =>
+                  simp only [hTail] at hCompile
+                  cases hCompile
+                  have hBodyBlocks : BlocksInProgram bodyResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hTailBlocks : BlocksInProgram tail cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  by_cases hEq : caseValue = value
+                  · have hSelected : body = selected := by
+                      simpa [Switch.select, hEq] using hSelect
+                    subst selected
+                    have hRegular :=
+                      regular_cases_head_of_compileCasesFuel?
+                        hCompileFull hBlocks hHead hPopType hPop hEq
+                        (fun hBodyCompile hCompiledBodyBlocks =>
+                          hCasePreserves
+                            hBodyCompile hCompiledBodyBlocks)
+                    simpa [casesEntryLabel] using
+                      PathPreserves.of_regular hRegular
+                  · have hTailSelect :
+                        Switch.select value rest defaultBody =
+                          some selected := by
+                      simpa [Switch.select, hEq] using hSelect
+                    have hTailPreserves :=
+                      ih hTail hTailBlocks hTailSelect
+                        hCasePreserves hDefaultPreserves
+                    have hRegular :=
+                      regular_cases_tail_of_compileCasesFuel?
+                        hCompileFull hBlocks hHead hPopType hPop hEq
+                        hTailPreserves
+                    simpa [casesEntryLabel] using
+                      PathPreserves.of_regular hRegular
+
+/--
+If source selection finds no body, every generated case test misses and the
+chain eventually delegates to the no-body default entry.
+-/
+theorem path_cases_none_of_compileCasesFuel?
+    {compilerFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx base supply idx
+        valueShape bodyShape regular = some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hPop : source.evm.stack.pop = some (stack, value))
+    (hSelect : Switch.select value cases defaultBody = none)
+    (hDefaultPreserves :
+      defaultBody = none →
+        PathPreserves cfg (LabelSupply.label base 1) regular
+          source final tokens) :
+    PathPreserves cfg (casesEntryLabel base idx cases) regular
+      source final tokens := by
+  induction cases generalizing compilerFuel supply idx result with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          have hDefault : defaultBody = none := by
+            simpa [Switch.select] using hSelect
+          simpa [casesEntryLabel] using hDefaultPreserves hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ bodyCompilerFuel =>
+          have hCompileFull := hCompile
+          have hPopBodyType :
+              TypedCfg.Block.bodyType? [.pop] valueShape =
+                some bodyShape := by
+            simp [TypedCfg.Block.bodyType?, hPopType]
+          unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+          simp only at hCompile
+          simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+            hPopBodyType, Bind.bind, Option.bind] at hCompile
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
+                supply (.generated base (2000 + idx))
+                bodyShape regular with
+          | none =>
+              simp [hBody] at hCompile
+          | some bodyResult =>
+              simp only [hBody] at hCompile
+              cases hTail :
+                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                    base bodyResult.next (idx + 1) valueShape bodyShape
+                    regular with
+              | none =>
+                  simp [hTail] at hCompile
+              | some tail =>
+                  simp only [hTail] at hCompile
+                  cases hCompile
+                  have hTailBlocks : BlocksInProgram tail cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  by_cases hEq : caseValue = value
+                  · simp [Switch.select, hEq] at hSelect
+                  · have hTailSelect :
+                        Switch.select value rest defaultBody = none := by
+                      simpa [Switch.select, hEq] using hSelect
+                    have hTailPreserves :=
+                      ih hTail hTailBlocks hTailSelect
+                    have hRegular :=
+                      regular_cases_tail_of_compileCasesFuel?
+                        hCompileFull hBlocks hHead hPopType hPop hEq
+                        hTailPreserves
+                    simpa [casesEntryLabel] using
+                      PathPreserves.of_regular hRegular
+
+/--
 When a switch has no default body, the generated default block removes the
 retained scrutinee and reaches the regular continuation.
 -/
@@ -2147,11 +2387,182 @@ theorem regular_default_some_of_compileDefaultFuel?
           hEntryEventually hBodyEventually
 
 /--
-An empty switch without a default body executes the scrutinee, removes its
-value in the generated default block, and reaches the regular continuation.
+A source switch that selects a body executes the scrutinee, follows the
+generated case/default dispatch, and delegates only the selected source body to
+the recursive preservation proof.
 -/
-theorem preserves_empty_none_of_compileStmtFuel?
+theorem preserves_some_of_compileStmtFuel?
     {compilerFuel : Nat} {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block} {selected : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source afterScrutinee final : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hFrameSafe : scrutinee.FrameSafe)
+    (hScrutinee :
+      Structured.Code.runState scrutinee source =
+        .ok afterScrutinee)
+    (hPop :
+      afterScrutinee.evm.stack.pop = some (stack, value))
+    (hSelect :
+      Switch.select value cases defaultBody = some selected)
+    (hSelectedPreserves :
+      ∀ {bodyCompilerFuel bodySupply : Nat}
+        {bodyEntry : Assembly.Label}
+        {bodyShape : TypedCfg.Shape}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            bodySupply bodyEntry bodyShape regular =
+          some bodyResult →
+        BlocksInProgram bodyResult cfg →
+        RegularPreserves bodyResult cfg bodyEntry regular
+          (afterScrutinee.withEVM
+            { afterScrutinee.evm with stack := stack })
+          final tokens) :
+    RegularPreserves result cfg entry regular source final tokens := by
+  intro target hRel
+  rcases StateRel.runCode hFrameSafe hScrutinee hRel with
+    ⟨targetAfterScrutinee, hTargetScrutinee, hAfterScrutineeRel⟩
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+  | none =>
+      simp [hType] at hCompile
+  | some valueShape =>
+      cases hValue : valueShape.slots.head? with
+      | none =>
+          simp [hType, hValue] at hCompile
+      | some valueSlot =>
+          let bodyShape : TypedCfg.Shape :=
+            { valueShape with slots := valueShape.slots.tail }
+          have hPopType :
+              TypedCfg.Instr.type? .pop valueShape = some bodyShape := by
+            cases valueShape with
+            | mk slots tail =>
+                cases slots with
+                | nil =>
+                    simp at hValue
+                | cons slot rest =>
+                    simp [bodyShape, TypedCfg.Instr.type?]
+          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+            Bind.bind, Option.bind] at hCompile
+          cases hCasesCompileRaw :
+              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                cases ctx supply (supply + 1) 0 valueShape
+                { valueShape with slots := valueShape.slots.tail }
+                regular with
+          | none =>
+              simp [hCasesCompileRaw] at hCompile
+          | some caseResult =>
+              simp only [hCasesCompileRaw] at hCompile
+              have hCasesCompile :
+                  TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                      cases ctx supply (supply + 1) 0 valueShape bodyShape
+                      regular =
+                    some caseResult := by
+                simpa [bodyShape] using hCasesCompileRaw
+              cases hDefaultCompileRaw :
+                  TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+                    defaultBody ctx caseResult.next
+                    (LabelSupply.label supply 1)
+                    valueShape
+                    { valueShape with slots := valueShape.slots.tail }
+                    regular with
+              | none =>
+                  simp [hDefaultCompileRaw] at hCompile
+              | some defaultResult =>
+                  simp only [hDefaultCompileRaw] at hCompile
+                  have hDefaultCompile :
+                      TypedCfgCompiler.compileDefaultFuel?
+                          (compilerFuel + 1) defaultBody ctx
+                          caseResult.next
+                          (LabelSupply.label supply 1)
+                          valueShape bodyShape regular =
+                        some defaultResult := by
+                    simpa [bodyShape] using hDefaultCompileRaw
+                  cases hCompile
+                  have hCaseBlocks : BlocksInProgram caseResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDefaultBlocks :
+                      BlocksInProgram defaultResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDispatch :
+                      PathPreserves cfg
+                        (casesEntryLabel supply 0 cases) regular
+                        afterScrutinee final tokens := by
+                    apply path_cases_some_of_compileCasesFuel?
+                      hCasesCompile hCaseBlocks hValue hPopType hPop hSelect
+                    · intro bodyCompilerFuel caseSupply caseIdx bodyResult
+                        hBodyCompile hBodyBlocks
+                      exact
+                        hSelectedPreserves
+                          hBodyCompile hBodyBlocks
+                    · intro hDefault
+                      have hDefaultSelected :
+                          TypedCfgCompiler.compileDefaultFuel?
+                              (compilerFuel + 1) (some selected) ctx
+                              caseResult.next
+                              (LabelSupply.label supply 1)
+                              valueShape bodyShape regular =
+                            some defaultResult := by
+                        simpa [hDefault] using hDefaultCompile
+                      apply PathPreserves.of_regular
+                      apply regular_default_some_of_compileDefaultFuel?
+                        hDefaultSelected hDefaultBlocks hPopType hPop
+                      intro bodyResult hBodyCompile hBodyBlocks
+                      exact
+                        hSelectedPreserves
+                          hBodyCompile hBodyBlocks
+                  let firstTest := casesEntryLabel supply 0 cases
+                  let head : TypedCfg.Block :=
+                    { label := entry
+                      input := input
+                      body := TypedCfgCompiler.Code.toCfg scrutinee
+                      output := valueShape
+                      term := .jump firstTest }
+                  have hHeadEventually :
+                      cfg.Eventually entry target
+                        (.jump firstTest targetAfterScrutinee) := by
+                    apply BlocksInProgram.eventually_of_run hBlocks
+                      (block := head)
+                    · simp only [head, firstTest, casesEntryLabel,
+                        List.mem_cons]
+                      left
+                    · simp [head, TypedCfg.Block.run,
+                        Code.runBody_toCfg hType, hTargetScrutinee,
+                        Except.map, Bind.bind, Except.bind,
+                        TypedCfg.Block.runTerm]
+                  rcases hDispatch targetAfterScrutinee
+                      hAfterScrutineeRel with
+                    ⟨targetFinal, hDispatchEventually, hFinalRel⟩
+                  refine ⟨targetFinal, ?_, hFinalRel⟩
+                  refine ⟨bodyShape, rfl, ?_⟩
+                  exact
+                    TypedCfg.Program.Eventually.bind_jump
+                      hHeadEventually hDispatchEventually
+
+/--
+A source switch that selects no body executes the scrutinee, misses every
+generated case test, removes the retained value in the no-body default block,
+and reaches the regular continuation.
+-/
+theorem preserves_none_of_compileStmtFuel?
+    {compilerFuel : Nat} {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
     {entry regular : Assembly.Label} {input : TypedCfg.Shape}
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
@@ -2159,15 +2570,17 @@ theorem preserves_empty_none_of_compileStmtFuel?
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
-        (.switch scrutinee [] none) ctx supply entry input regular =
-          some result)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
     (hBlocks : BlocksInProgram result cfg)
     (hFrameSafe : scrutinee.FrameSafe)
     (hScrutinee :
       Structured.Code.runState scrutinee source =
         .ok afterScrutinee)
     (hPop :
-      afterScrutinee.evm.stack.pop = some (stack, value)) :
+      afterScrutinee.evm.stack.pop = some (stack, value))
+    (hSelect : Switch.select value cases defaultBody = none) :
     RegularPreserves result cfg entry regular source
       (afterScrutinee.withEVM
         { afterScrutinee.evm with stack := stack }) tokens := by
@@ -2196,49 +2609,130 @@ theorem preserves_empty_none_of_compileStmtFuel?
                     simp at hValue
                 | cons slot rest =>
                     simp [bodyShape, TypedCfg.Instr.type?]
-          simp [hType, hValue, TypedCfgCompiler.mkBlock?,
-            TypedCfgCompiler.compileCasesFuel?,
-            TypedCfgCompiler.compileDefaultFuel?,
-            TypedCfg.Block.bodyType?, hPopType, bodyShape] at hCompile
-          cases hCompile
-          let defaultLabel := LabelSupply.label supply 1
-          let head : TypedCfg.Block :=
-            { label := entry
-              input := input
-              body := TypedCfgCompiler.Code.toCfg scrutinee
-              output := valueShape
-              term := .jump defaultLabel }
-          let defaultBlock : TypedCfg.Block :=
-            { label := defaultLabel
-              input := valueShape
-              body := [.pop]
-              output := bodyShape
-              term := .jump regular }
-          have hHeadEventually :
-              cfg.Eventually entry target
-                (.jump defaultLabel targetAfterScrutinee) := by
-            apply BlocksInProgram.eventually_of_run hBlocks
-              (block := head)
-            · simp [head, defaultBlock, defaultLabel, bodyShape]
-            · simp [head, TypedCfg.Block.run,
-                Code.runBody_toCfg hType, hTargetScrutinee,
-                Except.map, Bind.bind, Except.bind,
-                TypedCfg.Block.runTerm]
-          rcases
-              BlocksInProgram.eventually_pop_jump
-                (entry := defaultLabel) (regular := regular)
-                (input := valueShape) (output := bodyShape)
-                hBlocks
-                (by
-                  simp [defaultBlock, defaultLabel, bodyShape])
-                hPopType hAfterScrutineeRel hPop with
-            ⟨targetFinal, hDefaultEventually, hFinalRel⟩
-          refine ⟨targetFinal, ?_, ?_⟩
-          · refine ⟨bodyShape, rfl, ?_⟩
-            exact
-              TypedCfg.Program.Eventually.bind_jump
-                hHeadEventually hDefaultEventually
-          · simpa [RunState.withEVM] using hFinalRel
+          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+            Bind.bind, Option.bind] at hCompile
+          cases hCasesCompileRaw :
+              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                cases ctx supply (supply + 1) 0 valueShape
+                { valueShape with slots := valueShape.slots.tail }
+                regular with
+          | none =>
+              simp [hCasesCompileRaw] at hCompile
+          | some caseResult =>
+              simp only [hCasesCompileRaw] at hCompile
+              have hCasesCompile :
+                  TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+                      cases ctx supply (supply + 1) 0 valueShape bodyShape
+                      regular =
+                    some caseResult := by
+                simpa [bodyShape] using hCasesCompileRaw
+              cases hDefaultCompileRaw :
+                  TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+                    defaultBody ctx caseResult.next
+                    (LabelSupply.label supply 1)
+                    valueShape
+                    { valueShape with slots := valueShape.slots.tail }
+                    regular with
+              | none =>
+                  simp [hDefaultCompileRaw] at hCompile
+              | some defaultResult =>
+                  simp only [hDefaultCompileRaw] at hCompile
+                  have hDefaultCompile :
+                      TypedCfgCompiler.compileDefaultFuel?
+                          (compilerFuel + 1) defaultBody ctx
+                          caseResult.next
+                          (LabelSupply.label supply 1)
+                          valueShape bodyShape regular =
+                        some defaultResult := by
+                    simpa [bodyShape] using hDefaultCompileRaw
+                  cases hCompile
+                  have hCaseBlocks : BlocksInProgram caseResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDefaultBlocks :
+                      BlocksInProgram defaultResult cfg := by
+                    intro block hMem
+                    apply hBlocks block
+                    simp [hMem]
+                  have hDispatch :
+                      PathPreserves cfg
+                        (casesEntryLabel supply 0 cases) regular
+                        afterScrutinee
+                        (afterScrutinee.withEVM
+                          { afterScrutinee.evm with stack := stack })
+                        tokens := by
+                    apply path_cases_none_of_compileCasesFuel?
+                      hCasesCompile hCaseBlocks hValue hPopType hPop hSelect
+                    intro hDefault
+                    have hDefaultNone :
+                        TypedCfgCompiler.compileDefaultFuel?
+                            (compilerFuel + 1) none ctx caseResult.next
+                            (LabelSupply.label supply 1)
+                            valueShape bodyShape regular =
+                          some defaultResult := by
+                      simpa [hDefault] using hDefaultCompile
+                    apply PathPreserves.of_regular
+                    exact
+                      regular_default_none_of_compileDefaultFuel?
+                        hDefaultNone hDefaultBlocks hPopType hPop
+                  let firstTest := casesEntryLabel supply 0 cases
+                  let head : TypedCfg.Block :=
+                    { label := entry
+                      input := input
+                      body := TypedCfgCompiler.Code.toCfg scrutinee
+                      output := valueShape
+                      term := .jump firstTest }
+                  have hHeadEventually :
+                      cfg.Eventually entry target
+                        (.jump firstTest targetAfterScrutinee) := by
+                    apply BlocksInProgram.eventually_of_run hBlocks
+                      (block := head)
+                    · simp only [head, firstTest, casesEntryLabel,
+                        List.mem_cons]
+                      left
+                    · simp [head, TypedCfg.Block.run,
+                        Code.runBody_toCfg hType, hTargetScrutinee,
+                        Except.map, Bind.bind, Except.bind,
+                        TypedCfg.Block.runTerm]
+                  rcases hDispatch targetAfterScrutinee
+                      hAfterScrutineeRel with
+                    ⟨targetFinal, hDispatchEventually, hFinalRel⟩
+                  refine ⟨targetFinal, ?_, ?_⟩
+                  · refine ⟨bodyShape, rfl, ?_⟩
+                    exact
+                      TypedCfg.Program.Eventually.bind_jump
+                        hHeadEventually hDispatchEventually
+                  · simpa [RunState.withEVM] using hFinalRel
+
+/--
+An empty switch without a default body executes the scrutinee, removes its
+value in the generated default block, and reaches the regular continuation.
+-/
+theorem preserves_empty_none_of_compileStmtFuel?
+    {compilerFuel : Nat} {scrutinee : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source afterScrutinee : RunState} {tokens : List Word}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+        (.switch scrutinee [] none) ctx supply entry input regular =
+          some result)
+    (hBlocks : BlocksInProgram result cfg)
+    (hFrameSafe : scrutinee.FrameSafe)
+    (hScrutinee :
+      Structured.Code.runState scrutinee source =
+        .ok afterScrutinee)
+    (hPop :
+      afterScrutinee.evm.stack.pop = some (stack, value)) :
+    RegularPreserves result cfg entry regular source
+      (afterScrutinee.withEVM
+        { afterScrutinee.evm with stack := stack }) tokens := by
+  exact
+    preserves_none_of_compileStmtFuel?
+      hCompile hBlocks hFrameSafe hScrutinee hPop rfl
 
 end Switch
 

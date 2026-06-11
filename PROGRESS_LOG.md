@@ -27914,3 +27914,22 @@ Resumed from commit `484ff1510` with the migration goal active. The current unco
   outcome relation. Remaining switch work is the source-selection induction
   and top-level statement lift; loops, concrete calls/returns, and public
   artifact composition follow.
+
+## 2026-06-11 06:22 PDT - Source-selected switch composition
+
+- Added a reusable relational CFG path certificate that omits fragment-owned
+  fallthrough metadata while preserving ambient multi-block execution.
+- Proved source `Switch.select` induction for both selected-body and no-selection
+  outcomes. Matching cases execute only the selected compiled body, misses
+  recurse through generated test labels, and exhaustion delegates to the
+  compiled default entry.
+- Lifted those paths through the whole switch statement, including scrutinee
+  execution and the generated head block. Both top-level regular outcomes now
+  have compiler-level relational preservation; the former empty/no-default
+  proof is a corollary rather than a parallel proof corridor.
+- Verification passed: focused preservation check, full 1,155-job
+  `EvmCompiler.Verification`, architecture dependency/retired-route guard,
+  proof-hole scan, and `git diff --check`.
+- Fresh metrics: 79 modules, 90,659 Lean lines, 65 compiler variants, and one
+  outcome relation. The next Structured proof frontier is loop preservation,
+  followed by concrete calls/returns and full nonregular outcome composition.
