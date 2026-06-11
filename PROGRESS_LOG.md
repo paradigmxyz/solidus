@@ -28535,3 +28535,22 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   no-hole scan, `git diff --check`, and focused axiom audit pass. The new
   adjacent theorems depend only on `propext`, `Classical.choice`, and
   `Quot.sound`.
+
+- 2026-06-11 15:12:17 PDT `compaction-resume`: Resumed with the shared
+  observer outcome/path relation and generic statement-list composition under
+  active repair. Next is checking that combinator, then using it to drive the
+  mutual Structured block/statement proof without duplicating control
+  semantics.
+
+- 2026-06-11 15:13:00 PDT `proof`: Checked the shared observer
+  outcome-indexed path relation, abrupt-mode transport, true-conditional
+  composition, uniform code/conditional certificates, empty blocks, and
+  generic statement-list composition over the parameterized Structured
+  evaluation relation. Moved nonempty statement-list compiler decomposition
+  into `Structured.TypedCfgPreservation.Core` so ordinary and observer proofs
+  share the same pass-owned compiler fact.
+
+- 2026-06-11 15:13:28 PDT `verification`: The 1,175-job verification root,
+  architecture guard, scoped no-hole scan, `git diff --check`, and focused
+  axiom audit pass for the true-branch and statement-list theorems. They depend
+  only on `propext`, `Classical.choice`, and `Quot.sound`.

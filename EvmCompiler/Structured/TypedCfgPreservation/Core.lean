@@ -1136,6 +1136,66 @@ theorem right_of_append
 
 end CallsInProgram
 
+namespace Block
+
+/--
+Canonical decomposition of a successful nonempty statement-list compilation.
+
+This is a compiler fact shared by ordinary and effectful preservation proofs.
+-/
+theorem components_of_compileStmtListFuel?_cons
+    {compilerFuel : Nat} {stmt : Structured.Stmt}
+    {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+        (stmt :: rest) ctx supply entry input regular = some result) :
+    ∃ headResult,
+      TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+          entry input (TypedCfgCompiler.restLabel supply) =
+        some headResult ∧
+      ((headResult.fallthrough? = none ∧ result = headResult) ∨
+        ∃ tailInput tailResult,
+          headResult.fallthrough? = some tailInput ∧
+          TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+              headResult.next (TypedCfgCompiler.restLabel supply)
+              tailInput regular =
+            some tailResult ∧
+          result = headResult.append tailResult) := by
+  unfold TypedCfgCompiler.compileStmtListFuel? at hCompile
+  cases hHead :
+      TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+        entry input (TypedCfgCompiler.restLabel supply) with
+  | none =>
+      simp [hHead] at hCompile
+  | some headResult =>
+      cases hFallthrough : headResult.fallthrough? with
+      | none =>
+          have hEq : headResult = result := by
+            simpa [hHead, hFallthrough] using hCompile
+          exact
+            ⟨headResult, rfl,
+              Or.inl ⟨hFallthrough, hEq.symm⟩⟩
+      | some tailInput =>
+          cases hTail :
+              TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+                headResult.next (TypedCfgCompiler.restLabel supply)
+                tailInput regular with
+          | none =>
+              simp [hHead, hFallthrough, hTail] at hCompile
+          | some tailResult =>
+              have hEq : headResult.append tailResult = result := by
+                simpa [hHead, hFallthrough, hTail] using hCompile
+              exact
+                ⟨headResult, rfl,
+                  Or.inr
+                    ⟨tailInput, tailResult, hFallthrough, hTail,
+                      hEq.symm⟩⟩
+
+end Block
+
 /--
 Semantic certificate for a compiler result that completes normally.
 

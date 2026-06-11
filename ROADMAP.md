@@ -104,8 +104,9 @@ Adjacent boundary status:
   shared parameterized control interpreter. Observer-aware instruction and
   code lowering, hidden-frame replay congruence, condition selection,
   effectful CFG path composition, straight-line statement preservation, and
-  false-conditional preservation are checked; recursive block, switch, loop,
-  call, halt, and whole-program forward/backward theorems remain.
+  both conditional branches are checked. The outcome-indexed observer path
+  relation and generic statement-list composition are also checked; recursive
+  switch, loop, call, halt, whole-program, and backward theorems remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
