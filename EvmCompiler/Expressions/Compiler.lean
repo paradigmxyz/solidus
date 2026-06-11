@@ -1,7 +1,5 @@
 import EvmCompiler.Expressions.Syntax
-import EvmCompiler.Structured.Compiler
 import EvmCompiler.Structured.TypedCfgCompiler
-import EvmCompiler.Structured.Preservation
 import EvmCompiler.Assembly.Accepted
 
 namespace EvmCompiler
@@ -139,15 +137,6 @@ def toStructured (program : Program) : Structured.Program where
   procs := ProcList.toStructured program.procs
   body := program.body.toStructured
 
-def compile (program : Program) : Assembly.Program :=
-  program.toStructured.compile
-
-def compile? (program : Program) : Option Assembly.TargetProgram :=
-  Assembly.compile? program.compile
-
-def compileExecutable? (program : Program) : Option Assembly.TargetProgram :=
-  Assembly.compileExecutable? program.compile
-
 structure TypedCompileArtifact where
   cfg : TypedCfg.Program
   assembly : Assembly.Program
@@ -198,12 +187,17 @@ theorem compileTypedArtifact?_certificateValid
                 ⟨TypedCfg.Program.compileCertified?_wellTyped hCertified,
                   TypedCfg.Program.compileCertified?_certificate hCertified⟩
 
+def compile? (program : Program) : Option Assembly.TargetProgram :=
+  compileTypedExecutable? program
+
+def compileExecutable? (program : Program) : Option Assembly.TargetProgram :=
+  compileTypedExecutable? program
+
 theorem compileExecutable?_eq_compile? (program : Program) :
-    compileExecutable? program = compile? program := by
-  simp [compileExecutable?, compile?, Assembly.compileExecutable?_eq_compile?]
+    compileExecutable? program = compile? program := rfl
 
 def Accepted (program : Program) : Prop :=
-  Structured.Preservation.Program.Accepted program.toStructured
+  ∃ artifact, compileTypedArtifact? program = some artifact
 
 def SourceAccepted (program : Program) : Prop :=
   program.WF
@@ -397,12 +391,6 @@ theorem Program.toStructured_usesCallCreate (program : Program) :
     Structured.Program.usesCallCreate,
     ProcList.toStructured_usesCallCreate program.procs,
     Block.toStructured_usesCallCreate program.body]
-
-theorem Program.compile_noCallCreate (program : Program)
-    (hProgram : program.usesCallCreate = false) :
-    Assembly.Program.usesCallCreate program.compile = false := by
-  exact Structured.CompilerFacts.program_compile_noCallCreate program.toStructured
-    (by simpa [Program.toStructured_usesCallCreate] using hProgram)
 
 end CompilerFacts
 

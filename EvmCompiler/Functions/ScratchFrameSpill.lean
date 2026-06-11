@@ -1,6 +1,7 @@
 import EvmCompiler.Functions.Compiler
 import EvmCompiler.Locals.Allocation
-import EvmCompiler.Expressions.Preservation
+import EvmCompiler.Expressions.Compiler
+import EvmCompiler.Expressions.Semantics
 
 /-!
 Executable stack-too-deep fallback for imported function-layer programs.
@@ -5867,135 +5868,6 @@ theorem compileExpressionsProgram?_lookup_of_find?
                 · simp [ctx0, mainStart, hProbeFunctions, hMainProbe,
                     hBound] at hCompile
   · simp [hNames] at hCompile
-
-noncomputable def compileChecked? (maxFrameWords : Nat)
-    (program : Program) : Option (Expressions.Program × Assembly.Program) := do
-  let exprProgram ← compileExpressionsProgram? maxFrameWords program
-  let asm ← Expressions.Program.compileChecked? exprProgram
-  some (exprProgram, asm)
-
-theorem compileChecked?_eq_some
-    {maxFrameWords : Nat} {program : Program}
-    {exprProgram : Expressions.Program} {asm : Assembly.Program}
-    (hCompile :
-      compileChecked? maxFrameWords program = some (exprProgram, asm)) :
-    compileExpressionsProgram? maxFrameWords program = some exprProgram ∧
-      Expressions.Program.compileChecked? exprProgram = some asm := by
-  unfold compileChecked? at hCompile
-  cases hExpr : compileExpressionsProgram? maxFrameWords program with
-  | none =>
-      simp [hExpr] at hCompile
-  | some exprProgram' =>
-      simp [hExpr] at hCompile
-      cases hAsm : Expressions.Program.compileChecked? exprProgram' with
-      | none =>
-          simp [hAsm] at hCompile
-      | some asm' =>
-          simp [hAsm] at hCompile
-          rcases hCompile with ⟨rfl, rfl⟩
-          exact ⟨rfl, hAsm⟩
-
-theorem compileChecked?_noCallCreate
-    {maxFrameWords : Nat} {program : Program}
-    {exprProgram : Expressions.Program} {asm : Assembly.Program}
-    (hExprNo : exprProgram.usesCallCreate = false)
-    (hCompile :
-      compileChecked? maxFrameWords program = some (exprProgram, asm)) :
-    Assembly.Program.usesCallCreate asm = false := by
-  exact
-    Expressions.Program.compileChecked?_noCallCreate hExprNo
-      (compileChecked?_eq_some hCompile).2
-
-theorem compileChecked?_noCallCreate_of_source
-    {maxFrameWords : Nat} {program : Program}
-    {exprProgram : Expressions.Program} {asm : Assembly.Program}
-    (hProgram : program.usesCallCreate = false)
-    (hCompile :
-      compileChecked? maxFrameWords program = some (exprProgram, asm)) :
-    Assembly.Program.usesCallCreate asm = false :=
-  compileChecked?_noCallCreate
-    (compileExpressionsProgram?_noCallCreate hProgram
-      (compileChecked?_eq_some hCompile).1)
-    hCompile
-
-theorem compileChecked?_lookup_of_find?
-    {maxFrameWords : Nat} {program : Program}
-    {exprProgram : Expressions.Program} {asm : Assembly.Program}
-    {name : Name} {fn : FunDef}
-    (hCompile :
-      compileChecked? maxFrameWords program = some (exprProgram, asm))
-    (hFind : FunList.find? name program.functions = some fn) :
-    ∃ proc,
-      Expressions.ProcList.lookup? name exprProgram.procs = some proc ∧
-        proc.name = fn.name ∧ proc.argc = 1 ∧
-          proc.retc = fn.returns.length :=
-  compileExpressionsProgram?_lookup_of_find?
-    (compileChecked?_eq_some hCompile).1 hFind
-
-noncomputable def compileCheckedAssembly? (maxFrameWords : Nat)
-    (program : Program) : Option Assembly.Program := do
-  let (_exprProgram, asm) ← compileChecked? maxFrameWords program
-  some asm
-
-theorem compileCheckedAssembly?_eq_some
-    {maxFrameWords : Nat} {program : Program} {asm : Assembly.Program}
-    (hCompile :
-      compileCheckedAssembly? maxFrameWords program = some asm) :
-    ∃ exprProgram : Expressions.Program,
-      compileExpressionsProgram? maxFrameWords program = some exprProgram ∧
-        Expressions.Program.compileChecked? exprProgram = some asm := by
-  unfold compileCheckedAssembly? at hCompile
-  cases hChecked : compileChecked? maxFrameWords program with
-  | none =>
-      simp [hChecked] at hCompile
-  | some result =>
-      rcases result with ⟨exprProgram, asm'⟩
-      simp [hChecked] at hCompile
-      cases hCompile
-      exact ⟨exprProgram, compileChecked?_eq_some hChecked⟩
-
-theorem compileCheckedAssembly?_noCallCreate
-    {maxFrameWords : Nat} {program : Program} {asm : Assembly.Program}
-    (hExprNo :
-      ∀ exprProgram : Expressions.Program,
-        compileExpressionsProgram? maxFrameWords program = some exprProgram →
-          exprProgram.usesCallCreate = false)
-    (hCompile :
-      compileCheckedAssembly? maxFrameWords program = some asm) :
-    Assembly.Program.usesCallCreate asm = false := by
-  rcases compileCheckedAssembly?_eq_some hCompile with
-    ⟨exprProgram, hExpr, hAsm⟩
-  exact Expressions.Program.compileChecked?_noCallCreate
-    (hExprNo exprProgram hExpr) hAsm
-
-theorem compileCheckedAssembly?_noCallCreate_of_source
-    {maxFrameWords : Nat} {program : Program} {asm : Assembly.Program}
-    (hProgram : program.usesCallCreate = false)
-    (hCompile :
-      compileCheckedAssembly? maxFrameWords program = some asm) :
-    Assembly.Program.usesCallCreate asm = false :=
-  compileCheckedAssembly?_noCallCreate
-    (fun exprProgram hExpr =>
-      compileExpressionsProgram?_noCallCreate hProgram hExpr)
-    hCompile
-
-def compileTarget? (maxFrameWords : Nat)
-    (program : Program) : Option Assembly.TargetProgram := do
-  let exprProgram ← compileExpressionsProgram? maxFrameWords program
-  Expressions.Program.compileExecutable? exprProgram
-
-theorem compileTarget?_eq_standard (maxFrameWords : Nat)
-    (program : Program) :
-    compileTarget? maxFrameWords program =
-      (do
-        let exprProgram ← compileExpressionsProgram? maxFrameWords program
-        Expressions.Program.compile? exprProgram) := by
-  unfold compileTarget?
-  cases hExpr : compileExpressionsProgram? maxFrameWords program with
-  | none =>
-      simp [hExpr]
-  | some exprProgram =>
-      simp [hExpr, Expressions.Program.compileExecutable?_eq_compile?]
 
 namespace AllocationExamples
 

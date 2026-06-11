@@ -1409,14 +1409,6 @@ theorem Program.toExpressions?_noCallCreate (program : Program)
               hBody
           simp [Expressions.Program.usesCallCreate, hProcsNo, hBodyNo]
 
-theorem Program.compile_noCallCreate (program : Program)
-    {lower : Expressions.Program}
-    (hProgram : program.usesCallCreate = false)
-    (hLower : program.toExpressions? = some lower) :
-    Assembly.Program.usesCallCreate lower.compile = false := by
-  exact Expressions.CompilerFacts.Program.compile_noCallCreate lower
-    (Program.toExpressions?_noCallCreate program hProgram hLower)
-
 end CompilerFacts
 
 end Locals

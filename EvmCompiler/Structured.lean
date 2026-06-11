@@ -1,5 +1,4 @@
 import EvmCompiler.Structured.Syntax
 import EvmCompiler.Structured.Semantics
-import EvmCompiler.Structured.Compiler
-import EvmCompiler.Structured.TypedContinuations
-import EvmCompiler.Structured.TypedCfgBridge
+import EvmCompiler.Structured.ControlLabels
+import EvmCompiler.Structured.TypedCfgCompiler

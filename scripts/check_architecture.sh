@@ -49,6 +49,22 @@ report_matches \
   EvmCompiler.lean EvmCompiler/Public.lean
 
 retired_modules=(
+  EvmCompiler/Structured/Compiler.lean
+  EvmCompiler/Structured/TypedContinuations.lean
+  EvmCompiler/Structured/TypedCfgBridge.lean
+  EvmCompiler/Structured/Preservation.lean
+  EvmCompiler/Structured/StackResource.lean
+  EvmCompiler/Expressions/Preservation.lean
+  EvmCompiler/Locals/Preservation.lean
+  EvmCompiler/Locals/SourceLowering.lean
+  EvmCompiler/Functions/SourceDirect.lean
+  EvmCompiler/Functions/SourceLowering.lean
+  EvmCompiler/Functions/ScratchFrameMemory.lean
+  EvmCompiler/Functions/CallDepth.lean
+  EvmCompiler/Functions/CallDepthExamples.lean
+  EvmCompiler/Functions/CallDepthRanked.lean
+  EvmCompiler/Yul/ArgSlots.lean
+  EvmCompiler/Yul/OpenStackResource.lean
   EvmCompiler/Functions/CallAwareSpill.lean
   EvmCompiler/Functions/LiveLayout.lean
   EvmCompiler/Functions/LiveLayoutBridge.lean
@@ -185,6 +201,18 @@ report_matches \
   EvmCompiler/Functions.lean \
   EvmCompiler/Objects.lean \
   EvmCompiler/Yul.lean
+
+report_matches \
+  'The stable compiler spine must not import direct Structured emission or its preservation corridor:' \
+  '^import EvmCompiler\.(Structured\.(Compiler|Preservation|TypedContinuations|TypedCfgBridge)|Expressions\.Preservation|Locals\.Preservation)' \
+  EvmCompiler/Structured.lean \
+  EvmCompiler/Expressions/Compiler.lean \
+  EvmCompiler/Locals/Compiler.lean \
+  EvmCompiler/Functions/Compiler.lean \
+  EvmCompiler/Functions/ScratchFrameSpill.lean \
+  EvmCompiler/Objects/Compiler.lean \
+  EvmCompiler/Public.lean \
+  EvmCompiler.lean
 
 report_matches \
   'Migrated architecture modules must not contain proof holes:' \

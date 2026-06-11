@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-10 21:54 PDT.
+Last updated: 2026-06-10 22:03 PDT.
 
 ## Objective
 
@@ -74,12 +74,11 @@ The remaining critical path is deliberately narrow and explicit:
    certificates carry the remaining safety projections.
 3. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
-4. Delete direct Structured-to-Assembly control lowering, then refresh final
-   architecture metrics and run every verification/smoke gate.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
-`StackGuardAudit`, and `Legacy` have been deleted. The retained source tree is
-about 218K Lean lines, down by about 811K lines in this phase.
+`StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
+its preservation/spill/call-depth cone have been deleted. The retained source
+tree is 87,391 Lean lines, down by about 934K lines from the recorded baseline.
 
 ## Baseline Diagnosis
 
@@ -422,8 +421,9 @@ Cutover gate:
 
 Deletion gate:
 
-- Delete direct Structured-to-Assembly control emission after equivalence and
-  end-to-end preservation pass.
+- [x] Delete direct Structured-to-Assembly control emission. Stable
+  Expressions/Locals/Functions compile aliases now reach the same certified
+  TypedCfg executable route as the public Objects compiler.
 
 ## Phase 6: Generated Fragment Certificates
 
@@ -537,11 +537,13 @@ Exit gate:
   now a primitive-handler specialization of the generic effect semantics.
 - [x] Delete parallel allocation compilers. The stable policy contains only
   inline-stack and source-planned scratch-frame allocation.
-- [ ] Delete direct Structured-to-Assembly control lowering.
+- [x] Delete direct Structured-to-Assembly control lowering and its closed
+  preservation, spill-source, stack-resource, and call-depth proof cone.
 - [x] Delete compatibility theorem corridors and stale audit aliases.
-- [x] Recompute architecture metrics and compare to baseline. The initial
-  cutover snapshot is `proof_artifacts/architecture_current.json`; it records
-  the expected temporary increase from new abstractions before legacy deletion.
+- [x] Recompute architecture metrics and compare to baseline. The current
+  snapshot records 78 modules, 87,391 source lines, 65 compiler-variant
+  declarations, and one outcome-relation declaration, versus 104 modules,
+  1,021,199 lines, 145 variants, and 43 outcome relations at baseline.
 
 Completion evidence:
 
@@ -558,8 +560,9 @@ Completion evidence:
 
 Latest verified checkpoint:
 
-- deleted 21 retired source modules, four obsolete proof artifacts, and the
-  55K-line observer compatibility corridor: about 811K lines removed;
+- deleted the retired compatibility, observer, direct Structured emitter,
+  preservation, spill-source, stack-resource, and call-depth corridors:
+  about 934K lines removed from the recorded baseline;
 - architecture dependency and retired-module guards: pass;
 - stable verification aggregate, including observer, scratch-frame, object
   semantics, public API, public artifact simulation, generic Yul effects, and
@@ -572,6 +575,8 @@ Latest verified checkpoint:
   pass;
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
+- full `lake build`: pass (1,137 jobs);
+- retained architecture metrics: 78 modules and 87,391 Lean lines;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
 - Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
@@ -588,9 +593,8 @@ The remaining critical path is:
    shapes instead of certifying a separately generated CFG.
 2. Finish source-to-CFG semantic composition and remaining certificate safety
    projections.
-3. Finish outcome-indexed projections/composition and retire direct
-   Structured-to-Assembly control lowering.
-4. Refresh final architecture metrics and rerun every verification/smoke gate.
+3. Finish outcome-indexed projections/composition, then rerun the final
+   verification, frontend, benchmark, and architecture gates.
 
 ## Progress Discipline
 

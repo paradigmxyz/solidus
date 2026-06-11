@@ -27755,3 +27755,22 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
   check, and `git diff --check` all pass.
 - size: retained `EvmCompiler` Lean sources total 218,044 lines;
   `Yul/ObserverOracle.lean` is 350 lines, down from 55,316.
+
+## 2026-06-10 22:03 PDT - Deleted direct Structured emission and proof cone
+
+- stable cutover: extracted `Structured.ControlLabels`; the TypedCfg compiler
+  owns control lowering, while Expressions/Locals/Functions compatibility
+  compile aliases now delegate to the certified TypedCfg executable route.
+- deletion: removed the direct Structured-to-Assembly compiler, transitional
+  typed-continuation facade/bridge, Structured/Expressions/Locals preservation
+  corridor, old spill source proofs, scratch-frame memory proof backend,
+  stack-resource adapters, and call-depth proof family: 16 modules and 130,515
+  source lines in this checkpoint.
+- verification: full `lake build` passed all 1,137 jobs;
+  `EvmCompiler.Verification` and both public/resource proof smokes passed all
+  1,154 jobs; Solidity frontend/public/bridge verification passed 1,141 jobs;
+  architecture, stale-name, and diff checks passed.
+- metrics: refreshed `proof_artifacts/architecture_current.json`. The retained
+  tree has 78 modules, 87,391 Lean lines, 65 compiler variants, and one outcome
+  relation, versus baseline 104 modules, 1,021,199 lines, 145 variants, and 43
+  outcome relations.

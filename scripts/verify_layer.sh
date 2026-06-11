@@ -33,7 +33,7 @@ case "$layer" in
       EvmCompiler.TypedCfg
       EvmCompiler.TypedCfg.Preservation
       EvmCompiler.Compiler.AllocatedTypedCfg
-      EvmCompiler.Structured.TypedCfgBridge
+      EvmCompiler.Structured.ControlLabels
       EvmCompiler.Structured.TypedCfgCompiler
     )
     ;;

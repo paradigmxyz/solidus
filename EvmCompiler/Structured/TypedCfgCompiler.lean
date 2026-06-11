@@ -1,4 +1,4 @@
-import EvmCompiler.Structured.Compiler
+import EvmCompiler.Structured.ControlLabels
 import EvmCompiler.TypedCfg
 
 namespace EvmCompiler
