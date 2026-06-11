@@ -20,6 +20,9 @@ namespace ProcLabel
 def entry (name : Name) : Assembly.Label :=
   Assembly.Label.named ("proc:" ++ name ++ ":entry")
 
+def body (name : Name) : Assembly.Label :=
+  Assembly.Label.named ("proc:" ++ name ++ ":body")
+
 def exit (name : Name) : Assembly.Label :=
   Assembly.Label.named ("proc:" ++ name ++ ":exit")
 

@@ -114,8 +114,10 @@ report_matches \
   'Functions\.(CallAwareSpill|ScratchFrameSpill)\..*compile(Target|Executable)' \
   EvmCompiler/Objects/Compiler.lean
 
-if ! rg -q 'Structured\.TypedCfgCompiler\.compile\?' \
+if ! rg -q 'Structured\.TypedCfgCompiler\.lowerWithProcEntryShapes\?' \
     EvmCompiler/Objects/Compiler.lean ||
+    ! rg -q 'planned\.procEntryShapes\?' \
+      EvmCompiler/Objects/Compiler.lean ||
     ! rg -q 'AllocatedTypedCfg\.Program\.ofAllocation' \
       EvmCompiler/Objects/Compiler.lean ||
     ! rg -q 'AllocatedTypedCfg\.Program\.compileCertified\?' \

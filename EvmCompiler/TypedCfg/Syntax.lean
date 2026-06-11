@@ -93,6 +93,11 @@ def compatible (left right : Shape) : Bool :=
     else
       decide (right.tail = .caller)
 
+def relabelCompatible (left right : Shape) : Bool :=
+  slotsAgree left.slots right.slots &&
+    decide (left.length = right.length) &&
+    decide (left.tail = right.tail)
+
 def unwindTo (target current : Shape) : Option Shape :=
   if target.tail = current.tail ∧
       target.length ≤ current.length ∧
@@ -131,6 +136,7 @@ inductive Instr where
   | pop
   | dup (depth : Nat)
   | swap (depth : Nat)
+  | relabel (target : Shape)
   | unwind (target : Shape)
   deriving DecidableEq, Repr
 

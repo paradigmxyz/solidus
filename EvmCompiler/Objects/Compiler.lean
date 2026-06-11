@@ -152,12 +152,51 @@ theorem lowerWithAllocation?_eq (planned : PlannedProgram) :
     planned.lowerWithAllocation? = planned.lowerExpressions? := by
   rfl
 
+def inlineProcEntryShape?
+    (allocation : Locals.Allocation.ProgramPlan)
+    (proc : Expressions.Proc) :
+    Option (Expressions.Name × TypedCfg.Shape) := do
+  let plan ← allocation.find? (.function proc.name)
+  if proc.argc ≤ plan.stackOrder.length then
+    let sourceParams :=
+      plan.stackOrder.drop (plan.stackOrder.length - proc.argc)
+    let shape ←
+      Structured.TypedCfgCompiler.Shape.namedProcEntry?
+        proc.toStructured sourceParams.reverse
+    some (proc.name, shape)
+  else
+    none
+
+def inlineProcEntryShapes?
+    (allocation : Locals.Allocation.ProgramPlan) :
+    List Expressions.Proc →
+      Option Structured.TypedCfgCompiler.ProcEntryShapes
+  | [] => some []
+  | proc :: rest => do
+      let entry ← inlineProcEntryShape? allocation proc
+      let tail ← inlineProcEntryShapes? allocation rest
+      some (entry :: tail)
+
+def procEntryShapes? (planned : PlannedProgram)
+    (expressions : Expressions.Program) :
+    Option Structured.TypedCfgCompiler.ProcEntryShapes :=
+  match planned.backend with
+  | .inlineStack =>
+      inlineProcEntryShapes? planned.allocation expressions.procs
+  | .scratchFrameSpill =>
+      some []
+
+def lowerTypedCfg? (planned : PlannedProgram)
+    (expressions : Expressions.Program) : Option TypedCfg.Program := do
+  let entryShapes ← planned.procEntryShapes? expressions
+  Structured.TypedCfgCompiler.lowerWithProcEntryShapes?
+    expressions.toStructured entryShapes
+
 def lowerArtifact? (planned : PlannedProgram) :
     Option CompileArtifact := do
   if planned.allocation.wellFormed? then pure () else none
   let expressions ← planned.lowerWithAllocation?
-  let cfg ←
-    Structured.TypedCfgCompiler.compile? expressions.toStructured
+  let cfg ← planned.lowerTypedCfg? expressions
   let allocated :=
     Compiler.AllocatedTypedCfg.Program.ofAllocation planned.allocation cfg
   let compiled ← allocated.compileCertified?
@@ -184,8 +223,7 @@ theorem lowerArtifact?_metadataValid
         simp [hLower] at hCompile
     | some expressions =>
         simp [hLower] at hCompile
-        cases hCfg :
-            Structured.TypedCfgCompiler.compile? expressions.toStructured with
+        cases hCfg : planned.lowerTypedCfg? expressions with
         | none =>
             rw [hCfg] at hCompile
             simp at hCompile
@@ -251,8 +289,7 @@ def LoweredFrom (artifact : CompileArtifact)
         backend := artifact.metadata.backend
         allocation := artifact.metadata.allocation }
     planned.lowerWithAllocation? = some expressions ∧
-      Structured.TypedCfgCompiler.compile? expressions.toStructured =
-        some artifact.metadata.typedCfg ∧
+      planned.lowerTypedCfg? expressions = some artifact.metadata.typedCfg ∧
       (Compiler.AllocatedTypedCfg.Program.ofAllocation
         artifact.metadata.allocation
         artifact.metadata.typedCfg).compileCertified? =
@@ -275,8 +312,7 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
         simp [hLower] at hCompile
     | some expressions =>
         simp [hLower] at hCompile
-        cases hCfg :
-            Structured.TypedCfgCompiler.compile? expressions.toStructured with
+        cases hCfg : planned.lowerTypedCfg? expressions with
         | none =>
             rw [hCfg] at hCompile
             simp at hCompile

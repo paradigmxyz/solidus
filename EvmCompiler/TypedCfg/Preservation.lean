@@ -615,16 +615,22 @@ theorem runState_pc_of_lowerAt
           simpa [TypedCfg.Instr.runState,
             Assembly.Program.byteLength, Assembly.Instr.byteSize] using
               pop_step_pc hRun
+      | relabel target =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simp [TypedCfg.Instr.runState] at hRun
+          cases hRun
+          exact (uint256_add_zero state.pc).symm
       | dup depth =>
           have hDepth : depth < 16 := by
             by_contra hNot
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
-            simp [TypedCfg.Instr.runState] at hRun
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
+            simp [TypedCfg.Instr.runState] at hRun <;>
             simpa [TypedCfg.Instr.runState,
               Assembly.Program.byteLength, Assembly.Instr.byteSize] using
                 primOp_step_pc_of_stackArity (by rfl) hRun
@@ -634,10 +640,9 @@ theorem runState_pc_of_lowerAt
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
-            simp [TypedCfg.Instr.runState] at hRun
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
+            simp [TypedCfg.Instr.runState] at hRun <;>
             simpa [TypedCfg.Instr.runState,
               Assembly.Program.byteLength, Assembly.Instr.byteSize] using
                 primOp_step_pc_of_stackArity (by rfl) hRun
@@ -745,22 +750,26 @@ theorem lowerAt_source_runN
           rw [source_runN_one_at_boundary hFits.1 hPc]
           simp [TypedCfg.Instr.runState, Assembly.Source.stepAt,
             Assembly.Target.stepInstr]
+      | relabel target =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simp [Assembly.Source.runN, TypedCfg.Instr.runState]
       | dup depth =>
           have hDepth : depth < 16 := by
             by_contra hNot
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc]
+              List.append_assoc] <;>
             change
               Assembly.Source.runN
                   (pre ++ Assembly.Instr.prim _ :: post) 1 state =
-                _
-            rw [source_runN_one_at_boundary hFits.1 hPc]
+                _ <;>
+            rw [source_runN_one_at_boundary hFits.1 hPc] <;>
             simp [TypedCfg.Instr.runState, Assembly.Source.stepAt,
               Assembly.Target.stepInstr]
       | swap depth =>
@@ -769,16 +778,15 @@ theorem lowerAt_source_runN
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc]
+              List.append_assoc] <;>
             change
               Assembly.Source.runN
                   (pre ++ Assembly.Instr.prim _ :: post) 1 state =
-                _
-            rw [source_runN_one_at_boundary hFits.1 hPc]
+                _ <;>
+            rw [source_runN_one_at_boundary hFits.1 hPc] <;>
             simp [TypedCfg.Instr.runState, Assembly.Source.stepAt,
               Assembly.Target.stepInstr]
       | unwind target =>
@@ -856,21 +864,27 @@ theorem lowerAt_source_runNResult
             List.append_assoc] at hRun
           rw [hRun]
           exact map_map_fst_running _
+      | relabel target =>
+          simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
+            at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rw [runAt_map_running_fst hType]
+          simp [Assembly.Source.runNResult, TypedCfg.Instr.runState]
+          rfl
       | dup depth =>
           have hDepth : depth < 16 := by
             by_contra hNot
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc]
-            rw [source_runNResult_one_eq_map_running_append hFits.1 hPc rfl]
+              List.append_assoc] <;>
+            rw [source_runNResult_one_eq_map_running_append hFits.1 hPc rfl] <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc] at hRun
-            rw [hRun]
+              List.append_assoc] at hRun <;>
+            rw [hRun] <;>
             exact map_map_fst_running _
       | swap depth =>
           have hDepth : depth < 16 := by
@@ -878,15 +892,14 @@ theorem lowerAt_source_runNResult
             simp [TypedCfg.Instr.type?, hNot] at hType
           interval_cases depth <;>
             simp [TypedCfg.Instr.lowerAt?, TypedCfg.Instr.lower?, hType]
-              at hLower
-          all_goals
-            rcases hLower with ⟨rfl, rfl⟩
+              at hLower <;>
+            rcases hLower with ⟨rfl, rfl⟩ <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc]
-            rw [source_runNResult_one_eq_map_running_append hFits.1 hPc rfl]
+              List.append_assoc] <;>
+            rw [source_runNResult_one_eq_map_running_append hFits.1 hPc rfl] <;>
             simp only [List.length_cons, List.length_nil, Nat.zero_add,
-              List.append_assoc] at hRun
-            rw [hRun]
+              List.append_assoc] at hRun <;>
+            rw [hRun] <;>
             exact map_map_fst_running _
       | unwind target =>
           simp [TypedCfg.Instr.lowerAt?, hType] at hLower

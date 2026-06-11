@@ -56,6 +56,14 @@ def procEntry (proc : Proc) : Shape :=
       List.replicate proc.argc .word ++ [.returnToken]
     tail := .caller }
 
+def namedProcEntry? (proc : Proc) (names : List Name) : Option Shape :=
+  if names.length = proc.argc then
+    some
+      { slots := names.map TypedCfg.Slot.local ++ [.returnToken]
+        tail := .caller }
+  else
+    none
+
 def procExit (proc : Proc) : Shape :=
   { slots :=
       List.replicate proc.retc .word ++ [.returnToken]
@@ -378,7 +386,18 @@ def compileBlock? (block : Block) (ctx : Context)
       (regular : Assembly.Label) : Option Result :=
   compileBlockFuel? (blockFuel block + 1) block ctx supply entry input regular
 
-def compileProcBodies? (allProcs : List Proc) :
+abbrev ProcEntryShapes := List (Name × Shape)
+
+namespace ProcEntryShapes
+
+def find? (shapes : ProcEntryShapes) (name : Name) : Option Shape :=
+  (List.find? (fun candidate : Name × Shape =>
+    decide (candidate.1 = name)) shapes).map Prod.snd
+
+end ProcEntryShapes
+
+def lowerProcBodiesWithShapes? (entryShapes : ProcEntryShapes)
+    (allProcs : List Proc) :
     List Proc → LabelSupply →
       Option (List CfgBlock × LabelSupply × List DispatchSite)
   | [], supply => some ([], supply, [])
@@ -386,12 +405,26 @@ def compileProcBodies? (allProcs : List Proc) :
       let ctx : Context :=
         { procs := allProcs
           leaveLabel? := some (ProcLabel.exit proc.name) }
-      let body ←
-        compileBlock? proc.body ctx supply (ProcLabel.entry proc.name)
-          (Shape.procEntry proc) (ProcLabel.exit proc.name)
+      let body ← match entryShapes.find? proc.name with
+        | none =>
+            compileBlock? proc.body ctx supply (ProcLabel.entry proc.name)
+              (Shape.procEntry proc) (ProcLabel.exit proc.name)
+        | some bodyInput => do
+            let adapter ←
+              mkBlock? (ProcLabel.entry proc.name) (Shape.procEntry proc)
+                [.relabel bodyInput] (.jump (ProcLabel.body proc.name))
+            let compiled ←
+              compileBlock? proc.body ctx supply (ProcLabel.body proc.name)
+                bodyInput (ProcLabel.exit proc.name)
+            some { compiled with blocks := adapter :: compiled.blocks }
       let (tailBlocks, next, tailCalls) ←
-        compileProcBodies? allProcs rest body.next
+        lowerProcBodiesWithShapes? entryShapes allProcs rest body.next
       some (body.blocks ++ tailBlocks, next, body.calls ++ tailCalls)
+
+def compileProcBodies? (allProcs : List Proc) :
+    List Proc → LabelSupply →
+      Option (List CfgBlock × LabelSupply × List DispatchSite) :=
+  lowerProcBodiesWithShapes? [] allProcs
 
 def returnSitesFor (name : Name) (calls : List DispatchSite) :
     List TypedCfg.ReturnSite :=
@@ -425,14 +458,16 @@ structure CompileArtifact where
   cfg : TypedCfg.Program
   wellTyped : cfg.WellTyped
 
-def generate? (program : Program) : Option TypedCfg.Program := do
+def generateWithProcEntryShapes? (program : Program)
+    (entryShapes : ProcEntryShapes) : Option TypedCfg.Program := do
   let mainCtx : Context := { procs := program.procs }
   let mainInput := TypedCfg.Shape.caller
   let main ←
     compileBlock? program.body mainCtx 0 entryLabel mainInput
       ProcLabel.programEnd
   let (procBlocks, _next, procCalls) ←
-    compileProcBodies? program.procs program.procs main.next
+    lowerProcBodiesWithShapes? entryShapes program.procs program.procs
+      main.next
   let calls := main.calls ++ procCalls
   let endInput := main.fallthrough?.getD mainInput
   let endBlock : CfgBlock :=
@@ -448,14 +483,26 @@ def generate? (program : Program) : Option TypedCfg.Program := do
           dispatchBlocks program.procs calls ++ [endBlock] }
   some cfg
 
-def compileArtifact? (program : Program) : Option CompileArtifact := do
-  let cfg ← generate? program
+def generate? (program : Program) : Option TypedCfg.Program :=
+  generateWithProcEntryShapes? program []
+
+def artifactWithProcEntryShapes? (program : Program)
+    (entryShapes : ProcEntryShapes) : Option CompileArtifact := do
+  let cfg ← generateWithProcEntryShapes? program entryShapes
   if hCheck : cfg.wellTyped? = true then
     some
       { cfg := cfg
         wellTyped := TypedCfg.Program.wellTyped_of_check hCheck }
   else
     none
+
+def compileArtifact? (program : Program) : Option CompileArtifact :=
+  artifactWithProcEntryShapes? program []
+
+def lowerWithProcEntryShapes? (program : Program)
+    (entryShapes : ProcEntryShapes) : Option TypedCfg.Program :=
+  (artifactWithProcEntryShapes? program entryShapes).map
+    CompileArtifact.cfg
 
 def compile? (program : Program) : Option TypedCfg.Program :=
   (compileArtifact? program).map CompileArtifact.cfg
@@ -561,6 +608,22 @@ def compilesCertified (program : Program) : Bool :=
   | none => false
   | some cfg => cfg.compileCertified?.isSome
 
+def namedArityCallBodyShape : Shape :=
+  { slots := [.local "value", .returnToken]
+    tail := .caller }
+
+def namedArityCallBodyShapeRecorded : Bool :=
+  match
+      lowerWithProcEntryShapes? arityCallProgram
+        [("identity", namedArityCallBodyShape)] with
+  | none => false
+  | some cfg =>
+      decide
+        (cfg.labelShape? (ProcLabel.entry "identity") =
+            some (Shape.procEntry identityProc) ∧
+          cfg.labelShape? (ProcLabel.body "identity") =
+            some namedArityCallBodyShape)
+
 example : (compile? emptyProgram).isSome = true := by
   native_decide
 
@@ -583,6 +646,9 @@ example : (compile? arityCallProgram).isSome = true := by
   native_decide
 
 example : compilesCertified arityCallProgram = true := by
+  native_decide
+
+example : namedArityCallBodyShapeRecorded = true := by
   native_decide
 
 example : compilesCertified resourceObserverProgram = true := by

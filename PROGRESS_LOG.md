@@ -27787,3 +27787,34 @@ initialized git and added initial Lean package scaffold targeting EVMYulLean v4.
 - regression: a deliberately stale layout is rejected by `native_decide`;
   allocated TypedCfg, Objects, public verification, the TypedCfg smoke, and the
   1,154-job proof aggregate pass.
+## 2026-06-10 — Resumed after context compaction
+
+- Re-established the active architecture-migration goal and current roadmap state.
+- Latest completed checkpoint derives allocated CFG scope layouts from canonical allocation plans.
+- Remaining critical path is concrete allocation-to-CFG value binding, source-to-CFG semantic composition, final certificate projections, and aggregate verification/metrics.
+
+## 2026-06-10 22:26 PDT - Allocation-derived procedure CFG values
+
+- typed CFG: added a zero-byte `relabel` instruction with exact-length/same-tail
+  shape compatibility, identity semantics, lowering, and complete instruction
+  preservation through Assembly result execution.
+- structured lowering: calls still target generic caller-row procedure entries;
+  optional named entry shapes create an internal adapter and body label so
+  symbolic names propagate through the existing typed CFG compiler.
+- public allocation path: inline function parameter names are derived from the
+  canonical function `ProgramPlan` and determine each procedure body shape;
+  scratch-frame procedures correctly retain their frame-pointer ABI.
+- guards and regressions: architecture checks pin the allocation-aware compiler
+  call; native-decision smokes prove relabel length rejection, named procedure
+  body shapes, and a real source-derived allocation-to-CFG binding.
+- focused verification passed for TypedCfg preservation, Structured TypedCfg,
+  Objects compiler, the allocation lowering smoke, architecture checks, and
+  `git diff --check`.
+- aggregate verification passed all 1,154 `EvmCompiler.Verification` jobs,
+  proof/axiom smokes remained limited to the standard Lean axioms, and the
+  Solidity frontend/public/bridge gate passed all 1,141 jobs.
+- refreshed architecture metrics remain at 78 modules, 65 compiler variants,
+  and one outcome relation; retained Lean source is 87,614 lines.
+- remaining allocation work is main/lexical transition naming and the generic
+  arbitrary-plan lowerer; source-to-CFG semantic composition remains the next
+  major proof phase.

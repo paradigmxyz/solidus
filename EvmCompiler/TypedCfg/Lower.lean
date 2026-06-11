@@ -49,6 +49,7 @@ def lower? : Instr → Option Assembly.Program
       | 14 => some [.prim .swap15]
       | 15 => some [.prim .swap16]
       | _ => none
+  | .relabel _target => some []
   | .unwind _target => none
 
 def lowerAt? (instr : Instr) (shape : Shape) :

@@ -58,6 +58,10 @@ Implemented in this migration:
 - a direct proof-carrying Structured-to-TypedCfg compiler with branch, switch,
   loop, break, nonzero-arity internal-call, resource-observer, and external-call
   smokes;
+- a zero-byte, preservation-proved CFG relabel instruction plus allocation-
+  derived inline procedure adapters: calls retain generic row-polymorphic entry
+  shapes while canonical parameter locations name the internal body shape and
+  subsequent symbolic value flow;
 - a primitive stack-contract interface independent of the historical
   closed-world proof whitelist, so `gas`, `msize`, and call/create operations
   can be typed without duplicating the CFG compiler;
@@ -68,8 +72,9 @@ Implemented in this migration:
 
 The remaining critical path is deliberately narrow and explicit:
 
-1. Make canonical per-local locations directly drive Expressions/TypedCfg
-   generation and CFG shapes across main and function scopes.
+1. Extend canonical location binding from inline procedure parameters to
+   main/lexical local transitions and the remaining generic-plan lowering
+   boundary.
 2. Finish source-to-CFG semantic composition and make generated fragment
    certificates carry the remaining safety projections.
 3. Finish the generic outcome migration and replace remaining mode-specific
@@ -400,8 +405,10 @@ Goal: make stack/control invariants explicit before Assembly.
   canonical allocation rather than pairing the plan with a separately
   generated CFG. The allocated IR now materializes canonical per-scope stack
   shapes and scratch bindings from `ProgramPlan`, stores them in the
-  certificate, and rejects stale layouts; binding those scope shapes to
-  concrete CFG labels and instruction-produced values remains.
+  certificate, and rejects stale layouts. Inline procedure parameters now
+  enter the generated CFG through a checked zero-byte relabel adapter whose
+  named body shape is derived from the function allocation; main/lexical
+  local transitions and fully generic arbitrary-plan lowering remain.
 - [x] Prove TypedCfg step preservation.
   The complete instruction slice now proves every push, primitive, pop,
   DUP/SWAP depth, and unwind against `Assembly.Source.runN`; block bodies,

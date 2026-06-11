@@ -1,14 +1,67 @@
 import EvmCompiler.TypedCfg
 import EvmCompiler.Compiler.AllocatedTypedCfg
+import EvmCompiler.Objects.Compiler
 
 open EvmCompiler
 
 namespace TypedCfgLoweringInvariantsSmoke
 
 #check TypedCfg.Preservation.Program.lower?_step_eventually
+#check TypedCfg.Preservation.Instr.lowerAt_source_runNResult
 #check TypedCfg.Program.compileCertified?_step_eventually
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_scopeLayouts
 #check Compiler.AllocatedTypedCfg.Program.compileCertified?_step_eventually
+
+def genericEntryShape : TypedCfg.Shape :=
+  { slots := [.word, .returnToken]
+    tail := .caller }
+
+def namedEntryShape : TypedCfg.Shape :=
+  { slots := [.local "value", .returnToken]
+    tail := .caller }
+
+example :
+    TypedCfg.Instr.type? (.relabel namedEntryShape) genericEntryShape =
+      some namedEntryShape := by
+  native_decide
+
+example :
+    TypedCfg.Instr.lowerAt? (.relabel namedEntryShape) genericEntryShape =
+      some ([], namedEntryShape) := by
+  native_decide
+
+example :
+    TypedCfg.Instr.type?
+        (.relabel (TypedCfg.Shape.caller [.local "value"]))
+        genericEntryShape =
+      none := by
+  native_decide
+
+def allocationDrivenProcShapeRecorded : Bool :=
+  let source :=
+    Functions.ScratchFrameSpill.AllocationExamples.program
+  match
+      Functions.ScratchFrameSpill.stackAllocationPlanner.plan? source with
+  | none => false
+  | some allocation =>
+      let planned : Objects.Program.PlannedProgram :=
+        { source := source
+          backend := .inlineStack
+          allocation := allocation }
+      match planned.lowerWithAllocation? with
+      | none => false
+      | some expressions =>
+          match planned.lowerTypedCfg? expressions with
+          | none => false
+          | some cfg =>
+              decide
+                (cfg.labelShape? (Structured.ProcLabel.body "f") =
+                  some
+                    { slots := [.local "p", .returnToken]
+                      tail := .caller })
+
+example : allocationDrivenProcShapeRecorded = true := by
+  native_decide
 
 def firstLabel : Assembly.Label :=
   .named "typedcfg:lowering:first"
