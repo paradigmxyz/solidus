@@ -510,6 +510,49 @@ def lowerWithProcEntryShapes? (program : Program)
 def compile? (program : Program) : Option TypedCfg.Program :=
   (compileArtifact? program).map CompileArtifact.cfg
 
+theorem generateWithProcEntryShapes?_entry
+    {program : Program} {entryShapes : ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (hGenerate :
+      generateWithProcEntryShapes? program entryShapes = some cfg) :
+    cfg.entry = entryLabel := by
+  unfold generateWithProcEntryShapes? at hGenerate
+  cases hMain :
+      compileBlock? program.body { procs := program.procs } 0 entryLabel
+        TypedCfg.Shape.caller ProcLabel.programEnd with
+  | none =>
+      simp [hMain] at hGenerate
+  | some main =>
+      cases hProcs :
+          lowerProcBodiesWithShapes? entryShapes program.procs program.procs
+            main.next with
+      | none =>
+          simp [hMain, hProcs] at hGenerate
+      | some procResult =>
+          rcases procResult with ⟨procBlocks, next, procCalls⟩
+          simp [hMain, hProcs] at hGenerate
+          rcases hGenerate with ⟨_hTokens, hCfg⟩
+          simpa using
+            congrArg TypedCfg.Program.entry hCfg.symm
+
+theorem artifactWithProcEntryShapes?_entry
+    {program : Program} {entryShapes : ProcEntryShapes}
+    {artifact : CompileArtifact}
+    (hArtifact :
+      artifactWithProcEntryShapes? program entryShapes = some artifact) :
+    artifact.cfg.entry = entryLabel := by
+  unfold artifactWithProcEntryShapes? at hArtifact
+  cases hGenerate :
+      generateWithProcEntryShapes? program entryShapes with
+  | none =>
+      simp [hGenerate] at hArtifact
+  | some cfg =>
+      by_cases hCheck : cfg.wellTyped? = true
+      · simp [hGenerate, hCheck] at hArtifact
+        cases hArtifact
+        exact generateWithProcEntryShapes?_entry hGenerate
+      · simp [hGenerate, hCheck] at hArtifact
+
 theorem compile?_wellTyped {program : Program} {cfg : TypedCfg.Program}
     (hCompile : compile? program = some cfg) :
     cfg.WellTyped := by

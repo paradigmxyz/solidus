@@ -1,7 +1,11 @@
 import EvmCompiler.PublicVerification
 
 #check EvmCompiler.Public.Artifact.BlockSimulation
+#check EvmCompiler.Public.Artifact.StructuredEntrySimulation
+#check EvmCompiler.Public.Artifact.StructuredSimulation
 #check EvmCompiler.Public.compileArtifactWithPolicy?_blockSimulation
 #check EvmCompiler.Public.compileArtifactWithPolicy?_entrySimulation
+#check EvmCompiler.Public.compileArtifactWithPolicy?_structuredSimulation
 
 #print axioms EvmCompiler.Public.compileArtifactWithPolicy?_entrySimulation
+#print axioms EvmCompiler.Public.compileArtifactWithPolicy?_structuredSimulation

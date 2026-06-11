@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 07:44 PDT.
+Last updated: 2026-06-11 07:53 PDT.
 
 ## Objective
 
@@ -54,7 +54,9 @@ Implemented in this migration:
   successful-artifact metadata;
 - a hidden-witness public artifact simulation relation that composes successful
   public compilation, allocated TypedCfg stepping, emitted-label resolution,
-  and final Assembly target execution;
+  and final Assembly target execution; its source-facing form now also owns the
+  hidden allocation-lowered Structured program, complete source-to-CFG outcome
+  path, canonical entry label, and the checked Assembly entry execution;
 - a direct proof-carrying Structured-to-TypedCfg compiler with branch, switch,
   loop, break, nonzero-arity internal-call, resource-observer, and external-call
   smokes;
@@ -101,15 +103,15 @@ The remaining critical path is deliberately narrow and explicit:
 1. Extend canonical location binding from inline procedure parameters to
    main/lexical local transitions and the remaining generic-plan lowering
    boundary.
-2. Compose the completed checked Structured-to-TypedCfg artifact theorem into
-   the public source-to-Assembly artifact theorem.
-3. Finish the generic outcome migration and replace remaining mode-specific
+2. Finish the generic outcome migration and replace remaining mode-specific
    proof families with projections and composition theorems.
+3. Run the final frontend, benchmark, deletion, proof-hole, and architecture
+   gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source
-tree is 95,382 Lean lines across 79 modules, down by about 926K lines from the
+tree is 95,629 Lean lines across 79 modules, down by about 926K lines from the
 recorded baseline.
 
 ## Baseline Diagnosis
@@ -511,6 +513,12 @@ corridors.
 - [ ] Move open external execution and resource observation onto common effect
   events.
 - [x] Route Objects through the uniform artifact and backend-policy API.
+- [x] Compose successful public compilation with the hidden allocation-lowered
+  Structured evaluation, complete TypedCfg outcome path, canonical CFG entry,
+  checked Assembly entry-block execution, and executable target trace. The
+  public relation deliberately preserves the current gas-erasing backend
+  boundary rather than claiming an unsupported flattened multi-block Assembly
+  trace.
 - [x] Route Solidity through the same public Objects artifact result. Checked
   object images now compile through `Objects.Program.CompileArtifact`, and
   generated Lean modules expose that artifact instead of importing
@@ -641,6 +649,11 @@ Latest verified checkpoint:
 - successful generation and checked artifacts now project a source-facing
   Structured-to-TypedCfg outcome path without exposing compiler results, call
   tables, or generated-context witnesses;
+- successful public compilation now composes that path with the exact hidden
+  Expressions-to-Structured lowering witness, canonical generated entry label,
+  AllocatedTypedCfg certificate, checked Assembly entry execution, and
+  executable target trace in
+  `compileArtifactWithPolicy?_structuredSimulation`;
 - stale-import scan over retained Lean modules: clean;
 - allocated TypedCfg layer: pass, including certified whole-program stepping,
   emitted block fragments, label/PC projections, and lowering-invariant
@@ -650,7 +663,7 @@ Latest verified checkpoint:
 - `EvmCompiler.Yul.ObserverOracle`: pass;
 - public-artifact and resource-observer proof artifacts and axiom prints: pass;
 - full `lake build`: pass (1,137 jobs);
-- retained architecture metrics: 79 modules, 95,382 Lean lines, 65 compiler
+- retained architecture metrics: 79 modules, 95,629 Lean lines, 65 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
 - Aave v3 math and interest public backend smokes: pass;
@@ -666,11 +679,10 @@ The remaining critical path is:
 
 1. Make canonical allocation locations determine generated CFG values and block
    shapes instead of certifying a separately generated CFG.
-2. Compose the checked Structured-to-TypedCfg artifact path into the public
-   source-to-Assembly artifact theorem, then discharge the remaining
+2. Finish outcome-indexed observer migration and derive the remaining
    certificate safety projections.
-3. Finish outcome-indexed projections/composition, then rerun the final
-   verification, frontend, benchmark, and architecture gates.
+3. Rerun the final verification, frontend, benchmark, deletion, proof-hole,
+   and architecture gates.
 
 ## Progress Discipline
 

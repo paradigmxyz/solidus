@@ -28093,3 +28093,29 @@ artifact surface.
   checks; all 1,156 `EvmCompiler.Verification` jobs; touched-file proof-hole
   scan; architecture metrics; and `git diff --check`. Fresh metrics are 79
   modules, 95,382 Lean lines, 65 compiler variants, and one outcome relation.
+
+## 2026-06-11 07:53 PDT - Public source-facing artifact composition
+
+- Added compiler projections recovering the checked Structured artifact and
+  canonical entry label from successful allocation-aware Objects lowering,
+  without extending public artifact metadata or re-running a second compiler.
+- Added a public hidden-witness `StructuredEvaluation` contract and
+  `StructuredEntrySimulation` relation. The relation composes the complete
+  Structured-to-TypedCfg outcome path with the same canonical entry-PC witness
+  used by checked Assembly entry-block execution and executable target tracing.
+- Kept the theorem boundary honest: TypedCfg-to-Assembly currently erases gas
+  and control counters between blocks, so the public relation does not claim a
+  flattened multi-block Assembly trace that the backend contract cannot yet
+  support.
+- Added
+  `compileArtifactWithPolicy?_structuredSimulation` and extended the public
+  artifact proof smoke. Its axiom print remains limited to `propext`,
+  `Classical.choice`, and `Quot.sound`.
+- Verification passed: focused compiler/public checks, public proof smoke,
+  `scripts/verify_layer.sh proofs`, architecture dependency checks, all 1,156
+  `EvmCompiler.Verification` jobs, touched-file proof-hole scan, architecture
+  metrics, and `git diff --check`. Fresh metrics are 79 modules, 95,629 Lean
+  lines, 65 compiler variants, and one outcome relation.
+- The completed oracle review independently recommended the same generated
+  whole-program provenance and source-fuel recursion architecture used to
+  eliminate `CallCertificate`; no corrective follow-up was needed.

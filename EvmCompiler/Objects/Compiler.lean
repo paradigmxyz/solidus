@@ -192,6 +192,33 @@ def lowerTypedCfg? (planned : PlannedProgram)
   Structured.TypedCfgCompiler.lowerWithProcEntryShapes?
     expressions.toStructured entryShapes
 
+theorem lowerTypedCfg?_sourceArtifact
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    {cfg : TypedCfg.Program}
+    (hLower : planned.lowerTypedCfg? expressions = some cfg) :
+    ∃ entryShapes sourceArtifact,
+      planned.procEntryShapes? expressions = some entryShapes ∧
+        Structured.TypedCfgCompiler.artifactWithProcEntryShapes?
+            expressions.toStructured entryShapes =
+          some sourceArtifact ∧
+        sourceArtifact.cfg = cfg := by
+  unfold lowerTypedCfg? at hLower
+  cases hShapes : planned.procEntryShapes? expressions with
+  | none =>
+      simp [hShapes] at hLower
+  | some entryShapes =>
+      simp [hShapes] at hLower
+      unfold Structured.TypedCfgCompiler.lowerWithProcEntryShapes? at hLower
+      cases hArtifact :
+          Structured.TypedCfgCompiler.artifactWithProcEntryShapes?
+            expressions.toStructured entryShapes with
+      | none =>
+          simp [hArtifact] at hLower
+      | some sourceArtifact =>
+          simp [hArtifact] at hLower
+          cases hLower
+          exact ⟨entryShapes, sourceArtifact, rfl, hArtifact, rfl⟩
+
 def lowerArtifact? (planned : PlannedProgram) :
     Option CompileArtifact := do
   if planned.allocation.wellFormed? then pure () else none
