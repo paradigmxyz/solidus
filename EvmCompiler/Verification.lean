@@ -54,12 +54,17 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
+#check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_push
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
 #check EvmCompiler.Expressions.ObserverPreservation.verified

@@ -9,7 +9,129 @@ abbrev Word := Assembly.Word
 
 open AllocationObserverRelation
 
+private theorem take_succ_getLast!_of_getElem?_eq_some
+    {α : Type} [Inhabited α] {values : List α} {index : Nat} {value : α}
+    (hGet : values[index]? = some value) :
+    (values.take (index + 1)).getLast! = value := by
+  induction index generalizing values with
+  | zero =>
+      cases values with
+      | nil =>
+          simp at hGet
+      | cons head tail =>
+          simp at hGet
+          subst head
+          rfl
+  | succ index ih =>
+      cases values with
+      | nil =>
+          simp at hGet
+      | cons head tail =>
+          simp only [List.getElem?_cons_succ] at hGet
+          have hTail := ih hGet
+          have hIndex : index < tail.length :=
+            List.getElem?_eq_some_iff.mp hGet |>.1
+          have hLength :
+              (tail.take (index + 1)).length = index + 1 := by
+            simp [List.length_take,
+              Nat.min_eq_left (Nat.succ_le_iff.mpr hIndex)]
+          cases hTake : tail.take (index + 1) with
+          | nil =>
+              rw [hTake] at hLength
+              simp at hLength
+          | cons next rest =>
+              rw [hTake] at hTail
+              simpa [List.take_succ_cons, hTake] using hTail
+
+private theorem dup?_continuingStep
+    {depth : Nat} {op : Structured.BasicOp}
+    (hOp : Locals.StackOp.dup? depth = some op) :
+    op.toPrimOp.continuingStep? = some (.dup depth) := by
+  match depth with
+  | 0 => simp [Locals.StackOp.dup?] at hOp
+  | 1 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 2 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 3 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 4 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 5 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 6 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 7 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 8 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 9 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 10 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 11 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 12 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 13 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 14 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 15 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | 16 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
+  | depth + 17 => simp [Locals.StackOp.dup?] at hOp
+
 namespace ObserverCode
+
+theorem run_push {transcript : Trace}
+    (value : Word)
+    (target : Structured.ObserverSemantics.State transcript) :
+    Structured.ObserverSemantics.Code.run
+        [.push value] target =
+      .ok
+        (AllocationObserverRelation.StateRel.pushTargetBy
+          33 value target) := by
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm,
+    Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler, Bind.bind, Except.bind]
+  simp [Structured.EffectSemantics.Code.run, EvmYul.Stack.push,
+    Simulation.ResourceReplay.State.withSource,
+    AllocationObserverRelation.StateRel.pushTargetBy]
+
+theorem run_dup {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {index : Nat} {value : Word} {op : Structured.BasicOp}
+    (hOp : Locals.StackOp.dup? (index + 1) = some op)
+    (hGet : target.source.evm.stack[index]? = some value) :
+    Structured.ObserverSemantics.Code.run [.op op] target =
+      .ok
+        (AllocationObserverRelation.StateRel.pushTarget
+          value target) := by
+  have hIndex : index < target.source.evm.stack.length :=
+    List.getElem?_eq_some_iff.mp hGet |>.1
+  have hDepth : index + 1 ≤ target.source.evm.stack.length := by
+    omega
+  have hLast :
+      (target.source.evm.stack.take (index + 1)).getLast! = value :=
+    take_succ_getLast!_of_getElem?_eq_some hGet
+  have hStep := dup?_continuingStep hOp
+  have hObserver :
+      Structured.ObserverSemantics.basicOpObserver? op = none := by
+    cases op <;>
+      simp [Structured.ObserverSemantics.basicOpObserver?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.ResourceObserver.ofPrimOp?,
+        Assembly.PrimOp.continuingStep?] at hStep ⊢
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run hStep]
+  unfold Assembly.PrimStep.run EvmYul.dup
+  have hTakeLength :
+      (target.source.evm.stack.take (index + 1)).length =
+        index + 1 := by
+    simp [List.length_take, Nat.min_eq_left hDepth]
+  simp only [hTakeLength, ↓reduceIte]
+  rw [hLast]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler, hObserver,
+    Structured.EffectSemantics.Code.run,
+    AllocationObserverRelation.StateRel.pushTarget,
+    AllocationObserverRelation.StateRel.pushTargetBy,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
 
 theorem run_gas {transcript : Trace}
     {target targetConsumed :
@@ -52,6 +174,7 @@ theorem run_gas {transcript : Trace}
     hConsumedSource,
     Simulation.ResourceReplay.State.withSource,
     AllocationObserverRelation.StateRel.pushTarget,
+    AllocationObserverRelation.StateRel.pushTargetBy,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
@@ -146,6 +269,7 @@ theorem run_msize {transcript : Trace}
     hConsumedSource,
     Simulation.ResourceReplay.State.withSource,
     AllocationObserverRelation.StateRel.pushTarget,
+    AllocationObserverRelation.StateRel.pushTargetBy,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
@@ -202,6 +326,138 @@ theorem run_msize_backward {transcript : Trace}
 end ObserverCode
 
 namespace Expr
+
+theorem literal_forward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (value : Word)
+    (hRel :
+      AllocationObserverRelation.StateRel contract plan live
+        stackOffset frameBase source target) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.lit value : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    Structured.ObserverSemantics.Code.run
+        [.push value] target =
+      .ok
+        (AllocationObserverRelation.StateRel.pushTargetBy
+          33 value target) ∧
+    AllocationObserverRelation.StateRel contract plan live
+      (stackOffset + 1) frameBase source
+      (AllocationObserverRelation.StateRel.pushTargetBy
+        33 value target) := by
+  exact
+    ⟨rfl, ObserverCode.run_push value target,
+      hRel.push_target_by 33 value⟩
+
+theorem literal_backward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    (value : Word)
+    (hRel :
+      AllocationObserverRelation.StateRel contract plan live
+        stackOffset frameBase source target)
+    (hRun :
+      Structured.ObserverSemantics.Code.run [.push value] target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.lit value : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.StateRel contract plan live
+      (stackOffset + 1) frameBase source targetFinal := by
+  rw [ObserverCode.run_push value target] at hRun
+  cases hRun
+  exact ⟨rfl, hRel.push_target_by 33 value⟩
+
+theorem stackVar_forward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase depth : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.StateRel contract plan live
+        stackOffset frameBase source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      AllocationObserverRelation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.stack depth))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.var name : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    Structured.ObserverSemantics.Code.run [.op op] target =
+      .ok
+        (AllocationObserverRelation.StateRel.pushTarget value target) ∧
+    AllocationObserverRelation.StateRel contract plan live
+      (stackOffset + 1) frameBase source
+      (AllocationObserverRelation.StateRel.pushTarget value target) := by
+  have hTargetGet :
+      target.source.evm.stack[stackOffset + depth]? = some value := by
+    rw [hRel.core.store.stack hLive hLocation, hSource]
+  refine ⟨?_, ObserverCode.run_dup hOp hTargetGet,
+    hRel.push_target value⟩
+  simp [Functions.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Functions.ObserverSemantics.stateModel,
+    Locals.ObserverSemantics.stateModel,
+    Locals.Source.Effectful.StateModel.vars, hSource]
+
+theorem stackVar_backward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase depth : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.StateRel contract plan live
+        stackOffset frameBase source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      AllocationObserverRelation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.stack depth))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + depth + 1) = some op)
+    (hRun :
+      Structured.ObserverSemantics.Code.run [.op op] target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.var name : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.StateRel contract plan live
+      (stackOffset + 1) frameBase source targetFinal := by
+  have hTargetGet :
+      target.source.evm.stack[stackOffset + depth]? = some value := by
+    rw [hRel.core.store.stack hLive hLocation, hSource]
+  rw [ObserverCode.run_dup hOp hTargetGet] at hRun
+  cases hRun
+  refine ⟨?_, hRel.push_target value⟩
+  simp [Functions.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Functions.ObserverSemantics.stateModel,
+    Locals.ObserverSemantics.stateModel,
+    Locals.Source.Effectful.StateModel.vars, hSource]
 
 theorem gas_forward {transcript : Trace}
     {contract : MemoryContract.Contract}

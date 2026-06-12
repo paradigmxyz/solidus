@@ -115,6 +115,10 @@ Adjacent boundary status:
   `Functions.AllocationObserverPreservation` proves forward preservation and
   backward classification for compiled `gas()` and `msize()` expression
   leaves, including the temporary result above stack-allocated locals.
+  Literal and stack-resident variable reads are also checked in both
+  directions through concrete `PUSH32` and `DUPn` execution. Scratch reads
+  next require extending the relation with the hidden frame pointer's
+  stack location.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

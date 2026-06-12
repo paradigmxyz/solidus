@@ -122,12 +122,16 @@ end StoreRel
 
 namespace StateRel
 
-def pushTarget {transcript : Trace} (value : Word)
+def pushTargetBy {transcript : Trace} (pcDelta : Nat) (value : Word)
     (target : TargetState transcript) : TargetState transcript :=
   target.withSource
     (target.source.withEVM
       (target.source.evm.replaceStackAndIncrPC
-        (value :: target.source.evm.stack)))
+        (value :: target.source.evm.stack) (pcΔ := pcDelta)))
+
+def pushTarget {transcript : Trace} (value : Word)
+    (target : TargetState transcript) : TargetState transcript :=
+  pushTargetBy 1 value target
 
 theorem mono {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -140,18 +144,18 @@ theorem mono {transcript : Trace}
   ⟨hRel.cursor,
     ⟨hRel.core.machine, hRel.core.store.mono hSubset⟩⟩
 
-theorem push_target {transcript : Trace}
+theorem push_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
     {source : SourceState transcript} {target : TargetState transcript}
-    (value : Word)
+    (pcDelta : Nat) (value : Word)
     (hRel :
       StateRel contract plan live stackOffset frameBase source target) :
     StateRel contract plan live (stackOffset + 1) frameBase source
-      (pushTarget value target) := by
+      (pushTargetBy pcDelta value target) := by
   refine ⟨hRel.cursor, ?_⟩
   refine ⟨?_, ?_⟩
-  · simpa [pushTarget, EvmYul.EVM.State.replaceStackAndIncrPC,
+  · simpa [pushTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using hRel.core.machine
   · intro name location hLive hLocation
     have hValue :=
@@ -165,9 +169,20 @@ theorem push_target {transcript : Trace}
             (stackOffset + depth) + 1 by omega]
         simpa using hValue
     | scratch slot =>
-        simpa [locationValue?, pushTarget,
+        simpa [locationValue?, pushTargetBy,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hValue
+
+theorem push_target {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (value : Word)
+    (hRel :
+      StateRel contract plan live stackOffset frameBase source target) :
+    StateRel contract plan live (stackOffset + 1) frameBase source
+      (pushTarget value target) := by
+  exact push_target_by 1 value hRel
 
 theorem consume_forward {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}

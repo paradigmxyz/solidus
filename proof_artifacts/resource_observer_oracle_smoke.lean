@@ -30,6 +30,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
 #check EvmCompiler.Expressions.ObserverPreservation.verified
 #check EvmCompiler.Locals.ObserverSemantics.eval_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
@@ -111,6 +115,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_forward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
 #print axioms EvmCompiler.Expressions.ObserverPreservation.verified
 #print axioms EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons
