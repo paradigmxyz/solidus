@@ -260,6 +260,55 @@ end
 
 namespace Block
 
+/--
+Successful open-block compilation over an appended statement list decomposes
+through the ordinary compiler state produced by the left block.
+-/
+theorem compileOpen_append_components
+    {ctx final : Ctx}
+    {left right : List Stmt}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx { stmts := left ++ right } =
+        some (code, final)) :
+    ∃ leftCode middle rightCode,
+      Block.compileOpen ctx { stmts := left } =
+        some (leftCode, middle) ∧
+      Block.compileOpen middle { stmts := right } =
+        some (rightCode, final) ∧
+      code = leftCode ++ rightCode := by
+  induction left generalizing ctx code final with
+  | nil =>
+      exact
+        ⟨[], ctx, code,
+          by simp [Block.compileOpen],
+          by simpa using hCompile,
+          by simp⟩
+  | cons stmt rest ih =>
+      cases hStmt : Stmt.compile ctx stmt with
+      | none =>
+          simp [Block.compileOpen, hStmt] at hCompile
+      | some stmtResult =>
+          rcases stmtResult with ⟨stmtCode, next⟩
+          cases hTail :
+              Block.compileOpen next { stmts := rest ++ right } with
+          | none =>
+              simp [Block.compileOpen, hStmt, hTail] at hCompile
+          | some tailResult =>
+              rcases tailResult with ⟨tailCode, tailFinal⟩
+              simp [Block.compileOpen, hStmt, hTail] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              obtain
+                  ⟨leftTailCode, middle, rightCode,
+                    hLeftTail, hRight, hTailCode⟩ :=
+                ih hTail
+              subst tailCode
+              refine
+                ⟨stmtCode ++ leftTailCode, middle, rightCode,
+                  ?_, hRight, ?_⟩
+              · simp [Block.compileOpen, hStmt, hLeftTail]
+              · simp [List.append_assoc]
+
 def compileToPreserving (ctx : Ctx) (preserve targetDepth : Nat)
     (block : Block) : Option Expressions.Block := do
   let (code, finalCtx) ← Block.compileOpen ctx block

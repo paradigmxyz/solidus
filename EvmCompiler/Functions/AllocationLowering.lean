@@ -439,6 +439,40 @@ mutual
         some ([.terminalArgs kind lowered], state)
 end
 
+/--
+Successful open-block lowering of a nonempty block decomposes through the
+ordinary statement lowerer and the recursively lowered tail.
+-/
+theorem lowerBlockOpen_cons_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {stmt : Stmt} {rest : List Stmt}
+    {lowered : Locals.Block}
+    (hLower :
+      lowerBlockOpen ctx returns state { stmts := stmt :: rest } =
+        some (lowered, final)) :
+    ∃ head next tail,
+      lowerStmt ctx returns state stmt = some (head, next) ∧
+      lowerBlockOpen ctx returns next { stmts := rest } =
+        some ({ stmts := tail }, final) ∧
+      lowered.stmts = head ++ tail := by
+  cases hHead : lowerStmt ctx returns state stmt with
+  | none =>
+      simp [lowerBlockOpen, lowerStmtList, hHead] at hLower
+  | some headResult =>
+      rcases headResult with ⟨head, next⟩
+      cases hTail :
+          lowerStmtList ctx returns next rest with
+      | none =>
+          simp [lowerBlockOpen, lowerStmtList, hHead, hTail] at hLower
+      | some tailResult =>
+          rcases tailResult with ⟨tail, tailFinal⟩
+          simp [lowerBlockOpen, lowerStmtList, hHead, hTail] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact
+            ⟨head, next, tail, rfl,
+              by simp [lowerBlockOpen, hTail], rfl⟩
+
 def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig)

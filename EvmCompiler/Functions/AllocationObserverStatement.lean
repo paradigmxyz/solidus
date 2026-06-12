@@ -3274,6 +3274,128 @@ theorem assign_of_compilers
 end RegularStmtInvariantForward
 
 /--
+Regular open-block execution retaining the complete final allocation
+invariant. This is the induction target for a sequence whose statements all
+finish regularly.
+-/
+def RegularBlockInvariantForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript)
+    (finalCtx : Functions.Source.Ctx) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel sourceBlock source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerFinal localsFinal plan finalLive
+        frameBase finalMode sourceFinal targetFinal
+
+namespace RegularBlockInvariantForward
+
+theorem nil
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    RegularBlockInvariantForward
+      contract transcript lowerCtx lowerState localsCtx plan live
+      frameBase mode sourceProgram sourceCtx { stmts := [] } source
+      targetProgram { stmts := [] } target source target sourceCtx := by
+  exact
+    ⟨1, 1,
+      by simp [Functions.Source.Effectful.Block.runOpen],
+      Structured.EffectSemantics.Block.Eval.nil,
+      hInvariant⟩
+
+theorem cons_regular
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {midState finalState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {midLive finalLive : List Locals.Name}
+    {frameBase : Nat} {midMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {source sourceMid sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetMid targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    (hHead :
+      RegularStmtInvariantForward
+        contract transcript lowerCtx midState midLocals plan midLive
+        frameBase midMode sourceProgram sourceCtx stmt source
+        targetProgram target compiledHead sourceMid targetMid midCtx)
+    (hTail :
+      RegularBlockInvariantForward
+        contract transcript lowerCtx finalState finalLocals plan finalLive
+        frameBase finalMode sourceProgram midCtx { stmts := rest } sourceMid
+        targetProgram { stmts := compiledTail } targetMid
+        sourceFinal targetFinal finalCtx) :
+    RegularBlockInvariantForward
+      contract transcript lowerCtx finalState finalLocals plan finalLive
+      frameBase finalMode sourceProgram sourceCtx
+      { stmts := stmt :: rest } source
+      targetProgram { stmts := compiledHead ++ compiledTail } target
+      sourceFinal targetFinal finalCtx := by
+  rcases hHead with
+    ⟨headSourceFuel, headTargetFuel,
+      hHeadSource, hHeadTarget, _hHeadInvariant⟩
+  rcases hTail with
+    ⟨tailSourceFuel, tailTargetFuel,
+      hTailSource, hTailTarget, hTailInvariant⟩
+  obtain ⟨sourceFuel, hSourceRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hHeadSource hTailSource
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hHeadTarget hTailTarget
+  exact
+    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant⟩
+
+end RegularBlockInvariantForward
+
+/--
 One source statement that exits nonregularly after lowering to an arbitrary
 Structured statement prefix.
 

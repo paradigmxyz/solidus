@@ -97,6 +97,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward
+#check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_cons_components
+#check EvmCompiler.Locals.Block.compileOpen_append_components
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorInit_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_backward
@@ -269,6 +272,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.assign_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.cons_regular
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_cons_components
+#print axioms EvmCompiler.Locals.Block.compileOpen_append_components
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorInit_forward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorAdvance_forward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Frame.framePrealloc_forward
