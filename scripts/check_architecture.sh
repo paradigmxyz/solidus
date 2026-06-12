@@ -193,6 +193,7 @@ report_matches \
   'Structured observer adequacy must remain owned by the adjacent TypedCfg boundary:' \
   '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -204,6 +205,7 @@ report_matches \
   'Structured observer adequacy must not reason through Assembly execution or lower-pass preservation:' \
   '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -215,6 +217,7 @@ report_matches \
   'Structured observer adequacy must invert the shared TypedCfg interpreter, not define an observer-specific target interpreter:' \
   '^[[:space:]]*(private[[:space:]]+)?def[[:space:]]+(runN|step)([^A-Za-z0-9_]|$)' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -226,6 +229,7 @@ report_matches \
   'Structured recursive observer composition must not restore label-only JumpOr boundaries:' \
   '\bJumpOr\b' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -237,6 +241,7 @@ report_matches \
   'Structured observer adequacy must derive stack-shape soundness instead of accepting generated evidence:' \
   'h[A-Za-z0-9_]*[[:space:]]*:[[:space:]]*.*ShapeSound' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -253,6 +258,7 @@ report_matches \
   'Structured observer adequacy must derive frame reflection from typing instead of accepting it as a premise:' \
   'hFrameReflecting[[:space:]]*:' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -406,6 +412,7 @@ report_matches \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
   EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \

@@ -14,6 +14,7 @@ import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.ObserverAdequacy
+import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverTerminalAdequacy
@@ -96,6 +97,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.fallthrough_if_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequate_nil_of_compileBlockFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_code_of_compileStmtFuel?

@@ -165,10 +165,10 @@ Adjacent boundary status:
   straight-line code, condition pops, statement sequencing, switches, and
   loops, and is carried by the outcome-indexed adequacy artifact. The
   frame-invariant proofs live in `Structured.ObserverFrameInvariant`.
-  `ObserverPreservation` remains below the 5K soft limit;
-  `ObserverAdequacy` temporarily grew to 5,632 lines during semantic callback
-  migration and must be split again before this boundary is considered
-  architecturally complete.
+  `Structured.ObserverSequenceAdequacy` now owns recursive statement-list
+  composition and exposes one compiler-driven adjacent-pass theorem for the
+  forthcoming mutual proof. Both central observer modules remain below the 5K
+  soft limit.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
