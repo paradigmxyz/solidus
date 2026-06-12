@@ -1,3 +1,4 @@
+import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
 
 namespace EvmCompiler
@@ -459,7 +460,7 @@ theorem stackVar_forward {transcript : Trace}
         stackOffset frameBase source target)
     (hLive : name ∈ live)
     (hLocation :
-      AllocationObserverRelation.Plan.location? plan name =
+      Locals.Allocation.Plan.location? plan name =
         some (Locals.Allocation.LocalLocation.stack depth))
     (hSource : source.source.vars name = some value)
     (hOp :
@@ -499,7 +500,7 @@ theorem stackVar_backward {transcript : Trace}
         stackOffset frameBase source target)
     (hLive : name ∈ live)
     (hLocation :
-      AllocationObserverRelation.Plan.location? plan name =
+      Locals.Allocation.Plan.location? plan name =
         some (Locals.Allocation.LocalLocation.stack depth))
     (hSource : source.source.vars name = some value)
     (hOp :
@@ -538,7 +539,7 @@ theorem scratchVar_forward {transcript : Trace}
         stackOffset frameBase frameDepth frameWords source target)
     (hLive : name ∈ live)
     (hLocation :
-      AllocationObserverRelation.Plan.location? plan name =
+      Locals.Allocation.Plan.location? plan name =
         some (Locals.Allocation.LocalLocation.scratch slot))
     (hSource : source.source.vars name = some value)
     (hOp :
@@ -684,7 +685,7 @@ theorem scratchVar_backward {transcript : Trace}
         stackOffset frameBase frameDepth frameWords source target)
     (hLive : name ∈ live)
     (hLocation :
-      AllocationObserverRelation.Plan.location? plan name =
+      Locals.Allocation.Plan.location? plan name =
         some (Locals.Allocation.LocalLocation.scratch slot))
     (hSource : source.source.vars name = some value)
     (hOp :
@@ -709,6 +710,116 @@ theorem scratchVar_backward {transcript : Trace}
   rw [hExpectedRun] at hRun
   cases hRun
   exact ⟨hSourceEval, hExpectedRel⟩
+
+theorem scratchVar_forward_of_compileCode {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name frameName : Locals.Name} {value : Word}
+    {ctx : Locals.Ctx} {code : Structured.Code}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      Locals.Allocation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.scratch slot))
+    (hSource : source.source.vars name = some value)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? frameName ctx.layout =
+        some (frameDepth + 1))
+    (hCompile :
+      Locals.Expr.compileCode ctx stackOffset
+          (AllocationLowering.scratchLoadExpr frameName slot) =
+        some code) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (.var name : Functions.Expr 1) source =
+        .ok (source, [value]) ∧
+      Structured.ObserverSemantics.Code.run code target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 1) frameBase frameDepth frameWords
+        source targetFinal := by
+  cases hDup :
+      Locals.StackOp.dup? (stackOffset + (frameDepth + 1)) with
+  | none =>
+      simp [AllocationLowering.scratchLoadExpr,
+        AllocationLowering.scratchAddressExpr,
+        AllocationLowering.exprSeqOne,
+        AllocationLowering.exprSeqTwo,
+        Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+        hFrameDepth, hDup] at hCompile
+  | some op =>
+      have hCode :=
+        AllocationLowering.scratchLoadExpr_compileCode
+          (slot := slot) (offset := stackOffset) hFrameDepth hDup
+      rw [hCode] at hCompile
+      cases hCompile
+      exact
+        scratchVar_forward hRel hLive hLocation hSource
+          (by
+            simpa [Nat.add_assoc] using hDup)
+
+theorem scratchVar_backward_of_compileCode {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {name frameName : Locals.Name} {value : Word}
+    {ctx : Locals.Ctx} {code : Structured.Code}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      Locals.Allocation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.scratch slot))
+    (hSource : source.source.vars name = some value)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? frameName ctx.layout =
+        some (frameDepth + 1))
+    (hCompile :
+      Locals.Expr.compileCode ctx stackOffset
+          (AllocationLowering.scratchLoadExpr frameName slot) =
+        some code)
+    (hRun :
+      Structured.ObserverSemantics.Code.run code target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.var name : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.ScratchStateRel contract plan live
+      (stackOffset + 1) frameBase frameDepth frameWords
+      source targetFinal := by
+  cases hDup :
+      Locals.StackOp.dup? (stackOffset + (frameDepth + 1)) with
+  | none =>
+      simp [AllocationLowering.scratchLoadExpr,
+        AllocationLowering.scratchAddressExpr,
+        AllocationLowering.exprSeqOne,
+        AllocationLowering.exprSeqTwo,
+        Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+        hFrameDepth, hDup] at hCompile
+  | some op =>
+      have hCode :=
+        AllocationLowering.scratchLoadExpr_compileCode
+          (slot := slot) (offset := stackOffset) hFrameDepth hDup
+      rw [hCode] at hCompile
+      cases hCompile
+      exact
+        scratchVar_backward hRel hLive hLocation hSource
+          (by
+            simpa [Nat.add_assoc] using hDup)
+          hRun
 
 theorem gas_forward {transcript : Trace}
     {contract : MemoryContract.Contract}

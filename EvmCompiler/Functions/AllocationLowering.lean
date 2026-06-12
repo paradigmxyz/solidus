@@ -77,6 +77,35 @@ mutual
         some (.cons loweredHead loweredTail)
 end
 
+theorem lowerExpr_var_scratch
+    {ctx : Ctx} {state : State} {name : Name} {slot : Nat}
+    (hSlot :
+      AllocationSupport.lookupSlot? name state.allocation.env =
+        some slot)
+    (hStack : isStackSlot ctx slot = false)
+    (hFrame : ctx.frameName ∈ state.layout) :
+    lowerExpr ctx state (.var name) =
+      some (scratchLoadExpr ctx.frameName slot) := by
+  simp [lowerExpr, hSlot, hStack, hFrame]
+
+theorem scratchLoadExpr_compileCode
+    {frameName : Name} {slot offset depth : Nat}
+    {ctx : Locals.Ctx} {op : Structured.BasicOp}
+    (hDepth :
+      Locals.Layout.lookupDepth? frameName ctx.layout =
+        some depth)
+    (hDup :
+      Locals.StackOp.dup? (offset + depth) = some op) :
+    Locals.Expr.compileCode ctx offset
+        (scratchLoadExpr frameName slot) =
+      some
+        [ .op op,
+          .push (AllocationSupport.slotOffset slot),
+          .op .add,
+          .op .mload ] := by
+  simp [scratchLoadExpr, scratchAddressExpr, exprSeqOne, exprSeqTwo,
+    Locals.Expr.compileCode, Locals.ExprSeq.compileCode, hDepth, hDup]
+
 def lowerExprList (ctx : Ctx) (state : State) :
     List (Expr 1) → Option (List (Locals.Expr 1))
   | [] => some []
@@ -553,8 +582,7 @@ def slotOccurrences
 def bindingLocation? (allocation : ProgramPlan)
     (scope : ScopeId) (name : Name) : Option LocalLocation := do
   let plan ← allocation.find? scope
-  (plan.bindings.find? fun binding =>
-    decide (binding.1 = name)).map Prod.snd
+  plan.location? name
 
 def inferSlotStack? (allocation : ProgramPlan)
     (occurrences : List SlotOccurrence) (slot : Nat) : Option Bool := do

@@ -50,7 +50,10 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverSemantics.Instr.runState
 #check EvmCompiler.MemoryContract.ofMemoryGuard?
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel
+#check EvmCompiler.Locals.Allocation.Plan.location?
+#check EvmCompiler.Locals.Allocation.Plan.scratch_bound_of_wellFormed
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_memoryAuthorized
+#check EvmCompiler.Functions.AllocationLowering.scratchLoadExpr_compileCode
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
@@ -67,6 +70,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward_of_compileCode
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward_of_compileCode
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch

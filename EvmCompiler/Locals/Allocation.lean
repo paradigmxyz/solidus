@@ -90,6 +90,30 @@ def scratchSlots (plan : Plan) : List Nat :=
     | .stack _ => none
     | .scratch slot => some slot
 
+def location? (plan : Plan) (name : Name) : Option LocalLocation :=
+  (plan.bindings.find? fun binding =>
+    decide (binding.1 = name)).map Prod.snd
+
+theorem binding_mem_of_location?_eq_some
+    {plan : Plan} {name : Name} {location : LocalLocation}
+    (hLocation : plan.location? name = some location) :
+    (name, location) ∈ plan.bindings := by
+  unfold location? at hLocation
+  cases hFind :
+      plan.bindings.find? fun binding =>
+        decide (binding.1 = name) with
+  | none =>
+      simp [hFind] at hLocation
+  | some binding =>
+      have hMem := List.mem_of_find?_eq_some hFind
+      have hName := List.find?_some hFind
+      rcases binding with ⟨candidate, candidateLocation⟩
+      rw [hFind] at hLocation
+      cases hLocation
+      simp only [decide_eq_true_eq] at hName
+      subst candidate
+      exact hMem
+
 def BindingValid (plan : Plan) (binding : Binding) : Prop :=
   match binding.2 with
   | .stack depth => plan.stackOrder[depth]? = some binding.1
@@ -189,6 +213,31 @@ def WellFormed (plan : Plan) : Prop :=
     plan.liveIntervals.Forall (LiveIntervalValid plan) ∧
     plan.callBoundaries.Forall (CallBoundaryValid plan) ∧
     plan.returnLayouts.Forall (ReturnLayoutValid plan)
+
+theorem bindingValid_of_wellFormed_of_location?_eq_some
+    {plan : Plan} {name : Name} {location : LocalLocation}
+    (hWF : plan.WellFormed)
+    (hLocation : plan.location? name = some location) :
+    plan.BindingValid (name, location) := by
+  rcases hWF with
+    ⟨_hBindings, _hScope, _hStackLength, _hStackOrder,
+      hValid, _hScratch, _hKeys, _hIntervals, _hCalls, _hReturns⟩
+  exact
+    (List.forall_iff_forall_mem.mp hValid)
+      (name, location)
+      (binding_mem_of_location?_eq_some hLocation)
+
+theorem scratch_bound_of_wellFormed
+    {plan : Plan} {name : Name} {slot words : Nat}
+    {base : RegionBase}
+    (hWF : plan.WellFormed)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hRegion :
+      plan.scratchRegion? = some { base := base, words := words }) :
+    slot < words := by
+  have hValid :=
+    bindingValid_of_wellFormed_of_location?_eq_some hWF hLocation
+  simpa [BindingValid, hRegion] using hValid
 
 instance wellFormedDecidable (plan : Plan) :
     Decidable plan.WellFormed := by

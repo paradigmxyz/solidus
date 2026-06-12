@@ -124,6 +124,10 @@ Adjacent boundary status:
   directions. The spill read executes the canonical frame-pointer `DUP`, slot
   `PUSH`, `ADD`, and preallocated `MLOAD` sequence; the proof derives that the
   load cannot expand memory and returns the source named-variable value.
+  Location lookup is now owned canonically by `Locals.Allocation.Plan`;
+  well-formed plans derive live scratch-slot bounds, and successful
+  `Locals.Expr.compileCode` execution constructs the exact spill-read code
+  consumed by the observer theorem instead of requiring caller-supplied code.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

@@ -27,14 +27,6 @@ abbrev Location := Locals.Allocation.LocalLocation
 abbrev SourceState := Functions.ObserverSemantics.State
 abbrev TargetState := Structured.ObserverSemantics.State
 
-namespace Plan
-
-def location? (plan : Plan) (name : Locals.Name) : Option Location :=
-  (plan.bindings.find? fun binding =>
-    decide (binding.1 = name)).map Prod.snd
-
-end Plan
-
 def scratchAddress (frameBase slot : Nat) : Nat :=
   frameBase + MemoryContract.wordBytes * slot
 
@@ -344,6 +336,35 @@ structure ScratchStateRel {transcript : Trace}
       slot < frameWords
 
 namespace ScratchStateRel
+
+theorem of_wellFormed
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hBase :
+      StateRel contract plan live stackOffset frameBase source target)
+    (hFramePointer :
+      target.source.evm.stack[stackOffset + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase))
+    (hFrameActive :
+      frameBase + MemoryContract.wordBytes * frameWords ≤
+        target.source.evm.activeWords.toNat * MemoryContract.wordBytes)
+    (hFrameNoWrap :
+      frameBase + MemoryContract.wordBytes * frameWords <
+        EvmYul.UInt256.size)
+    (hWF : plan.WellFormed)
+    (hRegion :
+      plan.scratchRegion? =
+        some
+          { base := .absolute frameBase
+            words := frameWords }) :
+    ScratchStateRel contract plan live stackOffset frameBase
+      frameDepth frameWords source target :=
+  ⟨hBase, hFramePointer, hFrameActive, hFrameNoWrap,
+    fun name slot _hLive hLocation =>
+      plan.scratch_bound_of_wellFormed hWF hLocation hRegion⟩
 
 private theorem memoryWords_eq_of_region_active
     {active address : Nat}
