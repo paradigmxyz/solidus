@@ -117,12 +117,13 @@ Adjacent boundary status:
   leaves, including the temporary result above stack-allocated locals.
   Literal and stack-resident variable reads are also checked in both
   directions through concrete `PUSH32` and `DUPn` execution. Scratch reads
-  use the stronger `ScratchStateRel`, which now records the hidden frame
-  pointer's stack location and whole-frame active-memory coverage and is
-  preserved by expression pushes and replay consumption. Gas/msize forward
-  and backward leaves are checked under this spill-capable relation. The
-  next scratch-read lemma composes frame-pointer `DUP`, slot `PUSH`, `ADD`,
-  and preallocated `MLOAD`.
+  use the stronger `ScratchStateRel`, which records the hidden frame pointer,
+  active-memory coverage, no-wrap frame bound, and live scratch-slot bounds.
+  It is preserved by expression stack transformations and replay consumption.
+  Gas/msize leaves and full scratch-variable reads are checked in both
+  directions. The spill read executes the canonical frame-pointer `DUP`, slot
+  `PUSH`, `ADD`, and preallocated `MLOAD` sequence; the proof derives that the
+  load cannot expand memory and returns the source named-variable value.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

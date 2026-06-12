@@ -133,6 +133,73 @@ theorem run_dup {transcript : Trace}
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
+theorem run_add {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {right left : Word} {rest : List Word}
+    (hStack : target.source.evm.stack = right :: left :: rest) :
+    Structured.ObserverSemantics.Code.run [.op .add] target =
+      .ok
+        (AllocationObserverRelation.StateRel.contractTargetBy
+          1 (EvmYul.UInt256.add right left) rest target) := by
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.add.continuingStep? =
+      some (.bin EvmYul.UInt256.add))]
+  unfold Assembly.PrimStep.run EvmYul.EVM.execBinOp
+  rw [hStack]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler,
+    Structured.ObserverSemantics.basicOpObserver?,
+    Structured.BasicOp.toPrimOp,
+    Assembly.ResourceObserver.ofPrimOp?,
+    Structured.EffectSemantics.Code.run,
+    EvmYul.Stack.pop2, EvmYul.Stack.push, Id.run,
+    AllocationObserverRelation.StateRel.contractTargetBy,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+theorem run_mload {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {address value : Word} {rest : List Word}
+    (hStack : target.source.evm.stack = address :: rest)
+    (hLoad :
+      target.source.evm.toMachineState.mload address =
+        (value, target.source.evm.toMachineState)) :
+    Structured.ObserverSemantics.Code.run [.op .mload] target =
+      .ok
+        (AllocationObserverRelation.StateRel.contractTargetBy
+          1 value rest target) := by
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.mload.continuingStep? =
+      some .mload)]
+  unfold Assembly.PrimStep.run
+  rw [hStack]
+  simp only [EvmYul.Stack.pop]
+  rw [hLoad]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler,
+    Structured.ObserverSemantics.basicOpObserver?,
+    Structured.BasicOp.toPrimOp,
+    Assembly.ResourceObserver.ofPrimOp?,
+    Structured.EffectSemantics.Code.run,
+    EvmYul.Stack.push, Id.run,
+    AllocationObserverRelation.StateRel.contractTargetBy,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
 theorem run_gas {transcript : Trace}
     {target targetConsumed :
       Structured.ObserverSemantics.State transcript}
@@ -458,6 +525,190 @@ theorem stackVar_backward {transcript : Trace}
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
+
+theorem scratchVar_forward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      AllocationObserverRelation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.scratch slot))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + frameDepth + 1) = some op) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (.var name : Functions.Expr 1) source =
+        .ok (source, [value]) ∧
+      Structured.ObserverSemantics.Code.run
+          [ .op op,
+            .push (AllocationSupport.slotOffset slot),
+            .op .add,
+            .op .mload ] target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 1) frameBase frameDepth frameWords
+        source targetFinal := by
+  let frameWord := EvmYul.UInt256.ofNat frameBase
+  let offsetWord := AllocationSupport.slotOffset slot
+  let address :=
+    EvmYul.UInt256.add offsetWord frameWord
+  let afterDup :=
+    AllocationObserverRelation.StateRel.pushTarget frameWord target
+  let afterPush :=
+    AllocationObserverRelation.StateRel.pushTargetBy
+      33 offsetWord afterDup
+  let afterAdd :=
+    AllocationObserverRelation.StateRel.contractTargetBy
+      1 address target.source.evm.stack afterPush
+  let targetFinal :=
+    AllocationObserverRelation.StateRel.contractTargetBy
+      1 value target.source.evm.stack afterAdd
+  have hAddress :
+      address =
+        EvmYul.UInt256.ofNat
+          (AllocationObserverRelation.scratchAddress frameBase slot) := by
+    change
+      EvmYul.UInt256.ofNat (32 * slot) +
+          EvmYul.UInt256.ofNat frameBase =
+        EvmYul.UInt256.ofNat
+          (frameBase + MemoryContract.wordBytes * slot)
+    rw [Assembly.UInt256_ofNat_add]
+    simp [MemoryContract.wordBytes, Nat.add_comm]
+  have hAfterDupRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 1) frameBase frameDepth frameWords
+        source afterDup := by
+    exact hRel.push_target frameWord
+  have hAfterPushRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 2) frameBase frameDepth frameWords
+        source afterPush := by
+    exact hAfterDupRel.push_target_by 33 offsetWord
+  have hAfterPushStack :
+      afterPush.source.evm.stack =
+        offsetWord :: frameWord :: target.source.evm.stack := by
+    rfl
+  have hAfterAddRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 1) frameBase frameDepth frameWords
+        source afterAdd := by
+    exact
+      hAfterPushRel.contract_target_by
+        (value := address) hAfterPushStack 1
+  have hAfterAddStack :
+      afterAdd.source.evm.stack =
+        address :: target.source.evm.stack := by
+    rfl
+  have hLoad :
+      afterAdd.source.evm.toMachineState.mload address =
+        (value, afterAdd.source.evm.toMachineState) := by
+    have hMachine :=
+      hAfterAddRel.mload_machine_eq hLive hLocation
+    have hStored :=
+      hAfterAddRel.base.core.store.scratch hLive hLocation
+    rw [hSource] at hStored
+    simp only [Option.getD_some] at hStored
+    simpa [hAddress, hStored] using hMachine
+  have hFinalRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        (stackOffset + 1) frameBase frameDepth frameWords
+        source targetFinal := by
+    exact
+      hAfterAddRel.replace_top_by
+        (value := value) hAfterAddStack 1
+  refine ⟨targetFinal, ?_, ?_, hFinalRel⟩
+  · simp [Functions.Source.Effectful.Expr.eval,
+      Locals.Source.Effectful.Expr.eval,
+      Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.vars, hSource]
+  · calc
+      Structured.ObserverSemantics.Code.run
+          [ .op op,
+            .push offsetWord,
+            .op .add,
+            .op .mload ] target =
+          (Structured.ObserverSemantics.Code.run [.op op] target).bind
+            (Structured.ObserverSemantics.Code.run
+              [ .push offsetWord, .op .add, .op .mload ]) := by
+                rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      _ =
+          Structured.ObserverSemantics.Code.run
+            [ .push offsetWord, .op .add, .op .mload ] afterDup := by
+              rw [ObserverCode.run_dup hOp hRel.framePointer]
+              rfl
+      _ =
+          (Structured.ObserverSemantics.Code.run
+              [.push offsetWord] afterDup).bind
+            (Structured.ObserverSemantics.Code.run
+              [.op .add, .op .mload]) := by
+                rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      _ =
+          Structured.ObserverSemantics.Code.run
+            [.op .add, .op .mload] afterPush := by
+              rw [ObserverCode.run_push offsetWord afterDup]
+              rfl
+      _ =
+          (Structured.ObserverSemantics.Code.run
+              [.op .add] afterPush).bind
+            (Structured.ObserverSemantics.Code.run [.op .mload]) := by
+                rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      _ =
+          Structured.ObserverSemantics.Code.run
+            [.op .mload] afterAdd := by
+              rw [ObserverCode.run_add hAfterPushStack]
+              rfl
+      _ = .ok targetFinal := by
+        exact ObserverCode.run_mload hAfterAddStack hLoad
+
+theorem scratchVar_backward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      AllocationObserverRelation.Plan.location? plan name =
+        some (Locals.Allocation.LocalLocation.scratch slot))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + frameDepth + 1) = some op)
+    (hRun :
+      Structured.ObserverSemantics.Code.run
+          [ .op op,
+            .push (AllocationSupport.slotOffset slot),
+            .op .add,
+            .op .mload ] target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.var name : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.ScratchStateRel contract plan live
+      (stackOffset + 1) frameBase frameDepth frameWords
+      source targetFinal := by
+  obtain ⟨expected, hSourceEval, hExpectedRun, hExpectedRel⟩ :=
+    scratchVar_forward hRel hLive hLocation hSource hOp
+  rw [hExpectedRun] at hRun
+  cases hRun
+  exact ⟨hSourceEval, hExpectedRel⟩
 
 theorem gas_forward {transcript : Trace}
     {contract : MemoryContract.Contract}

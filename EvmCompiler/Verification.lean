@@ -65,6 +65,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch
