@@ -166,7 +166,11 @@ Adjacent boundary status:
   stable, and the real one-op Structured executions return the source results.
   Fixed-length byte writes share an exact decomposition, locality,
   monotone-growth, synchronized-relation, and disjoint spill-lookup interface;
-  this is also the common substrate for the remaining copy primitive families.
+  arbitrary offset/padded `ByteArray.write` now has the corresponding
+  destination-independent inside/outside locality, monotone size,
+  synchronized-relation, disjoint padded-read, and spill-lookup interface.
+  Canonical `calldatacopy` is checked through that shared copy substrate.
+  `codecopy`, `returndatacopy`, `extcodecopy`, and `mcopy` remain.
   `ScratchStateRel` retains an actual reservation witness for its active frame,
   ruling out impossible unrestricted scratch states and making source-write
   disjointness an allocation-owned invariant.

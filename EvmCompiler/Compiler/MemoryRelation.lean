@@ -18,6 +18,587 @@ theorem usize_size_add_31_lt_uint256_size :
 def byteAt (memory : ByteArray) (address : Nat) : UInt8 :=
   memory.data.getD address 0
 
+private theorem byteAt_copySlice_of_outside
+    (source dest : ByteArray)
+    (sourceAddress destAddress length query : Nat)
+    (hDest : destAddress ≤ dest.size)
+    (hSource : sourceAddress + length ≤ source.size)
+    (hOutside :
+      query < destAddress ∨ destAddress + length ≤ query) :
+    byteAt
+        (source.copySlice sourceAddress dest destAddress length) query =
+      byteAt dest query := by
+  rw [byteAt, ByteArray.data_copySlice, byteAt]
+  let pre := dest.data.extract 0 destAddress
+  let copied :=
+    source.data.extract sourceAddress (sourceAddress + length)
+  let post :=
+    dest.data.extract (destAddress + length) dest.data.size
+  have hSourceSub : length ≤ source.size - sourceAddress := by
+    omega
+  have hMin :
+      min length (source.data.size - sourceAddress) = length := by
+    rw [Nat.min_eq_left]
+    simpa using hSourceSub
+  rw [hMin]
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?]
+  change
+    (pre ++ copied ++ post)[query]?.getD 0 =
+      dest.data[query]?.getD 0
+  have hPreSize : pre.size = destAddress := by
+    simp [pre, Array.size_extract, Nat.min_eq_left hDest]
+  have hCopiedSize : copied.size = length := by
+    simp [copied, Array.size_extract, hSource]
+  rcases hOutside with hBefore | hAfter
+  · have hPre : query < pre.size := by
+      simpa [hPreSize] using hBefore
+    have hPrefix : query < (pre ++ copied).size := by
+      simp [hPreSize, hCopiedSize]
+      omega
+    rw [Array.getElem?_append_left hPrefix,
+      Array.getElem?_append_left hPre]
+    have hQueryDest : query < dest.data.size := by
+      simpa using hBefore.trans_le hDest
+    simp only [pre, Array.getElem?_extract]
+    rw [show min destAddress dest.data.size = destAddress by
+      rw [Nat.min_eq_left]
+      simpa using hDest]
+    simp only [Nat.sub_zero, Nat.zero_add]
+    rw [if_pos hBefore]
+  · have hPast :
+        (pre ++ copied).size ≤ query := by
+      simp [hPreSize, hCopiedSize, hAfter]
+    rw [Array.getElem?_append_right hPast]
+    by_cases hInsideDest : query < dest.size
+    · have hPostInside :
+          query - (pre ++ copied).size <
+            dest.size - (destAddress + length) := by
+        simp [hPreSize, hCopiedSize]
+        omega
+      have hPostIndex :
+          destAddress + length +
+              (query - (pre ++ copied).size) =
+            query := by
+        simp [hPreSize, hCopiedSize]
+        omega
+      simp only [post, Array.getElem?_extract]
+      rw [show dest.data.size = dest.size by rfl, min_self]
+      rw [if_pos hPostInside, hPostIndex]
+    · have hPostPast :
+          post.size ≤ query - (pre ++ copied).size := by
+        simp [post, Array.size_extract, hPreSize, hCopiedSize]
+        omega
+      rw [Array.getElem?_eq_none hPostPast]
+      rw [Array.getElem?_eq_none (by simpa using Nat.le_of_not_gt hInsideDest)]
+
+private theorem byteAt_copySlice_of_inside
+    (source dest : ByteArray)
+    (sourceAddress destAddress length query : Nat)
+    (hDest : destAddress ≤ dest.size)
+    (hSource : sourceAddress + length ≤ source.size)
+    (hStart : destAddress ≤ query)
+    (hEnd : query < destAddress + length) :
+    byteAt
+        (source.copySlice sourceAddress dest destAddress length) query =
+      byteAt source (sourceAddress + (query - destAddress)) := by
+  rw [byteAt, ByteArray.data_copySlice, byteAt]
+  let pre := dest.data.extract 0 destAddress
+  let copied :=
+    source.data.extract sourceAddress (sourceAddress + length)
+  let post :=
+    dest.data.extract (destAddress + length) dest.data.size
+  have hSourceSub : length ≤ source.size - sourceAddress := by
+    omega
+  have hMin :
+      min length (source.data.size - sourceAddress) = length := by
+    rw [Nat.min_eq_left]
+    simpa using hSourceSub
+  rw [hMin]
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?]
+  change
+    (pre ++ copied ++ post)[query]?.getD 0 =
+      source.data[sourceAddress + (query - destAddress)]?.getD 0
+  have hPreSize : pre.size = destAddress := by
+    simp [pre, Array.size_extract, Nat.min_eq_left hDest]
+  have hCopiedSize : copied.size = length := by
+    simp [copied, Array.size_extract, hSource]
+  have hPastPre : pre.size ≤ query := by
+    simpa [hPreSize] using hStart
+  have hPrefixInside : query < (pre ++ copied).size := by
+    simp [hPreSize, hCopiedSize]
+    omega
+  rw [Array.getElem?_append_left hPrefixInside,
+    Array.getElem?_append_right hPastPre]
+  have hInsideCopied :
+      query - pre.size < copied.size := by
+    simp [hPreSize, hCopiedSize]
+    omega
+  simp only [copied, Array.getElem?_extract]
+  rw [show min (sourceAddress + length) source.data.size =
+      sourceAddress + length by
+    rw [Nat.min_eq_left]
+    simpa using hSource]
+  have hInsideLength : query - pre.size < length := by
+    rw [← hCopiedSize]
+    exact hInsideCopied
+  rw [if_pos (by simpa [hPreSize] using hInsideLength)]
+  congr 2
+  simp [hPreSize]
+
+private theorem size_copySlice_ge_dest
+    (source dest : ByteArray)
+    (sourceAddress destAddress length : Nat)
+    (hDest : destAddress ≤ dest.size)
+    (hSource : sourceAddress + length ≤ source.size) :
+    dest.size ≤
+      (source.copySlice sourceAddress dest destAddress length).size := by
+  change
+    dest.size ≤
+      (source.copySlice
+        sourceAddress dest destAddress length).data.size
+  rw [ByteArray.data_copySlice]
+  have hSourceSub : length ≤ source.size - sourceAddress := by
+    omega
+  have hMin :
+      min length (source.data.size - sourceAddress) = length := by
+    rw [Nat.min_eq_left]
+    simpa using hSourceSub
+  rw [hMin]
+  have hPre :
+      (dest.data.extract 0 destAddress).size = destAddress := by
+    simp [Array.size_extract, Nat.min_eq_left hDest]
+  have hCopied :
+      (source.data.extract
+        sourceAddress (sourceAddress + length)).size = length := by
+    simp [Array.size_extract, hSource]
+  have hPost :
+      (dest.data.extract
+        (destAddress + length) dest.data.size).size =
+          dest.size - (destAddress + length) := by
+    simp [Array.size_extract]
+  simp only [Array.size_append]
+  rw [hPre, hCopied, hPost]
+  omega
+
+private theorem byteAt_append_zeroes
+    (dest : ByteArray) (padding : USize) (query : Nat) :
+    byteAt (dest ++ ffi.ByteArray.zeroes padding) query =
+      byteAt dest query := by
+  unfold byteAt
+  simp only [ByteArray.data_append]
+  rw [Array.getD_eq_getD_getElem?, Array.getD_eq_getD_getElem?]
+  by_cases hInside : query < dest.data.size
+  · rw [Array.getElem?_append_left hInside]
+  · have hPast : dest.data.size ≤ query :=
+      Nat.le_of_not_gt hInside
+    rw [Array.getElem?_append_right hPast]
+    rw [ffi.ByteArray.data_getElem?_zeroes]
+    by_cases hPadding : query - dest.data.size < padding.toNat
+    · rw [if_pos hPadding]
+      rw [Array.getElem?_eq_none hPast]
+      rfl
+    · rw [if_neg hPadding]
+      rw [Array.getElem?_eq_none hPast]
+
+private theorem byteAt_of_size_le
+    (memory : ByteArray) (query : Nat)
+    (hPast : memory.size ≤ query) :
+    byteAt memory query = 0 := by
+  unfold byteAt
+  rw [Array.getD_eq_getD_getElem?]
+  rw [Array.getElem?_eq_none (by simpa using hPast)]
+  rfl
+
+private theorem byteAt_zeroes
+    (size : USize) (query : Nat) :
+    byteAt (ffi.ByteArray.zeroes size) query = 0 := by
+  unfold byteAt
+  rw [Array.getD_eq_getD_getElem?]
+  rw [ffi.ByteArray.data_getElem?_zeroes]
+  split <;> rfl
+
+set_option maxHeartbeats 1000000 in
+theorem byteAt_write_of_outside
+    (source dest : ByteArray)
+    (sourceAddress destAddress length query : Nat)
+    (hHost : destAddress + length < USize.size)
+    (hOutside :
+      query < destAddress ∨ destAddress + length ≤ query) :
+    byteAt
+        (source.write sourceAddress dest destAddress length) query =
+      byteAt dest query := by
+  unfold ByteArray.write
+  split
+  · rfl
+  · rename_i hPositive
+    split
+    · rename_i hSourcePast
+      let copiedLength := min length (dest.size - destAddress)
+      let copiedAddress := min destAddress dest.size
+      let zeroes :=
+        ffi.ByteArray.zeroes (OfNat.ofNat copiedLength)
+      have hCopiedLength : copiedLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.min_le_left _ _) (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hZeroesSize : zeroes.size = copiedLength := by
+        simp [zeroes, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hCopiedLength
+      have hCopiedAddress : copiedAddress ≤ dest.size := by
+        exact Nat.min_le_right _ _
+      have hSourceBound : 0 + copiedLength ≤ zeroes.size := by
+        simp [hZeroesSize]
+      have hCopiedOutside :
+          query < copiedAddress ∨
+            copiedAddress + copiedLength ≤ query := by
+        rcases hOutside with hBefore | hAfter
+        · by_cases hQuery : query < dest.size
+          · left
+            simp [copiedAddress]
+            exact ⟨hBefore, hQuery⟩
+          · right
+            have hAddressPast : dest.size ≤ destAddress := by
+              by_contra hNot
+              have hAddressInside : destAddress < dest.size :=
+                Nat.lt_of_not_ge hNot
+              exact hQuery (hBefore.trans hAddressInside)
+            have hCopiedZero : copiedLength = 0 := by
+              simp [copiedLength,
+                Nat.sub_eq_zero_of_le hAddressPast]
+            simp [copiedAddress, hCopiedZero,
+              Nat.min_eq_right hAddressPast,
+              Nat.le_of_not_gt hQuery]
+        · right
+          have hAddressLe : copiedAddress ≤ destAddress :=
+            Nat.min_le_left _ _
+          have hLengthLe : copiedLength ≤ length :=
+            Nat.min_le_left _ _
+          omega
+      exact
+        byteAt_copySlice_of_outside zeroes dest 0 copiedAddress
+          copiedLength query hCopiedAddress hSourceBound hCopiedOutside
+    · rename_i hSourceInside
+      let practicalLength := min length (source.size - sourceAddress)
+      let endPaddingAddress := min dest.size (destAddress + length)
+      let sourcePaddingLength :=
+        endPaddingAddress - (destAddress + practicalLength)
+      let sourcePadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat sourcePaddingLength)
+      let destPaddingLength := destAddress - dest.size
+      let destPadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat destPaddingLength)
+      let copiedSource := source ++ sourcePadding
+      let copiedDest := dest ++ destPadding
+      let copiedLength := practicalLength + sourcePaddingLength
+      have hDestAddressLt : destAddress < USize.size := by
+        omega
+      have hDestPaddingLt : destPaddingLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.sub_le _ _) hDestAddressLt
+      have hSourcePaddingLe : sourcePaddingLength ≤ length := by
+        dsimp [sourcePaddingLength, endPaddingAddress, practicalLength]
+        omega
+      have hSourcePaddingLt : sourcePaddingLength < USize.size := by
+        exact lt_of_le_of_lt hSourcePaddingLe
+          (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hDestPaddingSize :
+          destPadding.size = destPaddingLength := by
+        simp [destPadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hDestPaddingLt
+      have hSourcePaddingSize :
+          sourcePadding.size = sourcePaddingLength := by
+        simp [sourcePadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hSourcePaddingLt
+      have hPracticalBound :
+          sourceAddress + practicalLength ≤ source.size := by
+        dsimp [practicalLength]
+        omega
+      have hCopiedDestBound :
+          destAddress ≤ copiedDest.size := by
+        simp [copiedDest, hDestPaddingSize, destPaddingLength]
+        omega
+      have hCopiedSourceBound :
+          sourceAddress + copiedLength ≤ copiedSource.size := by
+        simp [copiedLength, copiedSource, hSourcePaddingSize]
+        omega
+      have hCopiedLengthLe : copiedLength ≤ length := by
+        dsimp [copiedLength, sourcePaddingLength,
+          endPaddingAddress, practicalLength]
+        omega
+      have hCopiedOutside :
+          query < destAddress ∨
+            destAddress + copiedLength ≤ query := by
+        rcases hOutside with hBefore | hAfter
+        · exact Or.inl hBefore
+        · exact Or.inr
+            ((Nat.add_le_add_left hCopiedLengthLe destAddress).trans hAfter)
+      exact
+        (byteAt_copySlice_of_outside copiedSource copiedDest
+          sourceAddress destAddress copiedLength query
+          hCopiedDestBound hCopiedSourceBound hCopiedOutside).trans
+          (byteAt_append_zeroes dest
+            (OfNat.ofNat destPaddingLength) query)
+
+set_option maxHeartbeats 1000000 in
+theorem byteAt_write_of_inside
+    (source dest : ByteArray)
+    (sourceAddress destAddress length query : Nat)
+    (hHost : destAddress + length < USize.size)
+    (hStart : destAddress ≤ query)
+    (hEnd : query < destAddress + length) :
+    byteAt
+        (source.write sourceAddress dest destAddress length) query =
+      byteAt source (sourceAddress + (query - destAddress)) := by
+  unfold ByteArray.write
+  split
+  · omega
+  · rename_i hPositive
+    split
+    · rename_i hSourcePast
+      let copiedLength := min length (dest.size - destAddress)
+      let copiedAddress := min destAddress dest.size
+      let zeroes :=
+        ffi.ByteArray.zeroes (OfNat.ofNat copiedLength)
+      have hCopiedLength : copiedLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.min_le_left _ _) (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hZeroesSize : zeroes.size = copiedLength := by
+        simp [zeroes, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hCopiedLength
+      have hCopiedAddress : copiedAddress ≤ dest.size :=
+        Nat.min_le_right _ _
+      have hSourceBound : 0 + copiedLength ≤ zeroes.size := by
+        simp [hZeroesSize]
+      by_cases hCopied : query < copiedAddress + copiedLength
+      · have hCopiedStart : copiedAddress ≤ query := by
+          dsimp [copiedAddress]
+          omega
+        calc
+          byteAt
+              (zeroes.copySlice 0 dest copiedAddress copiedLength)
+              query =
+            byteAt zeroes (0 + (query - copiedAddress)) :=
+              byteAt_copySlice_of_inside zeroes dest 0 copiedAddress
+                copiedLength query hCopiedAddress hSourceBound
+                hCopiedStart hCopied
+          _ = 0 := byteAt_zeroes _ _
+          _ =
+            byteAt source
+              (sourceAddress + (query - destAddress)) := by
+                symm
+                apply byteAt_of_size_le
+                exact hSourcePast.trans
+                  (Nat.le_add_right sourceAddress
+                    (query - destAddress))
+      · have hCopiedOutside :
+            query < copiedAddress ∨
+              copiedAddress + copiedLength ≤ query := by
+          exact Or.inr (Nat.le_of_not_gt hCopied)
+        have hDestPast : dest.size ≤ query := by
+          dsimp [copiedAddress, copiedLength] at hCopied
+          by_cases hAddress : destAddress ≤ dest.size
+          · rw [Nat.min_eq_left hAddress] at hCopied
+            by_cases hFits : length ≤ dest.size - destAddress
+            · rw [Nat.min_eq_left hFits] at hCopied
+              omega
+            · rw [Nat.min_eq_right (Nat.le_of_not_ge hFits)] at hCopied
+              omega
+          · have hAddressPast := Nat.le_of_not_ge hAddress
+            rw [Nat.min_eq_right hAddressPast,
+              Nat.sub_eq_zero_of_le hAddressPast] at hCopied
+            omega
+        calc
+          byteAt
+              (zeroes.copySlice 0 dest copiedAddress copiedLength)
+              query =
+            byteAt dest query :=
+              byteAt_copySlice_of_outside zeroes dest 0 copiedAddress
+                copiedLength query hCopiedAddress hSourceBound
+                hCopiedOutside
+          _ = 0 := byteAt_of_size_le dest query hDestPast
+          _ =
+            byteAt source
+              (sourceAddress + (query - destAddress)) := by
+                symm
+                apply byteAt_of_size_le
+                exact hSourcePast.trans
+                  (Nat.le_add_right sourceAddress
+                    (query - destAddress))
+    · rename_i hSourceInside
+      let practicalLength := min length (source.size - sourceAddress)
+      let endPaddingAddress := min dest.size (destAddress + length)
+      let sourcePaddingLength :=
+        endPaddingAddress - (destAddress + practicalLength)
+      let sourcePadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat sourcePaddingLength)
+      let destPaddingLength := destAddress - dest.size
+      let destPadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat destPaddingLength)
+      let copiedSource := source ++ sourcePadding
+      let copiedDest := dest ++ destPadding
+      let copiedLength := practicalLength + sourcePaddingLength
+      have hDestAddressLt : destAddress < USize.size := by
+        omega
+      have hDestPaddingLt : destPaddingLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.sub_le _ _) hDestAddressLt
+      have hSourcePaddingLe : sourcePaddingLength ≤ length := by
+        dsimp [sourcePaddingLength, endPaddingAddress, practicalLength]
+        omega
+      have hSourcePaddingLt : sourcePaddingLength < USize.size := by
+        exact lt_of_le_of_lt hSourcePaddingLe
+          (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hDestPaddingSize :
+          destPadding.size = destPaddingLength := by
+        simp [destPadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hDestPaddingLt
+      have hSourcePaddingSize :
+          sourcePadding.size = sourcePaddingLength := by
+        simp [sourcePadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hSourcePaddingLt
+      have hPracticalBound :
+          sourceAddress + practicalLength ≤ source.size := by
+        dsimp [practicalLength]
+        omega
+      have hCopiedDestBound :
+          destAddress ≤ copiedDest.size := by
+        simp [copiedDest, hDestPaddingSize, destPaddingLength]
+        omega
+      have hCopiedSourceBound :
+          sourceAddress + copiedLength ≤ copiedSource.size := by
+        simp [copiedLength, copiedSource, hSourcePaddingSize]
+        omega
+      by_cases hCopied : query < destAddress + copiedLength
+      · calc
+          byteAt
+              (copiedSource.copySlice sourceAddress copiedDest
+                destAddress copiedLength) query =
+            byteAt copiedSource
+              (sourceAddress + (query - destAddress)) :=
+              byteAt_copySlice_of_inside copiedSource copiedDest
+                sourceAddress destAddress copiedLength query
+                hCopiedDestBound hCopiedSourceBound hStart hCopied
+          _ =
+            byteAt source
+              (sourceAddress + (query - destAddress)) :=
+              byteAt_append_zeroes source
+                (OfNat.ofNat sourcePaddingLength)
+                (sourceAddress + (query - destAddress))
+      · have hCopiedOutside :
+            query < destAddress ∨
+              destAddress + copiedLength ≤ query :=
+          Or.inr (Nat.le_of_not_gt hCopied)
+        have hSourcePast :
+            source.size ≤ sourceAddress + (query - destAddress) := by
+          dsimp [copiedLength, practicalLength,
+            sourcePaddingLength, endPaddingAddress] at hCopied
+          by_cases hFits : length ≤ source.size - sourceAddress
+          · rw [Nat.min_eq_left hFits] at hCopied
+            omega
+          · rw [Nat.min_eq_right (Nat.le_of_not_ge hFits)] at hCopied
+            omega
+        have hDestPast : dest.size ≤ query := by
+          dsimp [copiedLength, practicalLength,
+            sourcePaddingLength, endPaddingAddress] at hCopied
+          omega
+        calc
+          byteAt
+              (copiedSource.copySlice sourceAddress copiedDest
+                destAddress copiedLength) query =
+            byteAt copiedDest query :=
+              byteAt_copySlice_of_outside copiedSource copiedDest
+                sourceAddress destAddress copiedLength query
+                hCopiedDestBound hCopiedSourceBound hCopiedOutside
+          _ = byteAt dest query :=
+            byteAt_append_zeroes dest
+              (OfNat.ofNat destPaddingLength) query
+          _ = 0 := byteAt_of_size_le dest query hDestPast
+          _ =
+            byteAt source
+              (sourceAddress + (query - destAddress)) := by
+                symm
+                exact byteAt_of_size_le source _ hSourcePast
+
+set_option maxHeartbeats 1000000 in
+theorem size_write_ge
+    (source dest : ByteArray)
+    (sourceAddress destAddress length : Nat)
+    (hHost : destAddress + length < USize.size) :
+    dest.size ≤
+      (source.write sourceAddress dest destAddress length).size := by
+  unfold ByteArray.write
+  split
+  · simp
+  · split
+    · let copiedLength := min length (dest.size - destAddress)
+      let copiedAddress := min destAddress dest.size
+      let zeroes :=
+        ffi.ByteArray.zeroes (OfNat.ofNat copiedLength)
+      have hCopiedLength : copiedLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.min_le_left _ _) (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hZeroesSize : zeroes.size = copiedLength := by
+        simp [zeroes, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hCopiedLength
+      exact
+        size_copySlice_ge_dest zeroes dest 0 copiedAddress
+          copiedLength (Nat.min_le_right _ _)
+          (by simp [hZeroesSize])
+    · let practicalLength := min length (source.size - sourceAddress)
+      let endPaddingAddress := min dest.size (destAddress + length)
+      let sourcePaddingLength :=
+        endPaddingAddress - (destAddress + practicalLength)
+      let sourcePadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat sourcePaddingLength)
+      let destPaddingLength := destAddress - dest.size
+      let destPadding :=
+        ffi.ByteArray.zeroes (OfNat.ofNat destPaddingLength)
+      let copiedSource := source ++ sourcePadding
+      let copiedDest := dest ++ destPadding
+      let copiedLength := practicalLength + sourcePaddingLength
+      have hDestAddressLt : destAddress < USize.size := by
+        omega
+      have hDestPaddingLt : destPaddingLength < USize.size := by
+        exact lt_of_le_of_lt
+          (Nat.sub_le _ _) hDestAddressLt
+      have hSourcePaddingLe : sourcePaddingLength ≤ length := by
+        dsimp [sourcePaddingLength, endPaddingAddress, practicalLength]
+        omega
+      have hSourcePaddingLt : sourcePaddingLength < USize.size := by
+        exact lt_of_le_of_lt hSourcePaddingLe
+          (lt_of_le_of_lt
+            (Nat.le_add_left length destAddress) hHost)
+      have hDestPaddingSize :
+          destPadding.size = destPaddingLength := by
+        simp [destPadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hDestPaddingLt
+      have hSourcePaddingSize :
+          sourcePadding.size = sourcePaddingLength := by
+        simp [sourcePadding, ffi.ByteArray.size_zeroes]
+        exact USize.toNat_ofNat_of_lt' hSourcePaddingLt
+      have hPracticalBound :
+          sourceAddress + practicalLength ≤ source.size := by
+        dsimp [practicalLength]
+        omega
+      have hCopiedDestBound :
+          destAddress ≤ copiedDest.size := by
+        simp [copiedDest, hDestPaddingSize, destPaddingLength]
+        omega
+      have hCopiedSourceBound :
+          sourceAddress + copiedLength ≤ copiedSource.size := by
+        simp [copiedLength, copiedSource, hSourcePaddingSize]
+        omega
+      have hDestLe : dest.size ≤ copiedDest.size := by
+        simp [copiedDest]
+      exact hDestLe.trans
+        (size_copySlice_ge_dest copiedSource copiedDest
+          sourceAddress destAddress copiedLength
+          hCopiedDestBound hCopiedSourceBound)
+
 set_option maxHeartbeats 1000000 in
 theorem writeBytes_memory_data
     (bytes : ByteArray) (machine : EvmYul.MachineState)
@@ -1337,6 +1918,63 @@ theorem readWithPadding_writeWord_disjoint_growing
     · right
       omega
 
+theorem readWithPadding_write_disjoint_growing
+    (source : ByteArray) (machine : EvmYul.MachineState)
+    (sourceAddress address length query : Nat)
+    (hHost : address + length < USize.size)
+    (hReadEnd : query + MemoryContract.wordBytes ≤ machine.memory.size)
+    (hDisjoint :
+      query + MemoryContract.wordBytes ≤ address ∨
+        address + length ≤ query) :
+    (source.write sourceAddress machine.memory address length).readWithPadding
+          query MemoryContract.wordBytes =
+      machine.memory.readWithPadding query MemoryContract.wordBytes := by
+  have hSizeGe :=
+    size_write_ge source machine.memory sourceAddress address length hHost
+  have hWrittenEnd :
+      query + MemoryContract.wordBytes ≤
+        (source.write
+          sourceAddress machine.memory address length).size :=
+    hReadEnd.trans hSizeGe
+  have hReadEnd32 : query + 32 ≤ machine.memory.size := by
+    simpa [MemoryContract.wordBytes] using hReadEnd
+  have hWrittenEnd32 :
+      query + 32 ≤
+        (source.write sourceAddress machine.memory address length).size := by
+    simpa [MemoryContract.wordBytes] using hWrittenEnd
+  change
+    (source.write sourceAddress machine.memory address length).readWithPadding
+          query 32 =
+      machine.memory.readWithPadding query 32
+  rw [readWithPadding_word_eq_extract _ _ hWrittenEnd32,
+    readWithPadding_word_eq_extract _ _ hReadEnd32]
+  apply byteArray_ext_of_size_get
+  · simp [ByteArray.size_extract, hWrittenEnd32, hReadEnd32]
+  · intro index hLeft hRight
+    rw [ByteArray.get_extract hLeft,
+      ByteArray.get_extract hRight]
+    have hIndexLt : index < MemoryContract.wordBytes := by
+      simpa [MemoryContract.wordBytes,
+        Nat.min_eq_left hReadEnd32] using hRight
+    have hOriginal :
+        query + index < machine.memory.size := by
+      omega
+    have hWritten :
+        query + index <
+          (source.write sourceAddress machine.memory address length).size :=
+      lt_of_lt_of_le hOriginal hSizeGe
+    rw [← byteAt_eq_get _ _ hWritten,
+      ← byteAt_eq_get _ _ hOriginal]
+    apply
+      byteAt_write_of_outside
+        source machine.memory sourceAddress address length
+          (query + index) hHost
+    rcases hDisjoint with hBefore | hAfter
+    · left
+      omega
+    · right
+      omega
+
 theorem readWithPadding_writeBytes_disjoint_growing
     (bytes : ByteArray) (machine : EvmYul.MachineState)
     (address length query : Nat)
@@ -1618,6 +2256,36 @@ theorem readWithPadding_word
     rcases hAllowed with hBefore | hAfter
     · exact (not_le_of_gt (by omega)) hInside.1
     · exact (not_lt_of_ge (by omega)) hInside.2
+
+theorem write_both
+    {reservation : MemoryContract.ScratchReservation}
+    {source target : ByteArray}
+    (copied : ByteArray)
+    (sourceAddress destAddress length : Nat)
+    (hRel : OutsideReservation reservation source target)
+    (hHost : destAddress + length < USize.size) :
+    OutsideReservation reservation
+      (copied.write sourceAddress source destAddress length)
+      (copied.write sourceAddress target destAddress length) := by
+  intro query hOutsideReservation
+  by_cases hBefore : query < destAddress
+  · rw [byteAt_write_of_outside copied source sourceAddress
+        destAddress length query hHost (Or.inl hBefore),
+      byteAt_write_of_outside copied target sourceAddress
+        destAddress length query hHost (Or.inl hBefore)]
+    exact hRel query hOutsideReservation
+  · by_cases hAfter : destAddress + length ≤ query
+    · rw [byteAt_write_of_outside copied source sourceAddress
+          destAddress length query hHost (Or.inr hAfter),
+        byteAt_write_of_outside copied target sourceAddress
+          destAddress length query hHost (Or.inr hAfter)]
+      exact hRel query hOutsideReservation
+    · rw [byteAt_write_of_inside copied source sourceAddress
+          destAddress length query hHost
+          (Nat.le_of_not_gt hBefore) (Nat.lt_of_not_ge hAfter),
+        byteAt_write_of_inside copied target sourceAddress
+          destAddress length query hHost
+          (Nat.le_of_not_gt hBefore) (Nat.lt_of_not_ge hAfter)]
 
 theorem writeBytes_both
     {reservation : MemoryContract.ScratchReservation}
@@ -2028,16 +2696,14 @@ theorem activeBytes_toNat
     rfl
   rw [hProduct, Nat.mod_eq_of_lt hNoWrap]
 
-theorem lookupMemory_eq_of_writeBytes_disjoint_growing
-    (bytes : ByteArray)
+theorem lookupMemory_eq_of_write_disjoint_growing
+    (copied : ByteArray)
     (before after : EvmYul.MachineState)
-    (address length query : Nat)
-    (hLength : bytes.size = length)
-    (hPositive : 0 < length)
+    (sourceAddress address length query : Nat)
     (hHost : address + length < USize.size)
     (hMemory :
       after.memory =
-        (EvmYul.writeBytes bytes 0 before address length).memory)
+        copied.write sourceAddress before.memory address length)
     (hQuery :
       (EvmYul.UInt256.ofNat query).toNat = query)
     (hReadMemory :
@@ -2061,8 +2727,7 @@ theorem lookupMemory_eq_of_writeBytes_disjoint_growing
   have hWordPositive : 0 < MemoryContract.wordBytes := by
     decide
   have hSizeGe :=
-    writeBytes_memory_size_ge bytes before address length
-      hLength hPositive hHost
+    size_write_ge copied before.memory sourceAddress address length hHost
   have hAfterReadMemory :
       query + MemoryContract.wordBytes ≤ after.memory.size := by
     rw [hMemory]
@@ -2133,13 +2798,50 @@ theorem lookupMemory_eq_of_writeBytes_disjoint_growing
   unfold EvmYul.MachineState.lookupMemory
   rw [if_neg hAfterGuard32, if_neg hBeforeGuard32, hQuery, hMemory]
   rw [show
-      (EvmYul.writeBytes bytes 0 before address length).memory.readWithPadding
+      (copied.write sourceAddress before.memory address length).readWithPadding
           query 32 =
         before.memory.readWithPadding query 32 by
     simpa [MemoryContract.wordBytes] using
-      (readWithPadding_writeBytes_disjoint_growing
-        bytes before address length query hLength hPositive hHost
+      (readWithPadding_write_disjoint_growing
+        copied before sourceAddress address length query hHost
         hReadMemory hDisjoint)]
+
+theorem lookupMemory_eq_of_writeBytes_disjoint_growing
+    (bytes : ByteArray)
+    (before after : EvmYul.MachineState)
+    (address length query : Nat)
+    (hLength : bytes.size = length)
+    (hPositive : 0 < length)
+    (hHost : address + length < USize.size)
+    (hMemory :
+      after.memory =
+        (EvmYul.writeBytes bytes 0 before address length).memory)
+    (hQuery :
+      (EvmYul.UInt256.ofNat query).toNat = query)
+    (hReadMemory :
+      query + MemoryContract.wordBytes ≤ before.memory.size)
+    (hReadActive :
+      query + MemoryContract.wordBytes ≤
+        before.activeWords.toNat * MemoryContract.wordBytes)
+    (hBeforeNoWrap :
+      before.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hActiveMono :
+      before.activeWords.toNat ≤ after.activeWords.toNat)
+    (hAfterNoWrap :
+      after.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hDisjoint :
+      query + MemoryContract.wordBytes ≤ address ∨
+        address + length ≤ query) :
+    after.lookupMemory (EvmYul.UInt256.ofNat query) =
+      before.lookupMemory (EvmYul.UInt256.ofNat query) := by
+  exact
+    lookupMemory_eq_of_write_disjoint_growing bytes before after
+      0 address length query hHost
+      (by simpa [EvmYul.writeBytes] using hMemory)
+      hQuery hReadMemory hReadActive hBeforeNoWrap hActiveMono
+      hAfterNoWrap hDisjoint
 
 structure MachineRel (contract : MemoryContract.Contract)
     (source target : EvmYul.MachineState) : Prop where
@@ -2784,6 +3486,113 @@ theorem mstore8_both
   · simpa [EvmYul.MachineState.mstore8, bytes] using
       (writeBytes_memory_size_ge bytes target address.toNat 1
         hBytes (by decide) hHost)
+
+theorem copy_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : MachineRel contract source target)
+    (hTargetNoWrap :
+      target.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (copied : ByteArray)
+    (sourceAddress address length : Nat)
+    (hExpansion : ExpansionNoWrap address length)
+    (hHost : address + length < USize.size) :
+    let sourceFinal : EvmYul.MachineState :=
+      { source with
+        memory := copied.write sourceAddress source.memory address length
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M
+              source.activeWords.toNat address length) }
+    let targetFinal : EvmYul.MachineState :=
+      { target with
+        memory := copied.write sourceAddress target.memory address length
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M
+              target.activeWords.toNat address length) }
+    MachineRel contract sourceFinal targetFinal ∧
+      targetFinal.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size ∧
+      target.activeWords.toNat ≤ targetFinal.activeWords.toNat ∧
+      target.memory.size ≤ targetFinal.memory.size := by
+  dsimp
+  have hTargetExpanded :
+      EvmYul.MachineState.M target.activeWords.toNat address length *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    M_activeBytes_lt_of_expansionNoWrap hTargetNoWrap hExpansion
+  have hTargetM :
+      EvmYul.MachineState.M target.activeWords.toNat address length <
+        EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive : source.activeWords = target.activeWords := by
+          simpa [hReservation] using hRel.activeWords
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          simp [hMemory]
+        · rw [hReservation, hActive]
+        · exact hRel.returnData
+        · exact hRel.output
+    | some reservation =>
+        have hMemory :
+            OutsideReservation reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive :
+            source.activeWords.toNat ≤ target.activeWords.toNat := by
+          simpa [hReservation] using hRel.activeWords
+        have hSourceNoWrap :
+            source.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          exact lt_of_le_of_lt
+            (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+            hTargetNoWrap
+        have hSourceExpanded :
+            EvmYul.MachineState.M source.activeWords.toNat address length *
+                MemoryContract.wordBytes <
+              EvmYul.UInt256.size :=
+          M_activeBytes_lt_of_expansionNoWrap hSourceNoWrap hExpansion
+        have hSourceM :
+            EvmYul.MachineState.M source.activeWords.toNat address length <
+              EvmYul.UInt256.size := by
+          have hPositive : 0 < MemoryContract.wordBytes := by decide
+          nlinarith
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          exact
+            OutsideReservation.write_both copied sourceAddress
+              address length hMemory hHost
+        · simp only [hReservation]
+          rw [EvmYul.UInt256.toNat_ofNat_of_lt hSourceM,
+            EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+          exact M_mono_active hActive
+        · exact hRel.returnData
+        · exact hRel.output
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    exact hTargetExpanded
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    exact
+      (show target.activeWords.toNat ≤
+          EvmYul.MachineState.M target.activeWords.toNat address length by
+        cases length <;> simp [EvmYul.MachineState.M])
+  · exact
+      size_write_ge copied target.memory sourceAddress
+        address length hHost
 
 theorem mstore_target
     {contract : MemoryContract.Contract}

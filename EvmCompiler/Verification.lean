@@ -78,6 +78,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore8_simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore8_primitiveForward
+#check EvmCompiler.Compiler.MemoryRelation.byteAt_write_of_outside
+#check EvmCompiler.Compiler.MemoryRelation.byteAt_write_of_inside
+#check EvmCompiler.Compiler.MemoryRelation.MachineRel.copy_both
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.calldatacopy_simulate
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.calldatacopy_primitiveForward
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
