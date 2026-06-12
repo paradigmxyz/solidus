@@ -134,6 +134,11 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverLoop.lean
 
 report_matches \
+  'The allocation loop boundary must not publicly expose a whole-loop proof callback:' \
+  '^[[:space:]]*theorem[[:space:]]+for_regular_of_components' \
+  EvmCompiler/Functions/AllocationObserverLoop.lean
+
+report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean

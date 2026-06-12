@@ -1107,7 +1107,7 @@ theorem for_false_of_components
 Forward preservation for a `for` from a regular initializer and a checked
 regular loop execution over the actual condition/post/body compiler artifacts.
 -/
-theorem for_regular_of_components
+private theorem for_regular_of_components
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {sourceProgram : Functions.Program}
@@ -1348,6 +1348,299 @@ theorem for_regular_of_components
     rw [hInitCompile, hCondCompile]
     simpa [Locals.codeStmt, Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
+
+/--
+Forward preservation for a regular `for` from its canonical source loop run.
+
+Unlike `for_regular_of_components`, this interface does not accept a complete
+loop proof. It derives that proof by source-fuel induction and asks recursive
+statement preservation only for one body or post execution at a time.
+-/
+theorem for_regular_of_source_run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx loopSourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan loopPlan : Locals.Allocation.Plan}
+    {outerLive loopLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode loopMode : ActivationMode}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterInit sourceLoopFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {loopSourceFuel : Nat}
+    (hInitScoped : Functions.Scope.Block.Scoped outerLive init)
+    (hCondScoped : Functions.Scope.ExprScoped loopLive cond)
+    (hSourceScope : sourceCtx.scope = outerLive)
+    (hLoopSourceScope : loopSourceCtx.scope = loopLive)
+    (hSubset :
+      ∀ name, name ∈ outerLive → name ∈ loopLive)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx outerPlan outerLive
+        frameBase outerMode source target)
+    (hInit :
+      ∀ {loweredInit : Locals.Block}
+        {loopState : AllocationLowering.State}
+        {initCode : List Expressions.Stmt}
+        {initLocals : Locals.Ctx},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx lowerState localsCtx.withoutLoopControl
+            outerPlan outerLive frameBase outerMode source target →
+        ∃ targetAfterInit,
+          RegularBlockInvariantForward
+            contract transcript lowerCtx loopState initLocals loopPlan
+            loopLive frameBase outerMode loopMode sourceProgram
+            sourceCtx.withoutLoopControl init source targetProgram
+            { stmts := Expressions.StmtList.toStructured initCode }
+            target sourceAfterInit targetAfterInit loopSourceCtx)
+    (hCondSafe :
+      ∀ {conditionSource conditionFinal :
+            Functions.ObserverSemantics.State transcript}
+        {conditionTrue : Bool},
+        Functions.Source.Effectful.Expr.evalCondition
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            cond conditionSource =
+          .ok (conditionFinal, conditionTrue) →
+        ∃ value,
+          AllocationObserverSafety.Expr.MemorySafeEval
+              contract transcript cond conditionSource conditionFinal
+              [value] ∧
+            (value != EvmYul.UInt256.ofNat 0) = conditionTrue)
+    (hBodyRegular :
+      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+        {loweredPost loweredBody : Locals.Block}
+        {initLocals bodyLocals : Locals.Ctx}
+        {bodyCode : List Expressions.Stmt}
+        {compiledBody : Expressions.Block}
+        {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns loopState post =
+          some (loweredPost, afterPost) →
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns afterPost body =
+          some (loweredBody, afterBody) →
+        Locals.Block.compileOpen
+            (initLocals.withLoopControl initLocals.layout.length)
+            loweredBody =
+          some (bodyCode, bodyLocals) →
+        Locals.finishScoped
+            (initLocals.withLoopControl initLocals.layout.length)
+            bodyLocals bodyCode =
+          some compiledBody →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx loopState initLocals loopPlan loopLive
+            frameBase loopMode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.regular bodyFinal) →
+        ∃ bodyTargetFinal,
+          RegularScopedBlockInvariantForward
+            contract transcript lowerCtx afterPost
+            (initLocals.withLoopControl initLocals.layout.length)
+            loopPlan loopLive frameBase loopMode sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodySource targetProgram compiledBody.toStructured
+            bodyTarget bodyFinal bodyTargetFinal)
+    (hBodyBreak :
+      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+        {loweredPost loweredBody : Locals.Block}
+        {initLocals bodyLocals : Locals.Ctx}
+        {bodyCode : List Expressions.Stmt}
+        {compiledBody : Expressions.Block}
+        {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns loopState post =
+          some (loweredPost, afterPost) →
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns afterPost body =
+          some (loweredBody, afterBody) →
+        Locals.Block.compileOpen
+            (initLocals.withLoopControl initLocals.layout.length)
+            loweredBody =
+          some (bodyCode, bodyLocals) →
+        Locals.finishScoped
+            (initLocals.withLoopControl initLocals.layout.length)
+            bodyLocals bodyCode =
+          some compiledBody →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx loopState initLocals loopPlan loopLive
+            frameBase loopMode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.brk bodyFinal) →
+        ∃ bodyTargetFinal,
+          ForLoop.BreakScopedBlockInvariantForward
+            contract transcript lowerCtx loopState initLocals loopPlan
+            loopLive frameBase loopMode sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodySource targetProgram compiledBody.toStructured
+            bodyTarget bodyFinal bodyTargetFinal)
+    (hBodyContinue :
+      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+        {loweredPost loweredBody : Locals.Block}
+        {initLocals bodyLocals : Locals.Ctx}
+        {bodyCode : List Expressions.Stmt}
+        {compiledBody : Expressions.Block}
+        {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns loopState post =
+          some (loweredPost, afterPost) →
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns afterPost body =
+          some (loweredBody, afterBody) →
+        Locals.Block.compileOpen
+            (initLocals.withLoopControl initLocals.layout.length)
+            loweredBody =
+          some (bodyCode, bodyLocals) →
+        Locals.finishScoped
+            (initLocals.withLoopControl initLocals.layout.length)
+            bodyLocals bodyCode =
+          some compiledBody →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx loopState initLocals loopPlan loopLive
+            frameBase loopMode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.cont bodyFinal) →
+        ∃ bodyTargetFinal,
+          ForLoop.ContinueScopedBlockInvariantForward
+            contract transcript lowerCtx afterPost
+            (initLocals.withLoopControl initLocals.layout.length)
+            loopPlan loopLive frameBase loopMode sourceProgram
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body bodySource targetProgram compiledBody.toStructured
+            bodyTarget bodyFinal bodyTargetFinal)
+    (hPostRegular :
+      ∀ {loopState afterPost : AllocationLowering.State}
+        {loweredPost : Locals.Block}
+        {initLocals postLocals : Locals.Ctx}
+        {postCode : List Expressions.Stmt}
+        {compiledPost : Expressions.Block}
+        {postFuel : Nat}
+        {postSource postFinal :
+          Functions.ObserverSemantics.State transcript}
+        {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns loopState post =
+          some (loweredPost, afterPost) →
+        Locals.Block.compileOpen initLocals.withoutLoopControl
+            loweredPost =
+          some (postCode, postLocals) →
+        Locals.finishScoped initLocals.withoutLoopControl
+            postLocals postCode =
+          some compiledPost →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx afterPost
+            (initLocals.withLoopControl initLocals.layout.length)
+            loopPlan loopLive frameBase loopMode postSource postTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram loopSourceCtx.withoutLoopControl post
+            postFuel postSource =
+          .ok (Functions.Source.Effectful.Outcome.regular postFinal) →
+        ∃ postTargetFinal,
+          RegularScopedBlockInvariantForward
+            contract transcript lowerCtx loopState initLocals loopPlan
+            loopLive frameBase loopMode sourceProgram
+            loopSourceCtx.withoutLoopControl post postSource
+            targetProgram compiledPost.toStructured postTarget
+            postFinal postTargetFinal)
+    (hSourceLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram loopSourceCtx cond
+          loopSourceCtx.withoutLoopControl post
+          (loopSourceCtx.withLoopControl
+            loopSourceCtx.scope loopSourceCtx.scope)
+          body loopSourceFuel sourceAfterInit =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceLoopFinal))
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.for_ init cond post body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtInvariantForward
+        contract transcript lowerCtx lowerFinal localsFinal outerPlan
+        outerLive frameBase outerMode outerMode sourceProgram sourceCtx
+        (.for_ init cond post body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          outerLive sourceLoopFinal)
+        targetFinal sourceCtx := by
+  apply
+    for_regular_of_components
+      hInitScoped hSourceScope hSubset hInvariant hInit
+  · intro loopState afterPost afterBody loweredCond loweredPost
+      loweredBody initLocals postLocals bodyLocals condCode postCode
+      bodyCode compiledPost compiledBody targetAfterInit
+      hLowerCond hLowerPost hLowerBody hCompileCond hCompilePost
+      hFinishPost hCompileBody hFinishBody hLoopInvariant
+    exact
+      ForLoop.RegularInvariantForward.of_source_run
+        hLoopSourceScope hCondScoped hLowerCond hCompileCond hCondSafe
+        (fun hInvariant hRun =>
+          hBodyRegular hLowerPost hLowerBody hCompileBody hFinishBody
+            hInvariant hRun)
+        (fun hInvariant hRun =>
+          hBodyBreak hLowerPost hLowerBody hCompileBody hFinishBody
+            hInvariant hRun)
+        (fun hInvariant hRun =>
+          hBodyContinue hLowerPost hLowerBody hCompileBody hFinishBody
+            hInvariant hRun)
+        (fun hInvariant hRun =>
+          hPostRegular hLowerPost hCompilePost hFinishPost hInvariant hRun)
+        hSourceLoop hLoopInvariant
+  · exact hLower
+  · exact hCompile
 
 /--
 Forward preservation for a `for` whose initializer completes regularly, whose

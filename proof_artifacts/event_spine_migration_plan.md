@@ -16,7 +16,7 @@ The implemented proof tower is organized as adjacent, pass-owned boundaries:
 | Boundary | Status |
 |---|---|
 | Yul → Functions | Partial: canonical effect semantics and checked gas/msize leaves exist; general program theorem remains |
-| Functions → allocated Locals/Expressions | Partial: memory contract, allocation relation, spill reads/writes, frame lifecycle, all canonical primitive families, recursive expressions, declarations, assignments, statement sequencing, terminals, break/continue/leave cleanup, conditionals, switches, and the regular loop preservation algebra are checked; closing recursive loop execution plus call/program lifting remain |
+| Functions → allocated Locals/Expressions | Partial: memory contract, allocation relation, spill reads/writes, frame lifecycle, all canonical primitive families, recursive expressions, declarations, assignments, statement sequencing, terminals, break/continue/leave cleanup, conditionals, switches, and source-fuel recursive regular loops are checked; abrupt loop exits plus call/program lifting remain |
 | Locals/Expressions → Structured | Checked transparent Expressions adapter; allocation-owned code correctness is being completed at the boundary above |
 | Structured → TypedCfg | Checked forward preservation and backward adequacy, including recursive calls, loops, switches, terminal outcomes, and generated-program wrapper |
 | TypedCfg → Assembly | Checked |
@@ -24,8 +24,8 @@ The implemented proof tower is organized as adjacent, pass-owned boundaries:
 | End-to-end composition | Not closed: the public theorem must not accept primitive-family or compiler-generated evidence |
 
 Estimated completion is **roughly 70%**. The dominant remaining work is not spill
-mechanics; it is discharging the internal recursive-loop callback from canonical source
-execution, lifting the allocation theorem through Functions calls and whole programs,
+mechanics; it is completing abrupt loop outcomes, lifting the allocation theorem through
+Functions calls and whole programs,
 completing Functions backward adequacy and source-facing memory safety, completing the
 general Yul-to-Functions boundary, and composing the short public theorem.
 
