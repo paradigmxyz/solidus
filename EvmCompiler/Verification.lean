@@ -17,6 +17,7 @@ import EvmCompiler.Structured.ObserverGeneratedBoundary
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
+import EvmCompiler.Structured.ObserverSwitchAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverTerminalAdequacy
@@ -110,6 +111,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithinFuel_cons_of_compileStmtListFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Switch.adequateWithin_switch_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Switch.adequateWithinFuel_switch_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_if_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithinFuel_if_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Loop.adequateWithin_for_of_compileStmtFuel?

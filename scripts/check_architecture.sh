@@ -194,6 +194,7 @@ report_matches \
   '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -207,6 +208,7 @@ report_matches \
   '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -220,6 +222,7 @@ report_matches \
   '^[[:space:]]*(private[[:space:]]+)?def[[:space:]]+(runN|step)([^A-Za-z0-9_]|$)' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -233,6 +236,7 @@ report_matches \
   '\bJumpOr\b' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -246,6 +250,7 @@ report_matches \
   'h[A-Za-z0-9_]*[[:space:]]*:[[:space:]]*.*ShapeSound' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -264,6 +269,7 @@ report_matches \
   'hFrameReflecting[[:space:]]*:' \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
@@ -420,6 +426,7 @@ report_matches \
   EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
+  EvmCompiler/Structured/ObserverSwitchAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \

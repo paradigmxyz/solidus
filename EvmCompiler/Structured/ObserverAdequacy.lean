@@ -1556,13 +1556,14 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
         (TypedCfgCompiler.switchTestLabel base idx)
         target trace targetOutcome traceFinal)
     (hBodyAdequate :
-      ∀ {bodyResult : TypedCfgCompiler.Result},
+      ∀ {bodyResult : TypedCfgCompiler.Result} bodyTargetFuel,
+        bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
             supply (.generated base (2000 + idx))
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        OutcomeSimulation.AdequateWithin
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel body
@@ -1575,7 +1576,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
-          tokens) :
+          tokens bodyTargetFuel) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Block.Eval program sourceFuel body
           (source.withSource
@@ -1681,7 +1682,8 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           obtain
               ⟨sourceFuel, sourceOutcome,
                 hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
-            hBodyAdequate hBodyCompile hBodyBlocks
+            hBodyAdequate bodyFuel (by omega)
+              hBodyCompile hBodyBlocks
               (fun bodySourceFuel bodyOutcome bodyTargetOutcome bodyTrace
                   hBodyEval hBodyRel hBodyArtifact => by
                 have hArtifact :
@@ -1859,6 +1861,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
             accept tailTargetOutcome) →
         ∀ {tailTargetFuel : Nat} {tailTarget : EVMState}
           {tailTrace : Trace},
+          tailTargetFuel < targetFuel →
           ObserverPreservation.StateRel.At
               valueShape source tokens tailTarget tailTrace →
           OutcomeSimulation.FirstReaches cfg accept (tailTargetFuel + 1)
@@ -1978,7 +1981,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
               hAccept tailSourceFuel tailOutcome
                 tailTargetOutcome tailFinalTrace
                 hTailEval hTailRel hArtifact)
-          hAfterTestAt hTailReach
+          (by omega) hAfterTestAt hTailReach
       have hTailFallthrough :
           tail.fallthrough? = some bodyShape :=
         TypedCfgCompilerFacts.Switch.fallthrough_of_compileCasesFuel?
@@ -2073,13 +2076,14 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
       OutcomeSimulation.FirstReaches cfg accept (targetFuel + 1)
         entry target trace targetOutcome traceFinal)
     (hBodyAdequate :
-      ∀ {bodyResult : TypedCfgCompiler.Result},
+      ∀ {bodyResult : TypedCfgCompiler.Result} bodyTargetFuel,
+        bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
             (supply + 1) (.generated supply 2000)
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        OutcomeSimulation.AdequateWithin
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel body
@@ -2092,7 +2096,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
-          tokens) :
+          tokens bodyTargetFuel) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Block.Eval program sourceFuel body
           (source.withSource
@@ -2169,7 +2173,8 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
       obtain
           ⟨sourceFuel, sourceOutcome,
             hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
-        hBodyAdequate hBodyCompile hBodyBlocks
+        hBodyAdequate bodyFuel (by omega)
+          hBodyCompile hBodyBlocks
           (fun bodySourceFuel bodyOutcome bodyTargetOutcome bodyTrace
               hBodyEval hBodyRel hBodyArtifact => by
             have hArtifact :
@@ -2639,13 +2644,15 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
         target trace targetOutcome traceFinal)
     (hBodyAdequate :
       ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
-        {bodyResult : TypedCfgCompiler.Result},
+        {bodyResult : TypedCfgCompiler.Result}
+        bodyTargetFuel,
+        bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             caseSupply (.generated base (2000 + caseIdx))
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        OutcomeSimulation.AdequateWithin
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel selected
@@ -2658,11 +2665,12 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
-          tokens)
+          tokens bodyTargetFuel)
     (hDefaultAdequate :
       defaultBody = some selected →
         ∀ {defaultTargetFuel : Nat} {defaultTarget : EVMState}
           {defaultTrace : Trace},
+          defaultTargetFuel ≤ targetFuel →
           ObserverPreservation.StateRel.At
               valueShape source tokens defaultTarget defaultTrace →
           OutcomeSimulation.FirstReaches cfg accept
@@ -2703,7 +2711,8 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
           obtain
               ⟨sourceFuel, sourceOutcome,
                 hBodyEval, hOutcomeRel, hDefaultArtifact⟩ :=
-            hDefaultAdequate hDefault hRel hReach
+            hDefaultAdequate hDefault (Nat.le_refl targetFuel)
+              hRel hReach
           exact
             ⟨sourceFuel, sourceOutcome,
               hBodyEval, hOutcomeRel,
@@ -2725,8 +2734,9 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
                 (hCaseEntryNotAccepted idx)
                 (hBodyEntryNotAccepted idx)
                 hRel hReach
-                (fun hBodyCompile hBodyBlocks =>
-                  hBodyAdequate hBodyCompile hBodyBlocks)
+                (fun bodyTargetFuel hBodyLt hBodyCompile hBodyBlocks =>
+                  hBodyAdequate bodyTargetFuel hBodyLt
+                    hBodyCompile hBodyBlocks)
           · have hTailSelect :
                 Structured.Switch.select value rest defaultBody =
                   some selected := by
@@ -2741,17 +2751,25 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
                 (fun {_tailSupply} {_tail} hTailCompile hTailBlocks
                     hTailAccept
                     {_tailTargetFuel} {_tailTarget} {_tailTrace}
-                    hTailRel hTailReach =>
+                    hTailLt hTailRel hTailReach =>
                   ih hTailCompile hTailBlocks hTailSelect
                     hTailAccept hTailRel hTailReach
-                    hBodyAdequate hDefaultAdequate)
+                    (fun bodyTargetFuel hBodyLt =>
+                      hBodyAdequate bodyTargetFuel
+                        (Nat.lt_trans hBodyLt hTailLt))
+                    (fun hDefaultSelected {_defaultTargetFuel}
+                        {_defaultTarget} {_defaultTrace}
+                        hDefaultLe =>
+                      hDefaultAdequate hDefaultSelected
+                        (Nat.le_trans hDefaultLe
+                          (Nat.le_of_lt hTailLt))))
 
 /--
 Top-level backward adequacy for a checked switch. Scrutinee inversion, case
 dispatch, default dispatch, and the source evaluation constructor are composed
 inside the owning Structured-to-TypedCfg boundary.
 -/
-private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
+theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
     {transcript : Trace} {compilerFuel targetFuel : Nat}
     {program : Structured.Program}
     {scrutinee : Structured.Code}
@@ -2811,17 +2829,19 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
         {stack : EvmYul.Stack Word} {value : Word}
         {bodyCompilerFuel bodySupply : Nat}
         {bodyEntry : Assembly.Label} {bodyShape : TypedCfg.Shape}
-        {bodyResult : TypedCfgCompiler.Result},
+        {bodyResult : TypedCfgCompiler.Result}
+        bodyTargetFuel,
         ObserverSemantics.Code.run scrutinee source =
           .ok afterScrutinee →
         afterScrutinee.source.evm.stack.pop = some (stack, value) →
         Structured.Switch.select value cases defaultBody =
           some selected →
+        bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        OutcomeSimulation.AdequateWithin
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel selected
@@ -2833,7 +2853,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
           (afterScrutinee.withSource
             (afterScrutinee.source.withEVM
               { afterScrutinee.source.evm with stack := stack }))
-          tokens) :
+          tokens bodyTargetFuel) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Stmt.Eval program sourceFuel
           (.switch scrutinee cases defaultBody) source sourceOutcome ∧
@@ -3052,13 +3072,15 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
               hAfterScrutineeRel hDispatchReach
               (by
                 intro bodyCompilerFuel caseSupply caseIdx bodyResult
-                  hBodyCompile hBodyBlocks
+                  bodyTargetFuel hBodyLt hBodyCompile hBodyBlocks
                 exact
-                  hBodyAdequate hScrutinee hPop hSelect
+                  hBodyAdequate bodyTargetFuel
+                    hScrutinee hPop hSelect
+                    (Nat.lt_trans hBodyLt (Nat.lt_succ_self dispatchFuel))
                     hBodyCompile hBodyBlocks)
               (by
                 intro hDefaultSelected defaultTargetFuel defaultTarget
-                  defaultTrace hDefaultRel hDefaultReach
+                  defaultTrace hDefaultLe hDefaultRel hDefaultReach
                 have hDefaultSelectedCompile :
                     TypedCfgCompiler.compileDefaultFuel?
                         (compilerFuel + 1) (some selected) ctx
@@ -3122,9 +3144,14 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                     (hGeneratedEntryNotAccepted caseResult.next 2000)
                     hDefaultRel hDefaultReach
                     (by
-                      intro bodyResult hBodyCompile hBodyBlocks
+                      intro bodyResult bodyTargetFuel hBodyLt
+                        hBodyCompile hBodyBlocks
                       exact
-                        hBodyAdequate hScrutinee hPop hSelect
+                        hBodyAdequate bodyTargetFuel
+                          hScrutinee hPop hSelect
+                          (Nat.lt_trans hBodyLt
+                            (Nat.lt_of_le_of_lt hDefaultLe
+                              (Nat.lt_succ_self dispatchFuel)))
                           hBodyCompile hBodyBlocks)
                 have hExpectedFallthrough :
                     defaultResult.fallthrough? = some bodyShape :=
@@ -3172,91 +3199,6 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
               Structured.EffectSemantics.Stmt.Eval.switch_some
                 hScrutinee hPop rfl hSelect hBodyEval,
               hOutcomeRel, hArtifact⟩
-
-/--
-Pass-owned `AdequateWithin` interface for checked switches. The generated
-context theorem supplies the selected-body instance and generated-label
-freshness facts.
--/
-theorem adequateWithin_switch_of_compileStmtFuel?
-    {transcript : Trace} {compilerFuel : Nat}
-    {program : Structured.Program}
-    {scrutinee : Structured.Code}
-    {cases : List (Word × Structured.Block)}
-    {defaultBody : Option Structured.Block}
-    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
-    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
-    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
-    {continuations : OutcomeSimulation.Continuations}
-    {accept : TypedCfg.Outcome → Prop}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word}
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
-          (.switch scrutinee cases defaultBody) ctx
-          supply entry input regular =
-        some result)
-    (hBlocks :
-      TypedCfgPreservation.BlocksInProgram result cfg)
-    (hRegular : continuations.regular = regular)
-    (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              supply caseIdx remaining)
-            targetState))
-    (hCaseEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (LabelSupply.label supply (caseIdx + 2)) targetState))
-    (hGeneratedEntryNotAccepted :
-      ∀ generatedSupply generatedOffset targetState,
-        ¬ accept
-          (.jump
-            (.generated generatedSupply generatedOffset)
-            targetState))
-    (hBodyAdequate :
-      ∀ {selected : Structured.Block}
-        {afterScrutinee : ObserverSemantics.State transcript}
-        {stack : EvmYul.Stack Word} {value : Word}
-        {bodyCompilerFuel bodySupply : Nat}
-        {bodyEntry : Assembly.Label} {bodyShape : TypedCfg.Shape}
-        {bodyResult : TypedCfgCompiler.Result},
-        ObserverSemantics.Code.run scrutinee source =
-          .ok afterScrutinee →
-        afterScrutinee.source.evm.stack.pop = some (stack, value) →
-        Structured.Switch.select value cases defaultBody =
-          some selected →
-        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
-            bodySupply bodyEntry bodyShape regular =
-          some bodyResult →
-        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        OutcomeSimulation.AdequateWithin
-          (fun sourceFuel sourceOutcome =>
-            ObserverSemantics.Block.Eval
-              program sourceFuel selected
-              (afterScrutinee.withSource
-                (afterScrutinee.source.withEVM
-                  { afterScrutinee.source.evm with stack := stack }))
-              sourceOutcome)
-          bodyResult ctx cfg continuations accept bodyEntry bodyShape
-          (afterScrutinee.withSource
-            (afterScrutinee.source.withEVM
-              { afterScrutinee.source.evm with stack := stack }))
-          tokens) :
-    OutcomeSimulation.AdequateWithin
-      (fun sourceFuel sourceOutcome =>
-        ObserverSemantics.Stmt.Eval program sourceFuel
-          (.switch scrutinee cases defaultBody) source sourceOutcome)
-      result ctx cfg continuations accept entry input source tokens := by
-  intro hAccept targetFuel target trace traceFinal
-    targetOutcome hRel hReach
-  exact
-    outcome_switch_of_compileStmtFuel?_and_firstReaches
-      hCompile hBlocks hRegular hAccept
-      hDispatchEntryNotAccepted hCaseEntryNotAccepted
-      hGeneratedEntryNotAccepted hRel hReach hBodyAdequate
 
 end Switch
 

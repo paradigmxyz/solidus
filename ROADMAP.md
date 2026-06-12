@@ -180,9 +180,11 @@ Adjacent boundary status:
   can therefore derive nested-label freshness from the existing compiler pass.
   `Structured.ObserverGeneratedBoundary` owns generated-label age and
   acceptance contracts. Sequence and conditional adequacy now expose
-  fixed-target-fuel forms while preserving their unbounded APIs as wrappers;
-  switch and loop still need the same extraction before the mutual theorem can
-  close recursive calls by a lexicographic fuel/compiler measure.
+  fixed-target-fuel forms while preserving their unbounded APIs as wrappers.
+  Switch adequacy now does the same in its pass-owned sibling module; loop
+  adequacy remains the final recursive control interface needing fixed-fuel
+  extraction before the mutual theorem can close recursive calls by a
+  lexicographic fuel/compiler measure.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
