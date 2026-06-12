@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 02:53 PDT.
+Last updated: 2026-06-12 04:42 PDT.
 
 ## Objective
 
@@ -169,8 +169,12 @@ Adjacent boundary status:
   arbitrary offset/padded `ByteArray.write` now has the corresponding
   destination-independent inside/outside locality, monotone size,
   synchronized-relation, disjoint padded-read, and spill-lookup interface.
-  Canonical `calldatacopy` is checked through that shared copy substrate.
-  `codecopy`, `returndatacopy`, `extcodecopy`, and `mcopy` remain.
+  The complete copy family is checked through one pass-owned `CopySpec`
+  interface and adjacent primitive-forward theorem: `calldatacopy`,
+  `codecopy`, bounds-sensitive `returndatacopy`, world-updating
+  `extcodecopy`, and overlapping-memory `mcopy`. `mcopy` additionally proves
+  that source-approved reads obtain equal bytes from reservation-related
+  memories before writing them to the destination.
   `ScratchStateRel` retains an actual reservation witness for its active frame,
   ruling out impossible unrestricted scratch states and making source-write
   disjointness an allocation-owned invariant.
@@ -181,8 +185,8 @@ Adjacent boundary status:
   target stack prefixes, allocation offsets, active scratch-frame invariants,
   and observer state. Forward and backward wrappers are checked for literals,
   stack variables, scratch variables, `gas()`, and `msize()`.
-  Remaining work at this boundary is the other memory primitive families, a
-  total canonical primitive interface, recursive statement/function and call
+  Remaining work at this boundary is hashing/logging and terminal memory
+  families, a total canonical primitive interface, recursive statement/function and call
   composition, construction of `ScratchStateRel` at function entry,
   propagation of source-facing memory safety and fuel through those recursive
   judgments, and the whole-program adjacent forward/backward theorem.

@@ -2287,6 +2287,57 @@ theorem write_both
           destAddress length query hHost
           (Nat.le_of_not_gt hBefore) (Nat.lt_of_not_ge hAfter)]
 
+/--
+`MCOPY` may use related source and target memories as its respective copy
+buffers. When the read range is outside the compiler reservation, both copies
+write the same bytes and preserve the outside-reservation relation.
+-/
+theorem write_self_both
+    {reservation : MemoryContract.ScratchReservation}
+    {source target : ByteArray}
+    (sourceAddress destAddress length : Nat)
+    (hRel : OutsideReservation reservation source target)
+    (hSourceAllowed :
+      reservation.sourceAccessAllowed sourceAddress length)
+    (hHost : destAddress + length < USize.size) :
+    OutsideReservation reservation
+      (source.write sourceAddress source destAddress length)
+      (target.write sourceAddress target destAddress length) := by
+  intro query hOutsideReservation
+  by_cases hBefore : query < destAddress
+  · rw [byteAt_write_of_outside source source sourceAddress
+        destAddress length query hHost (Or.inl hBefore),
+      byteAt_write_of_outside target target sourceAddress
+        destAddress length query hHost (Or.inl hBefore)]
+    exact hRel query hOutsideReservation
+  · by_cases hAfter : destAddress + length ≤ query
+    · rw [byteAt_write_of_outside source source sourceAddress
+          destAddress length query hHost (Or.inr hAfter),
+        byteAt_write_of_outside target target sourceAddress
+          destAddress length query hHost (Or.inr hAfter)]
+      exact hRel query hOutsideReservation
+    · have hStart : destAddress ≤ query :=
+        Nat.le_of_not_gt hBefore
+      have hEnd : query < destAddress + length :=
+        Nat.lt_of_not_ge hAfter
+      rw [byteAt_write_of_inside source source sourceAddress
+          destAddress length query hHost hStart hEnd,
+        byteAt_write_of_inside target target sourceAddress
+          destAddress length query hHost hStart hEnd]
+      apply hRel
+      intro hInside
+      rcases hSourceAllowed with hReadBefore | hReadAfter
+      · exact
+          (not_le_of_gt (show
+              sourceAddress + (query - destAddress) <
+                reservation.base by omega))
+            hInside.1
+      · exact
+          (not_lt_of_ge (show
+              reservation.endExclusive ≤
+                sourceAddress + (query - destAddress) by omega))
+            hInside.2
+
 theorem writeBytes_both
     {reservation : MemoryContract.ScratchReservation}
     {source target : EvmYul.MachineState}
@@ -3592,6 +3643,134 @@ theorem copy_both
         cases length <;> simp [EvmYul.MachineState.M])
   · exact
       size_write_ge copied target.memory sourceAddress
+        address length hHost
+
+/--
+Related machines agree after `MCOPY` when its read range is outside the
+compiler reservation. The destination may grow each memory independently; the
+relation records the target's monotone active-memory and materialized-size
+growth.
+-/
+theorem mcopy_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : MachineRel contract source target)
+    (hTargetNoWrap :
+      target.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (sourceAddress address length : Nat)
+    (hSourceAllowed :
+      match contract.scratch? with
+      | none => True
+      | some reservation =>
+          reservation.sourceAccessAllowed sourceAddress length)
+    (hExpansion : ExpansionNoWrap (max address sourceAddress) length)
+    (hHost : address + length < USize.size) :
+    let sourceFinal : EvmYul.MachineState :=
+      { source with
+        memory :=
+          source.memory.write sourceAddress source.memory address length
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M source.activeWords.toNat
+              (max address sourceAddress) length) }
+    let targetFinal : EvmYul.MachineState :=
+      { target with
+        memory :=
+          target.memory.write sourceAddress target.memory address length
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M target.activeWords.toNat
+              (max address sourceAddress) length) }
+    MachineRel contract sourceFinal targetFinal ∧
+      targetFinal.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size ∧
+      target.activeWords.toNat ≤ targetFinal.activeWords.toNat ∧
+      target.memory.size ≤ targetFinal.memory.size := by
+  dsimp
+  let expansionAddress := max address sourceAddress
+  have hTargetExpanded :
+      EvmYul.MachineState.M target.activeWords.toNat
+            expansionAddress length *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    M_activeBytes_lt_of_expansionNoWrap hTargetNoWrap hExpansion
+  have hTargetM :
+      EvmYul.MachineState.M target.activeWords.toNat
+          expansionAddress length <
+        EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive : source.activeWords = target.activeWords := by
+          simpa [hReservation] using hRel.activeWords
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          simp [hMemory]
+        · rw [hReservation, hActive]
+        · exact hRel.returnData
+        · exact hRel.output
+    | some reservation =>
+        have hMemory :
+            OutsideReservation reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive :
+            source.activeWords.toNat ≤ target.activeWords.toNat := by
+          simpa [hReservation] using hRel.activeWords
+        have hSourceNoWrap :
+            source.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          exact lt_of_le_of_lt
+            (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+            hTargetNoWrap
+        have hSourceExpanded :
+            EvmYul.MachineState.M source.activeWords.toNat
+                  expansionAddress length *
+                MemoryContract.wordBytes <
+              EvmYul.UInt256.size :=
+          M_activeBytes_lt_of_expansionNoWrap hSourceNoWrap hExpansion
+        have hSourceM :
+            EvmYul.MachineState.M source.activeWords.toNat
+                expansionAddress length <
+              EvmYul.UInt256.size := by
+          have hPositive : 0 < MemoryContract.wordBytes := by decide
+          nlinarith
+        have hReadAllowed :
+            reservation.sourceAccessAllowed sourceAddress length := by
+          simpa [hReservation] using hSourceAllowed
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          exact
+            OutsideReservation.write_self_both
+              sourceAddress address length hMemory hReadAllowed hHost
+        · simp only [hReservation]
+          rw [EvmYul.UInt256.toNat_ofNat_of_lt hSourceM,
+            EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+          exact M_mono_active hActive
+        · exact hRel.returnData
+        · exact hRel.output
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    exact hTargetExpanded
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    exact
+      (show target.activeWords.toNat ≤
+          EvmYul.MachineState.M target.activeWords.toNat
+            expansionAddress length by
+        cases length <;> simp [EvmYul.MachineState.M])
+  · exact
+      size_write_ge target.memory target.memory sourceAddress
         address length hHost
 
 theorem mstore_target
