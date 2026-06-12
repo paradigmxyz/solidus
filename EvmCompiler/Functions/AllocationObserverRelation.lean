@@ -34,6 +34,22 @@ def currentStackOrder (plan : Plan) (live : List Locals.Name) :
     List Locals.Name :=
   plan.stackOrder.filter fun name => decide (name ∈ live)
 
+theorem currentStackOrder_restrict
+    {plan : Plan} {beforeLive afterLive : List Locals.Name}
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive) :
+    (currentStackOrder plan beforeLive).filter
+        (fun name => decide (name ∈ afterLive)) =
+      currentStackOrder plan afterLive := by
+  unfold currentStackOrder
+  rw [List.filter_filter]
+  apply congrArg (fun predicate => plan.stackOrder.filter predicate)
+  funext name
+  by_cases hAfter : name ∈ afterLive
+  · have hBefore : name ∈ beforeLive :=
+      hSubset name hAfter
+    simp [hAfter, hBefore]
+  · simp [hAfter]
+
 /--
 Two allocation plans realize the same surviving locals.
 
@@ -2238,6 +2254,61 @@ def StackDepthValid : ActivationMode → Nat → Prop
   | .scratch frameDepth _frameWords, depth => depth < frameDepth
 
 end ActivationMode
+
+/--
+Two activation modes use the same runtime representation and, for scratch
+activations, the same fixed frame width. Lexical execution may change only the
+hidden frame-pointer depth.
+-/
+inductive SameFrame : ActivationMode → ActivationMode → Prop where
+  | stack : SameFrame .stack .stack
+  | scratch (leftDepth rightDepth frameWords : Nat) :
+      SameFrame
+        (.scratch leftDepth frameWords)
+        (.scratch rightDepth frameWords)
+
+namespace SameFrame
+
+theorem refl (mode : ActivationMode) : SameFrame mode mode := by
+  cases mode with
+  | stack =>
+      exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth frameDepth frameWords
+
+theorem symm
+    {left right : ActivationMode}
+    (hSame : SameFrame left right) :
+    SameFrame right left := by
+  cases hSame with
+  | stack =>
+      exact .stack
+  | scratch leftDepth rightDepth frameWords =>
+      exact .scratch rightDepth leftDepth frameWords
+
+theorem trans
+    {left middle right : ActivationMode}
+    (hLeft : SameFrame left middle)
+    (hRight : SameFrame middle right) :
+    SameFrame left right := by
+  cases hLeft with
+  | stack =>
+      cases hRight
+      exact .stack
+  | scratch leftDepth middleDepth frameWords =>
+      cases hRight with
+      | scratch _ rightDepth _ =>
+          exact .scratch leftDepth rightDepth frameWords
+
+theorem afterStackDeclaration (mode : ActivationMode) :
+    SameFrame mode mode.afterStackDeclaration := by
+  cases mode with
+  | stack =>
+      exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth (frameDepth + 1) frameWords
+
+end SameFrame
 
 /--
 Every currently live local is stack-resident.

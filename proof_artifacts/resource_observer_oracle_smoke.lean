@@ -451,11 +451,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetGas
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.symm
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_restrict
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.SameFrame.trans
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.transport_plan
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_stateExtends
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.planAgreesOn
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.transition_of_stateExtends
 #print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.restore_context
 #print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward_exact
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.block_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

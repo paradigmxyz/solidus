@@ -87,6 +87,214 @@ theorem cleanupTo?_shape
   · simp [hDepth] at hCleanup
 
 /--
+Construct the exact cleanup transition from the real open-block lowerer's state
+extension and the two adjacent compiler contexts.
+-/
+theorem transition_of_stateExtends
+    {lowerCtx : AllocationLowering.Ctx}
+    {bodyState outerState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    (hBody :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx bodyState bodyLocals bodyPlan beforeLive beforeMode)
+    (hOuter :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx outerState outerLocals outerPlan afterLive afterMode)
+    (hSubset :
+      ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hSameFrame : SameFrame beforeMode afterMode)
+    (hTargetDepth : targetDepth = outerLocals.layout.length)
+    (hExtends :
+      AllocationLowering.StateExtends
+        afterLive outerState bodyState) :
+    ∃ hTransition :
+        Transition bodyPlan beforeLive afterLive targetDepth
+          beforeMode afterMode,
+      bodyState.layout =
+          hTransition.dropped ++ outerState.layout ∧
+        ∀ name,
+          name ∈ afterLive →
+          AllocationSupport.lookupSlot?
+              name bodyState.allocation.env =
+            AllocationSupport.lookupSlot?
+              name outerState.allocation.env := by
+  rcases hExtends with
+    ⟨dropped, hLayout, hFresh, hSlots⟩
+  have hDroppedFilter :
+      dropped.filter (fun name => decide (name ∈ afterLive)) = [] := by
+    apply List.filter_eq_nil_iff.mpr
+    intro name hDropped
+    simpa using hFresh name hDropped
+  cases hSameFrame with
+  | stack =>
+      cases hBody with
+      | stack body =>
+          cases hOuter with
+          | stack outer =>
+              have hOuterFilter :
+                  outerState.layout.filter
+                      (fun name => decide (name ∈ afterLive)) =
+                    outerState.layout := by
+                apply List.filter_eq_self.mpr
+                intro name hName
+                have hLive :
+                    name ∈ afterLive := by
+                  apply mem_live_of_mem_currentStackOrder
+                  rw [outer.stackOrder]
+                  exact hName
+                simpa using hLive
+              have hAfterOrder :
+                  currentStackOrder bodyPlan afterLive =
+                    outerState.layout := by
+                calc
+                  currentStackOrder bodyPlan afterLive =
+                      (currentStackOrder bodyPlan beforeLive).filter
+                        (fun name => decide (name ∈ afterLive)) :=
+                    (currentStackOrder_restrict hSubset).symm
+                  _ =
+                      bodyState.layout.filter
+                        (fun name => decide (name ∈ afterLive)) := by
+                    rw [body.stackOrder]
+                  _ =
+                      (dropped ++ outerState.layout).filter
+                        (fun name => decide (name ∈ afterLive)) := by
+                    rw [hLayout]
+                  _ = outerState.layout := by
+                    rw [List.filter_append, hDroppedFilter, hOuterFilter]
+                    rfl
+              have hStackOrder :
+                  currentStackOrder bodyPlan beforeLive =
+                    dropped ++ currentStackOrder bodyPlan afterLive := by
+                calc
+                  currentStackOrder bodyPlan beforeLive =
+                      bodyState.layout := body.stackOrder
+                  _ = dropped ++ outerState.layout := hLayout
+                  _ =
+                      dropped ++ currentStackOrder bodyPlan afterLive := by
+                    rw [hAfterOrder]
+              have hTarget :
+                  targetDepth =
+                    (currentStackOrder bodyPlan afterLive).length := by
+                calc
+                  targetDepth = outerLocals.layout.length := hTargetDepth
+                  _ = outerState.layout.length :=
+                    congrArg List.length outer.layout
+                  _ =
+                      (currentStackOrder bodyPlan afterLive).length :=
+                    congrArg List.length hAfterOrder.symm
+              let transition :
+                  Transition bodyPlan beforeLive afterLive targetDepth
+                    .stack .stack :=
+                { dropped := dropped
+                  subset := hSubset
+                  stackOrder := hStackOrder
+                  mode := .stack hTarget }
+              exact ⟨transition, hLayout, hSlots⟩
+  | scratch beforeDepth afterDepth frameWords =>
+      cases hBody with
+      | scratch body =>
+          cases hOuter with
+          | scratch outer =>
+              have hDepth :
+                  beforeDepth = dropped.length + afterDepth := by
+                have hBodyLength := body.frameBottom
+                have hOuterLength := outer.frameBottom
+                rw [hLayout] at hBodyLength
+                simp only [List.length_append] at hBodyLength
+                omega
+              have hBeforeOrder :
+                  currentStackOrder bodyPlan beforeLive =
+                    dropped ++ outerState.layout.take afterDepth := by
+                rw [body.stackPrefix, hLayout]
+                calc
+                  List.take beforeDepth
+                        (dropped ++ outerState.layout) =
+                      List.take (dropped.length + afterDepth)
+                        (dropped ++ outerState.layout) :=
+                    congrArg
+                      (fun depth =>
+                        List.take depth (dropped ++ outerState.layout))
+                      hDepth
+                  _ = dropped ++ outerState.layout.take afterDepth :=
+                    List.take_length_add_append afterDepth
+              have hOuterFilter :
+                  (outerState.layout.take afterDepth).filter
+                      (fun name => decide (name ∈ afterLive)) =
+                    outerState.layout.take afterDepth := by
+                apply List.filter_eq_self.mpr
+                intro name hName
+                have hLive :
+                    name ∈ afterLive := by
+                  apply mem_live_of_mem_currentStackOrder
+                  rw [outer.stackPrefix]
+                  exact hName
+                simpa using hLive
+              have hAfterOrder :
+                  currentStackOrder bodyPlan afterLive =
+                    currentStackOrder outerPlan afterLive := by
+                calc
+                  currentStackOrder bodyPlan afterLive =
+                      (currentStackOrder bodyPlan beforeLive).filter
+                        (fun name => decide (name ∈ afterLive)) :=
+                    (currentStackOrder_restrict hSubset).symm
+                  _ =
+                      (dropped ++
+                        outerState.layout.take afterDepth).filter
+                        (fun name => decide (name ∈ afterLive)) := by
+                    rw [hBeforeOrder]
+                  _ = outerState.layout.take afterDepth := by
+                    rw [List.filter_append, hDroppedFilter, hOuterFilter]
+                    rfl
+                  _ = currentStackOrder outerPlan afterLive :=
+                    outer.stackPrefix.symm
+              have hStackOrder :
+                  currentStackOrder bodyPlan beforeLive =
+                    dropped ++ currentStackOrder bodyPlan afterLive := by
+                calc
+                  currentStackOrder bodyPlan beforeLive =
+                      dropped ++ outerState.layout.take afterDepth :=
+                    hBeforeOrder
+                  _ =
+                      dropped ++ currentStackOrder outerPlan afterLive := by
+                    rw [outer.stackPrefix]
+                  _ =
+                      dropped ++ currentStackOrder bodyPlan afterLive := by
+                    rw [hAfterOrder]
+              have hAfterDepth :
+                  afterDepth =
+                    (currentStackOrder bodyPlan afterLive).length := by
+                calc
+                  afterDepth =
+                      (currentStackOrder outerPlan afterLive).length :=
+                    outer.currentStackOrder_length.symm
+                  _ =
+                      (currentStackOrder bodyPlan afterLive).length :=
+                    congrArg List.length hAfterOrder.symm
+              have hTarget :
+                  targetDepth = afterDepth + 1 := by
+                calc
+                  targetDepth = outerLocals.layout.length :=
+                    hTargetDepth
+                  _ = outerState.layout.length :=
+                    congrArg List.length outer.layout
+                  _ = afterDepth + 1 := outer.frameBottom
+              let transition :
+                  Transition bodyPlan beforeLive afterLive targetDepth
+                    (.scratch beforeDepth frameWords)
+                    (.scratch afterDepth frameWords) :=
+                { dropped := dropped
+                  subset := hSubset
+                  stackOrder := hStackOrder
+                  mode :=
+                    .scratch beforeDepth afterDepth frameWords
+                      hAfterDepth hTarget }
+              exact ⟨transition, hLayout, hSlots⟩
+
+/--
 Restore an inner plan's compiler context after plain lexical cleanup.
 
 The two explicit premises are ordinary lowering facts: stack declarations in

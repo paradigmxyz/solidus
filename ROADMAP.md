@@ -271,12 +271,21 @@ Adjacent boundary status:
   automatically. Exact cleanup stack balance plus a checked context-restoration
   theorem re-establishes the complete outer activation invariant from ordinary
   layout-prefix and surviving-slot facts, without accepting plan agreement as
-  recursive proof evidence or pretending nested scopes share one plan.
+  recursive proof evidence or pretending nested scopes share one plan. The real
+  open-block lowerer now proves those facts for every well-scoped statement
+  list: new stack locals form a fresh removable layout prefix and incoming
+  names retain their allocation slots. `SameFrame` tracks that regular lexical
+  execution may move a scratch frame pointer but cannot change backend mode or
+  frame width. These facts construct the exact cleanup transition internally,
+  and regular `.block` preservation is checked through the actual lowerer,
+  Locals compiler, cleanup, and canonical effect semantics.
   Remaining work at this boundary is recursive statement/function/call
-  composition, proving those layout-prefix and slot-preservation facts for the
-  real open-block lowerer, construction of the activation relation at function
-  entry, propagation of source-facing memory safety and fuel, and the
-  whole-program adjacent forward/backward theorem.
+  composition, construction of the activation relation at function entry,
+  propagation of source-facing memory safety and fuel, and the whole-program
+  adjacent forward/backward theorem. The final scratch theorem must expose or
+  derive an actual-execution source memory-safety contract; no-external-effects
+  alone does not prove that source memory accesses avoid the reserved spill
+  interval.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

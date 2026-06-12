@@ -465,6 +465,21 @@ inductive ModeTransition
         (.scratch frameDepth frameWords)
         (.scratch frameDepth frameWords)
 
+namespace ModeTransition
+
+theorem sameFrame
+    {plan : Locals.Allocation.Plan} {name : Locals.Name}
+    {before after : ActivationMode}
+    (hTransition : ModeTransition plan name before after) :
+    SameFrame before after := by
+  cases hTransition with
+  | stack =>
+      exact SameFrame.afterStackDeclaration before
+  | scratch frameDepth frameWords slot hLocation =>
+      exact .scratch frameDepth frameDepth frameWords
+
+end ModeTransition
+
 /--
 Exact compiler shape for one declaration, classified by the placement chosen
 by the checked allocation plan.
@@ -3075,7 +3090,7 @@ def RegularStmtInvariantForward
     (localsFinal : Locals.Ctx)
     (plan : Locals.Allocation.Plan)
     (afterLive : List Locals.Name) (frameBase : Nat)
-    (afterMode : ActivationMode)
+    (beforeMode afterMode : ActivationMode)
     (sourceProgram : Functions.Program)
     (sourceCtx : Functions.Source.Ctx)
     (stmt : Functions.Stmt)
@@ -3099,7 +3114,8 @@ def RegularStmtInvariantForward
           (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
       AllocationObserverContext.ActivationInvariant
         contract lowerCtx lowerFinal localsFinal plan afterLive
-        frameBase afterMode sourceFinal targetFinal
+        frameBase afterMode sourceFinal targetFinal ∧
+      SameFrame beforeMode afterMode
 
 namespace RegularStmtInvariantForward
 
@@ -3139,7 +3155,7 @@ theorem expr_of_compilers
     ∃ targetFinal,
       RegularStmtInvariantForward
         contract transcript lowerCtx lowerFinal localsFinal plan live
-        frameBase mode sourceProgram sourceCtx (.expr expr) source
+        frameBase mode mode sourceProgram sourceCtx (.expr expr) source
         targetProgram target
         (Expressions.StmtList.toStructured compiledStmts)
         sourceFinal targetFinal sourceCtx := by
@@ -3147,7 +3163,9 @@ theorem expr_of_compilers
     ExprLeaf.forward_of_invariant
       (sourceFuel := 0) (targetFuel := 0)
       hSafe hScoped hInvariant hLower hCompile
-  exact ⟨targetFinal, 0, 2, hSource, hTarget, hFinal⟩
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      SameFrame.refl mode⟩
 
 theorem let_of_compilers
     {contract : MemoryContract.Contract}
@@ -3198,7 +3216,7 @@ theorem let_of_compilers
     ∃ targetFinal,
       RegularStmtInvariantForward
         contract transcript lowerCtx afterState afterLocals plan afterLive
-        frameBase afterMode sourceProgram sourceCtx
+        frameBase beforeMode afterMode sourceProgram sourceCtx
         (.let_ name valueExpr) source targetProgram target
         (Expressions.StmtList.toStructured compiledStmts)
         ((Functions.ObserverSemantics.stateModel transcript).insert
@@ -3210,7 +3228,9 @@ theorem let_of_compilers
       (sourceFuel := 0) (targetFuel := 0)
       hSafe hAfter hMode hScoped hAfterLive hNameFrame hScratchBound
       hInvariant hLower hCompile
-  exact ⟨targetFinal, 0, 2, hSource, hTarget, hFinal⟩
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      hMode.sameFrame⟩
 
 theorem assign_of_compilers
     {contract : MemoryContract.Contract}
@@ -3255,7 +3275,7 @@ theorem assign_of_compilers
     ∃ targetFinal,
       RegularStmtInvariantForward
         contract transcript lowerCtx lowerFinal localsFinal plan live
-        frameBase mode sourceProgram sourceCtx
+        frameBase mode mode sourceProgram sourceCtx
         (.assign name valueExpr) source targetProgram target
         (Expressions.StmtList.toStructured compiledStmts)
         ((Functions.ObserverSemantics.stateModel transcript).withVars
@@ -3269,7 +3289,9 @@ theorem assign_of_compilers
     AssignLeaf.forward_of_invariant
       (sourceFuel := 0) (targetFuel := 0)
       hContains hSafe hScoped hLive hInvariant hLower hCompile
-  exact ⟨targetFinal, 0, 2, hSource, hTarget, hFinal⟩
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      SameFrame.refl mode⟩
 
 end RegularStmtInvariantForward
 
@@ -3286,7 +3308,7 @@ def RegularBlockInvariantForward
     (localsFinal : Locals.Ctx)
     (plan : Locals.Allocation.Plan)
     (finalLive : List Locals.Name) (frameBase : Nat)
-    (finalMode : ActivationMode)
+    (initialMode finalMode : ActivationMode)
     (sourceProgram : Functions.Program)
     (sourceCtx : Functions.Source.Ctx)
     (sourceBlock : Functions.Block)
@@ -3310,7 +3332,8 @@ def RegularBlockInvariantForward
           (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
       AllocationObserverContext.ActivationInvariant
         contract lowerCtx lowerFinal localsFinal plan finalLive
-        frameBase finalMode sourceFinal targetFinal
+        frameBase finalMode sourceFinal targetFinal ∧
+      SameFrame initialMode finalMode
 
 namespace RegularBlockInvariantForward
 
@@ -3333,13 +3356,13 @@ theorem nil
         source target) :
     RegularBlockInvariantForward
       contract transcript lowerCtx lowerState localsCtx plan live
-      frameBase mode sourceProgram sourceCtx { stmts := [] } source
+      frameBase mode mode sourceProgram sourceCtx { stmts := [] } source
       targetProgram { stmts := [] } target source target sourceCtx := by
   exact
     ⟨1, 1,
       by simp [Functions.Source.Effectful.Block.runOpen],
       Structured.EffectSemantics.Block.Eval.nil,
-      hInvariant⟩
+      hInvariant, SameFrame.refl mode⟩
 
 theorem cons_regular
     {contract : MemoryContract.Contract}
@@ -3349,7 +3372,8 @@ theorem cons_regular
     {midLocals finalLocals : Locals.Ctx}
     {plan : Locals.Allocation.Plan}
     {midLive finalLive : List Locals.Name}
-    {frameBase : Nat} {midMode finalMode : ActivationMode}
+    {frameBase : Nat}
+    {initialMode midMode finalMode : ActivationMode}
     {sourceProgram : Functions.Program}
     {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
     {stmt : Functions.Stmt} {rest : List Functions.Stmt}
@@ -3362,26 +3386,27 @@ theorem cons_regular
     (hHead :
       RegularStmtInvariantForward
         contract transcript lowerCtx midState midLocals plan midLive
-        frameBase midMode sourceProgram sourceCtx stmt source
+        frameBase initialMode midMode sourceProgram sourceCtx stmt source
         targetProgram target compiledHead sourceMid targetMid midCtx)
     (hTail :
       RegularBlockInvariantForward
         contract transcript lowerCtx finalState finalLocals plan finalLive
-        frameBase finalMode sourceProgram midCtx { stmts := rest } sourceMid
+        frameBase midMode finalMode sourceProgram midCtx
+        { stmts := rest } sourceMid
         targetProgram { stmts := compiledTail } targetMid
         sourceFinal targetFinal finalCtx) :
     RegularBlockInvariantForward
       contract transcript lowerCtx finalState finalLocals plan finalLive
-      frameBase finalMode sourceProgram sourceCtx
+      frameBase initialMode finalMode sourceProgram sourceCtx
       { stmts := stmt :: rest } source
       targetProgram { stmts := compiledHead ++ compiledTail } target
       sourceFinal targetFinal finalCtx := by
   rcases hHead with
     ⟨headSourceFuel, headTargetFuel,
-      hHeadSource, hHeadTarget, _hHeadInvariant⟩
+      hHeadSource, hHeadTarget, _hHeadInvariant, hHeadMode⟩
   rcases hTail with
     ⟨tailSourceFuel, tailTargetFuel,
-      hTailSource, hTailTarget, hTailInvariant⟩
+      hTailSource, hTailTarget, hTailInvariant, hTailMode⟩
   obtain ⟨sourceFuel, hSourceRun⟩ :=
     Functions.Source.Effectful.Block.runOpen_cons_regular_exists
       (Functions.ObserverSemantics.stateModel transcript)
@@ -3391,7 +3416,8 @@ theorem cons_regular
     Structured.EffectSemantics.Block.Eval.append_regular_exists
       hHeadTarget hTailTarget
   exact
-    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant⟩
+    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant,
+      hHeadMode.trans hTailMode⟩
 
 end RegularBlockInvariantForward
 
@@ -4317,13 +4343,15 @@ theorem RegularScopedBlockInvariantForward.finish_regular
     {targetBlock : Expressions.Block}
     {target targetMid : Structured.ObserverSemantics.State transcript}
     {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {loweredBody : Locals.Block}
     {bodyLowerState outerLowerState : AllocationLowering.State}
     {outerLocals bodyLocals : Locals.Ctx}
     (hBody :
       RegularBlockInvariantForward
         contract transcript lowerCtx bodyLowerState bodyLocals bodyPlan
-        beforeLive frameBase beforeMode sourceProgram sourceCtx sourceBlock
-        source targetProgram
+        beforeLive frameBase afterMode beforeMode sourceProgram sourceCtx
+        sourceBlock source targetProgram
         { stmts := Expressions.StmtList.toStructured compiledBody }
         target sourceFinal targetMid finalCtx)
     (hSourceScope : sourceCtx.scope = afterLive)
@@ -4332,19 +4360,14 @@ theorem RegularScopedBlockInvariantForward.finish_regular
       AllocationObserverContext.ActivationExprContext
         lowerCtx outerLowerState outerLocals outerPlan afterLive afterMode)
     (hAfterWF : outerPlan.WellFormed)
-    (hTransition :
-      AllocationObserverCleanup.Transition
-        bodyPlan beforeLive afterLive targetDepth beforeMode afterMode)
-    (hLayout :
-      bodyLowerState.layout =
-        hTransition.dropped ++ outerLowerState.layout)
-    (hSlots :
-      ∀ name,
-        name ∈ afterLive →
-        AllocationSupport.lookupSlot?
-            name bodyLowerState.allocation.env =
-          AllocationSupport.lookupSlot?
-            name outerLowerState.allocation.env)
+    (hSubset :
+      ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hScoped :
+      Functions.Scope.Block.Scoped afterLive sourceBlock)
+    (hLowerBody :
+      AllocationLowering.lowerBlockOpen
+          lowerCtx returns outerLowerState sourceBlock =
+        some (loweredBody, bodyLowerState))
     (hFinish :
       Locals.finishScoped outerLocals bodyLocals compiledBody =
         some targetBlock) :
@@ -4359,7 +4382,15 @@ theorem RegularScopedBlockInvariantForward.finish_regular
           afterLive sourceFinal)
         targetFinal := by
   rcases hBody with
-    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant⟩
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant,
+      hBodyMode⟩
+  have hExtends :=
+    AllocationLowering.lowerBlockOpen_stateExtends
+      hScoped hLowerBody
+  obtain ⟨hTransition, hLayout, hSlots⟩ :=
+    AllocationObserverCleanup.Plain.transition_of_stateExtends
+      hBodyInvariant.compiler hAfterCompiler hSubset
+      hBodyMode.symm hTargetDepth hExtends
   obtain ⟨_hRestoredCompiler, hPlanAgree⟩ :=
     AllocationObserverCleanup.Plain.restore_context
       hBodyInvariant.compiler hAfterCompiler hTransition hLayout hSlots
@@ -4414,6 +4445,91 @@ theorem RegularScopedBlockInvariantForward.finish_regular
       Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTargetScoped
   · exact hFinalLength.trans hTargetDepth
+
+namespace RegularStmtInvariantForward
+
+/--
+Regular `.block` preservation from the adjacent recursive body theorem and the
+real lowerer/compiler components.
+-/
+theorem block_of_components
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {loweredBody : Locals.Block}
+    {bodyLowerState outerLowerState : AllocationLowering.State}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      RegularBlockInvariantForward
+        contract transcript lowerCtx bodyLowerState bodyLocals bodyPlan
+        beforeLive frameBase afterMode beforeMode sourceProgram sourceCtx
+        sourceBlock source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceFinal targetMid finalCtx)
+    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSubset :
+      ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hScoped :
+      Functions.Scope.Block.Scoped afterLive sourceBlock)
+    (hOuterInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx outerLowerState outerLocals outerPlan
+        afterLive frameBase afterMode source target)
+    (hLowerBody :
+      AllocationLowering.lowerBlockOpen
+          lowerCtx returns outerLowerState sourceBlock =
+        some (loweredBody, bodyLowerState))
+    (hCompileBody :
+      Locals.Block.compileOpen outerLocals loweredBody =
+        some (compiledBody, bodyLocals))
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    ∃ targetFinal,
+      RegularStmtInvariantForward
+        contract transcript lowerCtx outerLowerState outerLocals outerPlan
+        afterLive frameBase afterMode afterMode sourceProgram sourceCtx
+        (.block sourceBlock) source targetProgram target
+        (Expressions.StmtList.toStructured targetBlock.stmts)
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal sourceCtx := by
+  obtain ⟨targetFinal, sourceFuel, targetFuel,
+      hSourceScoped, hTargetScoped, hFinalInvariant⟩ :=
+    RegularScopedBlockInvariantForward.finish_regular
+      hBody hSourceScope rfl hOuterInvariant.compiler
+      hOuterInvariant.planWF hSubset hScoped hLowerBody hFinish
+  have hSourceStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive sourceFinal),
+            sourceCtx) := by
+    simp only [Functions.Source.Effectful.Stmt.run]
+    rw [hSourceScoped]
+    rfl
+  exact
+    ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,
+      hFinalInvariant, SameFrame.refl afterMode⟩
+
+end RegularStmtInvariantForward
 
 theorem ScopedBlockForward.finish_regular
     {contract : MemoryContract.Contract}

@@ -145,9 +145,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.insert_preserves
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.insert_cons
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.restrictTo
+#check EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_restrict
 #check EvmCompiler.Functions.AllocationObserverRelation.LocationAgrees
 #check EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn
 #check EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.symm
+#check EvmCompiler.Functions.AllocationObserverRelation.SameFrame
+#check EvmCompiler.Functions.AllocationObserverRelation.SameFrame.refl
+#check EvmCompiler.Functions.AllocationObserverRelation.SameFrame.symm
+#check EvmCompiler.Functions.AllocationObserverRelation.SameFrame.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.StoreRel.transport_plan
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.transport_plan
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.transport_plan
@@ -160,6 +165,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward_exact
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.backward
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.finishScoped_shape
+#check EvmCompiler.Functions.AllocationObserverCleanup.Plain.transition_of_stateExtends
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.restore_context
 #check EvmCompiler.Functions.AllocationObserverCleanup.Preserving.forward_zero
 #check EvmCompiler.Functions.AllocationObserverCleanup.Preserving.backward_zero
@@ -179,7 +185,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.nil
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.cons_regular
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.block_of_components
 #check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_cons_components
+#check EvmCompiler.Functions.AllocationLowering.StateExtends
+#check EvmCompiler.Functions.AllocationLowering.lowerStmt_stateExtends
+#check EvmCompiler.Functions.AllocationLowering.lowerStmtList_stateExtends
+#check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_stateExtends
 #check EvmCompiler.Locals.Block.compileOpen_append_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.terminalArgs_of_compilers

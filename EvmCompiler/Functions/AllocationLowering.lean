@@ -440,6 +440,486 @@ mutual
 end
 
 /--
+The part of lowering-state evolution visible at an open source-block boundary.
+
+New stack locals form a removable prefix of the incoming Locals layout, while
+lookups for names already in the source scope retain their allocation slots.
+-/
+def StateExtends
+    (live : List Name) (before after : State) : Prop :=
+  ∃ dropped : List Name,
+    after.layout = dropped ++ before.layout ∧
+      (∀ name, name ∈ dropped → name ∉ live) ∧
+      ∀ name,
+        name ∈ live →
+        AllocationSupport.lookupSlot? name after.allocation.env =
+          AllocationSupport.lookupSlot? name before.allocation.env
+
+namespace StateExtends
+
+theorem of_shape
+    {live : List Name} {before after : State}
+    (hLayout : after.layout = before.layout)
+    (hSlots : after.allocation.env = before.allocation.env) :
+    StateExtends live before after := by
+  refine ⟨[], by simpa using hLayout, ?_, ?_⟩
+  · simp
+  · intro name _hLive
+    rw [hSlots]
+
+theorem trans
+    {beforeLive afterLive : List Name}
+    {before middle after : State}
+    (hHead : StateExtends beforeLive before middle)
+    (hTail : StateExtends afterLive middle after)
+    (hSubset : ∀ name, name ∈ beforeLive → name ∈ afterLive) :
+    StateExtends beforeLive before after := by
+  rcases hHead with
+    ⟨headDropped, hHeadLayout, hHeadFresh, hHeadSlots⟩
+  rcases hTail with
+    ⟨tailDropped, hTailLayout, hTailFresh, hTailSlots⟩
+  refine
+    ⟨tailDropped ++ headDropped, ?_, ?_, ?_⟩
+  · rw [hTailLayout, hHeadLayout, List.append_assoc]
+  · intro name hDropped hLive
+    simp only [List.mem_append] at hDropped
+    cases hDropped with
+    | inl hTailDropped =>
+        exact hTailFresh name hTailDropped (hSubset name hLive)
+    | inr hHeadDropped =>
+        exact hHeadFresh name hHeadDropped hLive
+  · intro name hLive
+    exact (hTailSlots name (hSubset name hLive)).trans
+      (hHeadSlots name hLive)
+
+end StateExtends
+
+theorem lowerBlockScoped_state_shape
+    {ctx : Ctx} {returns : List Name}
+    {state final : State} {block : Block}
+    {lowered : Locals.Block}
+    (hLower :
+      lowerBlockScoped ctx returns state block =
+        some (lowered, final)) :
+    final.allocation.env = state.allocation.env ∧
+      final.layout = state.layout := by
+  unfold lowerBlockScoped at hLower
+  cases hOpen : lowerBlockOpen ctx returns state block with
+  | none =>
+      simp [hOpen] at hLower
+  | some result =>
+      rcases result with ⟨body, bodyFinal⟩
+      simp [hOpen] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
+
+theorem lowerCases_state_shape
+    {ctx : Ctx} {returns : List Name} :
+    ∀ {state final : State}
+      {cases : List (Word × Block)}
+      {lowered : List (Word × Locals.Block)},
+      lowerCases ctx returns state cases = some (lowered, final) →
+        final.allocation.env = state.allocation.env ∧
+          final.layout = state.layout := by
+  intro state final cases lowered hLower
+  induction cases generalizing state final lowered with
+  | nil =>
+      simp [lowerCases] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerCases, hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, afterBody⟩
+          cases hRest :
+              lowerCases ctx returns afterBody rest with
+          | none =>
+              simp [lowerCases, hBody, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨loweredRest, restFinal⟩
+              simp [lowerCases, hBody, hRest] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hBodyShape :=
+                lowerBlockScoped_state_shape hBody
+              have hRestShape := ih hRest
+              exact
+                ⟨hRestShape.1.trans hBodyShape.1,
+                  hRestShape.2.trans hBodyShape.2⟩
+
+theorem lowerDefault_state_shape
+    {ctx : Ctx} {returns : List Name}
+    {state final : State} {body : Option Block}
+    {lowered : Option Locals.Block}
+    (hLower :
+      lowerDefault ctx returns state body =
+        some (lowered, final)) :
+    final.allocation.env = state.allocation.env ∧
+      final.layout = state.layout := by
+  cases body with
+  | none =>
+      simp [lowerDefault] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl⟩
+  | some body =>
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerDefault, hBody] at hLower
+      | some result =>
+          rcases result with ⟨loweredBody, bodyFinal⟩
+          simp [lowerDefault, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact lowerBlockScoped_state_shape hBody
+
+theorem mem_stmt_outEnv
+    {live : List Name} {stmt : Stmt} {name : Name}
+    (hLive : name ∈ live) :
+    name ∈ Scope.Stmt.outEnv live stmt := by
+  cases stmt <;> simp [Scope.Stmt.outEnv, hLive]
+
+/--
+Successful lowering of one well-scoped statement preserves incoming allocation
+slots and extends the Locals layout only by stack declarations introduced by
+that statement.
+-/
+theorem lowerStmt_stateExtends
+    {ctx : Ctx} {returns live : List Name}
+    {state final : State} {stmt : Stmt}
+    {lowered : List Locals.Stmt}
+    (hScoped : Scope.Stmt.Scoped live stmt)
+    (hLower :
+      lowerStmt ctx returns state stmt =
+        some (lowered, final)) :
+    StateExtends live state final := by
+  cases stmt with
+  | expr expr =>
+      cases hExpr : lowerExpr ctx state expr with
+      | none =>
+          simp [lowerStmt, hExpr] at hLower
+      | some loweredExpr =>
+          simp [lowerStmt, hExpr] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact StateExtends.of_shape rfl rfl
+  | let_ name value =>
+      have hFresh : name ∉ live := hScoped.1
+      cases hValue : lowerExpr ctx state value with
+      | none =>
+          simp [lowerStmt, hValue] at hLower
+      | some loweredValue =>
+          by_cases hStack :
+              isStackSlot ctx state.allocation.nextSlot = true
+          · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+              hStack] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            refine ⟨[name], rfl, ?_, ?_⟩
+            · intro declared hDeclared
+              simp only [List.mem_singleton] at hDeclared
+              subst declared
+              exact hFresh
+            · intro existing hExisting
+              have hNe : name ≠ existing := by
+                intro hEq
+                subst existing
+                exact hFresh hExisting
+              simp [AllocationSupport.lookupSlot?, hNe]
+          · have hStackFalse :
+                isStackSlot ctx state.allocation.nextSlot = false :=
+              Bool.eq_false_of_not_eq_true hStack
+            by_cases hFrame : ctx.frameName ∈ state.layout
+            · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+                hStackFalse, hFrame] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              refine ⟨[], rfl, ?_, ?_⟩
+              · simp
+              · intro existing hExisting
+                have hNe : name ≠ existing := by
+                  intro hEq
+                  subst existing
+                  exact hFresh hExisting
+                simp [AllocationSupport.lookupSlot?, hNe]
+            · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+                hStackFalse, hFrame] at hLower
+  | assign name value =>
+      cases hSlot :
+          AllocationSupport.lookupSlot?
+            name state.allocation.env with
+      | none =>
+          simp [lowerStmt, hSlot] at hLower
+      | some slot =>
+          cases hValue : lowerExpr ctx state value with
+          | none =>
+              simp [lowerStmt, hSlot, hValue] at hLower
+          | some loweredValue =>
+              by_cases hStack : isStackSlot ctx slot = true
+              · simp [lowerStmt, hSlot, hValue, hStack] at hLower
+                rcases hLower with ⟨rfl, rfl⟩
+                exact StateExtends.of_shape rfl rfl
+              · have hStackFalse :
+                    isStackSlot ctx slot = false :=
+                  Bool.eq_false_of_not_eq_true hStack
+                by_cases hFrame : ctx.frameName ∈ state.layout
+                · simp [lowerStmt, hSlot, hValue, hStackFalse, hFrame]
+                    at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  exact StateExtends.of_shape rfl rfl
+                · simp [lowerStmt, hSlot, hValue, hStackFalse, hFrame]
+                    at hLower
+  | block body =>
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerStmt, hBody] at hLower
+      | some result =>
+          rcases result with ⟨loweredBody, bodyFinal⟩
+          simp [lowerStmt, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          have hShape := lowerBlockScoped_state_shape hBody
+          exact StateExtends.of_shape hShape.2 hShape.1
+  | if_ cond body =>
+      cases hCond : lowerExpr ctx state cond with
+      | none =>
+          simp [lowerStmt, hCond] at hLower
+      | some loweredCond =>
+          cases hBody :
+              lowerBlockScoped ctx returns state body with
+          | none =>
+              simp [lowerStmt, hCond, hBody] at hLower
+          | some result =>
+              rcases result with ⟨loweredBody, bodyFinal⟩
+              simp [lowerStmt, hCond, hBody] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hShape := lowerBlockScoped_state_shape hBody
+              exact StateExtends.of_shape hShape.2 hShape.1
+  | switch scrutinee cases defaultBody =>
+      cases hScrutinee : lowerExpr ctx state scrutinee with
+      | none =>
+          simp [lowerStmt, hScrutinee] at hLower
+      | some loweredScrutinee =>
+          cases hCases :
+              lowerCases ctx returns state cases with
+          | none =>
+              simp [lowerStmt, hScrutinee, hCases] at hLower
+          | some casesResult =>
+              rcases casesResult with ⟨loweredCases, afterCases⟩
+              cases hDefault :
+                  lowerDefault ctx returns afterCases defaultBody with
+              | none =>
+                  simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+              | some defaultResult =>
+                  rcases defaultResult with
+                    ⟨loweredDefault, defaultFinal⟩
+                  simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  have hCasesShape := lowerCases_state_shape hCases
+                  have hDefaultShape :=
+                    lowerDefault_state_shape hDefault
+                  exact
+                    StateExtends.of_shape
+                      (hDefaultShape.2.trans hCasesShape.2)
+                      (hDefaultShape.1.trans hCasesShape.1)
+  | for_ init cond post body =>
+      cases hInit :
+          lowerBlockOpen ctx returns state init with
+      | none =>
+          simp [lowerStmt, hInit] at hLower
+      | some initResult =>
+          rcases initResult with ⟨loweredInit, loopState⟩
+          cases hCond : lowerExpr ctx loopState cond with
+          | none =>
+              simp [lowerStmt, hInit, hCond] at hLower
+          | some loweredCond =>
+              cases hPost :
+                  lowerBlockScoped ctx returns loopState post with
+              | none =>
+                  simp [lowerStmt, hInit, hCond, hPost] at hLower
+              | some postResult =>
+                  rcases postResult with ⟨loweredPost, afterPost⟩
+                  cases hBody :
+                      lowerBlockScoped ctx returns afterPost body with
+                  | none =>
+                      simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+                  | some bodyResult =>
+                      rcases bodyResult with ⟨loweredBody, afterBody⟩
+                      simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+                      rcases hLower with ⟨rfl, rfl⟩
+                      exact StateExtends.of_shape rfl rfl
+  | brk =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact StateExtends.of_shape rfl rfl
+  | cont =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact StateExtends.of_shape rfl rfl
+  | leave =>
+      cases hValues :
+          lowerReturnExprs ctx state returns with
+      | none =>
+          simp [lowerStmt, hValues] at hLower
+      | some values =>
+          simp [lowerStmt, hValues] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact StateExtends.of_shape rfl rfl
+  | call targets functionName args =>
+      cases hFunction :
+          AllocationSupport.lookupFun?
+            functionName ctx.functions with
+      | none =>
+          simp [lowerStmt, hFunction] at hLower
+      | some fn =>
+          by_cases hArgsLength : args.length = fn.params.length
+          · by_cases hTargetsLength :
+                targets.length = fn.returns.length
+            · by_cases hTargetsNodup : targets.Nodup
+              · cases hArgs :
+                    lowerExprList ctx state args with
+                | none =>
+                    simp [lowerStmt, hFunction, hArgsLength,
+                      hTargetsLength, hTargetsNodup, hArgs] at hLower
+                | some loweredArgs =>
+                    by_cases hUsesFrame :
+                        functionName ∈ ctx.frameFunctions
+                    · cases hConfig : ctx.frameConfig? with
+                      | none =>
+                          simp [lowerStmt, hFunction, hArgsLength,
+                            hTargetsLength, hTargetsNodup, hArgs,
+                            hUsesFrame, hConfig] at hLower
+                      | some frameConfig =>
+                          cases hStores :
+                              lowerCallTargetsCode? ctx state
+                                targets.reverse targets.length with
+                          | none =>
+                              have hStores' :
+                                  lowerCallTargetsCode? ctx state
+                                      targets.reverse fn.returns.length =
+                                    none := by
+                                simpa [hTargetsLength] using hStores
+                              simp [lowerStmt, hFunction, hArgsLength,
+                                hTargetsLength, hTargetsNodup, hArgs,
+                                hUsesFrame, hConfig, hStores'] at hLower
+                          | some stores =>
+                              have hStores' :
+                                  lowerCallTargetsCode? ctx state
+                                      targets.reverse fn.returns.length =
+                                    some stores := by
+                                simpa [hTargetsLength] using hStores
+                              simp [lowerStmt, hFunction, hArgsLength,
+                                hTargetsLength, hTargetsNodup, hArgs,
+                                hUsesFrame, hConfig, hStores'] at hLower
+                              rcases hLower with ⟨rfl, rfl⟩
+                              exact StateExtends.of_shape rfl rfl
+                    · cases hStores :
+                          lowerCallTargetsCode? ctx state
+                            targets.reverse targets.length with
+                      | none =>
+                          have hStores' :
+                              lowerCallTargetsCode? ctx state
+                                  targets.reverse fn.returns.length =
+                                none := by
+                            simpa [hTargetsLength] using hStores
+                          simp [lowerStmt, hFunction, hArgsLength,
+                            hTargetsLength, hTargetsNodup, hArgs,
+                            hUsesFrame, hStores'] at hLower
+                      | some stores =>
+                          have hStores' :
+                              lowerCallTargetsCode? ctx state
+                                  targets.reverse fn.returns.length =
+                                some stores := by
+                            simpa [hTargetsLength] using hStores
+                          simp [lowerStmt, hFunction, hArgsLength,
+                            hTargetsLength, hTargetsNodup, hArgs,
+                            hUsesFrame, hStores'] at hLower
+                          rcases hLower with ⟨rfl, rfl⟩
+                          exact StateExtends.of_shape rfl rfl
+              · simp [lowerStmt, hFunction, hArgsLength,
+                  hTargetsLength, hTargetsNodup] at hLower
+            · simp [lowerStmt, hFunction, hArgsLength,
+                hTargetsLength] at hLower
+          · simp [lowerStmt, hFunction, hArgsLength] at hLower
+  | terminal kind =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact StateExtends.of_shape rfl rfl
+  | terminalArgs kind args =>
+      cases hArgs : lowerExprSeq ctx state args with
+      | none =>
+          simp [lowerStmt, hArgs] at hLower
+      | some loweredArgs =>
+          simp [lowerStmt, hArgs] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact StateExtends.of_shape rfl rfl
+
+/--
+Successful lowering of a well-scoped statement list preserves every incoming
+allocation slot and records the exact removable stack-local prefix.
+-/
+theorem lowerStmtList_stateExtends
+    {ctx : Ctx} {returns live : List Name}
+    {state final : State} {stmts : List Stmt}
+    {lowered : List Locals.Stmt}
+    (hScoped : Scope.StmtList.Scoped live stmts)
+    (hLower :
+      lowerStmtList ctx returns state stmts =
+        some (lowered, final)) :
+    StateExtends live state final := by
+  induction stmts generalizing live state final lowered with
+  | nil =>
+      simp [lowerStmtList] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact StateExtends.of_shape rfl rfl
+  | cons stmt rest ih =>
+      have hHeadScoped : Scope.Stmt.Scoped live stmt := hScoped.1
+      have hTailScoped :
+          Scope.StmtList.Scoped (Scope.Stmt.outEnv live stmt) rest :=
+        hScoped.2
+      cases hHead :
+          lowerStmt ctx returns state stmt with
+      | none =>
+          simp [lowerStmtList, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨head, next⟩
+          cases hTail :
+              lowerStmtList ctx returns next rest with
+          | none =>
+              simp [lowerStmtList, hHead, hTail] at hLower
+          | some tailResult =>
+              rcases tailResult with ⟨tail, tailFinal⟩
+              simp [lowerStmtList, hHead, hTail] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                (lowerStmt_stateExtends hHeadScoped hHead).trans
+                  (ih hTailScoped hTail)
+                  (fun name hLive => mem_stmt_outEnv hLive)
+
+/--
+The real open-block lowerer supplies the lexical layout and slot facts consumed
+by observer-preserving cleanup.
+-/
+theorem lowerBlockOpen_stateExtends
+    {ctx : Ctx} {returns live : List Name}
+    {state final : State} {block : Block}
+    {lowered : Locals.Block}
+    (hScoped : Scope.Block.Scoped live block)
+    (hLower :
+      lowerBlockOpen ctx returns state block =
+        some (lowered, final)) :
+    StateExtends live state final := by
+  rcases block with ⟨stmts⟩
+  cases hList :
+      lowerStmtList ctx returns state stmts with
+  | none =>
+      simp [lowerBlockOpen, hList] at hLower
+  | some result =>
+      rcases result with ⟨loweredStmts, listFinal⟩
+      simp [lowerBlockOpen, hList] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact lowerStmtList_stateExtends hScoped hList
+
+/--
 Successful open-block lowering of a nonempty block decomposes through the
 ordinary statement lowerer and the recursively lowered tail.
 -/
