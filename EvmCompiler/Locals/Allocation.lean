@@ -114,6 +114,64 @@ theorem binding_mem_of_location?_eq_some
       subst candidate
       exact hMem
 
+theorem scratch_slot_mem_of_location?_eq_some
+    {plan : Plan} {name : Name} {slot : Nat}
+    (hLocation : plan.location? name = some (.scratch slot)) :
+    slot ∈ plan.scratchSlots := by
+  have hBinding :=
+    binding_mem_of_location?_eq_some hLocation
+  unfold scratchSlots
+  exact List.mem_filterMap.mpr
+    ⟨(name, .scratch slot), hBinding, by simp⟩
+
+private theorem eq_of_filterMap_eq_some_of_nodup
+    {α β : Type} {filter : α → Option β}
+    {items : List α} {left right : α} {value : β}
+    (hNodup : (items.filterMap filter).Nodup)
+    (hLeftMem : left ∈ items)
+    (hRightMem : right ∈ items)
+    (hLeft : filter left = some value)
+    (hRight : filter right = some value) :
+    left = right := by
+  induction items generalizing left right with
+  | nil =>
+      simp at hLeftMem
+  | cons head tail ih =>
+      simp only [List.mem_cons] at hLeftMem hRightMem
+      cases hHead : filter head with
+      | none =>
+          simp only [List.filterMap_cons, hHead] at hNodup
+          rcases hLeftMem with rfl | hLeftTail
+          · rw [hHead] at hLeft
+            contradiction
+          · rcases hRightMem with rfl | hRightTail
+            · rw [hHead] at hRight
+              contradiction
+            · exact ih hNodup hLeftTail hRightTail hLeft hRight
+      | some headValue =>
+          simp only [List.filterMap_cons, hHead] at hNodup
+          have hHeadNotMem := (List.nodup_cons.mp hNodup).1
+          have hTailNodup := (List.nodup_cons.mp hNodup).2
+          rcases hLeftMem with rfl | hLeftTail
+          · rcases hRightMem with rfl | hRightTail
+            · rfl
+            · have hValue : headValue = value := by
+                simpa [hHead] using hLeft
+              subst value
+              exact False.elim
+                (hHeadNotMem
+                  (List.mem_filterMap.mpr
+                    ⟨right, hRightTail, hRight⟩))
+          · rcases hRightMem with rfl | hRightTail
+            · have hValue : headValue = value := by
+                simpa [hHead] using hRight
+              subst value
+              exact False.elim
+                (hHeadNotMem
+                  (List.mem_filterMap.mpr
+                    ⟨left, hLeftTail, hLeft⟩))
+            · exact ih hTailNodup hLeftTail hRightTail hLeft hRight
+
 def BindingValid (plan : Plan) (binding : Binding) : Prop :=
   match binding.2 with
   | .stack depth => plan.stackOrder[depth]? = some binding.1
@@ -238,6 +296,35 @@ theorem scratch_bound_of_wellFormed
   have hValid :=
     bindingValid_of_wellFormed_of_location?_eq_some hWF hLocation
   simpa [BindingValid, hRegion] using hValid
+
+theorem scratch_slot_ne_of_wellFormed
+    {plan : Plan} {left right : Name} {leftSlot rightSlot : Nat}
+    (hWF : plan.WellFormed)
+    (hName : left ≠ right)
+    (hLeft : plan.location? left = some (.scratch leftSlot))
+    (hRight : plan.location? right = some (.scratch rightSlot)) :
+    leftSlot ≠ rightSlot := by
+  intro hSlot
+  subst rightSlot
+  rcases hWF with
+    ⟨_hBindings, _hScope, _hStackLength, _hStackOrder,
+      _hValid, hScratch, _hKeys, _hIntervals, _hCalls, _hReturns⟩
+  have hLeftBinding :=
+    binding_mem_of_location?_eq_some hLeft
+  have hRightBinding :=
+    binding_mem_of_location?_eq_some hRight
+  unfold scratchSlots at hScratch
+  have hBindingEq :
+      (left, LocalLocation.scratch leftSlot) =
+        (right, LocalLocation.scratch leftSlot) := by
+    exact eq_of_filterMap_eq_some_of_nodup
+      (filter := fun binding : Binding =>
+        match binding.2 with
+        | .stack _ => none
+        | .scratch slot => some slot)
+      (value := leftSlot)
+      hScratch hLeftBinding hRightBinding (by simp) (by simp)
+  exact hName (Prod.mk.inj hBindingEq).1
 
 instance wellFormedDecidable (plan : Plan) :
     Decidable plan.WellFormed := by

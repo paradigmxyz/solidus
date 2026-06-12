@@ -142,6 +142,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
 #print axioms EvmCompiler.Compiler.MemoryRelation.byteAt_writeWord_of_outside
 #print axioms EvmCompiler.Compiler.MemoryRelation.MachineRel.mstore_target
+#print axioms EvmCompiler.Compiler.MemoryRelation.lookupMemory_mstore_same
+#print axioms EvmCompiler.Compiler.MemoryRelation.lookupMemory_mstore_disjoint
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.assign_scratch_live
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.assign_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.hostAddressable_of_budget_of_scratchFrameConfig?
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_mstore
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch

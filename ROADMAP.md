@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 01:00 PDT.
+Last updated: 2026-06-12 02:31 PDT.
 
 ## Objective
 
@@ -136,7 +136,14 @@ Adjacent boundary status:
   invariants from checked compiler configuration. `Compiler.MemoryRelation`
   now proves exact byte locality for `writeWord`, reservation-preserving
   target writes, monotone active-memory growth, and `MachineRel` preservation
-  for every compiler-owned `MSTORE`.
+  for every compiler-owned `MSTORE`. Exact same-slot and disjoint-slot
+  read-after-write theorems are checked. `ScratchStateRel.assign_scratch_live`
+  now preserves the allocation relation for both newly declared and already
+  live spilled names, including every unaffected stack/scratch binding,
+  frame coverage, memory-size behavior, and observer cursor. The remaining
+  spill-write step is the compiler-derived execution wrapper for the emitted
+  `DUP`/`PUSH`/`ADD`/`MSTORE` sequence, followed by allocator initialization,
+  frame acquire/release, and recursive statement/function composition.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward
