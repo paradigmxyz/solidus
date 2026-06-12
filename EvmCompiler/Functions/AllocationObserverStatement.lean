@@ -72,7 +72,8 @@ theorem forward
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords : Nat}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
     {expr : Functions.Expr 0}
     {lowered : Locals.Expr 0} {code : Structured.Code}
     {source sourceFinal :
@@ -83,8 +84,8 @@ theorem forward
       AllocationObserverSafety.Expr.MemorySafeEval
         contract transcript expr source sourceFinal values)
     (hCtx :
-      AllocationObserverContext.ExprContext
-        lowerCtx lowerState localsCtx plan live frameDepth)
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
     (hScoped : Functions.Scope.ExprScoped live expr)
     (hLower :
       AllocationLowering.lowerExpr lowerCtx lowerState expr =
@@ -92,8 +93,8 @@ theorem forward
     (hCompile :
       Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
     (hRel :
-      ScratchStateRel contract plan live
-        stackOffset frameBase frameDepth frameWords source target) :
+      ActivationStateRel contract plan live
+        stackOffset frameBase mode source target) :
     ∃ targetFinal,
       Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
@@ -105,25 +106,22 @@ theorem forward
       Structured.ObserverSemantics.Stmt.Eval
         targetProgram targetFuel (.code code) target
           (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
-      OutcomeRel contract plan live stackOffset frameBase
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
         (Functions.Source.Effectful.Outcome.regular sourceFinal)
         (Structured.EffectSemantics.Outcome.regular targetFinal) := by
   obtain ⟨targetFinal, hTargetRun, hResultRel⟩ :=
     AllocationObserverExpression.forwardExpr
-      (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
       hSafe hCtx hScoped hLower hCompile hRel
   have hSourceRun :=
     (AllocationObserverSafety.Stmt.LeafMemorySafeRun.expr
       (program := sourceProgram) (ctx := sourceCtx) (fuel := sourceFuel)
       hSafe).run_eq
-  have hState :
-      StateRel contract plan live stackOffset frameBase
-        sourceFinal targetFinal := by
-    simpa using hResultRel.state.base
   exact
     ⟨targetFinal, hSourceRun,
       Structured.EffectSemantics.Stmt.Eval.code hTargetRun,
-      OutcomeRel.regular hState⟩
+      ActivationOutcomeRel.regular (by simpa using hResultRel.state)⟩
 
 /--
 Backward adequacy for a compiled expression statement.
@@ -143,7 +141,8 @@ theorem backward
     {lowerState : AllocationLowering.State}
     {localsCtx : Locals.Ctx}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords : Nat}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
     {expr : Functions.Expr 0}
     {lowered : Locals.Expr 0} {code : Structured.Code}
     {source sourceFinal :
@@ -155,8 +154,8 @@ theorem backward
       AllocationObserverSafety.Expr.MemorySafeEval
         contract transcript expr source sourceFinal values)
     (hCtx :
-      AllocationObserverContext.ExprContext
-        lowerCtx lowerState localsCtx plan live frameDepth)
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
     (hScoped : Functions.Scope.ExprScoped live expr)
     (hLower :
       AllocationLowering.lowerExpr lowerCtx lowerState expr =
@@ -164,8 +163,8 @@ theorem backward
     (hCompile :
       Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
     (hRel :
-      ScratchStateRel contract plan live
-        stackOffset frameBase frameDepth frameWords source target)
+      ActivationStateRel contract plan live
+        stackOffset frameBase mode source target)
     (hTarget :
       Structured.ObserverSemantics.Stmt.Eval
         targetProgram targetFuel (.code code) target
@@ -177,24 +176,23 @@ theorem backward
       .ok
         (Functions.Source.Effectful.Outcome.regular sourceFinal,
           sourceCtx) ∧
-    OutcomeRel contract plan live stackOffset frameBase
+    ActivationOutcomeRel contract plan live stackOffset frameBase mode
       (Functions.Source.Effectful.Outcome.regular sourceFinal)
       (Structured.EffectSemantics.Outcome.regular targetFinal) := by
   cases hTarget with
   | code hTargetRun =>
       obtain ⟨_hSourceEval, hResultRel⟩ :=
         AllocationObserverExpression.Expr.backward_of_safeEval
-          (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
+          (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+            contract)
           hCtx hSafe hScoped hLower hCompile hRel hTargetRun
       have hSourceRun :=
         (AllocationObserverSafety.Stmt.LeafMemorySafeRun.expr
           (program := sourceProgram) (ctx := sourceCtx) (fuel := sourceFuel)
           hSafe).run_eq
-      have hState :
-          StateRel contract plan live stackOffset frameBase
-            sourceFinal targetFinal := by
-        simpa using hResultRel.state.base
-      exact ⟨hSourceRun, OutcomeRel.regular hState⟩
+      exact
+        ⟨hSourceRun,
+          ActivationOutcomeRel.regular (by simpa using hResultRel.state)⟩
 
 /--
 Forward preservation stated over the actual expanded statement block produced
@@ -212,7 +210,7 @@ theorem forward_of_compilers
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {frameBase frameDepth frameWords : Nat}
+    {frameBase : Nat} {mode : ActivationMode}
     {expr : Functions.Expr 0}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -224,8 +222,8 @@ theorem forward_of_compilers
       AllocationObserverSafety.Expr.MemorySafeEval
         contract transcript expr source sourceFinal values)
     (hCtx :
-      AllocationObserverContext.ExprContext
-        lowerCtx lowerState localsCtx plan live frameDepth)
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
     (hScoped : Functions.Scope.ExprScoped live expr)
     (hLower :
       AllocationLowering.lowerStmt lowerCtx returns lowerState (.expr expr) =
@@ -234,8 +232,8 @@ theorem forward_of_compilers
       Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
         some (compiledStmts, localsFinal))
     (hRel :
-      ScratchStateRel contract plan live
-        0 frameBase frameDepth frameWords source target) :
+      ActivationStateRel contract plan live
+        0 frameBase mode source target) :
     ∃ targetFinal,
       Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
@@ -248,7 +246,7 @@ theorem forward_of_compilers
         targetProgram (targetFuel + 2)
         { stmts := Expressions.StmtList.toStructured compiledStmts }
         target (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
-      OutcomeRel contract plan live 0 frameBase
+      ActivationOutcomeRel contract plan live 0 frameBase mode
         (Functions.Source.Effectful.Outcome.regular sourceFinal)
         (Structured.EffectSemantics.Outcome.regular targetFinal) := by
   obtain
@@ -279,7 +277,7 @@ theorem backward_of_compilers
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {frameBase frameDepth frameWords : Nat}
+    {frameBase : Nat} {mode : ActivationMode}
     {expr : Functions.Expr 0}
     {loweredStmts : List Locals.Stmt}
     {compiledStmts : List Expressions.Stmt}
@@ -292,8 +290,8 @@ theorem backward_of_compilers
       AllocationObserverSafety.Expr.MemorySafeEval
         contract transcript expr source sourceFinal values)
     (hCtx :
-      AllocationObserverContext.ExprContext
-        lowerCtx lowerState localsCtx plan live frameDepth)
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
     (hScoped : Functions.Scope.ExprScoped live expr)
     (hLower :
       AllocationLowering.lowerStmt lowerCtx returns lowerState (.expr expr) =
@@ -302,8 +300,8 @@ theorem backward_of_compilers
       Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
         some (compiledStmts, localsFinal))
     (hRel :
-      ScratchStateRel contract plan live
-        0 frameBase frameDepth frameWords source target)
+      ActivationStateRel contract plan live
+        0 frameBase mode source target)
     (hTarget :
       Structured.ObserverSemantics.Block.Eval
         targetProgram (targetFuel + 2)
@@ -316,7 +314,7 @@ theorem backward_of_compilers
       .ok
         (Functions.Source.Effectful.Outcome.regular sourceFinal,
           sourceCtx) ∧
-    OutcomeRel contract plan live 0 frameBase
+    ActivationOutcomeRel contract plan live 0 frameBase mode
       (Functions.Source.Effectful.Outcome.regular sourceFinal)
       (Structured.EffectSemantics.Outcome.regular targetFinal) := by
   obtain
@@ -695,8 +693,15 @@ theorem forward_of_compilers
       subst afterFrameDepth
       obtain ⟨targetAfterValue, hValueRun, hValueRel⟩ :=
         AllocationObserverExpression.forwardExpr
-          (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
-          hSafe hBefore hScoped hLowerValue hCompileValue hRel
+          (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+            contract)
+          hSafe (.scratch hBefore) hScoped hLowerValue hCompileValue
+          (.scratch hRel)
+      have hValueScratch :
+          ScratchStateRel contract plan beforeLive 1 frameBase
+            beforeFrameDepth frameWords sourceAfterValue targetAfterValue := by
+        cases hValueRel.state with
+        | scratch state => simpa using state
       have hValueStack :
           targetAfterValue.source.evm.stack =
             value :: target.source.evm.stack := by
@@ -708,7 +713,7 @@ theorem forward_of_compilers
               sourceAfterValue name value)
             targetAfterValue := by
         exact
-          hValueRel.state.declare_stack_live hValueStack
+          hValueScratch.declare_stack_live hValueStack
             (by
               intro other hOther
               simpa using hOther)
@@ -745,21 +750,28 @@ theorem forward_of_compilers
       subst afterFrameDepth
       obtain ⟨targetAfterValue, hValueRun, hValueRel⟩ :=
         AllocationObserverExpression.forwardExpr
-          (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
-          hSafe hBefore hScoped hLowerValue hCompileValue hRel
+          (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+            contract)
+          hSafe (.scratch hBefore) hScoped hLowerValue hCompileValue
+          (.scratch hRel)
+      have hValueScratch :
+          ScratchStateRel contract plan beforeLive 1 frameBase
+            beforeFrameDepth frameWords sourceAfterValue targetAfterValue := by
+        cases hValueRel.state with
+        | scratch state => simpa using state
       have hValueStack :
           targetAfterValue.source.evm.stack =
             value :: target.source.evm.stack := by
         simpa using hValueRel.stack
       have hBound := hScratchBound slot hLocation
       obtain ⟨reservation, hReservation, _hFrameRegion⟩ :=
-        hValueRel.state.frameReserved
+        hValueScratch.frameReserved
       have hRegion :=
-        hValueRel.state.scratchAddress_reserved_of_bound
+        hValueScratch.scratchAddress_reserved_of_bound
           hBound hReservation
       obtain ⟨targetFinal, hStoreRun, hFinalRel⟩ :=
         AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
-          hValueRel.state hValueStack hWF
+          hValueScratch hValueStack hWF
           (by
             intro other hOther
             simpa using hOther)
@@ -1197,14 +1209,21 @@ theorem forward_of_compilers
           subst compiledStmts
           obtain ⟨targetAfterValue, hValueRun, hValueRel⟩ :=
             AllocationObserverExpression.forwardExpr
-              (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
-              hSafe hCtx hScoped hLowerValue hCompileValue hRel
+              (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                contract)
+              hSafe (.scratch hCtx) hScoped hLowerValue hCompileValue
+              (.scratch hRel)
+          have hValueScratch :
+              ScratchStateRel contract plan live 1 frameBase
+                frameDepth frameWords sourceAfterValue targetAfterValue := by
+            cases hValueRel.state with
+            | scratch state => simpa using state
           have hValueStack :
               targetAfterValue.source.evm.stack =
                 value :: target.source.evm.stack := by
             simpa using hValueRel.stack
           have hOldTarget :=
-            hValueRel.state.base.core.store.stack_at
+            hValueScratch.base.core.store.stack_at
               hLive hLocation hCurrentDepth
           rw [hValueStack, hOldAfter] at hOldTarget
           have hRestGet :
@@ -1228,7 +1247,7 @@ theorem forward_of_compilers
                   (sourceAfterValue.source.insert name value))
                 targetFinal := by
             exact
-              hValueRel.state.assign_stack_live hValueStack hLive
+              hValueScratch.assign_stack_live hValueStack hLive
                 hLocation hCurrentDepth hDepthFrame hOldAfter
           have hBindRun :
               Structured.ObserverSemantics.Code.run
@@ -1277,22 +1296,29 @@ theorem forward_of_compilers
           subst compiledStmts
           obtain ⟨targetAfterValue, hValueRun, hValueRel⟩ :=
             AllocationObserverExpression.forwardExpr
-              (AllocationObserverPrimitive.canonicalPrimitiveForward contract)
-              hSafe hCtx hScoped hLowerValue hCompileValue hRel
+              (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                contract)
+              hSafe (.scratch hCtx) hScoped hLowerValue hCompileValue
+              (.scratch hRel)
+          have hValueScratch :
+              ScratchStateRel contract plan live 1 frameBase
+                frameDepth frameWords sourceAfterValue targetAfterValue := by
+            cases hValueRel.state with
+            | scratch state => simpa using state
           have hValueStack :
               targetAfterValue.source.evm.stack =
                 value :: target.source.evm.stack := by
             simpa using hValueRel.stack
           have hBound :=
-            hValueRel.state.scratchBound name slot hLive hLocation
+            hValueScratch.scratchBound name slot hLive hLocation
           obtain ⟨reservation, hReservation, _hFrameRegion⟩ :=
-            hValueRel.state.frameReserved
+            hValueScratch.frameReserved
           have hRegion :=
-            hValueRel.state.scratchAddress_reserved_of_bound
+            hValueScratch.scratchAddress_reserved_of_bound
               hBound hReservation
           obtain ⟨targetFinal, hStoreRun, hFinalRel⟩ :=
             AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
-              hValueRel.state hValueStack hWF
+              hValueScratch hValueStack hWF
               (fun other hOther => Or.inr hOther)
               rfl hLive hLocation hBound
               hReservation hRegion

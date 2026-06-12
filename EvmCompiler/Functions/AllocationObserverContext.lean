@@ -112,6 +112,75 @@ theorem stack_depth_lt_frame
 end ExprContext
 
 /--
+Compiler context for an activation whose live locals are entirely stack
+resident.
+
+Unlike `ExprContext`, this relation does not invent a hidden frame pointer for
+an all-stack artifact. The exact dynamic stack order is the Locals layout, and
+the lowerer's reserved frame name is absent.
+-/
+structure StackExprContext
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name) : Prop where
+  layout :
+    localsCtx.layout = lowerState.layout
+  stackOrder :
+    AllocationObserverRelation.currentStackOrder plan live =
+      lowerState.layout
+  frameAbsent :
+    lowerCtx.frameName ∉ lowerState.layout
+  liveStackOnly :
+    AllocationObserverRelation.LiveStackOnly plan live
+  slot :
+    ∀ name,
+      name ∈ live →
+      ∃ slot,
+        AllocationSupport.lookupSlot?
+            name lowerState.allocation.env =
+          some slot
+  stack :
+    ∀ name slot,
+      name ∈ live →
+      AllocationSupport.lookupSlot?
+          name lowerState.allocation.env =
+        some slot →
+      AllocationLowering.isStackSlot lowerCtx slot = true →
+      ∃ planDepth depth,
+        plan.location? name = some (.stack planDepth) ∧
+          Locals.Layout.lookupDepth?
+              name
+              (AllocationObserverRelation.currentStackOrder plan live) =
+            some (depth + 1) ∧
+          Locals.Layout.lookupDepth? name lowerState.layout =
+            some (depth + 1)
+
+/--
+One compiler-context boundary for stack-only and scratch-frame activations.
+
+The mode index prevents a stack-only artifact from acquiring synthetic frame
+premises while allowing the recursive expression proof to use one context
+type.
+-/
+inductive ActivationExprContext
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name) :
+    AllocationObserverRelation.ActivationMode → Prop where
+  | stack
+      (ctx :
+        StackExprContext lowerCtx lowerState localsCtx plan live) :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live .stack
+  | scratch
+      {frameDepth frameWords : Nat}
+      (ctx :
+        ExprContext lowerCtx lowerState localsCtx plan live frameDepth) :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live
+        (.scratch frameDepth frameWords)
+
+/--
 Exact compiler classification for a lowered source variable.
 
 The constructors retain only semantic location facts and the concrete code
@@ -236,6 +305,113 @@ theorem classify_var
           exact
             .stack planDepth depth op hLocation hCurrentDepth
               (by simpa [Nat.add_assoc] using hDup)
+
+/--
+Mode-indexed variable code emitted by the ordinary allocation lowerer and
+Locals compiler.
+
+Stack reads carry the dynamic-depth side condition needed to protect a hidden
+frame pointer when one exists. Scratch reads are possible only in a scratch
+activation.
+-/
+inductive ActivationVarCode
+    (plan : Plan) (live : List Locals.Name) (name : Locals.Name)
+    (offset : Nat) :
+    AllocationObserverRelation.ActivationMode → Structured.Code → Prop where
+  | stack
+      {mode : AllocationObserverRelation.ActivationMode}
+      (planDepth depth : Nat) (op : Structured.BasicOp)
+      (hLocation :
+        plan.location? name = some (.stack planDepth))
+      (hCurrentDepth :
+        Locals.Layout.lookupDepth?
+            name
+            (AllocationObserverRelation.currentStackOrder plan live) =
+          some (depth + 1))
+      (hDepthValid : mode.StackDepthValid depth)
+      (hDup :
+        Locals.StackOp.dup? (offset + depth + 1) = some op) :
+      ActivationVarCode plan live name offset mode [.op op]
+  | scratch
+      (frameDepth frameWords slot : Nat) (op : Structured.BasicOp)
+      (hLocation :
+        plan.location? name = some (.scratch slot))
+      (hDup :
+        Locals.StackOp.dup? (offset + frameDepth + 1) = some op) :
+      ActivationVarCode plan live name offset
+        (.scratch frameDepth frameWords)
+        [ .op op,
+          .push (AllocationSupport.slotOffset slot),
+          .op .add,
+          .op .mload ]
+
+theorem classify_activation_var
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {offset : Nat}
+    {name : Locals.Name} {lowered : Locals.Expr 1}
+    {code : Structured.Code}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode)
+    (hLive : name ∈ live)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState (.var name) =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx offset lowered = some code) :
+    ActivationVarCode plan live name offset mode code := by
+  cases hCtx with
+  | stack hStackCtx =>
+      obtain ⟨slot, hSlot⟩ := hStackCtx.slot name hLive
+      cases hStack :
+          AllocationLowering.isStackSlot lowerCtx slot with
+      | false =>
+          have hFrame :
+              lowerCtx.frameName ∈ lowerState.layout := by
+            by_contra hFrame
+            simp [AllocationLowering.lowerExpr, hSlot, hStack, hFrame]
+              at hLower
+          exact False.elim (hStackCtx.frameAbsent hFrame)
+      | true =>
+          obtain
+            ⟨planDepth, depth, hLocation, hCurrentDepth, hDepth⟩ :=
+            hStackCtx.stack name slot hLive hSlot hStack
+          have hDepthCtx :
+              Locals.Layout.lookupDepth? name localsCtx.layout =
+                some (depth + 1) := by
+            rw [hStackCtx.layout]
+            exact hDepth
+          have hLowered : lowered = .var name := by
+            have hEq : (.var name : Locals.Expr 1) = lowered := by
+              simpa [AllocationLowering.lowerExpr, hSlot, hStack] using
+                hLower
+            exact hEq.symm
+          subst lowered
+          cases hDup :
+              Locals.StackOp.dup? (offset + (depth + 1)) with
+          | none =>
+              simp [Locals.Expr.compileCode, hDepthCtx, hDup] at hCompile
+          | some op =>
+              have hCode : code = [.op op] := by
+                simp [Locals.Expr.compileCode, hDepthCtx, hDup] at hCompile
+                exact hCompile.symm
+              subst code
+              exact
+                .stack planDepth depth op hLocation hCurrentDepth
+                  trivial
+                  (by simpa [Nat.add_assoc] using hDup)
+  | @scratch frameDepth frameWords hScratchCtx =>
+      cases classify_var hScratchCtx hLive hLower hCompile with
+      | stack planDepth depth op hLocation hCurrentDepth hDup =>
+          exact
+            .stack planDepth depth op hLocation hCurrentDepth
+              (hScratchCtx.stack_depth_lt_frame hCurrentDepth) hDup
+      | scratch slot op hLocation hDup =>
+          exact
+            .scratch frameDepth frameWords slot op hLocation hDup
 
 /--
 Allocation-owned transition for one source declaration.

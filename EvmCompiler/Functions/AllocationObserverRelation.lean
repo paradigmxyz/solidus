@@ -261,6 +261,31 @@ theorem rebase_prefix
   intro name slot hLive hLocation
   simp [hMachine]
 
+theorem rebase_prefix_stack_only
+    {plan : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source sourceFinal : Locals.Source.State}
+    {target targetFinal : Structured.RunState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hOnly :
+      ∀ name slot,
+        name ∈ live →
+        plan.location? name = some (.scratch slot) →
+        False)
+    (hRel :
+      StoreRel plan live (stackOffset + oldPrefix.length) frameBase
+        source target)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
+    (hVars : sourceFinal.vars = source.vars) :
+    StoreRel plan live (stackOffset + newPrefix.length) frameBase
+      sourceFinal targetFinal := by
+  apply
+    rebase_prefix_of_lookup hRel hOldStack hNewStack
+      (fun name slot hLive hLocation =>
+        False.elim (hOnly name slot hLive hLocation))
+      hVars
+
 end StoreRel
 
 namespace StateRel
@@ -1903,6 +1928,9 @@ inductive ActivationStateRel {transcript : Trace}
   | stack
       {source : SourceState transcript} {target : TargetState transcript}
       (liveStackOnly : LiveStackOnly plan live)
+      (activeNoWrap :
+        target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+          EvmYul.UInt256.size)
       (state :
         StateRel contract plan live stackOffset frameBase source target) :
       ActivationStateRel contract plan live stackOffset frameBase
@@ -1928,8 +1956,22 @@ theorem base {transcript : Trace}
         mode source target) :
     StateRel contract plan live stackOffset frameBase source target := by
   cases hRel with
-  | stack _ state => exact state
+  | stack _ _ state => exact state
   | scratch state => exact state.base
+
+theorem activeNoWrap {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase
+        mode source target) :
+    target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size := by
+  cases hRel with
+  | stack _ activeNoWrap _ => exact activeNoWrap
+  | scratch state => exact state.activeNoWrap
 
 theorem mono {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1946,10 +1988,11 @@ theorem mono {transcript : Trace}
     ActivationStateRel contract plan smaller stackOffset frameBase
       mode source target := by
   cases hRel with
-  | stack hOnly state =>
+  | stack hOnly activeNoWrap state =>
       exact .stack
         (fun name slot hLive hLocation =>
           hOnly name slot (hSubset name hLive) hLocation)
+        activeNoWrap
         (state.mono hSubset hStackOrder)
   | scratch state =>
       exact .scratch (state.mono hSubset hStackOrder)
@@ -1966,8 +2009,13 @@ theorem push_target_by {transcript : Trace}
     ActivationStateRel contract plan live (stackOffset + 1) frameBase
       mode source (StateRel.pushTargetBy pcDelta value target) := by
   cases hRel with
-  | stack hOnly state =>
-      exact .stack hOnly (state.push_target_by pcDelta value)
+  | stack hOnly activeNoWrap state =>
+      exact .stack hOnly
+        (by
+          simpa [StateRel.pushTargetBy,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC] using activeNoWrap)
+        (state.push_target_by pcDelta value)
   | scratch state =>
       exact .scratch (state.push_target_by pcDelta value)
 
@@ -2003,10 +2051,14 @@ theorem consume_forward {transcript : Trace}
         ActivationStateRel contract plan live stackOffset frameBase
           mode source' target' := by
   cases hRel with
-  | stack hOnly state =>
+  | stack hOnly activeNoWrap state =>
       obtain ⟨target', hTarget, hState⟩ :=
         state.consume_forward hConsume
-      exact ⟨target', hTarget, .stack hOnly hState⟩
+      have hTargetSource : target'.source = target.source :=
+        Simulation.ResourceReplay.consume?_source hTarget
+      exact
+        ⟨target', hTarget,
+          .stack hOnly (by simpa [hTargetSource] using activeNoWrap) hState⟩
   | scratch state =>
       obtain ⟨target', hTarget, hState⟩ :=
         state.consume_forward hConsume
@@ -2031,10 +2083,14 @@ theorem consume_backward {transcript : Trace}
         ActivationStateRel contract plan live stackOffset frameBase
           mode source' target' := by
   cases hRel with
-  | stack hOnly state =>
+  | stack hOnly activeNoWrap state =>
       obtain ⟨source', hSource, hState⟩ :=
         state.consume_backward hConsume
-      exact ⟨source', hSource, .stack hOnly hState⟩
+      have hTargetSource : target'.source = target.source :=
+        Simulation.ResourceReplay.consume?_source hConsume
+      exact
+        ⟨source', hSource,
+          .stack hOnly (by simpa [hTargetSource] using activeNoWrap) hState⟩
   | scratch state =>
       obtain ⟨source', hSource, hState⟩ :=
         state.consume_backward hConsume
@@ -2062,7 +2118,7 @@ theorem declare_stack_live {transcript : Trace}
       mode.afterStackDeclaration
       (source.withSource (source.source.insert name value)) target := by
   cases hRel with
-  | stack hOnly state =>
+  | stack hOnly activeNoWrap state =>
       have hAfterOnly : LiveStackOnly plan afterLive := by
         intro other slot hOtherAfter hOtherLocation
         by_cases hName : other = name
@@ -2074,7 +2130,7 @@ theorem declare_stack_live {transcript : Trace}
             · exact False.elim (hName hEq)
             · exact hBefore
           exact hOnly other slot hOtherBefore hOtherLocation
-      exact .stack hAfterOnly
+      exact .stack hAfterOnly activeNoWrap
         (state.declare_stack_live hStack hAfter hNameAfter
           hLocation hStackOrder)
   | scratch state =>
@@ -2103,8 +2159,12 @@ theorem assign_stack_live {transcript : Trace}
       (source.withSource (source.source.insert name value))
       (StateRel.replaceStackBy 2 (rest.set depth value) target) := by
   cases hRel with
-  | stack liveStackOnly state =>
+  | stack liveStackOnly activeNoWrap state =>
       exact .stack liveStackOnly
+        (by
+          simpa [StateRel.replaceStackBy,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC] using activeNoWrap)
         (state.assign_stack_live hStack hLive hLocation hDepth hOld)
   | scratch state =>
       exact .scratch
@@ -2138,7 +2198,7 @@ theorem assign_scratch {transcript : Trace}
         (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
         value rest target) := by
   cases hRel with
-  | stack liveStackOnly _state =>
+  | stack liveStackOnly _activeNoWrap _state =>
       exact False.elim (liveStackOnly name slot hLive hLocation)
   | scratch state =>
       exact .scratch

@@ -420,6 +420,166 @@ theorem primitiveForward
 
 end SharedFamily
 
+/--
+Shared-state simulation contract sufficient for a stack-only activation.
+
+Scratch preservation is intentionally absent: `StackPrimitiveForward` uses the
+planner fact that every live local is stack-resident. Existing semantic-family
+proofs instantiate this contract by forgetting their stronger memory-growth
+results.
+-/
+structure StackSpec (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) : Prop where
+  observerNone :
+    Functions.ObserverSemantics.basicOpObserver? op = none
+  simulate :
+    ∀ {sourceShared sourceFinal targetShared :
+        EvmYul.SharedState .EVM}
+      {values outputs : List Word},
+      values.length = Expressions.Structured.BasicOp.inputs op →
+      SharedRel contract sourceShared targetShared →
+      AllocationObserverSafety.PrimitiveMemorySafe
+        contract op sourceShared.toMachineState values →
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size →
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values =
+        .ok (sourceFinal, outputs) →
+      ∃ targetFinal,
+        Locals.Source.PrimitiveSemantics.structured.eval
+            op targetShared values =
+          .ok (targetFinal, outputs) ∧
+        SharedRel contract sourceFinal targetFinal ∧
+        targetFinal.toMachineState.activeWords.toNat *
+            MemoryContract.wordBytes <
+          EvmYul.UInt256.size
+
+/--
+One stack-only primitive theorem from a shared-state semantic-family proof.
+
+The only local-allocation reasoning is `StoreRel.rebase_prefix_stack_only`;
+individual opcodes do not know about layouts or spill slots.
+-/
+theorem stack_primitiveForward
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (spec : StackSpec contract op) :
+    AllocationObserverExpression.StackPrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      hOnly hActiveNoWrap hArgsRel hMemory hPrimitive
+    cases hSourceEval :
+        Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceArgs.source.shared values with
+    | error err =>
+        simp [Functions.ObserverSemantics.primitiveSemantics,
+          Locals.ObserverSemantics.primitiveSemantics,
+          spec.observerNone, hSourceEval] at hPrimitive
+    | ok result =>
+        rcases result with ⟨sourceSharedFinal, canonicalOutputs⟩
+        have hPrimitiveResult :
+            sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal) =
+              sourceFinal ∧
+            canonicalOutputs = outputs := by
+          simpa [Functions.ObserverSemantics.primitiveSemantics,
+            Locals.ObserverSemantics.primitiveSemantics,
+            spec.observerNone, hSourceEval] using hPrimitive
+        rcases hPrimitiveResult with ⟨rfl, rfl⟩
+        obtain
+            ⟨targetSharedFinal, hTargetEval,
+              hSharedFinal, hFinalNoWrap⟩ :=
+          spec.simulate hArgsRel.valuesLength
+            hArgsRel.state.core.shared hMemory
+            hActiveNoWrap hSourceEval
+        obtain ⟨evmFinal, hStep, hEvmShared, hEvmStack⟩ :=
+          Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+            hTargetEval rfl hArgsRel.stack
+        let targetFinal :
+            Structured.ObserverSemantics.State transcript :=
+          targetArgs.withSource
+            (targetArgs.source.withEVM evmFinal)
+        have hRun :
+            Structured.ObserverSemantics.Code.run [.op op] targetArgs =
+              .ok targetFinal := by
+          have hObserver := spec.observerNone
+          change
+            Structured.ObserverSemantics.basicOpObserver? op = none
+            at hObserver
+          simp [Structured.ObserverSemantics.Code.run,
+            Structured.EffectSemantics.Code.run,
+            Structured.BasicInstr.step, hStep,
+            Structured.ObserverSemantics.handler,
+            hObserver, targetFinal]
+        have hOutputsLength :
+            canonicalOutputs.length =
+              Expressions.Structured.BasicOp.outputs op :=
+          Locals.Source.PrimitiveSemantics.structured_eval_length
+            hSourceEval
+        have hFinalStack :
+            targetFinal.source.evm.stack =
+              canonicalOutputs.reverse ++
+                targetInitial.source.evm.stack := by
+          simpa [targetFinal] using hEvmStack
+        have hOldStore :
+            StoreRel plan live
+              (stackOffset + values.reverse.length) frameBase
+              sourceArgs.source targetArgs.source := by
+          simpa [List.length_reverse, hArgsRel.valuesLength] using
+            hArgsRel.state.core.store
+        have hVars :
+            (sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal)).source.vars =
+              sourceArgs.source.vars := by
+          exact
+            Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq
+              hPrimitive
+        have hBaseRel :
+            StateRel contract plan live
+              (stackOffset + canonicalOutputs.reverse.length) frameBase
+              (sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal))
+              targetFinal := by
+          refine ⟨?_, ?_⟩
+          · simpa [targetFinal] using hArgsRel.state.cursor
+          · refine ⟨?_, ?_, ?_⟩
+            · simpa [targetFinal, hEvmShared] using
+                hSharedFinal.machine
+            · simpa [targetFinal, hEvmShared] using
+                hSharedFinal.world
+            · exact
+                StoreRel.rebase_prefix_stack_only
+                  hOnly hOldStore hArgsRel.stack hFinalStack hVars
+        refine
+          ⟨targetFinal, hRun, ?_, ?_,
+            hOutputsLength, hFinalStack⟩
+        · simpa [targetFinal, hEvmShared] using hFinalNoWrap
+        · simpa [List.length_reverse, hOutputsLength] using hBaseRel
+
+def SharedFamily.stackSpec
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (family : SharedFamily op) :
+    StackSpec contract op where
+  observerNone := family.observer_none
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      _hLength hRel _hMemory hTargetNoWrap hEval
+    obtain ⟨targetFinal, hTarget, hFinal, hMachine⟩ :=
+      family.simulate hRel hEval
+    exact
+      ⟨targetFinal, hTarget, hFinal,
+        by simpa [hMachine] using hTargetNoWrap⟩
+
+theorem SharedFamily.stackPrimitiveForward
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (family : SharedFamily op) :
+    AllocationObserverExpression.StackPrimitiveForward contract op :=
+  stack_primitiveForward family.stackSpec
+
 namespace MemoryFamily
 
 /--
@@ -1820,6 +1980,28 @@ theorem read_primitiveForward
         refine ⟨targetFinal, hRun, ?_, hOutputsLength, hFinalStack⟩
         simpa [List.length_reverse, hOutputsLength] using hScratchRel
 
+def ReadSpec.stackSpec
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (spec : ReadSpec contract op) :
+    StackSpec contract op where
+  observerNone := spec.observer_none
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      _hLength hRel hMemory hTargetNoWrap hEval
+    obtain
+        ⟨targetFinal, hTarget, hFinal,
+          _hMemory, _hActive, hFinalNoWrap⟩ :=
+      spec.simulate hRel hMemory hTargetNoWrap hEval
+    exact ⟨targetFinal, hTarget, hFinal, hFinalNoWrap⟩
+
+theorem read_stackPrimitiveForward
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (spec : ReadSpec contract op) :
+    AllocationObserverExpression.StackPrimitiveForward contract op :=
+  stack_primitiveForward spec.stackSpec
+
 /--
 Canonical hashing instantiates the shared read-only memory interface.
 -/
@@ -1927,6 +2109,65 @@ theorem log4_primitiveForward
     (contract : MemoryContract.Contract) :
     AllocationObserverExpression.PrimitiveForward contract .log4 :=
   LogFamily.log4.primitiveForward contract
+
+def mload_readSpec
+    (contract : MemoryContract.Contract) :
+    ReadSpec contract .mload where
+  observer_none := rfl
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      hRel hMemory hTargetNoWrap hEval
+    cases values with
+    | nil =>
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          Expressions.Structured.BasicOp.inputs] at hEval
+    | cons address rest =>
+        cases rest with
+        | cons next tail =>
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              Expressions.Structured.BasicOp.inputs] at hEval
+        | nil =>
+            have hSafety :
+                Compiler.MemoryRelation.MemoryConsistent
+                    sourceShared.toMachineState ∧
+                  AllocationObserverSafety.RegionAllowed contract
+                    address.toNat MemoryContract.wordBytes ∧
+                  Compiler.MemoryRelation.ExpansionNoWrap
+                    address.toNat MemoryContract.wordBytes := by
+              simpa [AllocationObserverSafety.PrimitiveMemorySafe,
+                AllocationObserverSafety.PrimitiveExpansionSafe] using
+                hMemory
+            rcases hSafety with
+              ⟨hConsistent, hAllowed, hExpansion⟩
+            exact
+              mload_simulate hRel hConsistent
+                (by
+                  cases hReservation : contract.scratch? with
+                  | none =>
+                      trivial
+                  | some reservation =>
+                      simpa [hReservation] using
+                        (show
+                          ∀ candidate,
+                            [address] = [candidate] →
+                            reservation.sourceAccessAllowed
+                              candidate.toNat
+                              MemoryContract.wordBytes by
+                          intro candidate hCandidate
+                          cases hCandidate
+                          simpa [AllocationObserverSafety.RegionAllowed,
+                            hReservation] using hAllowed))
+                (by
+                  intro candidate hCandidate
+                  cases hCandidate
+                  exact hExpansion)
+                hTargetNoWrap hEval
+
+theorem mload_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .mload :=
+  read_stackPrimitiveForward (mload_readSpec contract)
 
 /--
 Adjacent Functions-to-allocated-Expressions preservation for canonical
@@ -2163,6 +2404,56 @@ theorem mload_primitiveForward
                 refine ⟨targetFinal, hRun, ?_, hOutputsLength, hFinalStack⟩
                 simpa [List.length_reverse, hOutputsLength] using hScratchRel
 
+def mstore_stackSpec
+    (contract : MemoryContract.Contract) :
+    StackSpec contract .mstore where
+  observerNone := rfl
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      _hLength hRel hMemory hTargetNoWrap hEval
+    cases values with
+    | nil =>
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          Expressions.Structured.BasicOp.inputs] at hEval
+    | cons value rest =>
+        cases rest with
+        | nil =>
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              Expressions.Structured.BasicOp.inputs] at hEval
+        | cons address tail =>
+            have hTail : tail = [] := by
+              by_contra hNonempty
+              cases tail with
+              | nil => contradiction
+              | cons extra more =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+            subst tail
+            have hSafety :
+                Compiler.MemoryRelation.MemoryConsistent
+                    sourceShared.toMachineState ∧
+                  AllocationObserverSafety.RegionAllowed contract
+                    address.toNat MemoryContract.wordBytes ∧
+                  Compiler.MemoryRelation.ExpansionNoWrap
+                    address.toNat MemoryContract.wordBytes ∧
+                  address.toNat + MemoryContract.wordBytes < USize.size := by
+              simpa [AllocationObserverSafety.PrimitiveMemorySafe,
+                AllocationObserverSafety.PrimitiveExpansionSafe,
+                AllocationObserverSafety.PrimitiveHostSafe] using hMemory
+            rcases hSafety with
+              ⟨_hConsistent, _hAllowed, hExpansion, hHost⟩
+            obtain
+                ⟨targetFinal, hTarget, hFinal,
+                  _hMachine, _hMemory, _hActive, hFinalNoWrap⟩ :=
+              mstore_simulate hRel hExpansion hHost hTargetNoWrap hEval
+            exact ⟨targetFinal, hTarget, hFinal, hFinalNoWrap⟩
+
+theorem mstore_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .mstore :=
+  stack_primitiveForward (mstore_stackSpec contract)
+
 /--
 Adjacent Functions-to-allocated-Expressions preservation for canonical
 `mstore`.
@@ -2398,6 +2689,56 @@ theorem mstore_primitiveForward
                     hMemoryMono hActiveMono hFinalActiveNoWrap
                 refine ⟨targetFinal, hRun, ?_, hOutputsLength, hFinalStack⟩
                 simpa [List.length_reverse, hOutputsLength] using hScratchRel
+
+def mstore8_stackSpec
+    (contract : MemoryContract.Contract) :
+    StackSpec contract .mstore8 where
+  observerNone := rfl
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      _hLength hRel hMemory hTargetNoWrap hEval
+    cases values with
+    | nil =>
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          Expressions.Structured.BasicOp.inputs] at hEval
+    | cons value rest =>
+        cases rest with
+        | nil =>
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              Expressions.Structured.BasicOp.inputs] at hEval
+        | cons address tail =>
+            have hTail : tail = [] := by
+              by_contra hNonempty
+              cases tail with
+              | nil => contradiction
+              | cons extra more =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+            subst tail
+            have hSafety :
+                Compiler.MemoryRelation.MemoryConsistent
+                    sourceShared.toMachineState ∧
+                  AllocationObserverSafety.RegionAllowed contract
+                    address.toNat 1 ∧
+                  Compiler.MemoryRelation.ExpansionNoWrap
+                    address.toNat 1 ∧
+                  address.toNat + 1 < USize.size := by
+              simpa [AllocationObserverSafety.PrimitiveMemorySafe,
+                AllocationObserverSafety.PrimitiveExpansionSafe,
+                AllocationObserverSafety.PrimitiveHostSafe] using hMemory
+            rcases hSafety with
+              ⟨_hConsistent, _hAllowed, hExpansion, hHost⟩
+            obtain
+                ⟨targetFinal, hTarget, hFinal,
+                  _hMachine, _hMemory, _hActive, hFinalNoWrap⟩ :=
+              mstore8_simulate hRel hExpansion hHost hTargetNoWrap hEval
+            exact ⟨targetFinal, hTarget, hFinal, hFinalNoWrap⟩
+
+theorem mstore8_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .mstore8 :=
+  stack_primitiveForward (mstore8_stackSpec contract)
 
 /--
 Adjacent Functions-to-allocated-Expressions preservation for canonical
@@ -2903,6 +3244,30 @@ theorem copy_primitiveForward
           ⟨targetFinal, hRun, ?_, hOutputsLength, hFinalStack⟩
         simpa [List.length_reverse, hOutputsLength] using hScratchRel
 
+def CopySpec.stackSpec
+    {contract : MemoryContract.Contract} {op : Structured.BasicOp}
+    (spec : CopySpec contract op) :
+    StackSpec contract op where
+  observerNone := spec.observerNone
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      hLength hRel hMemory hTargetNoWrap hEval
+    have invocation :=
+      spec.decode values hLength
+    rcases invocation with
+      ⟨sourceOffset, destination, size, _hWriteSafe, hSimulate⟩
+    obtain
+        ⟨targetFinal, copied, hTarget, hFinal,
+          _hMemory, _hMemoryMono, _hActive, hFinalNoWrap⟩ :=
+      hSimulate hRel hMemory hTargetNoWrap hEval
+    exact ⟨targetFinal, hTarget, hFinal, hFinalNoWrap⟩
+
+theorem copy_stackPrimitiveForward
+    {contract : MemoryContract.Contract} {op : Structured.BasicOp}
+    (spec : CopySpec contract op) :
+    AllocationObserverExpression.StackPrimitiveForward contract op :=
+  stack_primitiveForward spec.stackSpec
+
 /--
 Adapter for the canonical three-argument copy family.
 -/
@@ -3265,6 +3630,77 @@ theorem mcopy_primitiveForward
     AllocationObserverExpression.PrimitiveForward contract .mcopy :=
   copy_primitiveForward (mcopy_copySpec contract)
 
+theorem calldatacopy_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .calldatacopy :=
+  copy_stackPrimitiveForward
+    (calldatacopy_copy3Spec contract).toCopySpec
+
+theorem codecopy_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .codecopy :=
+  copy_stackPrimitiveForward
+    (codecopy_copy3Spec contract).toCopySpec
+
+theorem returndatacopy_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .returndatacopy :=
+  copy_stackPrimitiveForward
+    (returndatacopy_copy3Spec contract).toCopySpec
+
+theorem extcodecopy_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .extcodecopy :=
+  copy_stackPrimitiveForward (extcodecopy_copySpec contract)
+
+theorem mcopy_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .mcopy :=
+  copy_stackPrimitiveForward (mcopy_copySpec contract)
+
+theorem keccak256_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .keccak256 :=
+  read_stackPrimitiveForward (keccak256_readSpec contract)
+
+theorem LogFamily.stackPrimitiveForward
+    {op : Structured.BasicOp}
+    (family : LogFamily op)
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract op :=
+  read_stackPrimitiveForward (family.readSpec contract)
+
+theorem log0_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract .log0 :=
+  LogFamily.log0.stackPrimitiveForward contract
+
+theorem log1_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract .log1 :=
+  LogFamily.log1.stackPrimitiveForward contract
+
+theorem log2_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract .log2 :=
+  LogFamily.log2.stackPrimitiveForward contract
+
+theorem log3_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract .log3 :=
+  LogFamily.log3.stackPrimitiveForward contract
+
+theorem log4_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward contract .log4 :=
+  LogFamily.log4.stackPrimitiveForward contract
+
 end MemoryFamily
 
 /--
@@ -3342,6 +3778,69 @@ theorem externallyEffectful_primitiveForward
       _hArgsRel hMemory _hPrimitive
     exact False.elim (hImpossible _ _ hMemory)
 
+theorem rejected_stackPrimitiveForward
+    {op : Structured.BasicOp}
+    (contract : MemoryContract.Contract)
+    (hObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = none)
+    (hRejected :
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = none) :
+    AllocationObserverExpression.StackPrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hOnly _hActive _hArgsRel _hMemory hPrimitive
+    by_cases hLength :
+        values.length = Expressions.Structured.BasicOp.inputs op
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics, hObserver,
+        Locals.Source.PrimitiveSemantics.structured, hRejected,
+        hLength] at hPrimitive
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics, hObserver,
+        Locals.Source.PrimitiveSemantics.structured, hLength] at hPrimitive
+
+theorem invalid_stackPrimitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.StackPrimitiveForward
+      contract .invalid where
+  simulate := by
+    intro transcript plan live stackOffset frameBase
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hOnly _hActive _hArgsRel _hMemory hPrimitive
+    have hObserver :
+        Functions.ObserverSemantics.basicOpObserver? .invalid = none := by
+      rfl
+    by_cases hLength :
+        values.length =
+          Expressions.Structured.BasicOp.inputs .invalid
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics,
+        hObserver,
+        Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+        Assembly.PrimStep.run, hLength] at hPrimitive
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics,
+        hObserver,
+        Locals.Source.PrimitiveSemantics.structured,
+        hLength] at hPrimitive
+
+theorem externallyEffectful_stackPrimitiveForward
+    {op : Structured.BasicOp}
+    (contract : MemoryContract.Contract)
+    (hImpossible :
+      ∀ machine values,
+        ¬ AllocationObserverSafety.PrimitiveMemorySafe
+          contract op machine values) :
+    AllocationObserverExpression.StackPrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hOnly _hActive _hArgsRel hMemory _hPrimitive
+    exact False.elim (hImpossible _ _ hMemory)
+
 /--
 Complete primitive interface for the checked no-external-effects allocation
 boundary.
@@ -3388,6 +3887,58 @@ theorem canonicalPrimitiveForward
     | exact externallyEffectful_primitiveForward contract (by
         intro machine values
         simp [AllocationObserverSafety.PrimitiveMemorySafe])
+
+/--
+Complete primitive interface for a stack-only activation.
+-/
+theorem canonicalStackPrimitiveForward
+    (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) :
+    AllocationObserverExpression.StackPrimitiveForward contract op := by
+  cases op <;>
+    first
+    | exact AllocationObserverExpression.StackPrimitiveForward.gas contract
+    | exact AllocationObserverExpression.StackPrimitiveForward.msize contract
+    | exact MemoryFamily.mload_stackPrimitiveForward contract
+    | exact MemoryFamily.mstore_stackPrimitiveForward contract
+    | exact MemoryFamily.mstore8_stackPrimitiveForward contract
+    | exact MemoryFamily.calldatacopy_stackPrimitiveForward contract
+    | exact MemoryFamily.codecopy_stackPrimitiveForward contract
+    | exact MemoryFamily.returndatacopy_stackPrimitiveForward contract
+    | exact MemoryFamily.extcodecopy_stackPrimitiveForward contract
+    | exact MemoryFamily.mcopy_stackPrimitiveForward contract
+    | exact MemoryFamily.keccak256_stackPrimitiveForward contract
+    | exact MemoryFamily.log0_stackPrimitiveForward contract
+    | exact MemoryFamily.log1_stackPrimitiveForward contract
+    | exact MemoryFamily.log2_stackPrimitiveForward contract
+    | exact MemoryFamily.log3_stackPrimitiveForward contract
+    | exact MemoryFamily.log4_stackPrimitiveForward contract
+    | exact SharedFamily.stackPrimitiveForward (.bin _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.un _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.tri _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.pop rfl)
+    | exact SharedFamily.stackPrimitiveForward (.executionEnv _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.unaryExecutionEnv _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.state _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.unaryState _ rfl)
+    | exact SharedFamily.stackPrimitiveForward (.binaryState _ rfl)
+    | exact SharedFamily.stackPrimitiveForward .returnDataSize
+    | exact rejected_stackPrimitiveForward contract rfl rfl
+    | exact invalid_stackPrimitiveForward contract
+    | exact externallyEffectful_stackPrimitiveForward contract (by
+        intro machine values
+        simp [AllocationObserverSafety.PrimitiveMemorySafe])
+
+/--
+Complete activation-aware primitive interface used by the single recursive
+expression proof.
+-/
+theorem canonicalActivationPrimitiveForward
+    (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) :
+    AllocationObserverExpression.ActivationPrimitiveForward contract op where
+  stack := canonicalStackPrimitiveForward contract op
+  scratch := canonicalPrimitiveForward contract op
 
 end AllocationObserverPrimitive
 end Functions

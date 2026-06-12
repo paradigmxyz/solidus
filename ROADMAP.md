@@ -231,9 +231,12 @@ Adjacent boundary status:
   lowerer and Locals compiler now have pass-owned forward preservation and
   backward adequacy for both placements. Observer-aware expression evaluation
   additionally proves that it preserves the named-variable store.
-  Remaining work at this boundary is to lift the current scratch-context
-  expression/declaration/assignment APIs fully through the activation
-  interface for genuinely stack-only artifacts, then prove recursive
+  The single recursive expression forward/backward proof now runs through the
+  activation interface for both genuinely stack-only and scratch-frame
+  artifacts, with one exhaustive primitive family and no parallel interpreter.
+  Declaration and assignment consumers use that shared expression theorem;
+  their public APIs still need to be generalized from scratch contexts to
+  activation contexts. Remaining work at this boundary is recursive
   statement/function/call composition, abrupt cleanup and terminal statement
   composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
