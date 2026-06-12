@@ -6,6 +6,87 @@ namespace TypedCfgCompilerFacts
 
 open Assembly
 
+namespace Block
+
+theorem fallthrough_nil_of_compileBlockFuel?
+    {compilerFuel : Nat}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? (compilerFuel + 2)
+          { stmts := [] } ctx supply entry input regular =
+        some result) :
+    result.fallthrough? = some input := by
+  unfold TypedCfgCompiler.compileBlockFuel? at hCompile
+  unfold TypedCfgCompiler.compileStmtListFuel? at hCompile
+  simp [TypedCfgCompiler.mkBlock?] at hCompile
+  cases hCompile
+  rfl
+
+end Block
+
+namespace Stmt
+
+theorem fallthrough_code_of_compileStmtFuel?
+    {compilerFuel : Nat} {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result) :
+    ∃ output, result.fallthrough? = some output := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg code) input with
+  | none =>
+      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+  | some output =>
+      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      cases hCompile
+      exact ⟨output, rfl⟩
+
+theorem fallthrough_if_of_compileStmtFuel?
+    {compilerFuel : Nat}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular =
+        some result) :
+    ∃ output, result.fallthrough? = some output := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg cond) input with
+  | none =>
+      simp [hType] at hCompile
+  | some output =>
+      cases hHead : output.slots.head? with
+      | none =>
+          simp [hType, hHead] at hCompile
+      | some condition =>
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+                (supply + 1) (LabelSupply.label supply 0)
+                { output with slots := output.slots.tail } regular with
+          | none =>
+              simp [hType, hHead,
+                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+          | some bodyResult =>
+              simp [hType, hHead,
+                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              cases hCompile
+              exact
+                ⟨{ output with slots := output.slots.tail }, rfl⟩
+
+end Stmt
+
 /--
 Any block property inherited by every case body and the default is inherited
 by the body selected by the source switch semantics.

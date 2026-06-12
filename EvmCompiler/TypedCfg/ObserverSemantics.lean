@@ -386,6 +386,48 @@ theorem runN_one_of_step
   rw [show 1 = 0 + 1 by rfl, runN_succ, hStep]
   cases outcome <;> rfl
 
+/--
+Execution that is residual at a jump composes with any additional target fuel.
+-/
+theorem runN_add_of_jump
+    {program : TypedCfg.Program}
+    {firstFuel restFuel : Nat} {entry next : Label}
+    {initial middle : EVMState}
+    {initialTrace middleTrace : Trace}
+    (hFirst :
+      runN program firstFuel entry initial initialTrace =
+        .ok (.jump next middle, middleTrace)) :
+    runN program (firstFuel + restFuel)
+        entry initial initialTrace =
+      runN program restFuel next middle middleTrace := by
+  induction firstFuel generalizing entry initial initialTrace with
+  | zero =>
+      simp only [runN_zero] at hFirst
+      cases hFirst
+      simp
+  | succ firstFuel ih =>
+      have hFirst' := hFirst
+      rw [runN_succ] at hFirst'
+      cases hStep : step program entry initial initialTrace with
+      | error err =>
+          rw [hStep] at hFirst'
+          contradiction
+      | ok result =>
+          rcases result with ⟨firstOutcome, firstTrace⟩
+          rw [hStep] at hFirst'
+          cases firstOutcome with
+          | jump afterLabel afterState =>
+              rw [show
+                Nat.succ firstFuel + restFuel =
+                  (firstFuel + restFuel) + 1 by omega,
+                runN_succ, hStep]
+              exact ih hFirst'
+          | fallthrough afterState
+          | returnDispatch afterState
+          | halt kind afterState
+          | invalid afterState =>
+              simp at hFirst'
+
 namespace Eventually
 
 theorem residual (program : TypedCfg.Program) (label : Label)

@@ -28761,3 +28761,29 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   prints for `runN` inversion, boundary-tail/minimality lemmas, empty/code
   `AdequateAt` instances, and conditional-head classification report only
   `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 18:06:29 PDT `compaction-resume`: Resumed the active
+  Structured-to-TypedCfg backward proof after the first-boundary checkpoint;
+  next is generic statement-list splitting followed by recursive block
+  composition.
+
+- 2026-06-11 18:06:29 PDT `theorem-boundary`: Strengthened backward adequacy
+  from `AdequateAt` to `AdequateWithin`, parameterized by an enclosing accepted
+  target-outcome predicate. The interface now returns a checked
+  `RegularArtifact` whenever the reconstructed source outcome is regular,
+  allowing sequence composition to recover its tail input shape without
+  reopening compiler definitions.
+
+- 2026-06-11 18:06:29 PDT `proof`: Added generic `FirstReaches` minimal-prefix
+  selection, residual target execution after a reached jump, and
+  `runN_add_of_jump` over the existing TypedCfg observer interpreter. Added
+  pass-owned compiler facts for empty-block, code-statement, and conditional
+  fallthrough shapes; empty/code/conditional adequacy consume those facts
+  rather than accepting generated evidence.
+
+- 2026-06-11 18:07:42 PDT `audit`: The generalized first-outcome and regular
+  artifact checkpoint passes the 1,177-job verification root, architecture
+  checks, exact changed-source hole scanning, and `git diff --check`. Axiom
+  prints for residual-fuel composition, minimal-prefix selection, pass-owned
+  fallthrough facts, and strengthened empty/code adequacy report only
+  `propext`, `Classical.choice`, and `Quot.sound`.

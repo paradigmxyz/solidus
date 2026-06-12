@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 17:55 PDT.
+Last updated: 2026-06-11 18:06 PDT.
 
 ## Objective
 
@@ -117,9 +117,13 @@ Adjacent boundary status:
   `runN` through a checked minimal first-boundary relation and shared
   `AdequateAt` interface; empty blocks and straight-line statements implement
   the interface, and conditional composition is checked with strictly smaller
-  target fuel in the taken branch. Recursive statement-list splitting,
-  switch/loop control, internal calls, and whole-program backward adequacy
-  remain.
+  target fuel in the taken branch. The interface now generalizes to
+  `AdequateWithin`, which stops at any checked enclosing target boundary while
+  retaining the pass-owned compiler fallthrough artifact for regular source
+  outcomes. Generic earliest-prefix selection and residual jump-fuel
+  composition are checked over the existing TypedCfg interpreter. Recursive
+  statement-list composition, switch/loop control, internal calls, and
+  whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
