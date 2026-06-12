@@ -72,6 +72,20 @@ theorem overwriteTop_pc
           cases hOverwrite
           rfl
 
+theorem overwriteTop_stack_length
+    {value : Word} {state state' : EVMState}
+    (hOverwrite : overwriteTop value state = .ok state') :
+    state'.stack.length = state.stack.length := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases stack with
+      | nil =>
+          simp [overwriteTop] at hOverwrite
+      | cons top rest =>
+          simp [overwriteTop] at hOverwrite
+          cases hOverwrite
+          rfl
+
 def applyOracleFromPostState (kind : ResourceObserver) (state : EVMState)
     (trace : ResourceTrace) :
     Except EVMException (EVMState × ResourceTrace) := do
@@ -100,6 +114,28 @@ theorem applyOracleFromPostState_pc
           rcases hApply with ⟨hState, _hTrace⟩
           subst state'
           exact overwriteTop_pc hOverwrite
+
+theorem applyOracleFromPostState_stack_length
+    {kind : ResourceObserver} {state state' : EVMState}
+    {trace trace' : ResourceTrace}
+    (hApply :
+      applyOracleFromPostState kind state trace = .ok (state', trace')) :
+    state'.stack.length = state.stack.length := by
+  unfold applyOracleFromPostState at hApply
+  cases hConsume : consume kind trace with
+  | error err =>
+      simp [hConsume, Bind.bind, Except.bind] at hApply
+  | ok consumed =>
+      rcases consumed with ⟨value, rest⟩
+      simp [hConsume, Bind.bind, Except.bind] at hApply
+      cases hOverwrite : overwriteTop value state with
+      | error err =>
+          simp [hOverwrite] at hApply
+      | ok stateMid =>
+          simp [hOverwrite] at hApply
+          rcases hApply with ⟨hState, _hTrace⟩
+          subst state'
+          exact overwriteTop_stack_length hOverwrite
 
 def eraseRuntimeStateTrace
     (result : EVMState × ResourceTrace) :

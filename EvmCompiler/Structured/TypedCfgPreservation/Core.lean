@@ -288,6 +288,90 @@ end BasicInstr
 namespace BasicOp
 
 /--
+Typing the existing lowering of a Structured primitive exposes the same
+concrete stack delta declared by its Assembly primitive.
+-/
+theorem type_length_toCfg
+    {op : Structured.BasicOp} {input output : TypedCfg.Shape}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.basicOpToCfg op) input =
+        some output) :
+    ∃ inputArity outputArity,
+      op.toPrimOp.stackArity? = some (inputArity, outputArity) ∧
+        inputArity ≤ input.length ∧
+        output.length =
+          input.length - inputArity + outputArity := by
+  generalize hCfg :
+      TypedCfgCompiler.BasicInstr.basicOpToCfg op = cfgInstr at hType
+  cases cfgInstr with
+  | prim prim =>
+      have hPrim : prim = op.toPrimOp := by
+        cases op <;>
+          simp [TypedCfgCompiler.BasicInstr.basicOpToCfg,
+            Structured.BasicOp.toPrimOp] at hCfg
+        all_goals
+          simpa using hCfg.symm
+      subst prim
+      cases hArity : op.toPrimOp.stackArity? with
+      | none =>
+          simp [TypedCfg.Instr.type?, hArity] at hType
+      | some arity =>
+          rcases arity with ⟨inputArity, outputArity⟩
+          have hLength :=
+            TypedCfg.Instr.length_of_type?_prim hArity hType
+          exact
+            ⟨inputArity, outputArity, rfl,
+              hLength.1, hLength.2⟩
+  | pop =>
+      have hArity :
+          op.toPrimOp.stackArity? = some (1, 0) := by
+        cases op <;>
+          simp [TypedCfgCompiler.BasicInstr.basicOpToCfg,
+            Structured.BasicOp.toPrimOp,
+            Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
+            EvmYul.EVM.δ, EvmYul.EVM.α] at hCfg ⊢
+      have hLength :=
+        TypedCfg.Instr.length_of_type?_pop hType
+      exact ⟨1, 0, hArity, hLength.1, hLength.2⟩
+  | dup depth =>
+      have hArity :
+          op.toPrimOp.stackArity? =
+            some (depth + 1, depth + 2) := by
+        cases op <;>
+          simp [TypedCfgCompiler.BasicInstr.basicOpToCfg,
+            Structured.BasicOp.toPrimOp,
+            Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
+            EvmYul.EVM.δ, EvmYul.EVM.α] at hCfg ⊢ <;>
+          omega
+      have hLength :=
+        TypedCfg.Instr.length_of_type?_dup hType
+      refine
+        ⟨depth + 1, depth + 2, hArity,
+          hLength.2.1, ?_⟩
+      omega
+  | swap depth =>
+      have hArity :
+          op.toPrimOp.stackArity? =
+            some (depth + 2, depth + 2) := by
+        cases op <;>
+          simp [TypedCfgCompiler.BasicInstr.basicOpToCfg,
+            Structured.BasicOp.toPrimOp,
+            Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
+            EvmYul.EVM.δ, EvmYul.EVM.α] at hCfg ⊢ <;>
+          omega
+      have hLength :=
+        TypedCfg.Instr.length_of_type?_swap hType
+      refine
+        ⟨depth + 2, depth + 2, hArity,
+          hLength.2.1, ?_⟩
+      omega
+  | push value | returnToken value | bindLocals value names
+  | bindScratch value name slot | relabel target | unwind target =>
+      cases op <;>
+        simp [TypedCfgCompiler.BasicInstr.basicOpToCfg] at hCfg
+
+/--
 Structured primitive execution is insensitive to CFG-owned control counters.
 The one admitted observer outside `continuingStep?`, `gas`, is covered because
 `SameRuntimeData` retains the complete shared machine state.
@@ -327,6 +411,65 @@ theorem step_map_eraseRuntimeControl
 end BasicOp
 
 namespace BasicInstr
+
+/--
+One successfully executed Structured instruction preserves the concrete lower
+bound tracked by the type of its existing TypedCfg lowering.
+-/
+theorem step_stack_bound_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final : EVMState}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hBound : input.length ≤ state.stack.length)
+    (hStep : instr.step state = .ok final) :
+    output.length ≤ final.stack.length := by
+  cases instr with
+  | push value =>
+      simp [TypedCfgCompiler.BasicInstr.toCfg,
+        TypedCfg.Instr.type?] at hType
+      cases hType
+      simp [Structured.BasicInstr.step,
+        Assembly.Target.stepInstr] at hStep
+      cases hStep
+      change input.slots.length ≤ state.stack.length at hBound
+      simp [TypedCfg.Shape.length,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      omega
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            hShapeBound, hOutputLength⟩ :=
+        BasicOp.type_length_toCfg hType
+      have hActualBound :
+          inputArity ≤ state.stack.length :=
+        Nat.le_trans hShapeBound hBound
+      have hFinalLength :
+          final.stack.length =
+            state.stack.length - inputArity + outputArity := by
+        apply
+          Assembly.PrimOp.step_stack_length_of_stackArity
+            hArity
+        simpa [Structured.BasicInstr.step,
+          Structured.BasicOp.step,
+          Assembly.Target.stepInstr] using hStep
+      omega
+  | bindLocals offset names =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindLocals hType
+      simp [Structured.BasicInstr.step] at hStep
+      cases hStep
+      omega
+  | bindScratch baseDepth name slot =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindScratch hType
+      simp [Structured.BasicInstr.step] at hStep
+      cases hStep
+      omega
 
 theorem step_map_eraseRuntimeControl
     {instr : Structured.BasicInstr} {target source : EVMState}

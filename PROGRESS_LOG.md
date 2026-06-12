@@ -28668,3 +28668,38 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   focused semantics/adequacy build, architecture guard, scoped no-hole scan,
   and `git diff --check` pass. The framed code converse and its compiler-facing
   wrapper depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 16:11:24 PDT `compaction-resume`: Resumed the adjacent
+  Structured-to-TypedCfg backward-adequacy proof after the framed
+  straight-line checkpoint; next is deriving shape-indexed stack availability
+  for framed conditions without exposing compiler-generated evidence.
+
+- 2026-06-11 16:11:24 PDT `oracle`: The requested structural
+  `FrameReflecting` proof consultation failed with insufficient quota, so no
+  oracle output was used; local theorem-truth inspection remains the basis for
+  the proof.
+
+- 2026-06-11 17:04:30 PDT `compaction-resume`: Resumed the
+  Structured-to-TypedCfg observer adequacy boundary after deriving checked
+  stack-shape facts; next is replacing the overstrong unindexed frame-reflection
+  premise with a typing-indexed, compiler-generated invariant.
+
+- 2026-06-11 17:06:48 PDT `proof`: Added checked primitive stack-arity,
+  instruction-typing, observer stack-length, and code-level `shapeSound`
+  theorems; framed `runCondition_of_runBody_toCfg` and framed false-if adequacy
+  now derive their stack bound internally. Focused
+  `lake build EvmCompiler.Structured.ObserverAdequacy` completed successfully
+  with 1129 jobs.
+
+- 2026-06-11 17:06:48 PDT `theorem-boundary`: The current unindexed
+  `Code.FrameReflecting` premise is false as a compiler-generated property for
+  stack-consuming code on arbitrary undersized states. It remains temporary;
+  replace it with a typing-indexed pass invariant before recursive or
+  whole-program composition.
+
+- 2026-06-11 17:09:16 PDT `audit`: The framed condition/false-if checkpoint
+  passes `scripts/check_architecture.sh`, scoped hole/axiom-token scans,
+  `git diff --check`, and `lake build EvmCompiler.Verification` (1177 jobs).
+  `#print axioms` reports only `propext`, `Classical.choice`, and `Quot.sound`
+  for `Code.shapeSound`, framed `Code.runCondition_of_runBody_toCfg`, and
+  framed `Stmt.outcome_if_false_of_compileStmtFuel?_and_step`.

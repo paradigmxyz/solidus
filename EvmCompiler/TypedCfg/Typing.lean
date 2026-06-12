@@ -51,6 +51,124 @@ def type? (instr : Instr) (shape : Shape) : Option Shape :=
   | .unwind target =>
       Shape.unwindTo target shape
 
+theorem length_of_type?_prim
+    {op : Assembly.PrimOp} {input output : Shape}
+    {inputArity outputArity : Nat}
+    (hArity : op.stackArity? = some (inputArity, outputArity))
+    (hType : Instr.type? (.prim op) input = some output) :
+    inputArity ≤ input.length ∧
+      output.length =
+        input.length - inputArity + outputArity := by
+  simp only [Instr.type?] at hType
+  rw [hArity] at hType
+  by_cases hBound : inputArity ≤ input.length
+  · simp [hBound] at hType
+    cases hType
+    change inputArity ≤ input.slots.length at hBound
+    constructor
+    · exact hBound
+    · change
+        (Shape.pushWords outputArity
+            (Shape.pop inputArity input)).slots.length =
+          input.slots.length - inputArity + outputArity
+      simp [Shape.pushWords, Shape.pop, List.length_drop]
+      omega
+  · simp [hBound] at hType
+
+theorem length_of_type?_pop
+    {input output : Shape}
+    (hType : Instr.type? .pop input = some output) :
+    1 ≤ input.length ∧
+      output.length = input.length - 1 := by
+  cases input with
+  | mk slots tail =>
+      cases slots with
+      | nil =>
+          simp [Instr.type?] at hType
+      | cons slot rest =>
+          simp [Instr.type?] at hType
+          cases hType
+          simp [Shape.length]
+
+theorem length_of_type?_dup
+    {depth : Nat} {input output : Shape}
+    (hType : Instr.type? (.dup depth) input = some output) :
+    depth < 16 ∧
+      depth + 1 ≤ input.length ∧
+      output.length = input.length + 1 := by
+  unfold Instr.type? at hType
+  by_cases hDepth : depth < 16
+  · simp [hDepth] at hType
+    cases hGet : input.get? depth with
+    | none =>
+        simp [hGet] at hType
+    | some slot =>
+        simp [hGet] at hType
+        cases hType
+        have hIndex : depth < input.slots.length :=
+          List.getElem?_eq_some_iff.mp hGet |>.1
+        simp [Shape.length]
+        omega
+  · simp [hDepth] at hType
+
+theorem length_of_type?_swap
+    {depth : Nat} {input output : Shape}
+    (hType : Instr.type? (.swap depth) input = some output) :
+    depth < 16 ∧
+      depth + 2 ≤ input.length ∧
+      output.length = input.length := by
+  unfold Instr.type? at hType
+  by_cases hDepth : depth < 16
+  · simp [hDepth] at hType
+    cases hSlots : input.slots with
+    | nil =>
+        simp [Shape.get?, hSlots] at hType
+    | cons top rest =>
+        cases hGet : input.get? (depth + 1) with
+        | none =>
+            simp [hSlots, hGet] at hType
+        | some slot =>
+            simp [hSlots, hGet] at hType
+            cases hType
+            have hIndex : depth + 1 < input.slots.length :=
+              List.getElem?_eq_some_iff.mp hGet |>.1
+            simp [hSlots] at hIndex
+            simp [Shape.length, hSlots, List.length_set]
+            omega
+  · simp [hDepth] at hType
+
+theorem length_of_type?_bindLocals
+    {offset : Nat} {names : List String}
+    {input output : Shape}
+    (hType :
+      Instr.type? (.bindLocals offset names) input = some output) :
+    output.length = input.length := by
+  unfold Instr.type? Shape.bindLocals? at hType
+  by_cases hBound : offset + names.length ≤ input.length
+  · simp [hBound] at hType
+    cases hType
+    change offset + names.length ≤ input.slots.length at hBound
+    have hOffset : offset ≤ input.slots.length := by omega
+    simp [Shape.length, List.length_take, List.length_drop, hOffset]
+    omega
+  · simp [hBound] at hType
+
+theorem length_of_type?_bindScratch
+    {baseDepth : Nat} {name : String} {slot : Nat}
+    {input output : Shape}
+    (hType :
+      Instr.type? (.bindScratch baseDepth name slot) input =
+        some output) :
+    output.length = input.length := by
+  unfold Instr.type? Shape.bindScratch? at hType
+  cases hGet : input.slots[baseDepth]? with
+  | none =>
+      simp [hGet] at hType
+  | some existing =>
+      simp [hGet] at hType
+      cases hType
+      simp [Shape.length]
+
 end Instr
 
 namespace Block

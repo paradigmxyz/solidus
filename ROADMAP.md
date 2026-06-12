@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 15:50 PDT.
+Last updated: 2026-06-11 17:06 PDT.
 
 ## Objective
 
@@ -103,12 +103,17 @@ Adjacent boundary status:
   checked for statements, blocks, recursive switch/loop/call control, halts,
   and whole-program artifacts. Terminal stack-suffix preservation is now a
   checked shared semantic theorem rather than a public premise. Backward
-  straight-line code and compiler-facing code are checked across active frames
-  under the source-semantic `Code.FrameReflecting` interface; condition,
-  terminal, and false-if leaves are checked at the closed no-frame boundary.
-  Halt typing enforces operand arity, so compiler-owned return data cannot
-  satisfy missing source operands. Deriving `FrameReflecting` structurally,
-  framed conditions, true branches, recursive control, internal calls, and
+  straight-line code, condition evaluation, compiler-facing code, and the
+  false conditional branch are checked across active frames under the temporary
+  source-semantic `Code.FrameReflecting` interface. Checked instruction-family
+  stack deltas and the structural `Code.shapeSound` theorem ensure a typed
+  condition cannot consume compiler-owned return data, without a caller-supplied
+  shape premise. Terminal and false-if leaves also remain checked at the closed
+  no-frame boundary. Halt typing enforces operand arity, so compiler-owned
+  return data cannot satisfy missing source operands. The current unindexed
+  `FrameReflecting` premise is too strong to derive for arbitrary undersized
+  states; replacing it with a typing-indexed compiler-generated invariant,
+  then proving true branches, recursive control, internal calls, and
   whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG

@@ -2239,6 +2239,106 @@ theorem step_pc_of_stackArity
             Except.ok final at hRun
         cases hRun
 
+/--
+Successful `stackArity?` lookup exposes the EVM delta/alpha pair used to define
+the declaration.
+-/
+theorem stackArity_values
+    {op : PrimOp} {input output : Nat}
+    (hArity : op.stackArity? = some (input, output)) :
+    input = (EvmYul.EVM.δ op.toEVM).getD 0 ∧
+      output = (EvmYul.EVM.α op.toEVM).getD 0 := by
+  cases op <;>
+    simp [PrimOp.stackArity?, PrimOp.toEVM,
+      EvmYul.EVM.δ, EvmYul.EVM.α] at hArity ⊢ <;>
+    omega
+
+/--
+Every successful nonterminal primitive realizes its declared symbolic stack
+transition on the concrete EVM stack.
+-/
+theorem step_stack_length_of_stackArity
+    {op : PrimOp} {input output : Nat}
+    {state final : EvmYul.EVM.State}
+    (hArity : op.stackArity? = some (input, output))
+    (hRun : op.step state = .ok final) :
+    final.stack.length =
+      state.stack.length - input + output := by
+  cases hCont : op.continuingStep? with
+  | some step =>
+      rcases stackArity_values hArity with
+        ⟨hInput, hOutput⟩
+      rcases continuingStep?_delta_alpha hCont with
+        ⟨hStepInput, hStepOutput⟩
+      rw [hInput, hOutput, hStepInput, hStepOutput]
+      rw [step_eq_continuingStep_run hCont] at hRun
+      cases step with
+      | dup depth =>
+          have hLength := PrimStep.run_dup_stack_length hRun
+          have hBound := PrimStep.run_inputArity_le hRun
+          simp [PrimStep.inputArity, PrimStep.outputArity] at hLength ⊢
+          simp [PrimStep.inputArity] at hBound
+          omega
+      | swap depth =>
+          have hPos : 1 ≤ depth :=
+            continuingStep?_swap_pos hCont
+          have hLength :=
+            PrimStep.run_swap_stack_length_of_pos hPos hRun
+          have hBound := PrimStep.run_inputArity_le hRun
+          simp [PrimStep.inputArity, PrimStep.outputArity] at hLength ⊢
+          simp [PrimStep.inputArity] at hBound
+          omega
+      | invalid =>
+          simp [PrimStep.run] at hRun
+      | bin f | un f | tri f | executionEnv f | machineState f
+      | state f | unaryExecutionEnv f | unaryState f
+      | binaryMachineState f | binaryMachineStateWithResult f
+      | ternaryMachineState f | binaryState f | ternaryCopy f
+      | quaternaryCopy f | pop | mload | returndatacopy
+      | log0 | log1 | log2 | log3 | log4 =>
+          exact
+            PrimStep.run_stack_length_safe
+              (by simp [PrimStep.SuffixSafe]) hRun
+  | none =>
+      cases op <;>
+        simp [PrimOp.continuingStep?] at hCont
+      case stop | «return» | revert | selfdestruct =>
+        simp [PrimOp.stackArity?] at hArity
+      case pc =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.pc)) =
+            Except.ok final at hRun
+        cases hRun
+        have hValues := stackArity_values hArity
+        have hInput : input = 0 := by simpa using hValues.1
+        have hOutput : output = 1 := by simpa using hValues.2
+        subst input
+        subst output
+        simp [EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      case gas =>
+        change
+          Except.ok
+              (state.replaceStackAndIncrPC
+                (state.stack.push state.gasAvailable)) =
+            Except.ok final at hRun
+        cases hRun
+        have hValues := stackArity_values hArity
+        have hInput : input = 0 := by simpa using hValues.1
+        have hOutput : output = 1 := by simpa using hValues.2
+        subst input
+        subst output
+        simp [EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      case create | call | callcode | delegatecall | create2 | staticcall =>
+        change
+          (Except.error EvmYul.EVM.ExecutionException.InvalidInstruction :
+            Except EvmYul.EVM.ExecutionException EvmYul.EVM.State) =
+            Except.ok final at hRun
+        cases hRun
+
 end PrimOp
 
 end Assembly

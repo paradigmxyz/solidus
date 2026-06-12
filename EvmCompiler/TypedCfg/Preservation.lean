@@ -355,6 +355,41 @@ theorem runPops_pc
               congr 2
               omega
 
+/--
+Successful repeated popping consumes exactly the requested concrete stack
+prefix.
+-/
+theorem runPops_stack_length
+    (count : Nat) {state final : EVMState}
+    (hRun : Instr.runPops count state = .ok final) :
+    count ≤ state.stack.length ∧
+      final.stack.length = state.stack.length - count := by
+  induction count generalizing state with
+  | zero =>
+      simp [Instr.runPops] at hRun
+      cases hRun
+      simp
+  | succ count ih =>
+      unfold Instr.runPops at hRun
+      cases hStep : Assembly.PrimOp.pop.step state with
+      | error err =>
+          simp [hStep, Bind.bind, Except.bind] at hRun
+      | ok middle =>
+          simp [hStep, Bind.bind, Except.bind] at hRun
+          rcases ih hRun with ⟨hTailBound, hTailLength⟩
+          have hHeadLength :
+              middle.stack.length = state.stack.length - 1 :=
+            Assembly.PrimOp.step_stack_length_of_stackArity
+              (op := .pop) (by rfl) hStep
+          have hHeadBound : 1 ≤ state.stack.length := by
+            have hPrim :
+                (Assembly.PrimStep.pop).run state = .ok middle := by
+              simpa [Assembly.PrimOp.step,
+                Assembly.PrimOp.continuingStep?] using hStep
+            simpa [Assembly.PrimStep.inputArity] using
+              Assembly.PrimStep.run_inputArity_le hPrim
+          constructor <;> omega
+
 theorem runPops_source_runN
     (count : Nat) {pre post : Assembly.Program} {state : EVMState}
     (hFits :

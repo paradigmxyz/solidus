@@ -17,6 +17,85 @@ abbrev Trace := Assembly.ResourceTrace
 namespace Code
 
 /--
+Typed observer execution respects the symbolic stack lower bound.
+
+This pass-owned semantic interface is discharged structurally by `shapeSound`;
+callers supply no layout, replay, emitted-code, or stack-shape evidence.
+-/
+def ShapeSound (code : Structured.Code) : Prop :=
+  ∀ {transcript : Trace} {input output : TypedCfg.Shape}
+      {source final : ObserverSemantics.State transcript},
+    TypedCfgCompiler.Code.type? code input = some output →
+      input.length ≤ source.source.evm.stack.length →
+      ObserverSemantics.Code.run code source = .ok final →
+      output.length ≤ final.source.evm.stack.length
+
+/--
+Every straight-line fragment accepted by the existing Structured-to-TypedCfg
+body typer is shape-sound under observer replay.
+-/
+theorem shapeSound (code : Structured.Code) : ShapeSound code := by
+  intro transcript input output source final hType hBound hRun
+  induction code generalizing input output source final with
+  | nil =>
+      simp [TypedCfgCompiler.Code.type?,
+        TypedCfgCompiler.Code.toCfg,
+        TypedCfg.Block.bodyType?,
+        ObserverSemantics.Code.run,
+        EffectSemantics.Code.run] at hType hRun
+      cases hType
+      cases hRun
+      exact hBound
+  | cons instr rest ih =>
+      unfold TypedCfgCompiler.Code.type? at hType
+      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
+        TypedCfg.Block.bodyType?] at hType
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hHeadType] at hType
+      | some middle =>
+          simp [hHeadType] at hType
+          have hTailType :
+              TypedCfgCompiler.Code.type? rest middle = some output := by
+            simpa [TypedCfgCompiler.Code.type?,
+              TypedCfgCompiler.Code.toCfg] using hType
+          unfold ObserverSemantics.Code.run
+            EffectSemantics.Code.run at hRun
+          simp only [ObserverSemantics.stateModel_evm,
+            ObserverSemantics.stateModel_withEVM] at hRun
+          cases hStep : instr.step source.source.evm with
+          | error err =>
+              simp [hStep, Bind.bind, Except.bind] at hRun
+          | ok evm =>
+              simp only [hStep, Bind.bind, Except.bind] at hRun
+              cases hAfter :
+                  (ObserverSemantics.handler transcript).afterInstr instr
+                    (source.withSource
+                      (source.source.withEVM evm)) with
+              | error err =>
+                  rw [hAfter] at hRun
+                  contradiction
+              | ok middleState =>
+                  rw [hAfter] at hRun
+                  have hStepBound :
+                      middle.length ≤ evm.stack.length :=
+                    TypedCfgPreservation.BasicInstr.step_stack_bound_of_type
+                      hHeadType hBound hStep
+                  have hAfterLength :=
+                    ObserverSemantics.handler_stack_length hAfter
+                  have hMiddleBound :
+                      middle.length ≤
+                        middleState.source.evm.stack.length := by
+                    have hLength :
+                        middleState.source.evm.stack.length =
+                          evm.stack.length := by
+                      simpa [RunState.withEVM] using hAfterLength
+                    omega
+                  exact ih hTailType hMiddleBound hRun
+
+/--
 Backward straight-line adequacy across realized procedure frames.
 
 The target run is transported to the source state with its concrete hidden
@@ -102,6 +181,89 @@ theorem run_of_runBody_toCfg
         exact
           (ObserverPreservation.ReplayStateRel.remaining_eq
             hFinalReplay).symm
+
+/--
+Backward adequacy for a compiled condition across active procedure frames.
+
+The shape-soundness fact prevents the condition pop from consuming a hidden
+return token or caller-stack value.
+-/
+theorem runCondition_of_runBody_toCfg
+    {transcript : Trace} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {target targetAfter targetFinal : EVMState}
+    {trace traceFinal : Trace} {cond : Bool}
+    {condition : TypedCfg.Slot}
+    (hType : TypedCfgCompiler.Code.type? code input = some output)
+    (hHead : output.slots.head? = some condition)
+    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
+    (hRel :
+      ObserverPreservation.StateRel.At
+        input source tokens target trace)
+    (hBody :
+      TypedCfg.ObserverSemantics.Block.runBody
+          (TypedCfgCompiler.Code.toCfg code) input target trace =
+        .ok ((targetAfter, output), traceFinal))
+    (hPop :
+      Structured.Code.popCondition targetAfter =
+        .ok (targetFinal, cond)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Code.runCondition code source =
+          .ok (final, cond) ∧
+        ObserverPreservation.StateRel
+          final tokens targetFinal traceFinal := by
+  obtain ⟨after, hSourceCode, hAfterRel⟩ :=
+    run_of_runBody_toCfg
+      hType hFrameReflecting hRel.rel hBody
+  have hOutputBound :
+      output.length ≤ after.source.evm.stack.length :=
+    shapeSound code hType hRel.sourceStack hSourceCode
+  have hOutputPos : 1 ≤ output.length := by
+    cases hSlots : output.slots with
+    | nil =>
+        simp [hSlots] at hHead
+    | cons slot rest =>
+        simp [TypedCfg.Shape.length, hSlots]
+  have hAfterPos : 1 ≤ after.source.evm.stack.length :=
+    Nat.le_trans hOutputPos hOutputBound
+  cases hAfterStack : after.source.evm.stack with
+  | nil =>
+      simp [hAfterStack] at hAfterPos
+  | cons value stack =>
+      let final : ObserverSemantics.State transcript :=
+        after.withSource
+          (after.source.withEVM
+            { after.source.evm with stack := stack })
+      have hSourcePop :
+          EffectSemantics.Code.popCondition
+              (ObserverSemantics.stateModel transcript) after =
+            .ok
+              (final,
+                value != EvmYul.UInt256.ofNat 0) := by
+        unfold EffectSemantics.Code.popCondition
+        simp only [ObserverSemantics.stateModel_evm,
+          ObserverSemantics.stateModel_withEVM]
+        rw [hAfterStack]
+        rfl
+      obtain ⟨producedTarget, hProducedPop, hFinalRel⟩ :=
+        ObserverPreservation.StateRel.popCondition
+          hSourcePop hAfterRel
+      rw [hPop] at hProducedPop
+      cases hProducedPop
+      refine ⟨final, ?_, hFinalRel⟩
+      unfold ObserverSemantics.Code.runCondition
+        EffectSemantics.Code.runCondition
+      have hEffectRun :
+          EffectSemantics.Code.run
+              (ObserverSemantics.stateModel transcript)
+              (ObserverSemantics.handler transcript)
+              code source =
+            .ok after :=
+        hSourceCode
+      rw [hEffectRun]
+      exact hSourcePop
 
 /--
 Backward straight-line adequacy at a source boundary with no active ghost
@@ -414,6 +576,135 @@ theorem outcome_code_of_compileStmtFuel?_and_step_noFrames
                 Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
                 hFinalRel⟩
           · simp [generated, hOutput] at hStep
+
+/--
+Backward adequacy for the false branch of a compiled conditional across active
+procedure frames.
+-/
+theorem outcome_if_false_of_compileStmtFuel?_and_step
+    {transcript : Trace} {fuel : Nat}
+    {program : Structured.Program}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target targetFinal : EVMState}
+    {trace traceFinal : Trace}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (fuel + 1)
+          (.if_ cond body) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hDistinct : LabelSupply.label supply 0 ≠ regular)
+    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting cond)
+    (hRel :
+      ObserverPreservation.StateRel.At
+        input source tokens target trace)
+    (hStep :
+      TypedCfg.ObserverSemantics.Program.step
+          cfg entry target trace =
+        .ok (.jump regular targetFinal, traceFinal)) :
+    ∃ final : ObserverSemantics.State transcript,
+      ObserverSemantics.Stmt.Eval program (fuel + 1)
+          (.if_ cond body) source
+          (Structured.OutcomeT.regular final) ∧
+        ObserverPreservation.StateRel
+          final tokens targetFinal traceFinal := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hType :
+      TypedCfg.Block.bodyType?
+        (TypedCfgCompiler.Code.toCfg cond) input with
+  | none =>
+      simp [hType] at hCompile
+  | some output =>
+      cases hHead : output.slots.head? with
+      | none =>
+          simp [hType, hHead] at hCompile
+      | some condition =>
+          cases hBody :
+              TypedCfgCompiler.compileBlockFuel? fuel body ctx
+                (supply + 1) (LabelSupply.label supply 0)
+                { output with slots := output.slots.tail } regular with
+          | none =>
+              simp [hType, hHead,
+                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+          | some bodyResult =>
+              simp [hType, hHead,
+                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              cases hCompile
+              let generated : TypedCfg.Block :=
+                { label := entry
+                  input := input
+                  body := TypedCfgCompiler.Code.toCfg cond
+                  output := output
+                  term :=
+                    .jumpi (LabelSupply.label supply 0) regular }
+              have hFind :
+                  cfg.findBlock? entry = some generated :=
+                hBlocks generated (by simp [generated])
+              unfold TypedCfg.ObserverSemantics.Program.step at hStep
+              rw [hFind] at hStep
+              change
+                TypedCfg.ObserverSemantics.Block.run
+                    generated target trace =
+                  .ok (.jump regular targetFinal, traceFinal) at hStep
+              unfold TypedCfg.ObserverSemantics.Block.run at hStep
+              dsimp [generated] at hStep
+              cases hCondBody :
+                  TypedCfg.ObserverSemantics.Block.runBody
+                    (TypedCfgCompiler.Code.toCfg cond)
+                    input target trace with
+              | error err =>
+                  simp [hCondBody, Bind.bind, Except.bind] at hStep
+              | ok bodyRun =>
+                  rcases bodyRun with
+                    ⟨⟨targetAfter, targetOutput⟩, targetTrace⟩
+                  rw [hCondBody] at hStep
+                  simp only [Bind.bind, Except.bind] at hStep
+                  by_cases hOutput : targetOutput = output
+                  · simp [hOutput] at hStep
+                    subst targetOutput
+                    rcases hStep with ⟨hTerm, hTrace⟩
+                    unfold TypedCfg.Block.runTerm at hTerm
+                    cases hStack : targetAfter.stack with
+                    | nil =>
+                        simp [hStack, EvmYul.Stack.pop] at hTerm
+                    | cons value stack =>
+                        by_cases hZero :
+                            value = EvmYul.UInt256.ofNat 0
+                        · simp [hStack, EvmYul.Stack.pop, hZero] at hTerm
+                          subst targetFinal
+                          subst traceFinal
+                          have hBne :
+                              (value != EvmYul.UInt256.ofNat 0) =
+                                false := by
+                            rw [hZero]
+                            exact
+                              TypedCfg.Preservation.uint256_bne_zero_self
+                          have hPop :
+                              Structured.Code.popCondition targetAfter =
+                                .ok
+                                  ({ targetAfter with stack := stack },
+                                    false) := by
+                            unfold Structured.Code.popCondition
+                              EffectSemantics.Code.popCondition
+                            simp [hStack, EvmYul.Stack.pop, hBne]
+                          obtain ⟨final, hCond, hFinalRel⟩ :=
+                            Code.runCondition_of_runBody_toCfg
+                              (by simpa [TypedCfgCompiler.Code.type?]
+                                using hType)
+                              hHead hFrameReflecting hRel
+                              hCondBody hPop
+                          exact
+                            ⟨final,
+                              Structured.EffectSemantics.Stmt.Eval.if_false
+                                hCond,
+                              hFinalRel⟩
+                        · simp [hStack, EvmYul.Stack.pop, hZero] at hTerm
+                          exact False.elim (hDistinct hTerm.1)
+                  · simp [hOutput] at hStep
 
 /--
 Backward adequacy for the false branch of a compiled conditional at a no-frame

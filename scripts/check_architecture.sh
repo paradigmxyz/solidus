@@ -200,6 +200,11 @@ report_matches \
   EvmCompiler/Structured/ObserverAdequacy.lean
 
 report_matches \
+  'Structured observer adequacy must derive stack-shape soundness instead of accepting generated evidence:' \
+  'h[A-Za-z0-9_]*[[:space:]]*:[[:space:]]*.*ShapeSound' \
+  EvmCompiler/Structured/ObserverAdequacy.lean
+
+report_matches \
   'Structured terminal frame safety must remain a proved semantic fact, not a public premise:' \
   'Terminal\.RelSafe|hTerminal[[:space:]]*:[[:space:]]*.*RelSafe' \
   EvmCompiler/Structured/TypedCfgPreservation.lean \
