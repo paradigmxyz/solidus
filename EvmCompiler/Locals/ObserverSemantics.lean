@@ -48,6 +48,42 @@ def primitiveSemantics (transcript : Trace) :
         .ok { state with source := state.source.withShared shared }
     | .error err => .error err
 
+theorem primitiveSemantics_eval_vars_eq
+    {transcript : Trace} {op : Structured.BasicOp}
+    {state final : State transcript} {values results : List Word}
+    (hEval :
+      (primitiveSemantics transcript).eval op state values =
+        .ok (final, results)) :
+    final.source.vars = state.source.vars := by
+  unfold primitiveSemantics at hEval
+  cases hObserver : basicOpObserver? op with
+  | none =>
+      cases hPrimitive :
+          Locals.Source.PrimitiveSemantics.structured.eval op
+            state.source.shared values with
+      | error err =>
+          simp [hObserver, hPrimitive] at hEval
+      | ok result =>
+          rcases result with ⟨shared, outputs⟩
+          simp [hObserver, hPrimitive] at hEval
+          rcases hEval with ⟨rfl, rfl⟩
+          rfl
+  | some kind =>
+      cases values with
+      | nil =>
+          cases hConsume :
+              Simulation.ResourceReplay.consume? kind state with
+          | none =>
+              simp [hObserver, hConsume, Structured.invalid] at hEval
+          | some result =>
+              rcases result with ⟨value, consumed⟩
+              simp [hObserver, hConsume] at hEval
+              rcases hEval with ⟨rfl, rfl⟩
+              exact congrArg (fun source => source.vars)
+                (Simulation.ResourceReplay.consume?_source hConsume)
+      | cons head tail =>
+          simp [hObserver, Structured.invalid] at hEval
+
 abbrev Outcome {transcript : Trace} :=
   Locals.Source.Effectful.Outcome (State transcript)
 

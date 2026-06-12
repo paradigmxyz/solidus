@@ -347,6 +347,43 @@ mutual
         rw [hTail.eval_eq]
 end
 
+mutual
+  theorem Expr.MemorySafeEval.vars_eq
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {expr : Functions.Expr results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hEval :
+        Expr.MemorySafeEval contract transcript expr source final values) :
+      final.source.vars = source.source.vars := by
+    cases hEval with
+    | lit =>
+        rfl
+    | var _hValue =>
+        rfl
+    | prim hArgs _hMemory hPrim =>
+        exact
+          (Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq
+            hPrim).trans hArgs.vars_eq
+
+  theorem ExprSeq.MemorySafeEval.vars_eq
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {exprs : Locals.ExprSeq results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hEval :
+        ExprSeq.MemorySafeEval contract transcript exprs
+          source final values) :
+      final.source.vars = source.source.vars := by
+    cases hEval with
+    | nil =>
+        rfl
+    | cons hHead hTail =>
+        exact hTail.vars_eq.trans hHead.vars_eq
+end
+
 theorem Expr.MemorySafeEval.evalOne_eq
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

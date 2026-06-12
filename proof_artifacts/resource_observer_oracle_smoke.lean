@@ -118,6 +118,21 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.compiler_shape
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel
+#check EvmCompiler.Functions.AllocationObserverRelation.StateRel.assign_stack_live
+#check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.assign_stack_live
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_stack_live
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_scratch
+#check EvmCompiler.Functions.AllocationObserverContext.ExprContext.stack_depth_lt_frame
+#check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_swap_pop
+#check EvmCompiler.Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq
+#check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.vars_eq
 #check EvmCompiler.Expressions.ObserverPreservation.verified
 #check EvmCompiler.Locals.ObserverSemantics.eval_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
@@ -308,6 +323,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.compiler_shape
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.backward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.compiler_shape
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_stack_live
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_scratch
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_swap_pop
+#print axioms EvmCompiler.Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq
+#print axioms EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.vars_eq
 #print axioms EvmCompiler.Expressions.ObserverPreservation.verified
 #print axioms EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons

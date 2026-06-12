@@ -65,6 +65,52 @@ structure ExprContext
             lowerCtx.frameName lowerState.layout =
           some (frameDepth + 1)
 
+namespace ExprContext
+
+theorem currentStackOrder_length
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameDepth : Nat}
+    (hCtx :
+      ExprContext lowerCtx lowerState localsCtx plan live frameDepth) :
+    (AllocationObserverRelation.currentStackOrder plan live).length =
+      frameDepth := by
+  have hFrameAt :
+      lowerState.layout[frameDepth]? = some lowerCtx.frameName :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hCtx.frame
+  have hFrameBound : frameDepth < lowerState.layout.length :=
+    List.getElem?_eq_some_iff.mp hFrameAt |>.1
+  rw [hCtx.stackPrefix]
+  simp [List.length_take,
+    Nat.min_eq_left (Nat.le_of_lt hFrameBound)]
+
+theorem stack_depth_lt_frame
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameDepth depth : Nat} {name : Locals.Name}
+    (hCtx :
+      ExprContext lowerCtx lowerState localsCtx plan live frameDepth)
+    (hDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1)) :
+    depth < frameDepth := by
+  have hAt :
+      (AllocationObserverRelation.currentStackOrder plan live)[depth]? =
+        some name :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+  have hBound :
+      depth <
+        (AllocationObserverRelation.currentStackOrder plan live).length :=
+    List.getElem?_eq_some_iff.mp hAt |>.1
+  simpa [hCtx.currentStackOrder_length] using hBound
+
+end ExprContext
+
 /--
 Exact compiler classification for a lowered source variable.
 

@@ -56,6 +56,51 @@ theorem mem_of_lookupDepth?_eq_some
       · simp only [lookupDepthFrom, if_neg hHead] at hDepth
         exact List.mem_cons_of_mem head (ih (start + 1) hDepth)
 
+private theorem lookupDepthFrom_eq_some_index
+    {name : Name} {layout : Layout} {start result : Nat}
+    (hDepth : lookupDepthFrom name start layout = some result) :
+    ∃ index,
+      result = start + index ∧
+        layout[index]? = some name := by
+  induction layout generalizing start with
+  | nil =>
+      simp [lookupDepthFrom] at hDepth
+  | cons head tail ih =>
+      by_cases hHead : head = name
+      · subst head
+        simp [lookupDepthFrom] at hDepth
+        subst result
+        exact ⟨0, by simp, rfl⟩
+      · simp only [lookupDepthFrom, if_neg hHead] at hDepth
+        obtain ⟨index, hResult, hAt⟩ := ih hDepth
+        refine ⟨index + 1, ?_, ?_⟩
+        · omega
+        · simpa [Nat.add_comm] using hAt
+
+theorem getElem?_eq_some_of_lookupDepth?_eq_some
+    {name : Name} {layout : Layout} {depth : Nat}
+    (hDepth : lookupDepth? name layout = some (depth + 1)) :
+    layout[depth]? = some name := by
+  obtain ⟨index, hResult, hAt⟩ :=
+    lookupDepthFrom_eq_some_index
+      (by simpa [lookupDepth?] using hDepth)
+  have hIndex : index = depth := by
+    omega
+  simpa [hIndex] using hAt
+
+theorem name_eq_of_lookupDepth?_eq_some
+    {left right : Name} {layout : Layout} {depth : Nat}
+    (hLeft : lookupDepth? left layout = some (depth + 1))
+    (hRight : lookupDepth? right layout = some (depth + 1)) :
+    left = right := by
+  have hLeftAt :=
+    getElem?_eq_some_of_lookupDepth?_eq_some hLeft
+  have hRightAt :=
+    getElem?_eq_some_of_lookupDepth?_eq_some hRight
+  rw [hLeftAt] at hRightAt
+  cases hRightAt
+  rfl
+
 def promoteAt (idx : Nat) (layout : Layout) : Layout :=
   match layout[idx]? with
   | none => layout

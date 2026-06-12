@@ -68,6 +68,63 @@ private theorem dup?_continuingStep
   | 16 => simp [Locals.StackOp.dup?] at hOp; cases hOp; rfl
   | depth + 17 => simp [Locals.StackOp.dup?] at hOp
 
+private theorem swap?_continuingStep
+    {depth : Nat} {op : Structured.BasicOp}
+    (hOp : Locals.StackOp.swap? depth = some op) :
+    op.toPrimOp.continuingStep? = some (.swap depth) := by
+  match depth with
+  | 0 => simp [Locals.StackOp.swap?] at hOp
+  | 1 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 2 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 3 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 4 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 5 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 6 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 7 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 8 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 9 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 10 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 11 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 12 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 13 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 14 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 15 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | 16 => simp [Locals.StackOp.swap?] at hOp; cases hOp; rfl
+  | depth + 17 => simp [Locals.StackOp.swap?] at hOp
+
+private theorem swap_stack_eq_set
+    {depth : Nat} {value old : Word} {rest : List Word}
+    (hGet : rest[depth]? = some old) :
+    let top := (value :: rest).take ((depth + 1) + 1)
+    let bottom := (value :: rest).drop ((depth + 1) + 1)
+    top.getLast! :: top.tail!.dropLast ++ [top.head!] ++ bottom =
+      old :: rest.set depth value := by
+  have hDepth : depth < rest.length :=
+    List.getElem?_eq_some_iff.mp hGet |>.1
+  have hStackGet :
+      (value :: rest)[depth + 1]? = some old := by
+    simpa using hGet
+  have hLast :
+      ((value :: rest).take ((depth + 1) + 1)).getLast! = old :=
+    take_succ_getLast!_of_getElem?_eq_some hStackGet
+  have hTake :
+      (value :: rest).take ((depth + 1) + 1) =
+        value :: rest.take (depth + 1) := by
+    simp [Nat.add_assoc]
+  have hTakeLength :
+      (rest.take (depth + 1)).length = depth + 1 := by
+    simp [List.length_take,
+      Nat.min_eq_left (Nat.succ_le_iff.mpr hDepth)]
+  have hDropLast :
+      (rest.take (depth + 1)).dropLast = rest.take depth := by
+    rw [List.dropLast_eq_take, hTakeLength]
+    simp [List.take_take]
+  simp only
+  rw [hLast, hTake]
+  simp only [List.tail!_cons, List.head!_cons]
+  rw [hDropLast, List.set_eq_take_cons_drop value hDepth]
+  simp [List.append_assoc]
+
 namespace ObserverCode
 
 theorem run_append {transcript : Trace}
@@ -141,6 +198,123 @@ theorem run_dup {transcript : Trace}
     Simulation.ResourceReplay.State.withSource,
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
+
+theorem run_pop {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word} {rest : List Word}
+    (hStack : target.source.evm.stack = value :: rest) :
+    Structured.ObserverSemantics.Code.run [.op .pop] target =
+      .ok
+        (AllocationObserverRelation.StateRel.replaceStackBy
+          1 rest target) := by
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.pop.continuingStep? = some .pop)]
+  unfold Assembly.PrimStep.run
+  rw [hStack]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler,
+    Structured.ObserverSemantics.basicOpObserver?,
+    Structured.BasicOp.toPrimOp,
+    Assembly.ResourceObserver.ofPrimOp?,
+    Structured.EffectSemantics.Code.run,
+    EvmYul.Stack.pop,
+    AllocationObserverRelation.StateRel.replaceStackBy,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+theorem run_swap {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {depth : Nat} {value old : Word} {rest : List Word}
+    {op : Structured.BasicOp}
+    (hOp : Locals.StackOp.swap? (depth + 1) = some op)
+    (hGet : rest[depth]? = some old)
+    (hStack : target.source.evm.stack = value :: rest) :
+    Structured.ObserverSemantics.Code.run [.op op] target =
+      .ok
+        (AllocationObserverRelation.StateRel.replaceStackBy
+          1 (old :: rest.set depth value) target) := by
+  have hStep := swap?_continuingStep hOp
+  have hObserver :
+      Structured.ObserverSemantics.basicOpObserver? op = none := by
+    cases op <;>
+      simp [Structured.ObserverSemantics.basicOpObserver?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.ResourceObserver.ofPrimOp?,
+        Assembly.PrimOp.continuingStep?] at hStep ⊢
+  have hDepth : depth < rest.length :=
+    List.getElem?_eq_some_iff.mp hGet |>.1
+  have hTakeBound :
+      (depth + 1) + 1 ≤ (value :: rest).length := by
+    simp only [List.length_cons]
+    omega
+  have hTakeLength :
+      ((value :: rest).take ((depth + 1) + 1)).length =
+        (depth + 1) + 1 := by
+    exact List.length_take_of_le hTakeBound
+  have hSwap := swap_stack_eq_set (value := value) hGet
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run hStep]
+  unfold Assembly.PrimStep.run EvmYul.swap
+  rw [hStack]
+  simp only [hTakeLength, ↓reduceIte]
+  rw [hSwap]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler, hObserver,
+    Structured.EffectSemantics.Code.run,
+    AllocationObserverRelation.StateRel.replaceStackBy,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+theorem run_swap_pop {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {depth : Nat} {value old : Word} {rest : List Word}
+    {op : Structured.BasicOp}
+    (hOp : Locals.StackOp.swap? (depth + 1) = some op)
+    (hGet : rest[depth]? = some old)
+    (hStack : target.source.evm.stack = value :: rest) :
+    Structured.ObserverSemantics.Code.run
+        [.op op, .op .pop] target =
+      .ok
+        (AllocationObserverRelation.StateRel.replaceStackBy
+          2 (rest.set depth value) target) := by
+  change
+    Structured.ObserverSemantics.Code.run
+        ([.op op] ++ [.op .pop]) target =
+      .ok
+        (AllocationObserverRelation.StateRel.replaceStackBy
+          2 (rest.set depth value) target)
+  rw [run_append, run_swap hOp hGet hStack]
+  simp only [Except.bind]
+  rw [run_pop (target :=
+    AllocationObserverRelation.StateRel.replaceStackBy
+      1 (old :: rest.set depth value) target)
+      (value := old) (rest := rest.set depth value) (by
+        simp [AllocationObserverRelation.StateRel.replaceStackBy,
+          Simulation.ResourceReplay.State.withSource,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC])]
+  have hPC :
+      target.source.evm.pc + EvmYul.UInt256.ofNat 1 +
+          EvmYul.UInt256.ofNat 1 =
+        target.source.evm.pc + EvmYul.UInt256.ofNat 2 := by
+    rw [Assembly.UInt256_add_assoc, Assembly.UInt256_ofNat_add]
+  simp [AllocationObserverRelation.StateRel.replaceStackBy,
+    Simulation.ResourceReplay.State.withSource,
+    Structured.RunState.withEVM,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, hPC]
 
 theorem run_add {transcript : Trace}
     {target : Structured.ObserverSemantics.State transcript}

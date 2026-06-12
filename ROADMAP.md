@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 05:43 PDT.
+Last updated: 2026-06-12 06:05 PDT.
 
 ## Objective
 
@@ -221,10 +221,19 @@ Adjacent boundary status:
   `AllocationObserverStatement.LetLeaf.forward_of_compilers` checks declaration
   forwarding through both emitted shapes: a stack declaration retains the
   expression result as a named local, while a scratch declaration executes the
-  canonical frame-pointer `DUP`/offset/`ADD`/`MSTORE` sequence. Remaining work
-  at this boundary is backward declaration adequacy, assignment statement
-  integration, an activation relation covering both stack-only and
-  scratch-frame artifacts, activation-aware continuing outcomes, recursive
+  canonical frame-pointer `DUP`/offset/`ADD`/`MSTORE` sequence. Declaration
+  backward adequacy is also checked by exact singleton-code execution
+  uniqueness. `ActivationStateRel`, `ActivationExprResultRel`, and
+  `ActivationOutcomeRel` now provide one representation-neutral recursive
+  interface for stack-only and scratch-frame activations. Stack assignment has
+  checked dynamic-depth replacement and concrete `SWAP`/`POP` execution;
+  scratch assignment reuses the canonical frame store. The real assignment
+  lowerer and Locals compiler now have pass-owned forward preservation and
+  backward adequacy for both placements. Observer-aware expression evaluation
+  additionally proves that it preserves the named-variable store.
+  Remaining work at this boundary is to lift the current scratch-context
+  expression/declaration/assignment APIs fully through the activation
+  interface for genuinely stack-only artifacts, then prove recursive
   statement/function/call composition, abrupt cleanup and terminal statement
   composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
