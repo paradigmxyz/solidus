@@ -193,6 +193,46 @@ inductive ActivationExprContext
 namespace ActivationExprContext
 
 /--
+Transport an activation compiler context across Locals contexts with the same
+layout.
+
+Loop-control metadata changes do not affect expression compilation or the
+runtime activation relation.
+-/
+theorem transport_locals_layout
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {before after : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {mode : AllocationObserverRelation.ActivationMode}
+    (hCtx :
+      ActivationExprContext
+        lowerCtx lowerState before plan live mode)
+    (hLayout : after.layout = before.layout) :
+    ActivationExprContext
+      lowerCtx lowerState after plan live mode := by
+  cases hCtx with
+  | stack hStack =>
+      exact .stack
+        { layout := hLayout.trans hStack.layout
+          stackOrder := hStack.stackOrder
+          frameAbsent := hStack.frameAbsent
+          liveStackOnly := hStack.liveStackOnly
+          location := hStack.location
+          slot := hStack.slot
+          stack := hStack.stack }
+  | @scratch frameDepth frameWords hScratch =>
+      exact .scratch
+        { layout := hLayout.trans hScratch.layout
+          stackPrefix := hScratch.stackPrefix
+          frame := hScratch.frame
+          frameBottom := hScratch.frameBottom
+          location := hScratch.location
+          slot := hScratch.slot
+          stack := hScratch.stack
+          scratch := hScratch.scratch }
+
+/--
 Transport an activation compiler context across lowering-state changes that
 leave the concrete layout and live allocation environment unchanged.
 
@@ -474,6 +514,63 @@ structure ActivationInvariant
     target.source.evm.stack.length = localsCtx.layout.length
 
 namespace ActivationInvariant
+
+/--
+Canonical source scope restriction to the invariant's current live set leaves
+the complete statement-boundary activation invariant unchanged.
+-/
+theorem restrict_source_live
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+        frameBase mode source target) :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+      frameBase mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        live source)
+      target :=
+  { compiler := hInvariant.compiler
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined.restrictTo (fun _name hLive => hLive)
+    state := hInvariant.state.restrict_source_live
+    stackLength := hInvariant.stackLength }
+
+/--
+Transport a complete activation invariant across Locals contexts with the same
+layout.
+-/
+theorem transport_locals_layout
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {before after : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx lowerState before plan live
+        frameBase mode source target)
+    (hLayout : after.layout = before.layout) :
+    ActivationInvariant contract lowerCtx lowerState after plan live
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_locals_layout hLayout
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined
+    state := hInvariant.state
+    stackLength := by
+      rw [hInvariant.stackLength, hLayout] }
 
 theorem transport_state
     {transcript : AllocationObserverRelation.Trace}

@@ -516,6 +516,61 @@ theorem lowerStmt_switch_components
                   loweredDefault, rfl, rfl, hDefault, rfl⟩
 
 /--
+Successful lowering of a source `for` exposes the adjacent initializer,
+condition, post, and body lowerers plus the common restored outer state.
+-/
+theorem lowerStmt_for_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {loweredStmts : List Locals.Stmt}
+    (hLower :
+      lowerStmt ctx returns state (.for_ init cond post body) =
+        some (loweredStmts, final)) :
+    ∃ loweredInit loopState loweredCond loweredPost afterPost
+        loweredBody afterBody,
+      lowerBlockOpen ctx returns state init =
+        some (loweredInit, loopState) ∧
+      lowerExpr ctx loopState cond = some loweredCond ∧
+      lowerBlockScoped ctx returns loopState post =
+        some (loweredPost, afterPost) ∧
+      lowerBlockScoped ctx returns afterPost body =
+        some (loweredBody, afterBody) ∧
+      loweredStmts =
+        [.for_ loweredInit loweredCond loweredPost loweredBody] ∧
+      final =
+        { allocation :=
+            { env := state.allocation.env
+              nextSlot := afterBody.allocation.nextSlot }
+          layout := state.layout } := by
+  cases hInit : lowerBlockOpen ctx returns state init with
+  | none =>
+      simp [lowerStmt, hInit] at hLower
+  | some initResult =>
+      rcases initResult with ⟨loweredInit, loopState⟩
+      cases hCond : lowerExpr ctx loopState cond with
+      | none =>
+          simp [lowerStmt, hInit, hCond] at hLower
+      | some loweredCond =>
+          cases hPost : lowerBlockScoped ctx returns loopState post with
+          | none =>
+              simp [lowerStmt, hInit, hCond, hPost] at hLower
+          | some postResult =>
+              rcases postResult with ⟨loweredPost, afterPost⟩
+              cases hBody :
+                  lowerBlockScoped ctx returns afterPost body with
+              | none =>
+                  simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+              | some bodyResult =>
+                  rcases bodyResult with ⟨loweredBody, afterBody⟩
+                  simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  exact
+                    ⟨loweredInit, loopState, loweredCond,
+                      loweredPost, afterPost, loweredBody, afterBody,
+                      rfl, hCond, hPost, hBody, rfl, rfl⟩
+
+/--
 Case/default lowering preserves the absence of a selected source branch.
 -/
 theorem lowerSwitch_select_none

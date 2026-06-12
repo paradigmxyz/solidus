@@ -339,6 +339,105 @@ theorem compile_switch_components
                 ⟨scrutineeCode, compiledCases, compiledDefault,
                   rfl, rfl, rfl, rfl, rfl⟩
 
+/--
+Successful compilation of a Locals `for` exposes the ordinary initializer,
+condition, scoped post/body, and outer-cleanup compiler components.
+-/
+theorem compile_for_components
+    {ctx final : Ctx}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.for_ init cond post body) =
+        some (code, final)) :
+    ∃ initCode initCtx condCode
+        postCode postCtx compiledPost
+        bodyCode bodyCtx compiledBody cleanup,
+      Block.compileOpen ctx.withoutLoopControl init =
+        some (initCode, initCtx) ∧
+      Expr.compileCode initCtx 0 cond = some condCode ∧
+      Block.compileOpen initCtx.withoutLoopControl post =
+        some (postCode, postCtx) ∧
+      finishScoped initCtx.withoutLoopControl postCtx postCode =
+        some compiledPost ∧
+      Block.compileOpen
+          (initCtx.withLoopControl initCtx.layout.length) body =
+        some (bodyCode, bodyCtx) ∧
+      finishScoped
+          (initCtx.withLoopControl initCtx.layout.length)
+          bodyCtx bodyCode =
+        some compiledBody ∧
+      initCtx.cleanupTo? ctx.layout.length = some cleanup ∧
+      code =
+        [Expressions.Stmt.for_
+          { stmts := initCode } (.code condCode)
+          compiledPost compiledBody] ++
+          codeStmt cleanup ∧
+      final = ctx := by
+  let initBase := ctx.withoutLoopControl
+  cases hInit : Block.compileOpen initBase init with
+  | none =>
+      simp [Stmt.compile, initBase, hInit] at hCompile
+  | some initResult =>
+      rcases initResult with ⟨initCode, initCtx⟩
+      cases hCond : Expr.compileCode initCtx 0 cond with
+      | none =>
+          simp [Stmt.compile, Expr.compile, initBase, hInit, hCond] at hCompile
+      | some condCode =>
+          let postBase := initCtx.withoutLoopControl
+          cases hPost : Block.compileOpen postBase post with
+          | none =>
+              simp [Stmt.compile, Expr.compile, initBase, postBase,
+                hInit, hCond, hPost] at hCompile
+          | some postResult =>
+              rcases postResult with ⟨postCode, postCtx⟩
+              cases hFinishPost :
+                  finishScoped postBase postCtx postCode with
+              | none =>
+                  simp [Stmt.compile, Expr.compile, initBase, postBase,
+                    hInit, hCond, hPost, hFinishPost] at hCompile
+              | some compiledPost =>
+                  let bodyBase :=
+                    initCtx.withLoopControl initCtx.layout.length
+                  cases hBody : Block.compileOpen bodyBase body with
+                  | none =>
+                      simp [Stmt.compile, Expr.compile, initBase, postBase,
+                        bodyBase, hInit, hCond, hPost, hFinishPost, hBody]
+                        at hCompile
+                  | some bodyResult =>
+                      rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+                      cases hFinishBody :
+                          finishScoped bodyBase bodyCtx bodyCode with
+                      | none =>
+                          simp [Stmt.compile, Expr.compile, initBase, postBase,
+                            bodyBase, hInit, hCond, hPost, hFinishPost, hBody,
+                            hFinishBody] at hCompile
+                      | some compiledBody =>
+                          cases hCleanup :
+                              initCtx.cleanupTo? ctx.layout.length with
+                          | none =>
+                              simp [Stmt.compile, Expr.compile, initBase,
+                                postBase, bodyBase, hInit, hCond, hPost,
+                                hFinishPost, hBody, hFinishBody, hCleanup]
+                                at hCompile
+                          | some cleanup =>
+                              simp [Stmt.compile, Expr.compile, initBase,
+                                postBase, bodyBase, hInit, hCond, hPost,
+                                hFinishPost, hBody, hFinishBody, hCleanup]
+                                at hCompile
+                              rcases hCompile with ⟨rfl, rfl⟩
+                              exact
+                                ⟨initCode, initCtx, condCode,
+                                  postCode, postCtx, compiledPost,
+                                  bodyCode, bodyCtx, compiledBody, cleanup,
+                                  by simpa [initBase] using hInit,
+                                  hCond,
+                                  by simpa [postBase] using hPost,
+                                  by simpa [postBase] using hFinishPost,
+                                  by simpa [bodyBase] using hBody,
+                                  by simpa [bodyBase] using hFinishBody,
+                                  hCleanup, rfl, rfl⟩
+
 end Stmt
 
 namespace Block
@@ -397,6 +496,50 @@ theorem compileOpen_single_switch_components
       simp [Block.compileOpen, hStmt] at hCompile
       rcases hCompile with ⟨rfl, rfl⟩
       exact Stmt.compile_switch_components hStmt
+
+/--
+The singleton open-block form used by the allocation boundary for `for`.
+-/
+theorem compileOpen_single_for_components
+    {ctx final : Ctx}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx
+          { stmts := [.for_ init cond post body] } =
+        some (code, final)) :
+    ∃ initCode initCtx condCode
+        postCode postCtx compiledPost
+        bodyCode bodyCtx compiledBody cleanup,
+      Block.compileOpen ctx.withoutLoopControl init =
+        some (initCode, initCtx) ∧
+      Expr.compileCode initCtx 0 cond = some condCode ∧
+      Block.compileOpen initCtx.withoutLoopControl post =
+        some (postCode, postCtx) ∧
+      finishScoped initCtx.withoutLoopControl postCtx postCode =
+        some compiledPost ∧
+      Block.compileOpen
+          (initCtx.withLoopControl initCtx.layout.length) body =
+        some (bodyCode, bodyCtx) ∧
+      finishScoped
+          (initCtx.withLoopControl initCtx.layout.length)
+          bodyCtx bodyCode =
+        some compiledBody ∧
+      initCtx.cleanupTo? ctx.layout.length = some cleanup ∧
+      code =
+        [Expressions.Stmt.for_
+          { stmts := initCode } (.code condCode)
+          compiledPost compiledBody] ++
+          codeStmt cleanup ∧
+      final = ctx := by
+  cases hStmt : Stmt.compile ctx (.for_ init cond post body) with
+  | none =>
+      simp [Block.compileOpen, hStmt] at hCompile
+  | some stmtResult =>
+      rcases stmtResult with ⟨stmtCode, stmtCtx⟩
+      simp [Block.compileOpen, hStmt] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Stmt.compile_for_components hStmt
 
 /--
 Successful open-block compilation over an appended statement list decomposes

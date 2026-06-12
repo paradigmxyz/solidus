@@ -16,6 +16,7 @@ import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverTerminal
 import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
+import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
@@ -165,7 +166,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.transport_state
+#check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.transport_locals_layout
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationInvariant.transport_state
+#check EvmCompiler.Functions.AllocationObserverContext.ActivationInvariant.transport_locals_layout
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.TerminalLeaf.args_compiler_shape
 #check EvmCompiler.Functions.AllocationObserverStatement.TerminalLeaf.forward_args_of_compilers
@@ -193,6 +196,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_none_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_some_of_components
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_false_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.nil
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.cons_regular

@@ -483,6 +483,53 @@ end StoreRel
 
 namespace StateRel
 
+/--
+Restricting the source store to exactly the live names already represented by
+the target preserves the allocation relation.
+-/
+theorem restrict_source_live {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      StateRel contract plan live stackOffset frameBase source target) :
+    StateRel contract plan live stackOffset frameBase
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        live source)
+      target := by
+  refine ⟨hRel.cursor, ?_⟩
+  refine
+    ⟨by
+      simpa [Functions.ObserverSemantics.stateModel,
+        Locals.ObserverSemantics.stateModel,
+        Locals.Source.Effectful.StateModel.restrictTo,
+        Locals.Source.State.restrictTo] using hRel.core.machine,
+      by
+        simpa [Functions.ObserverSemantics.stateModel,
+          Locals.ObserverSemantics.stateModel,
+          Locals.Source.Effectful.StateModel.restrictTo,
+          Locals.Source.State.restrictTo] using hRel.core.world,
+      ?_⟩
+  intro name location hLive hLocation
+  have hValue := hRel.core.store name location hLive hLocation
+  cases location with
+  | stack depth =>
+      rcases hValue with ⟨actualDepth, hDepth, hStack⟩
+      exact
+        ⟨actualDepth, hDepth,
+          by
+            simpa [Functions.ObserverSemantics.stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.restrictTo,
+              Locals.Source.State.restrictTo,
+              Locals.Source.Store.restrictTo, hLive] using hStack⟩
+  | scratch slot =>
+      simpa [Functions.ObserverSemantics.stateModel,
+        Locals.ObserverSemantics.stateModel,
+        Locals.Source.Effectful.StateModel.restrictTo,
+        Locals.Source.State.restrictTo,
+        Locals.Source.Store.restrictTo, hLive] using hValue
+
 def pushTargetBy {transcript : Trace} (pcDelta : Nat) (value : Word)
     (target : TargetState transcript) : TargetState transcript :=
   target.withSource
@@ -2421,6 +2468,30 @@ inductive ActivationStateRel {transcript : Trace}
         (.scratch frameDepth frameWords) source target
 
 namespace ActivationStateRel
+
+/--
+Restricting the source store to the current live scope preserves either
+activation representation.
+-/
+theorem restrict_source_live {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase
+        mode source target) :
+    ActivationStateRel contract plan live stackOffset frameBase mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        live source)
+      target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      exact .stack hOnly hActive hState.restrict_source_live
+  | scratch hScratch =>
+      exact .scratch
+        { hScratch with
+          base := hScratch.base.restrict_source_live }
 
 theorem transport_plan {transcript : Trace}
     {contract : MemoryContract.Contract}
