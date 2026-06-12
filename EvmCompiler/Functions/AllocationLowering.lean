@@ -213,13 +213,9 @@ def lowerReturns (ctx : Ctx) :
         lowerReturns ctx rest nextLayout
       (head ++ tail, finalLayout)
 
-def lowerReturnExprs (ctx : Ctx) (state : State) :
-    List Name → Option (List (Locals.Expr 1))
-  | [] => some []
-  | name :: rest => do
-      let head ← lowerExpr ctx state (.var name)
-      let tail ← lowerReturnExprs ctx state rest
-      some (head :: tail)
+def lowerReturnExprs (ctx : Ctx) (state : State)
+    (names : List Name) : Option (Locals.ExprSeq names.length) :=
+  lowerExprSeq ctx state (Functions.Lower.returnExprs names)
 
 def stackAssignTopCode? (layout : Locals.Layout)
     (remaining : Nat) (name : Name) : Option Structured.Code := do
@@ -407,7 +403,7 @@ mutual
     | .cont => some ([.cont], state)
     | .leave => do
         let values ← lowerReturnExprs ctx state returns
-        some ([.exprs (exprSeqOfList values), .leave], state)
+        some ([.exprs values, .leave], state)
     | .call targets functionName args => do
         let fn ← AllocationSupport.lookupFun? functionName ctx.functions
         if args.length = fn.params.length then pure () else none
@@ -484,7 +480,7 @@ def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
   let fullBody : Locals.Block :=
     { stmts :=
         markers ++ paramPrelude ++ returnPrelude ++ body.stmts ++
-          [.exprs (exprSeqOfList returnValues)] }
+          [.exprs returnValues] }
   some
     ({ name := fn.name
        argc := fn.params.length + if needsFrame then 1 else 0

@@ -243,9 +243,15 @@ Adjacent boundary status:
   lowerer/compiler, the shared expression-sequence theorem, and a terminal-owned
   halt relation; `RETURN`, `REVERT`, and `SELFDESTRUCT` therefore lift into the
   nonregular interface without retaining dead local/frame realization.
+  Plain cleanup and real compiler leaves for `break` and `continue` are checked
+  forward and backward. Preserving `SWAP`/`POP` cleanup for `leave` is checked
+  forward and backward, and the forward statement theorem now evaluates the
+  canonical named-return sequence, removes the complete activation layout, and
+  establishes the exact returned-value stack relation. Return lowering has one
+  indexed implementation shared by the executable compiler and proof.
   Remaining work at this boundary is recursive statement/function/call
-  composition, abrupt cleanup for break/continue/leave and no-argument
-  terminals, construction of the activation relation at function entry,
+  composition, backward adequacy for the complete `leave` statement, construction
+  of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
   adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

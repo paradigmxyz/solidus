@@ -244,6 +244,271 @@ theorem backward
 
 end Plain
 
+namespace Preserving
+
+theorem cleanupToPreserving?_shape
+    {ctx : Locals.Ctx} {preserve targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve targetDepth = some code) :
+    targetDepth ≤ ctx.layout.length ∧
+      Locals.Ctx.cleanupManyPreserving?
+          (ctx.layout.length - targetDepth) preserve =
+        some code := by
+  unfold Locals.Ctx.cleanupToPreserving? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp only [hDepth, if_pos] at hCleanup
+    exact ⟨hDepth, hCleanup⟩
+  · simp [hDepth] at hCleanup
+
+/--
+Executing preserving cleanup to activation depth zero removes the complete
+compiler layout beneath the returned values.
+-/
+theorem forward_zero {transcript : Trace}
+    {ctx : Locals.Ctx} {preserve : Nat}
+    {cleanup : Structured.Code}
+    {values baseStack : List Assembly.Word}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve 0 = some cleanup)
+    (hValuesLength : values.length = preserve)
+    (hBaseLength : baseStack.length = ctx.layout.length)
+    (hStack :
+      target.source.evm.stack = values ++ baseStack) :
+    ∃ final,
+      Structured.ObserverSemantics.Code.run cleanup target = .ok final ∧
+      final.cursor = target.cursor ∧
+      final.source.evm.stack = values ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  obtain ⟨_hDepth, hMany⟩ :=
+    cleanupToPreserving?_shape hCleanup
+  obtain ⟨final, hRun, hCursor, hFinalStack, hShared, hReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_cleanupManyPreserving?
+      (discarded := baseStack) (suffix := [])
+      hMany hValuesLength
+        (by simpa [hBaseLength])
+        (by simpa using hStack)
+  exact
+    ⟨final, hRun, hCursor, by simpa using hFinalStack,
+      hShared, hReturns⟩
+
+/--
+Backward adequacy for exact preserving cleanup follows from deterministic
+execution of the compiler-emitted code.
+-/
+theorem backward_zero {transcript : Trace}
+    {ctx : Locals.Ctx} {preserve : Nat}
+    {cleanup : Structured.Code}
+    {values baseStack : List Assembly.Word}
+    {target final : Structured.ObserverSemantics.State transcript}
+    (hCleanup :
+      ctx.cleanupToPreserving? preserve 0 = some cleanup)
+    (hValuesLength : values.length = preserve)
+    (hBaseLength : baseStack.length = ctx.layout.length)
+    (hStack :
+      target.source.evm.stack = values ++ baseStack)
+    (hRun :
+      Structured.ObserverSemantics.Code.run cleanup target = .ok final) :
+    final.cursor = target.cursor ∧
+      final.source.evm.stack = values ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  obtain
+      ⟨expected, hExpectedRun, hCursor, hExpectedStack,
+        hShared, hReturns⟩ :=
+    forward_zero hCleanup hValuesLength hBaseLength hStack
+  rw [hExpectedRun] at hRun
+  cases hRun
+  exact ⟨hCursor, hExpectedStack, hShared, hReturns⟩
+
+end Preserving
+
+namespace ReturnValues
+
+private theorem memorySafeEval_cast
+    {contract : MemoryContract.Contract} {transcript : Trace}
+    {left right : Nat} (h : left = right)
+    {exprs : Locals.ExprSeq left}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Assembly.Word}
+    (hEval :
+      AllocationObserverSafety.ExprSeq.MemorySafeEval
+        contract transcript exprs source final values) :
+    AllocationObserverSafety.ExprSeq.MemorySafeEval
+      contract transcript
+      (cast (congrArg Locals.ExprSeq h) exprs)
+      source final values := by
+  cases h
+  exact hEval
+
+theorem memorySafeEval
+    {contract : MemoryContract.Contract} {transcript : Trace}
+    {returns : List Functions.Name} {values : List Assembly.Word}
+    {source : Functions.ObserverSemantics.State transcript}
+    (hLookup :
+      Functions.Source.Store.lookupMany returns source.source.vars =
+        some values) :
+    AllocationObserverSafety.ExprSeq.MemorySafeEval
+      contract transcript (Functions.Lower.returnExprs returns)
+      source source values := by
+  induction returns generalizing values with
+  | nil =>
+      simp [Functions.Source.Store.lookupMany] at hLookup
+      subst values
+      exact .nil
+  | cons name returns ih =>
+      unfold Functions.Source.Store.lookupMany at hLookup
+      cases hValue : source.source.vars name with
+      | none =>
+          simp [hValue] at hLookup
+      | some value =>
+          cases hTail :
+              Functions.Source.Store.lookupMany returns source.source.vars with
+          | none =>
+              simp [hValue, hTail] at hLookup
+          | some tailValues =>
+              simp [hValue, hTail] at hLookup
+              subst values
+              unfold Functions.Lower.returnExprs
+              let exprs : Locals.ExprSeq (1 + returns.length) :=
+                Locals.ExprSeq.cons (.var name)
+                  (Functions.Lower.returnExprs returns)
+              have hLen : 1 + returns.length = returns.length + 1 := by
+                omega
+              change
+                AllocationObserverSafety.ExprSeq.MemorySafeEval
+                  contract transcript
+                  (cast (congrArg Locals.ExprSeq hLen) exprs)
+                  source source (value :: tailValues)
+              apply memorySafeEval_cast hLen
+              exact
+                AllocationObserverSafety.ExprSeq.MemorySafeEval.cons
+                  (AllocationObserverSafety.Expr.MemorySafeEval.var hValue)
+                  (ih hTail)
+
+private theorem exprSeqScoped_cast
+    {left right : Nat} (h : left = right)
+    {live : List Functions.Name} {exprs : Locals.ExprSeq left}
+    (hScoped : Functions.Scope.ExprSeqScoped live exprs) :
+    Functions.Scope.ExprSeqScoped live
+      (cast (congrArg Locals.ExprSeq h) exprs) := by
+  cases h
+  exact hScoped
+
+theorem returnExprsScoped
+    {returns live : List Functions.Name}
+    (hSubset : ∀ name, name ∈ returns → name ∈ live) :
+    Functions.Scope.ExprSeqScoped live
+      (Functions.Lower.returnExprs returns) := by
+  induction returns with
+  | nil =>
+      trivial
+  | cons name returns ih =>
+      unfold Functions.Lower.returnExprs
+      let exprs : Locals.ExprSeq (1 + returns.length) :=
+        Locals.ExprSeq.cons (.var name)
+          (Functions.Lower.returnExprs returns)
+      have hLen : 1 + returns.length = returns.length + 1 := by
+        omega
+      change
+        Functions.Scope.ExprSeqScoped live
+          (cast (congrArg Locals.ExprSeq hLen) exprs)
+      apply exprSeqScoped_cast hLen
+      exact
+        ⟨hSubset name (by simp),
+          ih (fun other hOther => hSubset other (by simp [hOther]))⟩
+
+theorem lowerExprSeq
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {returns : List Functions.Name}
+    {lowered : Locals.ExprSeq returns.length}
+    (hLower :
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns =
+        some lowered) :
+    AllocationLowering.lowerExprSeq lowerCtx lowerState
+        (Functions.Lower.returnExprs returns) =
+      some lowered := by
+  exact hLower
+
+end ReturnValues
+
+namespace LeaveLeaf
+
+theorem compiler_shape
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hDepth : localsCtx.leaveDepth? = some 0)
+    (hRetc : localsCtx.leaveRetc = returns.length)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .leave =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ loweredReturns returnCode cleanup,
+      AllocationLowering.lowerReturnExprs
+          lowerCtx lowerState returns =
+        some loweredReturns ∧
+      AllocationLowering.lowerExprSeq lowerCtx lowerState
+          (Functions.Lower.returnExprs returns) =
+        some loweredReturns ∧
+      Locals.ExprSeq.compileCode localsCtx 0
+          loweredReturns =
+        some returnCode ∧
+      localsCtx.cleanupToPreserving? returns.length 0 =
+        some cleanup ∧
+      loweredStmts =
+        [.exprs loweredReturns, .leave] ∧
+      lowerFinal = lowerState ∧
+      compiledStmts =
+        [ Expressions.Stmt.code returnCode,
+          Expressions.Stmt.code cleanup,
+          Expressions.Stmt.leave ] ∧
+      localsFinal = localsCtx := by
+  cases hReturns :
+      AllocationLowering.lowerReturnExprs
+        lowerCtx lowerState returns with
+  | none =>
+      simp [AllocationLowering.lowerStmt, hReturns] at hLower
+  | some loweredReturns =>
+      simp [AllocationLowering.lowerStmt, hReturns] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      have hLowerSeq :=
+        ReturnValues.lowerExprSeq hReturns
+      cases hReturnCode :
+          Locals.ExprSeq.compileCode localsCtx 0
+            loweredReturns with
+      | none =>
+          simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+            hReturnCode] at hCompile
+      | some returnCode =>
+          cases hCleanup :
+              localsCtx.cleanupToPreserving? localsCtx.leaveRetc 0 with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hReturnCode, hDepth, hCleanup] at hCompile
+          | some cleanup =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                Locals.codeStmt, hReturnCode, hDepth, hCleanup]
+                at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              refine
+                ⟨loweredReturns, returnCode, cleanup,
+                  rfl, hLowerSeq, hReturnCode, ?_,
+                  rfl, rfl, rfl, rfl⟩
+              simpa [hRetc] using hCleanup
+
+end LeaveLeaf
+
 namespace BreakLeaf
 
 theorem compiler_shape

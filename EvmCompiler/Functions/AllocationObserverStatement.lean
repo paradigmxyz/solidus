@@ -2778,6 +2778,136 @@ theorem of_halt_runs
       cases hMode)
     hRel
 
+theorem leave_of_compilers
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns functionScope live : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {frameBase : Nat} {mode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.leaveScope? = some functionScope)
+    (hReturnsLive : ∀ name, name ∈ returns → name ∈ live)
+    (hReturnsScope : ∀ name, name ∈ returns → name ∈ functionScope)
+    (hTargetDepth : localsCtx.leaveDepth? = some 0)
+    (hRetc : localsCtx.leaveRetc = returns.length)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length)
+    (hReturnFrame : target.source.returns ≠ [])
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined live source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .leave =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase
+        mode source target) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan returns frameBase mode
+        sourceProgram sourceCtx .leave source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.leave
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            functionScope source))
+        (Structured.EffectSemantics.Outcome.leave targetFinal)
+        sourceCtx := by
+  obtain ⟨values, hLookup⟩ :=
+    lookupMany_of_liveDefined hDefined hReturnsLive
+  have hSafe :=
+    AllocationObserverCleanup.ReturnValues.memorySafeEval
+      (contract := contract) (transcript := transcript) hLookup
+  have hScoped :=
+    AllocationObserverCleanup.ReturnValues.returnExprsScoped hReturnsLive
+  obtain
+      ⟨loweredReturns, returnCode, cleanup,
+        hLowerReturns, hLowerSeq, hReturnCode, hCleanup,
+        rfl, rfl, rfl, rfl⟩ :=
+    AllocationObserverCleanup.LeaveLeaf.compiler_shape
+      hTargetDepth hRetc hLower hCompile
+  obtain ⟨afterReturns, hReturnRun, hReturnRel⟩ :=
+    AllocationObserverExpression.forwardExprSeq
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hSafe hCtx hScoped hLowerSeq hReturnCode hRel
+  obtain
+      ⟨targetFinal, hCleanupRun, hCleanupCursor, hFinalStack,
+        hCleanupShared, hCleanupReturns⟩ :=
+    AllocationObserverCleanup.Preserving.forward_zero
+      (values := values.reverse)
+      (baseStack := target.source.evm.stack)
+      hCleanup
+      (by simpa [Functions.Source.Store.lookupMany_length hLookup])
+      (by simpa [hStackLength])
+      hReturnRel.stack
+  have hAfterReturnsFrame : afterReturns.source.returns ≠ [] := by
+    rw [Structured.ObserverSemantics.Code.run_returns_eq hReturnRun]
+    exact hReturnFrame
+  have hFinalFrame : targetFinal.source.returns ≠ [] := by
+    rw [hCleanupReturns]
+    exact hAfterReturnsFrame
+  have hLeaveStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .leave targetFinal
+          (Structured.EffectSemantics.Outcome.leave targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.leave hFinalFrame
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 3
+        { stmts :=
+            [ Structured.Stmt.code returnCode,
+              Structured.Stmt.code cleanup,
+              Structured.Stmt.leave ] }
+        target
+        (Structured.EffectSemantics.Outcome.leave targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 2) hReturnRun)
+      (Structured.EffectSemantics.Block.Eval.cons_regular
+        (Structured.EffectSemantics.Stmt.Eval.code
+          (fuel := 1) hCleanupRun)
+        (Structured.EffectSemantics.Block.Eval.cons_leave hLeaveStmt))
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.leave
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  let sourceFinal :=
+    (Functions.ObserverSemantics.stateModel transcript).restrictTo
+      functionScope source
+  have hLeaveRel :
+      LeaveStateRel contract returns sourceFinal targetFinal := by
+    refine ⟨?_, ?_, values, ?_, hFinalStack⟩
+    · change source.cursor = targetFinal.cursor
+      rw [hCleanupCursor]
+      exact hReturnRel.state.base.cursor
+    · change
+        SharedRel contract source.source.shared
+          targetFinal.source.evm.toSharedState
+      rw [hCleanupShared]
+      exact hReturnRel.state.base.core.shared
+    · exact
+        Functions.Source.Store.lookupMany_restrictTo_of_mem
+          hReturnsScope hLookup
+  refine ⟨targetFinal, 0, 3, hSource, ?_, ?_, .leave hLeaveRel⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTarget
+  · intro hMode
+    cases hMode
+
 theorem terminalArgs_of_compilers
     {contract : MemoryContract.Contract}
     {transcript : Trace}

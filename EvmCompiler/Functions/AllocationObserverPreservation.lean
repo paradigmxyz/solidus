@@ -397,6 +397,293 @@ theorem run_swap_pop {transcript : Trace}
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC, hPC]
 
+private theorem set_append_head
+    {α : Type} (above : List α) (old new : α) (suffix : List α) :
+    (above ++ old :: suffix).set above.length new =
+      above ++ new :: suffix := by
+  induction above with
+  | nil =>
+      rfl
+  | cons head tail ih =>
+      simp [ih]
+
+/--
+The compiler's restore sequence moves the value immediately below a prefix
+back to the top while preserving the prefix order.
+-/
+theorem run_swapRestoreUpTo? {transcript : Trace}
+    {depth : Nat} {code : Structured.Code}
+    {above : List Word} {value : Word} {suffix : List Word}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCode : Locals.Ctx.swapRestoreUpTo? depth = some code)
+    (hLength : above.length = depth)
+    (hStack :
+      target.source.evm.stack = above ++ value :: suffix) :
+    ∃ final,
+      Structured.ObserverSemantics.Code.run code target = .ok final ∧
+      final.cursor = target.cursor ∧
+      final.source.evm.stack = value :: above ++ suffix ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  induction depth generalizing code above value suffix target with
+  | zero =>
+      simp [Locals.Ctx.swapRestoreUpTo?] at hCode
+      subst code
+      have hAbove : above = [] := List.eq_nil_of_length_eq_zero hLength
+      subst above
+      exact ⟨target, rfl, rfl, by simpa using hStack, rfl, rfl⟩
+  | succ depth ih =>
+      simp only [Locals.Ctx.swapRestoreUpTo?] at hCode
+      cases hRest : Locals.Ctx.swapRestoreUpTo? depth with
+      | none =>
+          simp [hRest] at hCode
+      | some restCode =>
+          cases hOp : Locals.StackOp.swap? (depth + 1) with
+          | none =>
+              simp [hRest, hOp] at hCode
+          | some op =>
+              simp [hRest, hOp] at hCode
+              subst code
+              have hAboveNonempty : above ≠ [] := by
+                intro hEmpty
+                simp [hEmpty] at hLength
+              let last := above.getLast hAboveNonempty
+              let init := above.dropLast
+              have hAboveEq : init ++ [last] = above := by
+                exact List.dropLast_append_getLast hAboveNonempty
+              have hInitLength : init.length = depth := by
+                have hLengths := congrArg List.length hAboveEq
+                simp only [List.length_append, List.length_singleton] at hLengths
+                simp only [init] at hLengths ⊢
+                omega
+              have hStackInit :
+                  target.source.evm.stack =
+                    init ++ last :: value :: suffix := by
+                rw [← hAboveEq] at hStack
+                simpa [List.append_assoc] using hStack
+              obtain
+                  ⟨mid, hRestRun, hMidCursor, hMidStack,
+                    hMidShared, hMidReturns⟩ :=
+                ih hRest hInitLength hStackInit
+              have hGet :
+                  (init ++ value :: suffix)[depth]? = some value := by
+                simp [hInitLength]
+              let final :=
+                AllocationObserverRelation.StateRel.replaceStackBy
+                  1
+                  (value ::
+                    (init ++ value :: suffix).set depth last)
+                  mid
+              have hSwap :
+                  Structured.ObserverSemantics.Code.run [.op op] mid =
+                    .ok final := by
+                apply run_swap hOp hGet
+                simpa [List.append_assoc] using hMidStack
+              refine ⟨final, ?_, ?_, ?_, ?_, ?_⟩
+              · rw [run_append, hRestRun]
+                exact hSwap
+              · simpa [final,
+                  AllocationObserverRelation.StateRel.replaceStackBy,
+                  Simulation.ResourceReplay.State.withSource,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC] using hMidCursor
+              · simp only [final,
+                  AllocationObserverRelation.StateRel.replaceStackBy,
+                  Simulation.ResourceReplay.State.withSource,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC]
+                rw [← hInitLength, set_append_head, ← hAboveEq]
+                simp [List.append_assoc]
+              · simpa [final,
+                  AllocationObserverRelation.StateRel.replaceStackBy,
+                  Simulation.ResourceReplay.State.withSource,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC] using hMidShared
+              · simpa [final,
+                  AllocationObserverRelation.StateRel.replaceStackBy,
+                  Simulation.ResourceReplay.State.withSource,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC] using hMidReturns
+
+/--
+One preserving cleanup step removes the first local below a fixed prefix of
+return values and leaves that prefix in its original order.
+-/
+theorem run_cleanupOnePreserving? {transcript : Trace}
+    {preserve : Nat} {code : Structured.Code}
+    {values : List Word} {discarded : Word} {suffix : List Word}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCode : Locals.Ctx.cleanupOnePreserving? preserve = some code)
+    (hLength : values.length = preserve)
+    (hStack :
+      target.source.evm.stack = values ++ discarded :: suffix) :
+    ∃ final,
+      Structured.ObserverSemantics.Code.run code target = .ok final ∧
+      final.cursor = target.cursor ∧
+      final.source.evm.stack = values ++ suffix ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  cases preserve with
+  | zero =>
+      simp [Locals.Ctx.cleanupOnePreserving?] at hCode
+      subst code
+      have hValues : values = [] :=
+        List.eq_nil_of_length_eq_zero hLength
+      subst values
+      let final :=
+        AllocationObserverRelation.StateRel.replaceStackBy
+          1 suffix target
+      have hRun :
+          Structured.ObserverSemantics.Code.run [.op .pop] target =
+            .ok final := by
+        simpa [final] using run_pop (target := target) hStack
+      exact
+        ⟨final, hRun,
+          by simp [final,
+            AllocationObserverRelation.StateRel.replaceStackBy,
+            Simulation.ResourceReplay.State.withSource,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC],
+          by simp [final,
+            AllocationObserverRelation.StateRel.replaceStackBy,
+            Simulation.ResourceReplay.State.withSource,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC],
+          by simp [final,
+            AllocationObserverRelation.StateRel.replaceStackBy,
+            Simulation.ResourceReplay.State.withSource,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC],
+          by simp [final,
+            AllocationObserverRelation.StateRel.replaceStackBy,
+            Simulation.ResourceReplay.State.withSource,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC]⟩
+  | succ preserve =>
+      simp only [Locals.Ctx.cleanupOnePreserving?] at hCode
+      cases hOp : Locals.StackOp.swap? (preserve + 1) with
+      | none =>
+          simp [hOp] at hCode
+      | some op =>
+          cases hRestore :
+              Locals.Ctx.swapRestoreUpTo? preserve with
+          | none =>
+              simp [hOp, hRestore] at hCode
+          | some restore =>
+              simp [hOp, hRestore] at hCode
+              subst code
+              cases values with
+              | nil =>
+                  simp at hLength
+              | cons value rest =>
+                  have hRestLength : rest.length = preserve := by
+                    simpa using Nat.succ.inj hLength
+                  have hGet :
+                      (rest ++ discarded :: suffix)[preserve]? =
+                        some discarded := by
+                    simp [hRestLength]
+                  let mid :=
+                    AllocationObserverRelation.StateRel.replaceStackBy
+                      2
+                      ((rest ++ discarded :: suffix).set preserve value)
+                      target
+                  have hHeadRun :
+                      Structured.ObserverSemantics.Code.run
+                          [.op op, .op .pop] target =
+                        .ok mid := by
+                    apply run_swap_pop hOp hGet
+                    simpa [List.append_assoc] using hStack
+                  have hMidStack :
+                      mid.source.evm.stack = rest ++ value :: suffix := by
+                    simp [mid,
+                      AllocationObserverRelation.StateRel.replaceStackBy,
+                      Simulation.ResourceReplay.State.withSource,
+                      EvmYul.EVM.State.replaceStackAndIncrPC,
+                      EvmYul.EVM.State.incrPC, hRestLength,
+                      set_append_head]
+                  obtain
+                      ⟨final, hRestoreRun, hCursor, hFinalStack,
+                        hShared, hReturns⟩ :=
+                    run_swapRestoreUpTo? hRestore hRestLength hMidStack
+                  refine ⟨final, ?_, hCursor, ?_, hShared, hReturns⟩
+                  · change
+                      Structured.ObserverSemantics.Code.run
+                          ([.op op, .op .pop] ++ restore) target =
+                        .ok final
+                    rw [run_append, hHeadRun]
+                    exact hRestoreRun
+                  · simpa [List.append_assoc] using hFinalStack
+
+/--
+Repeated preserving cleanup removes a contiguous list of locals below the
+preserved value prefix.
+-/
+theorem run_cleanupManyPreserving? {transcript : Trace}
+    {count preserve : Nat} {code : Structured.Code}
+    {values discarded suffix : List Word}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCode :
+      Locals.Ctx.cleanupManyPreserving? count preserve = some code)
+    (hValuesLength : values.length = preserve)
+    (hDiscardedLength : discarded.length = count)
+    (hStack :
+      target.source.evm.stack = values ++ discarded ++ suffix) :
+    ∃ final,
+      Structured.ObserverSemantics.Code.run code target = .ok final ∧
+      final.cursor = target.cursor ∧
+      final.source.evm.stack = values ++ suffix ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  induction count generalizing code discarded target with
+  | zero =>
+      simp [Locals.Ctx.cleanupManyPreserving?] at hCode
+      subst code
+      have hDiscarded : discarded = [] :=
+        List.eq_nil_of_length_eq_zero hDiscardedLength
+      subst discarded
+      exact ⟨target, rfl, rfl, by simpa using hStack, rfl, rfl⟩
+  | succ count ih =>
+      simp only [Locals.Ctx.cleanupManyPreserving?] at hCode
+      cases hHead :
+          Locals.Ctx.cleanupOnePreserving? preserve with
+      | none =>
+          simp [hHead] at hCode
+      | some headCode =>
+          cases hTail :
+              Locals.Ctx.cleanupManyPreserving? count preserve with
+          | none =>
+              simp [hHead, hTail] at hCode
+          | some tailCode =>
+              simp [hHead, hTail] at hCode
+              subst code
+              cases discarded with
+              | nil =>
+                  simp at hDiscardedLength
+              | cons discardedHead discardedTail =>
+                  have hTailLength :
+                      discardedTail.length = count := by
+                    simpa using Nat.succ.inj hDiscardedLength
+                  obtain
+                      ⟨mid, hHeadRun, hMidCursor, hMidStack,
+                        hMidShared, hMidReturns⟩ :=
+                    run_cleanupOnePreserving?
+                      hHead hValuesLength
+                      (by simpa [List.append_assoc] using hStack)
+                  obtain
+                      ⟨final, hTailRun, hFinalCursor, hFinalStack,
+                        hFinalShared, hFinalReturns⟩ :=
+                    ih hTail hTailLength
+                      (by simpa [List.append_assoc] using hMidStack)
+                  refine ⟨final, ?_, ?_, hFinalStack, ?_, ?_⟩
+                  · rw [run_append, hHeadRun]
+                    exact hTailRun
+                  · exact hFinalCursor.trans hMidCursor
+                  · exact hFinalShared.trans hMidShared
+                  · exact hFinalReturns.trans hMidReturns
+
 theorem run_add {transcript : Trace}
     {target : Structured.ObserverSemantics.State transcript}
     {right left : Word} {rest : List Word}

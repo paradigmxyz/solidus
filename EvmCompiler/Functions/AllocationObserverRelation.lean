@@ -45,6 +45,24 @@ def LiveDefined (live : List Locals.Name) (source : Locals.Source.State) :
     Prop :=
   ∀ name, name ∈ live → ∃ value, source.vars name = some value
 
+theorem lookupMany_of_liveDefined
+    {live names : List Locals.Name} {source : Locals.Source.State}
+    (hDefined : LiveDefined live source)
+    (hSubset : ∀ name, name ∈ names → name ∈ live) :
+    ∃ values,
+      Functions.Source.Store.lookupMany names source.vars =
+        some values := by
+  induction names with
+  | nil =>
+      exact ⟨[], rfl⟩
+  | cons name names ih =>
+      obtain ⟨value, hValue⟩ :=
+        hDefined name (hSubset name (by simp))
+      obtain ⟨values, hValues⟩ :=
+        ih (fun other hOther => hSubset other (by simp [hOther]))
+      exact ⟨value :: values, by
+        simp [Functions.Source.Store.lookupMany, hValue, hValues]⟩
+
 theorem currentStackOrder_nodup
     {plan : Plan} {live : List Locals.Name}
     (hWF : plan.WellFormed) :
@@ -2437,12 +2455,32 @@ structure HaltStateRel {transcript : Trace}
   shared : SharedRel contract source.source.shared target.source.evm.toSharedState
 
 /--
-Outcome relation retaining the active allocator representation for every
-continuing control mode.
+Observable state at an activation exit.
 
-This is the recursive statement interface. Halts intentionally erase local and
-frame realization because no source continuation can observe compiler cleanup
-after termination.
+All local and scratch-frame realization has been removed. The target stack is
+exactly the returned values, in EVM top-first order, and those values are the
+ordinary source lookup of the function's named returns.
+-/
+structure LeaveStateRel {transcript : Trace}
+    (contract : MemoryContract.Contract) (returns : List Locals.Name)
+    (source : SourceState transcript) (target : TargetState transcript) :
+    Prop where
+  cursor : source.cursor = target.cursor
+  shared : SharedRel contract source.source.shared target.source.evm.toSharedState
+  values :
+    ∃ returned,
+      Functions.Source.Store.lookupMany returns source.source.vars =
+        some returned ∧
+      target.source.evm.stack = returned.reverse
+
+/--
+Outcome relation retaining the active allocator representation for local
+continuations and an exact value relation for activation exit.
+
+For `leave`, `live` is interpreted as the function's ordered return names.
+Both `leave` and terminal halts intentionally erase local and frame realization
+because no source continuation can observe compiler cleanup after activation
+exit.
 -/
 inductive ActivationOutcomeRel {transcript : Trace}
     (contract : MemoryContract.Contract) (plan : Plan)
@@ -2477,9 +2515,7 @@ inductive ActivationOutcomeRel {transcript : Trace}
         (Structured.EffectSemantics.Outcome.cont target)
   | leave
       {source : SourceState transcript} {target : TargetState transcript}
-      (state :
-        ActivationStateRel contract plan live stackOffset frameBase
-          mode source target) :
+      (state : LeaveStateRel contract live source target) :
       ActivationOutcomeRel contract plan live stackOffset frameBase mode
         (Functions.Source.Effectful.Outcome.leave source)
         (Structured.EffectSemantics.Outcome.leave target)
