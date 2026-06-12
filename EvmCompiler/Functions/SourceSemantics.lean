@@ -266,6 +266,33 @@ theorem initReturns_apply_of_not_mem :
         _ = store key :=
           Locals.Source.Store.insert_of_ne hHead
 
+/--
+Every name initialized by `initReturns` maps to the canonical zero word.
+-/
+theorem initReturns_apply_of_mem :
+    ∀ {returns : List Name} {store : Store} {key : Name},
+      returns.Nodup →
+      key ∈ returns →
+      initReturns returns store key = some zero
+  | [], _store, _key, _hNodup, hMem => by
+      simp at hMem
+  | name :: returns, store, key, hNodup, hMem => by
+      rcases List.mem_cons.mp hMem with hKey | hTail
+      · subst key
+        have hFresh := (List.nodup_cons.mp hNodup).1
+        change
+          initReturns returns
+              (Locals.Source.Store.insert store name zero) name =
+            some zero
+        rw [initReturns_apply_of_not_mem hFresh]
+        exact Locals.Source.Store.insert_self store name zero
+      · exact
+          initReturns_apply_of_mem
+            (returns := returns)
+            (store := Locals.Source.Store.insert store name zero)
+            (key := key)
+            (List.nodup_cons.mp hNodup).2 hTail
+
 theorem lookupMany_initReturns_self :
     ∀ {returns : List Name} {store : Store},
       returns.Nodup →

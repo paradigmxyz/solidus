@@ -178,6 +178,27 @@ def attachReturns? (frame : ReturnDest) (stack : EvmYul.Stack Word) :
   else
     none
 
+/--
+An exact argument prefix is split from its caller suffix.
+-/
+theorem splitArgs?_append
+    (args callerStack : EvmYul.Stack Word) :
+    splitArgs? args.length (args ++ callerStack) =
+      some (args, callerStack) := by
+  simp [splitArgs?]
+
+/--
+An exact return vector is reattached to the caller stack recorded in its
+return destination.
+-/
+theorem attachReturns?_eq_some
+    {returned callerStack : EvmYul.Stack Word} {retc : Nat}
+    (hLength : returned.length = retc) :
+    attachReturns?
+        { callerStack := callerStack, retc := retc } returned =
+      some (returned ++ callerStack) := by
+  simp [attachReturns?, hLength]
+
 end StackFrame
 
 namespace Switch

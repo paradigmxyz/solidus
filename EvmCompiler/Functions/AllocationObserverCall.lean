@@ -9,6 +9,90 @@ abbrev Word := Assembly.Word
 
 open AllocationObserverRelation
 
+namespace CalleeEntry
+
+/--
+The exact target state constructed by Structured call semantics after argument
+splitting and before procedure-body execution.
+-/
+def structuredState {transcript : Trace}
+    (target : Structured.ObserverSemantics.State transcript)
+    (args callerStack : EvmYul.Stack Word) (retc : Nat) :
+    Structured.ObserverSemantics.State transcript :=
+  (Structured.ObserverSemantics.stateModel transcript).pushReturn
+    ((Structured.ObserverSemantics.stateModel transcript).withEVM target
+      { target.source.evm with stack := args })
+    callerStack retc
+
+/--
+Argument evaluation followed by the actual Structured call-frame construction
+establishes the transient entry relation for an all-stack callee.
+-/
+theorem stack_of_arguments
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {callerPlan calleePlan : Locals.Allocation.Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase calleeFrameBase : Nat}
+    {callerMode : AllocationObserverRelation.ActivationMode}
+    {pending : List (Locals.Name × Nat)}
+    {sourceAfterArgs : Functions.ObserverSemantics.State transcript}
+    {targetInitial targetAfterArgs :
+      Structured.ObserverSemantics.State transcript}
+    {args : List Word}
+    {initialStore : Locals.Source.Store}
+    {callerStack : EvmYul.Stack Word}
+    {retc : Nat}
+    (hArgs :
+      AllocationObserverRelation.ActivationExprResultRel
+        contract callerPlan callerLive 0 callerFrameBase args.length
+        callerMode sourceAfterArgs targetInitial targetAfterArgs args)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) initialStore =
+        some args) :
+    AllocationObserverRelation.ActivationCalleeEntryRel
+      contract calleePlan [] pending calleeFrameBase .stack
+      ((Functions.ObserverSemantics.stateModel transcript).withSource
+        sourceAfterArgs
+        { shared := sourceAfterArgs.source.shared
+          vars := initialStore })
+      (structuredState targetAfterArgs args.reverse callerStack retc) := by
+  have hBase := hArgs.state.base
+  apply AllocationObserverRelation.ActivationCalleeEntryRel.stack_empty
+      (values := args) (suffix := [])
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.EffectSemantics.StateModel.withEVM,
+      Structured.RunState.pushReturn] using hBase.cursor
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Simulation.ResourceReplay.State.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hBase.core.machine
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Simulation.ResourceReplay.State.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hBase.core.world
+  · simpa [structuredState, Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hArgs.state.activeNoWrap
+  · simpa [Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource] using hLookup
+  · simp [structuredState, Structured.ObserverSemantics.stateModel,
+      Structured.EffectSemantics.StateModel.withEVM,
+      Structured.RunState.withEVM, Structured.RunState.pushReturn]
+
+end CalleeEntry
+
 namespace EntryMarkers
 
 theorem compileOpen
@@ -1282,6 +1366,56 @@ def ScratchAuthorized
         contract.scratch? = some reservation
 
 /--
+The canonical Functions function-entry store supplies every source-facing
+premise required by the allocation prelude: parameters retain the argument
+values, returns are initialized to zero, and the complete body scope is
+defined.
+-/
+theorem initialized_source_facts
+    {transcript : Trace}
+    {params returns : List Functions.Name}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {source : Functions.ObserverSemantics.State transcript}
+    (hSignature : (returns ++ params).Nodup)
+    (hInsert :
+      Functions.Source.Store.insertMany params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hVars :
+      source.source.vars =
+        Functions.Source.Store.initReturns returns paramStore) :
+    Functions.Source.Store.lookupMany params source.source.vars =
+        some args ∧
+      (∀ name, name ∈ returns →
+        source.source.vars name = some AllocationSupport.zeroWord) ∧
+      AllocationObserverRelation.LiveDefined
+        (returns.reverse ++ params.reverse) source.source := by
+  obtain ⟨hParams, hReturns⟩ :=
+    Functions.Source.Store.initializedStore_lookupMany
+      hSignature hInsert
+  have hReturnNodup := (List.nodup_append.mp hSignature).1
+  have hParams' :
+      Functions.Source.Store.lookupMany params source.source.vars =
+        some args := by
+    simpa [hVars] using hParams
+  have hReturns' :
+      Functions.Source.Store.lookupMany returns source.source.vars =
+        some (returns.map fun _name => AllocationSupport.zeroWord) := by
+    simpa [hVars] using hReturns
+  refine ⟨hParams', ?_, ?_⟩
+  · intro name hName
+    rw [hVars]
+    exact
+      Functions.Source.Store.initReturns_apply_of_mem
+        hReturnNodup hName
+  · exact
+      (AllocationObserverRelation.LiveDefined.of_lookupMany
+          (Functions.Source.Store.lookupMany_reverse hReturns')).append
+        (AllocationObserverRelation.LiveDefined.of_lookupMany
+          (Functions.Source.Store.lookupMany_reverse hParams'))
+
+/--
 Compile and execute the complete parameter/return prelude selected by a
 checked function compiler artifact.
 
@@ -1717,6 +1851,442 @@ theorem backward_of_safeEval
   exact ⟨hSafe.eval_eq, hExpectedRel⟩
 
 end ArgList
+
+namespace CallTargets
+
+private theorem set_append_offset
+    {α : Type} (above suffix : List α) (depth : Nat) (value : α) :
+    (above ++ suffix).set (above.length + depth) value =
+      above ++ suffix.set depth value := by
+  induction above with
+  | nil =>
+      simp
+  | cons head tail ih =>
+      simp [Nat.succ_add, ih]
+
+private theorem lookupDepth?_none_of_not_mem
+    {name : Locals.Name} {layout : Locals.Layout}
+    (hNotMem : name ∉ layout) :
+    Locals.Layout.lookupDepth? name layout = none := by
+  cases hLookup : Locals.Layout.lookupDepth? name layout with
+  | none =>
+      rfl
+  | some depth =>
+      exact False.elim
+        (hNotMem (Locals.Layout.mem_of_lookupDepth?_eq_some hLookup))
+
+private theorem stack_step
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase planDepth depth : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {layout : Locals.Layout}
+    {name : Locals.Name} {value old : Word}
+    {remaining rest : List Word}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {code : Structured.Code}
+    (hCode :
+      AllocationLowering.stackAssignTopCode?
+          layout remaining.length name =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live (remaining.length + 1) frameBase mode
+        source target)
+    (hStack :
+      target.source.evm.stack = value :: (remaining ++ rest))
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
+    (hCompileDepth :
+      Locals.Layout.lookupDepth? name layout = some (depth + 1))
+    (hDepthValid : mode.StackDepthValid depth)
+    (hOld : source.source.vars name = some old) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live remaining.length frameBase mode
+          (source.withSource (source.source.insert name value))
+          targetFinal ∧
+        targetFinal.source.evm.stack =
+          remaining ++ rest.set depth value := by
+  cases hSwap :
+      Locals.StackOp.swap? (remaining.length + (depth + 1)) with
+  | none =>
+      simp [AllocationLowering.stackAssignTopCode?, hCompileDepth, hSwap]
+        at hCode
+  | some op =>
+      simp [AllocationLowering.stackAssignTopCode?, hCompileDepth, hSwap]
+        at hCode
+      subst code
+      have hOldTarget :=
+        hRel.base.core.store.stack_at hLive hLocation hDepth
+      rw [hStack, hOld] at hOldTarget
+      have hRestGet :
+          (remaining ++ rest)[remaining.length + depth]? = some old := by
+        simpa [Nat.add_assoc, Nat.add_left_comm, Nat.add_comm] using hOldTarget
+      let targetFinal :=
+        AllocationObserverRelation.StateRel.replaceStackBy 2
+          ((remaining ++ rest).set (remaining.length + depth) value)
+          target
+      have hRun :
+          Structured.ObserverSemantics.Code.run
+              [.op op, .op .pop] target =
+            .ok targetFinal := by
+        simpa [targetFinal, Nat.add_assoc] using
+          AllocationObserverPreservation.ObserverCode.run_swap_pop
+            (by simpa [Nat.add_assoc] using hSwap)
+            hRestGet hStack
+      have hFinalRel :
+          AllocationObserverRelation.ActivationStateRel
+            contract plan live remaining.length frameBase mode
+            (source.withSource (source.source.insert name value))
+            targetFinal := by
+        exact
+          hRel.assign_stack_live_at hStack hLive hLocation hDepth
+            hDepthValid hOld
+      refine ⟨targetFinal, hRun, hFinalRel, ?_⟩
+      simp [targetFinal,
+        AllocationObserverRelation.StateRel.replaceStackBy,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, set_append_offset]
+
+private theorem scratch_step
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase frameDepth frameWords slot : Nat}
+    {name : Locals.Name} {value : Word}
+    {remaining rest : List Word}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {code : Structured.Code}
+    (hCode :
+      AllocationLowering.scratchAssignTopCode?
+          lowerCtx lowerState remaining.length slot =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel
+        contract plan live (remaining.length + 1) frameBase
+        frameDepth frameWords source target)
+    (hStack :
+      target.source.evm.stack = value :: (remaining ++ rest))
+    (hWF : plan.WellFormed)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? lowerCtx.frameName lowerState.layout =
+        some (frameDepth + 1)) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live remaining.length frameBase
+          (.scratch frameDepth frameWords)
+          (source.withSource (source.source.insert name value))
+          targetFinal ∧
+        targetFinal.source.evm.stack = remaining ++ rest := by
+  have hStoreCode :
+      AllocationSupport.storeTopSlotCode?
+          (remaining.length + frameDepth + 1) slot =
+        some code := by
+    simpa [AllocationLowering.scratchAssignTopCode?,
+      AllocationLowering.frameDepth?, hFrameDepth, Nat.add_assoc] using hCode
+  have hSlotBound :=
+    hRel.scratchBound name slot hLive hLocation
+  obtain ⟨reservation, hReservation, _hFrameRegion⟩ :=
+    hRel.frameReserved
+  have hRegion :=
+    hRel.scratchAddress_reserved_of_bound hSlotBound hReservation
+  obtain ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩ :=
+    AllocationObserverPreservation.Expr.scratchAssignTop_forward_of_storeTopSlotCode?_live
+        hRel hStack hWF
+        (fun other hOther => Or.inr hOther)
+        rfl hLive hLocation hSlotBound hReservation hRegion hStoreCode
+  exact ⟨targetFinal, hRun, .scratch hFinalRel, hFinalStack⟩
+
+/--
+Execute the actual code emitted for assigning returned call values to source
+targets.
+
+The compiler and source semantics both process the already-reversed target and
+value lists from left to right. Each step consumes exactly one temporary stack
+value, updates either a stack local or its allocated scratch slot, and leaves
+the remaining return prefix intact for the recursive step.
+-/
+theorem forward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {names : List Locals.Name} {values : List Word}
+    {finalStore : Locals.Source.Store}
+    {code : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {rest : List Word}
+    (hContext :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hLive :
+      ∀ name, name ∈ names → name ∈ live)
+    (hAssign :
+      Functions.Source.Store.assignMany names values source.source.vars =
+        some finalStore)
+    (hCode :
+      AllocationLowering.lowerCallTargetsCode?
+          lowerCtx lowerState names values.length =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live values.length frameBase mode source target)
+    (hStack :
+      target.source.evm.stack = values ++ rest) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live 0 frameBase mode
+          (source.withSource (source.source.withVars finalStore))
+          targetFinal ∧
+        targetFinal.source.evm.stack.length = rest.length := by
+  induction names generalizing values code source target rest with
+  | nil =>
+      cases values with
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+          subst finalStore
+          have hCode' : code = [] := by
+            simpa [AllocationLowering.lowerCallTargetsCode?] using hCode.symm
+          subst code
+          exact
+            ⟨target, rfl,
+              by
+                simpa [Locals.Source.State.withVars] using hRel,
+              by simpa using congrArg List.length hStack⟩
+      | cons value values =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+  | cons name names ih =>
+      cases values with
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+      | cons value values =>
+          have hNameLive : name ∈ live :=
+            hLive name (by simp)
+          have hTailLive :
+              ∀ other, other ∈ names → other ∈ live := by
+            intro other hOther
+            exact hLive other (by simp [hOther])
+          change
+            (if source.source.vars.contains name then
+                Functions.Source.Store.assignMany names values
+                  (Locals.Source.Store.insert
+                    source.source.vars name value)
+              else none) =
+              some finalStore at hAssign
+          by_cases hContains :
+              source.source.vars.contains name = true
+          · simp [hContains] at hAssign
+            cases hOld : source.source.vars name with
+            | none =>
+                simp [Locals.Source.Store.contains, hOld] at hContains
+            | some old =>
+                let sourceNext :=
+                  source.withSource (source.source.insert name value)
+                have hTailAssign :
+                    Functions.Source.Store.assignMany names values
+                        sourceNext.source.vars =
+                      some finalStore := by
+                  simpa [sourceNext, Locals.Source.State.insert] using hAssign
+                have hHeadStack :
+                    target.source.evm.stack =
+                      value :: (values ++ rest) := by
+                  simpa using hStack
+                have hHeadRel :
+                    AllocationObserverRelation.ActivationStateRel
+                      contract plan live (values.length + 1) frameBase mode
+                      source target := by
+                  simpa using hRel
+                obtain ⟨slot, hSlot⟩ :=
+                  match hContext with
+                  | .stack ctx => ctx.slot name hNameLive
+                  | .scratch ctx => ctx.slot name hNameLive
+                by_cases hStackSlot :
+                    AllocationLowering.isStackSlot lowerCtx slot = true
+                · cases hHeadCode :
+                    AllocationLowering.stackAssignTopCode?
+                      lowerState.layout values.length name with
+                  | none =>
+                      simp [AllocationLowering.lowerCallTargetsCode?,
+                        hSlot, hStackSlot, hHeadCode] at hCode
+                  | some headCode =>
+                      cases hTailCode :
+                          AllocationLowering.lowerCallTargetsCode?
+                            lowerCtx lowerState names values.length with
+                      | none =>
+                          simp [AllocationLowering.lowerCallTargetsCode?,
+                            hSlot, hStackSlot, hHeadCode, hTailCode] at hCode
+                      | some tailCode =>
+                          have hWholeCode :
+                              code = headCode ++ tailCode := by
+                            apply Option.some.inj
+                            calc
+                              some code =
+                                  AllocationLowering.lowerCallTargetsCode?
+                                    lowerCtx lowerState (name :: names)
+                                      (values.length + 1) :=
+                                hCode.symm
+                              _ = some (headCode ++ tailCode) := by
+                                simp [
+                                  AllocationLowering.lowerCallTargetsCode?,
+                                  hSlot, hStackSlot, hHeadCode, hTailCode]
+                          subst code
+                          cases hContext with
+                          | stack stackContext =>
+                              obtain
+                                  ⟨planDepth, depth, hLocation, hCurrentDepth,
+                                    hLowerDepth⟩ :=
+                                stackContext.stack name slot hNameLive
+                                  hSlot hStackSlot
+                              obtain
+                                  ⟨targetHead, hHeadRun, hHeadFinalRel,
+                                    hHeadFinalStack⟩ :=
+                                stack_step hHeadCode hHeadRel hHeadStack
+                                  hNameLive hLocation hCurrentDepth hLowerDepth
+                                  trivial hOld
+                              obtain
+                                  ⟨targetFinal, hTailRun, hFinalRel,
+                                    hFinalStack⟩ :=
+                                ih hTailLive hTailAssign hTailCode
+                                  hHeadFinalRel hHeadFinalStack
+                              refine
+                                ⟨targetFinal, ?_, ?_, ?_⟩
+                              · rw [
+                                  AllocationObserverPreservation.ObserverCode.run_append,
+                                  hHeadRun]
+                                exact hTailRun
+                              · simpa [sourceNext,
+                                  Locals.Source.State.withVars] using hFinalRel
+                              · simpa using hFinalStack
+                          | @scratch frameDepth frameWords scratchContext =>
+                              obtain
+                                  ⟨planDepth, depth, hLocation, hCurrentDepth,
+                                    hLowerDepth⟩ :=
+                                scratchContext.stack name slot hNameLive
+                                  hSlot hStackSlot
+                              have hDepthValid :
+                                  AllocationObserverRelation.ActivationMode.StackDepthValid
+                                    (.scratch frameDepth frameWords) depth :=
+                                scratchContext.stack_depth_lt_frame
+                                  hCurrentDepth
+                              obtain
+                                  ⟨targetHead, hHeadRun, hHeadFinalRel,
+                                    hHeadFinalStack⟩ :=
+                                stack_step hHeadCode hHeadRel hHeadStack
+                                  hNameLive hLocation hCurrentDepth hLowerDepth
+                                  hDepthValid hOld
+                              obtain
+                                  ⟨targetFinal, hTailRun, hFinalRel,
+                                    hFinalStack⟩ :=
+                                ih hTailLive hTailAssign hTailCode
+                                  hHeadFinalRel hHeadFinalStack
+                              refine
+                                ⟨targetFinal, ?_, ?_, ?_⟩
+                              · rw [
+                                  AllocationObserverPreservation.ObserverCode.run_append,
+                                  hHeadRun]
+                                exact hTailRun
+                              · simpa [sourceNext,
+                                  Locals.Source.State.withVars] using hFinalRel
+                              · simpa using hFinalStack
+                · have hScratchSlot :
+                    AllocationLowering.isStackSlot lowerCtx slot = false :=
+                    Bool.eq_false_of_not_eq_true hStackSlot
+                  cases hContext with
+                  | stack stackContext =>
+                      have hFrameNone :
+                          Locals.Layout.lookupDepth?
+                              lowerCtx.frameName lowerState.layout =
+                            none :=
+                        lookupDepth?_none_of_not_mem
+                          stackContext.frameAbsent
+                      simp [AllocationLowering.lowerCallTargetsCode?,
+                        hSlot, hScratchSlot,
+                        AllocationLowering.scratchAssignTopCode?,
+                        AllocationLowering.frameDepth?, hFrameNone] at hCode
+                  | @scratch frameDepth frameWords scratchContext =>
+                      cases hRel with
+                      | scratch scratchRel =>
+                          obtain ⟨hLocation, hFrameDepth⟩ :=
+                            scratchContext.scratch name slot hNameLive
+                              hSlot hScratchSlot
+                          cases hHeadCode :
+                              AllocationLowering.scratchAssignTopCode?
+                                lowerCtx lowerState values.length slot with
+                          | none =>
+                              simp [AllocationLowering.lowerCallTargetsCode?,
+                                hSlot, hScratchSlot, hHeadCode] at hCode
+                          | some headCode =>
+                              cases hTailCode :
+                                  AllocationLowering.lowerCallTargetsCode?
+                                    lowerCtx lowerState names values.length with
+                              | none =>
+                                  simp [
+                                    AllocationLowering.lowerCallTargetsCode?,
+                                    hSlot, hScratchSlot, hHeadCode, hTailCode]
+                                    at hCode
+                              | some tailCode =>
+                                  have hWholeCode :
+                                      code = headCode ++ tailCode := by
+                                    apply Option.some.inj
+                                    calc
+                                      some code =
+                                          AllocationLowering.lowerCallTargetsCode?
+                                              lowerCtx lowerState
+                                                (name :: names)
+                                                (values.length + 1) :=
+                                        hCode.symm
+                                      _ = some (headCode ++ tailCode) := by
+                                        simp [
+                                          AllocationLowering.lowerCallTargetsCode?,
+                                          hSlot, hScratchSlot, hHeadCode,
+                                          hTailCode]
+                                  subst code
+                                  obtain
+                                      ⟨targetHead, hHeadRun, hHeadFinalRel,
+                                        hHeadFinalStack⟩ :=
+                                    scratch_step hHeadCode scratchRel hHeadStack
+                                      hWF hNameLive hLocation hFrameDepth
+                                  obtain
+                                      ⟨targetFinal, hTailRun, hFinalRel,
+                                        hFinalStack⟩ :=
+                                    ih hTailLive hTailAssign hTailCode
+                                      hHeadFinalRel hHeadFinalStack
+                                  refine
+                                    ⟨targetFinal, ?_, ?_, hFinalStack⟩
+                                  · rw [
+                                      AllocationObserverPreservation.ObserverCode.run_append,
+                                      hHeadRun]
+                                    exact hTailRun
+                                  · simpa [sourceNext,
+                                      Locals.Source.State.withVars] using
+                                      hFinalRel
+          · simp [hContains] at hAssign
+
+end CallTargets
 
 end AllocationObserverCall
 end Functions

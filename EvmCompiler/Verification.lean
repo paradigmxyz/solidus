@@ -124,6 +124,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
+#check EvmCompiler.Functions.Source.Store.initReturns_apply_of_mem
+#check EvmCompiler.Structured.StackFrame.splitArgs?_append
+#check EvmCompiler.Structured.StackFrame.attachReturns?_eq_some
+#check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.of_lookupMany
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_stack_live_at
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.stack_empty
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.scratch_empty
+#check EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.stack_of_arguments
+#check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
 #check EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
 #check EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
 #check EvmCompiler.Locals.Ctx.exists_swapRestoreUpTo?_of_le
@@ -170,6 +179,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.stack_of_layout
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.scratch_of_layout
 #check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext.bodyCompiler
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.initialized_source_facts
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward_invariant
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward

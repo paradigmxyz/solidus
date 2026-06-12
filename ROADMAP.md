@@ -476,7 +476,11 @@ Roadmap:
   Generic observer primitives, resource expressions, and `let` declarations
   for both `gas()` and `msize()` are checked.
 - [ ] Prove allocation-driven Functions-to-Locals/Expressions preservation
-  under the same observation protocol.
+  under the same observation protocol. Compiler-derived function entry,
+  parameter/return preludes, body activation invariants, argument evaluation,
+  and generic stack-or-scratch multi-return target assignment are checked.
+  Recursive scratch-frame acquisition/readiness, callee execution, return
+  reattachment, frame release, and the matching backward theorem remain.
 - [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
 - [x] Complete the pass-owned Structured code/terminal typing invariant that

@@ -587,7 +587,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerScratchReturn_compileOpen
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_stack_of_context
+#print axioms EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.stack_of_arguments
+#print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.initialized_source_facts
 #print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
+#print axioms EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

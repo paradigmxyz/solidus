@@ -2888,7 +2888,8 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
       AllocationObserverRelation.ScratchStateRel contract plan afterLive
         stackOffset frameBase frameDepth frameWords
         (source.withSource (source.source.insert name value))
-        targetFinal := by
+        targetFinal ∧
+      targetFinal.source.evm.stack = rest := by
   cases hDup :
       Locals.StackOp.dup?
         ((stackOffset + frameDepth + 1) + 1) with
@@ -2901,11 +2902,11 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
         AllocationSupport.slotAddressCode?,
         AllocationSupport.dupCode?, hDup] at hCode
       subst code
-      obtain ⟨targetFinal, hRun, hFinalRel, _hFinalStack⟩ :=
+      obtain ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩ :=
         scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
           hNameAfter hLocation hAssignedBound hReservation hRegion
           (by simpa [Nat.add_assoc] using hDup)
-      exact ⟨targetFinal, hRun, hFinalRel⟩
+      exact ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩
 
 theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
     {transcript : Trace}
@@ -2950,7 +2951,7 @@ theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
       stackOffset frameBase frameDepth frameWords
       (source.withSource (source.source.insert name value))
       targetFinal := by
-  obtain ⟨expected, hExpectedRun, hExpectedRel⟩ :=
+  obtain ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack⟩ :=
     scratchAssignTop_forward_of_storeTopSlotCode?_live
       hRel hStack hWF hAfter hStackOrder hNameAfter hLocation hAssignedBound
       hReservation hRegion hCode
