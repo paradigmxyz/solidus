@@ -30,22 +30,20 @@ abbrev TargetState := Structured.ObserverSemantics.State
 def scratchAddress (frameBase slot : Nat) : Nat :=
   frameBase + MemoryContract.wordBytes * slot
 
-def locationValue? (stackOffset frameBase : Nat)
-    (target : Structured.RunState) : Location → Option Word
-  | .stack depth =>
-      target.evm.stack[stackOffset + depth]?
-  | .scratch slot =>
-      some
-        (target.evm.toMachineState.lookupMemory
-          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)))
+def currentStackOrder (plan : Plan) (live : List Locals.Name) :
+    List Locals.Name :=
+  plan.stackOrder.filter fun name => decide (name ∈ live)
 
 /--
 Realization of the source store for names that are live at the current
 semantic point.
 
 Allocation plans describe an entire lexical scope, including declarations
-that may not have executed yet. Indexing by `live` avoids requiring target
-values for those future declarations.
+that may not have executed yet. Their stack depths are therefore final-scope
+depths, not necessarily current runtime depths. The current stack order is the
+plan's final stack order filtered to names that are live at this semantic
+point. This also handles function entry, whose source scope and concrete stack
+use different list orientations.
 -/
 def StoreRel (plan : Plan) (live : List Locals.Name)
     (stackOffset frameBase : Nat) (source : Locals.Source.State)
@@ -53,7 +51,17 @@ def StoreRel (plan : Plan) (live : List Locals.Name)
   ∀ name location,
     name ∈ live →
     plan.location? name = some location →
-    locationValue? stackOffset frameBase target location = source.vars name
+    match location with
+    | .stack _ =>
+        ∃ depth,
+          Locals.Layout.lookupDepth?
+              name (currentStackOrder plan live) =
+            some (depth + 1) ∧
+          target.evm.stack[stackOffset + depth]? = source.vars name
+    | .scratch slot =>
+        target.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+          (source.vars name).getD (EvmYul.UInt256.ofNat 0)
 
 /--
 The shared-state portion of allocation correctness.
@@ -129,23 +137,41 @@ structure StateRel {transcript : Trace}
 
 namespace StoreRel
 
-theorem mono {plan : Plan} {smaller larger : List Locals.Name}
+theorem restrict {plan : Plan} {smaller larger : List Locals.Name}
     {stackOffset frameBase : Nat} {source : Locals.Source.State}
     {target : Structured.RunState}
     (hRel : StoreRel plan larger stackOffset frameBase source target)
-    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger)
+    (hStackOrder :
+      currentStackOrder plan smaller =
+        currentStackOrder plan larger) :
     StoreRel plan smaller stackOffset frameBase source target := by
   intro name location hLive hLocation
-  exact hRel name location (hSubset name hLive) hLocation
+  have hValue := hRel name location (hSubset name hLive) hLocation
+  cases location with
+  | stack planDepth =>
+      rcases hValue with ⟨depth, hDepth, hValue⟩
+      exact ⟨depth, by simpa [hStackOrder] using hDepth, hValue⟩
+  | scratch slot =>
+      exact hValue
 
-theorem stack {plan : Plan} {live : List Locals.Name}
+theorem stack_at {plan : Plan} {live : List Locals.Name}
     {stackOffset frameBase : Nat} {source : Locals.Source.State}
-    {target : Structured.RunState} {name : Locals.Name} {depth : Nat}
+    {target : Structured.RunState} {name : Locals.Name}
+    {planDepth depth : Nat}
     (hRel : StoreRel plan live stackOffset frameBase source target)
     (hLive : name ∈ live)
-    (hLocation : plan.location? name = some (.stack depth)) :
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hDepth :
+      Locals.Layout.lookupDepth? name (currentStackOrder plan live) =
+        some (depth + 1)) :
     target.evm.stack[stackOffset + depth]? = source.vars name :=
-  hRel name (.stack depth) hLive hLocation
+  by
+    obtain ⟨actualDepth, hActualDepth, hValue⟩ :=
+      hRel name (.stack planDepth) hLive hLocation
+    rw [hDepth] at hActualDepth
+    cases hActualDepth
+    exact hValue
 
 theorem scratch {plan : Plan} {live : List Locals.Name}
     {stackOffset frameBase : Nat} {source : Locals.Source.State}
@@ -156,10 +182,7 @@ theorem scratch {plan : Plan} {live : List Locals.Name}
     target.evm.toMachineState.lookupMemory
         (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
       (source.vars name).getD (EvmYul.UInt256.ofNat 0) := by
-  have hValue := hRel name (.scratch slot) hLive hLocation
-  simp only [locationValue?] at hValue
-  rw [← hValue]
-  simp
+  exact hRel name (.scratch slot) hLive hLocation
 
 theorem rebase_prefix_of_lookup
     {plan : Plan} {live : List Locals.Name}
@@ -186,7 +209,9 @@ theorem rebase_prefix_of_lookup
   intro name location hLive hLocation
   have hValue := hRel name location hLive hLocation
   cases location with
-  | stack depth =>
+  | stack planDepth =>
+      rcases hValue with ⟨depth, hDepth, hValue⟩
+      refine ⟨depth, hDepth, ?_⟩
       change
         targetFinal.evm.stack[
             stackOffset + newPrefix.length + depth]? =
@@ -214,8 +239,7 @@ theorem rebase_prefix_of_lookup
         (Nat.le_add_right newPrefix.length (stackOffset + depth))]
       simpa using hBase
   | scratch slot =>
-      simpa [locationValue?,
-        hScratch name slot hLive hLocation, hVars] using hValue
+      simpa [hScratch name slot hLive hLocation, hVars] using hValue
 
 theorem rebase_prefix
     {plan : Plan} {live : List Locals.Name}
@@ -276,11 +300,14 @@ theorem mono {transcript : Trace}
     {source : SourceState transcript} {target : TargetState transcript}
     (hRel :
       StateRel contract plan larger stackOffset frameBase source target)
-    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger)
+    (hStackOrder :
+      currentStackOrder plan smaller =
+        currentStackOrder plan larger) :
     StateRel contract plan smaller stackOffset frameBase source target :=
   ⟨hRel.cursor,
     ⟨hRel.core.machine, hRel.core.world,
-      hRel.core.store.mono hSubset⟩⟩
+      hRel.core.store.restrict hSubset hStackOrder⟩⟩
 
 theorem push_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -301,7 +328,9 @@ theorem push_target_by {transcript : Trace}
     have hValue :=
       hRel.core.store name location hLive hLocation
     cases location with
-    | stack depth =>
+    | stack planDepth =>
+        rcases hValue with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
         change
           (value :: target.source.evm.stack)[stackOffset + 1 + depth]? =
             source.source.vars name
@@ -309,7 +338,7 @@ theorem push_target_by {transcript : Trace}
             (stackOffset + depth) + 1 by omega]
         simpa using hValue
     | scratch slot =>
-        simpa [locationValue?, pushTargetBy,
+        simpa [pushTargetBy,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hValue
 
@@ -348,7 +377,9 @@ theorem contract_target_by {transcript : Trace}
     have hValue :=
       hRel.core.store name location hLive hLocation
     cases location with
-    | stack depth =>
+    | stack planDepth =>
+        rcases hValue with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
         change
           (value :: rest)[stackOffset + 1 + depth]? =
             source.source.vars name
@@ -363,7 +394,7 @@ theorem contract_target_by {transcript : Trace}
         simpa [show stackOffset + 1 + depth =
             (stackOffset + depth) + 1 by omega] using hRest
     | scratch slot =>
-        simpa [locationValue?, contractTargetBy,
+        simpa [contractTargetBy,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hValue
 
@@ -391,7 +422,9 @@ theorem replace_top_by {transcript : Trace}
     have hValue :=
       hRel.core.store name location hLive hLocation
     cases location with
-    | stack depth =>
+    | stack planDepth =>
+        rcases hValue with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
         change
           (value :: rest)[stackOffset + 1 + depth]? =
             source.source.vars name
@@ -402,7 +435,7 @@ theorem replace_top_by {transcript : Trace}
         simpa [show stackOffset + 1 + depth =
             (stackOffset + depth) + 1 by omega] using hValue
     | scratch slot =>
-        simpa [locationValue?, contractTargetBy,
+        simpa [contractTargetBy,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hValue
 
@@ -777,18 +810,17 @@ theorem of_wellFormed
     hFrameReserved, fun name slot _hLive hLocation =>
       plan.scratch_bound_of_wellFormed hWF hLocation hRegion⟩
 
-theorem scratchAddress_reserved {transcript : Trace}
+theorem scratchAddress_reserved_of_bound {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
     {stackOffset frameBase frameDepth frameWords : Nat}
     {source : SourceState transcript} {target : TargetState transcript}
-    {name : Locals.Name} {slot : Nat}
+    {slot : Nat}
     {reservation : MemoryContract.ScratchReservation}
     (hRel :
       ScratchStateRel contract plan live stackOffset frameBase
         frameDepth frameWords source target)
-    (hLive : name ∈ live)
-    (hLocation : plan.location? name = some (.scratch slot))
+    (hSlot : slot < frameWords)
     (hReservation : contract.scratch? = some reservation) :
     reservation.containsRegion (scratchAddress frameBase slot) 1 := by
   obtain ⟨owned, hOwned, hFrame⟩ := hRel.frameReserved
@@ -796,7 +828,6 @@ theorem scratchAddress_reserved {transcript : Trace}
     rw [hReservation] at hOwned
     exact (Option.some.inj hOwned).symm
   subst owned
-  have hSlot := hRel.scratchBound name slot hLive hLocation
   have hSucc : slot + 1 ≤ frameWords :=
     Nat.succ_le_iff.mpr hSlot
   constructor
@@ -810,6 +841,23 @@ theorem scratchAddress_reserved {transcript : Trace}
         Nat.add_le_add_left
           (Nat.mul_le_mul_left MemoryContract.wordBytes hSucc) frameBase
       _ ≤ reservation.endExclusive := hFrame.2
+
+theorem scratchAddress_reserved {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {slot : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hReservation : contract.scratch? = some reservation) :
+    reservation.containsRegion (scratchAddress frameBase slot) 1 :=
+  hRel.scratchAddress_reserved_of_bound
+    (hRel.scratchBound name slot hLive hLocation) hReservation
 
 theorem scratchAddress_end_le_active {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -973,10 +1021,13 @@ theorem mono {transcript : Trace}
     (hRel :
       ScratchStateRel contract plan larger stackOffset frameBase
         frameDepth frameWords source target)
-    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger)
+    (hStackOrder :
+      currentStackOrder plan smaller =
+        currentStackOrder plan larger) :
     ScratchStateRel contract plan smaller stackOffset frameBase
       frameDepth frameWords source target :=
-  ⟨hRel.base.mono hSubset, hRel.framePointer, hRel.frameActive,
+  ⟨hRel.base.mono hSubset hStackOrder, hRel.framePointer, hRel.frameActive,
     hRel.frameAllocated, hRel.frameNoWrap,
     hRel.frameHostAddressable, hRel.activeNoWrap,
     hRel.frameReserved,
@@ -1104,6 +1155,114 @@ theorem replace_top_by {transcript : Trace}
       EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using hRel.activeNoWrap
 
+/--
+A newly declared stack local consumes the expression result at the top of the
+stack. Existing stack locals move one slot deeper, while the hidden scratch
+frame pointer moves from `frameDepth` to `frameDepth + 1`.
+
+`hStackOrder` is the allocation-owned transition fact: among names live after
+the declaration, the new stack binding is first and the previous current order
+is retained behind it.
+-/
+theorem declare_stack_live
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase frameDepth frameWords planDepth : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan beforeLive 1 frameBase
+        frameDepth frameWords source target)
+    (hStack : target.source.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive) :
+    ScratchStateRel contract plan afterLive 0 frameBase
+      (frameDepth + 1) frameWords
+      (source.withSource (source.source.insert name value)) target := by
+  refine
+    { base := ?_
+      framePointer := ?_
+      frameActive := hRel.frameActive
+      frameAllocated := hRel.frameAllocated
+      frameNoWrap := hRel.frameNoWrap
+      frameHostAddressable := hRel.frameHostAddressable
+      activeNoWrap := hRel.activeNoWrap
+      frameReserved := hRel.frameReserved
+      scratchBound := ?_ }
+  · refine ⟨?_, ?_⟩
+    · simpa [Simulation.ResourceReplay.State.withSource] using
+        hRel.base.cursor
+    · refine ⟨?_, ?_, ?_⟩
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Locals.Source.State.insert] using hRel.base.core.machine
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Locals.Source.State.insert] using hRel.base.core.world
+      · intro other location hOtherAfter hOtherLocation
+        by_cases hName : other = name
+        · subst other
+          cases location with
+          | stack otherPlanDepth =>
+              rw [hLocation] at hOtherLocation
+              cases hOtherLocation
+              refine ⟨0, ?_, ?_⟩
+              · simp [hStackOrder, Locals.Layout.lookupDepth?,
+                  Locals.Layout.lookupDepthFrom]
+              · rw [hStack]
+                simp [Simulation.ResourceReplay.State.withSource,
+                  Locals.Source.State.insert]
+          | scratch slot =>
+              rw [hLocation] at hOtherLocation
+              simp at hOtherLocation
+        · have hOtherBefore : other ∈ beforeLive := by
+            rcases hAfter other hOtherAfter with hEq | hBefore
+            · exact False.elim (hName hEq)
+            · exact hBefore
+          have hOld :=
+            hRel.base.core.store other location
+              hOtherBefore hOtherLocation
+          cases location with
+          | stack otherPlanDepth =>
+              rcases hOld with ⟨depth, hDepth, hValue⟩
+              refine ⟨depth + 1, ?_, ?_⟩
+              · rw [hStackOrder]
+                simpa [Nat.add_assoc] using
+                  (Locals.Layout.lookupDepth?_cons_of_ne
+                    (Ne.symm hName) hDepth)
+              · simpa [Simulation.ResourceReplay.State.withSource,
+                  Locals.Source.State.insert,
+                  Locals.Source.Store.insert_of_ne hName,
+                  Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hValue
+          | scratch slot =>
+              change
+                target.source.evm.toMachineState.lookupMemory
+                    (EvmYul.UInt256.ofNat
+                      (scratchAddress frameBase slot)) =
+                  (Locals.Source.Store.insert
+                    source.source.vars name value other).getD
+                      (EvmYul.UInt256.ofNat 0)
+              rw [Locals.Source.Store.insert_of_ne hName]
+              exact hOld
+  · have hPointer := hRel.framePointer
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hPointer
+  · intro other slot hOtherAfter hOtherLocation
+    have hNe : other ≠ name := by
+      intro hEq
+      subst other
+      rw [hLocation] at hOtherLocation
+      simp at hOtherLocation
+    have hOtherBefore : other ∈ beforeLive := by
+      rcases hAfter other hOtherAfter with hEq | hBefore
+      · exact False.elim (hNe hEq)
+      · exact hBefore
+    exact hRel.scratchBound other slot hOtherBefore hOtherLocation
+
 theorem assign_scratch_live
     {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1120,6 +1279,9 @@ theorem assign_scratch_live
     (hAfter :
       ∀ other, other ∈ afterLive →
         other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        currentStackOrder plan beforeLive)
     (hNameAfter : name ∈ afterLive)
     (hLocation : plan.location? name = some (.scratch slot))
     (hAssignedBound : slot < frameWords)
@@ -1221,7 +1383,8 @@ theorem assign_scratch_live
                       (scratchAddress frameBase slot)) value).lookupMemory
                       (EvmYul.UInt256.ofNat
                         (scratchAddress frameBase slot)) =
-                  (source.source.insert name value).vars name
+                  ((source.source.insert name value).vars name).getD
+                    (EvmYul.UInt256.ofNat 0)
               rw [Compiler.MemoryRelation.lookupMemory_mstore_same
                 target.source.evm.toMachineState
                 (scratchAddress frameBase slot) value
@@ -1240,7 +1403,10 @@ theorem assign_scratch_live
             hRel.base.core.store other location
               hOtherBefore hOtherLocation
           cases location with
-          | stack depth =>
+          | stack planDepth =>
+              rcases hOld with ⟨depth, hDepth, hOld⟩
+              refine ⟨depth, ?_, ?_⟩
+              · simpa [hStackOrder] using hDepth
               change
                 rest[stackOffset + depth]? =
                   Locals.Source.Store.insert
@@ -1289,8 +1455,9 @@ theorem assign_scratch_live
                       (scratchAddress frameBase slot)) value).lookupMemory
                       (EvmYul.UInt256.ofNat
                         (scratchAddress frameBase otherSlot)) =
-                  Locals.Source.Store.insert
-                    source.source.vars name value other
+                  (Locals.Source.Store.insert
+                    source.source.vars name value other).getD
+                      (EvmYul.UInt256.ofNat 0)
               rw [Compiler.MemoryRelation.lookupMemory_mstore_disjoint
                 target.source.evm.toMachineState
                 (scratchAddress frameBase slot)
@@ -1302,7 +1469,7 @@ theorem assign_scratch_live
                 (by simpa [MemoryContract.wordBytes] using hWriteEndActive)
                 (by simpa [MemoryContract.wordBytes] using hDisjoint)]
               rw [Locals.Source.Store.insert_of_ne hName]
-              simpa [locationValue?] using hOld
+              exact hOld
   · change
       rest[stackOffset + frameDepth]? =
         some (EvmYul.UInt256.ofNat frameBase)
@@ -1362,7 +1529,7 @@ theorem assign_scratch
       by_cases hEq : other = name
       · exact Or.inl hEq
       · exact Or.inr hOther)
-    hLive hLocation
+    rfl hLive hLocation
     (hRel.scratchBound name slot hLive hLocation)
     hReservation hRegion hStack
 

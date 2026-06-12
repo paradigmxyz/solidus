@@ -16,6 +16,46 @@ def lookupDepthFrom (name : Name) : Nat → Layout → Option Nat
 def lookupDepth? (name : Name) (layout : Layout) : Option Nat :=
   lookupDepthFrom name 1 layout
 
+theorem lookupDepthFrom_succ (name : Name) (depth : Nat)
+    (layout : Layout) :
+    lookupDepthFrom name (depth + 1) layout =
+      (lookupDepthFrom name depth layout).map (· + 1) := by
+  induction layout generalizing depth with
+  | nil =>
+      simp [lookupDepthFrom]
+  | cons head tail ih =>
+      by_cases hHead : head = name
+      · simp [lookupDepthFrom, hHead]
+      · simp [lookupDepthFrom, hHead, ih, Nat.add_assoc]
+
+theorem lookupDepth?_cons_of_ne
+    {name head : Name} {layout : Layout} {depth : Nat}
+    (hNe : head ≠ name)
+    (hDepth : lookupDepth? name layout = some depth) :
+    lookupDepth? name (head :: layout) = some (depth + 1) := by
+  have hDepth' :
+      lookupDepthFrom name 1 layout = some depth := by
+    simpa [lookupDepth?] using hDepth
+  simp only [lookupDepth?, lookupDepthFrom, if_neg hNe]
+  rw [lookupDepthFrom_succ, hDepth']
+  rfl
+
+theorem mem_of_lookupDepth?_eq_some
+    {name : Name} {layout : Layout} {depth : Nat}
+    (hDepth : lookupDepth? name layout = some depth) :
+    name ∈ layout := by
+  unfold lookupDepth? at hDepth
+  generalize hStart : 1 = start at hDepth
+  clear hStart
+  induction layout generalizing start with
+  | nil =>
+      simp [lookupDepthFrom] at hDepth
+  | cons head tail ih =>
+      by_cases hHead : head = name
+      · simp [hHead]
+      · simp only [lookupDepthFrom, if_neg hHead] at hDepth
+        exact List.mem_cons_of_mem head (ih (start + 1) hDepth)
+
 def promoteAt (idx : Nat) (layout : Layout) : Layout :=
   match layout[idx]? with
   | none => layout

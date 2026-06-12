@@ -70,6 +70,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
+#check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
@@ -120,7 +121,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.compiler_shape
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.of_wellFormed
+#check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.declare_stack_live
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?

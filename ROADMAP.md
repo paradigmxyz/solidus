@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 05:19 PDT.
+Last updated: 2026-06-12 05:43 PDT.
 
 ## Objective
 
@@ -211,12 +211,24 @@ Adjacent boundary status:
   Functions evaluator rather than a second interpreter. The first adjacent
   statement theorem is checked in both directions for expression statements:
   it derives the singleton target block from the real `lowerStmt` and
-  `Locals.Block.compileOpen` passes and relates their regular outcomes.
-  Remaining work at this boundary is recursive statement/function and call
-  composition, declaration and assignment layout transitions, abrupt cleanup
-  leaves, terminal statement composition, construction of `ScratchStateRel` at function entry,
-  propagation of source-facing memory safety and fuel through those recursive
-  judgments, and the whole-program adjacent forward/backward theorem.
+  `Locals.Block.compileOpen` passes and relates their regular outcomes. The
+  allocation store relation now derives current stack depths from the final
+  plan order filtered to currently live names; final-scope plan depths are no
+  longer treated as runtime depths before later declarations execute. The
+  hidden frame-pointer depth consequently changes with stack declarations.
+  `AllocationObserverContext.classify_let_transition` derives those dynamic
+  stack-order and frame-depth transitions from the real lowerer, and
+  `AllocationObserverStatement.LetLeaf.forward_of_compilers` checks declaration
+  forwarding through both emitted shapes: a stack declaration retains the
+  expression result as a named local, while a scratch declaration executes the
+  canonical frame-pointer `DUP`/offset/`ADD`/`MSTORE` sequence. Remaining work
+  at this boundary is backward declaration adequacy, assignment statement
+  integration, an activation relation covering both stack-only and
+  scratch-frame artifacts, activation-aware continuing outcomes, recursive
+  statement/function/call composition, abrupt cleanup and terminal statement
+  composition, construction of the activation relation at function entry,
+  propagation of source-facing memory safety and fuel, and the whole-program
+  adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

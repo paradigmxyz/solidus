@@ -202,10 +202,10 @@ mutual
         cases
             AllocationObserverContext.classify_var
               hCtx hLive hLower hCompile with
-        | stack depth op hLocation hDup =>
+        | stack planDepth depth op hLocation hCurrentDepth hDup =>
             obtain ⟨targetFinal, _hSource, hTarget, hFinalRel⟩ :=
               AllocationObserverPreservation.Expr.stackVar_forward_result_scratch
-                hRel hLive hLocation hValue hDup
+                hRel hLive hLocation hCurrentDepth hValue hDup
             exact ⟨targetFinal, hTarget, hFinalRel⟩
         | scratch slot op hLocation hDup =>
             obtain ⟨targetFinal, _hSource, hTarget, hFinalRel⟩ :=

@@ -1709,7 +1709,7 @@ theorem literal_backward {transcript : Trace}
 theorem stackVar_forward {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase depth : Nat}
+    {stackOffset frameBase planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
@@ -1719,7 +1719,11 @@ theorem stackVar_forward {transcript : Trace}
     (hLive : name ∈ live)
     (hLocation :
       Locals.Allocation.Plan.location? plan name =
-        some (Locals.Allocation.LocalLocation.stack depth))
+        some (Locals.Allocation.LocalLocation.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
@@ -1736,7 +1740,7 @@ theorem stackVar_forward {transcript : Trace}
       (AllocationObserverRelation.StateRel.pushTarget value target) := by
   have hTargetGet :
       target.source.evm.stack[stackOffset + depth]? = some value := by
-    rw [hRel.core.store.stack hLive hLocation, hSource]
+    rw [hRel.core.store.stack_at hLive hLocation hCurrentDepth, hSource]
   refine ⟨?_, ObserverCode.run_dup hOp hTargetGet,
     hRel.push_target value⟩
   simp [Functions.Source.Effectful.Expr.eval,
@@ -1748,7 +1752,7 @@ theorem stackVar_forward {transcript : Trace}
 theorem stackVar_backward {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase depth : Nat}
+    {stackOffset frameBase planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target targetFinal :
       Structured.ObserverSemantics.State transcript}
@@ -1759,7 +1763,11 @@ theorem stackVar_backward {transcript : Trace}
     (hLive : name ∈ live)
     (hLocation :
       Locals.Allocation.Plan.location? plan name =
-        some (Locals.Allocation.LocalLocation.stack depth))
+        some (Locals.Allocation.LocalLocation.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op)
@@ -1775,7 +1783,7 @@ theorem stackVar_backward {transcript : Trace}
       (stackOffset + 1) frameBase source targetFinal := by
   have hTargetGet :
       target.source.evm.stack[stackOffset + depth]? = some value := by
-    rw [hRel.core.store.stack hLive hLocation, hSource]
+    rw [hRel.core.store.stack_at hLive hLocation hCurrentDepth, hSource]
   rw [ObserverCode.run_dup hOp hTargetGet] at hRun
   cases hRun
   refine ⟨?_, hRel.push_target value⟩
@@ -2105,6 +2113,9 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
     (hAfter :
       ∀ other, other ∈ afterLive →
         other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan afterLive =
+        AllocationObserverRelation.currentStackOrder plan beforeLive)
     (hNameAfter : name ∈ afterLive)
     (hLocation :
       plan.location? name =
@@ -2193,7 +2204,8 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
         (source.withSource (source.source.insert name value))
         targetFinal := by
     simpa [targetFinal, hAddress] using
-      (hAfterAddRel.assign_scratch_live hWF hAfter hNameAfter hLocation
+      (hAfterAddRel.assign_scratch_live hWF hAfter hStackOrder
+        hNameAfter hLocation
         hAssignedBound hReservation hRegion hAfterAddStack')
   have hFramePointer :
       target.source.evm.stack[stackOffset + frameDepth + 1]? =
@@ -2259,6 +2271,9 @@ theorem scratchAssignTop_backward_live {transcript : Trace}
     (hAfter :
       ∀ other, other ∈ afterLive →
         other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan afterLive =
+        AllocationObserverRelation.currentStackOrder plan beforeLive)
     (hNameAfter : name ∈ afterLive)
     (hLocation :
       plan.location? name =
@@ -2282,7 +2297,8 @@ theorem scratchAssignTop_backward_live {transcript : Trace}
       (source.withSource (source.source.insert name value))
       targetFinal := by
   obtain ⟨expected, hExpectedRun, hExpectedRel⟩ :=
-    scratchAssignTop_forward_live hRel hStack hWF hAfter hNameAfter
+    scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
+      hNameAfter
       hLocation hAssignedBound hReservation hRegion hOp
   rw [hExpectedRun] at hRun
   cases hRun
@@ -2307,6 +2323,9 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
     (hAfter :
       ∀ other, other ∈ afterLive →
         other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan afterLive =
+        AllocationObserverRelation.currentStackOrder plan beforeLive)
     (hNameAfter : name ∈ afterLive)
     (hLocation :
       plan.location? name =
@@ -2340,8 +2359,8 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
         AllocationSupport.dupCode?, hDup] at hCode
       subst code
       exact
-        scratchAssignTop_forward_live hRel hStack hWF hAfter hNameAfter
-          hLocation hAssignedBound hReservation hRegion
+        scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
+          hNameAfter hLocation hAssignedBound hReservation hRegion
           (by simpa [Nat.add_assoc] using hDup)
 
 theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
@@ -2364,6 +2383,9 @@ theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
     (hAfter :
       ∀ other, other ∈ afterLive →
         other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan afterLive =
+        AllocationObserverRelation.currentStackOrder plan beforeLive)
     (hNameAfter : name ∈ afterLive)
     (hLocation :
       plan.location? name =
@@ -2386,7 +2408,7 @@ theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
       targetFinal := by
   obtain ⟨expected, hExpectedRun, hExpectedRel⟩ :=
     scratchAssignTop_forward_of_storeTopSlotCode?_live
-      hRel hStack hWF hAfter hNameAfter hLocation hAssignedBound
+      hRel hStack hWF hAfter hStackOrder hNameAfter hLocation hAssignedBound
       hReservation hRegion hCode
   rw [hExpectedRun] at hRun
   cases hRun
@@ -2695,7 +2717,7 @@ theorem literal_forward_result_scratch {transcript : Trace}
 theorem stackVar_forward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase depth : Nat}
+    {stackOffset frameBase planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
@@ -2704,7 +2726,11 @@ theorem stackVar_forward_result {transcript : Trace}
         stackOffset frameBase source target)
     (hLive : name ∈ live)
     (hLocation :
-      plan.location? name = some (.stack depth))
+      plan.location? name = some (.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
@@ -2719,7 +2745,7 @@ theorem stackVar_forward_result {transcript : Trace}
       AllocationObserverRelation.ExprResultRel contract plan live
         stackOffset frameBase 1 source target targetFinal [value] := by
   obtain ⟨hSourceEval, hTargetRun, hFinalRel⟩ :=
-    stackVar_forward hRel hLive hLocation hSource hOp
+    stackVar_forward hRel hLive hLocation hCurrentDepth hSource hOp
   refine
     ⟨AllocationObserverRelation.StateRel.pushTarget value target,
       hSourceEval, hTargetRun, ?_⟩
@@ -2728,7 +2754,7 @@ theorem stackVar_forward_result {transcript : Trace}
 theorem stackVar_forward_result_scratch {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords depth : Nat}
+    {stackOffset frameBase frameDepth frameWords planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
@@ -2737,7 +2763,11 @@ theorem stackVar_forward_result_scratch {transcript : Trace}
         stackOffset frameBase frameDepth frameWords source target)
     (hLive : name ∈ live)
     (hLocation :
-      plan.location? name = some (.stack depth))
+      plan.location? name = some (.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
@@ -2754,7 +2784,8 @@ theorem stackVar_forward_result_scratch {transcript : Trace}
         source target targetFinal [value] := by
   have hTargetGet :
       target.source.evm.stack[stackOffset + depth]? = some value := by
-    rw [hRel.base.core.store.stack hLive hLocation, hSource]
+    rw [hRel.base.core.store.stack_at
+      hLive hLocation hCurrentDepth, hSource]
   let targetFinal :=
     AllocationObserverRelation.StateRel.pushTarget value target
   refine
@@ -2944,7 +2975,7 @@ theorem literal_backward_result_scratch {transcript : Trace}
 theorem stackVar_backward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase depth : Nat}
+    {stackOffset frameBase planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target targetFinal : Structured.ObserverSemantics.State transcript}
     {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
@@ -2952,7 +2983,11 @@ theorem stackVar_backward_result {transcript : Trace}
       AllocationObserverRelation.StateRel contract plan live
         stackOffset frameBase source target)
     (hLive : name ∈ live)
-    (hLocation : plan.location? name = some (.stack depth))
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op)
@@ -2968,7 +3003,7 @@ theorem stackVar_backward_result {transcript : Trace}
       stackOffset frameBase 1 source target targetFinal [value] := by
   have hTargetGet :
       target.source.evm.stack[stackOffset + depth]? = some value := by
-    rw [hRel.core.store.stack hLive hLocation, hSource]
+    rw [hRel.core.store.stack_at hLive hLocation hCurrentDepth, hSource]
   rw [ObserverCode.run_dup hOp hTargetGet] at hRun
   cases hRun
   refine ⟨?_, ⟨by simpa using hRel.push_target value, rfl, rfl⟩⟩
@@ -2981,7 +3016,7 @@ theorem stackVar_backward_result {transcript : Trace}
 theorem stackVar_backward_result_scratch {transcript : Trace}
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan} {live : List Locals.Name}
-    {stackOffset frameBase frameDepth frameWords depth : Nat}
+    {stackOffset frameBase frameDepth frameWords planDepth depth : Nat}
     {source : Functions.ObserverSemantics.State transcript}
     {target targetFinal : Structured.ObserverSemantics.State transcript}
     {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
@@ -2989,7 +3024,11 @@ theorem stackVar_backward_result_scratch {transcript : Trace}
       AllocationObserverRelation.ScratchStateRel contract plan live
         stackOffset frameBase frameDepth frameWords source target)
     (hLive : name ∈ live)
-    (hLocation : plan.location? name = some (.stack depth))
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hCurrentDepth :
+      Locals.Layout.lookupDepth? name
+          (AllocationObserverRelation.currentStackOrder plan live) =
+        some (depth + 1))
     (hSource : source.source.vars name = some value)
     (hOp :
       Locals.StackOp.dup? (stackOffset + depth + 1) = some op)
@@ -3006,7 +3045,7 @@ theorem stackVar_backward_result_scratch {transcript : Trace}
       source target targetFinal [value] := by
   obtain ⟨expected, hSourceEval, hExpectedRun, hExpectedRel⟩ :=
     stackVar_forward_result_scratch
-      hRel hLive hLocation hSource hOp
+      hRel hLive hLocation hCurrentDepth hSource hOp
   rw [hExpectedRun] at hRun
   cases hRun
   exact ⟨hSourceEval, hExpectedRel⟩
