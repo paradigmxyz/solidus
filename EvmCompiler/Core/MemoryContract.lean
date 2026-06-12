@@ -51,9 +51,17 @@ def WellFormed (reservation : ScratchReservation) : Prop :=
   reservation.base % wordBytes = 0 ∧
     reservation.endExclusive < EvmYul.UInt256.size
 
+def HostAddressable (reservation : ScratchReservation) : Prop :=
+  reservation.endExclusive < USize.size
+
 instance wellFormedDecidable (reservation : ScratchReservation) :
     Decidable reservation.WellFormed := by
   unfold WellFormed
+  infer_instance
+
+instance hostAddressableDecidable (reservation : ScratchReservation) :
+    Decidable reservation.HostAddressable := by
+  unfold HostAddressable
   infer_instance
 
 def wellFormed? (reservation : ScratchReservation) : Bool :=

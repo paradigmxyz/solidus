@@ -52,6 +52,7 @@ def scratchFrameConfig?
     (frameWords : Nat) : Option ScratchFrameConfig := do
   let reservation ← contract.scratch?
   if reservation.WellFormed ∧
+      reservation.HostAddressable ∧
       0 < reservation.words ∧
       frameWords ≤ reservation.usableWords then
     some
@@ -74,6 +75,7 @@ theorem scratchFrameConfig?_sound
       config.limit = reservation.endExclusive ∧
       config.frameWords = frameWords ∧
       reservation.WellFormed ∧
+      reservation.HostAddressable ∧
       0 < reservation.words ∧
       frameWords ≤ reservation.usableWords := by
   unfold scratchFrameConfig? at hConfig
@@ -83,13 +85,15 @@ theorem scratchFrameConfig?_sound
   | some reservation =>
       by_cases hWF : reservation.WellFormed
       · by_cases hPositive : 0 < reservation.words
-        · by_cases hFits : frameWords ≤ reservation.usableWords
-          · simp [hReservation, hWF, hPositive, hFits] at hConfig
-            subst config
-            exact
-              ⟨reservation, rfl, rfl, rfl, rfl, rfl,
-                hWF, hPositive, hFits⟩
-          · simp [hReservation, hWF, hPositive, hFits] at hConfig
+        · by_cases hHost : reservation.HostAddressable
+          · by_cases hFits : frameWords ≤ reservation.usableWords
+            · simp [hReservation, hWF, hHost, hPositive, hFits] at hConfig
+              subst config
+              exact
+                ⟨reservation, rfl, rfl, rfl, rfl, rfl,
+                  hWF, hHost, hPositive, hFits⟩
+            · simp [hReservation, hWF, hHost, hPositive, hFits] at hConfig
+          · simp [hReservation, hWF, hHost] at hConfig
         · simp [hReservation, hWF, hPositive] at hConfig
       · simp [hReservation, hWF] at hConfig
 

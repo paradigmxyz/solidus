@@ -842,7 +842,7 @@ theorem budget_zero_of_scratchFrameConfig?
     Budget config 0 := by
   obtain
     ⟨reservation, _hReservation, hAllocator, hFirst, hLimit,
-      hWords, _hWF, hPositive, hFits⟩ :=
+      hWords, _hWF, _hHost, hPositive, hFits⟩ :=
     AllocationSupport.scratchFrameConfig?_sound hConfig
   simp only [Budget, baseAt_zero, bytes]
   rw [hFirst, hLimit, hWords]
@@ -863,9 +863,24 @@ theorem noWrap_of_budget_of_scratchFrameConfig?
     baseAt config depth + bytes config < EvmYul.UInt256.size := by
   obtain
     ⟨reservation, _hReservation, _hAllocator, _hFirst, hLimit,
-      _hWords, hWF, _hPositive, _hFits⟩ :=
+      _hWords, hWF, _hHost, _hPositive, _hFits⟩ :=
     AllocationSupport.scratchFrameConfig?_sound hConfig
   exact lt_of_le_of_lt (by simpa [Budget, hLimit] using hBudget) hWF.2
+
+theorem hostAddressable_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    baseAt config depth + bytes config < USize.size := by
+  obtain
+    ⟨reservation, _hReservation, _hAllocator, _hFirst, hLimit,
+      _hWords, _hWF, hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  exact lt_of_le_of_lt
+    (by simpa [Budget, hLimit] using hBudget) hHost
 
 end Frame
 

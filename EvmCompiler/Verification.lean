@@ -49,7 +49,11 @@ or audit-alias corridor.
 
 #check EvmCompiler.TypedCfg.ObserverSemantics.Instr.runState
 #check EvmCompiler.MemoryContract.ofMemoryGuard?
+#check EvmCompiler.MemoryContract.ScratchReservation.HostAddressable
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel
+#check EvmCompiler.Compiler.MemoryRelation.byteAt_writeWord_of_outside
+#check EvmCompiler.Compiler.MemoryRelation.OutsideReservation.writeWord_right
+#check EvmCompiler.Compiler.MemoryRelation.MachineRel.mstore_target
 #check EvmCompiler.Locals.Allocation.Plan.location?
 #check EvmCompiler.Locals.Allocation.Plan.scratch_bound_of_wellFormed
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_memoryAuthorized
@@ -60,6 +64,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.hostAddressable_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_push
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize

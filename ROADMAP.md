@@ -132,15 +132,18 @@ Adjacent boundary status:
   activation's dynamic frame base, so recursive activations can construct the
   same relation from allocator depth rather than an impossible base equality.
   Scratch-frame configuration now rejects malformed wrapping reservations and
-  derives each budgeted activation's no-wrap invariant from checked compiler
-  configuration.
+  derives each budgeted activation's no-wrap and concrete host-addressability
+  invariants from checked compiler configuration. `Compiler.MemoryRelation`
+  now proves exact byte locality for `writeWord`, reservation-preserving
+  target writes, monotone active-memory growth, and `MachineRel` preservation
+  for every compiler-owned `MSTORE`.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward
   `ObserverPass` theorems in `Expressions.ObserverPreservation`, reusing the
   canonical Structured control interpreter rather than defining an
   observer-specific interpreter.
-- [ ] Structured -> TypedCfg: complete observer-aware forward preservation is
+- [x] Structured -> TypedCfg: complete observer-aware forward preservation is
   checked for statements, blocks, recursive switch/loop/call control, halts,
   and whole-program artifacts. Terminal stack-suffix preservation is now a
   checked shared semantic theorem rather than a public premise. Backward
