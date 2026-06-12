@@ -230,6 +230,133 @@ theorem consume_backward {transcript : Trace}
 
 end StateRel
 
+/--
+Additional realization facts for an activation that owns a scratch frame.
+
+The hidden frame pointer is below any temporary expression results by
+`stackOffset + frameDepth`. Frame acquisition preallocates every frame word,
+so reads of compiler-owned slots do not subsequently change `MSIZE`.
+-/
+structure ScratchStateRel {transcript : Trace}
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (stackOffset frameBase frameDepth frameWords : Nat)
+    (source : SourceState transcript) (target : TargetState transcript) :
+    Prop where
+  base :
+    StateRel contract plan live stackOffset frameBase source target
+  framePointer :
+    target.source.evm.stack[stackOffset + frameDepth]? =
+      some (EvmYul.UInt256.ofNat frameBase)
+  frameActive :
+    frameBase + MemoryContract.wordBytes * frameWords ≤
+      target.source.evm.activeWords.toNat * MemoryContract.wordBytes
+
+namespace ScratchStateRel
+
+theorem mono {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {smaller larger : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract plan larger stackOffset frameBase
+        frameDepth frameWords source target)
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    ScratchStateRel contract plan smaller stackOffset frameBase
+      frameDepth frameWords source target :=
+  ⟨hRel.base.mono hSubset, hRel.framePointer, hRel.frameActive⟩
+
+theorem push_target_by {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (pcDelta : Nat) (value : Word)
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target) :
+    ScratchStateRel contract plan live (stackOffset + 1) frameBase
+      frameDepth frameWords source
+      (StateRel.pushTargetBy pcDelta value target) := by
+  refine ⟨hRel.base.push_target_by pcDelta value, ?_, ?_⟩
+  · change
+      (value :: target.source.evm.stack)[stackOffset + 1 + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    rw [show stackOffset + 1 + frameDepth =
+        (stackOffset + frameDepth) + 1 by omega]
+    simpa using hRel.framePointer
+  · simpa [StateRel.pushTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.frameActive
+
+theorem push_target {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (value : Word)
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target) :
+    ScratchStateRel contract plan live (stackOffset + 1) frameBase
+      frameDepth frameWords source
+      (StateRel.pushTarget value target) := by
+  exact hRel.push_target_by 1 value
+
+theorem consume_forward {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {kind : Assembly.ResourceObserver} {value : Word}
+    {source source' : SourceState transcript}
+    {target : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hConsume :
+      Simulation.ResourceReplay.consume? kind source =
+        some (value, source')) :
+    ∃ target' : TargetState transcript,
+      Simulation.ResourceReplay.consume? kind target =
+          some (value, target') ∧
+        ScratchStateRel contract plan live stackOffset frameBase
+          frameDepth frameWords source' target' := by
+  obtain ⟨target', hTarget, hBase⟩ :=
+    hRel.base.consume_forward hConsume
+  have hTargetSource : target'.source = target.source :=
+    Simulation.ResourceReplay.consume?_source hTarget
+  refine ⟨target', hTarget, hBase, ?_, ?_⟩
+  · simpa [hTargetSource] using hRel.framePointer
+  · simpa [hTargetSource] using hRel.frameActive
+
+theorem consume_backward {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {kind : Assembly.ResourceObserver} {value : Word}
+    {source : SourceState transcript}
+    {target target' : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hConsume :
+      Simulation.ResourceReplay.consume? kind target =
+        some (value, target')) :
+    ∃ source' : SourceState transcript,
+      Simulation.ResourceReplay.consume? kind source =
+          some (value, source') ∧
+        ScratchStateRel contract plan live stackOffset frameBase
+          frameDepth frameWords source' target' := by
+  obtain ⟨source', hSource, hBase⟩ :=
+    hRel.base.consume_backward hConsume
+  have hTargetSource : target'.source = target.source :=
+    Simulation.ResourceReplay.consume?_source hConsume
+  refine ⟨source', hSource, hBase, ?_, ?_⟩
+  · simpa [hTargetSource] using hRel.framePointer
+  · simpa [hTargetSource] using hRel.frameActive
+
+end ScratchStateRel
+
 inductive ModeRel :
     Locals.Source.Mode → Structured.Mode → Prop where
   | regular : ModeRel .regular .regular

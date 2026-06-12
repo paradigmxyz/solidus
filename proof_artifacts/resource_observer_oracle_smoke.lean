@@ -25,6 +25,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.ObserverSemantics.runBody_let_gas_cons
 #check EvmCompiler.Functions.ObserverSemantics.stmt_run_call_let_gas_cons
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
+#check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.FuelSafe
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
@@ -34,6 +35,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward_scratch
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward_scratch
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward_scratch
 #check EvmCompiler.Expressions.ObserverPreservation.verified
 #check EvmCompiler.Locals.ObserverSemantics.eval_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
@@ -119,6 +124,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_backward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_backward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward_scratch
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward_scratch
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward_scratch
 #print axioms EvmCompiler.Expressions.ObserverPreservation.verified
 #print axioms EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons
