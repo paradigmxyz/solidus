@@ -3766,60 +3766,6 @@ theorem dispatch_eventually
     exact hFinalRel
 
 /--
-Canonical decomposition of successful call-statement compilation.
--/
-theorem components_of_compileStmtFuel?_call
-    {compilerFuel : Nat} {name : Structured.Name}
-    {proc : Structured.Proc} {ctx : TypedCfgCompiler.Context}
-    {supply : LabelSupply} {entry regular : Assembly.Label}
-    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
-    (hLookup : Structured.ProcList.lookup? name ctx.procs = some proc)
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
-          ctx supply entry input regular =
-        some result) :
-    ∃ returnShape output,
-      TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc =
-          some returnShape ∧
-      TypedCfg.Block.bodyType?
-          (.returnToken (Structured.Stmt.callToken supply) ::
-            TypedCfgCompiler.sinkTopUnder proc.argc) input =
-        some output ∧
-      result =
-        { blocks :=
-            [{ label := entry
-               input := input
-               body :=
-                 .returnToken (Structured.Stmt.callToken supply) ::
-                   TypedCfgCompiler.sinkTopUnder proc.argc
-               output := output
-               term := .jump (ProcLabel.entry name) }]
-          next := supply + 1
-          calls :=
-            [{ procName := name
-               token := Structured.Stmt.callToken supply
-               returnLabel := regular
-               caseLabel := .generated supply 10000 }]
-          fallthrough? := some returnShape } := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [hLookup] at hCompile
-  cases hReturnShape :
-      TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc with
-  | none =>
-      simp [hReturnShape] at hCompile
-  | some returnShape =>
-      cases hType :
-          TypedCfg.Block.bodyType?
-            (.returnToken (Structured.Stmt.callToken supply) ::
-              TypedCfgCompiler.sinkTopUnder proc.argc) input with
-      | none =>
-          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
-      | some output =>
-          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
-          cases hCompile
-          exact ⟨returnShape, output, rfl, rfl, rfl⟩
-
-/--
 The generated call block reaches the procedure entry with the source call
 frame realized by its compiler-generated return token.
 -/
@@ -3849,8 +3795,10 @@ theorem entry_eventually_of_compileStmtFuel?
         ((source.withEVM { source.evm with stack := args }).pushReturn
           callerStack proc.retc)
         (Structured.Stmt.callToken supply :: tokens) targetFinal := by
-  rcases components_of_compileStmtFuel?_call hLookup hCompile with
-    ⟨returnShape, output, hReturnShape, hType, rfl⟩
+  rcases
+      TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
+        hLookup hCompile with
+    ⟨returnShape, output, hSource, hReturnShape, hType, rfl⟩
   rcases
       CallStack.runBody_callEntry_preserves hRel hSplit hType hProcWF.1 with
     ⟨targetFinal, hRunBody, hFinalRel⟩
@@ -4479,9 +4427,10 @@ mutual
               Structured.Program.procCallsResolved_of_lookup?
                 hProgramWF hLookup
             rcases
-                Call.components_of_compileStmtFuel?_call
+                TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
                   hCompilerLookup hCompile with
-              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+              ⟨returnShape, output, hSource, hReturnShape,
+                hCallType, hResult⟩
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name
@@ -4575,9 +4524,10 @@ mutual
               Structured.Program.procCallsResolved_of_lookup?
                 hProgramWF hLookup
             rcases
-                Call.components_of_compileStmtFuel?_call
+                TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
                   hCompilerLookup hCompile with
-              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+              ⟨returnShape, output, hSource, hReturnShape,
+                hCallType, hResult⟩
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name

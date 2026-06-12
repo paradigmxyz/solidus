@@ -142,8 +142,14 @@ Adjacent boundary status:
   body break/continue/regular/leave/halt outcomes, post execution, strictly
   decreasing residual target fuel, initializer composition, and checked
   fallthrough joins all live in the pass-owned
-  `Structured.ObserverLoopAdequacy` module. Internal calls/return dispatch, the
-  mutual statement/block theorem, and whole-program backward adequacy remain.
+  `Structured.ObserverLoopAdequacy` module. Internal-call backward adequacy is
+  also checked in `Structured.ObserverCallAdequacy`: call entry, optional
+  allocation relabeling, recursive callee execution, exact source-frame
+  reconstruction, and return dispatch compose through one `AdequateWithin`
+  rule. Procedure lowering now rejects allocation entry shapes that move or
+  erase the hidden return token and rejects regular procedure fallthrough that
+  disagrees with the declared return shape. The generated-context mutual
+  statement/block theorem and whole-program backward adequacy remain.
   Shared outcome artifacts and terminal leaves were extracted into sibling
   modules. Source-frame typing now distinguishes token-free caller frames,
   which retain a stack lower bound, from active procedure frames, whose
@@ -334,10 +340,11 @@ Implemented in this migration:
 
 The remaining observer-proof critical path is explicit:
 
-1. Complete the indexed call-entry replay theorem.
-2. Complete internal-call/return-dispatch adequacy and the generated-context
-   mutual Structured theorem.
-3. Prove the Functions/allocation/Expressions and Yul adjacent backward
+1. [x] Complete the indexed call-entry replay theorem.
+2. [x] Complete internal-call/return-dispatch adequacy.
+3. Complete the generated-context mutual Structured theorem and whole-program
+   backward adequacy.
+4. Prove the Functions/allocation/Expressions and Yul adjacent backward
    boundaries, compose `ClosedResourceCorrect`, and run the final gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,

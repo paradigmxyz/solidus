@@ -152,6 +152,18 @@ theorem requireSourceWords?_eq_some_iff
       count ≤ TypedCfgCompiler.Shape.sourceLength shape := by
   simp [TypedCfgCompiler.Shape.requireSourceWords?]
 
+theorem requireReturnTokenDepth?_eq_some_iff
+    {depth : Nat} {shape : TypedCfg.Shape} :
+    TypedCfgCompiler.Shape.requireReturnTokenDepth? depth shape = some () ↔
+      shape.returnTokenDepth? = some depth := by
+  simp [TypedCfgCompiler.Shape.requireReturnTokenDepth?]
+
+theorem sourceLength_le_length (shape : TypedCfg.Shape) :
+    TypedCfgCompiler.Shape.sourceLength shape ≤ shape.length := by
+  unfold TypedCfgCompiler.Shape.sourceLength
+    TypedCfgCompiler.Shape.sourceView
+  split <;> simp [TypedCfg.Shape.length]
+
 theorem sourceLength_tail_of_one_le
     (shape : TypedCfg.Shape)
     (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape) :
@@ -221,6 +233,113 @@ theorem sourceFrameFits_tail
     have hLift := returnTokenDepth?_tail_lift hSource hDepth
     have hExact := hFits.2 (depth + 1) hLift
     omega
+
+theorem sourceFrameFits_cons_word
+    {shape : TypedCfg.Shape} {stackLength : Nat}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape stackLength) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      { shape with slots := .word :: shape.slots } (stackLength + 1) := by
+  cases hDepth : shape.returnTokenDepth? with
+  | none =>
+      have hNewDepth :
+          ({ shape with slots := .word :: shape.slots } :
+            TypedCfg.Shape).returnTokenDepth? = none := by
+        simpa [TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] using hDepth
+      apply sourceFrameFits_of_returnTokenDepth?_eq_none hNewDepth
+      have hSource :
+          TypedCfgCompiler.Shape.sourceLength
+              { shape with slots := .word :: shape.slots } =
+            TypedCfgCompiler.Shape.sourceLength shape + 1 := by
+        unfold TypedCfgCompiler.Shape.sourceLength
+        rw [show
+          TypedCfgCompiler.Shape.sourceView
+              { shape with slots := .word :: shape.slots } =
+            { shape with slots := .word :: shape.slots } by
+              exact sourceView_eq_self_of_returnTokenDepth?_eq_none hNewDepth,
+          sourceView_eq_self_of_returnTokenDepth?_eq_none hDepth]
+        simp [TypedCfg.Shape.length]
+      have hBound := hFits.1
+      omega
+  | some depth =>
+      have hNewDepth :
+          ({ shape with slots := .word :: shape.slots } :
+            TypedCfg.Shape).returnTokenDepth? = some (depth + 1) := by
+        simpa [TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] using hDepth
+      rw [sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some hNewDepth]
+      have hExact := hFits.2 depth hDepth
+      omega
+
+theorem sourceFrameFits_pop
+    {shape : TypedCfg.Shape} {stackLength count : Nat}
+    (hCount :
+      count ≤ TypedCfgCompiler.Shape.sourceLength shape)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape stackLength) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      (TypedCfg.Shape.pop count shape) (stackLength - count) := by
+  induction count generalizing shape stackLength with
+  | zero =>
+      simpa using hFits
+  | succ count ih =>
+      have hSource :
+          1 ≤ TypedCfgCompiler.Shape.sourceLength shape := by
+        omega
+      have hStack : 1 ≤ stackLength := by
+        have hBound := hFits.1
+        omega
+      obtain ⟨stackLength, rfl⟩ := Nat.exists_eq_succ_of_ne_zero (by omega : stackLength ≠ 0)
+      have hTailFits :=
+        sourceFrameFits_tail hSource hFits
+      have hTailSource :=
+        sourceLength_tail_of_one_le shape hSource
+      have hCountTail :
+          count ≤
+            TypedCfgCompiler.Shape.sourceLength
+              { shape with slots := shape.slots.tail } := by
+        omega
+      simpa [TypedCfg.Shape.pop, Nat.succ_sub_succ_eq_sub] using
+        ih hCountTail hTailFits
+
+theorem sourceFrameFits_pushWords
+    {shape : TypedCfg.Shape} {stackLength count : Nat}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape stackLength) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      (TypedCfg.Shape.pushWords count shape) (stackLength + count) := by
+  induction count with
+  | zero =>
+      simpa using hFits
+  | succ count ih =>
+      have hCons :=
+        sourceFrameFits_cons_word (ih)
+      simpa [TypedCfg.Shape.pushWords, List.replicate_succ,
+        Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hCons
+
+theorem sourceFrameFits_afterCall
+    {input output : TypedCfg.Shape}
+    {stackLength argc retc : Nat}
+    (hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? argc input = some ())
+    (hAfter :
+      TypedCfgCompiler.Shape.afterCall input argc retc = some output)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits input stackLength) :
+    TypedCfgCompiler.Shape.SourceFrameFits output
+      (stackLength - argc + retc) := by
+  have hCount :
+      argc ≤ TypedCfgCompiler.Shape.sourceLength input :=
+    requireSourceWords?_eq_some_iff.mp hSource
+  unfold TypedCfgCompiler.Shape.afterCall at hAfter
+  have hInputCount : argc ≤ input.length := by
+    exact Nat.le_trans hCount (sourceLength_le_length input)
+  simp [hInputCount] at hAfter
+  subst output
+  exact
+    sourceFrameFits_pushWords
+      (sourceFrameFits_pop hCount hFits)
 
 theorem sourceLength_of_type?_pop
     {input output : TypedCfg.Shape}
@@ -1173,6 +1292,33 @@ end Loop
 
 namespace Call
 
+theorem exists_lookup_of_compileStmtFuel?_call
+    {compilerFuel : Nat} {name : Structured.Name}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular =
+        some result) :
+    ∃ proc, Structured.ProcList.lookup? name ctx.procs = some proc := by
+  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  cases hLookup : Structured.ProcList.lookup? name ctx.procs with
+  | none =>
+      simp [hLookup] at hCompile
+  | some proc =>
+      exact ⟨proc, rfl⟩
+
+theorem returnTokenDepth?_procEntry (proc : Structured.Proc) :
+    (TypedCfgCompiler.Shape.procEntry proc).returnTokenDepth? =
+      some proc.argc := by
+  unfold TypedCfgCompiler.Shape.procEntry TypedCfg.Shape.returnTokenDepth?
+  induction proc.argc with
+  | zero =>
+      simp [TypedCfg.Shape.returnTokenDepthList?]
+  | succ argc ih =>
+      simp [List.replicate_succ, TypedCfg.Shape.returnTokenDepthList?, ih]
+
 theorem returnTokenDepth?_procExit (proc : Structured.Proc) :
     (TypedCfgCompiler.Shape.procExit proc).returnTokenDepth? =
       some proc.retc := by
@@ -1234,6 +1380,8 @@ theorem components_of_compileStmtFuel?_call
           ctx supply entry input regular =
         some result) :
     ∃ returnShape output,
+      TypedCfgCompiler.Shape.requireSourceWords? proc.argc input =
+          some () ∧
       TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc =
           some returnShape ∧
       TypedCfg.Block.bodyType?
@@ -1258,21 +1406,29 @@ theorem components_of_compileStmtFuel?_call
           fallthrough? := some returnShape } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   simp [hLookup] at hCompile
-  cases hReturnShape :
-      TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc with
+  cases hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? proc.argc input with
   | none =>
-      simp [hReturnShape] at hCompile
-  | some returnShape =>
-      cases hType :
-          TypedCfg.Block.bodyType?
-            (.returnToken (Structured.Stmt.callToken supply) ::
-              TypedCfgCompiler.sinkTopUnder proc.argc) input with
+      simp [hSource] at hCompile
+  | some unit =>
+      cases unit
+      cases hReturnShape :
+          TypedCfgCompiler.Shape.afterCall input proc.argc proc.retc with
       | none =>
-          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
-      | some output =>
-          simp [hReturnShape, TypedCfgCompiler.mkBlock?, hType] at hCompile
-          cases hCompile
-          exact ⟨returnShape, output, rfl, rfl, rfl⟩
+          simp [hSource, hReturnShape] at hCompile
+      | some returnShape =>
+          cases hType :
+              TypedCfg.Block.bodyType?
+                (.returnToken (Structured.Stmt.callToken supply) ::
+                  TypedCfgCompiler.sinkTopUnder proc.argc) input with
+          | none =>
+              simp [hSource, hReturnShape,
+                TypedCfgCompiler.mkBlock?, hType] at hCompile
+          | some output =>
+              simp [hSource, hReturnShape,
+                TypedCfgCompiler.mkBlock?, hType] at hCompile
+              cases hCompile
+              exact ⟨returnShape, output, rfl, rfl, rfl, rfl⟩
 
 end Call
 

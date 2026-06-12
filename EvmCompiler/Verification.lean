@@ -14,6 +14,7 @@ import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
+import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
@@ -102,6 +103,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_outcome_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_terminal_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Loop.condition_of_step
+#check EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
+#check EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
+#check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithin_call_of_compileStmtFuel?
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

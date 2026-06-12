@@ -71,6 +71,18 @@ theorem targetCongr
     ⟨realized, hRealize,
       SameRuntimeData.trans hSame hTarget⟩
 
+theorem returns_cons_of_tokens_cons
+    {source : RunState} {token : Word} {tokens : List Word}
+    {target : EVMState}
+    (hRel : StateRel source (token :: tokens) target) :
+    ∃ frame returns, source.returns = frame :: returns := by
+  rcases hRel with ⟨realized, hRealize, hSame⟩
+  cases hReturns : source.returns with
+  | nil =>
+      simp [hReturns, realizeStack] at hRealize
+  | cons frame returns =>
+      exact ⟨frame, returns, rfl⟩
+
 /--
 Terminal execution preserves realization of ghost return frames. The terminal
 operation consumes only source stack operands, so compiler-owned return data
@@ -2417,6 +2429,9 @@ structure ProcFragment
           leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
         supply entry input (ProcLabel.exit proc.name) =
       some result
+  fallthrough :
+    result.requireFallthrough? (TypedCfgCompiler.Shape.procExit proc) =
+      some ()
   blocks :
     ∀ block, block ∈ result.blocks → block ∈ procBlocks
   calls :
@@ -2427,6 +2442,8 @@ structure ProcFragment
     (∃ adapter,
       entry = ProcLabel.body proc.name ∧
       entryShapes.find? proc.name = some input ∧
+      TypedCfgCompiler.Shape.requireReturnTokenDepth?
+          proc.argc input = some () ∧
       TypedCfgCompiler.mkBlock?
           (ProcLabel.entry proc.name)
           (TypedCfgCompiler.Shape.procEntry proc)
@@ -2474,80 +2491,105 @@ def procFragment_of_lowerProcBodiesWithShapes?
             | none =>
                 simp [hShape, hBody] at hLower
             | some bodyResult =>
-                cases hTail :
-                    TypedCfgCompiler.lowerProcBodiesWithShapes?
-                      entryShapes allProcs rest bodyResult.next with
+                cases hRequire :
+                    bodyResult.requireFallthrough?
+                      (TypedCfgCompiler.Shape.procExit head) with
                 | none =>
-                    simp [hShape, hBody, hTail] at hLower
-                | some tailResult =>
-                    rcases tailResult with
-                      ⟨tailBlocks, tailNext, tailCalls⟩
-                    simp [hShape, hBody, hTail] at hLower
-                    rcases hLower with ⟨rfl, rfl, rfl⟩
-                    exact
-                      { supply := supply
-                        input := TypedCfgCompiler.Shape.procEntry head
-                        entry := ProcLabel.entry head.name
-                        result := bodyResult
-                        compile := hBody
-                        blocks := by
-                          intro block hMem
-                          exact List.mem_append.mpr (Or.inl hMem)
-                        calls := by
-                          intro site hMem
-                          exact List.mem_append.mpr (Or.inl hMem)
-                        route := Or.inl ⟨rfl, rfl⟩ }
-        | some bodyInput =>
-            cases hAdapter :
-                TypedCfgCompiler.mkBlock?
-                  (ProcLabel.entry head.name)
-                  (TypedCfgCompiler.Shape.procEntry head)
-                  [.relabel bodyInput]
-                  (.jump (ProcLabel.body head.name)) with
-            | none =>
-                simp [hShape, hAdapter] at hLower
-            | some adapter =>
-                cases hBody :
-                    TypedCfgCompiler.compileBlock? head.body
-                      { procs := allProcs
-                        leaveLabel? := some (ProcLabel.exit head.name)
-                        leaveShape? :=
-                          some (TypedCfgCompiler.Shape.procExit head) }
-                      supply (ProcLabel.body head.name) bodyInput
-                      (ProcLabel.exit head.name) with
-                | none =>
-                    simp [hShape, hAdapter, hBody] at hLower
-                | some bodyResult =>
+                    simp [hShape, hBody, hRequire] at hLower
+                | some unit =>
+                    cases unit
                     cases hTail :
                         TypedCfgCompiler.lowerProcBodiesWithShapes?
                           entryShapes allProcs rest bodyResult.next with
                     | none =>
-                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        simp [hShape, hBody, hRequire, hTail] at hLower
                     | some tailResult =>
                         rcases tailResult with
                           ⟨tailBlocks, tailNext, tailCalls⟩
-                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        simp [hShape, hBody, hRequire, hTail] at hLower
                         rcases hLower with ⟨rfl, rfl, rfl⟩
                         exact
                           { supply := supply
-                            input := bodyInput
-                            entry := ProcLabel.body head.name
+                            input := TypedCfgCompiler.Shape.procEntry head
+                            entry := ProcLabel.entry head.name
                             result := bodyResult
                             compile := hBody
+                            fallthrough := hRequire
                             blocks := by
                               intro block hMem
-                              exact
-                                List.mem_append.mpr
-                                  (Or.inl
-                                    (List.mem_cons_of_mem adapter hMem))
+                              exact List.mem_append.mpr (Or.inl hMem)
                             calls := by
                               intro site hMem
                               exact List.mem_append.mpr (Or.inl hMem)
-                            route :=
-                              Or.inr
-                                ⟨adapter, rfl, hShape, hAdapter,
-                                  List.mem_append.mpr
-                                    (Or.inl (List.mem_cons_self))⟩ }
+                            route := Or.inl ⟨rfl, rfl⟩ }
+        | some bodyInput =>
+            cases hFrame :
+                TypedCfgCompiler.Shape.requireReturnTokenDepth?
+                  head.argc bodyInput with
+            | none =>
+                simp [hShape, hFrame] at hLower
+            | some unit =>
+                cases unit
+                cases hAdapter :
+                    TypedCfgCompiler.mkBlock?
+                      (ProcLabel.entry head.name)
+                      (TypedCfgCompiler.Shape.procEntry head)
+                      [.relabel bodyInput]
+                      (.jump (ProcLabel.body head.name)) with
+                | none =>
+                    simp [hShape, hFrame, hAdapter] at hLower
+                | some adapter =>
+                    cases hBody :
+                        TypedCfgCompiler.compileBlock? head.body
+                          { procs := allProcs
+                            leaveLabel? := some (ProcLabel.exit head.name)
+                            leaveShape? :=
+                              some (TypedCfgCompiler.Shape.procExit head) }
+                          supply (ProcLabel.body head.name) bodyInput
+                          (ProcLabel.exit head.name) with
+                    | none =>
+                        simp [hShape, hFrame, hAdapter, hBody] at hLower
+                    | some bodyResult =>
+                        cases hRequire :
+                            bodyResult.requireFallthrough?
+                              (TypedCfgCompiler.Shape.procExit head) with
+                        | none =>
+                            simp [hShape, hFrame, hAdapter, hBody, hRequire] at hLower
+                        | some unit =>
+                            cases unit
+                            cases hTail :
+                                TypedCfgCompiler.lowerProcBodiesWithShapes?
+                                  entryShapes allProcs rest bodyResult.next with
+                            | none =>
+                                simp [hShape, hFrame, hAdapter, hBody,
+                                  hRequire, hTail] at hLower
+                            | some tailResult =>
+                                rcases tailResult with
+                                  ⟨tailBlocks, tailNext, tailCalls⟩
+                                simp [hShape, hFrame, hAdapter, hBody,
+                                  hRequire, hTail] at hLower
+                                rcases hLower with ⟨rfl, rfl, rfl⟩
+                                exact
+                                  { supply := supply
+                                    input := bodyInput
+                                    entry := ProcLabel.body head.name
+                                    result := bodyResult
+                                    compile := hBody
+                                    fallthrough := hRequire
+                                    blocks := by
+                                      intro block hMem
+                                      exact
+                                        List.mem_append.mpr
+                                          (Or.inl
+                                            (List.mem_cons_of_mem adapter hMem))
+                                    calls := by
+                                      intro site hMem
+                                      exact List.mem_append.mpr (Or.inl hMem)
+                                    route :=
+                                      Or.inr
+                                        ⟨adapter, rfl, hShape, hFrame, hAdapter,
+                                          List.mem_append.mpr
+                                            (Or.inl (List.mem_cons_self))⟩ }
       · simp [hName] at hLookup
         unfold TypedCfgCompiler.lowerProcBodiesWithShapes? at hLower
         cases hShape : entryShapes.find? head.name with
@@ -2564,71 +2606,22 @@ def procFragment_of_lowerProcBodiesWithShapes?
             | none =>
                 simp [hShape, hBody] at hLower
             | some bodyResult =>
-                cases hTail :
-                    TypedCfgCompiler.lowerProcBodiesWithShapes?
-                      entryShapes allProcs rest bodyResult.next with
+                cases hRequire :
+                    bodyResult.requireFallthrough?
+                      (TypedCfgCompiler.Shape.procExit head) with
                 | none =>
-                    simp [hShape, hBody, hTail] at hLower
-                | some tailResult =>
-                    rcases tailResult with
-                      ⟨tailBlocks, tailNext, tailCalls⟩
-                    simp [hShape, hBody, hTail] at hLower
-                    rcases hLower with ⟨rfl, rfl, rfl⟩
-                    let fragment :=
-                      ih hTail hLookup
-                    exact
-                      { fragment with
-                        blocks := by
-                          intro block hMem
-                          exact
-                            List.mem_append.mpr
-                              (Or.inr (fragment.blocks block hMem))
-                        calls := by
-                          intro site hMem
-                          exact
-                            List.mem_append.mpr
-                              (Or.inr (fragment.calls site hMem))
-                        route := by
-                          rcases fragment.route with hDirect | hAdapter
-                          · exact Or.inl hDirect
-                          · rcases hAdapter with
-                              ⟨adapter, hEntry, hInput,
-                                hAdapterCompile, hAdapterMem⟩
-                            exact
-                              Or.inr
-                                ⟨adapter, hEntry, hInput,
-                                  hAdapterCompile,
-                                  List.mem_append.mpr (Or.inr hAdapterMem)⟩ }
-        | some bodyInput =>
-            cases hAdapter :
-                TypedCfgCompiler.mkBlock?
-                  (ProcLabel.entry head.name)
-                  (TypedCfgCompiler.Shape.procEntry head)
-                  [.relabel bodyInput]
-                  (.jump (ProcLabel.body head.name)) with
-            | none =>
-                simp [hShape, hAdapter] at hLower
-            | some adapter =>
-                cases hBody :
-                    TypedCfgCompiler.compileBlock? head.body
-                      { procs := allProcs
-                        leaveLabel? := some (ProcLabel.exit head.name)
-                        leaveShape? :=
-                          some (TypedCfgCompiler.Shape.procExit head) }
-                      supply (ProcLabel.body head.name) bodyInput
-                      (ProcLabel.exit head.name) with
-                | none =>
-                    simp [hShape, hAdapter, hBody] at hLower
-                | some bodyResult =>
+                    simp [hShape, hBody, hRequire] at hLower
+                | some unit =>
+                    cases unit
                     cases hTail :
                         TypedCfgCompiler.lowerProcBodiesWithShapes?
                           entryShapes allProcs rest bodyResult.next with
                     | none =>
-                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        simp [hShape, hBody, hRequire, hTail] at hLower
                     | some tailResult =>
                         rcases tailResult with
                           ⟨tailBlocks, tailNext, tailCalls⟩
-                        simp [hShape, hAdapter, hBody, hTail] at hLower
+                        simp [hShape, hBody, hRequire, hTail] at hLower
                         rcases hLower with ⟨rfl, rfl, rfl⟩
                         let fragment :=
                           ih hTail hLookup
@@ -2637,28 +2630,103 @@ def procFragment_of_lowerProcBodiesWithShapes?
                             blocks := by
                               intro block hMem
                               exact
-                                List.mem_cons_of_mem adapter
-                                  (List.mem_append.mpr
-                                    (Or.inr (fragment.blocks block hMem)))
+                                List.mem_append.mpr
+                                  (Or.inr (fragment.blocks block hMem))
                             calls := by
                               intro site hMem
                               exact
                                 List.mem_append.mpr
                                   (Or.inr (fragment.calls site hMem))
                             route := by
-                              rcases fragment.route with
-                                hDirect | hFragmentAdapter
+                              rcases fragment.route with hDirect | hAdapter
                               · exact Or.inl hDirect
-                              · rcases hFragmentAdapter with
-                                  ⟨fragmentAdapter, hEntry, hInput,
-                                    hAdapterCompile, hAdapterMem⟩
+                              · rcases hAdapter with
+                                  ⟨adapter, hEntry, hInput,
+                                    hFrame, hAdapterCompile, hAdapterMem⟩
                                 exact
                                   Or.inr
-                                    ⟨fragmentAdapter, hEntry, hInput,
-                                      hAdapterCompile,
-                                      List.mem_cons_of_mem adapter
-                                        (List.mem_append.mpr
-                                          (Or.inr hAdapterMem))⟩ }
+                                    ⟨adapter, hEntry, hInput,
+                                      hFrame, hAdapterCompile,
+                                      List.mem_append.mpr
+                                        (Or.inr hAdapterMem)⟩ }
+        | some bodyInput =>
+            cases hFrame :
+                TypedCfgCompiler.Shape.requireReturnTokenDepth?
+                  head.argc bodyInput with
+            | none =>
+                simp [hShape, hFrame] at hLower
+            | some unit =>
+                cases unit
+                cases hAdapter :
+                    TypedCfgCompiler.mkBlock?
+                      (ProcLabel.entry head.name)
+                      (TypedCfgCompiler.Shape.procEntry head)
+                      [.relabel bodyInput]
+                      (.jump (ProcLabel.body head.name)) with
+                | none =>
+                    simp [hShape, hFrame, hAdapter] at hLower
+                | some adapter =>
+                    cases hBody :
+                        TypedCfgCompiler.compileBlock? head.body
+                          { procs := allProcs
+                            leaveLabel? := some (ProcLabel.exit head.name)
+                            leaveShape? :=
+                              some (TypedCfgCompiler.Shape.procExit head) }
+                          supply (ProcLabel.body head.name) bodyInput
+                          (ProcLabel.exit head.name) with
+                    | none =>
+                        simp [hShape, hFrame, hAdapter, hBody] at hLower
+                    | some bodyResult =>
+                        cases hRequire :
+                            bodyResult.requireFallthrough?
+                              (TypedCfgCompiler.Shape.procExit head) with
+                        | none =>
+                            simp [hShape, hFrame, hAdapter, hBody, hRequire] at hLower
+                        | some unit =>
+                            cases unit
+                            cases hTail :
+                                TypedCfgCompiler.lowerProcBodiesWithShapes?
+                                  entryShapes allProcs rest bodyResult.next with
+                            | none =>
+                                simp [hShape, hFrame, hAdapter, hBody,
+                                  hRequire, hTail] at hLower
+                            | some tailResult =>
+                                rcases tailResult with
+                                  ⟨tailBlocks, tailNext, tailCalls⟩
+                                simp [hShape, hFrame, hAdapter, hBody,
+                                  hRequire, hTail] at hLower
+                                rcases hLower with ⟨rfl, rfl, rfl⟩
+                                let fragment :=
+                                  ih hTail hLookup
+                                exact
+                                  { fragment with
+                                    blocks := by
+                                      intro block hMem
+                                      exact
+                                        List.mem_cons_of_mem adapter
+                                          (List.mem_append.mpr
+                                            (Or.inr
+                                              (fragment.blocks block hMem)))
+                                    calls := by
+                                      intro site hMem
+                                      exact
+                                        List.mem_append.mpr
+                                          (Or.inr (fragment.calls site hMem))
+                                    route := by
+                                      rcases fragment.route with
+                                        hDirect | hFragmentAdapter
+                                      · exact Or.inl hDirect
+                                      · rcases hFragmentAdapter with
+                                          ⟨fragmentAdapter, hEntry, hInput,
+                                            hFragmentFrame, hAdapterCompile,
+                                            hAdapterMem⟩
+                                        exact
+                                          Or.inr
+                                            ⟨fragmentAdapter, hEntry, hInput,
+                                              hFragmentFrame, hAdapterCompile,
+                                              List.mem_cons_of_mem adapter
+                                                (List.mem_append.mpr
+                                                  (Or.inr hAdapterMem))⟩ }
 
 /--
 Successful generation exposes all compiler-produced whole-program fragments and
@@ -2922,7 +2990,7 @@ theorem eventually_procEntry
     rw [hEntry]
     exact TypedCfg.Program.Eventually.residual _ _ _
   · rcases hAdapterRoute with
-      ⟨adapter, hEntry, hInput, hAdapterCompile, hAdapterMem⟩
+      ⟨adapter, hEntry, hInput, _hFrame, hAdapterCompile, hAdapterMem⟩
     have hMem : adapter ∈ cfg.blocks := by
       have hBlocksEq :
           cfg.blocks =

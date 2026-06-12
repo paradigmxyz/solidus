@@ -3633,7 +3633,7 @@ theorem eventually_procEntry
       TypedCfg.ObserverSemantics.Program.Eventually.residual
         cfg (ProcLabel.entry proc.name) state trace
   · rcases hAdapterRoute with
-      ⟨adapter, hEntry, hInput, hAdapterCompile, hAdapterMem⟩
+      ⟨adapter, hEntry, hInput, _hFrame, hAdapterCompile, hAdapterMem⟩
     have hMem : adapter ∈ cfg.blocks := by
       have hBlocksEq :
           cfg.blocks =
@@ -3749,7 +3749,7 @@ theorem entry_eventually_of_compileStmtFuel?
   rcases
       TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
         hLookup hCompile with
-    ⟨returnShape, output, hReturnShape, hType, rfl⟩
+    ⟨returnShape, output, hSource, hReturnShape, hType, rfl⟩
   rcases
       TypedCfgPreservation.CallStack.runBody_callEntry_preserves
         (retc := proc.retc)
@@ -4602,7 +4602,8 @@ mutual
             rcases
                 TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
                   hCompilerLookup hCompile with
-              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+              ⟨returnShape, output, hSource, hReturnShape,
+                hCallType, hResult⟩
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name
@@ -4705,7 +4706,8 @@ mutual
             rcases
                 TypedCfgCompilerFacts.Call.components_of_compileStmtFuel?_call
                   hCompilerLookup hCompile with
-              ⟨returnShape, output, hReturnShape, hCallType, hResult⟩
+              ⟨returnShape, output, hSource, hReturnShape,
+                hCallType, hResult⟩
             subst result
             let site : TypedCfgCompiler.DispatchSite :=
               { procName := name

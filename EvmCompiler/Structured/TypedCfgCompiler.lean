@@ -115,6 +115,9 @@ def SourceFrameFits (shape : Shape) (stackLength : Nat) : Prop :=
 def requireSourceWords? (count : Nat) (shape : Shape) : Option Unit :=
   if count ≤ shape.sourceLength then some () else none
 
+def requireReturnTokenDepth? (depth : Nat) (shape : Shape) : Option Unit :=
+  if shape.returnTokenDepth? = some depth then some () else none
+
 end Shape
 
 namespace BasicInstr
@@ -456,6 +459,7 @@ mutual
               fallthrough? := none }
       | .call name => do
           let proc ← ProcList.lookup? name ctx.procs
+          let _ ← Shape.requireSourceWords? proc.argc input
           let returnShape ← Shape.afterCall input proc.argc proc.retc
           let token := Stmt.callToken supply
           let body := .returnToken token :: sinkTopUnder proc.argc
@@ -577,16 +581,22 @@ def lowerProcBodiesWithShapes? (entryShapes : ProcEntryShapes)
           leaveLabel? := some (ProcLabel.exit proc.name)
           leaveShape? := some (Shape.procExit proc) }
       let body ← match entryShapes.find? proc.name with
-        | none =>
-            compileBlock? proc.body ctx supply (ProcLabel.entry proc.name)
-              (Shape.procEntry proc) (ProcLabel.exit proc.name)
+        | none => do
+            let compiled ←
+              compileBlock? proc.body ctx supply
+                (ProcLabel.entry proc.name) (Shape.procEntry proc)
+                (ProcLabel.exit proc.name)
+            let _ ← compiled.requireFallthrough? (Shape.procExit proc)
+            some compiled
         | some bodyInput => do
+            let _ ← Shape.requireReturnTokenDepth? proc.argc bodyInput
             let adapter ←
               mkBlock? (ProcLabel.entry proc.name) (Shape.procEntry proc)
                 [.relabel bodyInput] (.jump (ProcLabel.body proc.name))
             let compiled ←
               compileBlock? proc.body ctx supply (ProcLabel.body proc.name)
                 bodyInput (ProcLabel.exit proc.name)
+            let _ ← compiled.requireFallthrough? (Shape.procExit proc)
             some { compiled with blocks := adapter :: compiled.blocks }
       let (tailBlocks, next, tailCalls) ←
         lowerProcBodiesWithShapes? entryShapes allProcs rest body.next
