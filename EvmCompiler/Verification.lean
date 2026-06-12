@@ -7,6 +7,7 @@ import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
+import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -59,6 +60,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_memoryAuthorized
 #check EvmCompiler.Functions.AllocationLowering.scratchLoadExpr_compileCode
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
+#check EvmCompiler.Functions.AllocationObserverSafety.PrimitiveMemorySafe
+#check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.of_wellFormed
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit

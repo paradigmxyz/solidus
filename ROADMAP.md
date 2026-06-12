@@ -154,10 +154,19 @@ Adjacent boundary status:
   data stack. Proving release exposed and fixed an operand-order bug in the
   emitted `SUB`: the compiler now pushes frame bytes before loading the current
   allocator value, so EVM subtraction computes `current - frameBytes`.
+  `Functions.AllocationObserverSafety` defines source-facing primitive and
+  terminal memory-safety contracts relative to the authorized reservation.
+  Its checked `Expr.MemorySafeEval` and `ExprSeq.MemorySafeEval` derivations
+  reuse the canonical parameterized Functions evaluator and erase back to
+  ordinary evaluation; they are not alternate interpreters or compiler
+  certificates. Exact expression-result relations now compose produced values,
+  target stack prefixes, allocation offsets, active scratch-frame invariants,
+  and observer state. Forward and backward wrappers are checked for literals,
+  stack variables, scratch variables, `gas()`, and `msize()`.
   Remaining work at this boundary is recursive expression/statement/function
   and call composition, construction of `ScratchStateRel` at function entry,
-  source-facing memory-safety/fuel premises, and the whole-program adjacent
-  forward/backward theorem.
+  propagation of source-facing memory safety and fuel through those recursive
+  judgments, and the whole-program adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

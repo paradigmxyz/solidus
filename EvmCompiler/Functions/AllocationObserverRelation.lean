@@ -365,6 +365,118 @@ structure ScratchStateRel {transcript : Trace}
       plan.location? name = some (.scratch slot) →
       slot < frameWords
 
+/--
+Result relation for a compiled expression or expression sequence.
+
+The produced source values occupy exactly the new concrete target stack
+prefix, in EVM top-first order, and the incoming stack is preserved as the
+suffix. `StateRel` simultaneously advances the local-location offset by the
+number of produced values.
+-/
+structure ExprResultRel {transcript : Trace}
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (stackOffset frameBase : Nat)
+    (source : SourceState transcript)
+    (targetInitial targetFinal : TargetState transcript)
+    (values : List Word) : Prop where
+  state :
+    StateRel contract plan live (stackOffset + values.length) frameBase
+      source targetFinal
+  stack :
+    targetFinal.source.evm.stack =
+      values.reverse ++ targetInitial.source.evm.stack
+
+/--
+Expression-result relation retaining the additional active scratch-frame
+invariants needed by spilled variable reads and writes.
+-/
+structure ScratchExprResultRel {transcript : Trace}
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name)
+    (stackOffset frameBase frameDepth frameWords : Nat)
+    (source : SourceState transcript)
+    (targetInitial targetFinal : TargetState transcript)
+    (values : List Word) : Prop where
+  state :
+    ScratchStateRel contract plan live
+      (stackOffset + values.length) frameBase frameDepth frameWords
+      source targetFinal
+  stack :
+    targetFinal.source.evm.stack =
+      values.reverse ++ targetInitial.source.evm.stack
+
+namespace ExprResultRel
+
+theorem nil {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      StateRel contract plan live stackOffset frameBase source target) :
+    ExprResultRel contract plan live stackOffset frameBase
+      source target target [] := by
+  exact ⟨by simpa using hRel, by simp⟩
+
+theorem append {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {sourceHead sourceFinal : SourceState transcript}
+    {targetInitial targetHead targetFinal : TargetState transcript}
+    {headValues tailValues : List Word}
+    (hHead :
+      ExprResultRel contract plan live stackOffset frameBase
+        sourceHead targetInitial targetHead headValues)
+    (hTail :
+      ExprResultRel contract plan live
+        (stackOffset + headValues.length) frameBase
+        sourceFinal targetHead targetFinal tailValues) :
+    ExprResultRel contract plan live stackOffset frameBase
+      sourceFinal targetInitial targetFinal (headValues ++ tailValues) := by
+  refine ⟨?_, ?_⟩
+  · simpa [List.length_append, Nat.add_assoc] using hTail.state
+  · rw [hTail.stack, hHead.stack]
+    simp [List.reverse_append, List.append_assoc]
+
+end ExprResultRel
+
+namespace ScratchExprResultRel
+
+theorem nil {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target) :
+    ScratchExprResultRel contract plan live stackOffset frameBase
+      frameDepth frameWords source target target [] := by
+  exact ⟨by simpa using hRel, by simp⟩
+
+theorem append {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {sourceHead sourceFinal : SourceState transcript}
+    {targetInitial targetHead targetFinal : TargetState transcript}
+    {headValues tailValues : List Word}
+    (hHead :
+      ScratchExprResultRel contract plan live stackOffset frameBase
+        frameDepth frameWords sourceHead targetInitial targetHead headValues)
+    (hTail :
+      ScratchExprResultRel contract plan live
+        (stackOffset + headValues.length) frameBase
+        frameDepth frameWords sourceFinal targetHead targetFinal tailValues) :
+    ScratchExprResultRel contract plan live stackOffset frameBase
+      frameDepth frameWords sourceFinal targetInitial targetFinal
+      (headValues ++ tailValues) := by
+  refine ⟨?_, ?_⟩
+  · simpa [List.length_append, Nat.add_assoc] using hTail.state
+  · rw [hTail.stack, hHead.stack]
+    simp [List.reverse_append, List.append_assoc]
+
+end ScratchExprResultRel
+
 namespace ScratchStateRel
 
 theorem of_wellFormed
