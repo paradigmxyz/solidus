@@ -225,15 +225,15 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
       OutcomeSimulation.TargetBoundary continuations
         (.halt kind target) := by
     trivial
-  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
-    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
-      hReach hStep (hAccept _ hBoundary)
-  subst targetOutcome
-  subst traceFinal
   let final :
       ObserverSemantics.State transcript :=
     source.withSource
       (source.source.withEVM sourceFinal)
+  have hSourceEval :
+      ObserverSemantics.Stmt.Eval
+        program compilerFuel (.terminal kind) source
+          (Structured.OutcomeT.halt kind final) := by
+    simpa [final] using hEval
   have hOutcomeRel :
       ObserverPreservation.OutcomeSimulation.Rel
         continuations tokens
@@ -241,9 +241,15 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
         (.halt kind target) trace :=
     ObserverPreservation.OutcomeSimulation.Rel.halt_iff.mpr
       ⟨rfl, targetFinal, hTargetStep, ⟨tokens, hFinalRel⟩⟩
+  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
+    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
+      hReach hStep
+        (hAccept compilerFuel _ _ _ hSourceEval hOutcomeRel trivial)
+  subst targetOutcome
+  subst traceFinal
   exact
     ⟨compilerFuel, Structured.OutcomeT.halt kind final,
-      by simpa [final] using hEval,
+      hSourceEval,
       hOutcomeRel,
       trivial⟩
 

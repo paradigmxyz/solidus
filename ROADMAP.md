@@ -142,14 +142,21 @@ Adjacent boundary status:
   body break/continue/regular/leave/halt outcomes, post execution, strictly
   decreasing residual target fuel, initializer composition, and checked
   fallthrough joins all live in the pass-owned
-  `Structured.ObserverLoopAdequacy` module. Internal-call backward adequacy is
-  also checked in `Structured.ObserverCallAdequacy`: call entry, optional
-  allocation relabeling, recursive callee execution, exact source-frame
+  `Structured.ObserverLoopAdequacy` module. Internal-call backward adequacy has
+  a checked callback rule in `Structured.ObserverCallAdequacy`: call entry,
+  optional allocation relabeling, callee execution, exact source-frame
   reconstruction, and return dispatch compose through one `AdequateWithin`
   rule. Procedure lowering now rejects allocation entry shapes that move or
   erase the hidden return token and rejects regular procedure fallthrough that
-  disagrees with the declared return shape. The generated-context mutual
-  statement/block theorem and whole-program backward adequacy remain.
+  disagrees with the declared return shape.
+  `Structured.ObserverActivationBoundary` defines the pass-owned
+  `FrameMatches`/`JumpAt` interface and derives it from the indexed state
+  relation. Statement sequencing, recursive loops, and internal calls now use
+  `JumpAt` for every internal continuation, so a nested recursive activation
+  cannot satisfy its caller's boundary merely by reaching the same static
+  label. The label-only `JumpOr` predicate and adapters have been deleted and
+  an architecture guard prevents their restoration. The generated-context
+  mutual statement/block theorem and whole-program backward adequacy remain.
   Shared outcome artifacts and terminal leaves were extracted into sibling
   modules. Source-frame typing now distinguishes token-free caller frames,
   which retain a stack lower bound, from active procedure frames, whose
@@ -157,8 +164,11 @@ Adjacent boundary status:
   The invariant is preserved by accepted instructions, observer handlers,
   straight-line code, condition pops, statement sequencing, switches, and
   loops, and is carried by the outcome-indexed adequacy artifact. The
-  frame-invariant proofs live in `Structured.ObserverFrameInvariant`; both
-  central observer modules remain below the 5K soft limit.
+  frame-invariant proofs live in `Structured.ObserverFrameInvariant`.
+  `ObserverPreservation` remains below the 5K soft limit;
+  `ObserverAdequacy` temporarily grew to 5,632 lines during semantic callback
+  migration and must be split again before this boundary is considered
+  architecturally complete.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

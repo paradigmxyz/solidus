@@ -26,12 +26,14 @@ theorem At.ofFits
     At shape source tokens target trace :=
   ⟨hRel, hFits.1, hFits.2⟩
 
-theorem targetStack_eq_source_append_hidden
+theorem targetStack_decompose
     {transcript : Trace} {shape : TypedCfg.Shape}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState} {trace : Trace}
     (hRel : At shape source tokens target trace) :
     ∃ hidden : EvmYul.Stack Word,
+      TypedCfgPreservation.realizeStack
+          [] source.source.returns tokens = some hidden ∧
       target.stack = source.source.evm.stack ++ hidden := by
   rcases hRel.rel.1 with ⟨realized, hRealize, hSame⟩
   have hAppend :=
@@ -49,8 +51,19 @@ theorem targetStack_eq_source_append_hidden
       rw [hAppend] at hRealize
       cases hRealize
       exact
-        ⟨hidden,
+        ⟨hidden, rfl,
           by simpa using Assembly.SameRuntimeData.stack_eq hSame⟩
+
+theorem targetStack_eq_source_append_hidden
+    {transcript : Trace} {shape : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    (hRel : At shape source tokens target trace) :
+    ∃ hidden : EvmYul.Stack Word,
+      target.stack = source.source.evm.stack ++ hidden := by
+  obtain ⟨hidden, _hHidden, hStack⟩ :=
+    targetStack_decompose hRel
+  exact ⟨hidden, hStack⟩
 
 end StateRel
 end ObserverPreservation

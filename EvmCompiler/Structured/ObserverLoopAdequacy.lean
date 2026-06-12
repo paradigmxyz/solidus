@@ -11,83 +11,216 @@ abbrev bodyContinuations :=
 abbrev postContinuations :=
   TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations
 
-private theorem jumpOr_of_accept
-    {next : Assembly.Label}
-    {accept : TypedCfg.Outcome → Prop}
-    {outcome : TypedCfg.Outcome}
-    (hAccept : accept outcome) :
-    OutcomeSimulation.JumpOr next accept outcome := by
-  cases outcome <;> simp [OutcomeSimulation.JumpOr, hAccept]
-
-private theorem bodyBoundary
+private theorem bodyActivationBoundary
+    {transcript : Trace} {program : Structured.Program}
+    {body : Structured.Block}
     {endLabel postLabel : Assembly.Label}
     {outer : OutcomeSimulation.Continuations}
     {accept : TypedCfg.Outcome → Prop}
-    {outcome : TypedCfg.Outcome}
+    {bodyShape : TypedCfg.Shape}
+    {bodyResult : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {initial : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {sourceFuel : Nat}
+    {sourceOutcome : ObserverSemantics.Outcome}
+    {targetOutcome : TypedCfg.Outcome} {trace : Trace}
     (hOuter :
       ∀ targetOutcome,
         OutcomeSimulation.TargetBoundary outer targetOutcome →
           accept targetOutcome)
     (hOuterRegular : outer.regular = endLabel)
-    (hBoundary :
-      OutcomeSimulation.TargetBoundary
-        (bodyContinuations endLabel postLabel outer) outcome) :
-    OutcomeSimulation.JumpOr postLabel accept outcome := by
-  cases outcome with
-  | jump label target =>
-      change
-        label = postLabel ∨
-          some endLabel = some label ∨
-          some postLabel = some label ∨
-          outer.leaveLabel? = some label at hBoundary
-      change label = postLabel ∨ accept (.jump label target)
-      rcases hBoundary with hPost | hBreak | hContinue | hLeave
-      · exact Or.inl hPost
-      · exact Or.inr (hOuter _ (by
-          have hLabel : label = outer.regular := by
-            exact (Option.some.inj hBreak).symm.trans hOuterRegular.symm
-          simp [OutcomeSimulation.TargetBoundary, hLabel]))
-      · exact Or.inl (Option.some.inj hContinue).symm
-      · exact Or.inr (hOuter _ (by
-          simp [OutcomeSimulation.TargetBoundary, hLeave]))
-  | halt kind target =>
-      exact jumpOr_of_accept (hOuter _ (by
-        simp [OutcomeSimulation.TargetBoundary]))
-  | fallthrough target | returnDispatch target | invalid target =>
-      simp [OutcomeSimulation.TargetBoundary] at hBoundary
+    (hRequire :
+      bodyResult.requireFallthrough? bodyShape = some ())
+    (hEval :
+      ObserverSemantics.Block.Eval
+        program sourceFuel body initial sourceOutcome)
+    (hRel :
+      ObserverPreservation.OutcomeSimulation.Rel
+        (bodyContinuations endLabel postLabel outer)
+        tokens sourceOutcome targetOutcome trace)
+    (hArtifact :
+      OutcomeSimulation.OutcomeArtifact
+        bodyResult
+        { ctx with
+          breakLabel? := some endLabel
+          breakShape? := some bodyShape
+          continueLabel? := some postLabel
+          continueShape? := some bodyShape }
+        sourceOutcome) :
+    OutcomeSimulation.JumpAt initial tokens postLabel bodyShape
+      accept targetOutcome := by
+  have hJoin :
+      OutcomeSimulation.JoinArtifact
+        { ctx with
+          breakLabel? := some endLabel
+          breakShape? := some bodyShape
+          continueLabel? := some postLabel
+          continueShape? := some bodyShape }
+        bodyShape sourceOutcome :=
+    OutcomeSimulation.OutcomeArtifact.toJoin_of_requireFallthrough
+      hRequire hArtifact
+  rcases sourceOutcome with ⟨source, mode⟩
+  cases mode with
+  | regular =>
+      obtain ⟨target, rfl, hStateRel⟩ :=
+        ObserverPreservation.OutcomeSimulation.Rel.regular_elim hRel
+      exact
+        OutcomeSimulation.JumpAt.of_rel
+          (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hEval (by simp [ObserverSemantics.Outcome.Nonhalting]))
+          hStateRel hJoin
+  | brk =>
+      obtain ⟨label, target, hLabel, rfl, _hStateRel⟩ :=
+        ObserverPreservation.OutcomeSimulation.Rel.brk_elim hRel
+      apply OutcomeSimulation.JumpAt.of_accept
+      apply hOuter
+      have hLabelEq : label = outer.regular := by
+        change some endLabel = some label at hLabel
+        exact (Option.some.inj hLabel).symm.trans hOuterRegular.symm
+      simp [OutcomeSimulation.TargetBoundary, hLabelEq]
+  | cont =>
+      obtain ⟨label, target, hLabel, rfl, hStateRel⟩ :=
+        ObserverPreservation.OutcomeSimulation.Rel.cont_elim hRel
+      have hLabelEq : label = postLabel := by
+        change some postLabel = some label at hLabel
+        exact (Option.some.inj hLabel).symm
+      subst label
+      have hFits :
+          TypedCfgCompiler.Shape.SourceFrameFits bodyShape
+            source.source.evm.stack.length := by
+        simpa [OutcomeSimulation.JoinArtifact] using hJoin
+      exact
+        OutcomeSimulation.JumpAt.of_rel
+          (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hEval (by simp [ObserverSemantics.Outcome.Nonhalting]))
+          hStateRel hFits
+  | leave =>
+      apply OutcomeSimulation.JumpAt.of_accept
+      apply hOuter
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens (Structured.OutcomeT.leave source)
+            targetOutcome trace := by
+        cases targetOutcome <;>
+          simpa [
+            ObserverPreservation.OutcomeSimulation.Rel,
+            TypedCfgPreservation.OutcomeSimulation.Loop.bodyContinuations] using
+            hRel
+      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+  | halt kind =>
+      apply OutcomeSimulation.JumpAt.of_accept
+      apply hOuter
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens (Structured.OutcomeT.halt kind source)
+            targetOutcome trace := by
+        cases targetOutcome <;>
+          simpa [
+            ObserverPreservation.OutcomeSimulation.Rel,
+            TypedCfgPreservation.OutcomeSimulation.Loop.bodyContinuations] using
+            hRel
+      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
 
-private theorem postBoundary
-    {loopLabel : Assembly.Label}
+private theorem postActivationBoundary
+    {transcript : Trace} {program : Structured.Program}
+    {post : Structured.Block} {loopLabel : Assembly.Label}
     {outer : OutcomeSimulation.Continuations}
     {accept : TypedCfg.Outcome → Prop}
-    {outcome : TypedCfg.Outcome}
+    {loopShape : TypedCfg.Shape}
+    {postResult : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {initial : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {sourceFuel : Nat}
+    {sourceOutcome : ObserverSemantics.Outcome}
+    {targetOutcome : TypedCfg.Outcome} {trace : Trace}
     (hOuter :
       ∀ targetOutcome,
         OutcomeSimulation.TargetBoundary outer targetOutcome →
           accept targetOutcome)
-    (hBoundary :
-      OutcomeSimulation.TargetBoundary
-        (postContinuations loopLabel outer) outcome) :
-    OutcomeSimulation.JumpOr loopLabel accept outcome := by
-  cases outcome with
-  | jump label target =>
+    (hRequire :
+      postResult.requireFallthrough? loopShape = some ())
+    (hEval :
+      ObserverSemantics.Block.Eval
+        program sourceFuel post initial sourceOutcome)
+    (hRel :
+      ObserverPreservation.OutcomeSimulation.Rel
+        (postContinuations loopLabel outer)
+        tokens sourceOutcome targetOutcome trace)
+    (hArtifact :
+      OutcomeSimulation.OutcomeArtifact
+        postResult
+        { ctx with
+          breakLabel? := none
+          breakShape? := none
+          continueLabel? := none
+          continueShape? := none }
+        sourceOutcome) :
+    OutcomeSimulation.JumpAt initial tokens loopLabel loopShape
+      accept targetOutcome := by
+  have hJoin :
+      OutcomeSimulation.JoinArtifact
+        { ctx with
+          breakLabel? := none
+          breakShape? := none
+          continueLabel? := none
+          continueShape? := none }
+        loopShape sourceOutcome :=
+    OutcomeSimulation.OutcomeArtifact.toJoin_of_requireFallthrough
+      hRequire hArtifact
+  rcases sourceOutcome with ⟨source, mode⟩
+  cases mode with
+  | regular =>
+      obtain ⟨target, rfl, hStateRel⟩ :=
+        ObserverPreservation.OutcomeSimulation.Rel.regular_elim hRel
+      exact
+        OutcomeSimulation.JumpAt.of_rel
+          (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hEval (by simp [ObserverSemantics.Outcome.Nonhalting]))
+          hStateRel hJoin
+  | brk =>
       change
-        label = loopLabel ∨
-          none = some label ∨
-          none = some label ∨
-          outer.leaveLabel? = some label at hBoundary
-      change label = loopLabel ∨ accept (.jump label target)
-      rcases hBoundary with hLoop | hBreak | hContinue | hLeave
-      · exact Or.inl hLoop
-      · cases hBreak
-      · cases hContinue
-      · exact Or.inr (hOuter _ (by
-          simp [OutcomeSimulation.TargetBoundary, hLeave]))
-  | halt kind target =>
-      exact jumpOr_of_accept (hOuter _ (by
-        simp [OutcomeSimulation.TargetBoundary]))
-  | fallthrough target | returnDispatch target | invalid target =>
-      simp [OutcomeSimulation.TargetBoundary] at hBoundary
+        ∃ output,
+          (none : Option TypedCfg.Shape) = some output ∧
+            TypedCfgCompiler.Shape.SourceFrameFits output
+              source.source.evm.stack.length at hJoin
+      obtain ⟨output, hNone, _hFits⟩ := hJoin
+      cases hNone
+  | cont =>
+      change
+        ∃ output,
+          (none : Option TypedCfg.Shape) = some output ∧
+            TypedCfgCompiler.Shape.SourceFrameFits output
+              source.source.evm.stack.length at hJoin
+      obtain ⟨output, hNone, _hFits⟩ := hJoin
+      cases hNone
+  | leave =>
+      apply OutcomeSimulation.JumpAt.of_accept
+      apply hOuter
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens (Structured.OutcomeT.leave source)
+            targetOutcome trace := by
+        cases targetOutcome <;>
+          simpa [
+            ObserverPreservation.OutcomeSimulation.Rel,
+            TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations] using
+            hRel
+      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+  | halt kind =>
+      apply OutcomeSimulation.JumpAt.of_accept
+      apply hOuter
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens (Structured.OutcomeT.halt kind source)
+            targetOutcome trace := by
+        cases targetOutcome <;>
+          simpa [
+            ObserverPreservation.OutcomeSimulation.Rel,
+            TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations] using
+            hRel
+      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
 
 private theorem bodyLeaveRel
     {transcript : Trace}
@@ -386,12 +519,14 @@ private theorem outcome_for_step_of_firstReaches
         OutcomeSimulation.TargetBoundary outer acceptedOutcome →
           accept acceptedOutcome)
     (hBodyEntryNotAccepted :
-      ∀ targetState,
-        ¬ OutcomeSimulation.JumpOr postLabel accept
+      ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
+          { condOutput with slots := condOutput.slots.tail } accept
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
-      ∀ targetState,
-        ¬ OutcomeSimulation.JumpOr loopLabel accept
+      ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        ¬ OutcomeSimulation.JumpAt postSource tokens loopLabel
+          loopInput accept
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
       ∀ targetState, ¬ accept (.jump loopLabel targetState))
@@ -416,7 +551,8 @@ private theorem outcome_for_step_of_firstReaches
             continueShape? :=
               some { condOutput with slots := condOutput.slots.tail } }
           cfg (bodyContinuations endLabel postLabel outer)
-          (OutcomeSimulation.JumpOr postLabel accept)
+          (OutcomeSimulation.JumpAt bodySource tokens postLabel
+            { condOutput with slots := condOutput.slots.tail } accept)
           bodyLabel
           { condOutput with slots := condOutput.slots.tail }
           bodySource tokens)
@@ -433,7 +569,8 @@ private theorem outcome_for_step_of_firstReaches
             continueLabel? := none
             continueShape? := none }
           cfg (postContinuations loopLabel outer)
-          (OutcomeSimulation.JumpOr loopLabel accept)
+          (OutcomeSimulation.JumpAt postSource tokens loopLabel
+            loopInput accept)
           postLabel
           { condOutput with slots := condOutput.slots.tail }
           postSource tokens)
@@ -496,10 +633,11 @@ private theorem outcome_for_step_of_firstReaches
         ⟨bodyPrefixFuel, bodyTargetOutcome, bodyTrace,
           hBodyLe, hBodyReach⟩ :=
       OutcomeSimulation.FirstReaches.exists_of_run
-        hTailReach.run (jumpOr_of_accept hTailReach.boundary)
+        hTailReach.run
+          (OutcomeSimulation.JumpAt.of_accept hTailReach.boundary)
     have hBodyPositive : 0 < bodyPrefixFuel :=
       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-        hBodyReach (hBodyEntryNotAccepted targetAfterCond)
+        hBodyReach (hBodyEntryNotAccepted afterCond targetAfterCond)
     cases bodyPrefixFuel with
     | zero =>
         omega
@@ -508,9 +646,10 @@ private theorem outcome_for_step_of_firstReaches
             ⟨bodySourceFuel, bodyOutcome,
               hBodyEval, hBodyOutcomeRel, hBodyArtifact⟩ :=
           hBodyAdequate
-            (fun targetOutcome hBoundary =>
-              bodyBoundary (postLabel := postLabel)
-                hAccept hOuterRegular hBoundary)
+            (fun _sourceFuel _sourceOutcome _targetOutcome _trace
+                hEval hOutcomeRel hArtifact =>
+              bodyActivationBoundary hAccept hOuterRegular hBodyRequire
+                hEval hOutcomeRel hArtifact)
             hAfterCondRel hBodyReach
         have hBodyJoin :
             OutcomeSimulation.JoinArtifact
@@ -635,10 +774,12 @@ private theorem outcome_for_step_of_firstReaches
                   hPostLe, hPostReach⟩ :=
               OutcomeSimulation.FirstReaches.exists_of_run
                 hAfterBodyReach.run
-                (jumpOr_of_accept hAfterBodyReach.boundary)
+                (OutcomeSimulation.JumpAt.of_accept
+                  hAfterBodyReach.boundary)
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-                hPostReach (hPostEntryNotAccepted bodyTarget)
+                hPostReach
+                  (hPostEntryNotAccepted bodyState bodyTarget)
             cases postPrefixFuel with
             | zero =>
                 omega
@@ -647,9 +788,10 @@ private theorem outcome_for_step_of_firstReaches
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
                   hPostAdequate
-                    (fun targetOutcome hBoundary =>
-                      postBoundary (loopLabel := loopLabel)
-                        hAccept hBoundary)
+                    (fun _sourceFuel _sourceOutcome _targetOutcome _trace
+                        hEval hOutcomeRel hArtifact =>
+                      postActivationBoundary hAccept hPostRequire
+                        hEval hOutcomeRel hArtifact)
                     hBodyAt hPostReach
                 have hPostJoin :
                     OutcomeSimulation.JoinArtifact
@@ -828,10 +970,12 @@ private theorem outcome_for_step_of_firstReaches
                   hPostLe, hPostReach⟩ :=
               OutcomeSimulation.FirstReaches.exists_of_run
                 hAfterBodyReach.run
-                (jumpOr_of_accept hAfterBodyReach.boundary)
+                (OutcomeSimulation.JumpAt.of_accept
+                  hAfterBodyReach.boundary)
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-                hPostReach (hPostEntryNotAccepted bodyTarget)
+                hPostReach
+                  (hPostEntryNotAccepted bodyState bodyTarget)
             cases postPrefixFuel with
             | zero =>
                 omega
@@ -840,9 +984,10 @@ private theorem outcome_for_step_of_firstReaches
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
                   hPostAdequate
-                    (fun targetOutcome hBoundary =>
-                      postBoundary (loopLabel := loopLabel)
-                        hAccept hBoundary)
+                    (fun _sourceFuel _sourceOutcome _targetOutcome _trace
+                        hEval hOutcomeRel hArtifact =>
+                      postActivationBoundary hAccept hPostRequire
+                        hEval hOutcomeRel hArtifact)
                     hBodyAt hPostReach
                 have hPostJoin :
                     OutcomeSimulation.JoinArtifact
@@ -1024,12 +1169,14 @@ private theorem outcome_for_of_firstReaches
         OutcomeSimulation.TargetBoundary outer acceptedOutcome →
           accept acceptedOutcome)
     (hBodyEntryNotAccepted :
-      ∀ targetState,
-        ¬ OutcomeSimulation.JumpOr postLabel accept
+      ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
+          { condOutput with slots := condOutput.slots.tail } accept
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
-      ∀ targetState,
-        ¬ OutcomeSimulation.JumpOr loopLabel accept
+      ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        ¬ OutcomeSimulation.JumpAt postSource tokens loopLabel
+          loopInput accept
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
       ∀ targetState, ¬ accept (.jump loopLabel targetState))
@@ -1054,7 +1201,8 @@ private theorem outcome_for_of_firstReaches
             continueShape? :=
               some { condOutput with slots := condOutput.slots.tail } }
           cfg (bodyContinuations endLabel postLabel outer)
-          (OutcomeSimulation.JumpOr postLabel accept)
+          (OutcomeSimulation.JumpAt bodySource tokens postLabel
+            { condOutput with slots := condOutput.slots.tail } accept)
           bodyLabel
           { condOutput with slots := condOutput.slots.tail }
           bodySource tokens)
@@ -1071,7 +1219,8 @@ private theorem outcome_for_of_firstReaches
             continueLabel? := none
             continueShape? := none }
           cfg (postContinuations loopLabel outer)
-          (OutcomeSimulation.JumpOr loopLabel accept)
+          (OutcomeSimulation.JumpAt postSource tokens loopLabel
+            loopInput accept)
           postLabel
           { condOutput with slots := condOutput.slots.tail }
           postSource tokens) :
@@ -1121,8 +1270,11 @@ private theorem adequateWithin_for_of_compileStmtFuel?
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hInitEntryNotAccepted :
-      ∀ {accept : TypedCfg.Outcome → Prop} targetState,
-        ¬ OutcomeSimulation.JumpOr (LabelSupply.label supply 0) accept
+      ∀ {accept : TypedCfg.Outcome → Prop}
+        (initSource : ObserverSemantics.State transcript)
+        (loopShape : TypedCfg.Shape) targetState,
+        ¬ OutcomeSimulation.JumpAt initSource tokens
+          (LabelSupply.label supply 0) loopShape accept
           (.jump entry targetState))
     (hGeneratedEntryNotAccepted :
       ∀ {accept : TypedCfg.Outcome → Prop}
@@ -1157,8 +1309,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
               continueShape? := none }
             cfg
             (postContinuations (LabelSupply.label supply 0) outer)
-            (OutcomeSimulation.JumpOr
-              (LabelSupply.label supply 0) accept)
+            (OutcomeSimulation.JumpAt initSource tokens
+              (LabelSupply.label supply 0) loopInput accept)
             entry input initSource tokens)
     (hBodyAdequate :
       ∀ {initResult bodyResult : TypedCfgCompiler.Result}
@@ -1193,14 +1345,15 @@ private theorem adequateWithin_for_of_compileStmtFuel?
                 some { condOutput with slots := condOutput.slots.tail } }
             cfg
             (bodyContinuations regular (LabelSupply.label supply 2) outer)
-            (OutcomeSimulation.JumpOr
-              (LabelSupply.label supply 2) accept)
+            (OutcomeSimulation.JumpAt bodySource tokens
+              (LabelSupply.label supply 2)
+              { condOutput with slots := condOutput.slots.tail } accept)
             (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             bodySource tokens)
     (hPostAdequate :
       ∀ {bodyResult postResult : TypedCfgCompiler.Result}
-        {condOutput : TypedCfg.Shape},
+        {condOutput loopInput : TypedCfg.Shape},
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
             { ctx with
               breakLabel? := none
@@ -1227,8 +1380,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
               continueShape? := none }
             cfg
             (postContinuations (LabelSupply.label supply 0) outer)
-            (OutcomeSimulation.JumpOr
-              (LabelSupply.label supply 0) accept)
+            (OutcomeSimulation.JumpAt postSource tokens
+              (LabelSupply.label supply 0) loopInput accept)
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
             postSource tokens) :
@@ -1289,10 +1442,10 @@ private theorem adequateWithin_for_of_compileStmtFuel?
       ⟨initPrefixFuel, initTargetOutcome, initTrace,
         hInitLe, hInitReach⟩ :=
     OutcomeSimulation.FirstReaches.exists_of_run
-      hReach.run (jumpOr_of_accept hReach.boundary)
+      hReach.run (OutcomeSimulation.JumpAt.of_accept hReach.boundary)
   have hInitPositive : 0 < initPrefixFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hInitReach (hInitEntryNotAccepted target)
+      hInitReach (hInitEntryNotAccepted source loopInput target)
   cases initPrefixFuel with
   | zero =>
       omega
@@ -1301,9 +1454,16 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           ⟨initSourceFuel, initOutcome,
             hInitEval, hInitOutcomeRel, hInitArtifact⟩ :=
         hInitAdequate hInitCompile hInitFallthrough hInitBlocks
-          (fun targetOutcome hBoundary =>
-            postBoundary (loopLabel := LabelSupply.label supply 0)
-              hAccept hBoundary)
+          (fun _sourceFuel _sourceOutcome _targetOutcome _trace
+              hEval hOutcomeRel hArtifact => by
+            have hInitRequire :
+                initResult.requireFallthrough? loopInput = some () := by
+              simp [TypedCfgCompiler.Result.requireFallthrough?,
+                hInitFallthrough]
+            exact
+              postActivationBoundary
+                (fun _ hBoundary => hBoundary) hInitRequire
+                hEval hOutcomeRel hArtifact)
           hRel hInitReach
       have hInitJoin :
           OutcomeSimulation.JoinArtifact
@@ -1350,16 +1510,16 @@ private theorem adequateWithin_for_of_compileStmtFuel?
                 outcome_for_of_firstReaches
                   hBlocks hLoopMem hType hSource hHead hBodyRequire
                   hPostRequire
-                  rfl hAccept
+                  rfl (fun _ hBoundary => hBoundary)
                   (by
-                    intro targetState
-                    simp [OutcomeSimulation.JumpOr]
+                    intro bodySource targetState
+                    simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
                         hGeneratedEntryNotAccepted 1 targetState⟩)
                   (by
-                    intro targetState
-                    simp [OutcomeSimulation.JumpOr]
+                    intro postSource targetState
+                    simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
                         hGeneratedEntryNotAccepted 2 targetState⟩)
@@ -1389,8 +1549,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
             OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
               hReach hInitReach hInitLe
-              (hAccept _
-                (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+              (OutcomeSimulation.targetBoundary_of_rel hOuterRel)
           subst targetOutcome
           subst traceFinal
           exact
@@ -1411,8 +1570,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
             OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
               hReach hInitReach hInitLe
-              (hAccept _
-                (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+              (OutcomeSimulation.targetBoundary_of_rel hOuterRel)
           subst targetOutcome
           subst traceFinal
           exact

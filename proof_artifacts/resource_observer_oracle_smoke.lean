@@ -63,6 +63,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
 #check EvmCompiler.Structured.TypedCfgPreservation.BasicInstr.step_sourceFrameFits_of_type
 #check EvmCompiler.Structured.ObserverAdequacy.Code.sourceFrameFits
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
 #check EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
@@ -113,6 +115,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
 #print axioms EvmCompiler.Structured.TypedCfgPreservation.BasicInstr.step_sourceFrameFits_of_type
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Code.sourceFrameFits
+#print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
+#print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step

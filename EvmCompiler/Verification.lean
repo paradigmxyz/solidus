@@ -12,6 +12,7 @@ import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
+import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
 import EvmCompiler.Structured.ObserverCallAdequacy
@@ -81,6 +82,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ReachesBoundary
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateWithin
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.tail_of_prefix_jump

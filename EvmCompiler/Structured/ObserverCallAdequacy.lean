@@ -7,55 +7,6 @@ namespace Call
 
 abbrev Trace := Assembly.ResourceTrace
 
-private theorem jumpOr_of_accept
-    {next : Assembly.Label}
-    {accept : TypedCfg.Outcome → Prop}
-    {outcome : TypedCfg.Outcome}
-    (hAccept : accept outcome) :
-    OutcomeSimulation.JumpOr next accept outcome := by
-  cases outcome <;> simp [OutcomeSimulation.JumpOr, hAccept]
-
-private theorem procBodyBoundary
-    {proc : Structured.Proc}
-    {procs : List Structured.Proc}
-    {outer : OutcomeSimulation.Continuations}
-    {accept : TypedCfg.Outcome → Prop}
-    {outcome : TypedCfg.Outcome}
-    (hOuter :
-      ∀ targetOutcome,
-        OutcomeSimulation.TargetBoundary outer targetOutcome →
-          accept targetOutcome)
-    (hBoundary :
-      OutcomeSimulation.TargetBoundary
-        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-          { procs := procs
-            leaveLabel? := some (ProcLabel.exit proc.name)
-            leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
-          (ProcLabel.exit proc.name))
-        outcome) :
-    OutcomeSimulation.JumpOr
-      (ProcLabel.exit proc.name) accept outcome := by
-  cases outcome with
-  | jump label target =>
-      change
-        label = ProcLabel.exit proc.name ∨
-          none = some label ∨ none = some label ∨
-            some (ProcLabel.exit proc.name) = some label
-        at hBoundary
-      change
-        label = ProcLabel.exit proc.name ∨
-          accept (.jump label target)
-      rcases hBoundary with hRegular | hBreak | hContinue | hLeave
-      · exact Or.inl hRegular
-      · cases hBreak
-      · cases hContinue
-      · exact Or.inl (Option.some.inj hLeave).symm
-  | halt kind target =>
-      exact jumpOr_of_accept
-        (hOuter _ (by simp [OutcomeSimulation.TargetBoundary]))
-  | fallthrough target | returnDispatch target | invalid target =>
-      simp [OutcomeSimulation.TargetBoundary] at hBoundary
-
 theorem popReturn_of_stateRel
     {transcript : Trace}
     {bodyState : ObserverSemantics.State transcript}
@@ -531,11 +482,14 @@ theorem adequateWithin_call_of_compileStmtFuel?
         {fragment :
           TypedCfgPreservation.Program.ProcFragment
             entryShapes program.procs proc
-            generated.procBlocks generated.procCalls},
+            generated.procBlocks generated.procCalls}
+        {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
           ∀ target,
-            ¬ OutcomeSimulation.JumpOr
-              (ProcLabel.exit proc.name) accept
+            ¬ OutcomeSimulation.JumpAt callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (ProcLabel.exit proc.name)
+              (TypedCfgCompiler.Shape.procExit proc) accept
               (.jump fragment.entry target))
     (hBodyAdequate :
       ∀ {proc : Structured.Proc}
@@ -561,8 +515,10 @@ theorem adequateWithin_call_of_compileStmtFuel?
                 leaveShape? :=
                   some (TypedCfgCompiler.Shape.procExit proc) }
               (ProcLabel.exit proc.name))
-            (OutcomeSimulation.JumpOr
-              (ProcLabel.exit proc.name) accept)
+            (OutcomeSimulation.JumpAt callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (ProcLabel.exit proc.name)
+              (TypedCfgCompiler.Shape.procExit proc) accept)
             fragment.entry fragment.input callSource
             (Structured.Stmt.callToken supply :: tokens)) :
     OutcomeSimulation.AdequateWithin
@@ -667,10 +623,18 @@ theorem adequateWithin_call_of_compileStmtFuel?
       have hAfterRoute :=
         OutcomeSimulation.FirstReaches.tail_of_prefix_jump
           hAfterEntryProc hRoutePrefix hRouteLe
+      let callSource : ObserverSemantics.State transcript :=
+        source.withSource
+          ((source.source.withEVM
+            { source.source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
       have hBodyFinalAccepted :
-          OutcomeSimulation.JumpOr
-            (ProcLabel.exit proc.name) accept targetOutcome :=
-        jumpOr_of_accept hAfterRoute.boundary
+          OutcomeSimulation.JumpAt callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            (ProcLabel.exit proc.name)
+            (TypedCfgCompiler.Shape.procExit proc)
+            accept targetOutcome :=
+        OutcomeSimulation.JumpAt.of_accept hAfterRoute.boundary
       obtain
           ⟨bodyPrefixFuel, bodyTargetOutcome, bodyTrace,
             hBodyPrefixLe, hBodyReach⟩ :=
@@ -684,21 +648,92 @@ theorem adequateWithin_call_of_compileStmtFuel?
       | zero =>
           omega
       | succ bodyTargetFuel =>
-          let callSource : ObserverSemantics.State transcript :=
-            source.withSource
-              ((source.source.withEVM
-                { source.source.evm with stack := args }).pushReturn
-                  callerStack proc.retc)
           obtain
               ⟨bodySourceFuel, bodyOutcome,
                 hBodyEval, hBodyRel, hBodyArtifact⟩ :=
             hBodyAdequate (fragment := fragment)
               (callSource := callSource) hLookup
-              (fun targetOutcome hBoundary =>
-                procBodyBoundary
-                  (proc := proc) (procs := program.procs)
-                  (outer := continuations)
-                  hAccept hBoundary)
+              (fun bodyFuel bodyOutcome targetOutcome bodyTrace
+                  hBodyEval hBodyRel _hBodyArtifact => by
+                have hExitJoin :
+                    OutcomeSimulation.JoinArtifact
+                      { procs := program.procs
+                        leaveLabel? := some (ProcLabel.exit proc.name)
+                        leaveShape? :=
+                          some (TypedCfgCompiler.Shape.procExit proc) }
+                      (TypedCfgCompiler.Shape.procExit proc)
+                      bodyOutcome :=
+                  OutcomeSimulation.OutcomeArtifact.toJoin_of_requireFallthrough
+                    fragment.fallthrough _hBodyArtifact
+                rcases bodyOutcome with ⟨bodyState, bodyMode⟩
+                cases bodyMode with
+                | regular =>
+                    obtain ⟨targetState, hTargetOutcome, hStateRel⟩ :=
+                      ObserverPreservation.OutcomeSimulation.Rel.regular_elim
+                        hBodyRel
+                    subst targetOutcome
+                    exact
+                      OutcomeSimulation.JumpAt.of_rel
+                        (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                          hBodyEval
+                          (by simp [ObserverSemantics.Outcome.Nonhalting]))
+                        hStateRel hExitJoin
+                | brk =>
+                    obtain ⟨label, targetState, hLabel,
+                      hTargetOutcome, _hStateRel⟩ :=
+                      ObserverPreservation.OutcomeSimulation.Rel.brk_elim
+                        hBodyRel
+                    change (none : Option Assembly.Label) = some label at hLabel
+                    cases hLabel
+                | cont =>
+                    obtain ⟨label, targetState, hLabel,
+                      hTargetOutcome, _hStateRel⟩ :=
+                      ObserverPreservation.OutcomeSimulation.Rel.cont_elim
+                        hBodyRel
+                    change (none : Option Assembly.Label) = some label at hLabel
+                    cases hLabel
+                | leave =>
+                    obtain ⟨label, targetState, hLabel,
+                      hTargetOutcome, _hStateRel⟩ :=
+                      ObserverPreservation.OutcomeSimulation.Rel.leave_elim
+                        hBodyRel
+                    have hLabelEq : label = ProcLabel.exit proc.name := by
+                      simpa using (Option.some.inj hLabel).symm
+                    subst label
+                    subst targetOutcome
+                    have hExitFits :
+                        TypedCfgCompiler.Shape.SourceFrameFits
+                          (TypedCfgCompiler.Shape.procExit proc)
+                          bodyState.source.evm.stack.length := by
+                      simpa [OutcomeSimulation.JoinArtifact] using hExitJoin
+                    exact
+                      OutcomeSimulation.JumpAt.of_rel
+                        (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                          hBodyEval
+                          (by simp [ObserverSemantics.Outcome.Nonhalting]))
+                        _hStateRel hExitFits
+                | halt kind =>
+                    obtain
+                        ⟨targetBefore, targetAfter, hTargetOutcome,
+                          hTargetStep, hHaltRel⟩ :=
+                      ObserverPreservation.OutcomeSimulation.Rel.halt_elim
+                        hBodyRel
+                    subst targetOutcome
+                    have hOuterRel :
+                        ObserverPreservation.OutcomeSimulation.Rel
+                          continuations tokens
+                          (Structured.OutcomeT.halt kind bodyState)
+                          (.halt kind targetBefore) bodyTrace :=
+                      ObserverPreservation.OutcomeSimulation.Rel.halt_iff.mpr
+                        ⟨rfl, targetAfter, hTargetStep, hHaltRel⟩
+                    apply OutcomeSimulation.JumpAt.of_accept
+                    exact
+                      hAccept (bodyFuel + 1)
+                        (Structured.OutcomeT.halt kind bodyState)
+                        (.halt kind targetBefore) bodyTrace
+                        (Structured.EffectSemantics.Stmt.Eval.call_halt
+                          hLookup hSplit hBodyEval)
+                        hOuterRel (by trivial))
               (by simpa [callSource] using hFragmentRel)
               hBodyReach
           rcases bodyOutcome with ⟨bodyState, bodyMode⟩
@@ -720,8 +755,12 @@ theorem adequateWithin_call_of_compileStmtFuel?
               obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
                 OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                   hAfterRoute hBodyReach hBodyPrefixLe
-                  (hAccept _
-                    (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                  (hAccept (bodySourceFuel + 1)
+                    (Structured.OutcomeT.halt kind bodyState)
+                    (.halt kind targetBefore) bodyTrace
+                    (Structured.EffectSemantics.Stmt.Eval.call_halt
+                      hLookup hSplit hBodyEval)
+                    hOuterRel (by trivial))
               subst targetOutcome
               subst traceFinal
               exact
@@ -802,16 +841,6 @@ theorem adequateWithin_call_of_compileStmtFuel?
               | zero =>
                   omega
               | succ dispatchFuel =>
-                  have hDispatchAccepted :
-                      accept (.jump regular targetFinal) := by
-                    apply hAccept
-                    simp [OutcomeSimulation.TargetBoundary, hRegular]
-                  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
-                    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
-                      (by simpa [hResidual] using hAfterBody)
-                      hDispatchStep hDispatchAccepted
-                  subst targetOutcome
-                  subst traceFinal
                   let finalSource : ObserverSemantics.State transcript :=
                     returned.withSource
                       (returned.source.withEVM
@@ -835,19 +864,42 @@ theorem adequateWithin_call_of_compileStmtFuel?
                       simp [finalSource, stack, hSourceStack,
                         hArgsLength, hBodyLength, Nat.add_comm]
                     simpa [hLength] using hAfterFits
+                  have hCallEval :
+                      ObserverSemantics.Stmt.Eval program
+                        (bodySourceFuel + 1) (.call name) source
+                        (Structured.OutcomeT.regular finalSource) := by
+                    simpa [callSource, finalSource] using
+                      Structured.EffectSemantics.Stmt.Eval.call_regular
+                        (model := ObserverSemantics.stateModel transcript)
+                        (handler := ObserverSemantics.handler transcript)
+                        (program := program)
+                        hLookup hSplit hBodyEval hPop hAttach
+                  have hCallRel :
+                      ObserverPreservation.OutcomeSimulation.Rel
+                        continuations tokens
+                        (Structured.OutcomeT.regular finalSource)
+                        (.jump regular targetFinal) bodyTrace :=
+                    ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                      ⟨by simpa [site] using hRegular.symm,
+                        by simpa [finalSource] using hFinalRel⟩
+                  have hDispatchAccepted :
+                      accept (.jump regular targetFinal) := by
+                    exact
+                      hAccept (bodySourceFuel + 1)
+                        (Structured.OutcomeT.regular finalSource)
+                        (.jump regular targetFinal) bodyTrace
+                        hCallEval hCallRel
+                        ⟨returnShape, rfl, hFinalFits⟩
+                  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
+                    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
+                      (by simpa [hResidual] using hAfterBody)
+                      hDispatchStep hDispatchAccepted
+                  subst targetOutcome
+                  subst traceFinal
                   exact
                     ⟨bodySourceFuel + 1,
                       Structured.OutcomeT.regular finalSource,
-                      by
-                        simpa [callSource, finalSource] using
-                          Structured.EffectSemantics.Stmt.Eval.call_regular
-                            (model := ObserverSemantics.stateModel transcript)
-                            (handler := ObserverSemantics.handler transcript)
-                            (program := program)
-                            hLookup hSplit hBodyEval hPop hAttach,
-                      ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
-                        ⟨by simpa [site] using hRegular.symm,
-                          by simpa [finalSource] using hFinalRel⟩,
+                      hCallEval, hCallRel,
                       ⟨returnShape, rfl, hFinalFits⟩⟩
           | leave =>
               obtain
@@ -917,16 +969,6 @@ theorem adequateWithin_call_of_compileStmtFuel?
               | zero =>
                   omega
               | succ dispatchFuel =>
-                  have hDispatchAccepted :
-                      accept (.jump regular targetFinal) := by
-                    apply hAccept
-                    simp [OutcomeSimulation.TargetBoundary, hRegular]
-                  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
-                    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
-                      (by simpa [hResidual] using hAfterBody)
-                      hDispatchStep hDispatchAccepted
-                  subst targetOutcome
-                  subst traceFinal
                   let finalSource : ObserverSemantics.State transcript :=
                     returned.withSource
                       (returned.source.withEVM
@@ -950,19 +992,42 @@ theorem adequateWithin_call_of_compileStmtFuel?
                       simp [finalSource, stack, hSourceStack,
                         hArgsLength, hBodyLength, Nat.add_comm]
                     simpa [hLength] using hAfterFits
+                  have hCallEval :
+                      ObserverSemantics.Stmt.Eval program
+                        (bodySourceFuel + 1) (.call name) source
+                        (Structured.OutcomeT.regular finalSource) := by
+                    simpa [callSource, finalSource] using
+                      Structured.EffectSemantics.Stmt.Eval.call_leave
+                        (model := ObserverSemantics.stateModel transcript)
+                        (handler := ObserverSemantics.handler transcript)
+                        (program := program)
+                        hLookup hSplit hBodyEval hPop hAttach
+                  have hCallRel :
+                      ObserverPreservation.OutcomeSimulation.Rel
+                        continuations tokens
+                        (Structured.OutcomeT.regular finalSource)
+                        (.jump regular targetFinal) bodyTrace :=
+                    ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+                      ⟨by simpa [site] using hRegular.symm,
+                        by simpa [finalSource] using hFinalRel⟩
+                  have hDispatchAccepted :
+                      accept (.jump regular targetFinal) := by
+                    exact
+                      hAccept (bodySourceFuel + 1)
+                        (Structured.OutcomeT.regular finalSource)
+                        (.jump regular targetFinal) bodyTrace
+                        hCallEval hCallRel
+                        ⟨returnShape, rfl, hFinalFits⟩
+                  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
+                    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
+                      (by simpa [hResidual] using hAfterBody)
+                      hDispatchStep hDispatchAccepted
+                  subst targetOutcome
+                  subst traceFinal
                   exact
                     ⟨bodySourceFuel + 1,
                       Structured.OutcomeT.regular finalSource,
-                      by
-                        simpa [callSource, finalSource] using
-                          Structured.EffectSemantics.Stmt.Eval.call_leave
-                            (model := ObserverSemantics.stateModel transcript)
-                            (handler := ObserverSemantics.handler transcript)
-                            (program := program)
-                            hLookup hSplit hBodyEval hPop hAttach,
-                      ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
-                        ⟨by simpa [site] using hRegular.symm,
-                          by simpa [finalSource] using hFinalRel⟩,
+                      hCallEval, hCallRel,
                       ⟨returnShape, rfl, hFinalFits⟩⟩
 
 end Call
