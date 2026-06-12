@@ -249,9 +249,14 @@ Adjacent boundary status:
   canonical named-return sequence, removes the complete activation layout, and
   establishes the exact returned-value stack relation. Return lowering has one
   indexed implementation shared by the executable compiler and proof.
+  Complete `leave` backward adequacy now inverts that same real three-statement
+  expansion. Scoped blocks have checked regular and abrupt composition:
+  regular execution appends and proves the compiler-owned cleanup, while
+  nonregular execution skips the unreachable cleanup in both semantics. The
+  actual `.block` lowerer/compiler expansion has a pass-owned decomposition
+  theorem exposing only its adjacent open-body and `finishScoped` components.
   Remaining work at this boundary is recursive statement/function/call
-  composition, backward adequacy for the complete `leave` statement, construction
-  of the activation relation at function entry,
+  composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
   adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

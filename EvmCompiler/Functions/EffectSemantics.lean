@@ -934,6 +934,49 @@ end
 namespace Block
 
 /--
+A regular open-block result becomes a scoped result by restricting only the
+source variable store to the incoming lexical scope.
+-/
+theorem runScoped_regular_of_runOpen {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {block : Block} {source final : σ}
+    (hOpen :
+      Block.runOpen model prim program ctx fuel block source =
+        .ok (Outcome.regular final, finalCtx)) :
+    Block.runScoped model prim program ctx block fuel source =
+      .ok (Outcome.regular (model.restrictTo ctx.scope final)) := by
+  simp [Block.runScoped, hOpen, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular]
+
+/--
+Abrupt open-block outcomes pass through scoped execution unchanged.
+-/
+theorem runScoped_nonregular_of_runOpen {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {block : Block} {source : σ} {outcome : Outcome σ}
+    (hOpen :
+      Block.runOpen model prim program ctx fuel block source =
+        .ok (outcome, finalCtx))
+    (hMode : outcome.mode ≠ .regular) :
+    Block.runScoped model prim program ctx block fuel source =
+      .ok outcome := by
+  cases hOutcome : outcome.mode with
+  | regular =>
+      exact False.elim (hMode hOutcome)
+  | brk =>
+      simp [Block.runScoped, hOpen, hOutcome]
+  | cont =>
+      simp [Block.runScoped, hOpen, hOutcome]
+  | leave =>
+      simp [Block.runScoped, hOpen, hOutcome]
+  | halt kind =>
+      simp [Block.runScoped, hOpen, hOutcome]
+
+/--
 Compose one successful regular source statement with a reconstructed tail at
 a common canonical Functions fuel.
 -/

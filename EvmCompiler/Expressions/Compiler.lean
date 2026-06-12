@@ -113,6 +113,15 @@ mutual
     | some body => some body.toStructured
 end
 
+theorem StmtList.toStructured_append
+    (left right : List Stmt) :
+    StmtList.toStructured (left ++ right) =
+      StmtList.toStructured left ++ StmtList.toStructured right := by
+  induction left with
+  | nil => rfl
+  | cons stmt rest ih =>
+      simp [StmtList.toStructured, ih]
+
 namespace Proc
 
 def toStructured (proc : Proc) : Structured.Proc where

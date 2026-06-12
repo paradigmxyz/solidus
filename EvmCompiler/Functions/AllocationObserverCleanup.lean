@@ -52,6 +52,26 @@ structure Transition
 
 namespace Plain
 
+theorem finishScoped_shape
+    {outer final : Locals.Ctx}
+    {stmts : List Expressions.Stmt}
+    {block : Expressions.Block}
+    (hFinish :
+      Locals.finishScoped outer final stmts = some block) :
+    ∃ cleanup,
+      final.cleanupTo? outer.layout.length = some cleanup ∧
+      block.stmts =
+        stmts ++ [Expressions.Stmt.code cleanup] := by
+  unfold Locals.finishScoped at hFinish
+  cases hCleanup :
+      final.cleanupTo? outer.layout.length with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup, Locals.codeStmt] at hFinish
+      cases hFinish
+      exact ⟨cleanup, rfl, rfl⟩
+
 theorem cleanupTo?_shape
     {ctx : Locals.Ctx} {targetDepth : Nat}
     {code : Structured.Code}
