@@ -417,19 +417,20 @@ theorem runBody_toCfg
       rfl
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      by_cases hSafe :
-          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
-      · simp only [hSafe, if_true] at hType
-        cases hHeadType :
-            TypedCfg.Instr.type?
-              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-        | none =>
-            simp [hHeadType] at hType
-        | some middle =>
-            simp only [hHeadType, Option.bind_some] at hType
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hHeadType] at hType
+      | some middle =>
+        cases hSafe :
+            TypedCfgCompiler.BasicInstr.sourceSafe? instr input middle with
+        | false =>
+            simp [hHeadType, hSafe] at hType
+        | true =>
             have hTailType :
-                TypedCfgCompiler.Code.type? rest middle = some output :=
-              hType
+                TypedCfgCompiler.Code.type? rest middle = some output := by
+              simpa [hHeadType, hSafe] using hType
             simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
               TypedCfg.ObserverSemantics.Block.runBody_cons]
             rw [BasicInstr.runAt_toCfg hHeadType]
@@ -448,7 +449,6 @@ theorem runBody_toCfg
                     _
                 rw [ih hTailType]
                 simp [hHead, Except.map, Bind.bind, Except.bind]
-      · simp [hSafe] at hType
 
 /--
 Backward adequacy for the straight-line portion of the adjacent pass.
@@ -559,7 +559,8 @@ structure At {transcript : Trace}
     (tokens : List Word) (target : EVMState) (trace : Trace) : Prop where
   rel : StateRel source tokens target trace
   sourceStack :
-    shape.length ≤ source.source.evm.stack.length
+    TypedCfgCompiler.Shape.sourceLength shape ≤
+      source.source.evm.stack.length
 
 theorem initial (state : EVMState) (transcript : Trace) :
     StateRel
@@ -577,7 +578,12 @@ theorem At.initial (state : EVMState) (transcript : Trace) :
       [] state transcript := by
   exact
     ⟨ObserverPreservation.StateRel.initial state transcript,
-      by simp [TypedCfg.Shape.caller, TypedCfg.Shape.length]⟩
+      by
+        simp [TypedCfgCompiler.Shape.sourceLength,
+          TypedCfgCompiler.Shape.sourceView,
+          TypedCfg.Shape.caller, TypedCfg.Shape.length,
+          TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?]⟩
 
 theorem targetStack_eq_source_append_hidden
     {transcript : Trace} {shape : TypedCfg.Shape}
@@ -1699,7 +1705,7 @@ theorem regular_if_false_of_compileStmtFuel?
     RegularPreserves result cfg entry regular source final tokens := by
   obtain
       ⟨output, _condition, _bodyResult,
-        hType, _hHead, _hBody, _hRequire, rfl⟩ :=
+        hType, _hSource, _hHead, _hBody, _hRequire, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
       hCompile
   intro target trace hRel
@@ -1757,7 +1763,7 @@ theorem outcome_if_false_of_compileStmtFuel?
       (tokens := tokens) hCompile hBlocks hFrameSafe hCond
   obtain
       ⟨output, _condition, _bodyResult,
-        _hType, _hHead, _hBody, _hRequire, rfl⟩ :=
+        _hType, _hSource, _hHead, _hBody, _hRequire, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
       hCompile
   exact
@@ -1811,7 +1817,7 @@ theorem outcome_if_true_of_compileStmtFuel?
       source outcome tokens := by
   obtain
       ⟨output, _condition, bodyResult,
-        hType, _hHead, hBody, _hRequire, rfl⟩ :=
+        hType, _hSource, _hHead, hBody, _hRequire, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
       hCompile
   have hBodyBlocks :
@@ -2027,6 +2033,18 @@ theorem outcome_terminal_of_compileStmtFuel?
           (source.source.withEVM sourceFinal)))
       tokens := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  have hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? kind.argCount input =
+        some () := by
+    cases hCheck :
+        TypedCfgCompiler.Shape.requireSourceWords? kind.argCount input with
+    | none =>
+        simp [hCheck] at hCompile
+    | some unit =>
+        cases unit
+        rfl
+  simp only [Bind.bind, Option.bind] at hCompile
+  rw [hSource] at hCompile
   simp [TypedCfgCompiler.mkBlock?] at hCompile
   cases hCompile
   apply
@@ -2805,6 +2823,20 @@ theorem outcome_some_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       rcases
           StateRel.runCode hType hFrameSafe hScrutinee hRel with
         ⟨targetAfterScrutinee, traceAfterScrutinee,
@@ -2942,6 +2974,7 @@ theorem outcome_some_of_compileStmtFuel?
                     · simp only [head, firstTest, casesEntryLabel,
                         List.mem_cons]
                       left
+                      cases cases <;> rfl
                     · exact hHeadRun
                   rcases
                       hDispatch targetAfterScrutinee
@@ -2999,6 +3032,20 @@ theorem outcome_none_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       rcases
           StateRel.runCode hType hFrameSafe hScrutinee hRel with
         ⟨targetAfterScrutinee, traceAfterScrutinee,
@@ -3122,6 +3169,7 @@ theorem outcome_none_of_compileStmtFuel?
                     · simp only [head, firstTest, casesEntryLabel,
                         List.mem_cons]
                       left
+                      cases cases <;> rfl
                     · exact hHeadRun
                   rcases
                       hDispatch targetAfterScrutinee
@@ -3495,7 +3543,7 @@ theorem outcome_of_compileStmtFuel?_and_eval
         hCompile with
     ⟨initResult, loopInput, condOutput, _condition,
       bodyResult, postResult, hInitCompile, hInitFallthrough,
-      hType, _hHead, hBodyCompile, _hBodyRequire,
+      hType, _hSource, _hHead, hBodyCompile, _hBodyRequire,
       hPostCompile, _hPostRequire, rfl⟩
   have hInitBlocks :
       TypedCfgPreservation.BlocksInProgram initResult cfg := by

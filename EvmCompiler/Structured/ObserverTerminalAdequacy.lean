@@ -19,6 +19,9 @@ theorem terminal_of_wellTyped_halt
     {fuel : Nat}
     (hTyped : block.WellTyped cfg)
     (hTerm : block.term = .halt kind)
+    (hSourceArity :
+      kind.argCount ≤
+        TypedCfgCompiler.Shape.sourceLength block.output)
     (hRel :
       ObserverPreservation.StateRel.At
         block.output source tokens target trace) :
@@ -30,12 +33,9 @@ theorem terminal_of_wellTyped_halt
           (Structured.OutcomeT.halt kind
             (source.withSource
               (source.source.withEVM finalEVM))) := by
-  have hArityShape :
-      kind.argCount ≤ block.output.length :=
-    TypedCfg.Block.halt_argCount_le_of_wellTyped hTyped hTerm
   have hAritySource :
       kind.argCount ≤ source.source.evm.stack.length :=
-    Nat.le_trans hArityShape hRel.sourceStack
+    Nat.le_trans hSourceArity hRel.sourceStack
   obtain ⟨finalEVM, hStep⟩ :=
     Structured.Terminal.exists_step_of_argCount_le
       kind source.source.evm hAritySource
@@ -57,6 +57,9 @@ theorem terminal_outcome_of_wellTyped_halt
     {fuel : Nat}
     (hTyped : block.WellTyped cfg)
     (hTerm : block.term = .halt kind)
+    (hSourceArity :
+      kind.argCount ≤
+        TypedCfgCompiler.Shape.sourceLength block.output)
     (hRel :
       ObserverPreservation.StateRel.At
         block.output source tokens target trace) :
@@ -75,7 +78,7 @@ theorem terminal_outcome_of_wellTyped_halt
             (source.source.withEVM sourceFinal))
           tokens targetFinal trace := by
   obtain ⟨sourceFinal, hSourceStep, hEval⟩ :=
-    terminal_of_wellTyped_halt hTyped hTerm hRel
+    terminal_of_wellTyped_halt hTyped hTerm hSourceArity hRel
   obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
     ObserverPreservation.StateRel.terminal hRel.rel hSourceStep
   exact
@@ -121,9 +124,13 @@ theorem outcome_terminal_of_compileStmtFuel?
           (source.withSource
             (source.source.withEVM sourceFinal))
           tokens targetFinal trace := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨hSourceWords, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
+      hCompile
+  have hSourceArity :
+      kind.argCount ≤ TypedCfgCompiler.Shape.sourceLength input :=
+    TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+      hSourceWords
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -142,7 +149,7 @@ theorem outcome_terminal_of_compileStmtFuel?
       ⟨sourceFinal, targetFinal, _hSourceStep,
         hTargetStep, hEval, hFinalRel⟩ :=
     terminal_outcome_of_wellTyped_halt
-      (fuel := fuel) hTyped (by rfl) hRel
+      (fuel := fuel) hTyped (by rfl) hSourceArity hRel
   have hRun :
       TypedCfg.ObserverSemantics.Block.run
           generated target trace =
@@ -192,9 +199,10 @@ theorem adequateWithin_terminal_of_compileStmtFuel?
       (program := program)
       hCompile hBlocks hWellTyped hRel
   have hCompile' := hCompile
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile'
-  simp [TypedCfgCompiler.mkBlock?] at hCompile'
-  cases hCompile'
+  obtain ⟨_hSourceWords, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
+      hCompile'
+  subst result
   let generated : TypedCfg.Block :=
     { label := entry
       input := input

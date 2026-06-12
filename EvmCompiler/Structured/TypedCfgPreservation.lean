@@ -158,6 +158,20 @@ theorem eventually_if_false_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -225,6 +239,20 @@ theorem regular_if_false_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -344,6 +372,20 @@ theorem eventually_if_true_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -441,6 +483,20 @@ theorem regular_if_true_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -511,6 +567,20 @@ theorem preserves_if_true_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -617,6 +687,20 @@ theorem outcome_if_true_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -828,6 +912,18 @@ theorem eventually_terminal_of_compileStmtFuel?
     cfg.Eventually entry state.evm
       (TypedCfg.Outcome.halt kind state.evm) := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
+  have hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? kind.argCount input =
+        some () := by
+    cases hCheck :
+        TypedCfgCompiler.Shape.requireSourceWords? kind.argCount input with
+    | none =>
+        simp [hCheck] at hCompile
+    | some unit =>
+        cases unit
+        rfl
+  simp only [Bind.bind, Option.bind] at hCompile
+  rw [hSource] at hCompile
   simp [TypedCfgCompiler.mkBlock?] at hCompile
   cases hCompile
   let generated : TypedCfg.Block :=
@@ -1994,6 +2090,20 @@ theorem outcome_some_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hValue : valueShape.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
@@ -2107,6 +2217,7 @@ theorem outcome_some_of_compileStmtFuel?
                     · simp only [head, firstTest, casesEntryLabel,
                         List.mem_cons]
                       left
+                      cases cases <;> rfl
                     · simp [head, TypedCfg.Block.run,
                         Code.runBody_toCfg hType, hTargetScrutinee,
                         Except.map, Bind.bind, Except.bind,
@@ -2171,6 +2282,20 @@ theorem preserves_some_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hValue : valueShape.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
@@ -2274,6 +2399,7 @@ theorem preserves_some_of_compileStmtFuel?
                     · simp only [head, firstTest, casesEntryLabel,
                         List.mem_cons]
                       left
+                      cases cases <;> rfl
                     · simp [head, TypedCfg.Block.run,
                         Code.runBody_toCfg hType, hTargetScrutinee,
                         Except.map, Bind.bind, Except.bind,
@@ -2326,6 +2452,20 @@ theorem preserves_none_of_compileStmtFuel?
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hValue : valueShape.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
@@ -2423,6 +2563,7 @@ theorem preserves_none_of_compileStmtFuel?
                     · simp only [head, firstTest, casesEntryLabel,
                         List.mem_cons]
                       left
+                      cases cases <;> rfl
                     · simp [head, TypedCfg.Block.run,
                         Code.runBody_toCfg hType, hTargetScrutinee,
                         Except.map, Bind.bind, Except.bind,
@@ -2549,6 +2690,8 @@ theorem components_of_compileStmtFuel?_for
       initResult.fallthrough? = some loopInput ∧
       TypedCfgCompiler.Code.type? cond loopInput =
         some condOutput ∧
+      TypedCfgCompiler.Shape.requireSourceWords? 1 condOutput =
+        some () ∧
       condOutput.slots.head? = some condition ∧
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
           { ctx with
@@ -2932,7 +3075,7 @@ theorem path_of_compileStmtFuel?_and_eval
       source outcome tokens := by
   rcases components_of_compileStmtFuel?_for hCompile with
     ⟨initResult, loopInput, condOutput, _condition, bodyResult,
-      postResult, hInitCompile, hInitFallthrough, hType, _hHead,
+      postResult, hInitCompile, hInitFallthrough, hType, _hSource, _hHead,
       hBodyCompile, _hBodyRequire, hPostCompile, _hPostRequire, rfl⟩
   have hInitBlocks : BlocksInProgram initResult cfg := by
     intro block hMem
@@ -3108,7 +3251,8 @@ theorem outcome_of_compileStmtFuel?_and_eval
   intro _hRegular
   rcases components_of_compileStmtFuel?_for hCompile with
     ⟨_initResult, _loopInput, condOutput, _condition, _bodyResult,
-      _postResult, _hInitCompile, _hInitFallthrough, _hType, _hHead,
+      _postResult, _hInitCompile, _hInitFallthrough, _hType, _hSource,
+      _hHead,
       _hBodyCompile, _hBodyRequire, _hPostCompile, _hPostRequire, hResult⟩
   subst result
   exact

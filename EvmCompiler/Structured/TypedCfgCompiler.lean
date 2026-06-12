@@ -89,6 +89,26 @@ def afterCall (input : Shape) (argc retc : Nat) : Option Shape :=
   else
     none
 
+/--
+The stack shape visible to Structured source execution.
+
+When a compiler-owned return token is present, source execution sees exactly
+the slots above that token. The token and caller suffix remain target-only
+representation details.
+-/
+def sourceView (shape : Shape) : Shape :=
+  match shape.returnTokenDepth? with
+  | none => shape
+  | some depth =>
+      { slots := shape.slots.take depth
+        tail := .closed }
+
+def sourceLength (shape : Shape) : Nat :=
+  shape.sourceView.length
+
+def requireSourceWords? (count : Nat) (shape : Shape) : Option Unit :=
+  if count ≤ shape.sourceLength then some () else none
+
 end Shape
 
 namespace BasicInstr
@@ -143,21 +163,17 @@ therefore remain able to move the token into place. This check applies only to
 Structured source code, preventing target execution from satisfying a missing
 source operand with hidden call-frame data.
 -/
-def sourceSafe? (instr : BasicInstr) (input : Shape) : Bool :=
-  match input.returnTokenDepth? with
-  | none => true
-  | some depth =>
-      match instr with
-      | .push _ => true
-      | .op op =>
-          match op.toPrimOp.stackArity? with
-          | none => false
-          | some (inputArity, _outputArity) =>
-              decide (inputArity ≤ depth)
-      | .bindLocals offset names =>
-          decide (offset + names.length ≤ depth)
-      | .bindScratch baseDepth _name _slot =>
-          decide (baseDepth < depth)
+def sourceSafe? (instr : BasicInstr) (input output : Shape) : Bool :=
+  decide
+    (TypedCfg.Instr.type? (toCfg instr) input.sourceView =
+      some output.sourceView)
+
+theorem sourceType_of_sourceSafe
+    {instr : BasicInstr} {input output : Shape}
+    (hSafe : sourceSafe? instr input output = true) :
+    TypedCfg.Instr.type? (toCfg instr) input.sourceView =
+      some output.sourceView := by
+  simpa [sourceSafe?] using of_decide_eq_true hSafe
 
 end BasicInstr
 
@@ -169,11 +185,12 @@ def toCfg (code : Code) : List TypedCfg.Instr :=
 def type? : Code → Shape → Option Shape
   | [], input => some input
   | instr :: rest, input =>
-      if BasicInstr.sourceSafe? instr input then do
+      do
         let middle ← TypedCfg.Instr.type? (BasicInstr.toCfg instr) input
-        type? rest middle
-      else
-        none
+        if BasicInstr.sourceSafe? instr input middle = true then
+          type? rest middle
+        else
+          none
 
 theorem bodyType?_toCfg_of_type?
     {code : Code} {input output : Shape}
@@ -184,18 +201,22 @@ theorem bodyType?_toCfg_of_type?
       simpa [type?, toCfg, TypedCfg.Block.bodyType?] using hType
   | cons instr rest ih =>
       unfold type? at hType
-      by_cases hSafe : BasicInstr.sourceSafe? instr input
-      · simp only [hSafe, if_true] at hType
-        cases hInstr :
-            TypedCfg.Instr.type? (BasicInstr.toCfg instr) input with
-        | none =>
-            simp [hInstr] at hType
-        | some middle =>
-            simp only [hInstr, Option.bind_some] at hType
+      cases hInstr :
+          TypedCfg.Instr.type? (BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hInstr] at hType
+      | some middle =>
+          cases hSafe :
+              BasicInstr.sourceSafe? instr input middle with
+          | false =>
+              simp [hInstr, hSafe] at hType
+          | true =>
+            have hTail :
+                type? rest middle = some output := by
+              simpa [hInstr, hSafe] using hType
             simp only [toCfg, List.map_cons,
               TypedCfg.Block.bodyType?, hInstr]
-            exact ih hType
-      · simp [hSafe] at hType
+            exact ih hTail
 
 end Code
 
@@ -314,6 +335,7 @@ mutual
           let head ←
             mkCodeBlock? entry input cond (.jumpi bodyLabel regular)
           let condOutput := head.output
+          let _ ← Shape.requireSourceWords? 1 condOutput
           let condition ← condOutput.slots.head?
           let branchInput :=
             { condOutput with slots := condOutput.slots.tail }
@@ -336,6 +358,7 @@ mutual
           let head ←
             mkCodeBlock? entry input scrutinee (.jump firstTest)
           let valueShape := head.output
+          let _ ← Shape.requireSourceWords? 1 valueShape
           let _value ← valueShape.slots.head?
           let bodyShape :=
             { valueShape with slots := valueShape.slots.tail }
@@ -369,6 +392,7 @@ mutual
             mkCodeBlock? loopLabel loopInput cond
               (.jumpi bodyLabel endLabel)
           let condOutput := loopBlock.output
+          let _ ← Shape.requireSourceWords? 1 condOutput
           let _condition ← condOutput.slots.head?
           let branchInput :=
             { condOutput with slots := condOutput.slots.tail }
@@ -441,6 +465,7 @@ mutual
                    caseLabel := .generated supply 10000 }]
               fallthrough? := some returnShape }
       | .terminal kind => do
+          let _ ← Shape.requireSourceWords? kind.argCount input
           let block ← mkBlock? entry input [] (.halt kind)
           some
             { blocks := [block]

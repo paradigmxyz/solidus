@@ -202,6 +202,9 @@ theorem condition_of_step
     (hType :
       TypedCfgCompiler.Code.type? cond loopInput =
         some condOutput)
+    (hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? 1 condOutput =
+        some ())
     (hHead : condOutput.slots.head? = some condition)
     (hRel :
       ObserverPreservation.StateRel.At
@@ -261,7 +264,7 @@ theorem condition_of_step
             ⟨afterCode, hSourceCode, hAfterCodeRel⟩ :=
           Code.run_of_runBody_toCfg hType hRel hCondBody
         have hOutputBound :
-            condOutput.length ≤
+            TypedCfgCompiler.Shape.sourceLength condOutput ≤
               afterCode.source.evm.stack.length :=
           Code.shapeSound cond hType
             hRel.sourceStack hSourceCode
@@ -277,12 +280,10 @@ theorem condition_of_step
         | nil =>
             rw [hStack] at hTargetStack
             simp at hTargetStack
-            have hOutputPos : 1 ≤ condOutput.length := by
-              cases hSlots : condOutput.slots with
-              | nil =>
-                  simp [hSlots] at hHead
-              | cons slot rest =>
-                  simp [TypedCfg.Shape.length, hSlots]
+            have hOutputPos :
+                1 ≤ TypedCfgCompiler.Shape.sourceLength condOutput :=
+              TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+                hSource
             have hSourcePos :
                 1 ≤ afterCode.source.evm.stack.length :=
               Nat.le_trans hOutputPos hOutputBound
@@ -307,7 +308,7 @@ theorem condition_of_step
                 simp [hStack, EvmYul.Stack.pop, hBne]
               obtain ⟨final, hCond, hFinalRel⟩ :=
                 Code.runCondition_of_runBody_toCfg
-                  hType hHead hRel hCondBody hPop
+                  hType hSource hHead hRel hCondBody hPop
               exact
                 Or.inl
                   ⟨final, { targetAfter with stack := stack },
@@ -329,7 +330,7 @@ theorem condition_of_step
                 simp [hStack, EvmYul.Stack.pop, hBne]
               obtain ⟨final, hCond, hFinalRel⟩ :=
                 Code.runCondition_of_runBody_toCfg
-                  hType hHead hRel hCondBody hPop
+                  hType hSource hHead hRel hCondBody hPop
               exact
                 Or.inr
                   ⟨final, { targetAfter with stack := stack },
@@ -367,6 +368,9 @@ private theorem outcome_for_step_of_firstReaches
         term := .jumpi bodyLabel endLabel } ∈ result.blocks)
     (hType :
       TypedCfgCompiler.Code.type? cond loopInput = some condOutput)
+    (hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? 1 condOutput =
+        some ())
     (hHead : condOutput.slots.head? = some condition)
     (hBodyRequire :
       bodyResult.requireFallthrough?
@@ -459,7 +463,7 @@ private theorem outcome_for_step_of_firstReaches
   obtain ⟨firstOutcome, firstTrace, hStep, _hAfterStep⟩ :=
     TypedCfg.ObserverSemantics.Program.runN_succ_elim hReach.run
   rcases
-      condition_of_step hBlocks hLoopMem hType hHead hRel hStep with
+      condition_of_step hBlocks hLoopMem hType hSource hHead hRel hStep with
     hFalse | hTrue
   · rcases hFalse with
       ⟨afterCond, targetAfterCond, rfl, hCond, hAfterCondRel⟩
@@ -550,7 +554,8 @@ private theorem outcome_for_step_of_firstReaches
                 (some { condOutput with
                     slots := condOutput.slots.tail } :
                   Option TypedCfg.Shape) = some output ∧
-                output.length ≤ bodyState.source.evm.stack.length
+                TypedCfgCompiler.Shape.sourceLength output ≤
+                  bodyState.source.evm.stack.length
               at hBodyJoin
             obtain ⟨output, hOutput, hBound⟩ := hBodyJoin
             have hOutputEq :
@@ -611,7 +616,8 @@ private theorem outcome_for_step_of_firstReaches
                 hBodyOutcomeRel
             subst bodyTargetOutcome
             change
-              { condOutput with slots := condOutput.slots.tail }.length ≤
+              TypedCfgCompiler.Shape.sourceLength
+                  { condOutput with slots := condOutput.slots.tail } ≤
                 bodyState.source.evm.stack.length at hBodyJoin
             have hBodyAt :
                 ObserverPreservation.StateRel.At
@@ -662,7 +668,7 @@ private theorem outcome_for_step_of_firstReaches
                         hPostOutcomeRel
                     subst postTargetOutcome
                     change
-                      loopInput.length ≤
+                      TypedCfgCompiler.Shape.sourceLength loopInput ≤
                         postState.source.evm.stack.length at hPostJoin
                     have hPostAt :
                         ObserverPreservation.StateRel.At
@@ -767,7 +773,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          output.length ≤
+                          TypedCfgCompiler.Shape.sourceLength output ≤
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -775,7 +781,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          output.length ≤
+                          TypedCfgCompiler.Shape.sourceLength output ≤
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -795,7 +801,8 @@ private theorem outcome_for_step_of_firstReaches
                 (some { condOutput with
                     slots := condOutput.slots.tail } :
                   Option TypedCfg.Shape) = some output ∧
-                output.length ≤ bodyState.source.evm.stack.length
+                TypedCfgCompiler.Shape.sourceLength output ≤
+                  bodyState.source.evm.stack.length
               at hBodyJoin
             obtain ⟨output, hOutput, hBodyBound⟩ := hBodyJoin
             have hOutputEq :
@@ -852,7 +859,7 @@ private theorem outcome_for_step_of_firstReaches
                         hPostOutcomeRel
                     subst postTargetOutcome
                     change
-                      loopInput.length ≤
+                      TypedCfgCompiler.Shape.sourceLength loopInput ≤
                         postState.source.evm.stack.length at hPostJoin
                     have hPostAt :
                         ObserverPreservation.StateRel.At
@@ -957,7 +964,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          output.length ≤
+                          TypedCfgCompiler.Shape.sourceLength output ≤
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -965,7 +972,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          output.length ≤
+                          TypedCfgCompiler.Shape.sourceLength output ≤
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -995,6 +1002,9 @@ private theorem outcome_for_of_firstReaches
         term := .jumpi bodyLabel endLabel } ∈ result.blocks)
     (hType :
       TypedCfgCompiler.Code.type? cond loopInput = some condOutput)
+    (hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? 1 condOutput =
+        some ())
     (hHead : condOutput.slots.head? = some condition)
     (hBodyRequire :
       bodyResult.requireFallthrough?
@@ -1072,7 +1082,7 @@ private theorem outcome_for_of_firstReaches
   | h targetFuel ih =>
       exact
         outcome_for_step_of_firstReaches
-          hBlocks hLoopMem hType hHead hBodyRequire hPostRequire
+          hBlocks hLoopMem hType hSource hHead hBodyRequire hPostRequire
           hOuterRegular hAccept hBodyEntryNotAccepted
           hPostEntryNotAccepted hLoopEntryNotAccepted
           hRel hReach hBodyAdequate hPostAdequate
@@ -1234,7 +1244,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
         hCompile with
     ⟨initResult, loopInput, condOutput, condition,
       bodyResult, postResult, hInitCompile, hInitFallthrough,
-      hType, hHead, hBodyCompile, hBodyRequire,
+      hType, hSource, hHead, hBodyCompile, hBodyRequire,
       hPostCompile, hPostRequire, hResult⟩
   subst result
   let outer :=
@@ -1307,7 +1317,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
               hInitOutcomeRel
           subst initTargetOutcome
           change
-            loopInput.length ≤ initState.source.evm.stack.length
+            TypedCfgCompiler.Shape.sourceLength loopInput ≤
+              initState.source.evm.stack.length
             at hInitJoin
           have hLoopAt :
               ObserverPreservation.StateRel.At
@@ -1330,7 +1341,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
                   ⟨loopSourceFuel, sourceOutcome,
                     hLoopEval, hLoopOutcomeRel, hLoopJoin⟩ :=
                 outcome_for_of_firstReaches
-                  hBlocks hLoopMem hType hHead hBodyRequire hPostRequire
+                  hBlocks hLoopMem hType hSource hHead hBodyRequire
+                  hPostRequire
                   rfl hAccept
                   (by
                     intro targetState
@@ -1406,7 +1418,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           change
             ∃ output,
               (none : Option TypedCfg.Shape) = some output ∧
-                output.length ≤ initState.source.evm.stack.length
+                TypedCfgCompiler.Shape.sourceLength output ≤
+                  initState.source.evm.stack.length
             at hInitJoin
           obtain ⟨output, hNone, _hBound⟩ := hInitJoin
           cases hNone
@@ -1414,7 +1427,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           change
             ∃ output,
               (none : Option TypedCfg.Shape) = some output ∧
-                output.length ≤ initState.source.evm.stack.length
+                TypedCfgCompiler.Shape.sourceLength output ≤
+                  initState.source.evm.stack.length
             at hInitJoin
           obtain ⟨output, hNone, _hBound⟩ := hInitJoin
           cases hNone

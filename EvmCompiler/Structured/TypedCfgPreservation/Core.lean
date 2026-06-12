@@ -472,6 +472,25 @@ theorem step_stack_bound_of_type
       omega
 
 /--
+One accepted Structured source instruction preserves the stack bound tracked
+by the source-visible projection of its full TypedCfg shape.
+-/
+theorem step_sourceLength_bound_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final : EVMState}
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true)
+    (hBound :
+      TypedCfgCompiler.Shape.sourceLength input ≤ state.stack.length)
+    (hStep : instr.step state = .ok final) :
+    TypedCfgCompiler.Shape.sourceLength output ≤ final.stack.length := by
+  have hSourceType :=
+    TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe
+  exact
+    step_stack_bound_of_type hSourceType hBound hStep
+
+/--
 Typed Structured execution cannot become successful only by appending
 compiler-owned stack data below the visible source prefix.
 -/
@@ -1189,19 +1208,20 @@ theorem runBody_toCfg
       rfl
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      by_cases hSafe :
-          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
-      · simp only [hSafe, if_true] at hType
-        cases hHeadType :
-            TypedCfg.Instr.type?
-              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-        | none =>
-            simp [hHeadType] at hType
-        | some middle =>
-            simp only [hHeadType, Option.bind_some] at hType
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hHeadType] at hType
+      | some middle =>
+        cases hSafe :
+            TypedCfgCompiler.BasicInstr.sourceSafe? instr input middle with
+        | false =>
+            simp [hHeadType, hSafe] at hType
+        | true =>
             have hTailType :
-                TypedCfgCompiler.Code.type? rest middle = some output :=
-              hType
+                TypedCfgCompiler.Code.type? rest middle = some output := by
+              simpa [hHeadType, hSafe] using hType
             simp only [TypedCfgCompiler.Code.toCfg, List.map_cons]
             unfold TypedCfg.Block.runBody
             rw [BasicInstr.runAt_toCfg hHeadType]
@@ -1219,7 +1239,6 @@ theorem runBody_toCfg
                   EffectSemantics.Ordinary.evmStateModel_withEVM,
                   EffectSemantics.Ordinary.handler_afterInstr]
                 exact ih hTailType
-      · simp [hSafe] at hType
 
 theorem runState_toCfg
     {code : Structured.Code} {input output : TypedCfg.Shape}

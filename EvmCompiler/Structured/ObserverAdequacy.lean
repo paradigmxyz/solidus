@@ -634,9 +634,11 @@ def ShapeSound (code : Structured.Code) : Prop :=
   ∀ {transcript : Trace} {input output : TypedCfg.Shape}
       {source final : ObserverSemantics.State transcript},
     TypedCfgCompiler.Code.type? code input = some output →
-      input.length ≤ source.source.evm.stack.length →
+      TypedCfgCompiler.Shape.sourceLength input ≤
+        source.source.evm.stack.length →
       ObserverSemantics.Code.run code source = .ok final →
-      output.length ≤ final.source.evm.stack.length
+      TypedCfgCompiler.Shape.sourceLength output ≤
+        final.source.evm.stack.length
 
 /--
 Every straight-line fragment accepted by the existing Structured-to-TypedCfg
@@ -656,19 +658,20 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
       exact hBound
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      by_cases hSafe :
-          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
-      · simp only [hSafe, if_true] at hType
-        cases hHeadType :
-            TypedCfg.Instr.type?
-              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-        | none =>
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
           simp [hHeadType] at hType
-        | some middle =>
-          simp only [hHeadType, Option.bind_some] at hType
+      | some middle =>
+        cases hSafe :
+            TypedCfgCompiler.BasicInstr.sourceSafe? instr input middle with
+        | false =>
+          simp [hHeadType, hSafe] at hType
+        | true =>
           have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output :=
-            hType
+              TypedCfgCompiler.Code.type? rest middle = some output := by
+            simpa [hHeadType, hSafe] using hType
           unfold ObserverSemantics.Code.run
             EffectSemantics.Code.run at hRun
           simp only [ObserverSemantics.stateModel_evm,
@@ -688,13 +691,14 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
               | ok middleState =>
                   rw [hAfter] at hRun
                   have hStepBound :
-                      middle.length ≤ evm.stack.length :=
-                    TypedCfgPreservation.BasicInstr.step_stack_bound_of_type
-                      hHeadType hBound hStep
+                      TypedCfgCompiler.Shape.sourceLength middle ≤
+                        evm.stack.length :=
+                    TypedCfgPreservation.BasicInstr.step_sourceLength_bound_of_type
+                      hSafe hBound hStep
                   have hAfterLength :=
                     ObserverSemantics.handler_stack_length hAfter
                   have hMiddleBound :
-                      middle.length ≤
+                      TypedCfgCompiler.Shape.sourceLength middle ≤
                         middleState.source.evm.stack.length := by
                     have hLength :
                         middleState.source.evm.stack.length =
@@ -702,7 +706,6 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
                       simpa [RunState.withEVM] using hAfterLength
                     omega
                   exact ih hTailType hMiddleBound hRun
-      · simp [hSafe] at hType
 
 /--
 Backward frame adequacy indexed by the checked input shape.
@@ -718,7 +721,8 @@ def FrameReflectingAt (code : Structured.Code)
       {state framedFinal : ObserverSemantics.State transcript}
       {hidden : EvmYul.Stack Word},
     TypedCfgCompiler.Code.type? code input = some output →
-      input.length ≤ state.source.evm.stack.length →
+      TypedCfgCompiler.Shape.sourceLength input ≤
+        state.source.evm.stack.length →
       ObserverSemantics.Code.run code
           (ObserverSemantics.Code.withHidden state hidden) =
         .ok framedFinal →
@@ -752,19 +756,20 @@ theorem frameReflectingAt
             (ObserverSemantics.Code.withHidden state hidden)⟩
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      by_cases hSafe :
-          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
-      · simp only [hSafe, if_true] at hType
-        cases hHeadType :
-            TypedCfg.Instr.type?
-              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-        | none =>
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
           simp [hHeadType] at hType
-        | some middle =>
-          simp only [hHeadType, Option.bind_some] at hType
+      | some middle =>
+        cases hSafe :
+            TypedCfgCompiler.BasicInstr.sourceSafe? instr input middle with
+        | false =>
+          simp [hHeadType, hSafe] at hType
+        | true =>
           have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output :=
-            hType
+              TypedCfgCompiler.Code.type? rest middle = some output := by
+            simpa [hHeadType, hSafe] using hType
           unfold ObserverSemantics.Code.run
             EffectSemantics.Code.run at hFramed
           simp only [ObserverSemantics.stateModel_evm,
@@ -782,14 +787,16 @@ theorem frameReflectingAt
                 Bind.bind, Except.bind] at hFramed
               obtain ⟨sourceEVM, hSourceStep⟩ :=
                 TypedCfgPreservation.BasicInstr.exists_step_of_type_bound_append
-                  hHeadType hBound hFramedStep
+                  (TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe)
+                  hBound hFramedStep
               have hStepRel :
                   Assembly.SameRuntimeData
                     framedEVM
                     { sourceEVM with
                       stack := sourceEVM.stack ++ hidden } :=
                 TypedCfgPreservation.BasicInstr.step_append_stack_rel_of_type
-                  hHeadType hBound hSourceStep hFramedStep
+                  (TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe)
+                  hBound hSourceStep hFramedStep
               let sourceMiddle : ObserverSemantics.State transcript :=
                 state.withSource
                   (state.source.withEVM sourceEVM)
@@ -832,9 +839,10 @@ theorem frameReflectingAt
                     ObserverPreservation.handler_of_rel
                       hMiddleRel hFramedAfter
                   have hSourceStepBound :
-                      middle.length ≤ sourceEVM.stack.length :=
-                    TypedCfgPreservation.BasicInstr.step_stack_bound_of_type
-                      hHeadType hBound hSourceStep
+                      TypedCfgCompiler.Shape.sourceLength middle ≤
+                        sourceEVM.stack.length :=
+                    TypedCfgPreservation.BasicInstr.step_sourceLength_bound_of_type
+                      hSafe hBound hSourceStep
                   have hObserverTop :
                       ∀ op kind,
                         instr = .op op →
@@ -843,9 +851,11 @@ theorem frameReflectingAt
                     intro op kind hInstr hObserver
                     subst instr
                     have hOutputPos :
-                        1 ≤ middle.length :=
+                        1 ≤ TypedCfgCompiler.Shape.sourceLength middle :=
                       BasicInstr.output_length_pos_of_observer
-                        hHeadType hObserver
+                        (TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe
+                          hSafe)
+                        hObserver
                     have hStackPos :
                         1 ≤ sourceEVM.stack.length :=
                       Nat.le_trans hOutputPos hSourceStepBound
@@ -860,7 +870,7 @@ theorem frameReflectingAt
                       (by simpa [expectedMiddle] using hExpectedAfter)
                   subst expectedAfter
                   have hAfterBound :
-                      middle.length ≤
+                      TypedCfgCompiler.Shape.sourceLength middle ≤
                         sourceAfter.source.evm.stack.length := by
                     have hLength :=
                       ObserverSemantics.handler_stack_length hSourceAfter
@@ -892,7 +902,6 @@ theorem frameReflectingAt
                   · exact
                       ObserverPreservation.ReplayStateRel.trans
                         hTailRel hExpectedFinalRel
-      · simp [hSafe] at hType
 
 /--
 Backward straight-line adequacy across realized procedure frames.
@@ -1001,6 +1010,8 @@ theorem runCondition_of_runBody_toCfg
     {trace traceFinal : Trace} {cond : Bool}
     {condition : TypedCfg.Slot}
     (hType : TypedCfgCompiler.Code.type? code input = some output)
+    (hSource :
+      TypedCfgCompiler.Shape.requireSourceWords? 1 output = some ())
     (hHead : output.slots.head? = some condition)
     (hRel :
       ObserverPreservation.StateRel.At
@@ -1022,14 +1033,13 @@ theorem runCondition_of_runBody_toCfg
     run_of_runBody_toCfg
       hType hRel hBody
   have hOutputBound :
-      output.length ≤ after.source.evm.stack.length :=
+      TypedCfgCompiler.Shape.sourceLength output ≤
+        after.source.evm.stack.length :=
     shapeSound code hType hRel.sourceStack hSourceCode
-  have hOutputPos : 1 ≤ output.length := by
-    cases hSlots : output.slots with
-    | nil =>
-        simp [hSlots] at hHead
-    | cons slot rest =>
-        simp [TypedCfg.Shape.length, hSlots]
+  have hOutputPos :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength output :=
+    TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+      hSource
   have hAfterPos : 1 ≤ after.source.evm.stack.length :=
     Nat.le_trans hOutputPos hOutputBound
   cases hAfterStack : after.source.evm.stack with
@@ -1068,12 +1078,14 @@ theorem runCondition_of_runBody_toCfg
           hSourceCode
         rw [hEffectRun]
         exact hSourcePop
-      · cases hSlots : output.slots with
-        | nil =>
-            simp [hSlots] at hHead
-        | cons slot rest =>
-            simpa [TypedCfg.Shape.length, hSlots, final, hAfterStack]
-              using hOutputBound
+      · have hTailLength :=
+          TypedCfgCompilerFacts.Shape.sourceLength_tail_of_one_le
+            output hOutputPos
+        simp [hAfterStack] at hOutputBound
+        simpa [hTailLength, final, hAfterStack] using
+          (show
+            TypedCfgCompiler.Shape.sourceLength output - 1 ≤
+              stack.length by omega)
 
 /--
 Backward straight-line adequacy at a source boundary with no active ghost
@@ -1950,6 +1962,8 @@ private theorem head_of_compileStmtFuel?_and_step
       firstOutcome =
         .jump (casesEntryLabel supply 0 cases) targetAfter ∧
       TypedCfgCompiler.Code.type? scrutinee input = some valueShape ∧
+      TypedCfgCompiler.Shape.requireSourceWords? 1 valueShape =
+        some () ∧
       valueShape.slots.head? = some valueSlot ∧
       TypedCfgCompiler.compileCasesFuel? compilerFuel
           cases ctx supply (supply + 1) 0 valueShape
@@ -1981,7 +1995,7 @@ private theorem head_of_compileStmtFuel?_and_step
         valueShape afterScrutinee tokens targetAfter traceAfter := by
   obtain
       ⟨valueShape, valueSlot, caseResult, defaultResult,
-        hType, hValue, hCases, hDefault, hResult⟩ :=
+        hType, hSource, hValue, hCases, hDefault, hResult⟩ :=
     TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch
       hCompile
   subst result
@@ -2026,14 +2040,10 @@ private theorem head_of_compileStmtFuel?_and_step
             ⟨hAfterRel,
               Code.shapeSound scrutinee
                 hType hRel.sourceStack hScrutinee⟩
-        have hShapeOne : 1 ≤ valueShape.length := by
-          cases valueShape with
-          | mk slots tail =>
-              cases slots with
-              | nil =>
-                  simp at hValue
-              | cons slot rest =>
-                  simp [TypedCfg.Shape.length]
+        have hShapeOne :
+            1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
+          TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+            hSource
         have hSourceOne :
             1 ≤ afterScrutinee.source.evm.stack.length :=
           Nat.le_trans hShapeOne hAfterAt.sourceStack
@@ -2048,7 +2058,7 @@ private theorem head_of_compileStmtFuel?_and_step
             exact
               ⟨valueShape, valueSlot, caseResult, defaultResult,
                 afterScrutinee, stack, value, bodyFinal, rfl,
-                hType, hValue, hCases, hDefault,
+                hType, hSource, hValue, hCases, hDefault,
                 rfl, hScrutinee, hPop, hAfterAt⟩
       · simp [hOutput] at hStep
 
@@ -2082,6 +2092,8 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hEq : caseValue = value)
     (hAccept :
@@ -2188,14 +2200,19 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
             rcases hPop with ⟨rfl, rfl⟩
             simp [hStack]
       have hPopShape :=
-        TypedCfg.Instr.length_of_type?_pop hPopType
+        TypedCfgCompilerFacts.Shape.sourceLength_of_type?_pop
+          hSourceOne hPopType
       have hInputBound :
-          valueShape.length ≤ source.source.evm.stack.length :=
+          TypedCfgCompiler.Shape.sourceLength valueShape ≤
+            source.source.evm.stack.length :=
         hRel.sourceStack
       have hOutputLength :
-          bodyShape.length = valueShape.length - 1 :=
-        hPopShape.2
-      have hBodyBound : bodyShape.length ≤ stack.length := by
+          TypedCfgCompiler.Shape.sourceLength bodyShape =
+            TypedCfgCompiler.Shape.sourceLength valueShape - 1 :=
+        hPopShape
+      have hBodyBound :
+          TypedCfgCompiler.Shape.sourceLength bodyShape ≤
+            stack.length := by
         omega
       have hAfterPopAt :
           ObserverPreservation.StateRel.At bodyShape
@@ -2293,6 +2310,8 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hNe : caseValue ≠ value)
     (hAccept :
@@ -2462,6 +2481,8 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hAccept :
       ∀ acceptedOutcome,
@@ -2541,14 +2562,19 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
             rcases hPop with ⟨rfl, rfl⟩
             simp [hStack]
       have hPopShape :=
-        TypedCfg.Instr.length_of_type?_pop hPopType
+        TypedCfgCompilerFacts.Shape.sourceLength_of_type?_pop
+          hSourceOne hPopType
       have hInputBound :
-          valueShape.length ≤ source.source.evm.stack.length :=
+          TypedCfgCompiler.Shape.sourceLength valueShape ≤
+            source.source.evm.stack.length :=
         hRel.sourceStack
       have hOutputLength :
-          bodyShape.length = valueShape.length - 1 :=
-        hPopShape.2
-      have hBodyBound : bodyShape.length ≤ stack.length := by
+          TypedCfgCompiler.Shape.sourceLength bodyShape =
+            TypedCfgCompiler.Shape.sourceLength valueShape - 1 :=
+        hPopShape
+      have hBodyBound :
+          TypedCfgCompiler.Shape.sourceLength bodyShape ≤
+            stack.length := by
         omega
       have hAfterPopAt :
           ObserverPreservation.StateRel.At bodyShape
@@ -2623,6 +2649,8 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hRegular : continuations.regular = regular)
     (hAccept :
@@ -2676,14 +2704,18 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
         rcases hPop with ⟨rfl, rfl⟩
         simp [hStack]
   have hPopShape :=
-    TypedCfg.Instr.length_of_type?_pop hPopType
+    TypedCfgCompilerFacts.Shape.sourceLength_of_type?_pop
+      hSourceOne hPopType
   have hInputBound :
-      valueShape.length ≤ source.source.evm.stack.length :=
+      TypedCfgCompiler.Shape.sourceLength valueShape ≤
+        source.source.evm.stack.length :=
     hRel.sourceStack
   have hOutputLength :
-      bodyShape.length = valueShape.length - 1 :=
-    hPopShape.2
-  have hBodyBound : bodyShape.length ≤ stack.length := by
+      TypedCfgCompiler.Shape.sourceLength bodyShape =
+        TypedCfgCompiler.Shape.sourceLength valueShape - 1 :=
+    hPopShape
+  have hBodyBound :
+      TypedCfgCompiler.Shape.sourceLength bodyShape ≤ stack.length := by
     omega
   exact
     ⟨ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
@@ -2691,7 +2723,7 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
       by
         show ∃ output,
           (some bodyShape : Option TypedCfg.Shape) = some output ∧
-            output.length ≤ stack.length
+            TypedCfgCompiler.Shape.sourceLength output ≤ stack.length
         exact ⟨bodyShape, rfl, hBodyBound⟩⟩
 
 /--
@@ -2722,6 +2754,8 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hSelect :
       Structured.Switch.select value cases defaultBody = none)
@@ -2756,7 +2790,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
                   (source.source.withEVM
                     { source.source.evm with stack := stack })))
               targetOutcome traceFinal ∧
-            bodyShape.length ≤ stack.length) :
+            TypedCfgCompiler.Shape.sourceLength bodyShape ≤ stack.length) :
     ObserverPreservation.OutcomeSimulation.Rel
         continuations tokens
         (Structured.OutcomeT.regular
@@ -2787,7 +2821,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
               by
                 show ∃ output,
                   (some bodyShape : Option TypedCfg.Shape) = some output ∧
-                    output.length ≤ stack.length
+                    TypedCfgCompiler.Shape.sourceLength output ≤ stack.length
                 exact ⟨bodyShape, rfl, hBodyBound⟩⟩
   | cons head rest ih =>
       rcases head with ⟨caseValue, body⟩
@@ -2924,6 +2958,8 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape)
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hSelect :
       Structured.Switch.select value cases defaultBody = some selected)
@@ -3038,7 +3074,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
             subst selected
             exact
               outcome_cases_head_of_compileCasesFuel?_and_firstReaches
-                hCompile hBlocks hHead hPopType hPop hEq hAccept
+                hCompile hBlocks hHead hPopType hSourceOne hPop hEq hAccept
                 (hCaseEntryNotAccepted idx)
                 (hBodyEntryNotAccepted idx)
                 hRel hReach
@@ -3051,7 +3087,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
             exact
               outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
                 (selected := selected)
-                hCompile hBlocks hHead hPopType hPop hEq hAccept
+                hCompile hBlocks hHead hPopType hSourceOne hPop hEq hAccept
                 (hDispatchEntryNotAccepted (idx + 1) rest)
                 hRel hReach
                 (fun {_tailSupply} {_tail} hTailCompile hTailBlocks
@@ -3156,7 +3192,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
   obtain
       ⟨valueShape, valueSlot, caseResult, defaultResult,
         afterScrutinee, stack, value, targetAfterScrutinee,
-        hFirstOutcome, hType, hHead, hCasesCompile, hDefaultCompile,
+        hFirstOutcome, hType, hSource, hHead, hCasesCompile, hDefaultCompile,
         hResult, hScrutinee, hPop, hAfterScrutineeRel⟩ :=
     head_of_compileStmtFuel?_and_step
       (by simpa [Nat.add_assoc] using hCompile)
@@ -3178,6 +3214,10 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
   | succ dispatchFuel =>
       let bodyShape : TypedCfg.Shape :=
         { valueShape with slots := valueShape.slots.tail }
+      have hSourceOne :
+          1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
+        TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+          hSource
       have hPopType :
           TypedCfg.Instr.type? .pop valueShape = some bodyShape := by
         cases valueShape with
@@ -3216,7 +3256,8 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
       | none =>
           obtain ⟨hOutcomeRel, hCaseArtifact⟩ :=
             outcome_cases_none_of_compileCasesFuel?_and_firstReaches
-              hCasesCompile' hCaseBlocks hHead hPopType hPop hSelect
+              hCasesCompile' hCaseBlocks hHead hPopType hSourceOne hPop
+              hSelect
               hDispatchEntryNotAccepted
               hAfterScrutineeRel hDispatchReach
               (by
@@ -3231,7 +3272,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                   simpa [hDefaultNone] using hDefaultCompile'
                 obtain ⟨hDefaultOutcomeRel, hDefaultArtifact⟩ :=
                   outcome_default_none_of_compileDefaultFuel?_and_firstReaches
-                    hDefaultNoneCompile hDefaultBlocks hPopType hPop
+                    hDefaultNoneCompile hDefaultBlocks hPopType hSourceOne hPop
                     hRegular hAccept hDefaultRel hDefaultReach
                 obtain
                     ⟨defaultOutput, hDefaultFallthrough,
@@ -3293,7 +3334,8 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
               ⟨bodyFuel, sourceOutcome,
                 hBodyEval, hOutcomeRel, hCaseArtifact⟩ :=
             outcome_cases_some_of_compileCasesFuel?_and_firstReaches
-              hCasesCompile' hCaseBlocks hHead hPopType hPop hSelect
+              hCasesCompile' hCaseBlocks hHead hPopType hSourceOne hPop
+              hSelect
               hAccept hDispatchEntryNotAccepted hCaseEntryNotAccepted
               (fun caseIdx =>
                 hGeneratedEntryNotAccepted supply (2000 + caseIdx))
@@ -3319,7 +3361,8 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                       hDefaultEval, hDefaultOutcomeRel,
                       hDefaultArtifact⟩ :=
                   outcome_default_some_of_compileDefaultFuel?_and_firstReaches
-                    hDefaultSelectedCompile hDefaultBlocks hPopType hPop
+                    hDefaultSelectedCompile hDefaultBlocks hPopType
+                    hSourceOne hPop
                     hAccept
                     (hGeneratedEntryNotAccepted caseResult.next 2000)
                     hDefaultRel hDefaultReach
@@ -4085,6 +4128,20 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -4174,7 +4231,7 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
                             Code.runCondition_of_runBody_toCfg
                               (by simpa [TypedCfgCompiler.Code.type?]
                                 using hType)
-                              hHead hRel
+                              hSource hHead hRel
                               hCondBody hPop
                           exact
                             ⟨final,
@@ -4237,6 +4294,20 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -4337,7 +4408,7 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
                             Code.runCondition_of_runBody_toCfg
                               (by simpa [TypedCfgCompiler.Code.type?]
                                 using hType)
-                              hHead hRel hCondBody hPop
+                              hSource hHead hRel hCondBody hPop
                           exact
                             ⟨output, condition, bodyResult, final,
                               by simpa [TypedCfgCompiler.Code.type?]
@@ -4418,6 +4489,20 @@ theorem condition_if_of_compileStmtFuel?_and_step
   | none =>
       simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
+      have hSource :
+          TypedCfgCompiler.Shape.requireSourceWords? 1 output =
+            some () := by
+        cases hCheck :
+            TypedCfgCompiler.Shape.requireSourceWords? 1 output with
+        | none =>
+            simp [TypedCfgCompiler.mkCodeBlock?, hType, hCheck] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [TypedCfgCompiler.mkCodeBlock?, hType, Bind.bind,
+        Option.bind] at hCompile
+      rw [hSource] at hCompile
+      simp at hCompile
       cases hHead : output.slots.head? with
       | none =>
           simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
@@ -4494,7 +4579,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                           using hType)
                         hRel hCondBody
                     have hOutputBound :
-                        output.length ≤
+                        TypedCfgCompiler.Shape.sourceLength output ≤
                           afterCode.source.evm.stack.length :=
                       Code.shapeSound cond
                         (by simpa [TypedCfgCompiler.Code.type?]
@@ -4512,12 +4597,11 @@ theorem condition_if_of_compileStmtFuel?_and_step
                     | nil =>
                         rw [hStack] at hTargetStack
                         simp at hTargetStack
-                        have hOutputPos : 1 ≤ output.length := by
-                          cases hSlots : output.slots with
-                          | nil =>
-                              simp [hSlots] at hHead
-                          | cons slot rest =>
-                              simp [TypedCfg.Shape.length, hSlots]
+                        have hOutputPos :
+                            1 ≤
+                              TypedCfgCompiler.Shape.sourceLength output :=
+                          TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+                            hSource
                         have hSourcePos :
                             1 ≤ afterCode.source.evm.stack.length :=
                           Nat.le_trans hOutputPos hOutputBound
@@ -4544,7 +4628,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                             Code.runCondition_of_runBody_toCfg
                               (by simpa [TypedCfgCompiler.Code.type?]
                                 using hType)
-                              hHead hRel hCondBody hPop
+                              hSource hHead hRel hCondBody hPop
                           exact
                             Or.inl
                               ⟨output, condition, bodyResult, final,
@@ -4573,7 +4657,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                             Code.runCondition_of_runBody_toCfg
                               (by simpa [TypedCfgCompiler.Code.type?]
                                 using hType)
-                              hHead hRel hCondBody hPop
+                              hSource hHead hRel hCondBody hPop
                           exact
                             Or.inr
                               ⟨output, condition, bodyResult, final,
@@ -4768,7 +4852,8 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
         by
           show ∃ regularOutput,
             result.fallthrough? = some regularOutput ∧
-              regularOutput.length ≤ final.source.evm.stack.length
+              TypedCfgCompiler.Shape.sourceLength regularOutput ≤
+                final.source.evm.stack.length
           exact
             ⟨{ output with slots := output.slots.tail },
               hParentFallthrough, hFinalRel.sourceStack⟩⟩

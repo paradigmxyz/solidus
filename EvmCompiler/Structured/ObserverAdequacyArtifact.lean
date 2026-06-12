@@ -25,19 +25,23 @@ def OutcomeArtifact {transcript : Trace}
   | .regular =>
       ∃ output,
         result.fallthrough? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .brk =>
       ∃ output,
         ctx.breakShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .cont =>
       ∃ output,
         ctx.continueShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .leave =>
       ∃ output,
         ctx.leaveShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .halt _ => True
 
 /--
@@ -52,19 +56,23 @@ def JoinArtifact {transcript : Trace}
       (transcript := transcript)) : Prop :=
   match outcome.mode with
   | .regular =>
-      regularShape.length ≤ outcome.state.source.evm.stack.length
+      TypedCfgCompiler.Shape.sourceLength regularShape ≤
+        outcome.state.source.evm.stack.length
   | .brk =>
       ∃ output,
         ctx.breakShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .cont =>
       ∃ output,
         ctx.continueShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .leave =>
       ∃ output,
         ctx.leaveShape? = some output ∧
-          output.length ≤ outcome.state.source.evm.stack.length
+          TypedCfgCompiler.Shape.sourceLength output ≤
+            outcome.state.source.evm.stack.length
   | .halt _ => True
 
 namespace OutcomeArtifact
@@ -78,7 +86,8 @@ theorem regular
     (hMode : outcome.mode = .regular) :
     ∃ output,
       result.fallthrough? = some output ∧
-        output.length ≤ outcome.state.source.evm.stack.length := by
+        TypedCfgCompiler.Shape.sourceLength output ≤
+          outcome.state.source.evm.stack.length := by
   simpa [OutcomeArtifact, hMode] using hArtifact
 
 theorem replaceRegular
@@ -91,7 +100,8 @@ theorem replaceRegular
       outcome.mode = .regular →
         ∃ output,
           newResult.fallthrough? = some output ∧
-            output.length ≤ outcome.state.source.evm.stack.length) :
+            TypedCfgCompiler.Shape.sourceLength output ≤
+              outcome.state.source.evm.stack.length) :
     OutcomeArtifact newResult ctx outcome := by
   rcases outcome with ⟨state, mode⟩
   cases mode with
