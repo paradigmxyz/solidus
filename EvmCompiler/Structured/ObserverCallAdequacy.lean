@@ -533,6 +533,10 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          OutcomeSimulation.ActivationExtension
+            source.source.returns tokens
+            callSource.source.returns
+            (Structured.Stmt.callToken supply :: tokens) →
           ∀ {bodyTargetFuel : Nat},
           bodyTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
@@ -714,7 +718,7 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
               ⟨bodySourceFuel, bodyOutcome,
                 hBodyEval, hBodyRel, hBodyArtifact⟩ :=
             hBodyAdequate (fragment := fragment)
-              (callSource := callSource) hLookup
+              (callSource := callSource) hLookup hCallExtension
               (bodyTargetFuel := bodyTargetFuel) (by omega)
               (fun bodyFuel bodyOutcome targetOutcome bodyTrace
                   hBodyEval hBodyRel _hBodyArtifact => by
@@ -1150,6 +1154,10 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_protected
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          OutcomeSimulation.ActivationExtension
+            source.source.returns tokens
+            callSource.source.returns
+            (Structured.Stmt.callToken supply :: tokens) →
           ∀ {bodyTargetFuel : Nat},
           bodyTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
@@ -1346,7 +1354,7 @@ theorem adequateWithin_call_of_compileStmtFuel?
       generated hCompile hBlocks hCalls hProcs hProgramWF hRegular
       hProcEntryNotAccepted hProcExitNotAccepted hBodyEntryNotAccepted
       (fun {proc} {fragment} {callSource} hLookup
-          {bodyTargetFuel} _hSmaller =>
+          _hExtension {bodyTargetFuel} _hSmaller =>
         OutcomeSimulation.AdequateWithin.fuel
           (hBodyAdequate (fragment := fragment)
             (callSource := callSource) hLookup)

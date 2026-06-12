@@ -787,6 +787,244 @@ theorem jumpAt_rest
 
 end GeneratedFreshExcept
 
+/--
+Activation-aware freshness for recursive procedure execution.
+
+A generated label at or after `supply`, other than the current regular
+continuation, may be accepted only when that acceptance belongs to a strict
+dynamic ancestor. This permits recursive executions to reuse the procedure's
+static labels without treating an ancestor continuation as a boundary of the
+current activation.
+-/
+def ActivationFreshExcept {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop)
+    (supply : LabelSupply) (regular : Assembly.Label) : Prop :=
+  ∀ scope tag target,
+    supply ≤ scope →
+      .generated scope tag ≠ regular →
+      accept (.jump (.generated scope tag) target) →
+        ∃ owner : ObserverSemantics.State transcript,
+          ∃ ownerTokens block,
+            cfg.findBlock? (.generated scope tag) = some block ∧
+              FrameMatches owner ownerTokens block.input target ∧
+              ActivationExtension
+                owner.source.returns ownerTokens
+                source.source.returns tokens
+
+namespace ActivationFreshExcept
+
+theorem of_generated
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hFresh : GeneratedFreshExcept accept supply regular) :
+    ActivationFreshExcept cfg source tokens accept supply regular := by
+  intro scope tag target hScope hNe hAccepted
+  exact (hFresh scope tag target hScope hNe hAccepted).elim
+
+theorem mono
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply next : LabelSupply} {regular : Assembly.Label}
+    (hFresh :
+      ActivationFreshExcept cfg source tokens accept supply regular)
+    (hSupply : supply ≤ next) :
+    ActivationFreshExcept cfg source tokens accept next regular := by
+  intro scope tag target hScope hNe hAccepted
+  exact
+    hFresh scope tag target
+      (Nat.le_trans hSupply hScope) hNe hAccepted
+
+theorem congr_returns
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hFresh :
+      ActivationFreshExcept cfg left tokens accept supply regular)
+    (hReturns : left.source.returns = right.source.returns) :
+    ActivationFreshExcept cfg right tokens accept supply regular := by
+  intro scope tag target hScope hNe hAccepted
+  rcases hFresh scope tag target hScope hNe hAccepted with
+    ⟨owner, ownerTokens, block, hFind, hFrame, hExtension⟩
+  refine ⟨owner, ownerTokens, block, hFind, hFrame, ?_⟩
+  simpa [hReturns] using hExtension
+
+theorem jumpAt_rest
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {shape : TypedCfg.Shape}
+    {accept : TypedCfg.Outcome → Prop} {supply : LabelSupply}
+    {regular : Assembly.Label}
+    (hFresh :
+      ActivationFreshExcept cfg source tokens accept supply regular)
+    (hRegular : RegularAtSupply regular supply) :
+    ActivationFreshExcept cfg source tokens
+      (JumpAt source tokens (TypedCfgCompiler.restLabel supply)
+        shape accept)
+      supply (TypedCfgCompiler.restLabel supply) := by
+  intro scope tag target hScope hNe hAccepted
+  rcases hAccepted with hCurrent | hOuter
+  · exact (hNe hCurrent.1).elim
+  · apply hFresh scope tag target hScope
+    · rcases hRegular with hBefore | hRest
+      · exact hBefore.generated_ne hScope
+      · intro hEq
+        exact hNe (hEq.trans hRest)
+    · exact hOuter
+
+theorem pushJumpAt
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source child : ObserverSemantics.State transcript}
+    {tokens childTokens : List Word}
+    {accept : TypedCfg.Outcome → Prop}
+    {next : Assembly.Label} {shape : TypedCfg.Shape}
+    {supply : LabelSupply}
+    (hProtected : ActivationProtected cfg source tokens accept)
+    (hExtension :
+      ActivationExtension
+        source.source.returns tokens
+        child.source.returns childTokens) :
+    ActivationFreshExcept cfg child childTokens
+      (JumpAt child childTokens next shape accept) supply next := by
+  intro scope tag target _hScope hNe hAccepted
+  rcases hAccepted with hCurrent | hOuter
+  · exact (hNe hCurrent.1).elim
+  · rcases hProtected _ _ hOuter with
+      ⟨owner, ownerTokens, block, hFind, hFrame, hAncestor⟩
+    exact
+      ⟨owner, ownerTokens, block, hFind, hFrame,
+        hAncestor.extension_after hExtension⟩
+
+theorem reject
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState} {depth : Nat}
+    (hFresh :
+      ActivationFreshExcept cfg source tokens accept supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hAccepted : accept (.jump (.generated scope tag) target))
+    (hShape : LabelShape cfg (.generated scope tag) shape)
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hCurrent : FrameMatches source tokens shape target) :
+    False := by
+  rcases hFresh scope tag target hScope hNe hAccepted with
+    ⟨owner, ownerTokens, block, hFind, hOwnerFrame, hExtension⟩
+  exact
+    OwnsJump.reject_extension
+      ⟨block, hFind, hOwnerFrame⟩
+      hShape hDepth hExtension hCurrent
+
+end ActivationFreshExcept
+
+/--
+The complete recursive acceptance contract for one Structured compiler
+fragment. `ownership` tracks who owns every accepted jump; `fresh` states that
+new generated labels can be accepted only by strict ancestors.
+-/
+structure RecursiveBoundary {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop)
+    (supply : LabelSupply) (regular : Assembly.Label) : Prop where
+  ownership : ActivationProtected cfg source tokens accept
+  fresh :
+    ActivationFreshExcept cfg source tokens accept supply regular
+
+namespace RecursiveBoundary
+
+theorem congr_returns
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hBoundary :
+      RecursiveBoundary cfg left tokens accept supply regular)
+    (hReturns : left.source.returns = right.source.returns) :
+    RecursiveBoundary cfg right tokens accept supply regular :=
+  ⟨hBoundary.ownership.congr_returns hReturns,
+    hBoundary.fresh.congr_returns hReturns⟩
+
+theorem mono
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply next : LabelSupply} {regular : Assembly.Label}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hSupply : supply ≤ next) :
+    RecursiveBoundary cfg source tokens accept next regular :=
+  ⟨hBoundary.ownership, hBoundary.fresh.mono hSupply⟩
+
+theorem jumpAt_rest
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hRegular : RegularAtSupply regular supply)
+    (hShape :
+      LabelShape cfg (TypedCfgCompiler.restLabel supply) shape) :
+    RecursiveBoundary cfg source tokens
+      (JumpAt source tokens (TypedCfgCompiler.restLabel supply)
+        shape accept)
+      supply (TypedCfgCompiler.restLabel supply) :=
+  ⟨hBoundary.ownership.jumpAt hShape,
+    hBoundary.fresh.jumpAt_rest hRegular⟩
+
+theorem pushJumpAt
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source child : ObserverSemantics.State transcript}
+    {tokens childTokens : List Word}
+    {accept : TypedCfg.Outcome → Prop}
+    {next : Assembly.Label} {shape : TypedCfg.Shape}
+    {supply : LabelSupply} {regular : Assembly.Label}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hExtension :
+      ActivationExtension
+        source.source.returns tokens
+        child.source.returns childTokens)
+    (hShape : LabelShape cfg next shape)
+    (childSupply : LabelSupply) :
+    RecursiveBoundary cfg child childTokens
+      (JumpAt child childTokens next shape accept)
+      childSupply next :=
+  ⟨hBoundary.ownership.pushJumpAt hExtension hShape,
+    ActivationFreshExcept.pushJumpAt
+      hBoundary.ownership hExtension⟩
+
+theorem reject
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply scope tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState} {depth : Nat}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hScope : supply ≤ scope)
+    (hNe : .generated scope tag ≠ regular)
+    (hAccepted : accept (.jump (.generated scope tag) target))
+    (hShape : LabelShape cfg (.generated scope tag) shape)
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hCurrent : FrameMatches source tokens shape target) :
+    False :=
+  hBoundary.fresh.reject
+    hScope hNe hAccepted hShape hDepth hCurrent
+
+end RecursiveBoundary
+
 end OutcomeSimulation
 end ObserverAdequacy
 end Structured

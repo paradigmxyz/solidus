@@ -3812,6 +3812,53 @@ theorem adequateWithin_leave_of_compileStmtFuel?
       ⟨input, hShape, hRel.sourceFrameFits⟩⟩
 
 /--
+Backward adequacy for `leave` when the active return token is supplied by the
+current compiler activation. Successful state realization then constructs the
+corresponding nonempty source return stack.
+-/
+theorem adequateWithin_leave_of_compileStmtFuel?_tokens
+    {transcript : Trace} {compilerFuel : Nat}
+    {program : Structured.Program}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular targetLabel : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hTarget : ctx.leaveLabel? = some targetLabel)
+    (hTokens : tokens ≠ [])
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .leave ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg) :
+    OutcomeSimulation.AdequateWithin
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel .leave source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens := by
+  intro hAccept targetFuel target trace traceFinal
+    targetOutcome hRel hReach
+  have hReturns : source.source.returns ≠ [] := by
+    cases tokens with
+    | nil =>
+        exact (hTokens rfl).elim
+    | cons token rest =>
+        obtain ⟨frame, returns, hNonempty⟩ :=
+          TypedCfgPreservation.StateRel.returns_cons_of_tokens_cons
+            hRel.rel.1
+        simpa [hNonempty]
+  exact
+    adequateWithin_leave_of_compileStmtFuel?
+      hTarget hReturns hCompile hBlocks
+      hAccept hRel hReach
+
+/--
 Compiler-facing backward adequacy for a straight-line statement at a boundary
 with no active procedure frames.
 -/
@@ -4612,6 +4659,7 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
             bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        afterCond.source.returns = source.source.returns →
         (∀ bodySourceFuel bodyOutcome bodyTargetOutcome bodyFinalTrace,
           ObserverSemantics.Block.Eval
               program bodySourceFuel body afterCond bodyOutcome →
@@ -4713,6 +4761,7 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
         ⟨bodySourceFuel, bodyOutcome,
           hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
       hBodyAdequate hBodyCompile hBodyBlocks
+        (ObserverSemantics.Code.runCondition_returns_eq hCond)
         (fun bodyFuel bodyOutcome bodyTargetOutcome bodyFinalTrace
             hBodyEval hBodyRel hBodyArtifact => by
           have hParentArtifact :
@@ -4815,6 +4864,7 @@ theorem adequateWithinFuel_if_of_compileStmtFuel?
             bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        afterCond.source.returns = source.source.returns →
         ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
@@ -4838,7 +4888,7 @@ theorem adequateWithinFuel_if_of_compileStmtFuel?
       hCompile hBlocks hRegular hAccept hRel hReach
       (by
         intro bodyInput bodyResult afterCond bodyTarget bodyTrace
-          hBodyCompile hBodyBlocks hBodyAccept hAfterCondRel
+          hBodyCompile hBodyBlocks hReturns hBodyAccept hAfterCondRel
           hBodyReach
         have hPositive :
             0 < targetFuel :=
@@ -4852,6 +4902,7 @@ theorem adequateWithinFuel_if_of_compileStmtFuel?
                 ⟨bodySourceFuel, bodyOutcome,
                   hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
               hBodyAdequate hBodyCompile hBodyBlocks
+                hReturns
                 bodyTargetFuel (by omega)
                 hBodyAccept hAfterCondRel hBodyReach
             exact
@@ -4894,6 +4945,7 @@ theorem adequateWithin_if_of_compileStmtFuel?
             bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        afterCond.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -4911,8 +4963,8 @@ theorem adequateWithin_if_of_compileStmtFuel?
   exact
     adequateWithinFuel_if_of_compileStmtFuel?
       targetFuel hCompile hBlocks hRegular hBodyEntry
-      (fun hBodyCompile hBodyBlocks bodyTargetFuel _hFuel =>
-        (hBodyAdequate hBodyCompile hBodyBlocks).fuel
+      (fun hBodyCompile hBodyBlocks hReturns bodyTargetFuel _hFuel =>
+        (hBodyAdequate hBodyCompile hBodyBlocks hReturns).fuel
           bodyTargetFuel)
       hAccept hRel hReach
 

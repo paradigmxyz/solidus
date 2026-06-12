@@ -106,6 +106,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationOwned.reject_extension
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationProtected.reject_extension
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationProtected.pushJumpAt
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationFreshExcept.pushJumpAt
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.pushJumpAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump
@@ -130,6 +132,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequate_code_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_leave_of_compileStmtFuel?_tokens
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.condition_if_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt

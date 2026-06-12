@@ -194,7 +194,13 @@ Adjacent boundary status:
   across arbitrary recursion depth without public label or call-oracle
   premises. Statement-list composition uses the exact outer boundary for
   non-fallthrough heads and passes checked tail-entry shape plus source-return
-  preservation to recursive callbacks.
+  preservation to recursive callbacks. `ActivationFreshExcept` now treats
+  reused generated labels as valid only when the accepted jump belongs to a
+  strict ancestor activation, and `RecursiveBoundary` bundles that contract
+  with activation ownership. The call-body callback receives the checked
+  activation extension constructed by the existing call proof. Procedure
+  `leave` adequacy derives its nonempty source return stack from the active
+  return-token realization instead of taking it as a separate source premise.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
