@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 06:05 PDT.
+Last updated: 2026-06-12 12:58 PDT.
 
 ## Objective
 
@@ -626,13 +626,19 @@ The remaining observer-proof critical path is explicit:
 
 The recursive Functions boundary now has checked preservation for leaves,
 lexical blocks, both `if` paths, both switch-selection paths, and every `for`
-outcome. Condition evaluation consumes its single target result through a
-reusable activation relation theorem; recursive loop preservation descends on
-canonical source fuel and abrupt outcomes skip compiler cleanup through the
-shared outcome relation. Calls now have canonical effect-semantic
-returned/halted decomposition and a checked allocation-lowering decomposition
-for the argument/frame/call/store/release sequence. Recursive function-entry
-composition, call execution, and the matching backward adequacy remain.
+  outcome. Condition evaluation consumes its single target result through a
+  reusable activation relation theorem; recursive loop preservation descends on
+  canonical source fuel and abrupt outcomes skip compiler cleanup through the
+  shared outcome relation. Calls now have canonical effect-semantic
+  returned/halted decomposition and a checked allocation-lowering decomposition
+  for the argument/frame/call/store/release sequence. Source-facing argument
+  safety now follows the canonical `ArgList.eval`, and the complete real
+  `lowerExprList`/`exprSeqOfList` path has checked forward preservation and
+  deterministic backward classification. Function and Locals compiler owners
+  expose exact procedure-entry, prelude, open-body, return-expression, and
+  preserving-cleanup components. Constructing the callee activation from those
+  components, recursive function-body composition, call execution, and the
+  matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

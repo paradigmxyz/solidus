@@ -131,7 +131,8 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverTerminal.lean \
   EvmCompiler/Functions/AllocationObserverStatement.lean \
   EvmCompiler/Functions/AllocationObserverSwitch.lean \
-  EvmCompiler/Functions/AllocationObserverLoop.lean
+  EvmCompiler/Functions/AllocationObserverLoop.lean \
+  EvmCompiler/Functions/AllocationObserverCall.lean
 
 report_matches \
   'The allocation loop boundary must not publicly expose a whole-loop proof callback:' \
@@ -472,6 +473,7 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverStatement.lean \
   EvmCompiler/Functions/AllocationObserverSwitch.lean \
   EvmCompiler/Functions/AllocationObserverLoop.lean \
+  EvmCompiler/Functions/AllocationObserverCall.lean \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \

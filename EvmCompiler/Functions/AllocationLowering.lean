@@ -145,6 +145,27 @@ def exprSeqOfList : (exprs : List (Locals.Expr 1)) →
       simpa [Nat.add_comm] using
         Locals.ExprSeq.cons expr (exprSeqOfList rest)
 
+@[simp] theorem exprSeqOfList_compileCode_nil
+    (ctx : Locals.Ctx) (offset : Nat) :
+    Locals.ExprSeq.compileCode ctx offset (exprSeqOfList []) =
+      some [] := by
+  rfl
+
+theorem exprSeqOfList_compileCode_cons
+    (ctx : Locals.Ctx) (offset : Nat)
+    (expr : Locals.Expr 1) (rest : List (Locals.Expr 1)) :
+    Locals.ExprSeq.compileCode ctx offset (exprSeqOfList (expr :: rest)) =
+      (do
+        let headCode ← Locals.Expr.compileCode ctx offset expr
+        let tailCode ←
+          Locals.ExprSeq.compileCode ctx (offset + 1)
+            (exprSeqOfList rest)
+        some (headCode ++ tailCode)) := by
+  rw [exprSeqOfList.eq_2]
+  rw [Locals.ExprSeq.compileCode_eqMpr]
+  · rfl
+  · simp [Nat.add_comm]
+
 def eraseName (name : Name) (layout : Locals.Layout) : Locals.Layout :=
   layout.filter fun candidate => candidate != name
 
@@ -1468,6 +1489,148 @@ theorem lowerFunction?_name
     simp [lowerFunction?]
   rw [hLower] at hNames
   simpa using hNames
+
+/--
+Successful function lowering exposes the exact entry layout, parameter and
+return preludes, open body lowering, and final return-expression sequence.
+Downstream preservation proofs consume this adjacent-pass interface instead of
+unfolding `lowerFunction?`.
+-/
+theorem lowerFunction?_components
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state final : AllocationSupport.CompileState}
+    {fn : FunDef} {proc : Locals.Proc}
+    (hLower :
+      lowerFunction? recipe stackSlots frameName frameConfig? state fn =
+        some (proc, final)) :
+    ∃ slots body bodyFinal returnValues,
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+        some slots ∧
+      let root := ScopeId.function fn.name
+      let scratchBindings :=
+        scratchBindingsForRoot recipe stackSlots root
+      let needsFrame := !scratchBindings.isEmpty
+      let entryLayout :=
+        fn.params.reverse ++ if needsFrame then [frameName] else []
+      let ctx : Ctx :=
+        { functions := recipe.functionSlots
+          frameConfig? := frameConfig?
+          frameName := frameName
+          stackSlots := stackSlots
+          root := root
+          scratchBindings := scratchBindings
+          frameFunctions := frameFunctions recipe stackSlots }
+      let markers :=
+        [bindEntryLayout entryLayout] ++
+          if needsFrame then
+            [bindScratchBindings fn.params.length scratchBindings]
+          else
+            []
+      let (paramPrelude, paramLayout) :=
+        lowerParams ctx slots.params entryLayout
+      let (returnPrelude, bodyLayout) :=
+        lowerReturns ctx slots.returns paramLayout
+      let bodyStart : State :=
+        { allocation :=
+            { env := AllocationSupport.functionEnv slots
+              nextSlot := state.nextSlot }
+          layout := bodyLayout }
+      lowerBlockOpen ctx fn.returns bodyStart fn.body =
+          some (body, bodyFinal) ∧
+        lowerReturnExprs ctx bodyFinal fn.returns =
+          some returnValues ∧
+        proc =
+          { name := fn.name
+            argc := fn.params.length + if needsFrame then 1 else 0
+            retc := fn.returns.length
+            entryLayout := entryLayout
+            body :=
+              { stmts :=
+                  markers ++ paramPrelude ++ returnPrelude ++ body.stmts ++
+                    [.exprs returnValues] } } ∧
+        final =
+          { env := state.env
+            nextSlot := bodyFinal.allocation.nextSlot } := by
+  cases hSlots :
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots with
+  | none =>
+      simp [lowerFunction?, hSlots] at hLower
+  | some slots =>
+      let root := ScopeId.function fn.name
+      let scratchBindings :=
+        scratchBindingsForRoot recipe stackSlots root
+      let needsFrame := !scratchBindings.isEmpty
+      let entryLayout :=
+        fn.params.reverse ++ if needsFrame then [frameName] else []
+      let ctx : Ctx :=
+        { functions := recipe.functionSlots
+          frameConfig? := frameConfig?
+          frameName := frameName
+          stackSlots := stackSlots
+          root := root
+          scratchBindings := scratchBindings
+          frameFunctions := frameFunctions recipe stackSlots }
+      let markers :=
+        [bindEntryLayout entryLayout] ++
+          if needsFrame then
+            [bindScratchBindings fn.params.length scratchBindings]
+          else
+            []
+      let paramResult := lowerParams ctx slots.params entryLayout
+      let paramPrelude := paramResult.1
+      let paramLayout := paramResult.2
+      let returnResult := lowerReturns ctx slots.returns paramLayout
+      let returnPrelude := returnResult.1
+      let bodyLayout := returnResult.2
+      let bodyStart : State :=
+        { allocation :=
+            { env := AllocationSupport.functionEnv slots
+              nextSlot := state.nextSlot }
+          layout := bodyLayout }
+      simp only [lowerFunction?, hSlots] at hLower
+      change
+        (do
+          let (body, bodyFinal) ←
+            lowerBlockOpen ctx fn.returns bodyStart fn.body
+          let returnValues ←
+            lowerReturnExprs ctx bodyFinal fn.returns
+          some
+            ({ name := fn.name
+               argc := fn.params.length + if needsFrame then 1 else 0
+               retc := fn.returns.length
+               entryLayout := entryLayout
+               body :=
+                 { stmts :=
+                     markers ++ paramPrelude ++ returnPrelude ++
+                       body.stmts ++ [.exprs returnValues] } },
+             { env := state.env
+               nextSlot := bodyFinal.allocation.nextSlot })) =
+          some (proc, final) at hLower
+      cases hBody :
+          lowerBlockOpen ctx fn.returns bodyStart fn.body with
+      | none =>
+          simp [hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨body, bodyFinal⟩
+          cases hReturns :
+              lowerReturnExprs ctx bodyFinal fn.returns with
+          | none =>
+              simp [hBody, hReturns] at hLower
+          | some returnValues =>
+              simp [hBody, hReturns] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              refine
+                ⟨slots, body, bodyFinal, returnValues, rfl, ?_⟩
+              exact
+                ⟨hBody, hReturns,
+                  by
+                    simp [markers, paramPrelude, paramLayout, paramResult,
+                      returnPrelude, returnResult, entryLayout,
+                      needsFrame, scratchBindings, root, ctx,
+                      List.append_assoc],
+                  rfl⟩
 
 /--
 State-threaded function-list lowering preserves source function lookup and

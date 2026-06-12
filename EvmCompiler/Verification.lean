@@ -17,6 +17,7 @@ import EvmCompiler.Functions.AllocationObserverTerminal
 import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
+import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
@@ -120,6 +121,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
+#check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
+#check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
+#check EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
@@ -229,8 +233,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
 #check EvmCompiler.Locals.Proc.toExpressions?_name
+#check EvmCompiler.Locals.Proc.toExpressions?_components
+#check EvmCompiler.Locals.Block.compileToPreserving_components
+#check EvmCompiler.Functions.AllocationLowering.exprSeqOfList_compileCode_cons
 #check EvmCompiler.Locals.ProcList.toExpressions?_member_components
 #check EvmCompiler.Expressions.ProcList.mem_toStructured
 #check EvmCompiler.Expressions.ProcList.lookup_toStructured_of_mem

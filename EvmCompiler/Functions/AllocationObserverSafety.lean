@@ -288,6 +288,35 @@ mutual
           source final (headValues ++ tailValues)
 end
 
+/--
+Left-to-right source-facing safety for function-call arguments.
+
+This relation follows the canonical `Functions.Source.Effectful.ArgList.eval`
+recursion. It contains only source evaluation evidence; allocation lowering
+and target execution remain owned by the adjacent compiler proof.
+-/
+inductive ArgList.MemorySafeEval
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace) :
+    List (Functions.Expr 1) →
+      Functions.ObserverSemantics.State transcript →
+      Functions.ObserverSemantics.State transcript →
+      List Word → Prop where
+  | nil {state : Functions.ObserverSemantics.State transcript} :
+      ArgList.MemorySafeEval contract transcript [] state state []
+  | cons {arg : Functions.Expr 1} {rest : List (Functions.Expr 1)}
+      {source afterArg final :
+        Functions.ObserverSemantics.State transcript}
+      {value : Word} {values : List Word}
+      (hArg :
+        Expr.MemorySafeEval contract transcript arg
+          source afterArg [value])
+      (hRest :
+        ArgList.MemorySafeEval contract transcript rest
+          afterArg final values) :
+      ArgList.MemorySafeEval contract transcript (arg :: rest)
+        source final (value :: values)
+
 mutual
   theorem Expr.MemorySafeEval.eval_eq
       {contract : MemoryContract.Contract}
@@ -347,6 +376,22 @@ mutual
         rw [hTail.eval_eq]
 end
 
+theorem ArgList.MemorySafeEval.values_length
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {args : List (Functions.Expr 1)}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      ArgList.MemorySafeEval contract transcript args
+        source final values) :
+    values.length = args.length := by
+  induction hEval with
+  | nil =>
+      rfl
+  | cons _hArg _hRest ih =>
+      simp [ih]
+
 mutual
   theorem Expr.MemorySafeEval.vars_eq
       {contract : MemoryContract.Contract}
@@ -383,6 +428,22 @@ mutual
     | cons hHead hTail =>
         exact hTail.vars_eq.trans hHead.vars_eq
 end
+
+theorem ArgList.MemorySafeEval.vars_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {args : List (Functions.Expr 1)}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      ArgList.MemorySafeEval contract transcript args
+        source final values) :
+    final.source.vars = source.source.vars := by
+  induction hEval with
+  | nil =>
+      rfl
+  | cons hArg _hRest ih =>
+      exact ih.trans hArg.vars_eq
 
 theorem Expr.MemorySafeEval.evalOne_eq
     {contract : MemoryContract.Contract}
@@ -433,6 +494,29 @@ theorem Expr.MemorySafeEval.evalCondition_eq
       .ok (final, value) at hEvalOne
   rw [hEvalOne]
   rfl
+
+theorem ArgList.MemorySafeEval.eval_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {args : List (Functions.Expr 1)}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      ArgList.MemorySafeEval contract transcript args
+        source final values) :
+    Functions.Source.Effectful.ArgList.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        args source =
+      .ok (final, values) := by
+  induction hEval with
+  | nil =>
+      rfl
+  | cons hArg _hRest ih =>
+      unfold Functions.Source.Effectful.ArgList.eval
+      rw [hArg.evalOne_eq]
+      simp only [Bind.bind, Except.bind]
+      rw [ih]
 
 namespace Stmt
 

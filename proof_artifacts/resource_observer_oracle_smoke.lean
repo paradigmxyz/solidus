@@ -8,6 +8,7 @@ import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
+import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -92,10 +93,17 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward_of_compileCode
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward_of_compileCode
 #check EvmCompiler.Functions.AllocationLowering.scratchStoreExpr_compileCode
+#check EvmCompiler.Functions.AllocationLowering.exprSeqOfList_compileCode_cons
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
+#check EvmCompiler.Locals.Block.compileToPreserving_components
+#check EvmCompiler.Locals.Proc.toExpressions?_components
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_backward_live
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.invariant_zero
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward
+#check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
+#check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
+#check EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
@@ -268,11 +276,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Compiler.MemoryRelation.readWithPadding_writeWord_disjoint_growing
 #print axioms EvmCompiler.Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
 #print axioms EvmCompiler.Functions.AllocationLowering.scratchStoreExpr_compileCode
+#print axioms EvmCompiler.Functions.AllocationLowering.exprSeqOfList_compileCode_cons
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_backward_live
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_forward_of_storeTopSlotCode?_live
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_backward_of_storeTopSlotCode?_live
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.Expr.invariant_zero
+#print axioms EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
@@ -501,8 +513,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
+#print axioms EvmCompiler.Locals.Proc.toExpressions?_components
+#print axioms EvmCompiler.Locals.Block.compileToPreserving_components
 #print axioms EvmCompiler.Locals.ProcList.toExpressions?_member_components
 #print axioms EvmCompiler.Expressions.ProcList.mem_toStructured
 #print axioms EvmCompiler.Expressions.ProcList.lookup_toStructured_of_mem

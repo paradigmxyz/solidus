@@ -133,6 +133,23 @@ mutual
         some (headCode ++ tailCode)
 end
 
+theorem ExprSeq.compileCode_cast
+    {left right : Nat} (h : left = right)
+    (ctx : Ctx) (offset : Nat) (exprs : ExprSeq left) :
+    ExprSeq.compileCode ctx offset (h ▸ exprs) =
+      ExprSeq.compileCode ctx offset exprs := by
+  cases h
+  rfl
+
+theorem ExprSeq.compileCode_eqMpr
+    {left right : Nat} (h : left = right)
+    (ctx : Ctx) (offset : Nat) (exprs : ExprSeq right) :
+    ExprSeq.compileCode ctx offset
+        (Eq.mpr (congrArg ExprSeq h) exprs) =
+      ExprSeq.compileCode ctx offset exprs := by
+  cases h
+  rfl
+
 namespace Expr
 
 def compile {results : Nat} (ctx : Ctx) (expr : Expr results) :
@@ -595,6 +612,34 @@ def compileToPreserving (ctx : Ctx) (preserve targetDepth : Nat)
   let (code, finalCtx) ← Block.compileOpen ctx block
   finishToPreserving finalCtx preserve targetDepth code
 
+/--
+Successful preserving compilation exposes the ordinary open-block compiler
+and the exact cleanup generated from its final context.
+-/
+theorem compileToPreserving_components
+    {ctx : Ctx} {preserve targetDepth : Nat}
+    {block : Block} {compiled : Expressions.Block}
+    (hCompile :
+      compileToPreserving ctx preserve targetDepth block =
+        some compiled) :
+    ∃ code finalCtx,
+      Block.compileOpen ctx block = some (code, finalCtx) ∧
+      finishToPreserving finalCtx preserve targetDepth code =
+        some compiled := by
+  cases hOpen : Block.compileOpen ctx block with
+  | none =>
+      simp [compileToPreserving, hOpen] at hCompile
+  | some result =>
+      rcases result with ⟨code, finalCtx⟩
+      cases hFinish :
+          finishToPreserving finalCtx preserve targetDepth code with
+      | none =>
+          simp [compileToPreserving, hOpen, hFinish] at hCompile
+      | some output =>
+          simp [compileToPreserving, hOpen, hFinish] at hCompile
+          subst compiled
+          exact ⟨code, finalCtx, rfl, hFinish⟩
+
 def compileTo (ctx : Ctx) (targetDepth : Nat)
     (block : Block) : Option Expressions.Block := do
   compileToPreserving ctx 0 targetDepth block
@@ -786,6 +831,34 @@ theorem toExpressions?_name
       simp [toExpressions?, hBody] at hCompile
       cases hCompile
       rfl
+
+/--
+Successful procedure compilation exposes the preserving body compilation and
+the exact Expressions procedure emitted by this pass.
+-/
+theorem toExpressions?_components
+    {proc : Proc} {lower : Expressions.Proc}
+    (hCompile : proc.toExpressions? = some lower) :
+    ∃ body,
+      Block.compileToPreserving
+          (Ctx.procEntryWithLayoutAndRetc proc.entryLayout proc.retc)
+          proc.retc 0 proc.body =
+        some body ∧
+      lower =
+        { name := proc.name
+          argc := proc.argc
+          retc := proc.retc
+          body := body } := by
+  cases hBody :
+      Block.compileToPreserving
+        (Ctx.procEntryWithLayoutAndRetc proc.entryLayout proc.retc)
+        proc.retc 0 proc.body with
+  | none =>
+      simp [toExpressions?, hBody] at hCompile
+  | some body =>
+      simp [toExpressions?, hBody] at hCompile
+      subst lower
+      exact ⟨body, rfl, rfl⟩
 
 end Proc
 
