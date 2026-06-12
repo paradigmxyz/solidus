@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 05:09 PDT.
+Last updated: 2026-06-12 05:19 PDT.
 
 ## Objective
 
@@ -206,8 +206,15 @@ Adjacent boundary status:
   revert use reservation-relative read preservation, terminal execution
   replays over an arbitrary caller stack suffix, and halting outcomes retain
   only observable shared state after compiler cleanup discards dead locals.
+  `AllocationObserverSafety.Stmt.LeafMemorySafeRun` now classifies every
+  nonrecursive source statement family using equations from the canonical
+  Functions evaluator rather than a second interpreter. The first adjacent
+  statement theorem is checked in both directions for expression statements:
+  it derives the singleton target block from the real `lowerStmt` and
+  `Locals.Block.compileOpen` passes and relates their regular outcomes.
   Remaining work at this boundary is recursive statement/function and call
-  composition, construction of `ScratchStateRel` at function entry,
+  composition, declaration and assignment layout transitions, abrupt cleanup
+  leaves, terminal statement composition, construction of `ScratchStateRel` at function entry,
   propagation of source-facing memory safety and fuel through those recursive
   judgments, and the whole-program adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

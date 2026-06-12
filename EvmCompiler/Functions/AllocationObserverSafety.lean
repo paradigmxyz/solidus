@@ -347,6 +347,225 @@ mutual
         rw [hTail.eval_eq]
 end
 
+theorem Expr.MemorySafeEval.evalOne_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {results : Nat} {expr : Functions.Expr results}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {value : Word}
+    (hEval :
+      Expr.MemorySafeEval contract transcript expr source final [value]) :
+    Functions.Source.Effectful.Expr.evalOne
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        expr source =
+      .ok (final, value) := by
+  unfold Functions.Source.Effectful.Expr.evalOne
+  unfold Locals.Source.Effectful.Expr.evalOne
+  have hEvalEq := hEval.eval_eq
+  change
+    Locals.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        expr source =
+      .ok (final, [value]) at hEvalEq
+  rw [hEvalEq]
+  rfl
+
+theorem Expr.MemorySafeEval.evalCondition_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {expr : Functions.Expr 1}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {value : Word}
+    (hEval :
+      Expr.MemorySafeEval contract transcript expr source final [value]) :
+    Functions.Source.Effectful.Expr.evalCondition
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        expr source =
+      .ok (final, value != EvmYul.UInt256.ofNat 0) := by
+  unfold Functions.Source.Effectful.Expr.evalCondition
+  unfold Locals.Source.Effectful.Expr.evalCondition
+  have hEvalOne := hEval.evalOne_eq
+  change
+    Locals.Source.Effectful.Expr.evalOne
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        expr source =
+      .ok (final, value) at hEvalOne
+  rw [hEvalOne]
+  rfl
+
+namespace Stmt
+
+/--
+Dynamic safety evidence for the nonrecursive statement families.
+
+Each constructor stores the canonical Functions expression or terminal
+equation used by `Functions.Source.Effectful.Stmt.run`. This classifies source
+runs without defining a second statement interpreter. Recursive blocks,
+control flow, and calls compose this leaf family in the statement preservation
+module.
+-/
+inductive LeafMemorySafeRun
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (program : Functions.Program)
+    (ctx : Functions.Source.Ctx)
+    (fuel : Nat) :
+    Functions.Stmt →
+      Functions.ObserverSemantics.State transcript →
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript) →
+      Functions.Source.Ctx → Prop where
+  | expr {expr : Functions.Expr 0}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hEval :
+        Expr.MemorySafeEval contract transcript expr source final values) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        (.expr expr) source
+        (Functions.Source.Effectful.Outcome.regular final) ctx
+  | let_ {name : Functions.Name} {valueExpr : Functions.Expr 1}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {value : Word}
+      (hEval :
+        Expr.MemorySafeEval contract transcript valueExpr
+          source final [value]) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        (.let_ name valueExpr) source
+        (Functions.Source.Effectful.Outcome.regular
+          ((Functions.ObserverSemantics.stateModel transcript).insert
+            final name value))
+        { ctx with scope := name :: ctx.scope }
+  | assign {name : Functions.Name} {valueExpr : Functions.Expr 1}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {value : Word}
+      (hContains :
+        Locals.Source.Store.contains
+            ((Functions.ObserverSemantics.stateModel transcript).vars source)
+            name =
+          true)
+      (hEval :
+        Expr.MemorySafeEval contract transcript valueExpr
+          source final [value]) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        (.assign name valueExpr) source
+        (Functions.Source.Effectful.Outcome.regular
+          ((Functions.ObserverSemantics.stateModel transcript).withVars
+            final
+            (Locals.Source.Store.insert
+              ((Functions.ObserverSemantics.stateModel transcript).vars final)
+              name value)))
+        ctx
+  | brk {source : Functions.ObserverSemantics.State transcript}
+      {scope : List Functions.Name}
+      (hScope : ctx.breakScope? = some scope) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        .brk source
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            scope source))
+        ctx
+  | cont {source : Functions.ObserverSemantics.State transcript}
+      {scope : List Functions.Name}
+      (hScope : ctx.continueScope? = some scope) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        .cont source
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            scope source))
+        ctx
+  | leave {source : Functions.ObserverSemantics.State transcript}
+      {scope : List Functions.Name}
+      (hScope : ctx.leaveScope? = some scope) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        .leave source
+        (Functions.Source.Effectful.Outcome.leave
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            scope source))
+        ctx
+  | terminal {kind : Assembly.HaltKind}
+      {source final : Functions.ObserverSemantics.State transcript}
+      (hMemory : TerminalMemorySafe contract kind [])
+      (hTerminal :
+        (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+            kind source [] =
+          .ok final) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        (.terminal kind) source
+        (Functions.Source.Effectful.Outcome.halt kind final) ctx
+  | terminalArgs {kind : Assembly.HaltKind}
+      {args : Locals.ExprSeq kind.argCount}
+      {source afterArgs final :
+        Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hArgs :
+        ExprSeq.MemorySafeEval contract transcript args
+          source afterArgs values)
+      (hMemory : TerminalMemorySafe contract kind values)
+      (hTerminal :
+        (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+            kind afterArgs values =
+          .ok final) :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        (.terminalArgs kind args) source
+        (Functions.Source.Effectful.Outcome.halt kind final) ctx
+
+theorem LeafMemorySafeRun.run_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program}
+    {ctx : Functions.Source.Ctx}
+    {fuel : Nat}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {finalCtx : Functions.Source.Ctx}
+    (hRun :
+      LeafMemorySafeRun contract transcript program ctx fuel
+        stmt source outcome finalCtx) :
+    Functions.Source.Effectful.Stmt.run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program ctx fuel stmt source =
+      .ok (outcome, finalCtx) := by
+  cases hRun with
+  | expr hEval =>
+      simp only [Functions.Source.Effectful.Stmt.run]
+      rw [hEval.eval_eq]
+      rfl
+  | let_ hEval =>
+      simp only [Functions.Source.Effectful.Stmt.run]
+      rw [hEval.evalOne_eq]
+      rfl
+  | assign hContains hEval =>
+      simp only [Functions.Source.Effectful.Stmt.run]
+      rw [hContains]
+      simp only [if_true]
+      rw [hEval.evalOne_eq]
+      rfl
+  | brk hScope =>
+      simp [Functions.Source.Effectful.Stmt.run, hScope]
+  | cont hScope =>
+      simp [Functions.Source.Effectful.Stmt.run, hScope]
+  | leave hScope =>
+      simp [Functions.Source.Effectful.Stmt.run, hScope]
+  | terminal _hMemory hTerminal =>
+      simp only [Functions.Source.Effectful.Stmt.run]
+      rw [hTerminal]
+      rfl
+  | terminalArgs hArgs _hMemory hTerminal =>
+      simp only [Functions.Source.Effectful.Stmt.run]
+      rw [hArgs.eval_eq]
+      simp only [Bind.bind, Except.bind]
+      rw [hTerminal]
+
+end Stmt
+
 end AllocationObserverSafety
 end Functions
 end EvmCompiler

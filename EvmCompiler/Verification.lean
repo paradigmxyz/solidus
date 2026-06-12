@@ -13,6 +13,7 @@ import EvmCompiler.Functions.AllocationObserverContext
 import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverTerminal
+import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
@@ -115,6 +116,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
+#check EvmCompiler.Functions.AllocationObserverSafety.Stmt.LeafMemorySafeRun.run_eq
+#check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.compiler_shape
+#check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.backward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.of_wellFormed
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
