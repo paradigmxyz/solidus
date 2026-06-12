@@ -87,6 +87,205 @@ theorem cleanupTo?_shape
   · simp [hDepth] at hCleanup
 
 /--
+Restore an inner plan's compiler context after plain lexical cleanup.
+
+The two explicit premises are ordinary lowering facts: stack declarations in
+the inner scope extend the outer layout by a prefix, and surviving source names
+retain their allocation slots. No target execution or observer evidence is
+used.
+-/
+theorem restore_context
+    {lowerCtx : AllocationLowering.Ctx}
+    {bodyState outerState : AllocationLowering.State}
+    {bodyLocals outerLocals : Locals.Ctx}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    (hBody :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx bodyState bodyLocals bodyPlan beforeLive beforeMode)
+    (hOuter :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx outerState outerLocals outerPlan afterLive afterMode)
+    (hTransition :
+      Transition bodyPlan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hLayout :
+      bodyState.layout =
+        hTransition.dropped ++ outerState.layout)
+    (hSlots :
+      ∀ name,
+        name ∈ afterLive →
+        AllocationSupport.lookupSlot?
+            name bodyState.allocation.env =
+          AllocationSupport.lookupSlot?
+            name outerState.allocation.env) :
+    AllocationObserverContext.ActivationExprContext
+        lowerCtx outerState outerLocals bodyPlan afterLive afterMode ∧
+      PlanAgreesOn bodyPlan outerPlan afterLive := by
+  have hSubset := hTransition.subset
+  cases hTransition.mode with
+  | stack hTarget =>
+      cases hBody with
+      | stack body =>
+          cases hOuter with
+          | stack outer =>
+              have hOrder :
+                  currentStackOrder bodyPlan afterLive =
+                    currentStackOrder outerPlan afterLive := by
+                apply List.append_cancel_left
+                calc
+                  hTransition.dropped ++
+                        currentStackOrder bodyPlan afterLive =
+                      currentStackOrder bodyPlan beforeLive :=
+                    hTransition.stackOrder.symm
+                  _ = bodyState.layout := body.stackOrder
+                  _ = hTransition.dropped ++ outerState.layout := hLayout
+                  _ =
+                      hTransition.dropped ++
+                        currentStackOrder outerPlan afterLive := by
+                    rw [outer.stackOrder]
+              have hRestored :
+                  AllocationObserverContext.ActivationExprContext
+                    lowerCtx outerState outerLocals bodyPlan afterLive
+                      .stack := by
+                refine .stack
+                  { layout := outer.layout
+                    stackOrder := hOrder.trans outer.stackOrder
+                    frameAbsent := outer.frameAbsent
+                    liveStackOnly := ?_
+                    location := ?_
+                    slot := outer.slot
+                    stack := ?_ }
+                · intro name slot hLive hLocation
+                  exact
+                    body.liveStackOnly name slot
+                      (hSubset name hLive) hLocation
+                · intro name hLive
+                  exact body.location name (hSubset name hLive)
+                · intro name slot hLive hOuterSlot hStack
+                  obtain
+                      ⟨outerPlanDepth, depth, _hOuterLocation,
+                        hOuterCurrent, hOuterLayout⟩ :=
+                    outer.stack name slot hLive hOuterSlot hStack
+                  obtain ⟨bodyLocation, hBodyLocation⟩ :=
+                    body.location name (hSubset name hLive)
+                  cases bodyLocation with
+                  | scratch scratchSlot =>
+                      exact False.elim
+                        (body.liveStackOnly name scratchSlot
+                          (hSubset name hLive) hBodyLocation)
+                  | stack bodyPlanDepth =>
+                      exact
+                        ⟨bodyPlanDepth, depth, hBodyLocation,
+                          by simpa [hOrder] using hOuterCurrent,
+                          hOuterLayout⟩
+              exact
+                ⟨hRestored,
+                  AllocationObserverContext.ActivationExprContext.planAgreesOn
+                    hRestored (.stack outer)⟩
+  | scratch beforeDepth afterDepth frameWords hAfter hTarget =>
+      cases hBody with
+      | scratch body =>
+          cases hOuter with
+          | scratch outer =>
+              have hDepth :
+                  beforeDepth =
+                    hTransition.dropped.length + afterDepth := by
+                have hBodyLength := body.frameBottom
+                have hOuterLength := outer.frameBottom
+                rw [hLayout] at hBodyLength
+                simp only [List.length_append] at hBodyLength
+                omega
+              have hBeforeOrder :
+                  currentStackOrder bodyPlan beforeLive =
+                    hTransition.dropped ++ outerState.layout.take afterDepth := by
+                rw [body.stackPrefix, hLayout]
+                calc
+                  List.take beforeDepth
+                        (hTransition.dropped ++ outerState.layout) =
+                      List.take
+                        (hTransition.dropped.length + afterDepth)
+                        (hTransition.dropped ++ outerState.layout) :=
+                    congrArg
+                      (fun depth =>
+                        List.take depth
+                          (hTransition.dropped ++ outerState.layout))
+                      hDepth
+                  _ =
+                      hTransition.dropped ++
+                        outerState.layout.take afterDepth :=
+                    List.take_length_add_append afterDepth
+              have hOrder :
+                  currentStackOrder bodyPlan afterLive =
+                    currentStackOrder outerPlan afterLive := by
+                apply List.append_cancel_left
+                calc
+                  hTransition.dropped ++
+                        currentStackOrder bodyPlan afterLive =
+                      currentStackOrder bodyPlan beforeLive :=
+                    hTransition.stackOrder.symm
+                  _ =
+                      hTransition.dropped ++
+                        outerState.layout.take afterDepth :=
+                    hBeforeOrder
+                  _ =
+                      hTransition.dropped ++
+                        currentStackOrder outerPlan afterLive := by
+                    rw [outer.stackPrefix]
+              have hRestored :
+                  AllocationObserverContext.ActivationExprContext
+                    lowerCtx outerState outerLocals bodyPlan afterLive
+                      (.scratch afterDepth frameWords) := by
+                refine .scratch
+                  { layout := outer.layout
+                    stackPrefix := hOrder.trans outer.stackPrefix
+                    frame := outer.frame
+                    frameBottom := outer.frameBottom
+                    location := ?_
+                    slot := outer.slot
+                    stack := ?_
+                    scratch := ?_ }
+                · intro name hLive
+                  exact body.location name (hSubset name hLive)
+                · intro name slot hLive hOuterSlot hStack
+                  have hBodySlot :
+                      AllocationSupport.lookupSlot?
+                          name bodyState.allocation.env =
+                        some slot := by
+                    rw [hSlots name hLive]
+                    exact hOuterSlot
+                  obtain
+                      ⟨bodyPlanDepth, _bodyRuntimeDepth,
+                        hBodyLocation, _hBodyCurrent, _hBodyLayout⟩ :=
+                    body.stack name slot (hSubset name hLive)
+                      hBodySlot hStack
+                  obtain
+                      ⟨_outerPlanDepth, depth,
+                        _hOuterLocation, hOuterCurrent, hOuterLayout⟩ :=
+                    outer.stack name slot hLive hOuterSlot hStack
+                  exact
+                    ⟨bodyPlanDepth, depth, hBodyLocation,
+                      by simpa [hOrder] using hOuterCurrent,
+                      hOuterLayout⟩
+                · intro name slot hLive hOuterSlot hScratch
+                  have hBodySlot :
+                      AllocationSupport.lookupSlot?
+                          name bodyState.allocation.env =
+                        some slot := by
+                    rw [hSlots name hLive]
+                    exact hOuterSlot
+                  obtain ⟨hBodyLocation, _hBodyFrame⟩ :=
+                    body.scratch name slot (hSubset name hLive)
+                      hBodySlot hScratch
+                  exact ⟨hBodyLocation, outer.frame⟩
+              exact
+                ⟨hRestored,
+                  AllocationObserverContext.ActivationExprContext.planAgreesOn
+                    hRestored (.scratch outer)⟩
+
+/--
 Forward preservation for the exact `POP` sequence emitted by
 `Locals.Ctx.cleanupTo?`.
 -/

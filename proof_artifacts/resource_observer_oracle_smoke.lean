@@ -452,6 +452,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.symm
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.transport_plan
+#print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.planAgreesOn
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.restore_context
 #print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward_exact
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

@@ -140,6 +140,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_activation_of_compilers
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationInvariant
+#check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.planAgreesOn
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.congr_vars
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.insert_preserves
 #check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.insert_cons
@@ -159,6 +160,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward_exact
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.backward
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.finishScoped_shape
+#check EvmCompiler.Functions.AllocationObserverCleanup.Plain.restore_context
 #check EvmCompiler.Functions.AllocationObserverCleanup.Preserving.forward_zero
 #check EvmCompiler.Functions.AllocationObserverCleanup.Preserving.backward_zero
 #check EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.forward_of_compilers

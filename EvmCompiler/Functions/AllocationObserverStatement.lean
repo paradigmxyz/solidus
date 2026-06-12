@@ -4332,11 +4332,19 @@ theorem RegularScopedBlockInvariantForward.finish_regular
       AllocationObserverContext.ActivationExprContext
         lowerCtx outerLowerState outerLocals outerPlan afterLive afterMode)
     (hAfterWF : outerPlan.WellFormed)
-    (hPlanAgree :
-      PlanAgreesOn bodyPlan outerPlan afterLive)
     (hTransition :
       AllocationObserverCleanup.Transition
         bodyPlan beforeLive afterLive targetDepth beforeMode afterMode)
+    (hLayout :
+      bodyLowerState.layout =
+        hTransition.dropped ++ outerLowerState.layout)
+    (hSlots :
+      ∀ name,
+        name ∈ afterLive →
+        AllocationSupport.lookupSlot?
+            name bodyLowerState.allocation.env =
+          AllocationSupport.lookupSlot?
+            name outerLowerState.allocation.env)
     (hFinish :
       Locals.finishScoped outerLocals bodyLocals compiledBody =
         some targetBlock) :
@@ -4352,6 +4360,9 @@ theorem RegularScopedBlockInvariantForward.finish_regular
         targetFinal := by
   rcases hBody with
     ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant⟩
+  obtain ⟨_hRestoredCompiler, hPlanAgree⟩ :=
+    AllocationObserverCleanup.Plain.restore_context
+      hBodyInvariant.compiler hAfterCompiler hTransition hLayout hSlots
   obtain ⟨cleanup, hCleanup, hTargetShape⟩ :=
     AllocationObserverCleanup.Plain.finishScoped_shape hFinish
   rw [← hTargetDepth] at hCleanup

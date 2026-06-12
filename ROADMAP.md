@@ -267,13 +267,16 @@ Adjacent boundary status:
   scope exit uses a semantic `PlanAgreesOn` transport relation: the inner and
   outer plans may assign different plan-local stack depths, but must realize
   surviving locals in the same runtime stack order and the same scratch slots.
-  Exact cleanup stack balance plus this transport re-establishes the complete
-  outer activation invariant without pretending nested scopes share one plan.
+  Plans certified against one concrete activation context derive that relation
+  automatically. Exact cleanup stack balance plus a checked context-restoration
+  theorem re-establishes the complete outer activation invariant from ordinary
+  layout-prefix and surviving-slot facts, without accepting plan agreement as
+  recursive proof evidence or pretending nested scopes share one plan.
   Remaining work at this boundary is recursive statement/function/call
-  composition, deriving lexical plan agreement from the checked planner
-  artifacts, construction of the activation relation at function entry,
-  propagation of source-facing memory safety and fuel, and the whole-program
-  adjacent forward/backward theorem.
+  composition, proving those layout-prefix and slot-preservation facts for the
+  real open-block lowerer, construction of the activation relation at function
+  entry, propagation of source-facing memory safety and fuel, and the
+  whole-program adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

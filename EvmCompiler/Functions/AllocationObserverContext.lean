@@ -193,6 +193,85 @@ inductive ActivationExprContext
 namespace ActivationExprContext
 
 /--
+Two plans certified against the same concrete compiler state realize the same
+live locals.
+
+This is the stable plan-transport constructor used at lexical boundaries.
+Plan-local stack depths may differ, but both contexts expose the same runtime
+layout. Scratch contexts additionally classify both plans from the same
+allocation slot.
+-/
+theorem planAgreesOn
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {leftPlan rightPlan : Plan}
+    {live : List Locals.Name}
+    {mode : AllocationObserverRelation.ActivationMode}
+    (hLeft :
+      ActivationExprContext
+        lowerCtx lowerState localsCtx leftPlan live mode)
+    (hRight :
+      ActivationExprContext
+        lowerCtx lowerState localsCtx rightPlan live mode) :
+    AllocationObserverRelation.PlanAgreesOn leftPlan rightPlan live := by
+  cases hLeft with
+  | stack left =>
+      cases hRight with
+      | stack right =>
+          refine ⟨left.stackOrder.trans right.stackOrder.symm, ?_⟩
+          intro name hLive
+          obtain ⟨leftLocation, hLeftLocation⟩ :=
+            left.location name hLive
+          obtain ⟨rightLocation, hRightLocation⟩ :=
+            right.location name hLive
+          cases leftLocation with
+          | scratch slot =>
+              exact False.elim
+                (left.liveStackOnly name slot hLive hLeftLocation)
+          | stack leftDepth =>
+              cases rightLocation with
+              | scratch slot =>
+                  exact False.elim
+                    (right.liveStackOnly name slot hLive hRightLocation)
+              | stack rightDepth =>
+                  exact
+                    ⟨.stack leftDepth, .stack rightDepth,
+                      hLeftLocation, hRightLocation,
+                      .stack leftDepth rightDepth⟩
+  | scratch left =>
+      cases hRight with
+      | scratch right =>
+          refine ⟨left.stackPrefix.trans right.stackPrefix.symm, ?_⟩
+          intro name hLive
+          obtain ⟨slot, hSlot⟩ := left.slot name hLive
+          by_cases hStack :
+              AllocationLowering.isStackSlot lowerCtx slot = true
+          · obtain
+                ⟨leftDepth, _leftRuntimeDepth,
+                  hLeftLocation, _hLeftCurrent, _hLeftLayout⟩ :=
+              left.stack name slot hLive hSlot hStack
+            obtain
+                ⟨rightDepth, _rightRuntimeDepth,
+                  hRightLocation, _hRightCurrent, _hRightLayout⟩ :=
+              right.stack name slot hLive hSlot hStack
+            exact
+              ⟨.stack leftDepth, .stack rightDepth,
+                hLeftLocation, hRightLocation,
+                .stack leftDepth rightDepth⟩
+          · have hScratch :
+                AllocationLowering.isStackSlot lowerCtx slot = false :=
+              Bool.eq_false_of_not_eq_true hStack
+            obtain ⟨hLeftLocation, _hLeftFrame⟩ :=
+              left.scratch name slot hLive hSlot hScratch
+            obtain ⟨hRightLocation, _hRightFrame⟩ :=
+              right.scratch name slot hLive hSlot hScratch
+            exact
+              ⟨.scratch slot, .scratch slot,
+                hLeftLocation, hRightLocation,
+                .scratch slot⟩
+
+/--
 The compiler layout described by an activation context is backed by concrete
 target stack cells.
 
