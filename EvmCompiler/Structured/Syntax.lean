@@ -465,6 +465,31 @@ theorem mem_of_lookup? {procs : List Proc} {name : Name} {proc : Proc}
       · simp [hEq] at hLookup
         exact List.mem_cons_of_mem head (ih hLookup)
 
+theorem lookup?_eq_some_of_mem
+    {procs : List Proc} {name : Name} {proc : Proc}
+    (hUnique : NamesUnique procs)
+    (hMem : proc ∈ procs)
+    (hName : proc.name = name) :
+    lookup? name procs = some proc := by
+  induction procs with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      have hUniqueParts :
+          head.name ∉ rest.map Proc.name ∧ NamesUnique rest := by
+        simpa [NamesUnique] using hUnique
+      rcases List.mem_cons.mp hMem with hHead | hRest
+      · subst proc
+        simp [lookup?, hName]
+      · have hHeadNe : head.name ≠ name := by
+          intro hEq
+          apply hUniqueParts.1
+          exact
+            List.mem_map.mpr
+              ⟨proc, hRest, by simpa [hName, hEq]⟩
+        simp [lookup?, hHeadNe]
+        exact ih hUniqueParts.2 hRest
+
 end ProcList
 
 mutual

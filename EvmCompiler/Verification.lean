@@ -228,6 +228,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
+#check EvmCompiler.Locals.Proc.toExpressions?_name
+#check EvmCompiler.Locals.ProcList.toExpressions?_member_components
+#check EvmCompiler.Expressions.ProcList.mem_toStructured
+#check EvmCompiler.Expressions.ProcList.lookup_toStructured_of_mem
+#check EvmCompiler.Structured.ProcList.lookup?_eq_some_of_mem
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.target_isExit
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.cons_nonregular
 #check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit

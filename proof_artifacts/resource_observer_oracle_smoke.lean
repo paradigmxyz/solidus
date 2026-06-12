@@ -500,6 +500,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
+#print axioms EvmCompiler.Locals.Proc.toExpressions?_name
+#print axioms EvmCompiler.Locals.ProcList.toExpressions?_member_components
+#print axioms EvmCompiler.Expressions.ProcList.mem_toStructured
+#print axioms EvmCompiler.Expressions.ProcList.lookup_toStructured_of_mem
+#print axioms EvmCompiler.Structured.ProcList.lookup?_eq_some_of_mem
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.target_isExit
 #print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.cons_nonregular
 #print axioms EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit

@@ -772,6 +772,21 @@ def toExpressions? (proc : Proc) : Option Expressions.Proc := do
       proc.retc 0 proc.body
   some { name := proc.name, argc := proc.argc, retc := proc.retc, body := body }
 
+theorem toExpressions?_name
+    {proc : Proc} {lower : Expressions.Proc}
+    (hCompile : proc.toExpressions? = some lower) :
+    lower.name = proc.name := by
+  cases hBody :
+      Block.compileToPreserving
+        (Ctx.procEntryWithLayoutAndRetc proc.entryLayout proc.retc)
+        proc.retc 0 proc.body with
+  | none =>
+      simp [toExpressions?, hBody] at hCompile
+  | some body =>
+      simp [toExpressions?, hBody] at hCompile
+      cases hCompile
+      rfl
+
 end Proc
 
 namespace ProcList
@@ -782,6 +797,35 @@ def toExpressions? : List Proc → Option (List Expressions.Proc)
       let lowerProc ← proc.toExpressions?
       let lowerRest ← toExpressions? rest
       some (lowerProc :: lowerRest)
+
+theorem toExpressions?_member_components :
+    ∀ {procs : List Proc} {lower : List Expressions.Proc} {proc : Proc},
+      toExpressions? procs = some lower →
+      proc ∈ procs →
+      ∃ lowerProc,
+        proc.toExpressions? = some lowerProc ∧
+        lowerProc ∈ lower
+  | [], _lower, _proc, hCompile, hMem => by
+      simp [toExpressions?] at hCompile hMem
+  | head :: rest, lower, proc, hCompile, hMem => by
+      cases hHead : head.toExpressions? with
+      | none =>
+          simp [toExpressions?, hHead] at hCompile
+      | some headLower =>
+          cases hRest : toExpressions? rest with
+          | none =>
+              simp [toExpressions?, hHead, hRest] at hCompile
+          | some tailLower =>
+              simp [toExpressions?, hHead, hRest] at hCompile
+              subst lower
+              rcases List.mem_cons.mp hMem with hSelected | hTail
+              · subst proc
+                exact ⟨headLower, hHead, by simp⟩
+              · obtain ⟨lowerProc, hProc, hLowerMem⟩ :=
+                  toExpressions?_member_components hRest hTail
+                exact
+                  ⟨lowerProc, hProc,
+                    List.mem_cons_of_mem headLower hLowerMem⟩
 
 end ProcList
 

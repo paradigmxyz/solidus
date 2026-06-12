@@ -130,6 +130,9 @@ def toStructured (proc : Proc) : Structured.Proc where
   retc := proc.retc
   body := proc.body.toStructured
 
+@[simp] theorem toStructured_name (proc : Proc) :
+    proc.toStructured.name = proc.name := rfl
+
 end Proc
 
 namespace ProcList
@@ -137,6 +140,31 @@ namespace ProcList
 def toStructured : List Proc → List Structured.Proc
   | [] => []
   | proc :: rest => proc.toStructured :: toStructured rest
+
+theorem mem_toStructured
+    {proc : Proc} {procs : List Proc}
+    (hMem : proc ∈ procs) :
+    proc.toStructured ∈ toStructured procs := by
+  induction procs with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      rcases List.mem_cons.mp hMem with hHead | hRest
+      · subst proc
+        simp [toStructured]
+      · exact
+          List.mem_cons_of_mem head.toStructured
+            (ih hRest)
+
+theorem lookup_toStructured_of_mem
+    {proc : Proc} {procs : List Proc}
+    (hUnique :
+      Structured.ProcList.NamesUnique (toStructured procs))
+    (hMem : proc ∈ procs) :
+    Structured.ProcList.lookup? proc.name (toStructured procs) =
+      some proc.toStructured :=
+  Structured.ProcList.lookup?_eq_some_of_mem
+    hUnique (mem_toStructured hMem) rfl
 
 end ProcList
 

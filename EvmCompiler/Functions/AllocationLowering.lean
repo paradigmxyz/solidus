@@ -1450,6 +1450,83 @@ def lowerFunctions? (recipe : AllocationSupport.AllocationRecipe)
         lowerFunctions? recipe stackSlots frameName frameConfig? next rest
       some (proc :: tail, final)
 
+theorem lowerFunction?_name
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state final : AllocationSupport.CompileState}
+    {fn : FunDef} {proc : Locals.Proc}
+    (hLower :
+      lowerFunction? recipe stackSlots frameName frameConfig? state fn =
+        some (proc, final)) :
+    proc.name = fn.name := by
+  have hNames :
+      (lowerFunction? recipe stackSlots frameName frameConfig? state fn).map
+          (fun output => output.1.name) =
+        (lowerFunction? recipe stackSlots frameName frameConfig? state fn).map
+          (fun _output => fn.name) := by
+    simp [lowerFunction?]
+  rw [hLower] at hNames
+  simpa using hNames
+
+/--
+State-threaded function-list lowering preserves source function lookup and
+returns the actual `lowerFunction?` equation for the selected function.
+-/
+theorem lowerFunctions?_find_components
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (name : Name) :
+    ∀ {state final : AllocationSupport.CompileState}
+      {functions : List FunDef} {procs : List Locals.Proc} {fn : FunDef},
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+          state functions =
+        some (procs, final) →
+      Source.FunList.find? name functions = some fn →
+      ∃ before after proc,
+        lowerFunction? recipe stackSlots frameName frameConfig? before fn =
+          some (proc, after) ∧
+        proc ∈ procs ∧
+        proc.name = name
+  | _state, _final, [], _procs, _fn, hLower, hFind => by
+      simp [lowerFunctions?, Source.FunList.find?] at hLower hFind
+  | state, final, head :: rest, procs, fn, hLower, hFind => by
+      cases hHead :
+          lowerFunction? recipe stackSlots frameName frameConfig?
+            state head with
+      | none =>
+          simp [lowerFunctions?, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨headProc, next⟩
+          cases hTail :
+              lowerFunctions? recipe stackSlots frameName frameConfig?
+                next rest with
+          | none =>
+              simp [lowerFunctions?, hHead, hTail] at hLower
+          | some tailResult =>
+              rcases tailResult with ⟨tail, tailFinal⟩
+              simp [lowerFunctions?, hHead, hTail] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hHeadName := lowerFunction?_name hHead
+              by_cases hName : head.name = name
+              · have hFn : fn = head := by
+                  simpa [Source.FunList.find?, hName] using hFind.symm
+                subst fn
+                exact
+                  ⟨state, next, headProc, hHead, by simp,
+                    hHeadName.trans hName⟩
+              · have hFindTail :
+                    Source.FunList.find? name rest = some fn := by
+                  simpa [Source.FunList.find?, hName] using hFind
+                obtain
+                    ⟨before, after, proc, hSelected, hMember, hProcName⟩ :=
+                  lowerFunctions?_find_components recipe stackSlots frameName
+                    frameConfig? name hTail hFindTail
+                exact
+                  ⟨before, after, proc, hSelected, by simp [hMember],
+                    hProcName⟩
+
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
