@@ -584,6 +584,267 @@ theorem RegularInvariantForward.regular_post_regular
     ⟨sourceFuel + 1, targetFuel + 1,
       hSource, hTarget, hFinalInvariant⟩
 
+/--
+Canonical source-fuel induction for regular loop executions.
+
+The recursive loop obligation is discharged internally from
+`runForLoop_regular_cases`. Callers supply only source-facing condition safety
+and adjacent preservation for one body or post block execution over the fixed
+compiler artifacts.
+-/
+theorem RegularInvariantForward.of_source_run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState bodyLowerState : AllocationLowering.State}
+    {localsCtx bodyLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {loopCtx postBase bodyBase : Functions.Source.Ctx}
+    {cond : Functions.Expr 1}
+    {loweredCond : Locals.Expr 1}
+    {post body : Functions.Block}
+    {targetProgram : Structured.Program}
+    {condCode : Structured.Code}
+    {postBlock bodyBlock : Structured.Block}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceFuel : Nat}
+    (hLoopScope : loopCtx.scope = live)
+    (hCondScoped : Functions.Scope.ExprScoped live cond)
+    (hLowerCond :
+      AllocationLowering.lowerExpr lowerCtx lowerState cond =
+        some loweredCond)
+    (hCompileCond :
+      Locals.Expr.compileCode localsCtx 0 loweredCond = some condCode)
+    (hCondSafe :
+      ∀ {conditionSource conditionFinal :
+            Functions.ObserverSemantics.State transcript}
+        {conditionTrue : Bool},
+        Functions.Source.Effectful.Expr.evalCondition
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            cond conditionSource =
+          .ok (conditionFinal, conditionTrue) →
+        ∃ value,
+          AllocationObserverSafety.Expr.MemorySafeEval
+              contract transcript cond conditionSource conditionFinal
+              [value] ∧
+            (value != EvmYul.UInt256.ofNat 0) = conditionTrue)
+    (hBodyRegular :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx lowerState localsCtx plan live frameBase mode
+            bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.regular bodyFinal) →
+        ∃ bodyTargetFinal,
+          Sequence.RegularScopedBlockInvariantForward
+            contract transcript lowerCtx bodyLowerState bodyLocals plan live
+            frameBase mode sourceProgram bodyBase body bodySource
+            targetProgram bodyBlock bodyTarget bodyFinal bodyTargetFinal)
+    (hBodyBreak :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx lowerState localsCtx plan live frameBase mode
+            bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.brk bodyFinal) →
+        ∃ bodyTargetFinal,
+          BreakScopedBlockInvariantForward
+            contract transcript lowerCtx lowerState localsCtx plan live
+            frameBase mode sourceProgram bodyBase body bodySource
+            targetProgram bodyBlock bodyTarget bodyFinal bodyTargetFinal)
+    (hBodyContinue :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx lowerState localsCtx plan live frameBase mode
+            bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.cont bodyFinal) →
+        ∃ bodyTargetFinal,
+          ContinueScopedBlockInvariantForward
+            contract transcript lowerCtx bodyLowerState bodyLocals plan live
+            frameBase mode sourceProgram bodyBase body bodySource
+            targetProgram bodyBlock bodyTarget bodyFinal bodyTargetFinal)
+    (hPostRegular :
+      ∀ {postFuel : Nat}
+        {postSource postFinal :
+          Functions.ObserverSemantics.State transcript}
+        {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx bodyLowerState bodyLocals plan live
+            frameBase mode postSource postTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram postBase post postFuel postSource =
+          .ok (Functions.Source.Effectful.Outcome.regular postFinal) →
+        ∃ postTargetFinal,
+          Sequence.RegularScopedBlockInvariantForward
+            contract transcript lowerCtx lowerState localsCtx plan live
+            frameBase mode sourceProgram postBase post postSource
+            targetProgram postBlock postTarget postFinal postTargetFinal)
+    (hSource :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram loopCtx cond postBase post bodyBase body
+          sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular final))
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    ∃ targetFinal,
+      RegularInvariantForward
+        contract transcript lowerCtx lowerState localsCtx plan live
+        frameBase mode sourceProgram loopCtx cond postBase post bodyBase body
+        targetProgram condCode postBlock bodyBlock source target
+        final targetFinal := by
+  induction sourceFuel using Nat.strong_induction_on generalizing
+      source target final with
+  | h sourceFuel ih =>
+      obtain ⟨stepFuel, rfl, hCases⟩ :=
+        Functions.Source.Effectful.Stmt.runForLoop_regular_cases
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram hSource
+      rcases hCases with
+        hFalse | hBreak | hRegular | hContinue
+      · obtain ⟨sourceAfterCond, hSourceCond, rfl⟩ := hFalse
+        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+          AllocationObserverExpression.Expr.condition_forward
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        refine
+          ⟨targetAfterCond, ?_⟩
+        simpa [hLoopScope] using
+          (RegularInvariantForward.false
+            hLoopScope hSourceCond
+            (by simpa [hValue] using hTargetCond)
+            hCondInvariant)
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody,
+              hSourceCond, hSourceBody, rfl⟩ :=
+          hBreak
+        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+          AllocationObserverExpression.Expr.condition_forward
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyBreak hCondInvariant hSourceBody
+        refine
+          ⟨targetAfterBody,
+            RegularInvariantForward.body_brk hSourceCond ?_
+              hBodyForward⟩
+        simpa [hValue] using hTargetCond
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
+              hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
+          hRegular
+        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+          AllocationObserverExpression.Expr.condition_forward
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyRegular hCondInvariant hSourceBody
+        rcases hBodyForward with
+          ⟨bodySourceFuel, bodyTargetFuel,
+            hSourceBody', hTargetBody, hBodyInvariant⟩
+        obtain ⟨targetAfterPost, hPostForward⟩ :=
+          hPostRegular hBodyInvariant hSourcePost
+        rcases hPostForward with
+          ⟨postSourceFuel, postTargetFuel,
+            hSourcePost', hTargetPost, hPostInvariant⟩
+        have hRecursive :=
+          ih stepFuel (Nat.lt_succ_self stepFuel)
+            (source := sourceAfterPost)
+            (target := targetAfterPost)
+            (final := final)
+            hSourceLoop
+        obtain ⟨targetFinal, hLoopForward⟩ :=
+          hRecursive hPostInvariant
+        refine
+          ⟨targetFinal,
+            RegularInvariantForward.regular_post_regular
+              hSourceCond ?_
+              ⟨bodySourceFuel, bodyTargetFuel,
+                hSourceBody', hTargetBody, hBodyInvariant⟩
+              ⟨postSourceFuel, postTargetFuel,
+                hSourcePost', hTargetPost, hPostInvariant⟩
+              hLoopForward⟩
+        simpa [hValue] using hTargetCond
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
+              hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
+          hContinue
+        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+          AllocationObserverExpression.Expr.condition_forward
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyContinue hCondInvariant hSourceBody
+        rcases hBodyForward with
+          ⟨bodySourceFuel, bodyTargetFuel,
+            hSourceBody', hTargetBody, hBodyInvariant⟩
+        obtain ⟨targetAfterPost, hPostForward⟩ :=
+          hPostRegular hBodyInvariant hSourcePost
+        rcases hPostForward with
+          ⟨postSourceFuel, postTargetFuel,
+            hSourcePost', hTargetPost, hPostInvariant⟩
+        have hRecursive :=
+          ih stepFuel (Nat.lt_succ_self stepFuel)
+            (source := sourceAfterPost)
+            (target := targetAfterPost)
+            (final := final)
+            hSourceLoop
+        obtain ⟨targetFinal, hLoopForward⟩ :=
+          hRecursive hPostInvariant
+        refine
+          ⟨targetFinal,
+            RegularInvariantForward.cont_post_regular
+              hSourceCond ?_
+              ⟨bodySourceFuel, bodyTargetFuel,
+                hSourceBody', hTargetBody, hBodyInvariant⟩
+              ⟨postSourceFuel, postTargetFuel,
+                hSourcePost', hTargetPost, hPostInvariant⟩
+              hLoopForward⟩
+        simpa [hValue] using hTargetCond
+
 end ForLoop
 
 namespace Sequence

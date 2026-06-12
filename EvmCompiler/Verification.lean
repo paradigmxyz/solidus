@@ -201,6 +201,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.body_brk
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.regular_post_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.cont_post_regular
+#check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.of_source_run
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_false_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_regular_of_components
 #check EvmCompiler.Functions.Source.Effectful.Stmt.runForLoop_regular_cases
