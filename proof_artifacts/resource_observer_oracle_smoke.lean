@@ -4,6 +4,7 @@ import EvmCompiler.Public.Observer
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverFrameInvariant
+import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObserverSemantics
@@ -123,6 +124,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.not_of_pushed_return
 #print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.pushJumpAt
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_leave
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN

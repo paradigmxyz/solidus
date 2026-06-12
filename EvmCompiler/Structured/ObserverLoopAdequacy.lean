@@ -698,16 +698,25 @@ private theorem outcome_for_step_of_firstReaches
           accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches bodySource tokens
+            { condOutput with slots := condOutput.slots.tail }
+            targetState →
         ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
           { condOutput with slots := condOutput.slots.tail } accept
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
       ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches postSource tokens
+            { condOutput with slots := condOutput.slots.tail }
+            targetState →
         ¬ OutcomeSimulation.JumpAt postSource tokens loopLabel
           loopInput accept
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
-      ∀ targetState, ¬ accept (.jump loopLabel targetState))
+      ∀ (loopSource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches loopSource tokens
+            loopInput targetState →
+        ¬ accept (.jump loopLabel targetState))
     (hRel :
       ObserverPreservation.StateRel.At
         loopInput source tokens target trace)
@@ -717,6 +726,7 @@ private theorem outcome_for_step_of_firstReaches
     (hBodyAdequate :
       ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
         ∀ {bodySource : ObserverSemantics.State transcript},
+        bodySource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -738,6 +748,7 @@ private theorem outcome_for_step_of_firstReaches
     (hPostAdequate :
       ∀ postTargetFuel, postTargetFuel < targetFuel →
         ∀ {postSource : ObserverSemantics.State transcript},
+        postSource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -759,6 +770,7 @@ private theorem outcome_for_step_of_firstReaches
         {loopSource : ObserverSemantics.State transcript}
         {loopTarget : EVMState} {loopTrace : Trace},
         smallerFuel < targetFuel →
+        loopSource.source.returns = source.source.returns →
         (∀ loopFuel loopOutcome loopTargetOutcome loopFinalTrace,
           ObserverSemantics.For.Eval program loopFuel
               cond post body loopSource loopOutcome →
@@ -838,7 +850,9 @@ private theorem outcome_for_step_of_firstReaches
           (OutcomeSimulation.JumpAt.of_accept hTailReach.boundary)
     have hBodyPositive : 0 < bodyPrefixFuel :=
       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-        hBodyReach (hBodyEntryNotAccepted afterCond targetAfterCond)
+        hBodyReach
+          (hBodyEntryNotAccepted afterCond targetAfterCond
+            (OutcomeSimulation.FrameMatches.of_at hAfterCondRel))
     cases bodyPrefixFuel with
     | zero =>
         omega
@@ -847,6 +861,7 @@ private theorem outcome_for_step_of_firstReaches
             ⟨bodySourceFuel, bodyOutcome,
               hBodyEval, hBodyOutcomeRel, hBodyArtifact⟩ :=
           hBodyAdequate bodyPrefixFuel (by omega)
+            (ObserverSemantics.Code.runCondition_returns_eq hCond)
             (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                 hEval hOutcomeRel hArtifact =>
               bodyActivationBoundary hClose hCond hOuterRegular
@@ -998,7 +1013,8 @@ private theorem outcome_for_step_of_firstReaches
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                 hPostReach
-                  (hPostEntryNotAccepted bodyState bodyTarget)
+                  (hPostEntryNotAccepted bodyState bodyTarget
+                    (OutcomeSimulation.FrameMatches.of_at hBodyAt))
             cases postPrefixFuel with
             | zero =>
                 omega
@@ -1007,6 +1023,11 @@ private theorem outcome_for_step_of_firstReaches
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
                   hPostAdequate postPrefixFuel (by omega)
+                    ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                        hBodyEval
+                        (by
+                          simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                      (ObserverSemantics.Code.runCondition_returns_eq hCond))
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
                       postActivationBoundary
@@ -1082,7 +1103,9 @@ private theorem outcome_for_step_of_firstReaches
                           (targetFuel - (bodyPrefixFuel + 1)) -
                             (postPrefixFuel + 1) :=
                       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-                        hAfterPostReach (hLoopEntryNotAccepted postTarget)
+                        hAfterPostReach
+                          (hLoopEntryNotAccepted postState postTarget
+                            (OutcomeSimulation.FrameMatches.of_at hPostAt))
                     cases hResidual :
                         (targetFuel - (bodyPrefixFuel + 1)) -
                           (postPrefixFuel + 1) with
@@ -1096,6 +1119,16 @@ private theorem outcome_for_step_of_firstReaches
                             ⟨loopSourceFuel, sourceOutcome,
                               hLoopEval, hLoopOutcomeRel, hLoopArtifact⟩ :=
                           hRecurse hDecrease
+                            ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                                hPostEval
+                                (by
+                                  simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                              ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                                  hBodyEval
+                                  (by
+                                    simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                                (ObserverSemantics.Code.runCondition_returns_eq
+                                  hCond)))
                             (fun loopFuel loopOutcome loopTargetOutcome
                                 loopFinalTrace hLoopEval hLoopRel
                                 hLoopArtifact => by
@@ -1264,7 +1297,8 @@ private theorem outcome_for_step_of_firstReaches
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                 hPostReach
-                  (hPostEntryNotAccepted bodyState bodyTarget)
+                  (hPostEntryNotAccepted bodyState bodyTarget
+                    (OutcomeSimulation.FrameMatches.of_at hBodyAt))
             cases postPrefixFuel with
             | zero =>
                 omega
@@ -1273,6 +1307,11 @@ private theorem outcome_for_step_of_firstReaches
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
                   hPostAdequate postPrefixFuel (by omega)
+                    ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                        hBodyEval
+                        (by
+                          simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                      (ObserverSemantics.Code.runCondition_returns_eq hCond))
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
                       postActivationBoundary
@@ -1348,7 +1387,9 @@ private theorem outcome_for_step_of_firstReaches
                           (targetFuel - (bodyPrefixFuel + 1)) -
                             (postPrefixFuel + 1) :=
                       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-                        hAfterPostReach (hLoopEntryNotAccepted postTarget)
+                        hAfterPostReach
+                          (hLoopEntryNotAccepted postState postTarget
+                            (OutcomeSimulation.FrameMatches.of_at hPostAt))
                     cases hResidual :
                         (targetFuel - (bodyPrefixFuel + 1)) -
                           (postPrefixFuel + 1) with
@@ -1362,6 +1403,16 @@ private theorem outcome_for_step_of_firstReaches
                             ⟨loopSourceFuel, sourceOutcome,
                               hLoopEval, hLoopOutcomeRel, hLoopArtifact⟩ :=
                           hRecurse hDecrease
+                            ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                                hPostEval
+                                (by
+                                  simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                              ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                                  hBodyEval
+                                  (by
+                                    simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                                (ObserverSemantics.Code.runCondition_returns_eq
+                                  hCond)))
                             (fun loopFuel loopOutcome loopTargetOutcome
                                 loopFinalTrace hLoopEval hLoopRel
                                 hLoopArtifact => by
@@ -1535,16 +1586,25 @@ private theorem outcome_for_of_firstReaches
           accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches bodySource tokens
+            { condOutput with slots := condOutput.slots.tail }
+            targetState →
         ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
           { condOutput with slots := condOutput.slots.tail } accept
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
       ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches postSource tokens
+            { condOutput with slots := condOutput.slots.tail }
+            targetState →
         ¬ OutcomeSimulation.JumpAt postSource tokens loopLabel
           loopInput accept
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
-      ∀ targetState, ¬ accept (.jump loopLabel targetState))
+      ∀ (loopSource : ObserverSemantics.State transcript) targetState,
+        OutcomeSimulation.FrameMatches loopSource tokens
+            loopInput targetState →
+        ¬ accept (.jump loopLabel targetState))
     (hRel :
       ObserverPreservation.StateRel.At
         loopInput source tokens target trace)
@@ -1554,6 +1614,7 @@ private theorem outcome_for_of_firstReaches
     (hBodyAdequate :
       ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
         ∀ {bodySource : ObserverSemantics.State transcript},
+        bodySource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -1575,6 +1636,7 @@ private theorem outcome_for_of_firstReaches
     (hPostAdequate :
       ∀ postTargetFuel, postTargetFuel < targetFuel →
         ∀ {postSource : ObserverSemantics.State transcript},
+        postSource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -1610,16 +1672,18 @@ private theorem outcome_for_of_firstReaches
           hRel hReach hBodyAdequate hPostAdequate
           (by
             intro smallerFuel loopSource loopTarget loopTrace
-              hSmaller hLoopClose hLoopRel hLoopReach
+              hSmaller hLoopReturns hLoopClose hLoopRel hLoopReach
             exact
               ih smallerFuel hSmaller
                 hLoopClose hLoopRel hLoopReach
-                (fun bodyTargetFuel hBodyLt =>
+                (fun bodyTargetFuel hBodyLt {_bodySource} hBodyReturns =>
                   hBodyAdequate bodyTargetFuel
-                    (Nat.lt_trans hBodyLt hSmaller))
-                (fun postTargetFuel hPostLt =>
+                    (Nat.lt_trans hBodyLt hSmaller)
+                    (hBodyReturns.trans hLoopReturns))
+                (fun postTargetFuel hPostLt {_postSource} hPostReturns =>
                   hPostAdequate postTargetFuel
-                    (Nat.lt_trans hPostLt hSmaller)))
+                    (Nat.lt_trans hPostLt hSmaller)
+                    (hPostReturns.trans hLoopReturns)))
 
 /--
 Compiler-facing backward adequacy for a checked Structured `for` statement.
@@ -1648,12 +1712,17 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
       ∀ {accept : TypedCfg.Outcome → Prop}
         (initSource : ObserverSemantics.State transcript)
         (loopShape : TypedCfg.Shape) targetState,
+        OutcomeSimulation.FrameMatches initSource tokens input targetState →
         ¬ OutcomeSimulation.JumpAt initSource tokens
           (LabelSupply.label supply 0) loopShape accept
           (.jump entry targetState))
     (hGeneratedEntryNotAccepted :
       ∀ {accept : TypedCfg.Outcome → Prop}
-        generatedOffset targetState,
+        {current : ObserverSemantics.State transcript}
+        generatedOffset shape targetState,
+        OutcomeSimulation.LabelShape cfg
+            (LabelSupply.label supply generatedOffset) shape →
+        OutcomeSimulation.FrameMatches current tokens shape targetState →
         ¬ accept
           (.jump (LabelSupply.label supply generatedOffset) targetState))
     (hInitAdequate :
@@ -1673,6 +1742,7 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
         ∀ {initSource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
+          initSource.source.returns = source.source.returns →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1708,6 +1778,7 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
         ∀ {bodySource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
+          bodySource.source.returns = source.source.returns →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1746,6 +1817,7 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
         ∀ {postSource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
+          postSource.source.returns = source.source.returns →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1814,6 +1886,27 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
              term := .jumpi (LabelSupply.label supply 1) regular }] ++
           bodyResult.blocks ++ postResult.blocks := by
     simp
+  have hLoopShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label supply 0) loopInput :=
+    ⟨{ label := LabelSupply.label supply 0
+       input := loopInput
+       body := TypedCfgCompiler.Code.toCfg cond
+       output := condOutput
+       term := .jumpi (LabelSupply.label supply 1) regular },
+      hBlocks _ hLoopMem, rfl⟩
+  have hBodyShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label supply 1)
+        { condOutput with slots := condOutput.slots.tail } :=
+    OutcomeSimulation.LabelShape.of_compileBlockFuel?
+      hBodyCompile hBodyBlocks
+  have hPostShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label supply 2)
+        { condOutput with slots := condOutput.slots.tail } :=
+    OutcomeSimulation.LabelShape.of_compileBlockFuel?
+      hPostCompile hPostBlocks
   obtain
       ⟨initPrefixFuel, initTargetOutcome, initTrace,
         hInitLe, hInitReach⟩ :=
@@ -1821,7 +1914,9 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
       hReach.run (OutcomeSimulation.JumpAt.of_accept hReach.boundary)
   have hInitPositive : 0 < initPrefixFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hInitReach (hInitEntryNotAccepted source loopInput target)
+      hInitReach
+        (hInitEntryNotAccepted source loopInput target
+          (OutcomeSimulation.FrameMatches.of_at hRel))
   cases initPrefixFuel with
   | zero =>
       omega
@@ -1831,6 +1926,7 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
             hInitEval, hInitOutcomeRel, hInitArtifact⟩ :=
         hInitAdequate hInitCompile hInitFallthrough hInitBlocks
           initPrefixFuel (by omega)
+          rfl
           (fun _sourceFuel _sourceOutcome _targetOutcome _trace
               hEval hOutcomeRel hArtifact => by
             exact
@@ -1850,6 +1946,11 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
       rcases initOutcome with ⟨initState, initMode⟩
       cases initMode with
       | regular =>
+          have hInitReturns :
+              initState.source.returns = source.source.returns :=
+            ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hInitEval
+              (by simp [ObserverSemantics.Outcome.Nonhalting])
           obtain ⟨loopTarget, hTargetOutcome, hInitStateRel⟩ :=
             ObserverPreservation.OutcomeSimulation.Rel.regular_elim
               hInitOutcomeRel
@@ -1870,7 +1971,9 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
               0 < targetFuel + 1 - (initPrefixFuel + 1) :=
             OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
               hAfterInitReach
-              (hGeneratedEntryNotAccepted 0 loopTarget)
+              (hGeneratedEntryNotAccepted 0 loopInput loopTarget
+                hLoopShape
+                (OutcomeSimulation.FrameMatches.of_at hLoopAt))
           cases hResidual :
               targetFuel + 1 - (initPrefixFuel + 1) with
           | zero =>
@@ -1899,28 +2002,34 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
                         (OutcomeSimulation.OutcomeArtifact.ofJoin
                           rfl hForJoin))
                   (by
-                    intro bodySource targetState
+                    intro bodySource targetState hFrame
                     simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
-                        hGeneratedEntryNotAccepted 1 targetState⟩)
+                        hGeneratedEntryNotAccepted
+                          1 _ targetState hBodyShape hFrame⟩)
                   (by
-                    intro postSource targetState
+                    intro postSource targetState hFrame
                     simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
-                        hGeneratedEntryNotAccepted 2 targetState⟩)
-                  (hGeneratedEntryNotAccepted 0)
+                        hGeneratedEntryNotAccepted
+                          2 _ targetState hPostShape hFrame⟩)
+                  (fun loopSource targetState hFrame =>
+                    hGeneratedEntryNotAccepted
+                      0 loopInput targetState hLoopShape hFrame)
                   hLoopAt
                   (by simpa [hResidual] using hAfterInitReach)
-                  (fun bodyTargetFuel hBodyLt =>
+                  (fun bodyTargetFuel hBodyLt {_bodySource} hBodyReturns =>
                     hBodyAdequate hBodyCompile hBodyBlocks
                       bodyTargetFuel
-                      (Nat.lt_trans hBodyLt (by omega)))
-                  (fun postTargetFuel hPostLt =>
+                      (Nat.lt_trans hBodyLt (by omega))
+                      (hBodyReturns.trans hInitReturns))
+                  (fun postTargetFuel hPostLt {_postSource} hPostReturns =>
                     hPostAdequate hPostCompile hPostBlocks
                       postTargetFuel
-                      (Nat.lt_trans hPostLt (by omega)))
+                      (Nat.lt_trans hPostLt (by omega))
+                      (hPostReturns.trans hInitReturns))
               let sourceFuel :=
                 Nat.max initSourceFuel loopSourceFuel
               exact

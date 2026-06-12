@@ -22,6 +22,7 @@ import EvmCompiler.Structured.ObserverSwitchAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverTerminalAdequacy
+import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -108,6 +109,11 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationProtected.pushJumpAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationFreshExcept.pushJumpAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.pushJumpAt
+#check EvmCompiler.Structured.ObserverAdequacy.SourceContext.procedure
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.procedureBody
+#check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_code
+#check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_leave
+#check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_terminal
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump

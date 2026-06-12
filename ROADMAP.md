@@ -201,6 +201,13 @@ Adjacent boundary status:
   activation extension constructed by the existing call proof. Procedure
   `leave` adequacy derives its nonempty source return stack from the active
   return-token realization instead of taking it as a separate source premise.
+  `Structured.ObserverGeneratedAdequacy` now owns the mutual-proof context:
+  source control permissions, original procedure lookup, active return-token
+  availability, same-activation boundary transport, and pushed procedure-body
+  boundaries. Its checked leaf family covers code, break, continue, leave, and
+  terminal statements at fixed target fuel. Loop callbacks now receive
+  source-return preservation and reject loop/body/post entries using exact
+  activation frames rather than a global generated-label blacklist.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

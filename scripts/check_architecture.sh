@@ -199,6 +199,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
@@ -213,6 +214,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
@@ -227,6 +229,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
@@ -241,6 +244,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
@@ -255,6 +259,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
@@ -274,6 +279,7 @@ report_matches \
   EvmCompiler/Structured/ObserverFrameInvariant.lean \
   EvmCompiler/Structured/ObserverActivationBoundary.lean \
   EvmCompiler/Structured/ObserverGeneratedBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedAdequacy.lean \
   EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
   EvmCompiler/Structured/ObserverLoopAdequacy.lean \
   EvmCompiler/Structured/ObserverCallAdequacy.lean
