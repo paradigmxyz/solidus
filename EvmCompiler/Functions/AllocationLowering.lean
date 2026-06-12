@@ -16,7 +16,7 @@ structure State where
 
 structure Ctx where
   functions : List AllocationSupport.FunSlots
-  frameWords : Nat
+  frameConfig? : Option AllocationSupport.ScratchFrameConfig
   frameName : Name
   stackSlots : SlotSet
   root : ScopeId
@@ -106,8 +106,9 @@ def bindScratchBindings (baseDepth : Nat)
     (Locals.Expr.code (results := 0)
       (AllocationSupport.bindScratchBindingsCode baseDepth bindings))
 
-def frameExpr (words : Nat) : Locals.Expr 1 :=
-  .code (AllocationSupport.frameInitCode words)
+def frameExpr
+    (config : AllocationSupport.ScratchFrameConfig) : Locals.Expr 1 :=
+  .code (AllocationSupport.scratchFrameAcquireCode config)
 
 def splitPrelude : List Stmt → List Locals.Stmt × List Stmt
   | [] => ([], [])
@@ -361,17 +362,28 @@ mutual
         if targets.length = fn.returns.length then pure () else none
         if targets.Nodup then pure () else none
         let loweredArgs ← lowerExprList ctx state args
-        let callArgs :=
-          if functionName ∈ ctx.frameFunctions then
-            frameExpr ctx.frameWords :: loweredArgs
+        let usesFrame := functionName ∈ ctx.frameFunctions
+        let callArgs ←
+          if usesFrame then do
+            let frameConfig ← ctx.frameConfig?
+            some (frameExpr frameConfig :: loweredArgs)
           else
-            loweredArgs
+            some loweredArgs
         let stores ←
           lowerCallTargetsCode? ctx state targets.reverse targets.length
+        let release ←
+          if usesFrame then do
+            let frameConfig ← ctx.frameConfig?
+            some
+              [ .expr
+                  (Locals.Expr.code (results := 0)
+                    (AllocationSupport.scratchFrameReleaseCode frameConfig)) ]
+          else
+            some []
         some
           ([ .exprs (exprSeqOfList callArgs),
              .call functionName,
-             .expr (Locals.Expr.code (results := 0) stores) ],
+             .expr (Locals.Expr.code (results := 0) stores) ] ++ release,
            state)
     | .terminal kind => some ([.terminal kind], state)
     | .terminalArgs kind args => do
@@ -381,6 +393,7 @@ end
 
 def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
     (state : AllocationSupport.CompileState) (fn : FunDef) :
     Option (Locals.Proc × AllocationSupport.CompileState) := do
   let slots ← AllocationSupport.lookupFun? fn.name recipe.functionSlots
@@ -392,7 +405,7 @@ def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
     fn.params.reverse ++ if needsFrame then [frameName] else []
   let ctx : Ctx :=
     { functions := recipe.functionSlots
-      frameWords := recipe.frameWords
+      frameConfig? := frameConfig?
       frameName := frameName
       stackSlots := stackSlots
       root := root
@@ -430,19 +443,21 @@ def lowerFunction? (recipe : AllocationSupport.AllocationRecipe)
        nextSlot := final.allocation.nextSlot })
 
 def lowerFunctions? (recipe : AllocationSupport.AllocationRecipe)
-    (stackSlots : SlotSet) (frameName : Name) :
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig) :
     AllocationSupport.CompileState → List FunDef →
       Option (List Locals.Proc × AllocationSupport.CompileState)
   | state, [] => some ([], state)
   | state, fn :: rest => do
       let (proc, next) ←
-        lowerFunction? recipe stackSlots frameName state fn
+        lowerFunction? recipe stackSlots frameName frameConfig? state fn
       let (tail, final) ←
-        lowerFunctions? recipe stackSlots frameName next rest
+        lowerFunctions? recipe stackSlots frameName frameConfig? next rest
       some (proc :: tail, final)
 
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
     (state : AllocationSupport.CompileState)
     (body : Block) : Option (Locals.Block × State) := do
   let root := ScopeId.main
@@ -451,18 +466,32 @@ def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
   let needsFrame := !scratchBindings.isEmpty
   let ctx : Ctx :=
     { functions := recipe.functionSlots
-      frameWords := recipe.frameWords
+      frameConfig? := frameConfig?
       frameName := frameName
       stackSlots := stackSlots
       root := root
       scratchBindings := scratchBindings
       frameFunctions := frameFunctions recipe stackSlots }
-  let prelude :=
-    if needsFrame then
-      [ Locals.Stmt.let_ frameName (frameExpr recipe.frameWords),
-        bindScratchBindings 0 scratchBindings ]
+  let needsAllocator :=
+    needsFrame || !(frameFunctions recipe stackSlots).isEmpty
+  let allocatorPrelude ←
+    if needsAllocator then do
+      let frameConfig ← frameConfig?
+      some
+        [ .expr
+            (Locals.Expr.code (results := 0)
+              (AllocationSupport.scratchAllocatorInitCode frameConfig)) ]
     else
-      []
+      some []
+  let framePrelude ←
+    if needsFrame then do
+      let frameConfig ← frameConfig?
+      some
+        [ Locals.Stmt.let_ frameName (frameExpr frameConfig),
+          bindScratchBindings 0 scratchBindings ]
+    else
+      some []
+  let prelude := allocatorPrelude ++ framePrelude
   let start : State :=
     { allocation := state
       layout := if needsFrame then [frameName] else [] }
@@ -476,14 +505,17 @@ def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
 def lowerToLocals? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (program : Program) : Option Locals.Program := do
+  let frameConfig? :=
+    AllocationSupport.scratchFrameConfig?
+      program.memoryContract recipe.frameWords
   let (procs, stateAfterFunctions) ←
-    lowerFunctions? recipe stackSlots frameName
+    lowerFunctions? recipe stackSlots frameName frameConfig?
       recipe.stateAfterSignatures program.functions
   if stateAfterFunctions = recipe.stateAfterFunctions then pure () else none
   let mainStart : AllocationSupport.CompileState :=
     { env := [], nextSlot := stateAfterFunctions.nextSlot }
   let (main, final) ←
-    lowerMain? recipe stackSlots frameName mainStart program.body
+    lowerMain? recipe stackSlots frameName frameConfig? mainStart program.body
   if final.allocation = recipe.main then
     some { procs := procs, body := main }
   else
@@ -553,7 +585,7 @@ def compatiblePlan? (allocation : ProgramPlan)
   else
     none
   if MixedAllocation.AllocationRecipe.toMixedProgramPlan
-      recipe stackSlots = allocation then
+      recipe stackSlots program.memoryContract = allocation then
     some (recipe, stackSlots)
   else
     none
@@ -574,7 +606,7 @@ theorem compatiblePlan?_eq_some_exact
       MixedAllocation.AllocationRecipe.executable?
           recipe stackSlots program = true ∧
       MixedAllocation.AllocationRecipe.toMixedProgramPlan
-          recipe stackSlots = allocation := by
+          recipe stackSlots program.memoryContract = allocation := by
   unfold compatiblePlan? at hCompatible
   cases hRecipe : AllocationSupport.planRecipeCore? program with
   | none =>
@@ -591,7 +623,8 @@ theorem compatiblePlan?_eq_some_exact
                     plannedRecipe plannedSlots program = true
             · by_cases hExact :
                   MixedAllocation.AllocationRecipe.toMixedProgramPlan
-                      plannedRecipe plannedSlots = allocation
+                      plannedRecipe plannedSlots
+                        program.memoryContract = allocation
               · simp
                   [hRecipe, hSlots, hNodup, hExecutable, hExact]
                   at hCompatible
@@ -614,7 +647,7 @@ theorem compatible_witness
         MixedAllocation.AllocationRecipe.executable?
             recipe stackSlots program = true ∧
         MixedAllocation.AllocationRecipe.toMixedProgramPlan
-            recipe stackSlots = allocation := by
+            recipe stackSlots program.memoryContract = allocation := by
   unfold Compatible at hCompatible
   cases hPlan : compatiblePlan? allocation program with
   | none =>
@@ -629,6 +662,10 @@ def validatePlan? (allocation : ProgramPlan)
     (program : Program) :
     Option (AllocationSupport.AllocationRecipe × SlotSet) := do
   if allocation.wellFormed? then pure () else none
+  if allocation.MemoryAuthorized program.memoryContract then
+    pure ()
+  else
+    none
   compatiblePlan? allocation program
 
 theorem validatePlan?_sound
@@ -639,12 +676,29 @@ theorem validatePlan?_sound
     allocation.WellFormed ∧ Compatible allocation program := by
   unfold validatePlan? at hValidate
   by_cases hWF : allocation.wellFormed? = true
-  · have hCompatible :
-        compatiblePlan? allocation program = some validated := by
-      simpa [hWF] using hValidate
-    exact
-      ⟨Locals.Allocation.ProgramPlan.wellFormed_of_check hWF,
-        by simp [Compatible, hCompatible]⟩
+  · by_cases hAuthorized :
+        allocation.MemoryAuthorized program.memoryContract
+    · have hCompatible :
+          compatiblePlan? allocation program = some validated := by
+        simpa [hWF, hAuthorized] using hValidate
+      exact
+        ⟨Locals.Allocation.ProgramPlan.wellFormed_of_check hWF,
+          by simp [Compatible, hCompatible]⟩
+    · simp [hWF, hAuthorized] at hValidate
+  · simp [hWF] at hValidate
+
+theorem validatePlan?_memoryAuthorized
+    {allocation : ProgramPlan} {program : Program}
+    {validated : AllocationSupport.AllocationRecipe × SlotSet}
+    (hValidate :
+      validatePlan? allocation program = some validated) :
+    allocation.MemoryAuthorized program.memoryContract := by
+  unfold validatePlan? at hValidate
+  by_cases hWF : allocation.wellFormed? = true
+  · by_cases hAuthorized :
+        allocation.MemoryAuthorized program.memoryContract
+    · exact hAuthorized
+    · simp [hWF, hAuthorized] at hValidate
   · simp [hWF] at hValidate
 
 def lowerLocalsFromAllocation? (allocation : ProgramPlan)
@@ -666,6 +720,19 @@ theorem lowerLocalsFromAllocation?_contract
   | some validated =>
       exact validatePlan?_sound hValidate
 
+theorem lowerLocalsFromAllocation?_memoryAuthorized
+    {allocation : ProgramPlan} {program : Program}
+    {locals : Locals.Program}
+    (hLower :
+      lowerLocalsFromAllocation? allocation program = some locals) :
+    allocation.MemoryAuthorized program.memoryContract := by
+  unfold lowerLocalsFromAllocation? at hLower
+  cases hValidate : validatePlan? allocation program with
+  | none =>
+      simp [hValidate] at hLower
+  | some validated =>
+      exact validatePlan?_memoryAuthorized hValidate
+
 def lowerExpressionsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Expressions.Program := do
   let locals ← lowerLocalsFromAllocation? allocation program
@@ -685,6 +752,21 @@ theorem lowerExpressionsFromAllocation?_contract
       simp [hLocals] at hLower
   | some locals =>
       exact lowerLocalsFromAllocation?_contract hLocals
+
+theorem lowerExpressionsFromAllocation?_memoryAuthorized
+    {allocation : ProgramPlan} {program : Program}
+    {expressions : Expressions.Program}
+    (hLower :
+      lowerExpressionsFromAllocation? allocation program =
+        some expressions) :
+    allocation.MemoryAuthorized program.memoryContract := by
+  unfold lowerExpressionsFromAllocation? at hLower
+  cases hLocals :
+      lowerLocalsFromAllocation? allocation program with
+  | none =>
+      simp [hLocals] at hLower
+  | some locals =>
+      exact lowerLocalsFromAllocation?_memoryAuthorized hLocals
 
 def allocationLowerer :
     Locals.Allocation.Lowerer Program Expressions.Program where

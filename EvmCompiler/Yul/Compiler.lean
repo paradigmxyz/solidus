@@ -2674,7 +2674,8 @@ end Contract
 namespace Program
 
 noncomputable def toObjects? (program : Program) : Option Objects.Program :=
-  Contract.toObjects? program.contract
+  (Contract.toObjects? program.contract).map fun lower =>
+    lower.withMemoryContract program.memoryContract
 
 noncomputable def toExpressions? (program : Program) : Option Expressions.Program := do
   let lower ← toObjects? program
@@ -2699,7 +2700,8 @@ noncomputable def compile? (program : Program) :
 
 noncomputable def toObjectsWithObservers? (program : Program) :
     Option Objects.Program :=
-  Contract.toObjectsWithObservers? program.contract
+  (Contract.toObjectsWithObservers? program.contract).map fun lower =>
+    lower.withMemoryContract program.memoryContract
 
 noncomputable def compileWithObservers? (program : Program) :
     Option Assembly.TargetProgram := do

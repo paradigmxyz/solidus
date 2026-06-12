@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 23:01 PDT.
+Last updated: 2026-06-12 00:42 PDT.
 
 ## Objective
 
@@ -96,13 +96,17 @@ Adjacent boundary status:
   leaves are checked in the pass-owned module; complete expression,
   statement, function, and program forward/backward theorems remain.
 - [ ] Functions -> allocated Locals/Expressions: shared allocation artifacts
-  exist, but observer-aware forward/backward theorems remain. The scratch
-  backend also requires a source-facing memory-ownership contract and an
-  allocation-indexed state relation: exact machine-state equality is false
-  because compiler frames change gas, active memory, the free-memory pointer,
-  and frame bytes. The current frontend erases Solidity `memoryguard`
-  declarations, so that contract must be retained or supplied explicitly
-  before scratch artifacts can enter the public theorem.
+  exist, but observer-aware forward/backward theorems remain. The frontend now
+  retains Solidity `memoryguard` declarations and threads a source-owned
+  `MemoryContract.Contract` through Yul, Functions, object lowering, allocation,
+  and checked artifacts. Scratch plans must be authorized by that contract.
+  The runtime backend uses a private allocator cell and frame interval inside
+  the reservation; the old free-memory-pointer bump allocator has been
+  deleted. `Compiler.MemoryRelation.MachineRel` now permits differences only
+  inside the reservation and in target memory growth, while preserving return
+  data and output. Remaining proof work is to connect source memory-access
+  safety, dynamic frame-depth bounds, named-variable locations, outcomes, and
+  observer cursors to this relation.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains.
 - [ ] Structured -> TypedCfg: complete observer-aware forward preservation is
@@ -1036,12 +1040,13 @@ Latest verified checkpoint:
 - retained architecture metrics: 75 modules, 46,066 Lean lines, 59 compiler
   variants, and one outcome relation;
 - bundled-Python importer/schema suite: 244 tests pass;
-- Aave v3 math and interest public backend smokes: pass;
-- Permit2 public bytecode/call-comparison smoke: pass, including 3 SafeCast,
-  5 NonceBitmap, and 3 SignatureVerification call comparisons. The
-  SignatureVerification runtime now reports only the independent
-  `solc_validation` frontend round-trip limitation; no retired compiler is
-  present in the backend diagnostic path.
+- Permit2 guarded scratch compilation reaches an object image and its
+  SignatureVerification call comparison passes after retaining `memoryguard`;
+  the diagnostic raw-unresolved route now correctly reports
+  `to_yul_contract = none`.
+- Aave v3 math and interest fixtures currently expose no `memoryguard`; the
+  checked scratch backend therefore rejects them instead of relying on the
+  former unproved unrestricted-memory spill assumption.
 
 ## Execution Order
 

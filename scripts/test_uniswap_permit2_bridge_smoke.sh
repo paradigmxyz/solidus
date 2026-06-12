@@ -412,7 +412,8 @@ def backend_status(report, expected_count, label, contract):
         key = (item.get("contract"), item.get("selector"))
         status = item.get("status")
         first_none = item.get("firstNone")
-        statuses[key] = (status, first_none)
+        object_image = item.get("stages", {}).get("object_image")
+        statuses[key] = (status, first_none, object_image)
         if item.get("contract") != contract:
             raise SystemExit(f"unexpected {label} backend contract: {item!r}")
         if status not in {"pass", "fail"}:
@@ -460,7 +461,7 @@ hash_backend_counts, hash_runtime_backend = backend_status(
     "PermitHash",
     "UniswapPermit2HashFallback",
 )
-if hash_runtime_backend != ("pass", "none"):
+if hash_runtime_backend != ("pass", "none", "some"):
     raise SystemExit(
         f"PermitHash runtime backend did not pass: {hash_runtime_backend!r}"
     )
@@ -505,12 +506,18 @@ signature_backend_counts, signature_runtime_backend = backend_status(
 if (
     signature_runtime_backend[0] == "fail"
     and signature_runtime_backend[1] not in {
+        "to_yul_contract",
         "lower_code_unchecked",
         "solc_validation",
     }
 ):
     raise SystemExit(
         "unexpected SignatureVerification runtime backend blocker: "
+        f"{signature_runtime_backend!r}"
+    )
+if signature_runtime_backend[2] != "some":
+    raise SystemExit(
+        "SignatureVerification runtime did not produce an object image: "
         f"{signature_runtime_backend!r}"
     )
 

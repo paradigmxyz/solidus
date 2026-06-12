@@ -384,6 +384,11 @@ if ! rg -q 'MixedAllocation\.allScratchPlanner' \
   failed=1
 fi
 report_matches \
+  'The canonical allocation lowerer must not restore free-memory-pointer frame allocation:' \
+  'freePtrWord|frameBumpCode|frameInitCode|ScratchRegionBase\.freeMemoryPointer' \
+  EvmCompiler/Functions/AllocationSupport.lean \
+  EvmCompiler/Functions/AllocationLowering.lean
+report_matches \
   'Objects inline planning must not restore the hard-coded empty allocation:' \
   'stackOnlyProgramAllocation|stackOnlyAllocation' \
   EvmCompiler/Objects/Compiler.lean

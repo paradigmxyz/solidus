@@ -1,3 +1,4 @@
+import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Locals.Syntax
 
 namespace EvmCompiler
@@ -47,7 +48,41 @@ structure Plan where
   returnLayouts : List ReturnLayout := []
   deriving DecidableEq, Repr
 
+def ScratchRegion.AuthorizedBy
+    (region : ScratchRegion)
+    (contract : MemoryContract.Contract) : Prop :=
+  match region.base with
+  | .absolute byteOffset =>
+      MemoryContract.authorizesRegion contract byteOffset region.words
+  | .freeMemoryPointer =>
+      False
+
+instance scratchRegionAuthorizedByDecidable
+    (region : ScratchRegion)
+    (contract : MemoryContract.Contract) :
+    Decidable (region.AuthorizedBy contract) := by
+  rcases region with ⟨base, words⟩
+  cases base with
+  | absolute byteOffset =>
+      simp only [ScratchRegion.AuthorizedBy]
+      infer_instance
+  | freeMemoryPointer =>
+      simp only [ScratchRegion.AuthorizedBy]
+      infer_instance
+
 namespace Plan
+
+def MemoryAuthorized (plan : Plan)
+    (contract : MemoryContract.Contract) : Prop :=
+  match plan.scratchRegion? with
+  | none => True
+  | some region => region.AuthorizedBy contract
+
+instance memoryAuthorizedDecidable (plan : Plan)
+    (contract : MemoryContract.Contract) :
+    Decidable (plan.MemoryAuthorized contract) := by
+  unfold MemoryAuthorized
+  cases plan.scratchRegion? <;> infer_instance
 
 def scratchSlots (plan : Plan) : List Nat :=
   plan.bindings.filterMap fun binding =>
@@ -198,6 +233,17 @@ structure ProgramPlan where
   deriving DecidableEq, Repr
 
 namespace ProgramPlan
+
+def MemoryAuthorized (plan : ProgramPlan)
+    (contract : MemoryContract.Contract) : Prop :=
+  plan.scopes.Forall fun scope =>
+    scope.allocation.MemoryAuthorized contract
+
+instance memoryAuthorizedDecidable (plan : ProgramPlan)
+    (contract : MemoryContract.Contract) :
+    Decidable (plan.MemoryAuthorized contract) := by
+  unfold MemoryAuthorized
+  infer_instance
 
 def singleton (scope : ScopeId) (allocation : Plan) : ProgramPlan :=
   { scopes := [{ scope := scope, allocation := allocation }] }

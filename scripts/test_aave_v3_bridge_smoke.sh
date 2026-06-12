@@ -251,8 +251,16 @@ def runtime_backend_status(report, contract):
     check = checks[0]
     status = check.get("status")
     first_none = check.get("firstNone")
-    if status != "pass" or first_none != "none":
-        raise SystemExit(f"{contract} runtime backend did not pass: {check!r}")
+    object_image = check.get("stages", {}).get("object_image")
+    if (
+        status != "fail"
+        or first_none not in {"locals_compile", "locals_to_expressions"}
+        or object_image != "none"
+    ):
+        raise SystemExit(
+            f"{contract} runtime did not enforce unguarded-spill rejection: "
+            f"{check!r}"
+        )
     return status, first_none
 
 math_summary_count = math_summary["counts"]["objects"]

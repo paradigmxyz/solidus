@@ -460,10 +460,12 @@ class SolidityToYulLeanTests(unittest.TestCase):
         self.assertIn("library MathLib", sources["@pkg/MathLib.sol"].content)
         self.assertIn("library Base", sources["@pkg/Base.sol"].content)
 
-    def test_memoryguard_is_normalized_to_literal_argument(self):
+    def test_memoryguard_is_retained_as_object_builtin(self):
         expr = bridge.parse_expr(call("memoryguard", [literal("128")]))
-        self.assertIsInstance(expr, bridge.Lit)
-        self.assertEqual(expr.value, 128)
+        self.assertIsInstance(expr, bridge.Call)
+        self.assertEqual(expr.callee, "memoryguard")
+        self.assertEqual(expr.callee_kind, bridge.CALL_OBJECT_BUILTIN)
+        self.assertEqual(expr.args, [bridge.Lit(128)])
 
     def test_yul_literals_accept_native_json_bool_and_number_values(self):
         number = bridge.parse_expr(
@@ -9269,10 +9271,11 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "permit2_hash_backend_check_objects=",
             "permit2_hash_runtime_backend_check=",
             "permit2_hash_runtime_backend_first_none=",
-            'hash_runtime_backend != ("pass", "none")',
+            'hash_runtime_backend != ("pass", "none", "some")',
             "permit2_signature_backend_check_objects=",
             "permit2_signature_runtime_backend_check=",
             "permit2_signature_runtime_backend_first_none=",
+            "to_yul_contract",
             "lower_code_unchecked",
         ]:
             self.assertIn(behavior, permit2_smoke)
@@ -9431,7 +9434,9 @@ class SolidityToYulLeanTests(unittest.TestCase):
             "aave_v3_math_summary_primitives=yes",
             "aave_v3_math_runtime_backend_check=",
             "aave_v3_math_runtime_backend_first_none=",
-            'status != "pass" or first_none != "none"',
+            'status != "fail"',
+            '"locals_compile", "locals_to_expressions"',
+            'object_image != "none"',
             "aave_v3_interest_summary_primitives=yes",
             "aave_v3_interest_runtime_backend_check=",
             "aave_v3_interest_runtime_backend_first_none=",

@@ -1,3 +1,4 @@
+import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Locals.Syntax
 
 namespace EvmCompiler
@@ -48,6 +49,8 @@ structure FunDef where
 structure Program where
   functions : List FunDef
   body : Block
+  memoryContract : MemoryContract.Contract :=
+    MemoryContract.unrestricted
 
 mutual
   inductive Block.WF : Bool → Bool → Bool → Block → Prop where

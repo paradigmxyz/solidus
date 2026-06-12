@@ -15,6 +15,8 @@ abbrev AstContract := EvmYul.Yul.Ast.YulContract
 
 structure Program where
   contract : AstContract
+  memoryContract : MemoryContract.Contract :=
+    MemoryContract.unrestricted
 
 end Yul
 end EvmCompiler

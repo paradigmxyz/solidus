@@ -2,6 +2,8 @@ import EvmCompiler.Public
 import EvmCompiler.Public.Observer
 import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
+import EvmCompiler.Compiler.MemoryRelation
+import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -43,6 +45,9 @@ or audit-alias corridor.
 -/
 
 #check EvmCompiler.TypedCfg.ObserverSemantics.Instr.runState
+#check EvmCompiler.MemoryContract.ofMemoryGuard?
+#check EvmCompiler.Compiler.MemoryRelation.MachineRel
+#check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_memoryAuthorized
 #check EvmCompiler.TypedCfg.ObserverSemantics.Block.runBody
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN
 #check EvmCompiler.TypedCfg.ObserverPreservation.Instr.lowerAt_source_runNResultWithOracle

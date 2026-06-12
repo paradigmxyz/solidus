@@ -1814,7 +1814,11 @@ def parse_expr(node: Any, ctx: Optional[ParseContext] = None) -> Expr:
         if function_name == "memoryguard":
             if len(raw_args) != 1:
                 fail(f"memoryguard expects one argument at {node_src(node)}")
-            return parse_expr(raw_args[0], ctx)
+            return Call(
+                "memoryguard",
+                [parse_expr(raw_args[0], ctx)],
+                CALL_OBJECT_BUILTIN,
+            )
         args = [parse_expr(arg, ctx) for arg in raw_args]
         if function_name == "clz":
             if len(args) != 1:

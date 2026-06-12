@@ -96,6 +96,8 @@ structure Object where
   data : List DataSection
   objects : List Object
   items : List ObjectItemRef
+  memoryContract : MemoryContract.Contract :=
+    MemoryContract.unrestricted
   deriving Inhabited, Repr
 
 structure Program where
@@ -406,6 +408,113 @@ def loweringFuel : List (Name × FunctionDef) → Nat
 end List
 end FunctionDef
 
+namespace MemoryGuard
+
+mutual
+  def Expr.sizes? : Expr → Option (List Word)
+    | .lit _ | .stringLit _ | .bytesLit _ | .var _ =>
+        some []
+    | .call .objectBuiltin "memoryguard" [.lit size] =>
+        some [size]
+    | .call .objectBuiltin "memoryguard" _ =>
+        none
+    | .call _ _ args =>
+        Expr.List.sizes? args
+
+  def Expr.List.sizes? : List Expr → Option (List Word)
+    | [] => some []
+    | expr :: rest => do
+        let head ← Expr.sizes? expr
+        let tail ← Expr.List.sizes? rest
+        some (head ++ tail)
+end
+
+mutual
+  def Stmt.sizes? : Stmt → Option (List Word)
+    | .block stmts =>
+        Stmt.List.sizes? stmts
+    | .letDecl _ none =>
+        some []
+    | .letDecl _ (some value) =>
+        Expr.sizes? value
+    | .assign _ value =>
+        Expr.sizes? value
+    | .exprStmt expr =>
+        Expr.sizes? expr
+    | .functionDef _ _ _ body =>
+        Stmt.List.sizes? body
+    | .switch scrutinee cases defaultBody => do
+        let scrutineeSizes ← Expr.sizes? scrutinee
+        let caseSizes ← Stmt.CaseList.sizes? cases
+        let defaultSizes ← Stmt.List.sizes? defaultBody
+        some (scrutineeSizes ++ caseSizes ++ defaultSizes)
+    | .forLoop pre condition post body => do
+        let preSizes ← Stmt.List.sizes? pre
+        let conditionSizes ← Expr.sizes? condition
+        let postSizes ← Stmt.List.sizes? post
+        let bodySizes ← Stmt.List.sizes? body
+        some (preSizes ++ conditionSizes ++ postSizes ++ bodySizes)
+    | .ifThen condition body => do
+        let conditionSizes ← Expr.sizes? condition
+        let bodySizes ← Stmt.List.sizes? body
+        some (conditionSizes ++ bodySizes)
+    | .break | .continue | .leave =>
+        some []
+
+  def Stmt.List.sizes? : List Stmt → Option (List Word)
+    | [] => some []
+    | stmt :: rest => do
+        let head ← Stmt.sizes? stmt
+        let tail ← Stmt.List.sizes? rest
+        some (head ++ tail)
+
+  def Stmt.CaseList.sizes? :
+      List (SwitchCaseValue × List Stmt) → Option (List Word)
+    | [] => some []
+    | (_, body) :: rest => do
+        let head ← Stmt.List.sizes? body
+        let tail ← Stmt.CaseList.sizes? rest
+        some (head ++ tail)
+end
+
+def FunctionDef.sizes? (fn : FunctionDef) : Option (List Word) :=
+  Stmt.List.sizes? fn.body
+
+def FunctionDef.List.sizes? :
+    List (Name × FunctionDef) → Option (List Word)
+  | [] => some []
+  | (_, fn) :: rest => do
+      let head ← FunctionDef.sizes? fn
+      let tail ← FunctionDef.List.sizes? rest
+      some (head ++ tail)
+
+def Object.sizes? (object : @& Object) : Option (List Word) := do
+  let dispatcher ← Stmt.List.sizes? object.dispatcher
+  let functions ← FunctionDef.List.sizes? object.functions
+  some (dispatcher ++ functions)
+
+def Object.inferredContract? (object : @& Object) :
+    Option MemoryContract.Contract := do
+  let sizes ← MemoryGuard.Object.sizes? object
+  match sizes with
+  | [] =>
+      some object.memoryContract
+  | size :: rest =>
+      if rest.all fun candidate => candidate == size then
+        match object.memoryContract.scratch? with
+        | none =>
+            MemoryContract.ofMemoryGuard? size
+              MemoryContract.defaultReservedWords
+        | some reservation =>
+            if reservation.base = size.toNat then
+              some object.memoryContract
+            else
+              none
+      else
+        none
+
+end MemoryGuard
+
 namespace Bytecode
 
 def concat (chunks : List (List UInt8)) : List UInt8 :=
@@ -432,6 +541,8 @@ structure ObjectBuiltinContext where
   immutableValues : List (Name × Word) := []
   immutableReferences : List (Name × List ImmutableReference) := []
   selfSize? : Option (Name × Word) := none
+  memoryContract : MemoryContract.Contract :=
+    MemoryContract.unrestricted
   deriving Inhabited, Repr
 
 namespace ObjectBuiltinContext
@@ -1207,8 +1318,17 @@ mutual
         let offset' ← Expr.resolveObjectBuiltinsIn? offset context
         let size' ← Expr.resolveObjectBuiltinsIn? size context
         some (.call .primitive "codecopy" [target', offset', size'])
-    | .call .objectBuiltin "memoryguard" [value] =>
-        Expr.resolveObjectBuiltinsIn? value context
+    | .call .objectBuiltin "memoryguard" [value] => do
+        let value' ← Expr.resolveObjectBuiltinsIn? value context
+        let size ←
+          match value' with
+          | .lit size => some size
+          | _ => none
+        let reservation ← context.memoryContract.scratch?
+        if reservation.base = size.toNat then
+          some (.lit reservation.returnedPointer)
+        else
+          none
     | .call kind callee args => do
         let args' ← Expr.List.resolveObjectBuiltinsIn? args context
         some (.call kind callee args')
@@ -1459,13 +1579,17 @@ theorem toYul_after_resolveObjectBuiltins_datacopy_codecopy
     hSizeYul]
 
 theorem resolveObjectBuiltins_memoryguard
-    {context : ObjectBuiltinContext} {value value' : Expr}
-    (hValue : value.resolveObjectBuiltinsIn? context = some value') :
+    {context : ObjectBuiltinContext} {value : Expr} {size : Word}
+    {reservation : MemoryContract.ScratchReservation}
+    (hValue : value.resolveObjectBuiltinsIn? context = some (.lit size))
+    (hReservation :
+      context.memoryContract.scratch? = some reservation)
+    (hBase : reservation.base = size.toNat) :
     Expr.resolveObjectBuiltinsIn?
         (.call .objectBuiltin "memoryguard" [value])
         context =
-      some value' := by
-  simp [Expr.resolveObjectBuiltinsIn?, hValue]
+      some (.lit reservation.returnedPointer) := by
+  simp [Expr.resolveObjectBuiltinsIn?, hValue, hReservation, hBase]
 
 end Expr
 
@@ -1738,7 +1862,8 @@ namespace Program
 
 def scopeLetLifetimes (program : Functions.Program) :
     Functions.Program :=
-  { functions := program.functions.map FunDef.scopeLetLifetimes
+  { program with
+    functions := program.functions.map FunDef.scopeLetLifetimes
     body := Block.scopeLetLifetimes program.body }
 
 end Program
@@ -1809,6 +1934,8 @@ def builtinContextWithLocalDataBaseAndLinkerSymbols
 
 def resolveObjectBuiltinsIn? (object : Object)
     (context : ObjectBuiltinContext) : Option Object := do
+  let memoryContract ← MemoryGuard.Object.inferredContract? object
+  let context := { context with memoryContract := memoryContract }
   let dispatcher ← Stmt.List.resolveObjectBuiltinsIn? object.dispatcher context
   let functions ←
     FunctionDef.List.resolveObjectBuiltinsIn? object.functions context
@@ -1818,7 +1945,8 @@ def resolveObjectBuiltinsIn? (object : Object)
       functions := functions
       data := object.data
       objects := object.objects
-      items := object.items }
+      items := object.items
+      memoryContract := memoryContract }
 
 def resolveObjectBuiltins? (object : Object)
     (layout : ObjectLayout) : Option Object :=
@@ -2080,14 +2208,18 @@ def toYulContract? (object : Object) : Option AstContract := do
 
 def toYulProgram? (object : Object) : Option Yul.Program := do
   let contract ← Object.toYulContract? object
-  some { contract := contract }
+  some
+    { contract := contract
+      memoryContract := object.memoryContract }
 
 def toSolcYulProgram? (object : Object) :
     Option Yul.Program := do
   let (contract, functions) ← object.toYulContractWithFunctionEntries?
   if Yul.SolcValidation.ContractOkWithEntries?
       Yul.SolcValidation.defaultDialectProfile contract functions then
-    some { contract := contract }
+    some
+      { contract := contract
+        memoryContract := object.memoryContract }
   else
     none
 
@@ -2104,7 +2236,7 @@ def toYulProgramWithLocalDataBase? (object : Object) (layout : ObjectLayout)
 noncomputable def lowerCode? (object : Object) :
     Option Functions.Program := do
   let program ← object.toSolcYulProgram?
-  let lower ← Yul.Contract.toObjects? program.contract
+  let lower ← Yul.Program.toObjects? program
   some lower.root.code
 
 theorem toSolcYulProgram?_eq_some {object : Object}
@@ -2142,14 +2274,14 @@ theorem lowerCode?_some_solc_valid {object : Object}
     (hLower : object.lowerCode? = some code) :
     ∃ yulProgram : Yul.Program, ∃ lower : Objects.Program,
       object.toSolcYulProgram? = some yulProgram ∧
-        Yul.Contract.toObjects? yulProgram.contract = some lower ∧
+        Yul.Program.toObjects? yulProgram = some lower ∧
           lower.root.code = code := by
   unfold lowerCode? at hLower
   cases hYul : object.toSolcYulProgram? with
   | none =>
       simp [hYul] at hLower
   | some yulProgram =>
-      cases hObjects : Yul.Contract.toObjects? yulProgram.contract with
+      cases hObjects : Yul.Program.toObjects? yulProgram with
       | none =>
           simp [hYul, hObjects] at hLower
       | some lower =>
@@ -2176,7 +2308,9 @@ def lowerCodeUnchecked? (object : Object) :
     Yul.FunctionList.toFunDefsUncheckedFuel? fuel state functionsYul
   some
     (FunctionPrep.Program.scopeLetLifetimes
-      { functions := functions, body := { stmts := bodyStmts } })
+      { functions := functions
+        body := { stmts := bodyStmts }
+        memoryContract := object.memoryContract })
 
 def lowerCodeUncheckedWithLayout? (object : Object)
     (layout : ObjectLayout) : Option Functions.Program := do
@@ -2766,11 +2900,14 @@ mutual
       (object : Object) (linkerSymbols : List (Name × Word)) :
       Option Object := do
     let computed ← object.computedObjectDataWithLinkerSymbols? linkerSymbols
+    let memoryContract ← MemoryGuard.Object.inferredContract? object
+    let context :=
+      { computed.context with memoryContract := memoryContract }
     let dispatcher ←
-      Stmt.List.resolveObjectBuiltinsIn? object.dispatcher computed.context
+      Stmt.List.resolveObjectBuiltinsIn? object.dispatcher context
     let functions ←
       FunctionDef.List.resolveObjectBuiltinsIn?
-        object.functions computed.context
+        object.functions context
     let objects ←
       List.resolveObjectBuiltinsWithComputedObjectDataAndLinkerSymbols?
         object.objects linkerSymbols
@@ -2780,7 +2917,8 @@ mutual
         functions := functions
         data := object.data
         objects := objects
-        items := object.items }
+        items := object.items
+        memoryContract := memoryContract }
   termination_by sizeOf object
   decreasing_by
     simp_wf

@@ -30,7 +30,17 @@ def usesScratch (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : Bool :=
   env.any fun binding => binding.2 ∉ stackSlots
 
-def allocationOfState (frameWords : Nat)
+def scratchRegionBase
+    (contract : MemoryContract.Contract) :
+    Locals.Allocation.RegionBase :=
+  match contract.scratch? with
+  | none =>
+      .freeMemoryPointer
+  | some reservation =>
+      .absolute reservation.frameBase
+
+def allocationOfState (contract : MemoryContract.Contract)
+    (frameWords : Nat)
     (stackEntries : AllocationSupport.SlotEnv)
     (state : AllocationSupport.CompileState) :
     Locals.Allocation.Plan where
@@ -40,7 +50,7 @@ def allocationOfState (frameWords : Nat)
   scratchRegion? :=
     if stackEntries.length < state.env.length then
       some
-        { base := .freeMemoryPointer
+        { base := scratchRegionBase contract
           words := frameWords }
     else
       none
@@ -110,23 +120,25 @@ def executable? (recipe : AllocationSupport.AllocationRecipe)
     functionEntriesExecutable? recipe stackSlots program
 
 def toMixedProgramPlan (recipe : AllocationSupport.AllocationRecipe)
-    (stackSlots : SlotSet) : Locals.Allocation.ProgramPlan :=
+    (stackSlots : SlotSet)
+    (contract : MemoryContract.Contract) :
+    Locals.Allocation.ProgramPlan :=
   { scopes :=
       [{ scope := .main
          allocation :=
-           allocationOfState recipe.frameWords
+           allocationOfState contract recipe.frameWords
              (stackEntriesForScope recipe stackSlots .main recipe.main)
              recipe.main }] ++
       (recipe.functions.map fun fn =>
         { scope := fn.scope
           allocation :=
-            allocationOfState recipe.frameWords
+            allocationOfState contract recipe.frameWords
               (stackEntriesForScope recipe stackSlots fn.scope fn.state)
               fn.state }) ++
       (recipe.lexicalScopes.map fun entry =>
         { scope := entry.scope
           allocation :=
-            allocationOfState recipe.frameWords
+            allocationOfState contract recipe.frameWords
               (stackEntriesForScope recipe stackSlots entry.scope entry.state)
               entry.state }) }
 
@@ -140,7 +152,9 @@ def planAllocation? (maxFrameWords : Nat) (stackSlots : SlotSet)
     pure ()
   else
     none
-  let allocation := AllocationRecipe.toMixedProgramPlan recipe stackSlots
+  let allocation :=
+    AllocationRecipe.toMixedProgramPlan
+      recipe stackSlots program.memoryContract
   if allocation.wellFormed? then some allocation else none
 
 theorem planAllocation?_wellFormed

@@ -54,6 +54,24 @@ namespace Program
 def toFunctions (program : Program) : Functions.Program :=
   program.root.toFunctions
 
+def withMemoryContract (program : Program)
+    (memoryContract : MemoryContract.Contract) : Program :=
+  match program.root with
+  | .mk name code data objects =>
+      { root :=
+          .mk name { code with memoryContract := memoryContract }
+            data objects }
+
+@[simp] theorem toFunctions_withMemoryContract
+    (program : Program)
+    (memoryContract : MemoryContract.Contract) :
+    (program.withMemoryContract memoryContract).toFunctions =
+      { program.toFunctions with memoryContract := memoryContract } := by
+  cases program with
+  | mk root =>
+      cases root
+      rfl
+
 def WF (program : Program) : Prop :=
   program.root.WF
 

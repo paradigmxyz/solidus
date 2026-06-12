@@ -31,9 +31,6 @@ structure CompileState where
 def word (n : Nat) : Word :=
   EvmYul.UInt256.ofNat n
 
-def freePtrWord : Word :=
-  word 64
-
 def slotOffset (slot : Nat) : Word :=
   word (32 * slot)
 
@@ -42,6 +39,26 @@ def frameBytes (words : Nat) : Word :=
 
 def zeroWord : Word :=
   word 0
+
+structure ScratchFrameConfig where
+  allocatorCell : Nat
+  firstFrame : Nat
+  limit : Nat
+  frameWords : Nat
+  deriving DecidableEq, Repr
+
+def scratchFrameConfig?
+    (contract : MemoryContract.Contract)
+    (frameWords : Nat) : Option ScratchFrameConfig := do
+  let reservation ← contract.scratch?
+  if frameWords ≤ reservation.usableWords then
+    some
+      { allocatorCell := reservation.allocatorCell
+        firstFrame := reservation.frameBase
+        limit := reservation.endExclusive
+        frameWords := frameWords }
+  else
+    none
 
 def lookupSlot? (name : Name) : SlotEnv → Option Nat
   | [] => none
@@ -270,15 +287,6 @@ def compilePreludeStmt? : Stmt → Option Expressions.Stmt
       some (Expressions.Stmt.code code)
   | _ => none
 
-def frameBumpCode (words : Nat) : Structured.Code :=
-  [ Structured.BasicInstr.push freePtrWord,
-    Structured.BasicInstr.op .mload,
-    Structured.BasicInstr.op .dup1,
-    Structured.BasicInstr.push (frameBytes words),
-    Structured.BasicInstr.op .add,
-    Structured.BasicInstr.push freePtrWord,
-    Structured.BasicInstr.op .mstore ]
-
 def framePreallocCode : Nat → Structured.Code
   | 0 => []
   | slot + 1 =>
@@ -288,8 +296,31 @@ def framePreallocCode : Nat → Structured.Code
         Structured.BasicInstr.op .add,
         Structured.BasicInstr.op .mstore ]
 
-def frameInitCode (words : Nat) : Structured.Code :=
-  frameBumpCode words ++ framePreallocCode words
+def scratchAllocatorInitCode
+    (config : ScratchFrameConfig) : Structured.Code :=
+  [ Structured.BasicInstr.push (word config.firstFrame),
+    Structured.BasicInstr.push (word config.allocatorCell),
+    Structured.BasicInstr.op .mstore ]
+
+def scratchFrameAcquireCode
+    (config : ScratchFrameConfig) : Structured.Code :=
+  [ Structured.BasicInstr.push (word config.allocatorCell),
+    Structured.BasicInstr.op .mload,
+    Structured.BasicInstr.op .dup1,
+    Structured.BasicInstr.push (frameBytes config.frameWords),
+    Structured.BasicInstr.op .add,
+    Structured.BasicInstr.push (word config.allocatorCell),
+    Structured.BasicInstr.op .mstore ] ++
+      framePreallocCode config.frameWords
+
+def scratchFrameReleaseCode
+    (config : ScratchFrameConfig) : Structured.Code :=
+  [ Structured.BasicInstr.push (word config.allocatorCell),
+    Structured.BasicInstr.op .mload,
+    Structured.BasicInstr.push (frameBytes config.frameWords),
+    Structured.BasicInstr.op .sub,
+    Structured.BasicInstr.push (word config.allocatorCell),
+    Structured.BasicInstr.op .mstore ]
 
 end AllocationSupport
 end Functions
