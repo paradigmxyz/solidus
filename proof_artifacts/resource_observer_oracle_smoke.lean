@@ -45,6 +45,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_primitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_simulate
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_primitiveForward
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
@@ -229,6 +231,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_primitiveForward
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_simulate
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_primitiveForward
 #print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExpr

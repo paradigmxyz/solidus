@@ -59,6 +59,35 @@ def PrimitiveExpansionSafe (op : Structured.BasicOp)
   | _, _ => True
 
 /--
+Memory writes and finite memory reads stay inside the host byte-array address
+space used by the executable semantics.
+-/
+def PrimitiveHostSafe (op : Structured.BasicOp)
+    (values : List Word) : Prop :=
+  let stack := values.reverse
+  match op, stack with
+  | .mstore, [address, _] =>
+      address.toNat + MemoryContract.wordBytes < USize.size
+  | .mstore8, [address, _] =>
+      address.toNat + 1 < USize.size
+  | .calldatacopy, [destination, _source, size]
+  | .codecopy, [destination, _source, size]
+  | .returndatacopy, [destination, _source, size]
+  | .extcodecopy, [_, destination, _source, size] =>
+      destination.toNat + size.toNat < USize.size
+  | .mcopy, [destination, source, size] =>
+      destination.toNat + size.toNat < USize.size ∧
+        source.toNat + size.toNat < USize.size
+  | .keccak256, [address, size]
+  | .log0, [address, size]
+  | .log1, [address, size, _]
+  | .log2, [address, size, _, _]
+  | .log3, [address, size, _, _, _]
+  | .log4, [address, size, _, _, _, _] =>
+      address.toNat + size.toNat < USize.size
+  | _, _ => True
+
+/--
 Source-facing memory safety for one primitive application.
 
 `values` is the argument list passed to the canonical stack-free Functions
@@ -79,30 +108,36 @@ def PrimitiveMemorySafe (contract : MemoryContract.Contract)
   | .mstore, [address, _value] =>
       MemoryConsistent machine ∧
         RegionAllowed contract address.toNat MemoryContract.wordBytes ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .mstore8, [address, _value] =>
       MemoryConsistent machine ∧
         RegionAllowed contract address.toNat 1 ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .calldatacopy, [destination, _source, size]
   | .codecopy, [destination, _source, size]
   | .returndatacopy, [destination, _source, size] =>
       MemoryConsistent machine ∧
         RegionAllowed contract destination.toNat size.toNat ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .extcodecopy, [_account, destination, _source, size] =>
       MemoryConsistent machine ∧
         RegionAllowed contract destination.toNat size.toNat ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .mcopy, [destination, source, size] =>
       MemoryConsistent machine ∧
         RegionAllowed contract destination.toNat size.toNat ∧
         RegionAllowed contract source.toNat size.toNat ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .keccak256, [address, size] =>
       MemoryConsistent machine ∧
         RegionAllowed contract address.toNat size.toNat ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .log0, [address, size]
   | .log1, [address, size, _topic0]
   | .log2, [address, size, _topic0, _topic1]
@@ -110,7 +145,8 @@ def PrimitiveMemorySafe (contract : MemoryContract.Contract)
   | .log4, [address, size, _topic0, _topic1, _topic2, _topic3] =>
       MemoryConsistent machine ∧
         RegionAllowed contract address.toNat size.toNat ∧
-        PrimitiveExpansionSafe op values
+        PrimitiveExpansionSafe op values ∧
+        PrimitiveHostSafe op values
   | .create, _
   | .call, _
   | .callcode, _
@@ -145,12 +181,13 @@ theorem primitiveMemorySafe_unrestricted_of_noExternal
     (hNoExternal : op.toPrimOp.isExternalCallCreate = false) :
     MemoryConsistent machine →
       PrimitiveExpansionSafe op values →
+      PrimitiveHostSafe op values →
       PrimitiveMemorySafe MemoryContract.unrestricted op machine values := by
-  intro hConsistent hExpansion
+  intro hConsistent hExpansion hHost
   unfold PrimitiveMemorySafe
   simp only [RegionAllowed, MemoryContract.unrestricted]
   split <;>
-    simp_all [MemoryConsistent, PrimitiveExpansionSafe,
+    simp_all [MemoryConsistent, PrimitiveExpansionSafe, PrimitiveHostSafe,
       Structured.BasicOp.toPrimOp,
       Assembly.PrimOp.isExternalCallCreate]
 

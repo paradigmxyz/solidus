@@ -1212,6 +1212,103 @@ theorem readWithPadding_word
     · exact (not_le_of_gt (by omega)) hInside.1
     · exact (not_lt_of_ge (by omega)) hInside.2
 
+theorem writeWord_both
+    {reservation : MemoryContract.ScratchReservation}
+    {source target : EvmYul.MachineState}
+    (address : Nat) (value : EvmYul.UInt256)
+    (hRel : OutsideReservation reservation source.memory target.memory)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size) :
+    OutsideReservation reservation
+      (source.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory
+      (target.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory := by
+  intro query hOutsideReservation
+  by_cases hBefore : query < address
+  · rw [byteAt_writeWord_of_outside value source address query
+        hAddress (by simpa [MemoryContract.wordBytes] using hHost)
+        (Or.inl hBefore),
+      byteAt_writeWord_of_outside value target address query
+        hAddress (by simpa [MemoryContract.wordBytes] using hHost)
+        (Or.inl hBefore)]
+    exact hRel query hOutsideReservation
+  · by_cases hAfter :
+        address + MemoryContract.wordBytes ≤ query
+    · rw [byteAt_writeWord_of_outside value source address query
+          hAddress (by simpa [MemoryContract.wordBytes] using hHost)
+          (Or.inr (by simpa [MemoryContract.wordBytes] using hAfter)),
+        byteAt_writeWord_of_outside value target address query
+          hAddress (by simpa [MemoryContract.wordBytes] using hHost)
+          (Or.inr (by simpa [MemoryContract.wordBytes] using hAfter))]
+      exact hRel query hOutsideReservation
+    · have hQuery :
+          address + (query - address) = query := by
+        omega
+      have hIndex :
+          query - address < MemoryContract.wordBytes := by
+        omega
+      have hSourceRead :=
+        readWithPadding_writeWord_same_growing
+          source address value hAddress
+            (by simpa [MemoryContract.wordBytes] using hHost)
+      have hTargetRead :=
+        readWithPadding_writeWord_same_growing
+          target address value hAddress
+            (by simpa [MemoryContract.wordBytes] using hHost)
+      calc
+        byteAt
+            (source.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory query =
+          byteAt
+            (source.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory
+            (address + (query - address)) := by rw [hQuery]
+        _ =
+          byteAt
+            ((source.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+                address MemoryContract.wordBytes)
+            (query - address) := by
+              exact
+                (byteAt_readWithPadding_word
+                  (source.writeWord
+                    (EvmYul.UInt256.ofNat address) value).memory
+                  address (query - address) hIndex).symm
+        _ = byteAt value.toByteArray (query - address) := by
+          rw [show
+              (source.writeWord
+                (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+                  address MemoryContract.wordBytes =
+                value.toByteArray by
+            simpa [MemoryContract.wordBytes] using hSourceRead]
+        _ = byteAt
+            ((target.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+                address MemoryContract.wordBytes)
+            (query - address) := by
+          rw [show
+              (target.writeWord
+                (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+                  address MemoryContract.wordBytes =
+                value.toByteArray by
+            simpa [MemoryContract.wordBytes] using hTargetRead]
+        _ = byteAt
+            (target.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory
+            (address + (query - address)) := by
+              exact
+                byteAt_readWithPadding_word
+                  (target.writeWord
+                    (EvmYul.UInt256.ofNat address) value).memory
+                  address (query - address) hIndex
+        _ =
+          byteAt
+            (target.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory query := by
+              rw [hQuery]
+
 private theorem byteArray_zeroes_eq_replicate (size : USize) :
     ffi.ByteArray.zeroes size =
       ⟨Array.replicate size.toNat 0⟩ := by
@@ -1873,6 +1970,140 @@ theorem mload_of_allowed
     exact hTargetExpanded
   · rw [hTargetActive]
     simp [EvmYul.MachineState.M, MemoryContract.wordBytes]
+
+theorem mstore_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : MachineRel contract source target)
+    (hTargetNoWrap :
+      target.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (address value : EvmYul.UInt256)
+    (hExpansion :
+      ExpansionNoWrap address.toNat MemoryContract.wordBytes)
+    (hHost :
+      address.toNat + MemoryContract.wordBytes < USize.size) :
+    MachineRel contract
+        (source.mstore address value) (target.mstore address value) ∧
+      (target.mstore address value).activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size ∧
+      target.activeWords.toNat ≤
+        (target.mstore address value).activeWords.toNat ∧
+      target.memory.size ≤
+        (target.mstore address value).memory.size := by
+  have hAddressWord :
+      EvmYul.UInt256.ofNat address.toNat = address :=
+    EvmYul.UInt256.ofNat_toNat address
+  have hAddress :
+      (EvmYul.UInt256.ofNat address.toNat).toNat = address.toNat := by
+    rw [hAddressWord]
+  have hTargetExpanded :
+      EvmYul.MachineState.M target.activeWords.toNat
+          address.toNat MemoryContract.wordBytes *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    M_activeBytes_lt_of_expansionNoWrap hTargetNoWrap hExpansion
+  have hTargetM :
+      EvmYul.MachineState.M target.activeWords.toNat
+          address.toNat MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  have hTargetActive :
+      (target.mstore address value).activeWords.toNat =
+        EvmYul.MachineState.M target.activeWords.toNat
+          address.toNat MemoryContract.wordBytes := by
+    change
+      (EvmYul.UInt256.ofNat
+          (EvmYul.MachineState.M target.activeWords.toNat
+            address.toNat 32)).toNat =
+        EvmYul.MachineState.M target.activeWords.toNat address.toNat 32
+    exact EvmYul.UInt256.toNat_ofNat_of_lt
+      (by simpa [MemoryContract.wordBytes] using hTargetM)
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive : source.activeWords = target.activeWords := by
+          simpa [hReservation] using hRel.activeWords
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          change
+            (source.writeWord address value).memory =
+              (target.writeWord address value).memory
+          unfold EvmYul.MachineState.writeWord EvmYul.writeBytes
+          simp [hMemory]
+        · rw [hReservation]
+          change
+            EvmYul.UInt256.ofNat
+                (EvmYul.MachineState.M source.activeWords.toNat
+                  address.toNat 32) =
+              EvmYul.UInt256.ofNat
+                (EvmYul.MachineState.M target.activeWords.toNat
+                  address.toNat 32)
+          rw [hActive]
+        · simpa [EvmYul.MachineState.mstore] using hRel.returnData
+        · simpa [EvmYul.MachineState.mstore] using hRel.output
+    | some reservation =>
+        have hMemory :
+            OutsideReservation reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive :
+            source.activeWords.toNat ≤ target.activeWords.toNat := by
+          simpa [hReservation] using hRel.activeWords
+        have hSourceNoWrap :
+            source.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          exact lt_of_le_of_lt
+            (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+            hTargetNoWrap
+        have hSourceExpanded :
+            EvmYul.MachineState.M source.activeWords.toNat
+                address.toNat MemoryContract.wordBytes *
+                MemoryContract.wordBytes <
+              EvmYul.UInt256.size :=
+          M_activeBytes_lt_of_expansionNoWrap hSourceNoWrap hExpansion
+        have hSourceM :
+            EvmYul.MachineState.M source.activeWords.toNat
+                address.toNat MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          have hPositive : 0 < MemoryContract.wordBytes := by decide
+          nlinarith
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := ?_
+            output := ?_ }
+        · rw [hReservation]
+          simpa [EvmYul.MachineState.mstore, hAddressWord] using
+            (OutsideReservation.writeWord_both
+              address.toNat value hMemory hAddress hHost)
+        · simp only [hReservation]
+          change
+            (EvmYul.UInt256.ofNat
+                (EvmYul.MachineState.M source.activeWords.toNat
+                  address.toNat MemoryContract.wordBytes)).toNat ≤
+              (EvmYul.UInt256.ofNat
+                (EvmYul.MachineState.M target.activeWords.toNat
+                  address.toNat MemoryContract.wordBytes)).toNat
+          rw [EvmYul.UInt256.toNat_ofNat_of_lt hSourceM,
+            EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+          exact M_mono_active hActive
+        · simpa [EvmYul.MachineState.mstore] using hRel.returnData
+        · simpa [EvmYul.MachineState.mstore] using hRel.output
+  · rw [hTargetActive]
+    exact hTargetExpanded
+  · rw [hTargetActive]
+    simp [EvmYul.MachineState.M, MemoryContract.wordBytes]
+  · simpa [EvmYul.MachineState.mstore, hAddressWord] using
+      (writeWord_memory_size_ge target address.toNat value hAddress
+        (by simpa [MemoryContract.wordBytes] using hHost))
 
 theorem mstore_target
     {contract : MemoryContract.Contract}

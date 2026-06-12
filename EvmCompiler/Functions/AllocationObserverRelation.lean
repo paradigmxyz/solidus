@@ -484,6 +484,10 @@ structure ScratchStateRel {transcript : Trace}
   activeNoWrap :
     target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
       EvmYul.UInt256.size
+  frameReserved :
+    ∃ reservation,
+      contract.scratch? = some reservation ∧
+        reservation.containsRegion frameBase frameWords
   scratchBound :
     ∀ name slot,
       name ∈ live →
@@ -642,7 +646,8 @@ theorem rebase_prefix {transcript : Trace}
       (stackOffset + newPrefix.length) frameBase
       frameDepth frameWords sourceFinal targetFinal := by
   refine ⟨hBase, ?_, ?_, ?_, hRel.frameNoWrap,
-    hRel.frameHostAddressable, ?_, hRel.scratchBound⟩
+    hRel.frameHostAddressable, ?_, hRel.frameReserved,
+    hRel.scratchBound⟩
   · have hPointer := hRel.framePointer
     rw [hOldStack] at hPointer
     have hBasePointer :
@@ -701,7 +706,8 @@ theorem rebase_prefix_mono {transcript : Trace}
       (stackOffset + newPrefix.length) frameBase
       frameDepth frameWords sourceFinal targetFinal := by
   refine ⟨hBase, ?_, ?_, ?_, hRel.frameNoWrap,
-    hRel.frameHostAddressable, hActiveNoWrap, hRel.scratchBound⟩
+    hRel.frameHostAddressable, hActiveNoWrap, hRel.frameReserved,
+    hRel.scratchBound⟩
   · have hPointer := hRel.framePointer
     rw [hOldStack] at hPointer
     have hBasePointer :
@@ -754,6 +760,10 @@ theorem of_wellFormed
     (hActiveNoWrap :
       target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
         EvmYul.UInt256.size)
+    (hFrameReserved :
+      ∃ reservation,
+        contract.scratch? = some reservation ∧
+          reservation.containsRegion frameBase frameWords)
     (hWF : plan.WellFormed)
     (hRegion :
       plan.scratchRegion? =
@@ -764,8 +774,42 @@ theorem of_wellFormed
       frameDepth frameWords source target :=
   ⟨hBase, hFramePointer, hFrameActive, hFrameAllocated,
     hFrameNoWrap, hFrameHostAddressable, hActiveNoWrap,
-    fun name slot _hLive hLocation =>
+    hFrameReserved, fun name slot _hLive hLocation =>
       plan.scratch_bound_of_wellFormed hWF hLocation hRegion⟩
+
+theorem scratchAddress_reserved {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {slot : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ScratchStateRel contract plan live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hReservation : contract.scratch? = some reservation) :
+    reservation.containsRegion (scratchAddress frameBase slot) 1 := by
+  obtain ⟨owned, hOwned, hFrame⟩ := hRel.frameReserved
+  have hOwnedEq : owned = reservation := by
+    rw [hReservation] at hOwned
+    exact (Option.some.inj hOwned).symm
+  subst owned
+  have hSlot := hRel.scratchBound name slot hLive hLocation
+  have hSucc : slot + 1 ≤ frameWords :=
+    Nat.succ_le_iff.mpr hSlot
+  constructor
+  · exact hFrame.1.trans
+      (Nat.le_add_right frameBase (MemoryContract.wordBytes * slot))
+  · calc
+      scratchAddress frameBase slot + MemoryContract.wordBytes * 1 =
+          frameBase + MemoryContract.wordBytes * (slot + 1) := by
+            simp [scratchAddress, Nat.mul_add, Nat.add_assoc]
+      _ ≤ frameBase + MemoryContract.wordBytes * frameWords :=
+        Nat.add_le_add_left
+          (Nat.mul_le_mul_left MemoryContract.wordBytes hSucc) frameBase
+      _ ≤ reservation.endExclusive := hFrame.2
 
 theorem scratchAddress_end_le_active {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -935,6 +979,7 @@ theorem mono {transcript : Trace}
   ⟨hRel.base.mono hSubset, hRel.framePointer, hRel.frameActive,
     hRel.frameAllocated, hRel.frameNoWrap,
     hRel.frameHostAddressable, hRel.activeNoWrap,
+    hRel.frameReserved,
     fun name slot hLive hLocation =>
       hRel.scratchBound name slot (hSubset name hLive) hLocation⟩
 
@@ -953,7 +998,7 @@ theorem push_target_by {transcript : Trace}
   refine
     ⟨hRel.base.push_target_by pcDelta value, ?_, ?_, ?_,
       hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
-      hRel.scratchBound⟩
+      hRel.frameReserved, hRel.scratchBound⟩
   · change
       (value :: target.source.evm.stack)[stackOffset + 1 + frameDepth]? =
         some (EvmYul.UInt256.ofNat frameBase)
@@ -1001,7 +1046,7 @@ theorem contract_target_by {transcript : Trace}
   refine
     ⟨hRel.base.contract_target_by hStack pcDelta, ?_, ?_, ?_,
       hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
-      hRel.scratchBound⟩
+      hRel.frameReserved, hRel.scratchBound⟩
   · change
       (value :: rest)[stackOffset + 1 + frameDepth]? =
         some (EvmYul.UInt256.ofNat frameBase)
@@ -1041,7 +1086,7 @@ theorem replace_top_by {transcript : Trace}
   refine
     ⟨hRel.base.replace_top_by hStack pcDelta, ?_, ?_, ?_,
       hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
-      hRel.scratchBound⟩
+      hRel.frameReserved, hRel.scratchBound⟩
   · change
       (value :: rest)[stackOffset + 1 + frameDepth]? =
         some (EvmYul.UInt256.ofNat frameBase)
@@ -1140,6 +1185,7 @@ theorem assign_scratch_live
       frameNoWrap := hRel.frameNoWrap
       frameHostAddressable := hRel.frameHostAddressable
       activeNoWrap := ?_
+      frameReserved := hRel.frameReserved
       scratchBound := ?_ }
   · refine ⟨?_, ?_⟩
     · simpa [Simulation.ResourceReplay.State.withSource,
@@ -1344,7 +1390,8 @@ theorem consume_forward {transcript : Trace}
     Simulation.ResourceReplay.consume?_source hTarget
   refine
     ⟨target', hTarget, hBase, ?_, ?_, ?_, hRel.frameNoWrap,
-      hRel.frameHostAddressable, ?_, hRel.scratchBound⟩
+      hRel.frameHostAddressable, ?_, hRel.frameReserved,
+      hRel.scratchBound⟩
   · simpa [hTargetSource] using hRel.framePointer
   · simpa [hTargetSource] using hRel.frameActive
   · simpa [hTargetSource] using hRel.frameAllocated
@@ -1374,7 +1421,8 @@ theorem consume_backward {transcript : Trace}
     Simulation.ResourceReplay.consume?_source hConsume
   refine
     ⟨source', hSource, hBase, ?_, ?_, ?_, hRel.frameNoWrap,
-      hRel.frameHostAddressable, ?_, hRel.scratchBound⟩
+      hRel.frameHostAddressable, ?_, hRel.frameReserved,
+      hRel.scratchBound⟩
   · simpa [hTargetSource] using hRel.framePointer
   · simpa [hTargetSource] using hRel.frameActive
   · simpa [hTargetSource] using hRel.frameAllocated

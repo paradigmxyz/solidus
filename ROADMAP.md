@@ -159,10 +159,14 @@ Adjacent boundary status:
   Memory-touching primitives additionally require ordinary source-memory
   consistency and a source-facing non-wrapping expansion bound, preventing
   target spill allocation from exposing dormant bytes or invalidating later
-  `msize()` observations. Canonical `mload` now has a checked adjacent forward
-  theorem: padded reads agree outside the reservation, active memory grows
-  monotonically without wrapping, every live spill lookup remains stable, and
-  the real one-op Structured execution returns the source word.
+  `msize()` observations. Canonical `mload` and `mstore` now have checked
+  adjacent forward theorems: padded reads agree outside the reservation,
+  synchronized source writes preserve reservation-relative memory, active
+  memory grows monotonically without wrapping, every live spill lookup remains
+  stable, and the real one-op Structured executions return the source results.
+  `ScratchStateRel` retains an actual reservation witness for its active frame,
+  ruling out impossible unrestricted scratch states and making source-write
+  disjointness an allocation-owned invariant.
   Its checked `Expr.MemorySafeEval` and `ExprSeq.MemorySafeEval` derivations
   reuse the canonical parameterized Functions evaluator and erase back to
   ordinary evaluation; they are not alternate interpreters or compiler
