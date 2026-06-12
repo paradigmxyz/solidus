@@ -49,7 +49,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_primitiveForward
 #check EvmCompiler.Compiler.MemoryRelation.OutsideReservation.write_self_both
 #check EvmCompiler.Compiler.MemoryRelation.MachineRel.mcopy_both
+#check EvmCompiler.Compiler.MemoryRelation.MachineRel.readRange_both
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.copy_primitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.read_primitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.keccak256_simulate
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.keccak256_primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.calldatacopy_primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.codecopy_primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.returndatacopy_primitiveForward
@@ -252,7 +256,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Compiler.MemoryRelation.OutsideReservation.write_self_both
 #print axioms EvmCompiler.Compiler.MemoryRelation.MachineRel.copy_both
 #print axioms EvmCompiler.Compiler.MemoryRelation.MachineRel.mcopy_both
+#print axioms EvmCompiler.Compiler.MemoryRelation.MachineRel.readRange_both
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.copy_primitiveForward
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.read_primitiveForward
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.keccak256_simulate
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.keccak256_primitiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.calldatacopy_simulate
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.calldatacopy_primitiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.codecopy_simulate

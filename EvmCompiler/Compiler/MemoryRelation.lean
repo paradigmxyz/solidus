@@ -2073,51 +2073,66 @@ private theorem readWithoutPadding_size_le
   · simp [ByteArray.size_extract]
     omega
 
-private theorem usize_wordBytes_sub_toNat
-    {value : Nat} (hValue : value ≤ MemoryContract.wordBytes) :
-    ((OfNat.ofNat MemoryContract.wordBytes : USize) -
+private theorem usize_sub_toNat
+    {limit value : Nat}
+    (hLimit : limit < USize.size)
+    (hValue : value ≤ limit) :
+    ((OfNat.ofNat limit : USize) -
         (OfNat.ofNat value : USize)).toNat =
-      MemoryContract.wordBytes - value := by
-  have hModulus :
-      MemoryContract.wordBytes <
-        2 ^ System.Platform.numBits := by
-    rcases System.Platform.numBits_eq with h | h <;>
-      simp [h, MemoryContract.wordBytes]
-  have hWord :
-      (OfNat.ofNat MemoryContract.wordBytes : USize).toNat =
-        MemoryContract.wordBytes :=
-    USize.toNat_ofNat_of_lt
-      (by simpa [USize.size_eq_two_pow] using hModulus)
+      limit - value := by
+  have hLimitNat :
+      (OfNat.ofNat limit : USize).toNat = limit :=
+    USize.toNat_ofNat_of_lt hLimit
   have hValueNat :
       (OfNat.ofNat value : USize).toNat = value :=
     USize.toNat_ofNat_of_lt
-      (lt_of_le_of_lt hValue hModulus)
+      (lt_of_le_of_lt hValue hLimit)
   rw [USize.toNat_sub_of_le]
-  · rw [hWord, hValueNat]
-  · rw [USize.le_iff_toNat_le, hWord, hValueNat]
+  · rw [hLimitNat, hValueNat]
+  · rw [USize.le_iff_toNat_le, hLimitNat, hValueNat]
     exact hValue
+
+private theorem not_ge_two_pow_64_of_lt_usize
+    {length : Nat}
+    (hLength : length < USize.size) :
+    ¬ length ≥ 2 ^ 64 := by
+  rw [USize.size_eq_two_pow] at hLength
+  rcases System.Platform.numBits_eq with hBits | hBits
+  · norm_num [hBits] at hLength ⊢
+    omega
+  · simpa [hBits] using hLength
+
+private theorem wordBytes_lt_usize :
+    MemoryContract.wordBytes < USize.size := by
+  rw [USize.size_eq_two_pow]
+  rcases System.Platform.numBits_eq with hBits | hBits <;>
+    norm_num [MemoryContract.wordBytes, hBits]
+
+private theorem readWithPadding_size
+    (memory : ByteArray) (address length : Nat)
+    (hLength : length < USize.size) :
+    (memory.readWithPadding address length).size = length := by
+  unfold ByteArray.readWithPadding
+  rw [if_neg (not_ge_two_pow_64_of_lt_usize hLength)]
+  simp only [ByteArray.size_append, ffi.ByteArray.size_zeroes]
+  have hRead :=
+    readWithoutPadding_size_le memory address length
+  change
+    (memory.readWithoutPadding address length).size +
+      ((OfNat.ofNat length : USize) -
+        (OfNat.ofNat
+          (memory.readWithoutPadding address length).size : USize)).toNat =
+      length
+  rw [usize_sub_toNat hLength hRead]
+  omega
 
 private theorem readWithPadding_word_size
     (memory : ByteArray) (address : Nat) :
     (memory.readWithPadding address MemoryContract.wordBytes).size =
       MemoryContract.wordBytes := by
-  unfold ByteArray.readWithPadding
-  rw [if_neg (by
-    simp [MemoryContract.wordBytes])]
-  simp only [ByteArray.size_append, ffi.ByteArray.size_zeroes]
-  have hRead :=
-    readWithoutPadding_size_le
-      memory address MemoryContract.wordBytes
-  change
-    (memory.readWithoutPadding
-        address MemoryContract.wordBytes).size +
-      ((OfNat.ofNat MemoryContract.wordBytes : USize) -
-        (OfNat.ofNat
-          (memory.readWithoutPadding
-            address MemoryContract.wordBytes).size : USize)).toNat =
-      MemoryContract.wordBytes
-  rw [usize_wordBytes_sub_toNat hRead]
-  omega
+  exact
+    readWithPadding_size memory address MemoryContract.wordBytes
+      wordBytes_lt_usize
 
 private theorem byteAt_readWithoutPadding_of_lt
     (memory : ByteArray) (address length index : Nat)
@@ -2139,28 +2154,23 @@ private theorem byteAt_readWithoutPadding_of_lt
         (a := memory) (start := address)
         (stop := address + min length memory.size) hIndex)
 
-private theorem byteAt_readWithPadding_word
-    (memory : ByteArray) (address index : Nat)
-    (hIndex : index < MemoryContract.wordBytes) :
-    byteAt
-        (memory.readWithPadding address MemoryContract.wordBytes)
-        index =
+private theorem byteAt_readWithPadding
+    (memory : ByteArray) (address length index : Nat)
+    (hLength : length < USize.size)
+    (hIndex : index < length) :
+    byteAt (memory.readWithPadding address length) index =
       byteAt memory (address + index) := by
-  let read :=
-    memory.readWithoutPadding address MemoryContract.wordBytes
+  let read := memory.readWithoutPadding address length
   let padding : USize :=
-    (OfNat.ofNat MemoryContract.wordBytes : USize) -
+    (OfNat.ofNat length : USize) -
       (OfNat.ofNat read.size : USize)
-  have hRead :
-      read.size ≤ MemoryContract.wordBytes := by
-    exact readWithoutPadding_size_le
-      memory address MemoryContract.wordBytes
+  have hRead : read.size ≤ length := by
+    exact readWithoutPadding_size_le memory address length
   have hReadDef :
-      memory.readWithPadding address MemoryContract.wordBytes =
+      memory.readWithPadding address length =
         read ++ ffi.ByteArray.zeroes padding := by
     unfold ByteArray.readWithPadding
-    rw [if_neg (by
-      simp [MemoryContract.wordBytes])]
+    rw [if_neg (not_ge_two_pow_64_of_lt_usize hLength)]
     rfl
   rw [hReadDef]
   by_cases hInside : index < read.size
@@ -2172,16 +2182,14 @@ private theorem byteAt_readWithPadding_word
     rw [Array.getElem?_append_left hInsideData]
     simpa [byteAt, Array.getD_eq_getD_getElem?, read] using
       (byteAt_readWithoutPadding_of_lt
-        memory address MemoryContract.wordBytes index hInside)
+        memory address length index hInside)
   · have hPastRead : read.size ≤ index :=
       Nat.le_of_not_gt hInside
     have hPaddingNat :
-        padding.toNat =
-        MemoryContract.wordBytes - read.size :=
-      usize_wordBytes_sub_toNat hRead
+        padding.toNat = length - read.size :=
+      usize_sub_toNat hLength hRead
     have hPaddingIndex :
-        index - read.size <
-          padding.toNat := by
+        index - read.size < padding.toNat := by
       rw [hPaddingNat]
       omega
     have hOutput :
@@ -2206,17 +2214,13 @@ private theorem byteAt_readWithPadding_word
       have hMemoryIndex : address + index < memory.size :=
         Nat.lt_of_not_ge hNotPast
       have hIndexMin :
-          index <
-            min MemoryContract.wordBytes memory.size :=
+          index < min length memory.size :=
         lt_min hIndex (by omega)
       have hAddressNotPast : ¬ address ≥ memory.size := by
         omega
       have hReadSize :
           read.size =
-            min
-                (address +
-                  min MemoryContract.wordBytes memory.size)
-                memory.size -
+            min (address + min length memory.size) memory.size -
               address := by
         simp [read, ByteArray.readWithoutPadding,
           hAddressNotPast, ByteArray.size_extract]
@@ -2232,6 +2236,42 @@ private theorem byteAt_readWithPadding_word
       rfl
     exact hOutput.trans hSource.symm
 
+private theorem byteAt_readWithPadding_word
+    (memory : ByteArray) (address index : Nat)
+    (hIndex : index < MemoryContract.wordBytes) :
+    byteAt
+        (memory.readWithPadding address MemoryContract.wordBytes)
+        index =
+      byteAt memory (address + index) := by
+  exact byteAt_readWithPadding memory address MemoryContract.wordBytes index
+    wordBytes_lt_usize hIndex
+
+theorem readWithPadding
+    {reservation : MemoryContract.ScratchReservation}
+    {source target : ByteArray}
+    (hRel : OutsideReservation reservation source target)
+    (address length : Nat)
+    (hAllowed :
+      reservation.sourceAccessAllowed address length)
+    (hLength : length < USize.size) :
+    source.readWithPadding address length =
+      target.readWithPadding address length := by
+  apply byteArray_ext_of_size_get
+  · rw [readWithPadding_size _ _ _ hLength,
+      readWithPadding_size _ _ _ hLength]
+  · intro index hSource hTarget
+    have hIndex : index < length := by
+      simpa [readWithPadding_size _ _ _ hLength] using hSource
+    rw [← byteAt_eq_get _ _ hSource,
+      ← byteAt_eq_get _ _ hTarget,
+      byteAt_readWithPadding source address length index hLength hIndex,
+      byteAt_readWithPadding target address length index hLength hIndex]
+    apply hRel
+    intro hInside
+    rcases hAllowed with hBefore | hAfter
+    · exact (not_le_of_gt (by omega)) hInside.1
+    · exact (not_lt_of_ge (by omega)) hInside.2
+
 theorem readWithPadding_word
     {reservation : MemoryContract.ScratchReservation}
     {source target : ByteArray}
@@ -2242,20 +2282,8 @@ theorem readWithPadding_word
         address MemoryContract.wordBytes) :
     source.readWithPadding address MemoryContract.wordBytes =
       target.readWithPadding address MemoryContract.wordBytes := by
-  apply byteArray_ext_of_size_get
-  · rw [readWithPadding_word_size, readWithPadding_word_size]
-  · intro index hSource hTarget
-    have hIndex : index < MemoryContract.wordBytes := by
-      simpa [readWithPadding_word_size] using hSource
-    rw [← byteAt_eq_get _ _ hSource,
-      ← byteAt_eq_get _ _ hTarget,
-      byteAt_readWithPadding_word source address index hIndex,
-      byteAt_readWithPadding_word target address index hIndex]
-    apply hRel
-    intro hInside
-    rcases hAllowed with hBefore | hAfter
-    · exact (not_le_of_gt (by omega)) hInside.1
-    · exact (not_lt_of_ge (by omega)) hInside.2
+  exact readWithPadding hRel address MemoryContract.wordBytes hAllowed
+    wordBytes_lt_usize
 
 theorem write_both
     {reservation : MemoryContract.ScratchReservation}
@@ -3164,6 +3192,127 @@ theorem lookupMemory_eq_of_memory_eq_active_growth
     simpa [MemoryContract.wordBytes] using hAfterGuard
   unfold EvmYul.MachineState.lookupMemory
   rw [if_neg hAfterGuard32, if_neg hBeforeGuard32, hQuery, hMemory]
+
+/--
+Related machines read the same source-approved padded byte range and preserve
+their relation after the read expands active memory. This is the common
+machine-level boundary for hashing, logging, and terminal memory reads.
+-/
+theorem readRange_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : MachineRel contract source target)
+    (hTargetNoWrap :
+      target.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (address length : Nat)
+    (hAllowed :
+      match contract.scratch? with
+      | none => True
+      | some reservation =>
+          reservation.sourceAccessAllowed address length)
+    (hExpansion : ExpansionNoWrap address length)
+    (hHost : address + length < USize.size) :
+    let sourceFinal : EvmYul.MachineState :=
+      { source with
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M
+              source.activeWords.toNat address length) }
+    let targetFinal : EvmYul.MachineState :=
+      { target with
+        activeWords :=
+          EvmYul.UInt256.ofNat
+            (EvmYul.MachineState.M
+              target.activeWords.toNat address length) }
+    source.memory.readWithPadding address length =
+        target.memory.readWithPadding address length ∧
+      MachineRel contract sourceFinal targetFinal ∧
+      targetFinal.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size ∧
+      target.activeWords.toNat ≤ targetFinal.activeWords.toNat := by
+  dsimp
+  have hLength : length < USize.size := by
+    omega
+  have hRead :
+      source.memory.readWithPadding address length =
+        target.memory.readWithPadding address length := by
+    cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        rw [hMemory]
+    | some reservation =>
+        have hMemory :
+            OutsideReservation reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hAllowed' :
+            reservation.sourceAccessAllowed address length := by
+          simpa [hReservation] using hAllowed
+        exact
+          OutsideReservation.readWithPadding
+            hMemory address length hAllowed' hLength
+  have hTargetExpanded :
+      EvmYul.MachineState.M target.activeWords.toNat address length *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    M_activeBytes_lt_of_expansionNoWrap hTargetNoWrap hExpansion
+  have hTargetM :
+      EvmYul.MachineState.M target.activeWords.toNat address length <
+        EvmYul.UInt256.size := by
+    have hPositive : 0 < MemoryContract.wordBytes := by decide
+    nlinarith
+  refine ⟨hRead, ?_, ?_, ?_⟩
+  · cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive : source.activeWords = target.activeWords := by
+          simpa [hReservation] using hRel.activeWords
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := hRel.returnData
+            output := hRel.output }
+        · simpa [hReservation] using hMemory
+        · simpa [hReservation, hActive]
+    | some reservation =>
+        have hMemory :
+            OutsideReservation reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hActive :
+            source.activeWords.toNat ≤ target.activeWords.toNat := by
+          simpa [hReservation] using hRel.activeWords
+        have hSourceNoWrap :
+            source.activeWords.toNat * MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          exact lt_of_le_of_lt
+            (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+            hTargetNoWrap
+        have hSourceExpanded :
+            EvmYul.MachineState.M source.activeWords.toNat address length *
+                MemoryContract.wordBytes <
+              EvmYul.UInt256.size :=
+          M_activeBytes_lt_of_expansionNoWrap hSourceNoWrap hExpansion
+        have hSourceM :
+            EvmYul.MachineState.M source.activeWords.toNat address length <
+              EvmYul.UInt256.size := by
+          have hPositive : 0 < MemoryContract.wordBytes := by decide
+          nlinarith
+        refine
+          { memory := ?_
+            activeWords := ?_
+            returnData := hRel.returnData
+            output := hRel.output }
+        · simpa [hReservation] using hMemory
+        · simp only [hReservation]
+          rw [EvmYul.UInt256.toNat_ofNat_of_lt hSourceM,
+            EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+          exact M_mono_active hActive
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    exact hTargetExpanded
+  · rw [EvmYul.UInt256.toNat_ofNat_of_lt hTargetM]
+    cases length <;> simp [EvmYul.MachineState.M]
 
 theorem mload_of_allowed
     {contract : MemoryContract.Contract}

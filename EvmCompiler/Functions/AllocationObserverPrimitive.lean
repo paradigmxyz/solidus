@@ -423,6 +423,91 @@ end SharedFamily
 namespace MemoryFamily
 
 /--
+Canonical `keccak256` reads the same source-approved byte range in related
+machines, returns the same digest, and preserves the active spill frame.
+-/
+theorem keccak256_simulate
+    {contract : MemoryContract.Contract}
+    {sourceShared sourceFinal targetShared :
+      EvmYul.SharedState .EVM}
+    {address size : Word} {outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hAllowed :
+      match contract.scratch? with
+      | none => True
+      | some reservation =>
+          reservation.sourceAccessAllowed address.toNat size.toNat)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat size.toNat)
+    (hHost : address.toNat + size.toNat < USize.size)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .keccak256 sourceShared [size, address] =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          .keccak256 targetShared [size, address] =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory =
+        targetShared.toMachineState.memory ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+  obtain ⟨hRead, hMachineRel, hFinalNoWrap, hActiveMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.readRange_both
+      hRel.machine hTargetNoWrap address.toNat size.toNat hAllowed
+      hExpansion hHost
+  have hValue :
+      (sourceShared.toMachineState.keccak256 address size).1 =
+        (targetShared.toMachineState.keccak256 address size).1 := by
+    simp [EvmYul.MachineState.keccak256, hRead]
+  have hSourceResult :
+      sourceFinal =
+          { sourceShared with
+            toMachineState :=
+              (sourceShared.toMachineState.keccak256 address size).2 } ∧
+        outputs =
+          [(sourceShared.toMachineState.keccak256 address size).1] := by
+    simpa [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp', EvmYul.Stack.pop2,
+      EvmYul.Stack.push,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run] using hEval.symm
+  rcases hSourceResult with ⟨rfl, rfl⟩
+  let targetFinal : EvmYul.SharedState .EVM :=
+    { targetShared with
+      toMachineState :=
+        (targetShared.toMachineState.keccak256 address size).2 }
+  refine ⟨targetFinal, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.EVM.binaryMachineStateOp', EvmYul.Stack.pop2,
+      EvmYul.Stack.push,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run, targetFinal, hValue]
+  · refine ⟨?_, ?_⟩
+    · simpa [EvmYul.MachineState.keccak256, targetFinal] using hMachineRel
+    · simpa [EvmYul.MachineState.keccak256, targetFinal] using hRel.world
+  · simp [EvmYul.MachineState.keccak256, targetFinal]
+  · simpa [EvmYul.MachineState.keccak256, targetFinal] using hActiveMono
+  · simpa [EvmYul.MachineState.keccak256, targetFinal] using hFinalNoWrap
+
+/--
 Canonical `mload` preserves the allocation shared-state relation, including the
 active-memory facts needed to retain an already allocated spill frame.
 -/
@@ -1162,6 +1247,283 @@ theorem mcopy_simulate
       targetFinal] using hMemoryMono
   · simpa [EvmYul.MachineState.mcopy, targetFinal] using hActiveMono
   · simpa [EvmYul.MachineState.mcopy, targetFinal] using hFinalNoWrap
+
+/--
+Pass-owned interface for primitives that only read source-visible memory and
+may expand active memory. Hashing and logging share this allocation proof even
+though their source-level results and world effects differ.
+-/
+structure ReadSpec (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) : Prop where
+  observer_none :
+    Functions.ObserverSemantics.basicOpObserver? op = none
+  simulate :
+    ∀ {sourceShared sourceFinal targetShared :
+        EvmYul.SharedState .EVM}
+      {values outputs : List Word},
+      SharedRel contract sourceShared targetShared →
+      AllocationObserverSafety.PrimitiveMemorySafe
+        contract op sourceShared.toMachineState values →
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size →
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values =
+        .ok (sourceFinal, outputs) →
+      ∃ targetFinal,
+        Locals.Source.PrimitiveSemantics.structured.eval
+            op targetShared values =
+          .ok (targetFinal, outputs) ∧
+        SharedRel contract sourceFinal targetFinal ∧
+        targetFinal.toMachineState.memory =
+          targetShared.toMachineState.memory ∧
+        targetShared.toMachineState.activeWords.toNat ≤
+          targetFinal.toMachineState.activeWords.toNat ∧
+        targetFinal.toMachineState.activeWords.toNat *
+            MemoryContract.wordBytes <
+          EvmYul.UInt256.size
+
+/--
+One adjacent Functions-to-allocated-Expressions proof for every canonical
+read-only memory primitive.
+-/
+theorem read_primitiveForward
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (spec : ReadSpec contract op) :
+    AllocationObserverExpression.PrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase frameDepth frameWords
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      hArgsRel hMemory hPrimitive
+    cases hSourceEval :
+        Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceArgs.source.shared values with
+    | error err =>
+        simp [Functions.ObserverSemantics.primitiveSemantics,
+          Locals.ObserverSemantics.primitiveSemantics,
+          spec.observer_none, hSourceEval] at hPrimitive
+    | ok result =>
+        rcases result with ⟨sourceSharedFinal, canonicalOutputs⟩
+        have hPrimitiveResult :
+            sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal) =
+              sourceFinal ∧
+            canonicalOutputs = outputs := by
+          simpa [Functions.ObserverSemantics.primitiveSemantics,
+            Locals.ObserverSemantics.primitiveSemantics,
+            spec.observer_none, hSourceEval] using hPrimitive
+        rcases hPrimitiveResult with ⟨rfl, rfl⟩
+        obtain
+            ⟨targetSharedFinal, hTargetEval, hSharedFinal,
+              hTargetMemory, hTargetActive, hFinalNoWrap⟩ :=
+          spec.simulate hArgsRel.state.base.core.shared hMemory
+            hArgsRel.state.activeNoWrap hSourceEval
+        obtain ⟨evmFinal, hStep, hEvmShared, hEvmStack⟩ :=
+          Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+            hTargetEval rfl hArgsRel.stack
+        let targetFinal :
+            Structured.ObserverSemantics.State transcript :=
+          targetArgs.withSource
+            (targetArgs.source.withEVM evmFinal)
+        have hObserver := spec.observer_none
+        have hRun :
+            Structured.ObserverSemantics.Code.run [.op op] targetArgs =
+              .ok targetFinal := by
+          change
+            Structured.ObserverSemantics.basicOpObserver? op = none
+            at hObserver
+          simp [Structured.ObserverSemantics.Code.run,
+            Structured.EffectSemantics.Code.run,
+            Structured.BasicInstr.step, hStep,
+            Structured.ObserverSemantics.handler,
+            hObserver, targetFinal]
+        have hOutputsLength :
+            canonicalOutputs.length =
+              Expressions.Structured.BasicOp.outputs op :=
+          Locals.Source.PrimitiveSemantics.structured_eval_length
+            hSourceEval
+        have hFinalMachine :
+            targetFinal.source.evm.toMachineState =
+              targetSharedFinal.toMachineState := by
+          change evmFinal.toMachineState =
+            targetSharedFinal.toMachineState
+          exact congrArg EvmYul.SharedState.toMachineState hEvmShared
+        have hMemoryEq :
+            targetFinal.source.evm.toMachineState.memory =
+              targetArgs.source.evm.toMachineState.memory := by
+          rw [hFinalMachine, hTargetMemory]
+        have hActiveMono :
+            targetArgs.source.evm.activeWords.toNat ≤
+              targetFinal.source.evm.activeWords.toNat := by
+          simpa [hFinalMachine] using hTargetActive
+        have hFinalActiveNoWrap :
+            targetFinal.source.evm.activeWords.toNat *
+                MemoryContract.wordBytes <
+              EvmYul.UInt256.size := by
+          simpa [hFinalMachine] using hFinalNoWrap
+        have hFinalStack :
+            targetFinal.source.evm.stack =
+              canonicalOutputs.reverse ++
+                targetInitial.source.evm.stack := by
+          simpa [targetFinal] using hEvmStack
+        have hOldStore :
+            StoreRel plan live
+              (stackOffset + values.reverse.length) frameBase
+              sourceArgs.source targetArgs.source := by
+          simpa [List.length_reverse, hArgsRel.valuesLength] using
+            hArgsRel.state.base.core.store
+        have hScratchStable :
+            ∀ name slot,
+              name ∈ live →
+              plan.location? name = some (.scratch slot) →
+              targetFinal.source.evm.toMachineState.lookupMemory
+                  (EvmYul.UInt256.ofNat
+                    (scratchAddress frameBase slot)) =
+                targetArgs.source.evm.toMachineState.lookupMemory
+                  (EvmYul.UInt256.ofNat
+                    (scratchAddress frameBase slot)) := by
+          intro name slot hLive hLocation
+          have hSlot :=
+            hArgsRel.state.scratchBound name slot hLive hLocation
+          have hEndFrame :
+              scratchAddress frameBase slot +
+                  MemoryContract.wordBytes ≤
+                frameBase +
+                  MemoryContract.wordBytes * frameWords := by
+            have hSucc : slot + 1 ≤ frameWords :=
+              Nat.succ_le_iff.mpr hSlot
+            calc
+              scratchAddress frameBase slot +
+                    MemoryContract.wordBytes =
+                  frameBase +
+                    MemoryContract.wordBytes * (slot + 1) := by
+                      simp [scratchAddress, Nat.mul_add,
+                        Nat.add_assoc]
+              _ ≤ frameBase +
+                    MemoryContract.wordBytes * frameWords :=
+                Nat.add_le_add_left
+                  (Nat.mul_le_mul_left
+                    MemoryContract.wordBytes hSucc) frameBase
+          have hQueryLt :
+              scratchAddress frameBase slot <
+                EvmYul.UInt256.size := by
+            exact lt_of_le_of_lt
+              (Nat.le_add_right
+                (scratchAddress frameBase slot)
+                MemoryContract.wordBytes)
+              (hEndFrame.trans_lt hArgsRel.state.frameNoWrap)
+          exact
+            Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+              (scratchAddress frameBase slot)
+              (EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt)
+              hMemoryEq hActiveMono
+              hArgsRel.state.activeNoWrap hFinalActiveNoWrap
+              (hEndFrame.trans hArgsRel.state.frameAllocated)
+              (hEndFrame.trans hArgsRel.state.frameActive)
+        have hBaseRel :
+            StateRel contract plan live
+              (stackOffset + canonicalOutputs.reverse.length) frameBase
+              (sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal))
+              targetFinal := by
+          refine ⟨?_, ?_⟩
+          · simpa [targetFinal] using hArgsRel.state.base.cursor
+          · refine ⟨?_, ?_, ?_⟩
+            · simpa [targetFinal, hEvmShared] using
+                hSharedFinal.machine
+            · simpa [targetFinal, hEvmShared] using
+                hSharedFinal.world
+            · exact
+                StoreRel.rebase_prefix_of_lookup
+                  (oldPrefix := values.reverse)
+                  (newPrefix := canonicalOutputs.reverse)
+                  (baseStack := targetInitial.source.evm.stack)
+                  hOldStore hArgsRel.stack hFinalStack
+                  hScratchStable rfl
+        have hOldScratch :
+            ScratchStateRel contract plan live
+              (stackOffset + values.reverse.length) frameBase
+              frameDepth frameWords sourceArgs targetArgs := by
+          simpa [List.length_reverse, hArgsRel.valuesLength] using
+            hArgsRel.state
+        have hScratchRel :
+            ScratchStateRel contract plan live
+              (stackOffset + canonicalOutputs.reverse.length) frameBase
+              frameDepth frameWords
+              (sourceArgs.withSource
+                (sourceArgs.source.withShared sourceSharedFinal))
+              targetFinal :=
+          ScratchStateRel.rebase_prefix_mono
+            (oldPrefix := values.reverse)
+            (newPrefix := canonicalOutputs.reverse)
+            (baseStack := targetInitial.source.evm.stack)
+            hOldScratch hBaseRel hArgsRel.stack hFinalStack
+            (by simp [hMemoryEq])
+            hActiveMono hFinalActiveNoWrap
+        refine ⟨targetFinal, hRun, ?_, hOutputsLength, hFinalStack⟩
+        simpa [List.length_reverse, hOutputsLength] using hScratchRel
+
+/--
+Canonical hashing instantiates the shared read-only memory interface.
+-/
+theorem keccak256_readSpec
+    (contract : MemoryContract.Contract) :
+    ReadSpec contract .keccak256 where
+  observer_none := rfl
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      hRel hMemory hTargetNoWrap hEval
+    cases values with
+    | nil =>
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          Expressions.Structured.BasicOp.inputs] at hEval
+    | cons size rest =>
+        cases rest with
+        | nil =>
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              Expressions.Structured.BasicOp.inputs] at hEval
+        | cons address tail =>
+            have hTail : tail = [] := by
+              by_contra hNonempty
+              cases tail with
+              | nil => exact hNonempty rfl
+              | cons extra more =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+            subst tail
+            have hSafety :
+                Compiler.MemoryRelation.MemoryConsistent
+                    sourceShared.toMachineState ∧
+                  AllocationObserverSafety.RegionAllowed contract
+                    address.toNat size.toNat ∧
+                  Compiler.MemoryRelation.ExpansionNoWrap
+                    address.toNat size.toNat ∧
+                  address.toNat + size.toNat < USize.size := by
+              simpa [AllocationObserverSafety.PrimitiveMemorySafe,
+                AllocationObserverSafety.PrimitiveExpansionSafe,
+                AllocationObserverSafety.PrimitiveHostSafe] using hMemory
+            rcases hSafety with
+              ⟨_hConsistent, hAllowed, hExpansion, hHost⟩
+            have hAllowed' :
+                match contract.scratch? with
+                | none => True
+                | some reservation =>
+                    reservation.sourceAccessAllowed
+                      address.toNat size.toNat := by
+              simpa [AllocationObserverSafety.RegionAllowed] using hAllowed
+            exact
+              keccak256_simulate hRel hAllowed' hExpansion hHost
+                hTargetNoWrap hEval
+
+/--
+Adjacent Functions-to-allocated-Expressions preservation for canonical
+`keccak256`.
+-/
+theorem keccak256_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .keccak256 :=
+  read_primitiveForward (keccak256_readSpec contract)
 
 /--
 Adjacent Functions-to-allocated-Expressions preservation for canonical
