@@ -13,22 +13,29 @@ abbrev postContinuations :=
 
 private theorem bodyActivationBoundary
     {transcript : Trace} {program : Structured.Program}
-    {body : Structured.Block}
+    {cond : Structured.Code} {post body : Structured.Block}
     {endLabel postLabel : Assembly.Label}
     {outer : OutcomeSimulation.Continuations}
     {accept : TypedCfg.Outcome → Prop}
     {bodyShape : TypedCfg.Shape}
     {bodyResult : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context}
-    {initial : ObserverSemantics.State transcript}
+    {loopSource initial : ObserverSemantics.State transcript}
     {tokens : List Word}
     {sourceFuel : Nat}
     {sourceOutcome : ObserverSemantics.Outcome}
     {targetOutcome : TypedCfg.Outcome} {trace : Trace}
-    (hOuter :
-      ∀ targetOutcome,
-        OutcomeSimulation.TargetBoundary outer targetOutcome →
-          accept targetOutcome)
+    (hClose :
+      ∀ forFuel forOutcome forTarget forTrace,
+        ObserverSemantics.For.Eval program forFuel
+            cond post body loopSource forOutcome →
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens forOutcome forTarget forTrace →
+          OutcomeSimulation.JoinArtifact ctx bodyShape forOutcome →
+          accept forTarget)
+    (hCond :
+      ObserverSemantics.Code.runCondition cond loopSource =
+        .ok (initial, true))
     (hOuterRegular : outer.regular = endLabel)
     (hRequire :
       bodyResult.requireFallthrough? bodyShape = some ())
@@ -74,11 +81,37 @@ private theorem bodyActivationBoundary
       obtain ⟨label, target, hLabel, rfl, _hStateRel⟩ :=
         ObserverPreservation.OutcomeSimulation.Rel.brk_elim hRel
       apply OutcomeSimulation.JumpAt.of_accept
-      apply hOuter
-      have hLabelEq : label = outer.regular := by
+      have hLabelEq : label = endLabel := by
         change some endLabel = some label at hLabel
-        exact (Option.some.inj hLabel).symm.trans hOuterRegular.symm
-      simp [OutcomeSimulation.TargetBoundary, hLabelEq]
+        exact (Option.some.inj hLabel).symm
+      subst label
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens (Structured.OutcomeT.regular source)
+            (.jump endLabel target) trace := by
+        exact
+          ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+            ⟨hOuterRegular.symm, _hStateRel⟩
+      have hOuterJoin :
+          OutcomeSimulation.JoinArtifact ctx bodyShape
+            (Structured.OutcomeT.regular source) := by
+        change
+          TypedCfgCompiler.Shape.SourceFrameFits bodyShape
+            source.source.evm.stack.length
+        change
+          ∃ output,
+            some bodyShape = some output ∧
+              TypedCfgCompiler.Shape.SourceFrameFits output
+                source.source.evm.stack.length at hJoin
+        obtain ⟨output, hOutput, hFits⟩ := hJoin
+        have hOutputEq : output = bodyShape :=
+          Option.some.inj hOutput.symm
+        simpa [hOutputEq] using hFits
+      exact
+        hClose (sourceFuel + 1) (Structured.OutcomeT.regular source)
+          (.jump endLabel target) trace
+          (Structured.EffectSemantics.For.Eval.body_brk hCond hEval)
+          hOuterRel hOuterJoin
   | cont =>
       obtain ⟨label, target, hLabel, rfl, hStateRel⟩ :=
         ObserverPreservation.OutcomeSimulation.Rel.cont_elim hRel
@@ -97,7 +130,6 @@ private theorem bodyActivationBoundary
           hStateRel hFits
   | leave =>
       apply OutcomeSimulation.JumpAt.of_accept
-      apply hOuter
       have hOuterRel :
           ObserverPreservation.OutcomeSimulation.Rel
             outer tokens (Structured.OutcomeT.leave source)
@@ -107,10 +139,14 @@ private theorem bodyActivationBoundary
             ObserverPreservation.OutcomeSimulation.Rel,
             TypedCfgPreservation.OutcomeSimulation.Loop.bodyContinuations] using
             hRel
-      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+      exact
+        hClose (sourceFuel + 1) (Structured.OutcomeT.leave source)
+          targetOutcome trace
+          (Structured.EffectSemantics.For.Eval.body_leave hCond hEval)
+          hOuterRel
+          (by simpa [OutcomeSimulation.JoinArtifact] using hJoin)
   | halt kind =>
       apply OutcomeSimulation.JumpAt.of_accept
-      apply hOuter
       have hOuterRel :
           ObserverPreservation.OutcomeSimulation.Rel
             outer tokens (Structured.OutcomeT.halt kind source)
@@ -120,7 +156,11 @@ private theorem bodyActivationBoundary
             ObserverPreservation.OutcomeSimulation.Rel,
             TypedCfgPreservation.OutcomeSimulation.Loop.bodyContinuations] using
             hRel
-      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+      exact
+        hClose (sourceFuel + 1) (Structured.OutcomeT.halt kind source)
+          targetOutcome trace
+          (Structured.EffectSemantics.For.Eval.body_halt hCond hEval)
+          hOuterRel (by trivial)
 
 private theorem postActivationBoundary
     {transcript : Trace} {program : Structured.Program}
@@ -135,10 +175,43 @@ private theorem postActivationBoundary
     {sourceFuel : Nat}
     {sourceOutcome : ObserverSemantics.Outcome}
     {targetOutcome : TypedCfg.Outcome} {trace : Trace}
-    (hOuter :
-      ∀ targetOutcome,
-        OutcomeSimulation.TargetBoundary outer targetOutcome →
-          accept targetOutcome)
+    (hLeave :
+      ∀ {postFuel : Nat}
+        {postState : ObserverSemantics.State transcript}
+        {postTarget : TypedCfg.Outcome} {postTrace : Trace},
+        ObserverSemantics.Block.Eval program postFuel post initial
+            (Structured.OutcomeT.leave postState) →
+          ObserverPreservation.OutcomeSimulation.Rel
+            (postContinuations loopLabel outer)
+            tokens (Structured.OutcomeT.leave postState)
+            postTarget postTrace →
+          OutcomeSimulation.JoinArtifact
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
+            loopShape (Structured.OutcomeT.leave postState) →
+          accept postTarget)
+    (hHalt :
+      ∀ {postFuel : Nat}
+        {postState : ObserverSemantics.State transcript}
+        {kind : Assembly.HaltKind}
+        {postTarget : TypedCfg.Outcome} {postTrace : Trace},
+        ObserverSemantics.Block.Eval program postFuel post initial
+            (Structured.OutcomeT.halt kind postState) →
+          ObserverPreservation.OutcomeSimulation.Rel
+            (postContinuations loopLabel outer)
+            tokens (Structured.OutcomeT.halt kind postState)
+            postTarget postTrace →
+          OutcomeSimulation.JoinArtifact
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
+            loopShape (Structured.OutcomeT.halt kind postState) →
+          accept postTarget)
     (hRequire :
       postResult.requireFallthrough? loopShape = some ())
     (hEval :
@@ -197,30 +270,129 @@ private theorem postActivationBoundary
       cases hNone
   | leave =>
       apply OutcomeSimulation.JumpAt.of_accept
-      apply hOuter
-      have hOuterRel :
-          ObserverPreservation.OutcomeSimulation.Rel
-            outer tokens (Structured.OutcomeT.leave source)
-            targetOutcome trace := by
-        cases targetOutcome <;>
-          simpa [
-            ObserverPreservation.OutcomeSimulation.Rel,
-            TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations] using
-            hRel
-      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+      exact hLeave hEval hRel hJoin
   | halt kind =>
       apply OutcomeSimulation.JumpAt.of_accept
-      apply hOuter
+      exact hHalt hEval hRel hJoin
+
+private theorem initActivationBoundary
+    {transcript : Trace} {program : Structured.Program}
+    {init post body : Structured.Block} {cond : Structured.Code}
+    {loopLabel regular : Assembly.Label}
+    {accept : TypedCfg.Outcome → Prop}
+    {loopShape : TypedCfg.Shape}
+    {result initResult : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {initial : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {sourceFuel : Nat}
+    {sourceOutcome : ObserverSemantics.Outcome}
+    {targetOutcome : TypedCfg.Outcome} {trace : Trace}
+    (hAccept :
+      ∀ parentFuel parentOutcome parentTarget parentTrace,
+        ObserverSemantics.Stmt.Eval program parentFuel
+            (.for_ init cond post body) initial parentOutcome →
+          ObserverPreservation.OutcomeSimulation.Rel
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            tokens parentOutcome parentTarget parentTrace →
+          OutcomeSimulation.OutcomeArtifact result ctx parentOutcome →
+          accept parentTarget)
+    (hFallthrough :
+      initResult.fallthrough? = some loopShape)
+    (hEval :
+      ObserverSemantics.Block.Eval
+        program sourceFuel init initial sourceOutcome)
+    (hRel :
+      ObserverPreservation.OutcomeSimulation.Rel
+        (postContinuations loopLabel
+          (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+            ctx regular))
+        tokens sourceOutcome targetOutcome trace)
+    (hArtifact :
+      OutcomeSimulation.OutcomeArtifact
+        initResult
+        { ctx with
+          breakLabel? := none
+          breakShape? := none
+          continueLabel? := none
+          continueShape? := none }
+        sourceOutcome) :
+    OutcomeSimulation.JumpAt initial tokens loopLabel loopShape
+      accept targetOutcome := by
+  have hJoin :
+      OutcomeSimulation.JoinArtifact
+        { ctx with
+          breakLabel? := none
+          breakShape? := none
+          continueLabel? := none
+          continueShape? := none }
+        loopShape sourceOutcome :=
+    OutcomeSimulation.OutcomeArtifact.toJoin hFallthrough hArtifact
+  rcases sourceOutcome with ⟨source, mode⟩
+  cases mode with
+  | regular =>
+      obtain ⟨target, rfl, hStateRel⟩ :=
+        ObserverPreservation.OutcomeSimulation.Rel.regular_elim hRel
+      exact
+        OutcomeSimulation.JumpAt.of_rel
+          (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hEval (by simp [ObserverSemantics.Outcome.Nonhalting]))
+          hStateRel hJoin
+  | brk =>
+      change
+        ∃ output,
+          (none : Option TypedCfg.Shape) = some output ∧
+            TypedCfgCompiler.Shape.SourceFrameFits output
+              source.source.evm.stack.length at hJoin
+      obtain ⟨output, hNone, _hFits⟩ := hJoin
+      cases hNone
+  | cont =>
+      change
+        ∃ output,
+          (none : Option TypedCfg.Shape) = some output ∧
+            TypedCfgCompiler.Shape.SourceFrameFits output
+              source.source.evm.stack.length at hJoin
+      obtain ⟨output, hNone, _hFits⟩ := hJoin
+      cases hNone
+  | leave =>
+      apply OutcomeSimulation.JumpAt.of_accept
       have hOuterRel :
           ObserverPreservation.OutcomeSimulation.Rel
-            outer tokens (Structured.OutcomeT.halt kind source)
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            tokens (Structured.OutcomeT.leave source)
             targetOutcome trace := by
         cases targetOutcome <;>
           simpa [
             ObserverPreservation.OutcomeSimulation.Rel,
             TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations] using
             hRel
-      exact OutcomeSimulation.targetBoundary_of_rel hOuterRel
+      exact
+        hAccept (sourceFuel + 1) (Structured.OutcomeT.leave source)
+          targetOutcome trace
+          (Structured.EffectSemantics.Stmt.Eval.for_init_leave hEval)
+          hOuterRel
+          (by
+            simpa [OutcomeSimulation.OutcomeArtifact] using hArtifact)
+  | halt kind =>
+      apply OutcomeSimulation.JumpAt.of_accept
+      have hOuterRel :
+          ObserverPreservation.OutcomeSimulation.Rel
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            tokens (Structured.OutcomeT.halt kind source)
+            targetOutcome trace := by
+        cases targetOutcome <;>
+          simpa [
+            ObserverPreservation.OutcomeSimulation.Rel,
+            TypedCfgPreservation.OutcomeSimulation.Loop.postContinuations] using
+            hRel
+      exact
+        hAccept (sourceFuel + 1) (Structured.OutcomeT.halt kind source)
+          targetOutcome trace
+          (Structured.EffectSemantics.Stmt.Eval.for_init_halt hEval)
+          hOuterRel (by trivial)
 
 private theorem bodyLeaveRel
     {transcript : Trace}
@@ -514,10 +686,16 @@ private theorem outcome_for_step_of_firstReaches
     (hPostRequire :
       postResult.requireFallthrough? loopInput = some ())
     (hOuterRegular : outer.regular = endLabel)
-    (hAccept :
-      ∀ acceptedOutcome,
-        OutcomeSimulation.TargetBoundary outer acceptedOutcome →
-          accept acceptedOutcome)
+    (hClose :
+      ∀ forFuel forOutcome forTarget forTrace,
+        ObserverSemantics.For.Eval program forFuel
+            cond post body source forOutcome →
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens forOutcome forTarget forTrace →
+          OutcomeSimulation.JoinArtifact ctx
+            { condOutput with slots := condOutput.slots.tail }
+            forOutcome →
+          accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
         ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
@@ -579,6 +757,15 @@ private theorem outcome_for_step_of_firstReaches
         {loopSource : ObserverSemantics.State transcript}
         {loopTarget : EVMState} {loopTrace : Trace},
         smallerFuel < targetFuel →
+        (∀ loopFuel loopOutcome loopTargetOutcome loopFinalTrace,
+          ObserverSemantics.For.Eval program loopFuel
+              cond post body loopSource loopOutcome →
+            ObserverPreservation.OutcomeSimulation.Rel
+              outer tokens loopOutcome loopTargetOutcome loopFinalTrace →
+            OutcomeSimulation.JoinArtifact ctx
+              { condOutput with slots := condOutput.slots.tail }
+              loopOutcome →
+            accept loopTargetOutcome) →
         ObserverPreservation.StateRel.At
             loopInput loopSource tokens loopTarget loopTrace →
         OutcomeSimulation.FirstReaches cfg accept (smallerFuel + 1)
@@ -606,22 +793,34 @@ private theorem outcome_for_step_of_firstReaches
     hFalse | hTrue
   · rcases hFalse with
       ⟨afterCond, targetAfterCond, rfl, hCond, hAfterCondRel⟩
-    have hBoundary :
-        OutcomeSimulation.TargetBoundary outer
-          (.jump endLabel targetAfterCond) := by
-      simp [OutcomeSimulation.TargetBoundary, hOuterRegular]
+    have hForEval :
+        ObserverSemantics.For.Eval program 1
+          cond post body source
+          (Structured.OutcomeT.regular afterCond) :=
+      Structured.EffectSemantics.For.Eval.false
+        (fuel := 0) hCond
+    have hOuterRel :
+        ObserverPreservation.OutcomeSimulation.Rel
+          outer tokens (Structured.OutcomeT.regular afterCond)
+          (.jump endLabel targetAfterCond) firstTrace :=
+      ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
+        ⟨hOuterRegular.symm, hAfterCondRel.rel⟩
+    have hJoin :
+        OutcomeSimulation.JoinArtifact ctx
+          { condOutput with slots := condOutput.slots.tail }
+          (Structured.OutcomeT.regular afterCond) :=
+      hAfterCondRel.sourceFrameFits
     obtain ⟨hOutcomeEq, hTraceEq⟩ :=
       OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
-        hReach hStep (hAccept _ hBoundary)
+        hReach hStep
+          (hClose 1 (Structured.OutcomeT.regular afterCond)
+            (.jump endLabel targetAfterCond) firstTrace
+            hForEval hOuterRel hJoin)
     subst targetOutcome
     subst traceFinal
     exact
       ⟨1, Structured.OutcomeT.regular afterCond,
-        Structured.EffectSemantics.For.Eval.false
-          (fuel := 0) hCond,
-        ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
-          ⟨hOuterRegular.symm, hAfterCondRel.rel⟩,
-        hAfterCondRel.sourceFrameFits⟩
+        hForEval, hOuterRel, hJoin⟩
   · rcases hTrue with
       ⟨afterCond, targetAfterCond, rfl, hCond, hAfterCondRel⟩
     have hTailReach :
@@ -648,8 +847,8 @@ private theorem outcome_for_step_of_firstReaches
           hBodyAdequate
             (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                 hEval hOutcomeRel hArtifact =>
-              bodyActivationBoundary hAccept hOuterRegular hBodyRequire
-                hEval hOutcomeRel hArtifact)
+              bodyActivationBoundary hClose hCond hOuterRegular
+                hBodyRequire hEval hOutcomeRel hArtifact)
             hAfterCondRel hBodyReach
         have hBodyJoin :
             OutcomeSimulation.JoinArtifact
@@ -683,13 +882,6 @@ private theorem outcome_for_step_of_firstReaches
                   (.jump endLabel bodyTarget) bodyTrace :=
               ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
                 ⟨hOuterRegular.symm, hBodyStateRel⟩
-            obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
-              OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
-                hTailReach hBodyReach hBodyLe
-                (hAccept _
-                  (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
-            subst targetOutcome
-            subst traceFinal
             change
               ∃ output,
                 (some { condOutput with
@@ -704,11 +896,25 @@ private theorem outcome_for_step_of_firstReaches
                   { condOutput with slots := condOutput.slots.tail } :=
               Option.some.inj hOutput.symm
             subst output
+            have hForEval :
+                ObserverSemantics.For.Eval program (bodySourceFuel + 1)
+                  cond post body source
+                  (Structured.OutcomeT.regular bodyState) :=
+              Structured.EffectSemantics.For.Eval.body_brk
+                hCond hBodyEval
+            obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
+              OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
+                hTailReach hBodyReach hBodyLe
+                (hClose (bodySourceFuel + 1)
+                  (Structured.OutcomeT.regular bodyState)
+                  (.jump endLabel bodyTarget) bodyTrace
+                  hForEval hOuterRel hBound)
+            subst targetOutcome
+            subst traceFinal
             exact
               ⟨bodySourceFuel + 1,
                 Structured.OutcomeT.regular bodyState,
-                Structured.EffectSemantics.For.Eval.body_brk
-                  hCond hBodyEval,
+                hForEval,
                 hOuterRel, hBound⟩
         | leave =>
             have hOuterRel :
@@ -719,8 +925,15 @@ private theorem outcome_for_step_of_firstReaches
             obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
               OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                 hTailReach hBodyReach hBodyLe
-                (hAccept _
-                  (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                (hClose (bodySourceFuel + 1)
+                  (Structured.OutcomeT.leave bodyState)
+                  bodyTargetOutcome bodyTrace
+                  (Structured.EffectSemantics.For.Eval.body_leave
+                    hCond hBodyEval)
+                  hOuterRel
+                  (by
+                    simpa [OutcomeSimulation.JoinArtifact] using
+                      hBodyJoin))
             subst targetOutcome
             subst traceFinal
             exact
@@ -741,8 +954,12 @@ private theorem outcome_for_step_of_firstReaches
             obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
               OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                 hTailReach hBodyReach hBodyLe
-                (hAccept _
-                  (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                (hClose (bodySourceFuel + 1)
+                  (Structured.OutcomeT.halt kind bodyState)
+                  bodyTargetOutcome bodyTrace
+                  (Structured.EffectSemantics.For.Eval.body_halt
+                    hCond hBodyEval)
+                  hOuterRel (by trivial))
             subst targetOutcome
             subst traceFinal
             exact
@@ -790,8 +1007,43 @@ private theorem outcome_for_step_of_firstReaches
                   hPostAdequate
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
-                      postActivationBoundary hAccept hPostRequire
-                        hEval hOutcomeRel hArtifact)
+                      postActivationBoundary
+                        (hLeave := fun {postFuel} {postState}
+                            {postTarget} {postTrace}
+                            hPostEval hPostRel hPostJoin => by
+                          let sourceFuel :=
+                            Nat.max bodySourceFuel postFuel
+                          exact
+                            hClose (sourceFuel + 1)
+                              (Structured.OutcomeT.leave postState)
+                              postTarget postTrace
+                              (Structured.EffectSemantics.For.Eval.regular_post_leave
+                                hCond
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hBodyEval (by simp [sourceFuel]))
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hPostEval (by simp [sourceFuel])))
+                              (postLeaveRel hPostRel)
+                              (by
+                                simpa [OutcomeSimulation.JoinArtifact] using
+                                  hPostJoin))
+                        (hHalt := fun {postFuel} {postState} {kind}
+                            {postTarget} {postTrace}
+                            hPostEval hPostRel _hPostJoin => by
+                          let sourceFuel :=
+                            Nat.max bodySourceFuel postFuel
+                          exact
+                            hClose (sourceFuel + 1)
+                              (Structured.OutcomeT.halt kind postState)
+                              postTarget postTrace
+                              (Structured.EffectSemantics.For.Eval.regular_post_halt
+                                hCond
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hBodyEval (by simp [sourceFuel]))
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hPostEval (by simp [sourceFuel])))
+                              (postHaltRel hPostRel) (by trivial))
+                        hPostRequire hEval hOutcomeRel hArtifact)
                     hBodyAt hPostReach
                 have hPostJoin :
                     OutcomeSimulation.JoinArtifact
@@ -841,7 +1093,26 @@ private theorem outcome_for_step_of_firstReaches
                         obtain
                             ⟨loopSourceFuel, sourceOutcome,
                               hLoopEval, hLoopOutcomeRel, hLoopArtifact⟩ :=
-                          hRecurse hDecrease hPostAt
+                          hRecurse hDecrease
+                            (fun loopFuel loopOutcome loopTargetOutcome
+                                loopFinalTrace hLoopEval hLoopRel
+                                hLoopArtifact => by
+                              let sourceFuel :=
+                                Nat.max bodySourceFuel
+                                  (Nat.max postSourceFuel loopFuel)
+                              exact
+                                hClose (sourceFuel + 1) loopOutcome
+                                  loopTargetOutcome loopFinalTrace
+                                  (Structured.EffectSemantics.For.Eval.regular_post_regular
+                                    hCond
+                                    (Structured.EffectSemantics.Block.Eval.mono
+                                      hBodyEval (by simp [sourceFuel]))
+                                    (Structured.EffectSemantics.Block.Eval.mono
+                                      hPostEval (by simp [sourceFuel]))
+                                    (Structured.EffectSemantics.For.Eval.mono
+                                      hLoopEval (by simp [sourceFuel])))
+                                  hLoopRel hLoopArtifact)
+                            hPostAt
                             (by simpa [hResidual] using hAfterPostReach)
                         let sourceFuel :=
                           Nat.max bodySourceFuel
@@ -867,24 +1138,33 @@ private theorem outcome_for_step_of_firstReaches
                           (Structured.OutcomeT.leave postState)
                           postTargetOutcome postTrace := by
                       exact postLeaveRel hPostOutcomeRel
+                    let sourceFuel :=
+                      Nat.max bodySourceFuel postSourceFuel
+                    have hForEval :
+                        ObserverSemantics.For.Eval program (sourceFuel + 1)
+                          cond post body source
+                          (Structured.OutcomeT.leave postState) :=
+                      Structured.EffectSemantics.For.Eval.regular_post_leave
+                        hCond
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hBodyEval (by simp [sourceFuel]))
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hPostEval (by simp [sourceFuel]))
                     obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
                       OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                         hAfterBodyReach hPostReach hPostLe
-                        (hAccept _
-                          (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                        (hClose (sourceFuel + 1)
+                          (Structured.OutcomeT.leave postState)
+                          postTargetOutcome postTrace hForEval hOuterRel
+                          (by
+                            simpa [OutcomeSimulation.JoinArtifact] using
+                              hPostJoin))
                     subst targetOutcome
                     subst traceFinal
-                    let sourceFuel :=
-                      Nat.max bodySourceFuel postSourceFuel
                     exact
                       ⟨sourceFuel + 1,
                         Structured.OutcomeT.leave postState,
-                        Structured.EffectSemantics.For.Eval.regular_post_leave
-                          hCond
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hBodyEval (by simp [sourceFuel]))
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hPostEval (by simp [sourceFuel])),
+                        hForEval,
                         hOuterRel,
                         by
                           simpa [OutcomeSimulation.JoinArtifact] using
@@ -896,24 +1176,31 @@ private theorem outcome_for_step_of_firstReaches
                           (Structured.OutcomeT.halt kind postState)
                           postTargetOutcome postTrace := by
                       exact postHaltRel hPostOutcomeRel
+                    let sourceFuel :=
+                      Nat.max bodySourceFuel postSourceFuel
+                    have hForEval :
+                        ObserverSemantics.For.Eval program (sourceFuel + 1)
+                          cond post body source
+                          (Structured.OutcomeT.halt kind postState) :=
+                      Structured.EffectSemantics.For.Eval.regular_post_halt
+                        hCond
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hBodyEval (by simp [sourceFuel]))
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hPostEval (by simp [sourceFuel]))
                     obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
                       OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                         hAfterBodyReach hPostReach hPostLe
-                        (hAccept _
-                          (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                        (hClose (sourceFuel + 1)
+                          (Structured.OutcomeT.halt kind postState)
+                          postTargetOutcome postTrace hForEval hOuterRel
+                          (by trivial))
                     subst targetOutcome
                     subst traceFinal
-                    let sourceFuel :=
-                      Nat.max bodySourceFuel postSourceFuel
                     exact
                       ⟨sourceFuel + 1,
                         Structured.OutcomeT.halt kind postState,
-                        Structured.EffectSemantics.For.Eval.regular_post_halt
-                          hCond
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hBodyEval (by simp [sourceFuel]))
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hPostEval (by simp [sourceFuel])),
+                        hForEval,
                         hOuterRel, by trivial⟩
                 | brk =>
                     change
@@ -986,8 +1273,43 @@ private theorem outcome_for_step_of_firstReaches
                   hPostAdequate
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
-                      postActivationBoundary hAccept hPostRequire
-                        hEval hOutcomeRel hArtifact)
+                      postActivationBoundary
+                        (hLeave := fun {postFuel} {postState}
+                            {postTarget} {postTrace}
+                            hPostEval hPostRel hPostJoin => by
+                          let sourceFuel :=
+                            Nat.max bodySourceFuel postFuel
+                          exact
+                            hClose (sourceFuel + 1)
+                              (Structured.OutcomeT.leave postState)
+                              postTarget postTrace
+                              (Structured.EffectSemantics.For.Eval.cont_post_leave
+                                hCond
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hBodyEval (by simp [sourceFuel]))
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hPostEval (by simp [sourceFuel])))
+                              (postLeaveRel hPostRel)
+                              (by
+                                simpa [OutcomeSimulation.JoinArtifact] using
+                                  hPostJoin))
+                        (hHalt := fun {postFuel} {postState} {kind}
+                            {postTarget} {postTrace}
+                            hPostEval hPostRel _hPostJoin => by
+                          let sourceFuel :=
+                            Nat.max bodySourceFuel postFuel
+                          exact
+                            hClose (sourceFuel + 1)
+                              (Structured.OutcomeT.halt kind postState)
+                              postTarget postTrace
+                              (Structured.EffectSemantics.For.Eval.cont_post_halt
+                                hCond
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hBodyEval (by simp [sourceFuel]))
+                                (Structured.EffectSemantics.Block.Eval.mono
+                                  hPostEval (by simp [sourceFuel])))
+                              (postHaltRel hPostRel) (by trivial))
+                        hPostRequire hEval hOutcomeRel hArtifact)
                     hBodyAt hPostReach
                 have hPostJoin :
                     OutcomeSimulation.JoinArtifact
@@ -1037,7 +1359,26 @@ private theorem outcome_for_step_of_firstReaches
                         obtain
                             ⟨loopSourceFuel, sourceOutcome,
                               hLoopEval, hLoopOutcomeRel, hLoopArtifact⟩ :=
-                          hRecurse hDecrease hPostAt
+                          hRecurse hDecrease
+                            (fun loopFuel loopOutcome loopTargetOutcome
+                                loopFinalTrace hLoopEval hLoopRel
+                                hLoopArtifact => by
+                              let sourceFuel :=
+                                Nat.max bodySourceFuel
+                                  (Nat.max postSourceFuel loopFuel)
+                              exact
+                                hClose (sourceFuel + 1) loopOutcome
+                                  loopTargetOutcome loopFinalTrace
+                                  (Structured.EffectSemantics.For.Eval.cont_post_regular
+                                    hCond
+                                    (Structured.EffectSemantics.Block.Eval.mono
+                                      hBodyEval (by simp [sourceFuel]))
+                                    (Structured.EffectSemantics.Block.Eval.mono
+                                      hPostEval (by simp [sourceFuel]))
+                                    (Structured.EffectSemantics.For.Eval.mono
+                                      hLoopEval (by simp [sourceFuel])))
+                                  hLoopRel hLoopArtifact)
+                            hPostAt
                             (by simpa [hResidual] using hAfterPostReach)
                         let sourceFuel :=
                           Nat.max bodySourceFuel
@@ -1063,24 +1404,33 @@ private theorem outcome_for_step_of_firstReaches
                           (Structured.OutcomeT.leave postState)
                           postTargetOutcome postTrace := by
                       exact postLeaveRel hPostOutcomeRel
+                    let sourceFuel :=
+                      Nat.max bodySourceFuel postSourceFuel
+                    have hForEval :
+                        ObserverSemantics.For.Eval program (sourceFuel + 1)
+                          cond post body source
+                          (Structured.OutcomeT.leave postState) :=
+                      Structured.EffectSemantics.For.Eval.cont_post_leave
+                        hCond
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hBodyEval (by simp [sourceFuel]))
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hPostEval (by simp [sourceFuel]))
                     obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
                       OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                         hAfterBodyReach hPostReach hPostLe
-                        (hAccept _
-                          (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                        (hClose (sourceFuel + 1)
+                          (Structured.OutcomeT.leave postState)
+                          postTargetOutcome postTrace hForEval hOuterRel
+                          (by
+                            simpa [OutcomeSimulation.JoinArtifact] using
+                              hPostJoin))
                     subst targetOutcome
                     subst traceFinal
-                    let sourceFuel :=
-                      Nat.max bodySourceFuel postSourceFuel
                     exact
                       ⟨sourceFuel + 1,
                         Structured.OutcomeT.leave postState,
-                        Structured.EffectSemantics.For.Eval.cont_post_leave
-                          hCond
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hBodyEval (by simp [sourceFuel]))
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hPostEval (by simp [sourceFuel])),
+                        hForEval,
                         hOuterRel,
                         by
                           simpa [OutcomeSimulation.JoinArtifact] using
@@ -1092,24 +1442,31 @@ private theorem outcome_for_step_of_firstReaches
                           (Structured.OutcomeT.halt kind postState)
                           postTargetOutcome postTrace := by
                       exact postHaltRel hPostOutcomeRel
+                    let sourceFuel :=
+                      Nat.max bodySourceFuel postSourceFuel
+                    have hForEval :
+                        ObserverSemantics.For.Eval program (sourceFuel + 1)
+                          cond post body source
+                          (Structured.OutcomeT.halt kind postState) :=
+                      Structured.EffectSemantics.For.Eval.cont_post_halt
+                        hCond
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hBodyEval (by simp [sourceFuel]))
+                        (Structured.EffectSemantics.Block.Eval.mono
+                          hPostEval (by simp [sourceFuel]))
                     obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
                       OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
                         hAfterBodyReach hPostReach hPostLe
-                        (hAccept _
-                          (OutcomeSimulation.targetBoundary_of_rel hOuterRel))
+                        (hClose (sourceFuel + 1)
+                          (Structured.OutcomeT.halt kind postState)
+                          postTargetOutcome postTrace hForEval hOuterRel
+                          (by trivial))
                     subst targetOutcome
                     subst traceFinal
-                    let sourceFuel :=
-                      Nat.max bodySourceFuel postSourceFuel
                     exact
                       ⟨sourceFuel + 1,
                         Structured.OutcomeT.halt kind postState,
-                        Structured.EffectSemantics.For.Eval.cont_post_halt
-                          hCond
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hBodyEval (by simp [sourceFuel]))
-                          (Structured.EffectSemantics.Block.Eval.mono
-                            hPostEval (by simp [sourceFuel])),
+                        hForEval,
                         hOuterRel, by trivial⟩
                 | brk =>
                     change
@@ -1164,10 +1521,16 @@ private theorem outcome_for_of_firstReaches
     (hPostRequire :
       postResult.requireFallthrough? loopInput = some ())
     (hOuterRegular : outer.regular = endLabel)
-    (hAccept :
-      ∀ acceptedOutcome,
-        OutcomeSimulation.TargetBoundary outer acceptedOutcome →
-          accept acceptedOutcome)
+    (hClose :
+      ∀ forFuel forOutcome forTarget forTrace,
+        ObserverSemantics.For.Eval program forFuel
+            cond post body source forOutcome →
+          ObserverPreservation.OutcomeSimulation.Rel
+            outer tokens forOutcome forTarget forTrace →
+          OutcomeSimulation.JoinArtifact ctx
+            { condOutput with slots := condOutput.slots.tail }
+            forOutcome →
+          accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
         ¬ OutcomeSimulation.JumpAt bodySource tokens postLabel
@@ -1238,22 +1601,22 @@ private theorem outcome_for_of_firstReaches
       exact
         outcome_for_step_of_firstReaches
           hBlocks hLoopMem hType hSource hHead hBodyRequire hPostRequire
-          hOuterRegular hAccept hBodyEntryNotAccepted
+          hOuterRegular hClose hBodyEntryNotAccepted
           hPostEntryNotAccepted hLoopEntryNotAccepted
           hRel hReach hBodyAdequate hPostAdequate
           (by
             intro smallerFuel loopSource loopTarget loopTrace
-              hSmaller hLoopRel hLoopReach
+              hSmaller hLoopClose hLoopRel hLoopReach
             exact
               ih smallerFuel hSmaller
-                hLoopRel hLoopReach)
+                hLoopClose hLoopRel hLoopReach)
 
 /--
 Compiler-facing backward adequacy for a checked Structured `for` statement.
 All generated shapes and labels are recovered from the existing compiler
 result; recursive blocks cross only the shared adjacent block interface.
 -/
-private theorem adequateWithin_for_of_compileStmtFuel?
+theorem adequateWithin_for_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
     {init : Structured.Block} {cond : Structured.Code}
@@ -1263,6 +1626,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {accept : TypedCfg.Outcome → Prop}
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.for_ init cond post body) ctx supply entry input regular =
@@ -1392,9 +1756,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
       result ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
-      (OutcomeSimulation.TargetBoundary
-        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-          ctx regular))
+      accept
       entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
@@ -1456,13 +1818,8 @@ private theorem adequateWithin_for_of_compileStmtFuel?
         hInitAdequate hInitCompile hInitFallthrough hInitBlocks
           (fun _sourceFuel _sourceOutcome _targetOutcome _trace
               hEval hOutcomeRel hArtifact => by
-            have hInitRequire :
-                initResult.requireFallthrough? loopInput = some () := by
-              simp [TypedCfgCompiler.Result.requireFallthrough?,
-                hInitFallthrough]
             exact
-              postActivationBoundary
-                (fun _ hBoundary => hBoundary) hInitRequire
+              initActivationBoundary hAccept hInitFallthrough
                 hEval hOutcomeRel hArtifact)
           hRel hInitReach
       have hInitJoin :
@@ -1510,7 +1867,22 @@ private theorem adequateWithin_for_of_compileStmtFuel?
                 outcome_for_of_firstReaches
                   hBlocks hLoopMem hType hSource hHead hBodyRequire
                   hPostRequire
-                  rfl (fun _ hBoundary => hBoundary)
+                  rfl
+                  (fun forFuel forOutcome forTarget forTrace
+                      hForEval hForRel hForJoin => by
+                    let sourceFuel :=
+                      Nat.max initSourceFuel forFuel
+                    exact
+                      hAccept (sourceFuel + 1) forOutcome
+                        forTarget forTrace
+                        (Structured.EffectSemantics.Stmt.Eval.for_init_regular
+                          (Structured.EffectSemantics.Block.Eval.mono
+                            hInitEval (by simp [sourceFuel]))
+                          (Structured.EffectSemantics.For.Eval.mono
+                            hForEval (by simp [sourceFuel])))
+                        hForRel
+                        (OutcomeSimulation.OutcomeArtifact.ofJoin
+                          rfl hForJoin))
                   (by
                     intro bodySource targetState
                     simp [OutcomeSimulation.JumpAt]
@@ -1549,7 +1921,15 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
             OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
               hReach hInitReach hInitLe
-              (OutcomeSimulation.targetBoundary_of_rel hOuterRel)
+              (hAccept (initSourceFuel + 1)
+                (Structured.OutcomeT.leave initState)
+                initTargetOutcome initTrace
+                (Structured.EffectSemantics.Stmt.Eval.for_init_leave
+                  hInitEval)
+                hOuterRel
+                (by
+                  simpa [OutcomeSimulation.OutcomeArtifact,
+                    OutcomeSimulation.JoinArtifact] using hInitJoin))
           subst targetOutcome
           subst traceFinal
           exact
@@ -1570,7 +1950,12 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
             OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
               hReach hInitReach hInitLe
-              (OutcomeSimulation.targetBoundary_of_rel hOuterRel)
+              (hAccept (initSourceFuel + 1)
+                (Structured.OutcomeT.halt kind initState)
+                initTargetOutcome initTrace
+                (Structured.EffectSemantics.Stmt.Eval.for_init_halt
+                  hInitEval)
+                hOuterRel (by trivial))
           subst targetOutcome
           subst traceFinal
           exact

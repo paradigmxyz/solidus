@@ -81,6 +81,51 @@ theorem of_at
     FrameMatches source tokens shape target :=
   of_rel rfl hRel.rel hRel.sourceFrameFits
 
+theorem not_of_pushed_return
+    {transcript : Trace} {shape : TypedCfg.Shape}
+    {caller child : ObserverSemantics.State transcript}
+    {tokens : List Word} {token : Word}
+    {frame : Structured.ReturnDest}
+    {target : EVMState} {depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hReturns :
+      child.source.returns = frame :: caller.source.returns)
+    (hCallerHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        TypedCfgPreservation.realizeStack
+            [] caller.source.returns tokens = some hidden)
+    (hChild :
+      FrameMatches child (token :: tokens) shape target) :
+    ¬ FrameMatches caller tokens shape target := by
+  rcases hCallerHidden with ⟨callerHidden, hCallerHidden⟩
+  unfold FrameMatches at hChild ⊢
+  rw [hDepth] at hChild ⊢
+  rcases hChild with ⟨childHidden, hChildHidden, hChildLength⟩
+  intro hCaller
+  rcases hCaller with
+    ⟨callerHidden', hCallerHidden', hCallerLength⟩
+  have hCallerHiddenEq : callerHidden' = callerHidden := by
+    exact Option.some.inj (hCallerHidden'.symm.trans hCallerHidden)
+  subst callerHidden'
+  have hExpected :
+      TypedCfgPreservation.realizeStack
+          [] child.source.returns (token :: tokens) =
+        some ([token] ++ frame.callerStack ++ callerHidden) := by
+    rw [hReturns]
+    simp only [TypedCfgPreservation.realizeStack]
+    have hAppend :=
+      TypedCfgPreservation.realizeStack_append_prefix
+        ([token] ++ frame.callerStack) []
+        caller.source.returns tokens
+    rw [hCallerHidden] at hAppend
+    simpa [List.append_assoc] using hAppend
+  have hChildHiddenEq :
+      childHidden = [token] ++ frame.callerStack ++ callerHidden := by
+    exact Option.some.inj (hChildHidden.symm.trans hExpected)
+  subst childHidden
+  simp only [List.length_append, List.length_cons, List.length_nil] at hChildLength
+  omega
+
 end FrameMatches
 
 namespace JumpAt

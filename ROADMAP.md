@@ -155,8 +155,14 @@ Adjacent boundary status:
   `JumpAt` for every internal continuation, so a nested recursive activation
   cannot satisfy its caller's boundary merely by reaching the same static
   label. The label-only `JumpOr` predicate and adapters have been deleted and
-  an architecture guard prevents their restoration. The generated-context
-  mutual statement/block theorem and whole-program backward adequacy remain.
+  an architecture guard prevents their restoration. Recursive loop adequacy
+  now carries the enclosing semantic closure through each smaller-fuel
+  iteration, so the compiler-facing loop theorem composes under arbitrary
+  activation-indexed boundaries. Internal calls expose a fixed-target-fuel
+  theorem whose callee obligation is strictly smaller, and pushed return-frame
+  realization proves that a recursive callee exit cannot satisfy its caller's
+  same-label continuation. The generated-context mutual statement/block
+  theorem and whole-program backward adequacy remain.
   Shared outcome artifacts and terminal leaves were extracted into sibling
   modules. Source-frame typing now distinguishes token-free caller frames,
   which retain a stack lower bound, from active procedure frames, whose

@@ -481,6 +481,42 @@ def AdequateWithin {transcript : Trace}
               OutcomeArtifact result ctx sourceOutcome
 
 /--
+Fixed-target-fuel form of `AdequateWithin`.
+
+Recursive procedure adequacy uses this interface to expose the strict decrease
+in target execution fuel without adding a public all-callees obligation.
+-/
+def AdequateWithinFuel {transcript : Trace}
+    (eval :
+      Nat →
+        ObserverSemantics.Outcome (transcript := transcript) → Prop)
+    (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context)
+    (program : TypedCfg.Program) (continuations : Continuations)
+    (accept : TypedCfg.Outcome → Prop)
+    (entry : Assembly.Label) (input : TypedCfg.Shape)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word) (targetFuel : Nat) : Prop :=
+  (∀ sourceFuel sourceOutcome targetOutcome trace,
+      eval sourceFuel sourceOutcome →
+        ObserverPreservation.OutcomeSimulation.Rel
+          continuations tokens sourceOutcome targetOutcome trace →
+        OutcomeArtifact result ctx sourceOutcome →
+          accept targetOutcome) →
+    ∀ {target : EVMState}
+      {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome},
+      ObserverPreservation.StateRel.At
+          input source tokens target trace →
+        FirstReaches program accept (targetFuel + 1)
+            entry target trace targetOutcome traceFinal →
+          ∃ sourceFuel sourceOutcome,
+            eval sourceFuel sourceOutcome ∧
+              ObserverPreservation.OutcomeSimulation.Rel
+                continuations tokens sourceOutcome
+                targetOutcome traceFinal ∧
+              OutcomeArtifact result ctx sourceOutcome
+
+/--
 Stable backward-adequacy interface for a source evaluation relation at a typed
 Structured-to-TypedCfg boundary.
 -/
@@ -509,6 +545,27 @@ def AdequateAt {transcript : Trace}
             OutcomeArtifact result ctx sourceOutcome
 
 namespace AdequateWithin
+
+theorem fuel
+    {transcript : Trace}
+    {eval :
+      Nat →
+        ObserverSemantics.Outcome (transcript := transcript) → Prop}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {program : TypedCfg.Program} {continuations : Continuations}
+    {accept : TypedCfg.Outcome → Prop}
+    {entry : Assembly.Label} {input : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (hAdequate :
+      AdequateWithin eval result ctx program continuations accept
+        entry input source tokens)
+    (targetFuel : Nat) :
+    AdequateWithinFuel eval result ctx program continuations accept
+      entry input source tokens targetFuel := by
+  intro hAccept
+  exact hAdequate hAccept
 
 theorem toAdequateAt
     {transcript : Trace}
@@ -3136,11 +3193,11 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
               hOutcomeRel, hArtifact⟩
 
 /--
-Private `AdequateWithin` interface for checked switches. The later mutual
-statement/block theorem supplies the selected-body instance and generated-label
+Pass-owned `AdequateWithin` interface for checked switches. The generated
+context theorem supplies the selected-body instance and generated-label
 freshness facts.
 -/
-private theorem adequateWithin_switch_of_compileStmtFuel?
+theorem adequateWithin_switch_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
     {scrutinee : Structured.Code}
@@ -4789,10 +4846,10 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
         hOutcomeRel, hArtifact⟩
 
 /--
-Private `AdequateWithin` composition rule for conditionals. The mutual recursive
-statement/block theorem supplies the body instance.
+Pass-owned `AdequateWithin` composition rule for conditionals. The generated
+context theorem supplies the body instance.
 -/
-private theorem adequateWithin_if_of_compileStmtFuel?
+theorem adequateWithin_if_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
     {cond : Structured.Code} {body : Structured.Block}

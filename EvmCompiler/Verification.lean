@@ -82,8 +82,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ReachesBoundary
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateWithin
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateWithinFuel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.not_of_pushed_return
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump
@@ -98,6 +100,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequate_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Switch.adequateWithin_switch_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_if_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Loop.adequateWithin_for_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_code_of_compileStmtFuel?
@@ -111,6 +116,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
 #check EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
+#check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithin_call_of_compileStmtFuel?
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
