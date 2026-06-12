@@ -144,6 +144,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameRelease_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameRelease_backward
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_memory_eq_active_growth
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
+#check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant
 #check EvmCompiler.Structured.EffectSemantics.Code.run_append
 #check EvmCompiler.Structured.ObserverSemantics.Code.run_append
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
@@ -591,6 +595,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.initialized_source_facts
 #print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
 #print axioms EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_memory_eq_active_growth
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
+#print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_state
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

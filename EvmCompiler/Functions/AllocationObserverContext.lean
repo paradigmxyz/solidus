@@ -2746,6 +2746,116 @@ theorem transport_state
 end ActivationInvariant
 
 /--
+Recursive statement-boundary invariant including the global scratch allocator.
+
+`ActivationInvariant` remains the local adjacent-pass contract. This wrapper
+adds only the runtime facts needed to justify nested frame acquisition and to
+show that ordinary source/compiler memory operations preserve allocator
+metadata. It contains no compiler implementation, replay evidence, or call
+oracle.
+-/
+structure ActivationRuntimeInvariant
+    {transcript : AllocationObserverRelation.Trace}
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : AllocationObserverRelation.ActivationMode)
+    (source : Functions.ObserverSemantics.State transcript)
+    (target : Structured.ObserverSemantics.State transcript) : Prop where
+  activation :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+      frameBase mode source target
+  allocator :
+    AllocationObserverRelation.Frame.AllocatorReady
+      config allocatorDepth target
+  frame :
+    AllocationObserverRelation.Frame.ActivationOwned
+      config allocatorDepth frameBase mode
+
+namespace ActivationRuntimeInvariant
+
+theorem restrict_source_live
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationRuntimeInvariant contract config allocatorDepth
+        lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    ActivationRuntimeInvariant contract config allocatorDepth
+      lowerCtx lowerState localsCtx plan live frameBase mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        live source)
+      target :=
+  { activation := hInvariant.activation.restrict_source_live
+    allocator := hInvariant.allocator
+    frame := hInvariant.frame }
+
+theorem transport_locals_layout
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {before after : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationRuntimeInvariant contract config allocatorDepth
+        lowerCtx lowerState before plan live frameBase mode source target)
+    (hLayout : after.layout = before.layout) :
+    ActivationRuntimeInvariant contract config allocatorDepth
+      lowerCtx lowerState after plan live frameBase mode source target :=
+  { activation :=
+      hInvariant.activation.transport_locals_layout hLayout
+    allocator := hInvariant.allocator
+    frame := hInvariant.frame }
+
+theorem transport_state
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationRuntimeInvariant contract config allocatorDepth
+        lowerCtx before localsCtx plan live frameBase mode source target)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationRuntimeInvariant contract config allocatorDepth
+      lowerCtx after localsCtx plan live frameBase mode source target :=
+  { activation := hInvariant.activation.transport_state hEnv hLayout
+    allocator := hInvariant.allocator
+    frame := hInvariant.frame }
+
+end ActivationRuntimeInvariant
+
+/--
 Exact compiler classification for a lowered source variable.
 
 The constructors retain only semantic location facts and the concrete code

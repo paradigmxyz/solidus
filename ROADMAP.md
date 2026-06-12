@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 15:04 PDT.
+Last updated: 2026-06-12 15:58 PDT.
 
 ## Objective
 
@@ -294,7 +294,11 @@ Adjacent boundary status:
   Validated function artifacts now construct the exact all-stack or
   scratch-frame parameter/return prelude, execute it, and package the
   compiler-derived body context as the standard `ActivationInvariant`.
-  Remaining work at this boundary is source-fuel recursive
+  `ActivationRuntimeInvariant` extends that local boundary with the global
+  allocator depth and exact ownership of the current scratch frame. Allocator
+  readiness transports across ordinary machine-preserving and monotone-memory
+  steps, and owned caller spill words are proved to end before the next frame
+  base. Remaining work at this boundary is source-fuel recursive
   statement/function/call composition, propagation of source-facing memory
   safety and fuel, and the whole-program adjacent forward/backward theorem.
   The final scratch theorem must expose or derive an actual-execution source
@@ -658,9 +662,13 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   including reversed entry-stack order. The allocation relation can construct
   a stack-local store realization directly from a checked source lookup and
   concrete entry stack, and metadata-only entry markers have checked
-  compilation and no-op execution. Constructing the validated body
-  `ActivationExprContext`, composing recursive body execution and call
-  execution, and matching backward adequacy remain.
+  compilation and no-op execution. Generic multi-return call writeback is
+  checked for both stack and scratch targets. The validated prelude now yields
+  the body `ActivationInvariant`, while `ActivationRuntimeInvariant` names the
+  additional allocator-readiness and top-frame-ownership facts required by
+  recursive calls. The immediate remaining lemma is real-code
+  noninterference for nested scratch-frame acquisition; after that, recursive
+  body/call composition and matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

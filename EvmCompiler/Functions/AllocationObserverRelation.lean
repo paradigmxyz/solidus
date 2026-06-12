@@ -4286,6 +4286,102 @@ structure AllocatorReady {transcript : Trace}
     target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
       EvmYul.UInt256.size
 
+namespace AllocatorReady
+
+/--
+Transport allocator readiness across target execution that leaves the
+allocator word unchanged while growing active and materialized memory.
+
+This is the common target-side interface used by ordinary source primitives
+and compiler-owned spill accesses. Only frame acquire/release deliberately
+change the allocator word.
+-/
+theorem of_lookup_growth
+    {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hLookup :
+      after.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat config.allocatorCell) =
+        before.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat config.allocatorCell))
+    (hActive :
+      before.source.evm.activeWords.toNat ≤
+        after.source.evm.activeWords.toNat)
+    (hMemory :
+      before.source.evm.toMachineState.memory.size ≤
+        after.source.evm.toMachineState.memory.size)
+    (hNoWrap :
+      after.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorReady config depth after := by
+  refine
+    { allocatorAt := ?_
+      cellActive := ?_
+      cellAllocated := ?_
+      activeNoWrap := hNoWrap }
+  · exact hLookup.trans hReady.allocatorAt
+  · exact hReady.cellActive.trans
+      (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+  · exact hReady.cellAllocated.trans hMemory
+
+/--
+Active-memory growth with identical materialized memory preserves allocator
+readiness.
+-/
+theorem of_memory_eq_active_growth
+    {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMemory :
+      after.source.evm.toMachineState.memory =
+        before.source.evm.toMachineState.memory)
+    (hActive :
+      before.source.evm.activeWords.toNat ≤
+        after.source.evm.activeWords.toNat)
+    (hNoWrap :
+      after.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorReady config depth after := by
+  have hCellLt :
+      config.allocatorCell < EvmYul.UInt256.size := by
+    exact lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCellWord :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hLookup :=
+    Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+        config.allocatorCell hCellWord hMemory hActive
+        hReady.activeNoWrap hNoWrap
+        hReady.cellAllocated hReady.cellActive
+  apply hReady.of_lookup_growth hLookup hActive
+  · simpa [hMemory]
+  · exact hNoWrap
+
+/--
+An unchanged target machine preserves allocator readiness exactly.
+-/
+theorem of_machine_eq
+    {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState) :
+    AllocatorReady config depth after := by
+  apply hReady.of_memory_eq_active_growth
+  · simpa [hMachine]
+  · simpa [hMachine]
+  · simpa [hMachine] using hReady.activeNoWrap
+
+end AllocatorReady
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
@@ -4365,6 +4461,113 @@ theorem budget_mono {config : Config} {smaller larger : Nat}
     Nat.le_trans
       (Nat.add_le_add_right (baseAt_mono config hDepth) (bytes config))
       hBudget
+
+/--
+The current Functions activation's relationship to the global scratch-frame
+allocator.
+
+Stack-only activations do not own a frame and therefore leave the allocator
+depth unconstrained. A scratch activation owns exactly the most recently
+acquired frame: its base is `baseAt` the preceding depth and its width is the
+single compiler-wide frame width.
+-/
+inductive ActivationOwned (config : Config) :
+    Nat → Nat → ActivationMode → Prop where
+  | stack {allocatorDepth frameBase : Nat} :
+      ActivationOwned config allocatorDepth frameBase .stack
+  | scratch
+      {previousDepth frameBase frameDepth frameWords : Nat}
+      (depth : frameBase = baseAt config previousDepth)
+      (words : frameWords = config.frameWords) :
+      ActivationOwned config (previousDepth + 1) frameBase
+        (.scratch frameDepth frameWords)
+
+namespace ActivationOwned
+
+theorem sameFrame
+    {config : Config}
+    {allocatorDepth frameBase : Nat}
+    {before after : ActivationMode}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase before)
+    (hSame : SameFrame before after) :
+    ActivationOwned config allocatorDepth frameBase after := by
+  cases hOwned with
+  | stack =>
+      cases hSame
+      exact .stack
+  | @scratch previousDepth _ beforeDepth frameWords hBase hWords =>
+      cases hSame with
+      | scratch _ afterDepth _ =>
+          exact .scratch hBase hWords
+
+/--
+Every owned scratch frame begins strictly after the allocator metadata word.
+-/
+theorem allocatorCell_end_le_frameBase
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase frameDepth frameWords : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.allocatorCell + MemoryContract.wordBytes ≤ frameBase := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      obtain
+        ⟨_reservation, _hReservation, hAllocator, hFirst, _hLimit,
+          _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+        AllocationSupport.scratchFrameConfig?_sound hConfig
+      rw [hBase, baseAt, hAllocator, hFirst]
+      unfold MemoryContract.ScratchReservation.allocatorCell
+        MemoryContract.ScratchReservation.frameBase
+      exact Nat.le_add_right _ _
+
+/--
+Every compiler spill address in the owned frame lies after the allocator word,
+so ordinary frame stores cannot overwrite allocator metadata.
+-/
+theorem allocatorCell_disjoint_scratchAddress
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.allocatorCell + MemoryContract.wordBytes ≤
+      scratchAddress frameBase slot := by
+  exact (hOwned.allocatorCell_end_le_frameBase hConfig).trans
+    (Nat.le_add_right frameBase
+      (MemoryContract.wordBytes * slot))
+
+/--
+Every live word in an owned scratch activation ends at or before the current
+allocator base. Acquiring the next frame therefore writes strictly above the
+caller's frame.
+-/
+theorem scratchAddress_end_le_allocatorBase
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hSlot : slot < frameWords) :
+    scratchAddress frameBase slot + MemoryContract.wordBytes ≤
+      baseAt config allocatorDepth := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase hWords =>
+      rw [hBase, baseAt_succ]
+      exact scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
+
+end ActivationOwned
 
 /--
 Source-facing resource premise for a run with the given call fuel.
