@@ -4266,6 +4266,144 @@ def ScopedBlockForward
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome
 
+/--
+Regular lexically scoped execution retaining the complete outer activation
+invariant after compiler-emitted cleanup.
+-/
+def RegularScopedBlockInvariantForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerFinal localsFinal plan finalLive
+        frameBase finalMode sourceFinal targetFinal
+
+theorem RegularScopedBlockInvariantForward.finish_regular
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {bodyLowerState outerLowerState : AllocationLowering.State}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      RegularBlockInvariantForward
+        contract transcript lowerCtx bodyLowerState bodyLocals bodyPlan
+        beforeLive frameBase beforeMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceFinal targetMid finalCtx)
+    (hSourceScope : sourceCtx.scope = afterLive)
+    (hTargetDepth : targetDepth = outerLocals.layout.length)
+    (hAfterCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx outerLowerState outerLocals outerPlan afterLive afterMode)
+    (hAfterWF : outerPlan.WellFormed)
+    (hPlanAgree :
+      PlanAgreesOn bodyPlan outerPlan afterLive)
+    (hTransition :
+      AllocationObserverCleanup.Transition
+        bodyPlan beforeLive afterLive targetDepth beforeMode afterMode)
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    ∃ targetFinal,
+      RegularScopedBlockInvariantForward
+        contract transcript lowerCtx outerLowerState outerLocals outerPlan
+        afterLive frameBase afterMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured targetBlock.stmts }
+        target
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal := by
+  rcases hBody with
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant⟩
+  obtain ⟨cleanup, hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
+  rw [← hTargetDepth] at hCleanup
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalBodyRel, hFinalLength⟩ :=
+    AllocationObserverCleanup.Plain.forward_exact
+      hBodyInvariant.compiler hTransition hBodyInvariant.planWF
+      hBodyInvariant.defined hBodyInvariant.state
+      hBodyInvariant.stackLength hCleanup
+  have hFinalRel :
+      ActivationStateRel contract outerPlan afterLive 0 frameBase
+        afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal :=
+    hFinalBodyRel.transport_plan hPlanAgree
+  have hCleanupBlock :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup] }
+        targetMid
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code hCleanupRun)
+      Structured.EffectSemantics.Block.Eval.nil
+  obtain ⟨scopedFuel, hTargetScoped⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hTargetBody hCleanupBlock
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen
+  rw [hSourceScope] at hSourceScoped
+  have hDefinedFinal :
+      LiveDefined afterLive
+        (((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal).source) := by
+    simpa [Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.restrictTo] using
+      hBodyInvariant.defined.restrictTo hTransition.subset
+  refine
+    ⟨targetFinal, sourceFuel, scopedFuel, hSourceScoped, ?_,
+      hAfterCompiler, hAfterWF, hDefinedFinal,
+      hFinalRel, ?_⟩
+  · rw [hTargetShape]
+    simpa [Expressions.StmtList.toStructured_append,
+      Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTargetScoped
+  · exact hFinalLength.trans hTargetDepth
+
 theorem ScopedBlockForward.finish_regular
     {contract : MemoryContract.Contract}
     {transcript : Trace}

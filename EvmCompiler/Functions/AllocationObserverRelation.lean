@@ -35,6 +35,52 @@ def currentStackOrder (plan : Plan) (live : List Locals.Name) :
   plan.stackOrder.filter fun name => decide (name ∈ live)
 
 /--
+Two allocation plans realize the same surviving locals.
+
+Stack-location indices are plan-local metadata and may differ across lexical
+scope plans; the filtered runtime order is required to agree. Scratch
+locations instead retain their exact activation slot.
+-/
+inductive LocationAgrees : Location → Location → Prop where
+  | stack (leftDepth rightDepth : Nat) :
+      LocationAgrees (.stack leftDepth) (.stack rightDepth)
+  | scratch (slot : Nat) :
+      LocationAgrees (.scratch slot) (.scratch slot)
+
+structure PlanAgreesOn
+    (left right : Plan) (live : List Locals.Name) : Prop where
+  stackOrder :
+    currentStackOrder left live = currentStackOrder right live
+  location :
+    ∀ name,
+      name ∈ live →
+      ∃ leftLocation rightLocation,
+        left.location? name = some leftLocation ∧
+          right.location? name = some rightLocation ∧
+          LocationAgrees leftLocation rightLocation
+
+namespace PlanAgreesOn
+
+theorem symm
+    {left right : Plan} {live : List Locals.Name}
+    (hAgree : PlanAgreesOn left right live) :
+    PlanAgreesOn right left live := by
+  refine ⟨hAgree.stackOrder.symm, ?_⟩
+  intro name hLive
+  obtain
+      ⟨leftLocation, rightLocation,
+        hLeft, hRight, hLocation⟩ :=
+    hAgree.location name hLive
+  refine ⟨rightLocation, leftLocation, hRight, hLeft, ?_⟩
+  cases hLocation with
+  | stack leftDepth rightDepth =>
+      exact .stack rightDepth leftDepth
+  | scratch slot =>
+      exact .scratch slot
+
+end PlanAgreesOn
+
+/--
 Every source local that is semantically live has already been initialized.
 
 Allocation plans include declarations that may not have executed yet, so this
@@ -86,6 +132,21 @@ theorem insert_cons
   · subst other
     exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
   · exact hDefined.insert_preserves other hLive
+
+theorem restrictTo
+    {beforeLive afterLive : List Locals.Name}
+    {source : Locals.Source.State}
+    (hDefined : LiveDefined beforeLive source)
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive) :
+    LiveDefined afterLive (source.restrictTo afterLive) := by
+  intro name hLive
+  obtain ⟨value, hValue⟩ :=
+    hDefined name (hSubset name hLive)
+  exact
+    ⟨value, by
+      simpa [Locals.Source.State.restrictTo] using
+        (Locals.Source.Store.restrictTo_mem
+          (scope := afterLive) (store := source.vars) hLive).trans hValue⟩
 
 end LiveDefined
 
@@ -376,6 +437,32 @@ theorem rebase_prefix_stack_only
         False.elim (hOnly name slot hLive hLocation))
       hVars
 
+theorem transport_plan
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hRel :
+      StoreRel left live stackOffset frameBase source target)
+    (hAgree : PlanAgreesOn left right live) :
+    StoreRel right live stackOffset frameBase source target := by
+  intro name rightLocation hLive hRightLocation
+  obtain
+      ⟨leftLocation, agreedRightLocation,
+        hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+    hAgree.location name hLive
+  rw [hRightLocation] at hAgreedRightLocation
+  cases hAgreedRightLocation
+  cases hLocationAgree with
+  | stack leftDepth rightDepth =>
+      obtain ⟨depth, hDepth, hValue⟩ :=
+        hRel name (.stack leftDepth) hLive hLeftLocation
+      refine ⟨depth, ?_, hValue⟩
+      rw [← hAgree.stackOrder]
+      exact hDepth
+  | scratch slot =>
+      exact hRel name (.scratch slot) hLive hLeftLocation
+
 end StoreRel
 
 namespace StateRel
@@ -430,6 +517,20 @@ theorem mono {transcript : Trace}
   ⟨hRel.cursor,
     ⟨hRel.core.machine, hRel.core.world,
       hRel.core.store.restrict hSubset hStackOrder⟩⟩
+
+theorem transport_plan {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source : SourceState transcript}
+    {target : TargetState transcript}
+    (hRel :
+      StateRel contract left live stackOffset frameBase source target)
+    (hAgree : PlanAgreesOn left right live) :
+    StateRel contract right live stackOffset frameBase source target :=
+  ⟨hRel.cursor,
+    ⟨hRel.core.machine, hRel.core.world,
+      hRel.core.store.transport_plan hAgree⟩⟩
 
 /--
 Discarding a prefix of stack-resident locals and restricting the source store
@@ -1077,6 +1178,34 @@ theorem append {transcript : Trace}
 end ScratchExprResultRel
 
 namespace ScratchStateRel
+
+theorem transport_plan {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript}
+    {target : TargetState transcript}
+    (hRel :
+      ScratchStateRel contract left live stackOffset frameBase
+        frameDepth frameWords source target)
+    (hAgree : PlanAgreesOn left right live) :
+    ScratchStateRel contract right live stackOffset frameBase
+      frameDepth frameWords source target := by
+  refine
+    ⟨hRel.base.transport_plan hAgree, hRel.framePointer,
+      hRel.frameActive, hRel.frameAllocated, hRel.frameNoWrap,
+      hRel.frameHostAddressable, hRel.activeNoWrap,
+      hRel.frameReserved, ?_⟩
+  intro name slot hLive hRightLocation
+  obtain
+      ⟨leftLocation, rightLocation,
+        hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+    hAgree.location name hLive
+  rw [hRightLocation] at hAgreedRightLocation
+  cases hAgreedRightLocation
+  cases hLocationAgree with
+  | scratch agreedSlot =>
+      exact hRel.scratchBound name slot hLive hLeftLocation
 
 theorem rebase_prefix {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -2155,6 +2284,38 @@ inductive ActivationStateRel {transcript : Trace}
         (.scratch frameDepth frameWords) source target
 
 namespace ActivationStateRel
+
+theorem transport_plan {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {left right : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript}
+    {target : TargetState transcript}
+    (hRel :
+      ActivationStateRel contract left live stackOffset frameBase
+        mode source target)
+    (hAgree : PlanAgreesOn left right live) :
+    ActivationStateRel contract right live stackOffset frameBase
+      mode source target := by
+  cases hRel with
+  | stack hOnly hActive hState =>
+      have hRightOnly : LiveStackOnly right live := by
+        intro name slot hLive hRightLocation
+        obtain
+            ⟨leftLocation, agreedRightLocation,
+              hLeftLocation, hAgreedRightLocation, hLocationAgree⟩ :=
+          hAgree.location name hLive
+        rw [hRightLocation] at hAgreedRightLocation
+        cases hAgreedRightLocation
+        cases hLocationAgree with
+        | scratch agreedSlot =>
+            exact hOnly name slot hLive hLeftLocation
+      exact
+        .stack hRightOnly hActive
+          (hState.transport_plan hAgree)
+  | scratch hScratch =>
+      exact .scratch (hScratch.transport_plan hAgree)
 
 theorem base {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}

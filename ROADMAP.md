@@ -262,9 +262,16 @@ Adjacent boundary status:
   Locals compilation paths; declaration and assignment preservation retain
   exact pass-owned stack-effect equations, including scratch stores. The
   stable `RegularStmtInvariantForward` interface is ready for recursive
-  statement-list induction without reconstructing leaf stack facts.
+  statement-list induction without reconstructing leaf stack facts. Regular
+  open blocks now compose inductively while retaining that invariant. Lexical
+  scope exit uses a semantic `PlanAgreesOn` transport relation: the inner and
+  outer plans may assign different plan-local stack depths, but must realize
+  surviving locals in the same runtime stack order and the same scratch slots.
+  Exact cleanup stack balance plus this transport re-establishes the complete
+  outer activation invariant without pretending nested scopes share one plan.
   Remaining work at this boundary is recursive statement/function/call
-  composition, construction of the activation relation at function entry,
+  composition, deriving lexical plan agreement from the checked planner
+  artifacts, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
   adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

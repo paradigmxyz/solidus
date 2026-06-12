@@ -219,6 +219,73 @@ theorem forward
                           (hTransition.subset name hLive) hLocation }
 
 /--
+Plain cleanup started from an exact compiler-layout stack finishes at exactly
+the requested target depth.
+
+This is the stack-balance fact needed to rebuild the complete activation
+invariant after lexical-scope cleanup.
+-/
+theorem forward_exact
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {cleanup : Structured.Code}
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length)
+    (hCleanup :
+      localsCtx.cleanupTo? targetDepth = some cleanup) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run cleanup target =
+          .ok targetFinal ∧
+        ActivationStateRel contract plan afterLive 0 frameBase
+          afterMode
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source)
+          targetFinal ∧
+        targetFinal.source.evm.stack.length = targetDepth := by
+  obtain ⟨targetFinal, hRun, hFinalRel⟩ :=
+    forward hCtx hTransition hWF hDefined hRel hCleanup
+  obtain ⟨hDepth, hCleanupCode⟩ :=
+    cleanupTo?_shape hCleanup
+  have hBound :
+      localsCtx.layout.length - targetDepth ≤
+        target.source.evm.stack.length := by
+    omega
+  obtain
+      ⟨expected, hExpectedRun, _hCursor, hExpectedStack,
+        _hShared, _hReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_replicate_pop
+      (localsCtx.layout.length - targetDepth) hBound
+  have hExpectedRun' :
+      Structured.ObserverSemantics.Code.run cleanup target =
+        .ok expected := by
+    simpa [hCleanupCode] using hExpectedRun
+  rw [hRun] at hExpectedRun'
+  cases hExpectedRun'
+  refine ⟨targetFinal, hRun, hFinalRel, ?_⟩
+  rw [hExpectedStack, List.length_drop, hStackLength]
+  omega
+
+/--
 Backward adequacy for plain cleanup follows from deterministic execution of the
 same compiler-emitted `POP` sequence.
 -/
