@@ -571,6 +571,111 @@ theorem lowerStmt_for_components
                       rfl, hCond, hPost, hBody, rfl, rfl⟩
 
 /--
+Successful call lowering exposes the source function lookup, arity checks,
+argument lowering, return stores, and optional scratch-frame protocol.
+-/
+theorem lowerStmt_call_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {targets : List Name} {functionName : Name}
+    {args : List (Expr 1)}
+    {loweredStmts : List Locals.Stmt}
+    (hLower :
+      lowerStmt ctx returns state (.call targets functionName args) =
+        some (loweredStmts, final)) :
+    ∃ fn loweredArgs callArgs stores release,
+      AllocationSupport.lookupFun? functionName ctx.functions = some fn ∧
+      args.length = fn.params.length ∧
+      targets.length = fn.returns.length ∧
+      targets.Nodup ∧
+      lowerExprList ctx state args = some loweredArgs ∧
+      (if functionName ∈ ctx.frameFunctions then do
+          let frameConfig ← ctx.frameConfig?
+          some (frameExpr frameConfig :: loweredArgs)
+        else
+          some loweredArgs) =
+        some callArgs ∧
+      lowerCallTargetsCode? ctx state targets.reverse targets.length =
+        some stores ∧
+      (if functionName ∈ ctx.frameFunctions then do
+          let frameConfig ← ctx.frameConfig?
+          some
+            [ .expr
+                (Locals.Expr.code (results := 0)
+                  (AllocationSupport.scratchFrameReleaseCode frameConfig)) ]
+        else
+          some []) =
+        some release ∧
+      loweredStmts =
+        ([ .exprs (exprSeqOfList callArgs),
+           .call functionName,
+           .expr (Locals.Expr.code (results := 0) stores) ] ++ release) ∧
+      final = state := by
+  cases hFind :
+      AllocationSupport.lookupFun? functionName ctx.functions with
+  | none =>
+      simp [lowerStmt, hFind] at hLower
+  | some fn =>
+      by_cases hArgsLength : args.length = fn.params.length
+      · by_cases hTargetsLength : targets.length = fn.returns.length
+        · by_cases hTargets : targets.Nodup
+          · cases hArgs : lowerExprList ctx state args with
+            | none =>
+                simp [lowerStmt, hFind, hArgsLength, hTargetsLength,
+                  hTargets, hArgs] at hLower
+            | some loweredArgs =>
+                by_cases hFrame :
+                    functionName ∈ ctx.frameFunctions
+                · cases hConfig : ctx.frameConfig? with
+                  | none =>
+                      simp [lowerStmt, hFind, hArgsLength, hTargetsLength,
+                        hTargets, hArgs, hFrame, hConfig] at hLower
+                  | some frameConfig =>
+                      cases hStores :
+                          lowerCallTargetsCode? ctx state targets.reverse
+                            fn.returns.length with
+                      | none =>
+                          simp [lowerStmt, hFind, hArgsLength,
+                            hTargetsLength, hTargets, hArgs, hFrame,
+                            hConfig, hStores] at hLower
+                      | some stores =>
+                          simp [lowerStmt, hFind, hArgsLength,
+                            hTargetsLength, hTargets, hArgs, hFrame,
+                            hConfig, hStores] at hLower
+                          rcases hLower with ⟨rfl, rfl⟩
+                          exact
+                            ⟨fn, loweredArgs,
+                              frameExpr frameConfig :: loweredArgs, stores,
+                              [ .expr
+                                  (Locals.Expr.code (results := 0)
+                                    (AllocationSupport.scratchFrameReleaseCode
+                                      frameConfig)) ],
+                              rfl, hArgsLength, hTargetsLength, hTargets,
+                              rfl, by simp [hFrame],
+                              by simpa [hTargetsLength] using hStores,
+                              by simp [hFrame], rfl, rfl⟩
+                · cases hStores :
+                      lowerCallTargetsCode? ctx state targets.reverse
+                        fn.returns.length with
+                  | none =>
+                      simp [lowerStmt, hFind, hArgsLength, hTargetsLength,
+                        hTargets, hArgs, hFrame, hStores] at hLower
+                  | some stores =>
+                      simp [lowerStmt, hFind, hArgsLength, hTargetsLength,
+                        hTargets, hArgs, hFrame, hStores] at hLower
+                      rcases hLower with ⟨rfl, rfl⟩
+                      exact
+                        ⟨fn, loweredArgs, loweredArgs, stores, [],
+                          rfl, hArgsLength, hTargetsLength, hTargets,
+                          rfl, by simp [hFrame],
+                          by simpa [hTargetsLength] using hStores,
+                          by simp [hFrame], rfl, rfl⟩
+          · simp [lowerStmt, hFind, hArgsLength, hTargetsLength,
+              hTargets] at hLower
+        · simp [lowerStmt, hFind, hArgsLength, hTargetsLength] at hLower
+      · simp [lowerStmt, hFind, hArgsLength] at hLower
+
+/--
 Case/default lowering preserves the absence of a selected source branch.
 -/
 theorem lowerSwitch_select_none

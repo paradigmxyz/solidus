@@ -75,6 +75,37 @@ def eval {σ : Type} (model : StateModel σ)
         eval model prim rest stateAfterArg
       .ok (stateAfterRest, value :: values)
 
+theorem eval_length {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) :
+    ∀ {args : List (Functions.Expr 1)} {state state' : σ}
+      {values : List Word},
+      eval model prim args state = .ok (state', values) →
+        values.length = args.length
+  | [], _state, _state', _values, hEval => by
+      cases hEval
+      rfl
+  | arg :: rest, state, state', values, hEval => by
+      unfold eval at hEval
+      cases hArg : Expr.evalOne model prim arg state with
+      | error err =>
+          simp [hArg] at hEval
+      | ok argResult =>
+          rcases argResult with ⟨stateAfterArg, value⟩
+          simp [hArg] at hEval
+          cases hRest : eval model prim rest stateAfterArg with
+          | error err =>
+              simp [hRest] at hEval
+          | ok restResult =>
+              rcases restResult with ⟨stateAfterRest, restValues⟩
+              simp [hRest] at hEval
+              rcases hEval with ⟨_hStateEq, hValuesEq⟩
+              have hTail :=
+                eval_length model prim
+                  (args := rest) (state := stateAfterArg)
+                  (state' := stateAfterRest) (values := restValues) hRest
+              rw [← hValuesEq]
+              simp [hTail]
+
 end ArgList
 
 inductive CallResult (σ : Type) where
@@ -351,7 +382,337 @@ mutual
           (Prod.Lex.left _ _ (by omega))
 end
 
+namespace FunDef
+
+def bodyCtx (fn : Functions.FunDef) : Source.Ctx :=
+  let functionScope := fn.returns ++ fn.params
+  { Source.Ctx.initial.withLeaveScope functionScope with
+    scope := functionScope }
+
+theorem runBody_returned_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args : List Word}
+    {fuel : Nat} {state returnedState : σ}
+    {returnValues : List Word}
+    (hRun :
+      FunDef.runBody model prim program fn args (fuel + 1) state =
+        .ok (CallResult.returned returnedState returnValues)) :
+    ∃ paramStore bodyOutcome bodyCtx',
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty =
+        some paramStore ∧
+      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (bodyOutcome, bodyCtx') ∧
+      (bodyOutcome.mode = .regular ∨ bodyOutcome.mode = .leave) ∧
+      Source.Store.lookupMany fn.returns (model.vars bodyOutcome.state) =
+        some returnValues ∧
+      bodyOutcome.state = returnedState := by
+  unfold FunDef.runBody at hRun
+  cases hParams :
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty with
+  | none =>
+      simp [hParams, Source.invalid, Structured.invalid] at hRun
+  | some paramStore =>
+      simp [hParams] at hRun
+      cases hBody :
+          Block.runOpen model prim program
+            { Source.Ctx.withLeaveScope Source.Ctx.initial
+                (fn.returns ++ fn.params) with
+              scope := fn.returns ++ fn.params }
+            fuel fn.body
+            (model.withSource state
+              { shared := (model.source state).shared,
+                vars := Source.Store.initReturns fn.returns paramStore }) with
+      | error err =>
+          simp [hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨bodyOutcome, bodyCtx'⟩
+          simp [hBody] at hRun
+          cases hMode : bodyOutcome.mode with
+          | regular =>
+              simp [hMode] at hRun
+              cases hLookup :
+                  Source.Store.lookupMany fn.returns
+                    (model.vars bodyOutcome.state) with
+              | none =>
+                  simp [hLookup, Source.invalid, Structured.invalid] at hRun
+              | some values =>
+                  simp [hLookup] at hRun
+                  rcases hRun with ⟨hState, hValues⟩
+                  subst returnedState
+                  subst values
+                  exact
+                    ⟨paramStore, bodyOutcome, bodyCtx', rfl,
+                      by simpa [bodyCtx] using hBody,
+                      Or.inl hMode, hLookup, rfl⟩
+          | leave =>
+              simp [hMode] at hRun
+              cases hLookup :
+                  Source.Store.lookupMany fn.returns
+                    (model.vars bodyOutcome.state) with
+              | none =>
+                  simp [hLookup, Source.invalid, Structured.invalid] at hRun
+              | some values =>
+                  simp [hLookup] at hRun
+                  rcases hRun with ⟨hState, hValues⟩
+                  subst returnedState
+                  subst values
+                  exact
+                    ⟨paramStore, bodyOutcome, bodyCtx', rfl,
+                      by simpa [bodyCtx] using hBody,
+                      Or.inr hMode, hLookup, rfl⟩
+          | brk =>
+              simp [hMode, Source.invalid, Structured.invalid] at hRun
+          | cont =>
+              simp [hMode, Source.invalid, Structured.invalid] at hRun
+          | halt kind =>
+              simp [hMode] at hRun
+
+theorem runBody_halted_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args : List Word}
+    {fuel : Nat} {state haltedState : σ}
+    {kind : Assembly.HaltKind}
+    (hRun :
+      FunDef.runBody model prim program fn args (fuel + 1) state =
+        .ok (CallResult.halted kind haltedState)) :
+    ∃ paramStore bodyCtx',
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty =
+        some paramStore ∧
+      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (Outcome.halt kind haltedState, bodyCtx') := by
+  unfold FunDef.runBody at hRun
+  cases hParams :
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty with
+  | none =>
+      simp [hParams, Source.invalid, Structured.invalid] at hRun
+  | some paramStore =>
+      simp [hParams] at hRun
+      cases hBody :
+          Block.runOpen model prim program
+            { Source.Ctx.withLeaveScope Source.Ctx.initial
+                (fn.returns ++ fn.params) with
+              scope := fn.returns ++ fn.params }
+            fuel fn.body
+            (model.withSource state
+              { shared := (model.source state).shared,
+                vars := Source.Store.initReturns fn.returns paramStore }) with
+      | error err =>
+          simp [hBody] at hRun
+      | ok bodyResult =>
+          rcases bodyResult with ⟨bodyOutcome, bodyCtx'⟩
+          simp [hBody] at hRun
+          cases hMode : bodyOutcome.mode with
+          | regular =>
+              simp [hMode] at hRun
+              cases hLookup :
+                  Source.Store.lookupMany fn.returns
+                    (model.vars bodyOutcome.state) with
+              | none =>
+                  simp [hLookup, Source.invalid, Structured.invalid] at hRun
+              | some values =>
+                  simp [hLookup] at hRun
+          | leave =>
+              simp [hMode] at hRun
+              cases hLookup :
+                  Source.Store.lookupMany fn.returns
+                    (model.vars bodyOutcome.state) with
+              | none =>
+                  simp [hLookup, Source.invalid, Structured.invalid] at hRun
+              | some values =>
+                  simp [hLookup] at hRun
+          | brk =>
+              simp [hMode, Source.invalid, Structured.invalid] at hRun
+          | cont =>
+              simp [hMode, Source.invalid, Structured.invalid] at hRun
+          | halt actualKind =>
+              rcases bodyOutcome with ⟨bodyState, bodyMode⟩
+              simp at hMode
+              subst bodyMode
+              simp at hRun
+              rcases hRun with ⟨hKind, hState⟩
+              subst actualKind
+              subst haltedState
+              exact
+                ⟨paramStore, bodyCtx', rfl,
+                  by simpa [bodyCtx, Outcome.halt] using hBody⟩
+
+theorem runBody_args_length {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args : List Word}
+    {fuel : Nat} {state : σ} {result : CallResult σ}
+    (hRun :
+      FunDef.runBody model prim program fn args fuel state = .ok result) :
+    args.length = fn.params.length := by
+  cases fuel with
+  | zero =>
+      simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+  | succ fuel =>
+      unfold FunDef.runBody at hRun
+      cases hParams :
+          Source.Store.insertMany fn.params args Locals.Source.Store.empty with
+      | none =>
+          simp [hParams, Source.invalid, Structured.invalid] at hRun
+      | some paramStore =>
+          exact Source.Store.insertMany_length hParams
+
+theorem runBody_returned_length {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args values : List Word}
+    {fuel : Nat} {state returnedState : σ}
+    (hRun :
+      FunDef.runBody model prim program fn args fuel state =
+        .ok (CallResult.returned returnedState values)) :
+    values.length = fn.returns.length := by
+  cases fuel with
+  | zero =>
+      simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+  | succ fuel =>
+      rcases runBody_returned_parts model prim program hRun with
+        ⟨_paramStore, bodyOutcome, _bodyCtx, _hParams, _hBody, _hMode,
+          hLookup, _hState⟩
+      exact Source.Store.lookupMany_length hLookup
+
+end FunDef
+
 namespace Stmt
+
+theorem call_regular_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source sourceAfter : σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.call targets functionName args) source =
+        .ok (Outcome.regular sourceAfter, ctx)) :
+    ∃ stateAfterArgs argValues fn stateAfterCall returnValues returnStore,
+      targets.Nodup ∧
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues) ∧
+      Source.FunList.find? functionName program.functions = some fn ∧
+      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+        .ok (CallResult.returned stateAfterCall returnValues) ∧
+      Source.Store.assignMany targets returnValues
+          (model.vars stateAfterArgs) =
+        some returnStore ∧
+      sourceAfter =
+        model.withSource stateAfterCall
+          { shared := (model.source stateAfterCall).shared,
+            vars := returnStore } := by
+  unfold Stmt.run at hRun
+  by_cases hTargets : targets.Nodup
+  · simp [hTargets] at hRun
+    cases hArgs : ArgList.eval model prim args source with
+    | error err =>
+        simp [hArgs] at hRun
+    | ok argResult =>
+        rcases argResult with ⟨stateAfterArgs, argValues⟩
+        simp [hArgs] at hRun
+        cases hFind :
+            Source.FunList.find? functionName program.functions with
+        | none =>
+            simp [hFind, Source.invalid, Structured.invalid] at hRun
+        | some fn =>
+            simp [hFind] at hRun
+            cases hBody :
+                FunDef.runBody model prim program fn argValues fuel
+                  stateAfterArgs with
+            | error err =>
+                simp [hBody] at hRun
+            | ok callResult =>
+                cases callResult with
+                | returned stateAfterCall returnValues =>
+                    simp [hBody] at hRun
+                    cases hAssign :
+                        Source.Store.assignMany targets returnValues
+                          (model.vars stateAfterArgs) with
+                    | none =>
+                        simp [hAssign, Source.invalid, Structured.invalid]
+                          at hRun
+                    | some returnStore =>
+                        simp [hAssign] at hRun
+                        cases hRun
+                        exact
+                          ⟨stateAfterArgs, argValues, fn, stateAfterCall,
+                            returnValues, returnStore, hTargets,
+                            by simpa [hArgs], by simpa [hFind],
+                            by simpa [hBody], by simpa [hAssign], rfl⟩
+                | halted kind haltedState =>
+                    simp [hBody, Outcome.regular, Outcome.halt] at hRun
+                    cases hRun
+  · simp [hTargets, Source.invalid, Structured.invalid] at hRun
+
+theorem call_halted_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source haltedState : σ} {kind : Assembly.HaltKind}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.call targets functionName args) source =
+        .ok (Outcome.halt kind haltedState, ctx)) :
+    ∃ stateAfterArgs argValues fn,
+      targets.Nodup ∧
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues) ∧
+      Source.FunList.find? functionName program.functions = some fn ∧
+      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+        .ok (CallResult.halted kind haltedState) := by
+  unfold Stmt.run at hRun
+  by_cases hTargets : targets.Nodup
+  · simp [hTargets] at hRun
+    cases hArgs : ArgList.eval model prim args source with
+    | error err =>
+        simp [hArgs] at hRun
+    | ok argResult =>
+        rcases argResult with ⟨stateAfterArgs, argValues⟩
+        simp [hArgs] at hRun
+        cases hFind :
+            Source.FunList.find? functionName program.functions with
+        | none =>
+            simp [hFind, Source.invalid, Structured.invalid] at hRun
+        | some fn =>
+            simp [hFind] at hRun
+            cases hBody :
+                FunDef.runBody model prim program fn argValues fuel
+                  stateAfterArgs with
+            | error err =>
+                simp [hBody] at hRun
+            | ok callResult =>
+                cases callResult with
+                | returned stateAfterCall returnValues =>
+                    simp [hBody] at hRun
+                    cases hAssign :
+                        Source.Store.assignMany targets returnValues
+                          (model.vars stateAfterArgs) with
+                    | none =>
+                        simp [hAssign, Source.invalid, Structured.invalid]
+                          at hRun
+                    | some returnStore =>
+                        simp [hAssign, Outcome.regular, Outcome.halt] at hRun
+                        cases hRun
+                | halted actualKind actualState =>
+                    simp [hBody, Outcome.halt] at hRun
+                    cases hRun
+                    exact
+                      ⟨stateAfterArgs, argValues, fn, hTargets,
+                        by simpa [hArgs], by simpa [hFind],
+                        by simpa [hBody]⟩
+  · simp [hTargets, Source.invalid, Structured.invalid] at hRun
 
 /--
 Canonical loop execution when the current condition is false.

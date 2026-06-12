@@ -629,8 +629,10 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
 outcome. Condition evaluation consumes its single target result through a
 reusable activation relation theorem; recursive loop preservation descends on
 canonical source fuel and abrupt outcomes skip compiler cleanup through the
-shared outcome relation. Recursive statement/function composition, calls, and
-the matching backward adequacy remain.
+shared outcome relation. Calls now have canonical effect-semantic
+returned/halted decomposition and a checked allocation-lowering decomposition
+for the argument/frame/call/store/release sequence. Recursive function-entry
+composition, call execution, and the matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

@@ -220,6 +220,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.runForLoop_exit_cases
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_exit_of_runs
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
+#check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
+#check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
+#check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_halted_parts
+#check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_args_length
+#check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_length
+#check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
+#check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.target_isExit
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.cons_nonregular
 #check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit

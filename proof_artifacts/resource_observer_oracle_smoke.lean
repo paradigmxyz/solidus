@@ -492,6 +492,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.runForLoop_exit_cases
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_for_exit_of_runs
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
+#print axioms EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
+#print axioms EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.FunDef.runBody_halted_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.FunDef.runBody_args_length
+#print axioms EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_length
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.target_isExit
 #print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.cons_nonregular
 #print axioms EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit
