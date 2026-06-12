@@ -40,12 +40,19 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
     (hCaseEntryNotAccepted :
       ∀ caseIdx targetState,
         ¬ accept
-          (.jump (LabelSupply.label supply (caseIdx + 2)) targetState))
-    (hGeneratedEntryNotAccepted :
-      ∀ generatedSupply generatedOffset targetState,
+          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+    (hCaseBodyEntryNotAccepted :
+      ∀ caseIdx targetState,
         ¬ accept
           (.jump
-            (.generated generatedSupply generatedOffset)
+            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
+            targetState))
+    (hDefaultBodyEntryNotAccepted :
+      ∀ generatedSupply targetState,
+        supply ≤ generatedSupply →
+        ¬ accept
+          (.jump
+            (.generated generatedSupply 2000)
             targetState))
     (hBodyAdequate :
       ∀ {selected : Structured.Block}
@@ -90,7 +97,8 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
     outcome_switch_of_compileStmtFuel?_and_firstReaches
       hCompile hBlocks hRegular hAccept
       hDispatchEntryNotAccepted hCaseEntryNotAccepted
-      hGeneratedEntryNotAccepted hRel hReach hBodyAdequate
+      hCaseBodyEntryNotAccepted hDefaultBodyEntryNotAccepted
+      hRel hReach hBodyAdequate
 
 /--
 Unbounded switch adequacy recovered from the fixed-fuel rule.
@@ -126,12 +134,19 @@ theorem adequateWithin_switch_of_compileStmtFuel?
     (hCaseEntryNotAccepted :
       ∀ caseIdx targetState,
         ¬ accept
-          (.jump (LabelSupply.label supply (caseIdx + 2)) targetState))
-    (hGeneratedEntryNotAccepted :
-      ∀ generatedSupply generatedOffset targetState,
+          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+    (hCaseBodyEntryNotAccepted :
+      ∀ caseIdx targetState,
         ¬ accept
           (.jump
-            (.generated generatedSupply generatedOffset)
+            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
+            targetState))
+    (hDefaultBodyEntryNotAccepted :
+      ∀ generatedSupply targetState,
+        supply ≤ generatedSupply →
+        ¬ accept
+          (.jump
+            (.generated generatedSupply 2000)
             targetState))
     (hBodyAdequate :
       ∀ {selected : Structured.Block}
@@ -173,7 +188,7 @@ theorem adequateWithin_switch_of_compileStmtFuel?
     adequateWithinFuel_switch_of_compileStmtFuel?
       targetFuel hCompile hBlocks hRegular
       hDispatchEntryNotAccepted hCaseEntryNotAccepted
-      hGeneratedEntryNotAccepted
+      hCaseBodyEntryNotAccepted hDefaultBodyEntryNotAccepted
       (fun bodyTargetFuel hScrutinee hPop hSelect _hFuel
           hBodyCompile hBodyBlocks =>
         (hBodyAdequate hScrutinee hPop hSelect

@@ -90,7 +90,12 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.not_of_pushed_return
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.GeneratedFresh.jumpAt
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.GeneratedFreshExcept.reject_switch_caseBody
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.GeneratedFreshExcept.reject_switch_defaultBody
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.targetBoundary_generatedFresh
+#check EvmCompiler.Structured.TypedCfgCompiler.switchTestLabel
+#check EvmCompiler.Structured.TypedCfgCompiler.switchCaseLabel
+#check EvmCompiler.Structured.TypedCfgCompiler.switchBodyLabel
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.block_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmtList_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge

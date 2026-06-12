@@ -15,7 +15,13 @@ def restLabel (supply : LabelSupply) : Assembly.Label :=
   .generated supply 100
 
 def switchTestLabel (base idx : Nat) : Assembly.Label :=
-  .generated base (1000 + idx)
+  .generated base (6 * idx + 1001)
+
+def switchCaseLabel (base idx : Nat) : Assembly.Label :=
+  .generated base (6 * idx + 1003)
+
+def switchBodyLabel (base idx : Nat) : Assembly.Label :=
+  .generated base (6 * idx + 1005)
 
 structure Context where
   procs : List Proc
@@ -498,8 +504,8 @@ mutual
               fallthrough? := some bodyShape }
       | (value, body) :: rest => do
           let testLabel := switchTestLabel base idx
-          let caseLabel := LabelSupply.label base (idx + 2)
-          let caseBodyLabel := Assembly.Label.generated base (2000 + idx)
+          let caseLabel := switchCaseLabel base idx
+          let caseBodyLabel := switchBodyLabel base idx
           let nextTest :=
             match rest with
             | [] => LabelSupply.label base 1

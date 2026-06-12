@@ -790,7 +790,7 @@ theorem components_of_compileCasesFuel?_cons
         some result) :
     ∃ bodyResult tail,
       TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-          supply (.generated base (2000 + idx)) bodyShape regular =
+          supply (TypedCfgCompiler.switchBodyLabel base idx) bodyShape regular =
         some bodyResult ∧
       bodyResult.requireFallthrough? bodyShape = some () ∧
       TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
@@ -803,13 +803,13 @@ theorem components_of_compileCasesFuel?_cons
               body := [.dup 0, .push caseValue, .prim .eq]
               output := testOutput valueShape
               term :=
-                .jumpi (LabelSupply.label base (idx + 2))
+                .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
                   (nextTestLabel base idx rest) } ::
-              { label := LabelSupply.label base (idx + 2)
+              { label := TypedCfgCompiler.switchCaseLabel base idx
                 input := valueShape
                 body := [.pop]
                 output := bodyShape
-                term := .jump (.generated base (2000 + idx)) } ::
+                term := .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
               bodyResult.blocks ++ tail.blocks
           next := tail.next
           calls := bodyResult.calls ++ tail.calls
@@ -823,7 +823,7 @@ theorem components_of_compileCasesFuel?_cons
     hPopBodyType, Bind.bind, Option.bind] at hCompile
   cases hBody :
       TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-        supply (.generated base (2000 + idx)) bodyShape regular with
+        supply (TypedCfgCompiler.switchBodyLabel base idx) bodyShape regular with
   | none =>
       simp [hBody] at hCompile
   | some bodyResult =>

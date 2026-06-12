@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.ObserverGeneratedBoundary
+import EvmCompiler.Structured.TypedCfgCompilerFreshness
 
 namespace EvmCompiler
 namespace Structured
@@ -1544,10 +1545,10 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           accept acceptedOutcome)
     (hCaseEntryNotAccepted :
       ∀ targetState,
-        ¬ accept (.jump (LabelSupply.label base (idx + 2)) targetState))
+        ¬ accept (.jump (TypedCfgCompiler.switchCaseLabel base idx) targetState))
     (hBodyEntryNotAccepted :
       ∀ targetState,
-        ¬ accept (.jump (.generated base (2000 + idx)) targetState))
+        ¬ accept (.jump (TypedCfgCompiler.switchBodyLabel base idx) targetState))
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -1559,7 +1560,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
       ∀ {bodyResult : TypedCfgCompiler.Result} bodyTargetFuel,
         bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-            supply (.generated base (2000 + idx))
+            supply (TypedCfgCompiler.switchBodyLabel base idx)
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
@@ -1572,7 +1573,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
                   { source.source.evm with stack := stack }))
               sourceOutcome)
           bodyResult ctx cfg continuations accept
-          (.generated base (2000 + idx)) bodyShape
+          (TypedCfgCompiler.switchBodyLabel base idx) bodyShape
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
@@ -1599,7 +1600,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
   obtain ⟨targetAfterTest, hTestStep, hAfterTestRel⟩ :=
     ObserverPreservation.Switch.step_test
       (testLabel := TypedCfgCompiler.switchTestLabel base idx)
-      (caseLabel := LabelSupply.label base (idx + 2))
+      (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
       (nextTest :=
         TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
       (caseValue := caseValue) (value := value)
@@ -1609,7 +1610,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           (TypedCfgCompiler.switchTestLabel base idx)
           target trace =
         .ok
-          (.jump (LabelSupply.label base (idx + 2))
+          (.jump (TypedCfgCompiler.switchCaseLabel base idx)
             targetAfterTest,
             trace) := by
     simpa [hEq] using hTestStep
@@ -1625,8 +1626,8 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
   | succ popFuel =>
       obtain ⟨targetAfterPop, hPopStep, hAfterPopRel⟩ :=
         ObserverPreservation.BlocksInProgram.step_pop_jump
-          (entry := LabelSupply.label base (idx + 2))
-          (regular := .generated base (2000 + idx))
+          (entry := TypedCfgCompiler.switchCaseLabel base idx)
+          (regular := TypedCfgCompiler.switchBodyLabel base idx)
           (input := valueShape) (output := bodyShape)
           hBlocks (by simp) hPopType hAfterTestRel hPop
       have hAfterPopReach :=
@@ -1697,15 +1698,15 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
                               TypedCfgCompilerFacts.Switch.testOutput
                                 valueShape
                             term :=
-                              .jumpi (LabelSupply.label base (idx + 2))
+                              .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
                                 (TypedCfgCompilerFacts.Switch.nextTestLabel
                                   base idx rest) } ::
-                            { label := LabelSupply.label base (idx + 2)
+                            { label := TypedCfgCompiler.switchCaseLabel base idx
                               input := valueShape
                               body := [.pop]
                               output := bodyShape
                               term :=
-                                .jump (.generated base (2000 + idx)) } ::
+                                .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
                               bodyResult.blocks ++ tail.blocks
                         next := tail.next
                         calls := bodyResult.calls ++ tail.calls
@@ -1745,15 +1746,15 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
                       output :=
                         TypedCfgCompilerFacts.Switch.testOutput valueShape
                       term :=
-                        .jumpi (LabelSupply.label base (idx + 2))
+                        .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
                           (TypedCfgCompilerFacts.Switch.nextTestLabel
                             base idx rest) } ::
-                      { label := LabelSupply.label base (idx + 2)
+                      { label := TypedCfgCompiler.switchCaseLabel base idx
                         input := valueShape
                         body := [.pop]
                         output := bodyShape
                         term :=
-                          .jump (.generated base (2000 + idx)) } ::
+                          .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
                         bodyResult.blocks ++ tail.blocks
                   next := tail.next
                   calls := bodyResult.calls ++ tail.calls
@@ -1900,7 +1901,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
   obtain ⟨targetAfterTest, hTestStep, hAfterTestRel⟩ :=
     ObserverPreservation.Switch.step_test
       (testLabel := TypedCfgCompiler.switchTestLabel base idx)
-      (caseLabel := LabelSupply.label base (idx + 2))
+      (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
       (nextTest :=
         TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
       (caseValue := caseValue) (value := value)
@@ -1951,15 +1952,15 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
                           TypedCfgCompilerFacts.Switch.testOutput
                             valueShape
                         term :=
-                          .jumpi (LabelSupply.label base (idx + 2))
+                          .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
                             (TypedCfgCompilerFacts.Switch.nextTestLabel
                               base idx rest) } ::
-                        { label := LabelSupply.label base (idx + 2)
+                        { label := TypedCfgCompiler.switchCaseLabel base idx
                           input := valueShape
                           body := [.pop]
                           output := bodyShape
                           term :=
-                            .jump (.generated base (2000 + idx)) } ::
+                            .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
                           bodyResult.blocks ++ tail.blocks
                     next := tail.next
                     calls := bodyResult.calls ++ tail.calls
@@ -1995,15 +1996,15 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
                   output :=
                     TypedCfgCompilerFacts.Switch.testOutput valueShape
                   term :=
-                    .jumpi (LabelSupply.label base (idx + 2))
+                    .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
                       (TypedCfgCompilerFacts.Switch.nextTestLabel
                         base idx rest) } ::
-                  { label := LabelSupply.label base (idx + 2)
+                  { label := TypedCfgCompiler.switchCaseLabel base idx
                     input := valueShape
                     body := [.pop]
                     output := bodyShape
                     term :=
-                      .jump (.generated base (2000 + idx)) } ::
+                      .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
                     bodyResult.blocks ++ tail.blocks
               next := tail.next
               calls := bodyResult.calls ++ tail.calls
@@ -2493,7 +2494,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
           obtain ⟨targetAfterTest, hTestStep, hAfterTestRel⟩ :=
             ObserverPreservation.Switch.step_test
               (testLabel := TypedCfgCompiler.switchTestLabel base idx)
-              (caseLabel := LabelSupply.label base (idx + 2))
+              (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
               (nextTest :=
                 TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
               (caseValue := caseValue) (value := value)
@@ -2545,15 +2546,15 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
                               valueShape
                           term :=
                             .jumpi
-                              (LabelSupply.label base (idx + 2))
+                              (TypedCfgCompiler.switchCaseLabel base idx)
                               (TypedCfgCompilerFacts.Switch.nextTestLabel
                                 base idx rest) } ::
-                          { label := LabelSupply.label base (idx + 2)
+                          { label := TypedCfgCompiler.switchCaseLabel base idx
                             input := valueShape
                             body := [.pop]
                             output := bodyShape
                             term :=
-                              .jump (.generated base (2000 + idx)) } ::
+                              .jump (TypedCfgCompiler.switchBodyLabel base idx) } ::
                             bodyResult.blocks ++ tail.blocks
                       next := tail.next
                       calls := bodyResult.calls ++ tail.calls
@@ -2630,11 +2631,11 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
     (hCaseEntryNotAccepted :
       ∀ caseIdx targetState,
         ¬ accept
-          (.jump (LabelSupply.label base (caseIdx + 2)) targetState))
+          (.jump (TypedCfgCompiler.switchCaseLabel base caseIdx) targetState))
     (hBodyEntryNotAccepted :
       ∀ caseIdx targetState,
         ¬ accept
-          (.jump (.generated base (2000 + caseIdx)) targetState))
+          (.jump (TypedCfgCompiler.switchBodyLabel base caseIdx) targetState))
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -2648,7 +2649,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
         bodyTargetFuel,
         bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
-            caseSupply (.generated base (2000 + caseIdx))
+            caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
@@ -2661,7 +2662,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
                   { source.source.evm with stack := stack }))
               sourceOutcome)
           bodyResult ctx cfg continuations accept
-          (.generated base (2000 + caseIdx)) bodyShape
+          (TypedCfgCompiler.switchBodyLabel base caseIdx) bodyShape
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
@@ -2810,12 +2811,19 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
     (hCaseEntryNotAccepted :
       ∀ caseIdx targetState,
         ¬ accept
-          (.jump (LabelSupply.label supply (caseIdx + 2)) targetState))
-    (hGeneratedEntryNotAccepted :
-      ∀ generatedSupply generatedOffset targetState,
+          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+    (hCaseBodyEntryNotAccepted :
+      ∀ caseIdx targetState,
         ¬ accept
           (.jump
-            (.generated generatedSupply generatedOffset)
+            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
+            targetState))
+    (hDefaultBodyEntryNotAccepted :
+      ∀ generatedSupply targetState,
+        supply ≤ generatedSupply →
+        ¬ accept
+          (.jump
+            (.generated generatedSupply 2000)
             targetState))
     (hRel :
       ObserverPreservation.StateRel.At
@@ -3067,8 +3075,7 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                       hScrutinee hPop rfl hSelect hSelectedEval)
                     hSelectedRel hParentArtifact)
               hDispatchEntryNotAccepted hCaseEntryNotAccepted
-              (fun caseIdx =>
-                hGeneratedEntryNotAccepted supply (2000 + caseIdx))
+              hCaseBodyEntryNotAccepted
               hAfterScrutineeRel hDispatchReach
               (by
                 intro bodyCompilerFuel caseSupply caseIdx bodyResult
@@ -3141,7 +3148,12 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                           (Structured.EffectSemantics.Stmt.Eval.switch_some
                             hScrutinee hPop rfl hSelect hSelectedEval)
                           hSelectedRel hParentArtifact)
-                    (hGeneratedEntryNotAccepted caseResult.next 2000)
+                    (fun targetState =>
+                      hDefaultBodyEntryNotAccepted caseResult.next
+                        targetState
+                        (Nat.le_trans (Nat.le_succ supply)
+                          (TypedCfgCompilerFacts.Supply.cases_next_ge
+                            hHead hPopType hCasesCompile')))
                     hDefaultRel hDefaultReach
                     (by
                       intro bodyResult bodyTargetFuel hBodyLt

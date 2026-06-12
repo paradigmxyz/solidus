@@ -2307,14 +2307,14 @@ theorem outcome_cases_some_of_compileCasesFuel?
       ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
         {bodyResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
-            caseSupply (.generated base (2000 + caseIdx))
+            caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
         TypedCfgPreservation.CallsInProgram
           bodyResult globalCalls →
         OutcomeSimulation.Path cfg
-          (.generated base (2000 + caseIdx)) continuations
+          (TypedCfgCompiler.switchBodyLabel base caseIdx) continuations
           (source.withSource
             (source.source.withEVM
               { source.source.evm with stack := stack }))
@@ -2352,7 +2352,7 @@ theorem outcome_cases_some_of_compileCasesFuel?
             hPopBodyType, Bind.bind, Option.bind] at hCompile
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
-                supply (.generated base (2000 + idx))
+                supply (TypedCfgCompiler.switchBodyLabel base idx)
                 bodyShape regular with
           | none =>
               simp [hBody] at hCompile
@@ -2410,7 +2410,7 @@ theorem outcome_cases_some_of_compileCasesFuel?
                         eventually_test
                           (testLabel :=
                             TypedCfgCompiler.switchTestLabel base idx)
-                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
                           (nextTest := nextTestLabel base idx rest)
                           (caseValue := caseValue) (value := value)
                           hBlocks (by left) hHead hRel hPop with
@@ -2420,14 +2420,14 @@ theorem outcome_cases_some_of_compileCasesFuel?
                         TypedCfg.ObserverSemantics.Program.Eventually cfg
                           (TypedCfgCompiler.switchTestLabel base idx)
                           target trace
-                          (.jump (LabelSupply.label base (idx + 2))
+                          (.jump (TypedCfgCompiler.switchCaseLabel base idx)
                             targetAfterTest)
                           trace := by
                       simpa [hEq] using hTestEventually
                     rcases
                         BlocksInProgram.eventually_pop_jump
-                          (entry := LabelSupply.label base (idx + 2))
-                          (regular := .generated base (2000 + idx))
+                          (entry := TypedCfgCompiler.switchCaseLabel base idx)
+                          (regular := TypedCfgCompiler.switchBodyLabel base idx)
                           (input := valueShape) (output := bodyShape)
                           hBlocks (by simp) hPopType
                           hAfterTestRel hPop with
@@ -2457,7 +2457,7 @@ theorem outcome_cases_some_of_compileCasesFuel?
                         eventually_test
                           (testLabel :=
                             TypedCfgCompiler.switchTestLabel base idx)
-                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
                           (nextTest := nextTestLabel base idx rest)
                           (caseValue := caseValue) (value := value)
                           hBlocks (by left) hHead hRel hPop with
@@ -2675,7 +2675,7 @@ theorem outcome_cases_none_of_compileCasesFuel?
             hPopBodyType, Bind.bind, Option.bind] at hCompile
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
-                supply (.generated base (2000 + idx))
+                supply (TypedCfgCompiler.switchBodyLabel base idx)
                 bodyShape regular with
           | none =>
               simp [hBody] at hCompile
@@ -2718,7 +2718,7 @@ theorem outcome_cases_none_of_compileCasesFuel?
                         eventually_test
                           (testLabel :=
                             TypedCfgCompiler.switchTestLabel base idx)
-                          (caseLabel := LabelSupply.label base (idx + 2))
+                          (caseLabel := TypedCfgCompiler.switchCaseLabel base idx)
                           (nextTest := nextTestLabel base idx rest)
                           (caseValue := caseValue) (value := value)
                           hBlocks (by left) hHead hRel hPop with

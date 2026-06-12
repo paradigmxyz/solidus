@@ -225,6 +225,26 @@ theorem toFresh_of_regularBefore
     (fun scope tag hScope =>
       hRegularBefore.generated_ne hScope)
 
+theorem reject_switch_caseBody
+    {accept : TypedCfg.Outcome → Prop} {supply caseIdx : Nat}
+    {regular : Assembly.Label} {target : EVMState}
+    (hFresh : GeneratedFreshExcept accept supply regular)
+    (hRegular : RegularAtSupply regular supply) :
+    ¬ accept
+      (.jump (TypedCfgCompiler.switchBodyLabel supply caseIdx) target) :=
+  hFresh.reject (Nat.le_refl supply)
+    (hRegular.current_generated_ne (by omega))
+
+theorem reject_switch_defaultBody
+    {accept : TypedCfg.Outcome → Prop} {supply next : Nat}
+    {regular : Assembly.Label} {target : EVMState}
+    (hFresh : GeneratedFreshExcept accept supply regular)
+    (hRegular : RegularAtSupply regular supply)
+    (hNext : supply + 1 ≤ next) :
+    ¬ accept (.jump (.generated next 2000) target) :=
+  hFresh.reject (by omega)
+    (hRegular.before_succ.generated_ne hNext)
+
 end GeneratedFreshExcept
 
 end OutcomeSimulation
