@@ -57,6 +57,20 @@ theorem of_compileBlock?
   apply of_compileBlockFuel? (hBlocks := hBlocks)
   simpa [TypedCfgCompiler.compileBlock?] using hCompile
 
+theorem of_compileStmtListFuel?
+    {fuel : Nat} {stmts : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? fuel stmts ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    LabelShape cfg entry input :=
+  of_hasEntry
+    (TypedCfgCompilerFacts.stmtList_hasEntry hCompile)
+    hBlocks
+
 theorem procExit
     {program : Structured.Program}
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
@@ -237,10 +251,6 @@ theorem reject_extension
       ActivationExtension
         ancestor.source.returns ancestorTokens
         child.source.returns childTokens)
-    (hAncestorHidden :
-      ∃ hidden : EvmYul.Stack Word,
-        TypedCfgPreservation.realizeStack
-            [] ancestor.source.returns ancestorTokens = some hidden)
     (hChild : FrameMatches child childTokens shape target) :
     False := by
   rcases hOwned with ⟨ownerBlock, hOwnerFind, hOwnerFrame⟩
@@ -249,6 +259,13 @@ theorem reject_extension
     Option.some.inj (hOwnerFind.symm.trans hChildFind)
   subst ownerBlock
   subst shape
+  have hAncestorHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        TypedCfgPreservation.realizeStack
+            [] ancestor.source.returns ancestorTokens = some hidden := by
+    unfold FrameMatches at hOwnerFrame
+    rw [hDepth] at hOwnerFrame
+    exact ⟨hOwnerFrame.choose, hOwnerFrame.choose_spec.1⟩
   exact
     (FrameMatches.not_of_extension
       hDepth hExtension hAncestorHidden hChild) hOwnerFrame
@@ -269,6 +286,18 @@ def ActivationOwned {transcript : Trace}
 
 namespace ActivationOwned
 
+theorem congr_returns
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    (hOwned : ActivationOwned cfg left tokens accept)
+    (hReturns : left.source.returns = right.source.returns) :
+    ActivationOwned cfg right tokens accept := by
+  intro label target hAccept
+  exact
+    OwnsJump.congr_returns hReturns
+      (hOwned label target hAccept)
+
 theorem reject_extension
     {transcript : Trace} {cfg : TypedCfg.Program}
     {ancestor child : ObserverSemantics.State transcript}
@@ -284,15 +313,11 @@ theorem reject_extension
       ActivationExtension
         ancestor.source.returns ancestorTokens
         child.source.returns childTokens)
-    (hAncestorHidden :
-      ∃ hidden : EvmYul.Stack Word,
-        TypedCfgPreservation.realizeStack
-            [] ancestor.source.returns ancestorTokens = some hidden)
     (hChild : FrameMatches child childTokens shape target) :
     False :=
   OwnsJump.reject_extension
     (hOwned label target hAccepted)
-    hShape hDepth hExtension hAncestorHidden hChild
+    hShape hDepth hExtension hChild
 
 theorem jumpAt
     {transcript : Trace} {cfg : TypedCfg.Program}
@@ -316,6 +341,189 @@ theorem jumpAt
         (hOwned label target hOuter)
 
 end ActivationOwned
+
+/--
+The owner activation is the current activation or one of its strict dynamic
+ancestors.
+-/
+inductive ActivationAncestor :
+    List Structured.ReturnDest → List Word →
+      List Structured.ReturnDest → List Word → Prop where
+  | refl (returns : List Structured.ReturnDest) (tokens : List Word) :
+      ActivationAncestor returns tokens returns tokens
+  | extension
+      {ownerReturns currentReturns : List Structured.ReturnDest}
+      {ownerTokens currentTokens : List Word}
+      (hExtension :
+        ActivationExtension ownerReturns ownerTokens
+          currentReturns currentTokens) :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens
+
+namespace ActivationAncestor
+
+theorem push
+    {ownerReturns currentReturns childReturns :
+      List Structured.ReturnDest}
+    {ownerTokens currentTokens childTokens : List Word}
+    (hOwner :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens)
+    (hChild :
+      ActivationExtension currentReturns currentTokens
+        childReturns childTokens) :
+    ActivationAncestor ownerReturns ownerTokens
+      childReturns childTokens := by
+  cases hOwner with
+  | refl =>
+      exact .extension hChild
+  | extension hExtension =>
+      exact .extension (hExtension.trans hChild)
+
+theorem extension_after
+    {ownerReturns currentReturns childReturns :
+      List Structured.ReturnDest}
+    {ownerTokens currentTokens childTokens : List Word}
+    (hOwner :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens)
+    (hChild :
+      ActivationExtension currentReturns currentTokens
+        childReturns childTokens) :
+    ActivationExtension ownerReturns ownerTokens
+      childReturns childTokens := by
+  cases hOwner with
+  | refl =>
+      exact hChild
+  | extension hExtension =>
+      exact hExtension.trans hChild
+
+end ActivationAncestor
+
+/--
+Every accepted jump is owned by the current activation or a checked dynamic
+ancestor. This is the recursive boundary invariant used by mutual adequacy.
+-/
+def ActivationProtected {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop) : Prop :=
+  ∀ label target,
+    accept (.jump label target) →
+      ∃ owner : ObserverSemantics.State transcript,
+        ∃ ownerTokens block,
+          cfg.findBlock? label = some block ∧
+            FrameMatches owner ownerTokens block.input target ∧
+            ActivationAncestor
+              owner.source.returns ownerTokens
+              source.source.returns tokens
+
+namespace ActivationProtected
+
+theorem of_owned
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    (hOwned : ActivationOwned cfg source tokens accept) :
+    ActivationProtected cfg source tokens accept := by
+  intro label target hAccept
+  rcases hOwned label target hAccept with
+    ⟨block, hFind, hFrame⟩
+  exact
+    ⟨source, tokens, block, hFind, hFrame,
+      ActivationAncestor.refl _ _⟩
+
+theorem congr_returns
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    (hProtected : ActivationProtected cfg left tokens accept)
+    (hReturns : left.source.returns = right.source.returns) :
+    ActivationProtected cfg right tokens accept := by
+  intro label target hAccept
+  rcases hProtected label target hAccept with
+    ⟨owner, ownerTokens, block, hFind, hFrame, hAncestor⟩
+  refine ⟨owner, ownerTokens, block, hFind, hFrame, ?_⟩
+  simpa [hReturns] using hAncestor
+
+theorem reject_extension
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source child : ObserverSemantics.State transcript}
+    {tokens childTokens : List Word}
+    {accept : TypedCfg.Outcome → Prop}
+    {label : Assembly.Label} {shape : TypedCfg.Shape}
+    {target : EVMState} {depth : Nat}
+    (hProtected : ActivationProtected cfg source tokens accept)
+    (hAccepted : accept (.jump label target))
+    (hShape : LabelShape cfg label shape)
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hExtension :
+      ActivationExtension
+        source.source.returns tokens
+        child.source.returns childTokens)
+    (hChild : FrameMatches child childTokens shape target) :
+    False := by
+  rcases hProtected label target hAccepted with
+    ⟨owner, ownerTokens, block, hFind, hOwnerFrame, hOwner⟩
+  rcases hShape with ⟨shapeBlock, hShapeFind, hInput⟩
+  have hBlockEq : block = shapeBlock :=
+    Option.some.inj (hFind.symm.trans hShapeFind)
+  subst block
+  subst shape
+  exact
+    OwnsJump.reject_extension
+      ⟨shapeBlock, hShapeFind, hOwnerFrame⟩
+      ⟨shapeBlock, hShapeFind, rfl⟩
+      hDepth (hOwner.extension_after hExtension) hChild
+
+theorem jumpAt
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {next : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    {accept : TypedCfg.Outcome → Prop}
+    (hProtected : ActivationProtected cfg source tokens accept)
+    (hShape : LabelShape cfg next shape) :
+    ActivationProtected cfg source tokens
+      (JumpAt source tokens next shape accept) := by
+  intro label target hAccept
+  rcases hAccept with hCurrent | hOuter
+  · rcases hCurrent with ⟨rfl, hFrame⟩
+    rcases hShape with ⟨block, hFind, rfl⟩
+    exact
+      ⟨source, tokens, block, hFind, hFrame,
+        ActivationAncestor.refl _ _⟩
+  · exact hProtected label target hOuter
+
+theorem pushJumpAt
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source child : ObserverSemantics.State transcript}
+    {tokens childTokens : List Word} {next : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    {accept : TypedCfg.Outcome → Prop}
+    (hProtected : ActivationProtected cfg source tokens accept)
+    (hExtension :
+      ActivationExtension
+        source.source.returns tokens
+        child.source.returns childTokens)
+    (hShape : LabelShape cfg next shape) :
+    ActivationProtected cfg child childTokens
+      (JumpAt child childTokens next shape accept) := by
+  intro label target hAccept
+  rcases hAccept with hCurrent | hOuter
+  · rcases hCurrent with ⟨rfl, hFrame⟩
+    rcases hShape with ⟨block, hFind, rfl⟩
+    exact
+      ⟨child, childTokens, block, hFind, hFrame,
+        ActivationAncestor.refl _ _⟩
+  · rcases hProtected label target hOuter with
+      ⟨owner, ownerTokens, block, hFind, hFrame, hOwner⟩
+    exact
+      ⟨owner, ownerTokens, block, hFind, hFrame,
+        hOwner.push hExtension⟩
+
+end ActivationProtected
 
 /--
 A target outcome has reached one of the Structured fragment's semantic
@@ -553,6 +761,29 @@ theorem reject_switch_defaultBody
     ¬ accept (.jump (.generated next 2000) target) :=
   hFresh.reject (by omega)
     (hRegular.before_succ.generated_ne hNext)
+
+theorem jumpAt_rest
+    {transcript : Trace}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {shape : TypedCfg.Shape}
+    {accept : TypedCfg.Outcome → Prop} {supply : LabelSupply}
+    {regular : Assembly.Label}
+    (hFresh : GeneratedFreshExcept accept supply regular)
+    (hRegular : RegularAtSupply regular supply) :
+    GeneratedFreshExcept
+      (JumpAt source tokens (TypedCfgCompiler.restLabel supply)
+        shape accept)
+      supply (TypedCfgCompiler.restLabel supply) := by
+  intro scope tag target hScope hNe hAccepted
+  rcases hAccepted with hCurrent | hOuter
+  · exact hNe hCurrent.1
+  · apply hFresh scope tag target hScope
+    rcases hRegular with hBefore | hRest
+    · exact hBefore.generated_ne hScope
+    · intro hEq
+      apply hNe
+      exact hEq.trans hRest
+    exact hOuter
 
 end GeneratedFreshExcept
 

@@ -127,6 +127,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?_protected
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithin_call_of_compileStmtFuel?
 #print axioms EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim

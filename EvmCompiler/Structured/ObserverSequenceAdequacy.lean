@@ -54,6 +54,7 @@ private theorem adequateWithinFuel_cons_withTail
     (hTailAdequate :
       ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
         ∀ {tailSource : ObserverSemantics.State transcript},
+          tailSource.source.returns = source.source.returns →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -217,6 +218,9 @@ private theorem adequateWithinFuel_cons_withTail
                   ⟨tailSourceFuel, tailOutcome,
                     hTailEval, hTailOutcomeRel, hTailArtifact⟩ :=
                 hTailAdequate tailTargetFuel (by omega)
+                  (ObserverSemantics.Stmt.Eval.returns_eq_of_nonhalting
+                    hHeadEval
+                    (by simp [ObserverSemantics.Outcome.Nonhalting]))
                   (fun tailFuel tailOutcome targetOutcome tailTrace
                       hTailEval hTailRel hTailArtifact => by
                     let sourceFuel :=
@@ -403,11 +407,6 @@ private theorem adequateWithinFuel_cons_noTail
     {tokens : List Word}
     (targetFuel : Nat)
     (hFallthrough : headResult.fallthrough? = none)
-    (hEntryNotAccepted :
-      ∀ targetState,
-        ¬ OutcomeSimulation.JumpAt source tokens
-            (TypedCfgCompiler.restLabel supply) input accept
-            (.jump entry targetState))
     (hHeadAdequate :
       ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
         OutcomeSimulation.AdequateWithinFuel
@@ -417,8 +416,7 @@ private theorem adequateWithinFuel_cons_noTail
           headResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
             ctx (TypedCfgCompiler.restLabel supply))
-          (OutcomeSimulation.JumpAt source tokens
-            (TypedCfgCompiler.restLabel supply) input accept)
+          accept
           entry input source tokens headTargetFuel) :
     OutcomeSimulation.AdequateWithinFuel
       (fun sourceFuel sourceOutcome =>
@@ -431,198 +429,97 @@ private theorem adequateWithinFuel_cons_noTail
       accept entry input source tokens targetFuel := by
   intro hAccept target trace traceFinal
     targetOutcome hRel hReach
-  have hFinalAccepted :
-      OutcomeSimulation.JumpAt source tokens
-        (TypedCfgCompiler.restLabel supply) input
-        accept targetOutcome :=
-    OutcomeSimulation.JumpAt.of_accept hReach.boundary
   obtain
-      ⟨prefixFuel, prefixOutcome, prefixTrace,
-        hPrefixLe, hPrefix⟩ :=
-    OutcomeSimulation.FirstReaches.exists_of_run
-      hReach.run hFinalAccepted
-  have hPrefixPositive : 0 < prefixFuel :=
-    OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hPrefix (hEntryNotAccepted target)
-  cases prefixFuel with
-  | zero =>
-      omega
-  | succ headTargetFuel =>
-      obtain
-          ⟨headSourceFuel, headOutcome,
-            hHeadEval, hHeadRel, hHeadArtifact⟩ :=
-        hHeadAdequate headTargetFuel (by omega)
-          (fun headFuel headOutcome targetOutcome headTrace
-              hHeadEval hHeadRel hHeadArtifact => by
-            rcases headOutcome with ⟨headSource, headMode⟩
-            cases headMode with
-            | regular =>
-                obtain ⟨output, hOutput, _hFits⟩ :=
-                  hHeadArtifact
-                rw [hFallthrough] at hOutput
-                cases hOutput
-            | brk =>
-                obtain ⟨label, targetState, _hLabel, rfl, _hStateRel⟩ :=
-                  ObserverPreservation.OutcomeSimulation.Rel.brk_elim
-                    hHeadRel
-                apply OutcomeSimulation.JumpAt.of_accept
-                exact
-                  hAccept (headFuel + 1)
-                    (Structured.OutcomeT.brk headSource)
-                    (.jump label targetState) headTrace
-                    (Structured.EffectSemantics.Block.Eval.cons_brk
-                      hHeadEval)
-                    (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-                      (leftRegular := TypedCfgCompiler.restLabel supply)
-                      (rightRegular := regular) (by simp) hHeadRel)
-                    hHeadArtifact
-            | cont =>
-                obtain ⟨label, targetState, _hLabel, rfl, _hStateRel⟩ :=
-                  ObserverPreservation.OutcomeSimulation.Rel.cont_elim
-                    hHeadRel
-                apply OutcomeSimulation.JumpAt.of_accept
-                exact
-                  hAccept (headFuel + 1)
-                    (Structured.OutcomeT.cont headSource)
-                    (.jump label targetState) headTrace
-                    (Structured.EffectSemantics.Block.Eval.cons_cont
-                      hHeadEval)
-                    (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-                      (leftRegular := TypedCfgCompiler.restLabel supply)
-                      (rightRegular := regular) (by simp) hHeadRel)
-                    hHeadArtifact
-            | leave =>
-                obtain ⟨label, targetState, _hLabel, rfl, _hStateRel⟩ :=
-                  ObserverPreservation.OutcomeSimulation.Rel.leave_elim
-                    hHeadRel
-                apply OutcomeSimulation.JumpAt.of_accept
-                exact
-                  hAccept (headFuel + 1)
-                    (Structured.OutcomeT.leave headSource)
-                    (.jump label targetState) headTrace
-                    (Structured.EffectSemantics.Block.Eval.cons_leave
-                      hHeadEval)
-                    (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-                      (leftRegular := TypedCfgCompiler.restLabel supply)
-                      (rightRegular := regular) (by simp) hHeadRel)
-                    hHeadArtifact
-            | halt kind =>
-                obtain
-                    ⟨targetState, _targetFinal, rfl, _hStep, _hStateRel⟩ :=
-                  ObserverPreservation.OutcomeSimulation.Rel.halt_elim
-                    hHeadRel
-                exact
-                  hAccept (headFuel + 1)
-                    (Structured.OutcomeT.halt kind headSource)
-                    (.halt kind targetState) headTrace
-                    (Structured.EffectSemantics.Block.Eval.cons_halt
-                      hHeadEval)
-                    (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-                      (leftRegular := TypedCfgCompiler.restLabel supply)
-                      (rightRegular := regular) (by simp) hHeadRel)
-                    hHeadArtifact)
-          hRel hPrefix
-      rcases headOutcome with ⟨headSource, headMode⟩
-      cases headMode with
-      | regular =>
-          obtain
-              ⟨headOutput, hHeadFallthrough, _hHeadBound⟩ :=
-            hHeadArtifact
-          rw [hFallthrough] at hHeadFallthrough
-          cases hHeadFallthrough
-      | brk =>
-          have hOuterRel :
-              ObserverPreservation.OutcomeSimulation.Rel
-                (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-                  ctx regular)
-                tokens (Structured.OutcomeT.brk headSource)
-                prefixOutcome prefixTrace :=
-            OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-              (by simp) hHeadRel
-          obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
-            OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
-              hReach hPrefix hPrefixLe
-              (hAccept (headSourceFuel + 1)
+      ⟨headSourceFuel, headOutcome,
+        hHeadEval, hHeadRel, hHeadArtifact⟩ :=
+    hHeadAdequate targetFuel (Nat.le_refl targetFuel)
+      (fun headFuel headOutcome targetOutcome headTrace
+          hHeadEval hHeadRel hHeadArtifact => by
+        rcases headOutcome with ⟨headSource, headMode⟩
+        cases headMode with
+        | regular =>
+            obtain ⟨output, hOutput, _hFits⟩ := hHeadArtifact
+            rw [hFallthrough] at hOutput
+            cases hOutput
+        | brk =>
+            exact
+              hAccept (headFuel + 1)
                 (Structured.OutcomeT.brk headSource)
-                prefixOutcome prefixTrace
-                (Structured.EffectSemantics.Block.Eval.cons_brk hHeadEval)
-                hOuterRel hHeadArtifact)
-          subst targetOutcome
-          subst traceFinal
-          exact
-            ⟨headSourceFuel + 1, Structured.OutcomeT.brk headSource,
-              Structured.EffectSemantics.Block.Eval.cons_brk hHeadEval,
-              hOuterRel, hHeadArtifact⟩
-      | cont =>
-          have hOuterRel :
-              ObserverPreservation.OutcomeSimulation.Rel
-                (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-                  ctx regular)
-                tokens (Structured.OutcomeT.cont headSource)
-                prefixOutcome prefixTrace :=
-            OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-              (by simp) hHeadRel
-          obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
-            OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
-              hReach hPrefix hPrefixLe
-              (hAccept (headSourceFuel + 1)
+                targetOutcome headTrace
+                (Structured.EffectSemantics.Block.Eval.cons_brk
+                  hHeadEval)
+                (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+                  (leftRegular := TypedCfgCompiler.restLabel supply)
+                  (rightRegular := regular) (by simp) hHeadRel)
+                hHeadArtifact
+        | cont =>
+            exact
+              hAccept (headFuel + 1)
                 (Structured.OutcomeT.cont headSource)
-                prefixOutcome prefixTrace
-                (Structured.EffectSemantics.Block.Eval.cons_cont hHeadEval)
-                hOuterRel hHeadArtifact)
-          subst targetOutcome
-          subst traceFinal
-          exact
-            ⟨headSourceFuel + 1, Structured.OutcomeT.cont headSource,
-              Structured.EffectSemantics.Block.Eval.cons_cont hHeadEval,
-              hOuterRel, hHeadArtifact⟩
-      | leave =>
-          have hOuterRel :
-              ObserverPreservation.OutcomeSimulation.Rel
-                (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-                  ctx regular)
-                tokens (Structured.OutcomeT.leave headSource)
-                prefixOutcome prefixTrace :=
-            OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-              (by simp) hHeadRel
-          obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
-            OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
-              hReach hPrefix hPrefixLe
-              (hAccept (headSourceFuel + 1)
+                targetOutcome headTrace
+                (Structured.EffectSemantics.Block.Eval.cons_cont
+                  hHeadEval)
+                (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+                  (leftRegular := TypedCfgCompiler.restLabel supply)
+                  (rightRegular := regular) (by simp) hHeadRel)
+                hHeadArtifact
+        | leave =>
+            exact
+              hAccept (headFuel + 1)
                 (Structured.OutcomeT.leave headSource)
-                prefixOutcome prefixTrace
-                (Structured.EffectSemantics.Block.Eval.cons_leave hHeadEval)
-                hOuterRel hHeadArtifact)
-          subst targetOutcome
-          subst traceFinal
-          exact
-            ⟨headSourceFuel + 1, Structured.OutcomeT.leave headSource,
-              Structured.EffectSemantics.Block.Eval.cons_leave hHeadEval,
-              hOuterRel, hHeadArtifact⟩
-      | halt kind =>
-          have hOuterRel :
-              ObserverPreservation.OutcomeSimulation.Rel
-                (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-                  ctx regular)
-                tokens (Structured.OutcomeT.halt kind headSource)
-                prefixOutcome prefixTrace :=
-            OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
-              (by simp) hHeadRel
-          obtain ⟨_hFuelEq, hOutcomeEq, hTraceEq⟩ :=
-            OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
-              hReach hPrefix hPrefixLe
-              (hAccept (headSourceFuel + 1)
+                targetOutcome headTrace
+                (Structured.EffectSemantics.Block.Eval.cons_leave
+                  hHeadEval)
+                (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+                  (leftRegular := TypedCfgCompiler.restLabel supply)
+                  (rightRegular := regular) (by simp) hHeadRel)
+                hHeadArtifact
+        | halt kind =>
+            exact
+              hAccept (headFuel + 1)
                 (Structured.OutcomeT.halt kind headSource)
-                prefixOutcome prefixTrace
-                (Structured.EffectSemantics.Block.Eval.cons_halt hHeadEval)
-                hOuterRel hHeadArtifact)
-          subst targetOutcome
-          subst traceFinal
-          exact
-            ⟨headSourceFuel + 1,
-              Structured.OutcomeT.halt kind headSource,
-              Structured.EffectSemantics.Block.Eval.cons_halt hHeadEval,
-              hOuterRel, hHeadArtifact⟩
+                targetOutcome headTrace
+                (Structured.EffectSemantics.Block.Eval.cons_halt
+                  hHeadEval)
+                (OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+                  (leftRegular := TypedCfgCompiler.restLabel supply)
+                  (rightRegular := regular) (by simp) hHeadRel)
+                hHeadArtifact)
+      hRel hReach
+  rcases headOutcome with ⟨headSource, headMode⟩
+  cases headMode with
+  | regular =>
+      obtain ⟨output, hOutput, _hFits⟩ := hHeadArtifact
+      rw [hFallthrough] at hOutput
+      cases hOutput
+  | brk =>
+      exact
+        ⟨headSourceFuel + 1, Structured.OutcomeT.brk headSource,
+          Structured.EffectSemantics.Block.Eval.cons_brk hHeadEval,
+          OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+            (by simp) hHeadRel,
+          hHeadArtifact⟩
+  | cont =>
+      exact
+        ⟨headSourceFuel + 1, Structured.OutcomeT.cont headSource,
+          Structured.EffectSemantics.Block.Eval.cons_cont hHeadEval,
+          OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+            (by simp) hHeadRel,
+          hHeadArtifact⟩
+  | leave =>
+      exact
+        ⟨headSourceFuel + 1, Structured.OutcomeT.leave headSource,
+          Structured.EffectSemantics.Block.Eval.cons_leave hHeadEval,
+          OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+            (by simp) hHeadRel,
+          hHeadArtifact⟩
+  | halt kind =>
+      exact
+        ⟨headSourceFuel + 1, Structured.OutcomeT.halt kind headSource,
+          Structured.EffectSemantics.Block.Eval.cons_halt hHeadEval,
+          OutcomeSimulation.rel_ofContext_change_regular_of_nonregular
+            (by simp) hHeadRel,
+          hHeadArtifact⟩
 
 /--
 Compiler-driven statement-list composition. The recursive statement and tail
@@ -655,13 +552,13 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
       ∀ targetState,
         ¬ accept
             (.jump (TypedCfgCompiler.restLabel supply) targetState))
-    (hHead :
-      ∀ {headResult : TypedCfgCompiler.Result}
-        {headAccept : TypedCfg.Outcome → Prop},
+    (hHeadNoTail :
+      ∀ {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        headResult.fallthrough? = none →
         ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
@@ -670,7 +567,29 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
             headResult ctx cfg
             (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
               ctx (TypedCfgCompiler.restLabel supply))
-            headAccept entry input source tokens headTargetFuel)
+            accept
+            entry input source tokens headTargetFuel)
+    (hHeadWithTail :
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {joinShape : TypedCfg.Shape},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        TypedCfgPreservation.BlocksInProgram headResult cfg →
+        headResult.fallthrough? = some joinShape →
+        OutcomeSimulation.LabelShape cfg
+          (TypedCfgCompiler.restLabel supply) joinShape →
+        ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Stmt.Eval
+                program sourceFuel stmt source sourceOutcome)
+            headResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx (TypedCfgCompiler.restLabel supply))
+            (OutcomeSimulation.JumpAt source tokens
+              (TypedCfgCompiler.restLabel supply) joinShape accept)
+            entry input source tokens headTargetFuel)
     (hTail :
       ∀ {headResult tailResult : TypedCfgCompiler.Result}
         {tailInput : TypedCfg.Shape}
@@ -681,6 +600,7 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        tailSource.source.returns = source.source.returns →
         ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
@@ -708,8 +628,8 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
   · rcases hNoTail with ⟨hFallthrough, rfl⟩
     exact
       adequateWithinFuel_cons_noTail targetFuel
-        hFallthrough (hEntryNotAccepted input)
-        (hHead hHeadCompile hBlocks)
+        hFallthrough
+        (hHeadNoTail hHeadCompile hBlocks hFallthrough)
   · rcases hWithTail with
       ⟨tailInput, tailResult,
         hFallthrough, hTailCompile, rfl⟩
@@ -717,12 +637,19 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
       TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
     have hTailBlocks :=
       TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+    have hTailShape :
+        OutcomeSimulation.LabelShape cfg
+          (TypedCfgCompiler.restLabel supply) tailInput :=
+      OutcomeSimulation.LabelShape.of_compileStmtListFuel?
+        hTailCompile hTailBlocks
     exact
       adequateWithinFuel_cons_withTail targetFuel
         hFallthrough (hEntryNotAccepted tailInput) hTailEntryNotAccepted
-        (hHead hHeadCompile hHeadBlocks)
-        (fun tailTargetFuel hFuel {_tailSource} =>
+        (hHeadWithTail hHeadCompile hHeadBlocks
+          hFallthrough hTailShape)
+        (fun tailTargetFuel hFuel {_tailSource} hReturns =>
           hTail hFallthrough hTailCompile hTailBlocks
+            hReturns
             tailTargetFuel hFuel)
 
 /--
@@ -753,13 +680,13 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
       ∀ targetState,
         ¬ accept
             (.jump (TypedCfgCompiler.restLabel supply) targetState))
-    (hHead :
-      ∀ {headResult : TypedCfgCompiler.Result}
-        {headAccept : TypedCfg.Outcome → Prop},
+    (hHeadNoTail :
+      ∀ {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        headResult.fallthrough? = none →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Stmt.Eval
@@ -767,7 +694,28 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
           headResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
             ctx (TypedCfgCompiler.restLabel supply))
-          headAccept entry input source tokens)
+          accept
+          entry input source tokens)
+    (hHeadWithTail :
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {joinShape : TypedCfg.Shape},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        TypedCfgPreservation.BlocksInProgram headResult cfg →
+        headResult.fallthrough? = some joinShape →
+        OutcomeSimulation.LabelShape cfg
+          (TypedCfgCompiler.restLabel supply) joinShape →
+        OutcomeSimulation.AdequateWithin
+          (fun sourceFuel sourceOutcome =>
+            ObserverSemantics.Stmt.Eval
+              program sourceFuel stmt source sourceOutcome)
+          headResult ctx cfg
+          (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+            ctx (TypedCfgCompiler.restLabel supply))
+          (OutcomeSimulation.JumpAt source tokens
+            (TypedCfgCompiler.restLabel supply) joinShape accept)
+          entry input source tokens)
     (hTail :
       ∀ {headResult tailResult : TypedCfgCompiler.Result}
         {tailInput : TypedCfg.Shape}
@@ -778,6 +726,7 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        tailSource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -803,11 +752,18 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
     adequateWithinFuel_cons_of_compileStmtListFuel?
       targetFuel hCompile hBlocks hEntryNotAccepted
       hTailEntryNotAccepted
-      (fun hHeadCompile hHeadBlocks headTargetFuel _hFuel =>
-        (hHead hHeadCompile hHeadBlocks).fuel headTargetFuel)
+      (fun hHeadCompile hHeadBlocks hFallthrough
+          headTargetFuel _hFuel =>
+        (hHeadNoTail hHeadCompile hHeadBlocks hFallthrough).fuel
+          headTargetFuel)
+      (fun hHeadCompile hHeadBlocks hFallthrough hShape
+          headTargetFuel _hFuel =>
+        (hHeadWithTail hHeadCompile hHeadBlocks
+          hFallthrough hShape).fuel headTargetFuel)
       (fun hFallthrough hTailCompile hTailBlocks
-          tailTargetFuel _hFuel =>
-        (hTail hFallthrough hTailCompile hTailBlocks).fuel
+          hReturns tailTargetFuel _hFuel =>
+        (hTail hFallthrough hTailCompile hTailBlocks
+          hReturns).fuel
           tailTargetFuel)
       hAccept hRel hReach
 

@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 20:48 PDT.
+Last updated: 2026-06-11 22:36 PDT.
 
 ## Objective
 
@@ -188,9 +188,13 @@ Adjacent boundary status:
   recursive Structured control form. Switch tests, dispatch entries, and case
   bodies now use disjoint named label constructors, eliminating arithmetic tag
   collisions with statement tails and with one another. Recursive calls now
-  expose an activation-owned fixed-fuel interface: compiler-derived CFG input
-  shapes separate proc entry, body entry, and exit across arbitrary recursion
-  depth without public label or call-oracle premises.
+  expose an activation-protected fixed-fuel interface: accepted jumps are
+  owned by the current activation or a checked dynamic ancestor, while
+  compiler-derived CFG input shapes separate proc entry, body entry, and exit
+  across arbitrary recursion depth without public label or call-oracle
+  premises. Statement-list composition uses the exact outer boundary for
+  non-fallthrough heads and passes checked tail-entry shape plus source-return
+  preservation to recursive callbacks.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

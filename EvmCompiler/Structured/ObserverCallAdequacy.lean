@@ -1108,11 +1108,11 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
                       ⟨returnShape, rfl, hFinalFits⟩⟩
 
 /--
-Fixed-fuel call adequacy from the shared activation-owned boundary. Recursive
-entry, body-entry, and exit separation are derived from checked CFG input
-shapes and activation extension rather than supplied as label oracles.
+Fixed-fuel call adequacy from the shared activation-protected boundary.
+Recursive entry, body-entry, and exit separation are derived from checked CFG
+input shapes and activation ancestry rather than supplied as label oracles.
 -/
-theorem adequateWithinFuel_call_of_compileStmtFuel?_owned
+theorem adequateWithinFuel_call_of_compileStmtFuel?_protected
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
@@ -1140,8 +1140,8 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_owned
     (hProcs : ctx.procs = program.procs)
     (hProgramWF : program.WF)
     (hRegular : continuations.regular = regular)
-    (hOwned :
-      OutcomeSimulation.ActivationOwned cfg source tokens accept)
+    (hProtected :
+      OutcomeSimulation.ActivationProtected cfg source tokens accept)
     (hBodyAdequate :
       ∀ {proc : Structured.Proc}
         {fragment :
@@ -1184,22 +1184,22 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_owned
   apply
     adequateWithinFuel_call_of_compileStmtFuel?
       generated hCompile hBlocks hCalls hProcs hProgramWF hRegular
-  · intro proc callSource hLookup target hFrame hHidden hExtension
+  · intro proc callSource hLookup target hFrame _hHidden hExtension
     intro hAccepted
     exact
-      hOwned.reject_extension hAccepted
+      hProtected.reject_extension hAccepted
         (OutcomeSimulation.LabelShape.procEntry generated hLookup)
         (TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc)
-        hExtension hHidden hFrame
-  · intro proc callSource hLookup target hFrame hHidden hExtension
+        hExtension hFrame
+  · intro proc callSource hLookup target hFrame _hHidden hExtension
     intro hAccepted
     exact
-      hOwned.reject_extension hAccepted
+      hProtected.reject_extension hAccepted
         (OutcomeSimulation.LabelShape.procExit generated hLookup)
         (TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit proc)
-        hExtension hHidden hFrame
+        hExtension hFrame
   · intro proc fragment callSource hLookup hFragmentBlocks
-      target hFrame hHidden hExtension
+      target hFrame _hHidden hExtension
     simp only [OutcomeSimulation.JumpAt]
     intro hAccepted
     rcases hAccepted with hCurrent | hOuter
@@ -1207,12 +1207,12 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_owned
         (OutcomeSimulation.ProcFragment.entry_ne_exit fragment)
           hCurrent.1
     · exact
-        hOwned.reject_extension hOuter
+        hProtected.reject_extension hOuter
           (OutcomeSimulation.LabelShape.of_compileBlock?
             fragment.compile hFragmentBlocks)
           (OutcomeSimulation.ProcFragment.input_returnTokenDepth
             fragment)
-          hExtension hHidden hFrame
+          hExtension hFrame
   · exact hBodyAdequate
 
 /--
