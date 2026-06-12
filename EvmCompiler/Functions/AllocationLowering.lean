@@ -368,6 +368,65 @@ theorem lowerScratchParam_compileOpen
     hCleanupStmt, Bind.bind, Option.bind, List.append_nil]
   rfl
 
+theorem lowerScratchParam_compileOpen_depth_bounds
+    {ctx : Ctx} {name : Name} {slot frameDepth : Nat}
+    {above suffix : Locals.Layout}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hLayout :
+      localsCtx.layout = above ++ name :: suffix)
+    (hAbove : name ∉ above)
+    (hSuffix : name ∉ suffix)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName
+          (above ++ name :: suffix) =
+        some frameDepth)
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (lowerScratchParam ctx name slot
+                (above ++ name :: suffix)).1 } =
+        some (compiled, finalCtx)) :
+    above.length + 1 ≤ 16 ∧
+      1 + frameDepth ≤ 16 := by
+  have hNameDepth :
+      Locals.Layout.lookupDepth? name
+          (above ++ name :: suffix) =
+        some (above.length + 1) := by
+    apply Locals.Layout.lookupDepth?_append_of_not_mem hAbove
+    simp [Locals.Layout.lookupDepth?, Locals.Layout.lookupDepthFrom]
+  have hTarget :
+      eraseName name (above ++ name :: suffix) =
+        above ++ suffix :=
+    eraseName_append_name hAbove hSuffix
+  cases hStore :
+      Locals.Stmt.compile localsCtx
+        (.expr (scratchStoreExpr ctx.frameName slot (.var name))) with
+  | none =>
+      simp [lowerScratchParam, hTarget, Locals.Block.compileOpen,
+        hStore] at hCompile
+  | some storeResult =>
+      cases hNameOp :
+          Locals.StackOp.dup? (above.length + 1) with
+      | none =>
+          simp [Locals.Stmt.compile, scratchStoreExpr,
+            scratchAddressExpr, exprSeqTwo, Locals.Expr.compileCode,
+            Locals.ExprSeq.compileCode, hLayout, hNameDepth, hNameOp]
+            at hStore
+      | some nameOp =>
+          cases hFrameOp :
+              Locals.StackOp.dup? (1 + frameDepth) with
+          | none =>
+              simp [Locals.Stmt.compile, scratchStoreExpr,
+                scratchAddressExpr, exprSeqTwo,
+                Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+                hLayout, hNameDepth, hNameOp, hFrameDepth, hFrameOp]
+                at hStore
+          | some frameOp =>
+              exact
+                ⟨(Locals.StackOp.bounds_of_dup?_eq_some hNameOp).2,
+                  (Locals.StackOp.bounds_of_dup?_eq_some hFrameOp).2⟩
+
 def lowerParams (ctx : Ctx) :
     List (Name × Nat) → Locals.Layout →
       List Locals.Stmt × Locals.Layout
@@ -448,6 +507,31 @@ theorem lowerScratchReturn_compileOpen
   simp [Locals.Block.compileOpen, Locals.Stmt.compile,
     Locals.codeStmt, hStore]
 
+theorem lowerScratchReturn_compileOpen_depth_bound
+    {ctx : Ctx} {name : Name} {slot frameDepth : Nat}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName localsCtx.layout =
+        some frameDepth)
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              [Locals.Stmt.expr
+                (scratchStoreExpr ctx.frameName slot
+                  (.lit AllocationSupport.zeroWord))] } =
+        some (compiled, finalCtx)) :
+    1 + frameDepth ≤ 16 := by
+  cases hFrameOp :
+      Locals.StackOp.dup? (1 + frameDepth) with
+  | none =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        scratchStoreExpr, scratchAddressExpr, exprSeqTwo,
+        Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+        hFrameDepth, hFrameOp] at hCompile
+  | some frameOp =>
+      exact (Locals.StackOp.bounds_of_dup?_eq_some hFrameOp).2
+
 def lowerReturnExprs (ctx : Ctx) (state : State)
     (names : List Name) : Option (Locals.ExprSeq names.length) :=
   lowerExprSeq ctx state (Functions.Lower.returnExprs names)
@@ -503,9 +587,88 @@ def scratchBindingsForRoot
       else
         none).flatten.eraseDups
 
+private theorem mem_eraseDups_iff
+    {α : Type} [BEq α] [LawfulBEq α]
+    {item : α} {items : List α} :
+    item ∈ items.eraseDups ↔ item ∈ items := by
+  match items with
+  | [] =>
+      simp
+  | head :: tail =>
+      rw [List.eraseDups_cons]
+      simp only [List.mem_cons]
+      rw [mem_eraseDups_iff]
+      simp only [List.mem_filter, Bool.not_eq_true, beq_iff_eq]
+      constructor
+      · intro h
+        rcases h with hEq | ⟨hMem, _⟩
+        · exact Or.inl hEq
+        · exact Or.inr hMem
+      · intro h
+        rcases h with hEq | hMem
+        · exact Or.inl hEq
+        · by_cases hEq : item = head
+          · exact Or.inl hEq
+          · exact Or.inr ⟨hMem, by simp [hEq]⟩
+termination_by items.length
+decreasing_by
+  exact
+    Nat.lt_succ_of_le
+      (List.length_filter_le (fun binding => !binding == head) tail)
+
+theorem mem_scratchBindingsForRoot
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {root : ScopeId}
+    {entry : AllocationSupport.ScopedAllocation}
+    {name : Name} {slot : Nat}
+    (hEntry : entry ∈ scopedStates recipe)
+    (hRoot : scopeRoot entry.scope = root)
+    (hBinding : (name, slot) ∈ entry.state.env)
+    (hScratch : slot ∉ stackSlots) :
+    (name, slot) ∈ scratchBindingsForRoot recipe stackSlots root := by
+  unfold scratchBindingsForRoot
+  rw [mem_eraseDups_iff]
+  simp only [List.mem_flatten]
+  refine
+    ⟨entry.state.env.filter fun binding => binding.2 ∉ stackSlots,
+      ?_, ?_⟩
+  · exact
+      List.mem_filterMap.mpr
+        ⟨entry, hEntry, by simp [hRoot]⟩
+  · exact List.mem_filter.mpr ⟨hBinding, by simpa using hScratch⟩
+
 def rootNeedsFrame (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (root : ScopeId) : Bool :=
   !(scratchBindingsForRoot recipe stackSlots root).isEmpty
+
+theorem slot_mem_of_function_rootNeedsFrame_eq_false
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {entry : AllocationSupport.ScopedAllocation}
+    {functionName name : Name} {slot : Nat}
+    (hEntry : entry ∈ recipe.functions)
+    (hScope : entry.scope = .function functionName)
+    (hBinding : (name, slot) ∈ entry.state.env)
+    (hNoFrame :
+      rootNeedsFrame recipe stackSlots (.function functionName) = false) :
+    slot ∈ stackSlots := by
+  by_contra hScratch
+  have hMem :
+      (name, slot) ∈
+        scratchBindingsForRoot recipe stackSlots
+          (.function functionName) := by
+    apply mem_scratchBindingsForRoot
+    · simp only [scopedStates, List.mem_cons, List.mem_append]
+      exact Or.inl (Or.inr hEntry)
+    · rw [hScope]
+      rfl
+    · exact hBinding
+    · exact hScratch
+  have hEmpty :
+      scratchBindingsForRoot recipe stackSlots (.function functionName) = [] := by
+    simpa [rootNeedsFrame] using hNoFrame
+  rw [hEmpty] at hMem
+  exact False.elim (by simpa using hMem)
 
 def functionNeedsFrame (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (name : Name) : Bool :=
@@ -1983,6 +2146,45 @@ def freshFrameName (program : Program) : Option Name :=
   (List.range (names.length + 1)).findSome? fun index =>
     let candidate := "__evm_compiler_scratch_frame_" ++ toString index
     if candidate ∈ names then none else some candidate
+
+theorem freshFrameName_not_mem_allSourceNames
+    {program : Program} {frameName : Name}
+    (hFresh : freshFrameName program = some frameName) :
+    frameName ∉ allSourceNames program := by
+  unfold freshFrameName at hFresh
+  obtain ⟨index, _hIndex, hCandidate⟩ :=
+    List.exists_of_findSome?_eq_some hFresh
+  let candidate :=
+    "__evm_compiler_scratch_frame_" ++ toString index
+  by_cases hMem : candidate ∈ allSourceNames program
+  · simp [candidate, hMem] at hCandidate
+  · simp [candidate, hMem] at hCandidate
+    subst frameName
+    exact hMem
+
+theorem freshFrameName_not_mem_params
+    {program : Program} {frameName : Name} {fn : FunDef}
+    (hFresh : freshFrameName program = some frameName)
+    (hFn : fn ∈ program.functions) :
+    frameName ∉ fn.params := by
+  have hNotMem := freshFrameName_not_mem_allSourceNames hFresh
+  intro hParam
+  apply hNotMem
+  simp only [allSourceNames, List.mem_append, List.mem_flatMap,
+    List.mem_cons]
+  exact Or.inl ⟨fn, hFn, Or.inl (Or.inr hParam)⟩
+
+theorem freshFrameName_not_mem_returns
+    {program : Program} {frameName : Name} {fn : FunDef}
+    (hFresh : freshFrameName program = some frameName)
+    (hFn : fn ∈ program.functions) :
+    frameName ∉ fn.returns := by
+  have hNotMem := freshFrameName_not_mem_allSourceNames hFresh
+  intro hReturn
+  apply hNotMem
+  simp only [allSourceNames, List.mem_append, List.mem_flatMap,
+    List.mem_cons]
+  exact Or.inl ⟨fn, hFn, Or.inr hReturn⟩
 
 structure SlotOccurrence where
   scope : ScopeId

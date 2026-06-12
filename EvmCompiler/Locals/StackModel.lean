@@ -233,6 +233,42 @@ theorem exists_dup?_of_pos_of_le
     ∃ op, dup? depth = some op := by
   interval_cases depth <;> simp [dup?] at *
 
+theorem bounds_of_dup?_eq_some
+    {depth : Nat} {op : Structured.BasicOp}
+    (hOp : dup? depth = some op) :
+    0 < depth ∧ depth ≤ 16 := by
+  by_cases hLe : depth ≤ 16
+  · have hPos : 0 < depth := by
+      by_contra hNotPos
+      have hZero : depth = 0 := by omega
+      subst depth
+      simp [dup?] at hOp
+    exact ⟨hPos, hLe⟩
+  · have hLarge : 17 ≤ depth := by omega
+    let extra := depth - 17
+    have hDepth : depth = 17 + extra := by
+      simp [extra]
+      omega
+    rw [hDepth] at hOp
+    have h1 : 17 + extra ≠ 1 := by omega
+    have h2 : 17 + extra ≠ 2 := by omega
+    have h3 : 17 + extra ≠ 3 := by omega
+    have h4 : 17 + extra ≠ 4 := by omega
+    have h5 : 17 + extra ≠ 5 := by omega
+    have h6 : 17 + extra ≠ 6 := by omega
+    have h7 : 17 + extra ≠ 7 := by omega
+    have h8 : 17 + extra ≠ 8 := by omega
+    have h9 : 17 + extra ≠ 9 := by omega
+    have h10 : 17 + extra ≠ 10 := by omega
+    have h11 : 17 + extra ≠ 11 := by omega
+    have h12 : 17 + extra ≠ 12 := by omega
+    have h13 : 17 + extra ≠ 13 := by omega
+    have h14 : 17 + extra ≠ 14 := by omega
+    have h15 : 17 + extra ≠ 15 := by omega
+    have h16 : 17 + extra ≠ 16 := by omega
+    simp [dup?, h1, h2, h3, h4, h5, h6, h7, h8,
+      h9, h10, h11, h12, h13, h14, h15, h16] at hOp
+
 def swap? : Nat → Option Structured.BasicOp
   | 1 => some .swap1
   | 2 => some .swap2

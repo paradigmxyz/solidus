@@ -460,6 +460,27 @@ theorem find?_of_mem_of_wellFormed
     findScope?_of_mem_of_nodup
       (by simpa [scopeIds] using hScopes) hMem
 
+theorem wellFormed_of_find?_eq_some
+    {plan : ProgramPlan} {scope : ScopeId} {allocation : Plan}
+    (hWF : plan.WellFormed)
+    (hFind : plan.find? scope = some allocation) :
+    allocation.WellFormed := by
+  rcases hWF with ⟨_hScopes, hPlans⟩
+  unfold find? at hFind
+  cases hScope :
+      plan.scopes.find? fun candidate =>
+        decide (candidate.scope = scope) with
+  | none =>
+      simp [hScope] at hFind
+  | some scopePlan =>
+      have hMem := List.mem_of_find?_eq_some hScope
+      rw [hScope] at hFind
+      simp at hFind
+      subst allocation
+      exact
+        (List.forall_iff_forall_mem.mp hPlans)
+          scopePlan hMem
+
 theorem wellFormed_main {allocation : Plan}
     (hWF : allocation.WellFormed) :
     (main allocation).WellFormed := by

@@ -18,9 +18,102 @@ theorem mem_stackEntries_iff
       binding ∈ env ∧ binding.2 ∈ stackSlots := by
   simp [stackEntries]
 
+theorem not_mem_stackEntries_of_slot_not_mem
+    {stackSlots : SlotSet}
+    {env : AllocationSupport.SlotEnv}
+    {name : Name} {slot : Nat}
+    (hSlot : slot ∉ stackSlots) :
+    (name, slot) ∉ stackEntries stackSlots env := by
+  intro hMem
+  exact hSlot (mem_stackEntries_iff.mp hMem).2
+
 def stackOrder (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : List Name :=
   (stackEntries stackSlots env).map Prod.fst
+
+theorem mem_stackOrder_iff
+    {stackSlots : SlotSet}
+    {env : AllocationSupport.SlotEnv}
+    {name : Name} :
+    name ∈ stackOrder stackSlots env ↔
+      ∃ slot, (name, slot) ∈ env ∧ slot ∈ stackSlots := by
+  constructor
+  · intro hMem
+    obtain ⟨binding, hEntry, hName⟩ :=
+      List.mem_map.mp hMem
+    rcases binding with ⟨candidate, slot⟩
+    simp at hName
+    subst candidate
+    exact
+      ⟨slot, (mem_stackEntries_iff.mp hEntry).1,
+        (mem_stackEntries_iff.mp hEntry).2⟩
+  · rintro ⟨slot, hMem, hSlot⟩
+    exact
+      List.mem_map.mpr
+        ⟨(name, slot), mem_stackEntries_iff.mpr ⟨hMem, hSlot⟩, rfl⟩
+
+theorem stackOrder_append
+    (stackSlots : SlotSet)
+    (left right : AllocationSupport.SlotEnv) :
+    stackOrder stackSlots (left ++ right) =
+      stackOrder stackSlots left ++ stackOrder stackSlots right := by
+  simp [stackOrder, stackEntries, List.filter_append]
+
+theorem stackOrder_filter_names_self
+    (stackSlots : SlotSet)
+    (env : AllocationSupport.SlotEnv) :
+    (stackOrder stackSlots env).filter
+        (fun name => decide (name ∈ env.map Prod.fst)) =
+      stackOrder stackSlots env := by
+  apply List.filter_eq_self.mpr
+  intro name hName
+  obtain ⟨slot, hMem, _hSlot⟩ :=
+    mem_stackOrder_iff.mp hName
+  have hNameMap : name ∈ env.map Prod.fst :=
+    List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+  simpa using hNameMap
+
+theorem stackOrder_filter_names_eq_nil_of_nodup_append
+    {stackSlots : SlotSet}
+    {left right : AllocationSupport.SlotEnv}
+    (hNodup :
+      ((left ++ right).map Prod.fst).Nodup) :
+    (stackOrder stackSlots left).filter
+        (fun name => decide (name ∈ right.map Prod.fst)) =
+      [] := by
+  apply List.filter_eq_nil_iff.mpr
+  intro name hName
+  obtain ⟨slot, hMem, _hSlot⟩ :=
+    mem_stackOrder_iff.mp hName
+  have hLeftName : name ∈ left.map Prod.fst :=
+    List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+  have hParts :
+      (left.map Prod.fst ++ right.map Prod.fst).Nodup := by
+    simpa [List.map_append] using hNodup
+  have hDisjoint :
+      List.Disjoint (left.map Prod.fst) (right.map Prod.fst) :=
+    List.disjoint_of_nodup_append hParts
+  have hNotRight : name ∉ right.map Prod.fst := fun hRightName =>
+    (List.disjoint_left.mp hDisjoint) hLeftName hRightName
+  simpa using hNotRight
+
+theorem stackOrder_filter_names_eq_nil_of_disjoint
+    {stackSlots : SlotSet}
+    {env : AllocationSupport.SlotEnv}
+    {names : List Name}
+    (hDisjoint : List.Disjoint (env.map Prod.fst) names) :
+    (stackOrder stackSlots env).filter
+        (fun name => decide (name ∈ names)) =
+      [] := by
+  apply List.filter_eq_nil_iff.mpr
+  intro name hName
+  obtain ⟨slot, hMem, _hSlot⟩ :=
+    mem_stackOrder_iff.mp hName
+  have hEnvName : name ∈ env.map Prod.fst :=
+    List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+  have hNotNames : name ∉ names := fun hNames =>
+    (List.disjoint_left.mp hDisjoint) hEnvName hNames
+  simpa using hNotNames
 
 def bindingLocation (stackEntries : AllocationSupport.SlotEnv)
     (binding : Name × Nat) :
@@ -209,6 +302,274 @@ theorem allocationOfState_scratch_bound_of_wellFormed
   exact
     Locals.Allocation.Plan.scratch_bound_of_wellFormed hWF hLocation
       (allocationOfState_scratchRegion_of_wellFormed hWF hLocation)
+
+theorem allocationOfState_parameter_stack_filter
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {stackSlots : SlotSet}
+    {state : AllocationSupport.CompileState}
+    {added returns params processed pending : AllocationSupport.SlotEnv}
+    (hEnv :
+      state.env = added ++ returns ++ params)
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hSplit : params = processed ++ pending) :
+    ((allocationOfState contract frameWords
+        (stackEntries stackSlots added ++
+          stackEntries stackSlots returns.reverse ++
+          stackEntries stackSlots params.reverse)
+        state).stackOrder.filter
+      (fun name => decide (name ∈ (processed.map Prod.fst).reverse))) =
+      stackOrder stackSlots processed.reverse := by
+  let addedNames := added.map Prod.fst
+  let returnNames := returns.map Prod.fst
+  let processedNames := processed.map Prod.fst
+  let pendingNames := pending.map Prod.fst
+  have hFull :
+      (addedNames ++ returnNames ++ processedNames ++ pendingNames).Nodup := by
+    simpa [addedNames, returnNames, processedNames, pendingNames,
+      hEnv, hSplit, List.map_append, List.append_assoc] using hNodup
+  have hAddedRest :
+      (addedNames ++
+        (returnNames ++ processedNames ++ pendingNames)).Nodup := by
+    simpa [List.append_assoc] using hFull
+  have hAddedParts := List.nodup_append.mp hAddedRest
+  have hReturnRest :
+      (returnNames ++ (processedNames ++ pendingNames)).Nodup :=
+    by simpa [List.append_assoc] using hAddedParts.2.1
+  have hReturnParts := List.nodup_append.mp hReturnRest
+  have hProcessedPending :
+      (processedNames ++ pendingNames).Nodup :=
+    hReturnParts.2.1
+  have hProcessedPendingParts :=
+    List.nodup_append.mp hProcessedPending
+  have hAddedProcessed :
+      List.Disjoint addedNames processedNames := by
+    apply List.disjoint_left.mpr
+    intro name hAdded hProcessed
+    exact
+      hAddedParts.2.2 name hAdded name
+        (by simp [hProcessed]) rfl
+  have hReturnProcessed :
+      List.Disjoint returnNames processedNames := by
+    apply List.disjoint_left.mpr
+    intro name hReturn hProcessed
+    exact
+      hReturnParts.2.2 name hReturn name
+        (by simp [hProcessed]) rfl
+  have hPendingProcessed :
+      List.Disjoint pendingNames processedNames := by
+    apply List.disjoint_left.mpr
+    intro name hPending hProcessed
+    exact
+      hProcessedPendingParts.2.2 name hProcessed name hPending rfl
+  have hAddedNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots)
+      (env := added)
+      (names := processedNames.reverse)
+      (by
+        apply List.disjoint_left.mpr
+        intro name hAdded hProcessed
+        exact
+          (List.disjoint_left.mp hAddedProcessed)
+            hAdded (by simpa using hProcessed))
+  have hReturnsNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots)
+      (env := returns.reverse)
+      (names := processedNames.reverse)
+      (by
+        apply List.disjoint_left.mpr
+        intro name hReturn hProcessed
+        have hReturnName : name ∈ returnNames := by
+          obtain ⟨binding, hBinding, hName⟩ :=
+            List.mem_map.mp hReturn
+          subst name
+          exact
+            List.mem_map.mpr
+              ⟨binding, by simpa using hBinding, rfl⟩
+        exact
+          (List.disjoint_left.mp hReturnProcessed)
+            hReturnName (by simpa using hProcessed))
+  have hPendingNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots)
+      (env := pending.reverse)
+      (names := processedNames.reverse)
+      (by
+        apply List.disjoint_left.mpr
+        intro name hPending hProcessed
+        have hPendingName : name ∈ pendingNames := by
+          obtain ⟨binding, hBinding, hName⟩ :=
+            List.mem_map.mp hPending
+          subst name
+          exact
+            List.mem_map.mpr
+              ⟨binding, by simpa using hBinding, rfl⟩
+        exact
+          (List.disjoint_left.mp hPendingProcessed)
+            hPendingName (by simpa using hProcessed))
+  have hProcessedSelf :=
+    stackOrder_filter_names_self stackSlots processed.reverse
+  subst params
+  simp only [allocationOfState, List.map_append]
+  change
+    ((stackOrder stackSlots added ++
+        stackOrder stackSlots returns.reverse ++
+        stackOrder stackSlots (processed ++ pending).reverse).filter
+      (fun name => decide (name ∈ (processed.map Prod.fst).reverse))) =
+      stackOrder stackSlots processed.reverse
+  rw [List.filter_append, List.filter_append, List.reverse_append,
+    stackOrder_append, List.filter_append]
+  simp only [processedNames] at hAddedNil hReturnsNil hPendingNil
+  rw [hAddedNil, hReturnsNil, hPendingNil]
+  simpa [List.map_reverse] using hProcessedSelf
+
+theorem allocationOfState_return_stack_filter
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {stackSlots : SlotSet}
+    {state : AllocationSupport.CompileState}
+    {added returns params processed pending : AllocationSupport.SlotEnv}
+    (hEnv :
+      state.env = added ++ returns ++ params)
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hSplit : returns = processed ++ pending) :
+    ((allocationOfState contract frameWords
+        (stackEntries stackSlots added ++
+          stackEntries stackSlots returns.reverse ++
+          stackEntries stackSlots params.reverse)
+        state).stackOrder.filter
+      (fun name =>
+        decide
+          (name ∈
+            (processed.map Prod.fst).reverse ++
+              (params.map Prod.fst).reverse))) =
+      stackOrder stackSlots processed.reverse ++
+        stackOrder stackSlots params.reverse := by
+  let addedNames := added.map Prod.fst
+  let processedNames := processed.map Prod.fst
+  let pendingNames := pending.map Prod.fst
+  let paramNames := params.map Prod.fst
+  let liveNames := processedNames.reverse ++ paramNames.reverse
+  have hFull :
+      (addedNames ++ processedNames ++ pendingNames ++ paramNames).Nodup := by
+    simpa [addedNames, processedNames, pendingNames, paramNames,
+      hEnv, hSplit, List.map_append, List.append_assoc] using hNodup
+  have hAddedRest :
+      (addedNames ++
+        (processedNames ++ pendingNames ++ paramNames)).Nodup := by
+    simpa [List.append_assoc] using hFull
+  have hAddedParts := List.nodup_append.mp hAddedRest
+  have hReturnsParams :
+      ((processedNames ++ pendingNames) ++ paramNames).Nodup := by
+    simpa [List.append_assoc] using hAddedParts.2.1
+  have hReturnsParts := List.nodup_append.mp hReturnsParams
+  have hProcessedPending :
+      (processedNames ++ pendingNames).Nodup :=
+    hReturnsParts.1
+  have hProcessedPendingParts :=
+    List.nodup_append.mp hProcessedPending
+  have hAddedLive :
+      List.Disjoint addedNames liveNames := by
+    apply List.disjoint_left.mpr
+    intro name hAdded hLive
+    have hLive' :
+        name ∈ processedNames ∨ name ∈ paramNames := by
+      simpa [liveNames] using hLive
+    have hRest :
+        name ∈ processedNames ++ pendingNames ++ paramNames := by
+      rcases hLive' with hProcessed | hParam
+      · simp [hProcessed]
+      · simp [hParam]
+    exact hAddedParts.2.2 name hAdded name hRest rfl
+  have hPendingLive :
+      List.Disjoint pendingNames liveNames := by
+    apply List.disjoint_left.mpr
+    intro name hPending hLive
+    rcases List.mem_append.mp hLive with hProcessed | hParam
+    · have hProcessed' : name ∈ processedNames := by
+        simpa using hProcessed
+      exact
+        hProcessedPendingParts.2.2 name hProcessed'
+          name hPending rfl
+    · have hParam' : name ∈ paramNames := by
+        simpa using hParam
+      have hPendingInReturns :
+          name ∈ processedNames ++ pendingNames := by
+        simp [hPending]
+      exact
+        hReturnsParts.2.2 name hPendingInReturns
+          name hParam' rfl
+  have hAddedNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots)
+      (env := added) (names := liveNames) hAddedLive
+  have hPendingNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots)
+      (env := pending.reverse) (names := liveNames)
+      (by
+        apply List.disjoint_left.mpr
+        intro name hPending hLive
+        have hPendingName : name ∈ pendingNames := by
+          obtain ⟨binding, hBinding, hName⟩ :=
+            List.mem_map.mp hPending
+          subst name
+          exact
+            List.mem_map.mpr
+              ⟨binding, by simpa using hBinding, rfl⟩
+        exact
+          (List.disjoint_left.mp hPendingLive)
+            hPendingName hLive)
+  have hProcessedSelf :
+      (stackOrder stackSlots processed.reverse).filter
+          (fun name => decide (name ∈ liveNames)) =
+        stackOrder stackSlots processed.reverse := by
+    apply List.filter_eq_self.mpr
+    intro name hName
+    obtain ⟨slot, hMem, _hSlot⟩ :=
+      mem_stackOrder_iff.mp hName
+    have hProcessedName : name ∈ processedNames.reverse := by
+      have hMapped : name ∈ processed.reverse.map Prod.fst :=
+        List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+      simpa [processedNames, List.map_reverse] using hMapped
+    simpa [liveNames, hProcessedName]
+  have hParamsSelf :
+      (stackOrder stackSlots params.reverse).filter
+          (fun name => decide (name ∈ liveNames)) =
+        stackOrder stackSlots params.reverse := by
+    apply List.filter_eq_self.mpr
+    intro name hName
+    obtain ⟨slot, hMem, _hSlot⟩ :=
+      mem_stackOrder_iff.mp hName
+    have hParamName : name ∈ paramNames.reverse := by
+      have hMapped : name ∈ params.reverse.map Prod.fst :=
+        List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+      simpa [paramNames, List.map_reverse] using hMapped
+    simpa [liveNames, hParamName]
+  subst returns
+  simp only [allocationOfState, List.map_append]
+  change
+    List.filter
+      (fun name =>
+        decide
+          (name ∈
+            (processed.map Prod.fst).reverse ++
+              (params.map Prod.fst).reverse))
+      (stackOrder stackSlots added ++
+        stackOrder stackSlots (processed ++ pending).reverse ++
+        stackOrder stackSlots params.reverse) =
+      stackOrder stackSlots processed.reverse ++
+        stackOrder stackSlots params.reverse
+  rw [List.filter_append, List.filter_append, List.reverse_append,
+    stackOrder_append, List.filter_append]
+  simp only [liveNames, processedNames, paramNames] at hAddedNil
+  simp only [liveNames, processedNames, paramNames] at hPendingNil
+  simp only [liveNames, processedNames, paramNames] at hProcessedSelf
+  simp only [liveNames, processedNames, paramNames] at hParamsSelf
+  rw [hAddedNil, hPendingNil, hProcessedSelf, hParamsSelf]
+  simp
 
 theorem allocationOfState_location_stack_of_mem
     {contract : MemoryContract.Contract}
