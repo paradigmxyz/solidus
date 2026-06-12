@@ -402,6 +402,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.restrict_source_live
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_locals_layout
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_state
+#check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.acquire_from_runtime
+#check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.release_to_runtime
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_push
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize

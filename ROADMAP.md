@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 15:58 PDT.
+Last updated: 2026-06-12 16:28 PDT.
 
 ## Objective
 
@@ -483,8 +483,10 @@ Roadmap:
   under the same observation protocol. Compiler-derived function entry,
   parameter/return preludes, body activation invariants, argument evaluation,
   and generic stack-or-scratch multi-return target assignment are checked.
-  Recursive scratch-frame acquisition/readiness, callee execution, return
-  reattachment, frame release, and the matching backward theorem remain.
+  Real scratch-frame acquire/release now preserve suspended caller spills,
+  observer/world state, allocator readiness, and exact activation ownership.
+  Recursive callee execution, return reattachment, allocator-aware ordinary
+  statements, and the matching backward theorem remain.
 - [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
 - [x] Complete the pass-owned Structured code/terminal typing invariant that
@@ -666,9 +668,14 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   checked for both stack and scratch targets. The validated prelude now yields
   the body `ActivationInvariant`, while `ActivationRuntimeInvariant` names the
   additional allocator-readiness and top-frame-ownership facts required by
-  recursive calls. The immediate remaining lemma is real-code
-  noninterference for nested scratch-frame acquisition; after that, recursive
-  body/call composition and matching backward adequacy remain.
+  recursive calls. The real acquire sequence preserves every caller-owned
+  spill below the next allocator base, and the real release sequence restores
+  the caller activation and allocator depth. Functions-owned
+  `ScratchFrame.acquire_from_runtime` and `ScratchFrame.release_to_runtime`
+  expose those checked transitions without a second compiler or interpreter.
+  The immediate remaining theorem is allocator-aware source-fuel recursion for
+  ordinary statements and the internal-call case; matching whole-function and
+  whole-program backward adequacy follows after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

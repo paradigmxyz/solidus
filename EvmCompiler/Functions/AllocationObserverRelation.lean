@@ -4567,6 +4567,23 @@ theorem scratchAddress_end_le_allocatorBase
       rw [hBase, baseAt_succ]
       exact scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
 
+/--
+An owned scratch frame ends exactly where the allocator says the next frame
+will begin.
+-/
+theorem frameEnd_eq_allocatorBase
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    frameBase + MemoryContract.wordBytes * frameWords =
+      baseAt config allocatorDepth := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase hWords =>
+      rw [hBase, hWords, baseAt_succ]
+      rfl
+
 end ActivationOwned
 
 /--

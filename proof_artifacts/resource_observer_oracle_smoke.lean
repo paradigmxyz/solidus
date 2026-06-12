@@ -148,6 +148,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant
+#check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.acquire_from_runtime
+#check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.release_to_runtime
 #check EvmCompiler.Structured.EffectSemantics.Code.run_append
 #check EvmCompiler.Structured.ObserverSemantics.Code.run_append
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
@@ -598,6 +600,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_memory_eq_active_growth
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_state
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.acquire_from_runtime
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.release_to_runtime
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

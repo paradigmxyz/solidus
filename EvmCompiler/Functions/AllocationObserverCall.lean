@@ -1852,6 +1852,121 @@ theorem backward_of_safeEval
 
 end ArgList
 
+namespace ScratchFrame
+
+/--
+Execute the compiler-owned scratch-frame acquire sequence from a complete
+caller runtime invariant. The result keeps the caller activation suspended
+below the new frame pointer and advances only the shared allocator depth.
+-/
+theorem acquire_from_runtime
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {globalFrameWords depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config depth lowerCtx lowerState localsCtx plan live
+        frameBase mode source target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameAcquireCode config) target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 1 frameBase mode source targetFinal ∧
+      AllocationObserverRelation.Frame.AllocatorReady
+        config (depth + 1) targetFinal ∧
+      targetFinal.source.evm.stack =
+        EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt config depth) ::
+          target.source.evm.stack ∧
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetFinal.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes ∧
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetFinal.source.evm.toMachineState.memory.size := by
+  simpa using
+    (AllocationObserverPreservation.Frame.scratchFrameAcquire_activation_forward
+      (stackOffset := 0)
+      hConfig hPositive hBudget hInvariant.allocator hInvariant.frame
+      hInvariant.activation.state)
+
+/--
+Execute the compiler-owned scratch-frame release sequence and reconstruct the
+complete caller runtime invariant at its previous allocator depth.
+-/
+theorem release_to_runtime
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {globalFrameWords depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hActivation :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config (depth + 1) target)
+    (hOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config depth frameBase mode) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameReleaseCode config) target =
+        .ok targetFinal ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config depth lowerCtx lowerState localsCtx plan live
+        frameBase mode source targetFinal := by
+  obtain
+      ⟨targetFinal, hRun, hState, hFinalReady, hFinalOwned⟩ :=
+    AllocationObserverPreservation.Frame.scratchFrameRelease_activation_forward
+      hConfig hBudget hReady hOwned hActivation.state
+  have hFinalStack :=
+    (AllocationObserverPreservation.Frame.scratchFrameRelease_backward
+      hConfig hBudget hReady hActivation.state.base.core.machine hRun).1
+  refine
+    ⟨targetFinal, hRun,
+      { activation :=
+          { compiler := hActivation.compiler
+            planWF := hActivation.planWF
+            defined := hActivation.defined
+            state := hState
+            stackLength := ?_ }
+        allocator := hFinalReady
+        frame := hFinalOwned }⟩
+  exact (congrArg List.length hFinalStack).trans hActivation.stackLength
+
+end ScratchFrame
+
 namespace CallTargets
 
 private theorem set_append_offset
