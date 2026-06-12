@@ -1135,6 +1135,12 @@ inductive FunctionPreludeContext
     (slots : AllocationSupport.FunSlots)
     (entryCtx paramCtx returnCtx : Locals.Ctx) : Prop where
   | stack
+      (parameterSlots :
+        ∀ binding ∈ slots.params,
+          AllocationLowering.isStackSlot lowerCtx binding.2 = true)
+      (returnSlots :
+        ∀ binding ∈ slots.returns,
+          AllocationLowering.isStackSlot lowerCtx binding.2 = true)
       (parameters :
         ParameterPreludeContext lowerCtx plan frameWords
           [] slots.params 0 entryCtx)
@@ -1636,7 +1642,8 @@ theorem of_validated_function
               ((slots.returns.map Prod.fst).reverse ++
                 (slots.params.map Prod.fst).reverse) := hBodyOrder.symm
     exact
-      .stack hParamContext hReturnContext hEntryLayout
+      .stack hParamAllStack hReturnAllStack
+        hParamContext hReturnContext hEntryLayout
         hParamLayout hBodyLayout
 
 end FunctionPreludeContext

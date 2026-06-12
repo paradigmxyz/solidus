@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 12:58 PDT.
+Last updated: 2026-06-12 14:40 PDT.
 
 ## Objective
 
@@ -635,10 +635,13 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   safety now follows the canonical `ArgList.eval`, and the complete real
   function prelude artifact is constructed by
   `AllocationObserverContext.FunctionPreludeContext.of_validated_function`
-  from the validator and actual Functions/Locals compiler outputs. The next
-  boundary is activation-indexed prelude execution: stack-only functions must
-  use the stack activation relation while spilled functions use the scratch
-  relation, without a synthetic frame.
+  from the validator and actual Functions/Locals compiler outputs.
+  `ActivationCalleeEntryRel` now gives raw parameter entry one
+  activation-indexed interface, and the complete stack-only parameter and
+  return preludes are checked through the actual compiler output without a
+  synthetic frame. The existing scratch prelude proofs remain on the real
+  frame-backed path and have checked conversions to the shared entry
+  interface.
   `lowerExprList`/`exprSeqOfList` path has checked forward preservation and
   deterministic backward classification. Function and Locals compiler owners
   expose exact procedure-entry, prelude, open-body, return-expression, and
@@ -647,10 +650,8 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   including reversed entry-stack order. The allocation relation can construct
   a stack-local store realization directly from a checked source lookup and
   concrete entry stack, and metadata-only entry markers have checked
-  compilation and no-op execution. Constructing the transient callee relation
-  while scratch-designated parameters still reside on the raw entry stack,
-  converting it to the ordinary activation invariant through the real
-  parameter/return preludes, recursive function-body composition, call
+  compilation and no-op execution. Whole-function composition of entry
+  markers, parameter/return preludes, recursive body execution, call
   execution, and matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,

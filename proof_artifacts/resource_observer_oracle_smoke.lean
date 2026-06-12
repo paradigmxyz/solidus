@@ -579,9 +579,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.validatePlan?_eq_some_exact
 #print axioms EvmCompiler.Functions.AllocationLowering.validatePlan?_function_components
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.StateRel.declare_stack_live_existing_at
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.declare_stack_live_existing_at
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.activate_stack
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_stack_of_context
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerStackReturn_compileOpen
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerScratchReturn_compileOpen
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_stack_of_context
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

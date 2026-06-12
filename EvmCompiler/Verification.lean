@@ -157,10 +157,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_function_components
 #check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_stack_of_context
 #check EvmCompiler.Functions.AllocationLowering.lowerStackReturn_compileOpen
 #check EvmCompiler.Functions.AllocationLowering.lowerScratchReturn_compileOpen
 #check EvmCompiler.Functions.AllocationObserverContext.ReturnPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
+#check EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_stack_of_context
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
@@ -342,6 +344,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.target_nonregular
 #check EvmCompiler.Functions.AllocationObserverRelation.StoreRel.rebase_prefix_stack_only
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.activeNoWrap
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.activate_stack
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel.assign_stack_live
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.assign_stack_live
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_stack_live

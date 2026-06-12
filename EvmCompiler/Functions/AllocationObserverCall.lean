@@ -643,6 +643,88 @@ theorem forward_of_context
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
 termination_by pending.length
 
+/--
+Compile and evaluate the complete parameter prelude for an all-stack
+activation.
+
+The compiler emits no executable parameter code in this branch. The proof
+still follows the real `lowerParams` recursion and derives each live-local
+activation from the raw entry stack.
+-/
+theorem forward_stack_of_context
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Structured.Program}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    (hContext :
+      AllocationObserverContext.ParameterPreludeContext
+        lowerCtx plan frameWords realized pending frameDepth localsCtx)
+    (hAllStack :
+      ∀ binding ∈ pending,
+        AllocationLowering.isStackSlot lowerCtx binding.2 = true)
+    (hRel :
+      AllocationObserverRelation.ActivationCalleeEntryRel contract plan
+        realized pending frameBase .stack source target) :
+    ∃ compiled finalCtx finalTarget fuel,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerParams lowerCtx pending
+          localsCtx.layout).2 ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ActivationStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
+        .stack source finalTarget := by
+  cases hContext with
+  | nil =>
+      refine
+        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_⟩
+      · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerParams]
+      · exact Structured.EffectSemantics.Block.Eval.nil
+      · simpa using hRel.finish
+  | @stack _ _ _ _ name slot planDepth classification fresh location
+      stackOrder tail =>
+      have hNextRel := by
+        simpa [AllocationObserverRelation.ActivationMode.afterStackDeclaration]
+          using hRel.activate_stack fresh location stackOrder
+      obtain
+          ⟨compiled, finalCtx, finalTarget, fuel,
+            hCompile, hFinalLayout, hEval, hFinalRel⟩ :=
+        forward_stack_of_context tail
+          (fun binding hBinding =>
+            hAllStack binding (by simp [hBinding]))
+          hNextRel
+      refine
+        ⟨compiled, finalCtx, finalTarget, fuel,
+          ?_, ?_, hEval, ?_⟩
+      · simpa [AllocationLowering.lowerParams, classification] using hCompile
+      · simpa [AllocationLowering.lowerParams, classification] using
+          hFinalLayout
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+  | @scratch _ pending _ _ name slot classification _fresh _location
+      _stackOrder _slotBound _layout _aboveFresh _suffixFresh
+      _nameDepthBound _frameDepthLookup _frameDepthBound _tail =>
+      have hCurrent :=
+        hAllStack (name, slot) (by simp)
+      rw [classification] at hCurrent
+      contradiction
+termination_by pending.length
+
 end ParameterPrelude
 
 namespace ReturnPrelude
@@ -925,6 +1007,164 @@ theorem forward_of_context
         rw [Expressions.StmtList.toStructured_append]
         exact hCombinedEval
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+termination_by pending.length
+
+/--
+Compile and execute the complete return-initialization prelude for an
+all-stack activation.
+-/
+theorem forward_stack_of_context
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Structured.Program}
+    {live : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    (hContext :
+      AllocationObserverContext.ReturnPreludeContext
+        lowerCtx plan frameWords live pending frameDepth localsCtx)
+    (hAllStack :
+      ∀ binding ∈ pending,
+        AllocationLowering.isStackSlot lowerCtx binding.2 = true)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel contract plan live 0
+        frameBase .stack source target)
+    (hZero :
+      ∀ name, name ∈ pending.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord) :
+    ∃ compiled finalCtx finalTarget fuel,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerReturns lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerReturns lowerCtx pending
+          localsCtx.layout).2 ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ActivationStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ live) 0 frameBase
+        .stack source finalTarget := by
+  cases hContext with
+  | nil =>
+      refine
+        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_⟩
+      · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerReturns]
+      · exact Structured.EffectSemantics.Block.Eval.nil
+      · simpa using hRel
+  | @stack _ pending _ planDepth _ name slot classification fresh location
+      stackOrder tail =>
+      let pushed :=
+        AllocationObserverRelation.StateRel.pushTargetBy
+          33 AllocationSupport.zeroWord target
+      have hPushRun :
+          Structured.ObserverSemantics.Code.run
+              [Structured.BasicInstr.push AllocationSupport.zeroWord]
+              target =
+            .ok pushed :=
+        AllocationObserverPreservation.ObserverCode.run_push
+          AllocationSupport.zeroWord target
+      have hPushedRel :
+          AllocationObserverRelation.ActivationStateRel contract plan live 1
+            frameBase .stack source pushed := by
+        simpa [pushed] using
+          hRel.push_target_by 33 AllocationSupport.zeroWord
+      have hPushedStack :
+          pushed.source.evm.stack =
+            AllocationSupport.zeroWord :: target.source.evm.stack := by
+        rfl
+      have hNameZero :
+          source.source.vars name =
+            some AllocationSupport.zeroWord :=
+        hZero name (by simp)
+      have hNextRel :
+          AllocationObserverRelation.ActivationStateRel contract plan
+            (name :: live) 0 frameBase .stack source pushed := by
+        simpa [AllocationObserverRelation.ActivationMode.afterStackDeclaration]
+          using hPushedRel.declare_stack_live_existing hPushedStack
+            (fun other hOther => by
+              simp at hOther
+              exact hOther)
+            (by simp) location stackOrder hNameZero
+      obtain
+          ⟨tailCompiled, finalCtx, finalTarget,
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+        forward_stack_of_context tail
+          (fun binding hBinding =>
+            hAllStack binding (by simp [hBinding]))
+          hNextRel
+          (fun other hOther => hZero other (by simp [hOther]))
+      have hHeadCompile :=
+        AllocationLowering.lowerStackReturn_compileOpen
+          (name := name) (localsCtx := localsCtx)
+      have hHeadRun :
+          Structured.ObserverSemantics.Code.run
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                Locals.bindLocals 0 (name :: localsCtx.layout))
+              target =
+            .ok pushed := by
+        rw [AllocationObserverPreservation.ObserverCode.run_append,
+          hPushRun]
+        rfl
+      have hHeadEval :
+          Structured.ObserverSemantics.Block.Eval targetProgram 2
+              { stmts :=
+                  [Structured.Stmt.code
+                    ([Structured.BasicInstr.push
+                        AllocationSupport.zeroWord] ++
+                      Locals.bindLocals 0
+                        (name :: localsCtx.layout))] }
+              target
+              (Structured.EffectSemantics.Outcome.regular pushed) :=
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hHeadRun)
+          Structured.EffectSemantics.Block.Eval.nil
+      have hCombinedCompile :=
+        Locals.Block.compileOpen_append hHeadCompile hTailCompile
+      obtain ⟨fuel, hCombinedEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hHeadEval hTailEval
+      refine
+        ⟨[Expressions.Stmt.code
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                Locals.bindLocals 0 (name :: localsCtx.layout))] ++
+            tailCompiled,
+          finalCtx, finalTarget, fuel, ?_, ?_, ?_, ?_⟩
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hCombinedCompile
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hFinalLayout
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  ([Expressions.Stmt.code
+                      ([Structured.BasicInstr.push
+                          AllocationSupport.zeroWord] ++
+                        Locals.bindLocals 0
+                          (name :: localsCtx.layout))] ++
+                    tailCompiled) }
+            target
+            (Structured.EffectSemantics.Outcome.regular finalTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hCombinedEval
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+  | @scratch _ pending _ _ name slot classification _fresh _location
+      _stackOrder _slotBound _frameDepthLookup _frameDepthBound _tail =>
+      have hCurrent :=
+        hAllStack (name, slot) (by simp)
+      rw [classification] at hCurrent
+      contradiction
 termination_by pending.length
 
 end ReturnPrelude
