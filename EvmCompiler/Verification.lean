@@ -114,7 +114,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Switch.adequateWithinFuel_switch_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_if_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithinFuel_if_of_compileStmtFuel?
-#check EvmCompiler.Structured.ObserverAdequacy.Loop.adequateWithin_for_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Loop.adequateWithinFuel_for_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_code_of_compileStmtFuel?

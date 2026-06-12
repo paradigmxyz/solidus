@@ -715,8 +715,9 @@ private theorem outcome_for_step_of_firstReaches
       OutcomeSimulation.FirstReaches cfg accept (targetFuel + 1)
         loopLabel target trace targetOutcome traceFinal)
     (hBodyAdequate :
-      ∀ {bodySource : ObserverSemantics.State transcript},
-        OutcomeSimulation.AdequateWithin
+      ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
+        ∀ {bodySource : ObserverSemantics.State transcript},
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel body bodySource sourceOutcome)
@@ -733,10 +734,11 @@ private theorem outcome_for_step_of_firstReaches
             { condOutput with slots := condOutput.slots.tail } accept)
           bodyLabel
           { condOutput with slots := condOutput.slots.tail }
-          bodySource tokens)
+          bodySource tokens bodyTargetFuel)
     (hPostAdequate :
-      ∀ {postSource : ObserverSemantics.State transcript},
-        OutcomeSimulation.AdequateWithin
+      ∀ postTargetFuel, postTargetFuel < targetFuel →
+        ∀ {postSource : ObserverSemantics.State transcript},
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel post postSource sourceOutcome)
@@ -751,7 +753,7 @@ private theorem outcome_for_step_of_firstReaches
             loopInput accept)
           postLabel
           { condOutput with slots := condOutput.slots.tail }
-          postSource tokens)
+          postSource tokens postTargetFuel)
     (hRecurse :
       ∀ {smallerFuel : Nat}
         {loopSource : ObserverSemantics.State transcript}
@@ -844,7 +846,7 @@ private theorem outcome_for_step_of_firstReaches
         obtain
             ⟨bodySourceFuel, bodyOutcome,
               hBodyEval, hBodyOutcomeRel, hBodyArtifact⟩ :=
-          hBodyAdequate
+          hBodyAdequate bodyPrefixFuel (by omega)
             (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                 hEval hOutcomeRel hArtifact =>
               bodyActivationBoundary hClose hCond hOuterRegular
@@ -1004,7 +1006,7 @@ private theorem outcome_for_step_of_firstReaches
                 obtain
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
-                  hPostAdequate
+                  hPostAdequate postPrefixFuel (by omega)
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
                       postActivationBoundary
@@ -1270,7 +1272,7 @@ private theorem outcome_for_step_of_firstReaches
                 obtain
                     ⟨postSourceFuel, postOutcome,
                       hPostEval, hPostOutcomeRel, hPostArtifact⟩ :=
-                  hPostAdequate
+                  hPostAdequate postPrefixFuel (by omega)
                     (fun _sourceFuel _sourceOutcome _targetOutcome _trace
                         hEval hOutcomeRel hArtifact =>
                       postActivationBoundary
@@ -1550,8 +1552,9 @@ private theorem outcome_for_of_firstReaches
       OutcomeSimulation.FirstReaches cfg accept (targetFuel + 1)
         loopLabel target trace targetOutcome traceFinal)
     (hBodyAdequate :
-      ∀ {bodySource : ObserverSemantics.State transcript},
-        OutcomeSimulation.AdequateWithin
+      ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
+        ∀ {bodySource : ObserverSemantics.State transcript},
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel body bodySource sourceOutcome)
@@ -1568,10 +1571,11 @@ private theorem outcome_for_of_firstReaches
             { condOutput with slots := condOutput.slots.tail } accept)
           bodyLabel
           { condOutput with slots := condOutput.slots.tail }
-          bodySource tokens)
+          bodySource tokens bodyTargetFuel)
     (hPostAdequate :
-      ∀ {postSource : ObserverSemantics.State transcript},
-        OutcomeSimulation.AdequateWithin
+      ∀ postTargetFuel, postTargetFuel < targetFuel →
+        ∀ {postSource : ObserverSemantics.State transcript},
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel post postSource sourceOutcome)
@@ -1586,7 +1590,7 @@ private theorem outcome_for_of_firstReaches
             loopInput accept)
           postLabel
           { condOutput with slots := condOutput.slots.tail }
-          postSource tokens) :
+          postSource tokens postTargetFuel) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.For.Eval program sourceFuel
           cond post body source sourceOutcome ∧
@@ -1609,14 +1613,20 @@ private theorem outcome_for_of_firstReaches
               hSmaller hLoopClose hLoopRel hLoopReach
             exact
               ih smallerFuel hSmaller
-                hLoopClose hLoopRel hLoopReach)
+                hLoopClose hLoopRel hLoopReach
+                (fun bodyTargetFuel hBodyLt =>
+                  hBodyAdequate bodyTargetFuel
+                    (Nat.lt_trans hBodyLt hSmaller))
+                (fun postTargetFuel hPostLt =>
+                  hPostAdequate postTargetFuel
+                    (Nat.lt_trans hPostLt hSmaller)))
 
 /--
 Compiler-facing backward adequacy for a checked Structured `for` statement.
 All generated shapes and labels are recovered from the existing compiler
 result; recursive blocks cross only the shared adjacent block interface.
 -/
-theorem adequateWithin_for_of_compileStmtFuel?
+theorem adequateWithinFuel_for_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
     {init : Structured.Block} {cond : Structured.Code}
@@ -1627,6 +1637,7 @@ theorem adequateWithin_for_of_compileStmtFuel?
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
     {accept : TypedCfg.Outcome → Prop}
+    (targetFuel : Nat)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.for_ init cond post body) ctx supply entry input regular =
@@ -1658,10 +1669,11 @@ theorem adequateWithin_for_of_compileStmtFuel?
           some initResult →
         initResult.fallthrough? = some loopInput →
         TypedCfgPreservation.BlocksInProgram initResult cfg →
+        ∀ initTargetFuel, initTargetFuel ≤ targetFuel →
         ∀ {initSource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
-          OutcomeSimulation.AdequateWithin
+          OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
                 program sourceFuel init initSource sourceOutcome)
@@ -1675,7 +1687,7 @@ theorem adequateWithin_for_of_compileStmtFuel?
             (postContinuations (LabelSupply.label supply 0) outer)
             (OutcomeSimulation.JumpAt initSource tokens
               (LabelSupply.label supply 0) loopInput accept)
-            entry input initSource tokens)
+            entry input initSource tokens initTargetFuel)
     (hBodyAdequate :
       ∀ {initResult bodyResult : TypedCfgCompiler.Result}
         {condOutput : TypedCfg.Shape},
@@ -1692,10 +1704,11 @@ theorem adequateWithin_for_of_compileStmtFuel?
             (LabelSupply.label supply 2) =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
         ∀ {bodySource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
-          OutcomeSimulation.AdequateWithin
+          OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
                 program sourceFuel body bodySource sourceOutcome)
@@ -1714,7 +1727,7 @@ theorem adequateWithin_for_of_compileStmtFuel?
               { condOutput with slots := condOutput.slots.tail } accept)
             (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
-            bodySource tokens)
+            bodySource tokens bodyTargetFuel)
     (hPostAdequate :
       ∀ {bodyResult postResult : TypedCfgCompiler.Result}
         {condOutput loopInput : TypedCfg.Shape},
@@ -1729,10 +1742,11 @@ theorem adequateWithin_for_of_compileStmtFuel?
             (LabelSupply.label supply 0) =
           some postResult →
         TypedCfgPreservation.BlocksInProgram postResult cfg →
+        ∀ postTargetFuel, postTargetFuel < targetFuel →
         ∀ {postSource : ObserverSemantics.State transcript}
           {outer : OutcomeSimulation.Continuations}
           {accept : TypedCfg.Outcome → Prop},
-          OutcomeSimulation.AdequateWithin
+          OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
                 program sourceFuel post postSource sourceOutcome)
@@ -1748,8 +1762,8 @@ theorem adequateWithin_for_of_compileStmtFuel?
               (LabelSupply.label supply 0) loopInput accept)
             (LabelSupply.label supply 2)
             { condOutput with slots := condOutput.slots.tail }
-            postSource tokens) :
-    OutcomeSimulation.AdequateWithin
+            postSource tokens postTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval program sourceFuel
           (.for_ init cond post body) source sourceOutcome)
@@ -1757,8 +1771,8 @@ theorem adequateWithin_for_of_compileStmtFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept
-      entry input source tokens := by
-  intro hAccept targetFuel target trace traceFinal
+      entry input source tokens targetFuel := by
+  intro hAccept target trace traceFinal
     targetOutcome hRel hReach
   rcases
       TypedCfgCompilerFacts.Loop.components_of_compileStmtFuel?_for
@@ -1816,6 +1830,7 @@ theorem adequateWithin_for_of_compileStmtFuel?
           ⟨initSourceFuel, initOutcome,
             hInitEval, hInitOutcomeRel, hInitArtifact⟩ :=
         hInitAdequate hInitCompile hInitFallthrough hInitBlocks
+          initPrefixFuel (by omega)
           (fun _sourceFuel _sourceOutcome _targetOutcome _trace
               hEval hOutcomeRel hArtifact => by
             exact
@@ -1898,8 +1913,14 @@ theorem adequateWithin_for_of_compileStmtFuel?
                   (hGeneratedEntryNotAccepted 0)
                   hLoopAt
                   (by simpa [hResidual] using hAfterInitReach)
-                  (hBodyAdequate hBodyCompile hBodyBlocks)
-                  (hPostAdequate hPostCompile hPostBlocks)
+                  (fun bodyTargetFuel hBodyLt =>
+                    hBodyAdequate hBodyCompile hBodyBlocks
+                      bodyTargetFuel
+                      (Nat.lt_trans hBodyLt (by omega)))
+                  (fun postTargetFuel hPostLt =>
+                    hPostAdequate hPostCompile hPostBlocks
+                      postTargetFuel
+                      (Nat.lt_trans hPostLt (by omega)))
               let sourceFuel :=
                 Nat.max initSourceFuel loopSourceFuel
               exact
