@@ -508,6 +508,362 @@ theorem keccak256_simulate
   · simpa [EvmYul.MachineState.keccak256, targetFinal] using hFinalNoWrap
 
 /--
+The canonical Functions argument list for one logging primitive.
+
+Functions values are reversed before the concrete EVM primitive runs, so topic
+arguments appear in reverse order here while `topics` records their EVM order.
+-/
+inductive LogInvocation :
+    Structured.BasicOp → List Word → Word → Word → Array Word → Prop where
+  | log0 (address size : Word) :
+      LogInvocation .log0 [size, address] address size #[]
+  | log1 (address size topic0 : Word) :
+      LogInvocation .log1 [topic0, size, address]
+        address size #[topic0]
+  | log2 (address size topic0 topic1 : Word) :
+      LogInvocation .log2 [topic1, topic0, size, address]
+        address size #[topic0, topic1]
+  | log3 (address size topic0 topic1 topic2 : Word) :
+      LogInvocation .log3 [topic2, topic1, topic0, size, address]
+        address size #[topic0, topic1, topic2]
+  | log4 (address size topic0 topic1 topic2 topic3 : Word) :
+      LogInvocation .log4
+        [topic3, topic2, topic1, topic0, size, address]
+        address size #[topic0, topic1, topic2, topic3]
+
+namespace LogInvocation
+
+theorem eval
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    (shared : EvmYul.SharedState .EVM) :
+    Locals.Source.PrimitiveSemantics.structured.eval op shared values =
+      .ok (EvmYul.SharedState.logOp address size topics shared, []) := by
+  cases invocation <;>
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?, Assembly.PrimStep.run,
+      Expressions.Structured.BasicOp.inputs,
+      EvmYul.Stack.pop2, EvmYul.Stack.pop3, EvmYul.Stack.pop4,
+      EvmYul.Stack.pop5, EvmYul.Stack.pop6,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, Id.run]
+
+theorem memorySafe
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp} {values : List Word}
+    {address size : Word} {topics : Array Word}
+    (invocation : LogInvocation op values address size topics)
+    {machine : EvmYul.MachineState}
+    (hSafe :
+      AllocationObserverSafety.PrimitiveMemorySafe
+        contract op machine values) :
+    Compiler.MemoryRelation.MemoryConsistent machine ∧
+      AllocationObserverSafety.RegionAllowed contract
+        address.toNat size.toNat ∧
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat size.toNat ∧
+      address.toNat + size.toNat < USize.size := by
+  cases invocation <;>
+    simpa [AllocationObserverSafety.PrimitiveMemorySafe,
+      AllocationObserverSafety.PrimitiveExpansionSafe,
+      AllocationObserverSafety.PrimitiveHostSafe] using hSafe
+
+end LogInvocation
+
+/--
+Appending one log entry preserves the allocation relation when its data range
+is source-approved. Both states append the same address, topics, and bytes;
+only their already-related active-memory counters may differ.
+-/
+theorem logOp_both
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (address size : Word) (topics : Array Word)
+    (hAllowed :
+      match contract.scratch? with
+      | none => True
+      | some reservation =>
+          reservation.sourceAccessAllowed address.toNat size.toNat)
+    (hExpansion :
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat size.toNat)
+    (hHost : address.toNat + size.toNat < USize.size)
+    (hTargetNoWrap :
+      target.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    SharedRel contract
+        (EvmYul.SharedState.logOp address size topics source)
+        (EvmYul.SharedState.logOp address size topics target) ∧
+      (EvmYul.SharedState.logOp address size topics target).toMachineState.memory =
+        target.toMachineState.memory ∧
+      target.toMachineState.activeWords.toNat ≤
+        (EvmYul.SharedState.logOp
+          address size topics target).toMachineState.activeWords.toNat ∧
+      (EvmYul.SharedState.logOp
+          address size topics target).toMachineState.activeWords.toNat *
+            MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+  obtain ⟨hRead, hMachineRel, hFinalNoWrap, hActiveMono⟩ :=
+    Compiler.MemoryRelation.MachineRel.readRange_both
+      hRel.machine hTargetNoWrap address.toNat size.toNat hAllowed
+      hExpansion hHost
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · refine ⟨?_, ?_⟩
+    · simpa [EvmYul.SharedState.logOp] using hMachineRel
+    · change
+        { source.toState with
+            substate.logSeries :=
+              source.toState.substate.logSeries.push
+                ⟨source.executionEnv.codeOwner, topics,
+                  source.memory.readWithPadding
+                    address.toNat size.toNat⟩ } =
+          { target.toState with
+            substate.logSeries :=
+              target.toState.substate.logSeries.push
+                ⟨target.executionEnv.codeOwner, topics,
+                  target.memory.readWithPadding
+                    address.toNat size.toNat⟩ }
+      rw [hRel.world, hRead]
+  · simp [EvmYul.SharedState.logOp]
+  · simpa [EvmYul.SharedState.logOp] using hActiveMono
+  · simpa [EvmYul.SharedState.logOp] using hFinalNoWrap
+
+/--
+Canonical log forms admitted by the no-external-effects primitive boundary.
+-/
+inductive LogFamily : Structured.BasicOp → Prop where
+  | log0 : LogFamily .log0
+  | log1 : LogFamily .log1
+  | log2 : LogFamily .log2
+  | log3 : LogFamily .log3
+  | log4 : LogFamily .log4
+
+namespace LogFamily
+
+theorem observer_none
+    {op : Structured.BasicOp}
+    (family : LogFamily op) :
+    Functions.ObserverSemantics.basicOpObserver? op = none := by
+  cases family <;> rfl
+
+theorem invocation_of_eval
+    {op : Structured.BasicOp}
+    (family : LogFamily op)
+    {shared final : EvmYul.SharedState .EVM}
+    {values outputs : List Word}
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op shared values =
+        .ok (final, outputs)) :
+    ∃ address size topics,
+      LogInvocation op values address size topics := by
+  cases family with
+  | log0 =>
+      cases values with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Expressions.Structured.BasicOp.inputs] at hEval
+      | cons size rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Expressions.Structured.BasicOp.inputs] at hEval
+          | cons address tail =>
+              cases tail with
+              | nil => exact ⟨address, size, #[], .log0 address size⟩
+              | cons extra more =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+  | log1 =>
+      cases values with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Expressions.Structured.BasicOp.inputs] at hEval
+      | cons topic0 rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Expressions.Structured.BasicOp.inputs] at hEval
+          | cons size rest =>
+              cases rest with
+              | nil =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+              | cons address tail =>
+                  cases tail with
+                  | nil =>
+                      exact
+                        ⟨address, size, #[topic0],
+                          .log1 address size topic0⟩
+                  | cons extra more =>
+                      simp [Locals.Source.PrimitiveSemantics.structured,
+                        Expressions.Structured.BasicOp.inputs] at hEval
+  | log2 =>
+      cases values with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Expressions.Structured.BasicOp.inputs] at hEval
+      | cons topic1 rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Expressions.Structured.BasicOp.inputs] at hEval
+          | cons topic0 rest =>
+              cases rest with
+              | nil =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+              | cons size rest =>
+                  cases rest with
+                  | nil =>
+                      simp [Locals.Source.PrimitiveSemantics.structured,
+                        Expressions.Structured.BasicOp.inputs] at hEval
+                  | cons address tail =>
+                      cases tail with
+                      | nil =>
+                          exact
+                            ⟨address, size, #[topic0, topic1],
+                              .log2 address size topic0 topic1⟩
+                      | cons extra more =>
+                          simp [Locals.Source.PrimitiveSemantics.structured,
+                            Expressions.Structured.BasicOp.inputs] at hEval
+  | log3 =>
+      cases values with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Expressions.Structured.BasicOp.inputs] at hEval
+      | cons topic2 rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Expressions.Structured.BasicOp.inputs] at hEval
+          | cons topic1 rest =>
+              cases rest with
+              | nil =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+              | cons topic0 rest =>
+                  cases rest with
+                  | nil =>
+                      simp [Locals.Source.PrimitiveSemantics.structured,
+                        Expressions.Structured.BasicOp.inputs] at hEval
+                  | cons size rest =>
+                      cases rest with
+                      | nil =>
+                          simp [Locals.Source.PrimitiveSemantics.structured,
+                            Expressions.Structured.BasicOp.inputs] at hEval
+                      | cons address tail =>
+                          cases tail with
+                          | nil =>
+                              exact
+                                ⟨address, size, #[topic0, topic1, topic2],
+                                  .log3 address size topic0 topic1 topic2⟩
+                          | cons extra more =>
+                              simp [Locals.Source.PrimitiveSemantics.structured,
+                                Expressions.Structured.BasicOp.inputs] at hEval
+  | log4 =>
+      cases values with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Expressions.Structured.BasicOp.inputs] at hEval
+      | cons topic3 rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Expressions.Structured.BasicOp.inputs] at hEval
+          | cons topic2 rest =>
+              cases rest with
+              | nil =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Expressions.Structured.BasicOp.inputs] at hEval
+              | cons topic1 rest =>
+                  cases rest with
+                  | nil =>
+                      simp [Locals.Source.PrimitiveSemantics.structured,
+                        Expressions.Structured.BasicOp.inputs] at hEval
+                  | cons topic0 rest =>
+                      cases rest with
+                      | nil =>
+                          simp [Locals.Source.PrimitiveSemantics.structured,
+                            Expressions.Structured.BasicOp.inputs] at hEval
+                      | cons size rest =>
+                          cases rest with
+                          | nil =>
+                              simp [Locals.Source.PrimitiveSemantics.structured,
+                                Expressions.Structured.BasicOp.inputs] at hEval
+                          | cons address tail =>
+                              cases tail with
+                              | nil =>
+                                  exact
+                                    ⟨address, size,
+                                      #[topic0, topic1, topic2, topic3],
+                                      .log4 address size topic0 topic1
+                                        topic2 topic3⟩
+                              | cons extra more =>
+                                  simp
+                                    [Locals.Source.PrimitiveSemantics.structured,
+                                      Expressions.Structured.BasicOp.inputs]
+                                    at hEval
+
+theorem simulate
+    {contract : MemoryContract.Contract}
+    {op : Structured.BasicOp}
+    (family : LogFamily op)
+    {sourceShared sourceFinal targetShared :
+      EvmYul.SharedState .EVM}
+    {values outputs : List Word}
+    (hRel : SharedRel contract sourceShared targetShared)
+    (hSafe :
+      AllocationObserverSafety.PrimitiveMemorySafe
+        contract op sourceShared.toMachineState values)
+    (hTargetNoWrap :
+      targetShared.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op sourceShared values =
+        .ok (sourceFinal, outputs)) :
+    ∃ targetFinal,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op targetShared values =
+        .ok (targetFinal, outputs) ∧
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory =
+        targetShared.toMachineState.memory ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+  obtain ⟨address, size, topics, invocation⟩ :=
+    family.invocation_of_eval hEval
+  obtain ⟨_hConsistent, hAllowed, hExpansion, hHost⟩ :=
+    invocation.memorySafe hSafe
+  have hAllowed' :
+      match contract.scratch? with
+      | none => True
+      | some reservation =>
+          reservation.sourceAccessAllowed address.toNat size.toNat := by
+    simpa [AllocationObserverSafety.RegionAllowed] using hAllowed
+  have hSourceCanonical := invocation.eval sourceShared
+  rw [hSourceCanonical] at hEval
+  cases hEval
+  obtain ⟨hShared, hMemory, hActive, hNoWrap⟩ :=
+    logOp_both hRel address size topics hAllowed' hExpansion hHost
+      hTargetNoWrap
+  exact
+    ⟨EvmYul.SharedState.logOp address size topics targetShared,
+      invocation.eval targetShared, hShared, hMemory, hActive, hNoWrap⟩
+
+end LogFamily
+
+/--
 Canonical `mload` preserves the allocation shared-state relation, including the
 active-memory facts needed to retain an already allocated spill frame.
 -/
@@ -1524,6 +1880,53 @@ theorem keccak256_primitiveForward
     (contract : MemoryContract.Contract) :
     AllocationObserverExpression.PrimitiveForward contract .keccak256 :=
   read_primitiveForward (keccak256_readSpec contract)
+
+theorem LogFamily.readSpec
+    {op : Structured.BasicOp}
+    (family : LogFamily op)
+    (contract : MemoryContract.Contract) :
+    ReadSpec contract op where
+  observer_none := family.observer_none
+  simulate := by
+    intro sourceShared sourceFinal targetShared values outputs
+      hRel hSafe hTargetNoWrap hEval
+    exact
+      family.simulate hRel hSafe hTargetNoWrap hEval
+
+/--
+One adjacent allocation theorem covers every canonical logging primitive.
+-/
+theorem LogFamily.primitiveForward
+    {op : Structured.BasicOp}
+    (family : LogFamily op)
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract op :=
+  read_primitiveForward (family.readSpec contract)
+
+theorem log0_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .log0 :=
+  LogFamily.log0.primitiveForward contract
+
+theorem log1_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .log1 :=
+  LogFamily.log1.primitiveForward contract
+
+theorem log2_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .log2 :=
+  LogFamily.log2.primitiveForward contract
+
+theorem log3_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .log3 :=
+  LogFamily.log3.primitiveForward contract
+
+theorem log4_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .log4 :=
+  LogFamily.log4.primitiveForward contract
 
 /--
 Adjacent Functions-to-allocated-Expressions preservation for canonical
@@ -2863,6 +3266,128 @@ theorem mcopy_primitiveForward
   copy_primitiveForward (mcopy_copySpec contract)
 
 end MemoryFamily
+
+/--
+Primitives rejected by the canonical stack-free Functions semantics cannot
+occur in a successful source evaluation. This covers backend-only DUP/SWAP
+instructions without assigning them a second source meaning.
+-/
+theorem rejected_primitiveForward
+    {op : Structured.BasicOp}
+    (contract : MemoryContract.Contract)
+    (hObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = none)
+    (hRejected :
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op = none) :
+    AllocationObserverExpression.PrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase frameDepth frameWords
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hArgsRel _hMemory hPrimitive
+    by_cases hLength :
+        values.length = Expressions.Structured.BasicOp.inputs op
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics, hObserver,
+        Locals.Source.PrimitiveSemantics.structured, hRejected,
+        hLength] at hPrimitive
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics, hObserver,
+        Locals.Source.PrimitiveSemantics.structured, hLength] at hPrimitive
+
+/--
+Canonical `invalid` always errors, so it also has no successful source
+evaluation to preserve.
+-/
+theorem invalid_primitiveForward
+    (contract : MemoryContract.Contract) :
+    AllocationObserverExpression.PrimitiveForward contract .invalid where
+  simulate := by
+    intro transcript plan live stackOffset frameBase frameDepth frameWords
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hArgsRel _hMemory hPrimitive
+    have hObserver :
+        Functions.ObserverSemantics.basicOpObserver? .invalid = none := by
+      rfl
+    by_cases hLength :
+        values.length =
+          Expressions.Structured.BasicOp.inputs .invalid
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics,
+        hObserver,
+        Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp, Assembly.PrimOp.continuingStep?,
+        Assembly.PrimStep.run, hLength] at hPrimitive
+    · simp [Functions.ObserverSemantics.primitiveSemantics,
+        Locals.ObserverSemantics.primitiveSemantics,
+        hObserver,
+        Locals.Source.PrimitiveSemantics.structured,
+        hLength] at hPrimitive
+
+/--
+External call/create primitives are excluded by the source-facing memory-safety
+judgment for the checked no-external-effects theorem.
+-/
+theorem externallyEffectful_primitiveForward
+    {op : Structured.BasicOp}
+    (contract : MemoryContract.Contract)
+    (hImpossible :
+      ∀ machine values,
+        ¬ AllocationObserverSafety.PrimitiveMemorySafe
+          contract op machine values) :
+    AllocationObserverExpression.PrimitiveForward contract op where
+  simulate := by
+    intro transcript plan live stackOffset frameBase frameDepth frameWords
+      sourceArgs sourceFinal targetInitial targetArgs values outputs
+      _hArgsRel hMemory _hPrimitive
+    exact False.elim (hImpossible _ _ hMemory)
+
+/--
+Complete primitive interface for the checked no-external-effects allocation
+boundary.
+
+Every `Structured.BasicOp` is classified through an existing semantic family,
+an observer primitive, a memory-family theorem, or an impossible successful
+source case. No compiler implementation or generated-code evidence appears in
+the interface.
+-/
+theorem canonicalPrimitiveForward
+    (contract : MemoryContract.Contract)
+    (op : Structured.BasicOp) :
+    AllocationObserverExpression.PrimitiveForward contract op := by
+  cases op <;>
+    first
+    | exact AllocationObserverExpression.PrimitiveForward.gas contract
+    | exact AllocationObserverExpression.PrimitiveForward.msize contract
+    | exact MemoryFamily.mload_primitiveForward contract
+    | exact MemoryFamily.mstore_primitiveForward contract
+    | exact MemoryFamily.mstore8_primitiveForward contract
+    | exact MemoryFamily.calldatacopy_primitiveForward contract
+    | exact MemoryFamily.codecopy_primitiveForward contract
+    | exact MemoryFamily.returndatacopy_primitiveForward contract
+    | exact MemoryFamily.extcodecopy_primitiveForward contract
+    | exact MemoryFamily.mcopy_primitiveForward contract
+    | exact MemoryFamily.keccak256_primitiveForward contract
+    | exact MemoryFamily.log0_primitiveForward contract
+    | exact MemoryFamily.log1_primitiveForward contract
+    | exact MemoryFamily.log2_primitiveForward contract
+    | exact MemoryFamily.log3_primitiveForward contract
+    | exact MemoryFamily.log4_primitiveForward contract
+    | exact SharedFamily.primitiveForward (.bin _ rfl)
+    | exact SharedFamily.primitiveForward (.un _ rfl)
+    | exact SharedFamily.primitiveForward (.tri _ rfl)
+    | exact SharedFamily.primitiveForward (.pop rfl)
+    | exact SharedFamily.primitiveForward (.executionEnv _ rfl)
+    | exact SharedFamily.primitiveForward (.unaryExecutionEnv _ rfl)
+    | exact SharedFamily.primitiveForward (.state _ rfl)
+    | exact SharedFamily.primitiveForward (.unaryState _ rfl)
+    | exact SharedFamily.primitiveForward (.binaryState _ rfl)
+    | exact SharedFamily.primitiveForward .returnDataSize
+    | exact rejected_primitiveForward contract rfl rfl
+    | exact invalid_primitiveForward contract
+    | exact externallyEffectful_primitiveForward contract (by
+        intro machine values
+        simp [AllocationObserverSafety.PrimitiveMemorySafe])
 
 end AllocationObserverPrimitive
 end Functions

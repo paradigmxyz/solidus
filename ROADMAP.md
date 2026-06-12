@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 04:49 PDT.
+Last updated: 2026-06-12 04:56 PDT.
 
 ## Objective
 
@@ -180,6 +180,16 @@ Adjacent boundary status:
   expansion. Canonical `keccak256` instantiates a pass-owned `ReadSpec`, so its
   digest equality and spill preservation reuse the same adjacent allocation
   theorem intended for logging and terminal reads.
+  `LOG0` through `LOG4` now share a proof-only `LogInvocation` classifier,
+  `logOp_both`, and the same `ReadSpec` allocation theorem. Their concrete
+  Functions argument reversal, topic order, appended log bytes, world update,
+  active-memory growth, and live spill preservation are checked once per
+  semantic family rather than through five allocation proofs.
+  `canonicalPrimitiveForward` is exhaustive over `Structured.BasicOp`:
+  ordinary operations use `SharedFamily`, memory operations use their
+  pass-owned families, `gas`/`msize` use observer instances, call/create are
+  excluded by the source-facing no-external-effects safety judgment, and
+  backend-only DUP/SWAP plus `INVALID` are impossible successful source cases.
   `ScratchStateRel` retains an actual reservation witness for its active frame,
   ruling out impossible unrestricted scratch states and making source-write
   disjointness an allocation-owned invariant.
@@ -190,8 +200,7 @@ Adjacent boundary status:
   target stack prefixes, allocation offsets, active scratch-frame invariants,
   and observer state. Forward and backward wrappers are checked for literals,
   stack variables, scratch variables, `gas()`, and `msize()`.
-  Remaining work at this boundary is logging and terminal memory
-  families, a total canonical primitive interface, recursive statement/function and call
+  Remaining work at this boundary is terminal memory families, recursive statement/function and call
   composition, construction of `ScratchStateRel` at function entry,
   propagation of source-facing memory safety and fuel through those recursive
   judgments, and the whole-program adjacent forward/backward theorem.
