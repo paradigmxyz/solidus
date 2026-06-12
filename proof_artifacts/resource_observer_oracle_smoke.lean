@@ -6,6 +6,7 @@ import EvmCompiler.Functions.AllocationObserverCleanup
 import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverStatement
+import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -468,6 +469,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_true_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_none_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

@@ -711,6 +711,74 @@ theorem Expr.invariant_zero
     simpa using hInvariant.stackLength
 
 /--
+Evaluate one source expression result through the real lowerer and compiler,
+then pop that result exactly as Structured `switch` and condition execution do.
+-/
+theorem Expr.one_forward
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal [value])
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code) :
+    ∃ targetWithValue targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetWithValue ∧
+        targetWithValue.source.evm.stack.pop =
+          some (target.source.evm.stack, value) ∧
+        targetFinal =
+          StateRel.popTarget target.source.evm.stack targetWithValue ∧
+        AllocationObserverContext.ActivationInvariant
+          contract lowerCtx lowerState localsCtx plan live frameBase mode
+          sourceFinal targetFinal := by
+  obtain ⟨targetWithValue, hRun, hResult⟩ :=
+    forwardExpr hPrimitive
+      hSafe hInvariant.compiler hScoped hLower hCompile hInvariant.state
+  have hStack :
+      targetWithValue.source.evm.stack =
+        value :: target.source.evm.stack := by
+    simpa using hResult.stack
+  let targetFinal :=
+    StateRel.popTarget target.source.evm.stack targetWithValue
+  have hPop :
+      targetWithValue.source.evm.stack.pop =
+        some (target.source.evm.stack, value) := by
+    rw [hStack]
+    rfl
+  refine
+    ⟨targetWithValue, targetFinal, hRun, hPop, rfl,
+      hInvariant.compiler, hInvariant.planWF, ?_,
+      hResult.state.pop_target hStack, ?_⟩
+  · intro name hLive
+    rw [hSafe.vars_eq]
+    exact hInvariant.defined name hLive
+  · simpa [targetFinal, StateRel.popTarget] using hInvariant.stackLength
+
+/--
 Evaluate one source condition through the real allocation and Locals
 compilers, then consume the target result exactly as Structured control flow
 does. The returned state is again at the statement-boundary activation

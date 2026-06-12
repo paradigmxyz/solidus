@@ -1,6 +1,7 @@
 import EvmCompiler.Locals.SourceSemantics
 import EvmCompiler.Locals.StackModel
 import EvmCompiler.Expressions.Compiler
+import EvmCompiler.Structured.EffectSemantics
 
 namespace EvmCompiler
 namespace Locals
@@ -297,6 +298,47 @@ theorem compile_if_components
                 ⟨condCode, bodyCode, bodyCtx, lowerBody,
                   rfl, rfl, hFinish, rfl, rfl⟩
 
+/--
+Successful compilation of a Locals `switch` decomposes through the ordinary
+scrutinee, case-list, and default compilers.
+-/
+theorem compile_switch_components
+    {ctx final : Ctx}
+    {scrutinee : Expr 1}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.switch scrutinee cases defaultBody) =
+        some (code, final)) :
+    ∃ scrutineeCode compiledCases compiledDefault,
+      Expr.compileCode ctx 0 scrutinee = some scrutineeCode ∧
+      CaseList.compile ctx cases = some compiledCases ∧
+      Default.compile ctx defaultBody = some compiledDefault ∧
+      code =
+        [Expressions.Stmt.switch
+          (.code scrutineeCode) compiledCases compiledDefault] ∧
+      final = ctx := by
+  cases hScrutinee : Expr.compileCode ctx 0 scrutinee with
+  | none =>
+      simp [Stmt.compile, Expr.compile, hScrutinee] at hCompile
+  | some scrutineeCode =>
+      cases hCases : CaseList.compile ctx cases with
+      | none =>
+          simp [Stmt.compile, Expr.compile, hScrutinee, hCases] at hCompile
+      | some compiledCases =>
+          cases hDefault : Default.compile ctx defaultBody with
+          | none =>
+              simp [Stmt.compile, Expr.compile, hScrutinee, hCases, hDefault]
+                at hCompile
+          | some compiledDefault =>
+              simp [Stmt.compile, Expr.compile, hScrutinee, hCases, hDefault]
+                at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact
+                ⟨scrutineeCode, compiledCases, compiledDefault,
+                  rfl, rfl, rfl, rfl, rfl⟩
+
 end Stmt
 
 namespace Block
@@ -325,6 +367,36 @@ theorem compileOpen_single_if_components
       simp [Block.compileOpen, hStmt] at hCompile
       rcases hCompile with ⟨rfl, rfl⟩
       exact Stmt.compile_if_components hStmt
+
+/--
+The singleton open-block form used by the allocation boundary for `switch`.
+-/
+theorem compileOpen_single_switch_components
+    {ctx final : Ctx}
+    {scrutinee : Expr 1}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx
+          { stmts := [.switch scrutinee cases defaultBody] } =
+        some (code, final)) :
+    ∃ scrutineeCode compiledCases compiledDefault,
+      Expr.compileCode ctx 0 scrutinee = some scrutineeCode ∧
+      CaseList.compile ctx cases = some compiledCases ∧
+      Default.compile ctx defaultBody = some compiledDefault ∧
+      code =
+        [Expressions.Stmt.switch
+          (.code scrutineeCode) compiledCases compiledDefault] ∧
+      final = ctx := by
+  cases hStmt : Stmt.compile ctx (.switch scrutinee cases defaultBody) with
+  | none =>
+      simp [Block.compileOpen, hStmt] at hCompile
+  | some stmtResult =>
+      rcases stmtResult with ⟨stmtCode, stmtCtx⟩
+      simp [Block.compileOpen, hStmt] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Stmt.compile_switch_components hStmt
 
 /--
 Successful open-block compilation over an appended statement list decomposes
@@ -389,6 +461,71 @@ def compile (ctx : Ctx) (block : Block) : Option Expressions.Block := do
   finishScoped ctx finalCtx code
 
 end Block
+
+namespace Switch
+
+/--
+Case/default compilation followed by the ordinary Expressions-to-Structured
+translation preserves the absence of a selected branch.
+-/
+theorem select_none_of_compile
+    {ctx : Ctx}
+    {value : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {compiledCases : List (Word × Expressions.Block)}
+    {compiledDefault : Option Expressions.Block}
+    (hCases :
+      CaseList.compile ctx cases = some compiledCases)
+    (hDefault :
+      Default.compile ctx defaultBody = some compiledDefault)
+    (hSelect :
+      Locals.Source.Switch.select value cases defaultBody = none) :
+    Structured.Switch.select value
+        (Expressions.CaseList.toStructured compiledCases)
+        (Expressions.Default.toStructured compiledDefault) =
+      none := by
+  induction cases generalizing compiledCases with
+  | nil =>
+      simp [CaseList.compile] at hCases
+      subst compiledCases
+      cases defaultBody with
+      | none =>
+          simp [Default.compile] at hDefault
+          subst compiledDefault
+          rfl
+      | some body =>
+          simp [Locals.Source.Switch.select] at hSelect
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody : Block.compileOpen ctx body with
+      | none =>
+          simp [CaseList.compile, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+          cases hFinish : finishScoped ctx bodyCtx bodyCode with
+          | none =>
+              simp [CaseList.compile, hBody, hFinish] at hCases
+          | some compiledBody =>
+              cases hRest : CaseList.compile ctx rest with
+              | none =>
+                  simp [CaseList.compile, hBody, hFinish, hRest] at hCases
+              | some compiledRest =>
+                  simp [CaseList.compile, hBody, hFinish, hRest] at hCases
+                  subst compiledCases
+                  by_cases hMatch : caseValue = value
+                  · simp [Locals.Source.Switch.select, hMatch] at hSelect
+                  · have hTailSelect :
+                        Locals.Source.Switch.select
+                            value rest defaultBody =
+                          none := by
+                      simpa [Locals.Source.Switch.select, hMatch] using hSelect
+                    have hCompiledTail :=
+                      ih hRest hTailSelect
+                    simpa [Expressions.CaseList.toStructured,
+                      Structured.Switch.select, hMatch] using hCompiledTail
+
+end Switch
 
 namespace Proc
 

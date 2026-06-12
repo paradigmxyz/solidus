@@ -279,6 +279,11 @@ Adjacent boundary status:
   frame width. These facts construct the exact cleanup transition internally,
   and regular `.block` preservation is checked through the actual lowerer,
   Locals compiler, cleanup, and canonical effect semantics.
+  Regular `switch` execution with no matching case and no default is now
+  checked in a construct-specific module: the real scrutinee lowerer/compiler,
+  exact target stack pop, and pass-owned branch-selection lemmas compose back
+  to the full activation invariant without unfolding lower compiler passes in
+  the recursive observer layer.
   Remaining work at this boundary is recursive statement/function/call
   composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program

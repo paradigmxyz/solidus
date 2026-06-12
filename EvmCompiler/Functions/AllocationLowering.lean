@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.MixedAllocation
+import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Compiler.AllocatedTypedCfg
 
 namespace EvmCompiler
@@ -469,6 +470,109 @@ theorem lowerStmt_if_components
           simp [lowerStmt, hCond, hBody] at hLower
           rcases hLower with ⟨rfl, rfl⟩
           exact ⟨loweredCond, loweredBody, rfl, rfl, rfl⟩
+
+/--
+Successful lowering of a source `switch` exposes only the adjacent expression,
+case-list, and default lowerers owned by this pass.
+-/
+theorem lowerStmt_switch_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {scrutinee : Expr 1}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {loweredStmts : List Locals.Stmt}
+    (hLower :
+      lowerStmt ctx returns state
+          (.switch scrutinee cases defaultBody) =
+        some (loweredStmts, final)) :
+    ∃ loweredScrutinee loweredCases afterCases loweredDefault,
+      lowerExpr ctx state scrutinee = some loweredScrutinee ∧
+      lowerCases ctx returns state cases =
+        some (loweredCases, afterCases) ∧
+      lowerDefault ctx returns afterCases defaultBody =
+        some (loweredDefault, final) ∧
+      loweredStmts =
+        [.switch loweredScrutinee loweredCases loweredDefault] := by
+  cases hScrutinee : lowerExpr ctx state scrutinee with
+  | none =>
+      simp [lowerStmt, hScrutinee] at hLower
+  | some loweredScrutinee =>
+      cases hCases : lowerCases ctx returns state cases with
+      | none =>
+          simp [lowerStmt, hScrutinee, hCases] at hLower
+      | some casesResult =>
+          rcases casesResult with ⟨loweredCases, afterCases⟩
+          cases hDefault :
+              lowerDefault ctx returns afterCases defaultBody with
+          | none =>
+              simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+          | some defaultResult =>
+              rcases defaultResult with ⟨loweredDefault, defaultFinal⟩
+              simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                ⟨loweredScrutinee, loweredCases, afterCases,
+                  loweredDefault, rfl, rfl, hDefault, rfl⟩
+
+/--
+Case/default lowering preserves the absence of a selected source branch.
+-/
+theorem lowerSwitch_select_none
+    {ctx : Ctx} {returns : List Name}
+    {state afterCases final : State}
+    {value : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {loweredCases : List (Word × Locals.Block)}
+    {loweredDefault : Option Locals.Block}
+    (hCases :
+      lowerCases ctx returns state cases =
+        some (loweredCases, afterCases))
+    (hDefault :
+      lowerDefault ctx returns afterCases defaultBody =
+        some (loweredDefault, final))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = none) :
+    Locals.Source.Switch.select value loweredCases loweredDefault = none := by
+  induction cases generalizing state afterCases loweredCases with
+  | nil =>
+      simp [lowerCases] at hCases
+      rcases hCases with ⟨rfl, rfl⟩
+      cases defaultBody with
+      | none =>
+          simp [lowerDefault] at hDefault
+          rcases hDefault with ⟨rfl, rfl⟩
+          rfl
+      | some body =>
+          simp [Source.Switch.select] at hSelect
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerCases, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, afterBody⟩
+          cases hRest :
+              lowerCases ctx returns afterBody rest with
+          | none =>
+              simp [lowerCases, hBody, hRest] at hCases
+          | some restResult =>
+              rcases restResult with ⟨loweredRest, restFinal⟩
+              simp [lowerCases, hBody, hRest] at hCases
+              rcases hCases with ⟨rfl, rfl⟩
+              by_cases hMatch : caseValue = value
+              · simp [Source.Switch.select, hMatch] at hSelect
+              · have hTailSelect :
+                    Source.Switch.select
+                        value rest defaultBody =
+                      none := by
+                  simpa [Source.Switch.select, hMatch] using hSelect
+                have hLoweredTail :=
+                  ih hRest hDefault hTailSelect
+                simpa [Locals.Source.Switch.select, hMatch] using
+                  hLoweredTail
 
 /--
 The part of lowering-state evolution visible at an open source-block boundary.
