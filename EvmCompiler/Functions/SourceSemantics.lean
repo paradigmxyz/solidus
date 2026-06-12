@@ -179,6 +179,284 @@ theorem insertMany_length :
           (store' := store') hInsert
       simp [hTail]
 
+theorem insertMany_apply_of_not_mem :
+    ∀ {names : List Name} {values : List Word}
+      {store store' : Store} {key : Name},
+      insertMany names values store = some store' →
+      key ∉ names →
+      store' key = store key
+  | [], [], _store, _store', _key, hInsert, _hNotMem => by
+      simp [insertMany] at hInsert
+      cases hInsert
+      rfl
+  | [], _value :: _values, _store, _store', _key, hInsert, _hNotMem => by
+      simp [insertMany] at hInsert
+  | _name :: _names, [], _store, _store', _key, hInsert, _hNotMem => by
+      simp [insertMany] at hInsert
+  | name :: names, value :: values, store, store', key,
+      hInsert, hNotMem => by
+      have hHead : key ≠ name := by
+        intro hEq
+        subst key
+        exact hNotMem (by simp)
+      have hTail : key ∉ names := by
+        intro hMem
+        exact hNotMem (by simp [hMem])
+      calc
+        store' key =
+            (Locals.Source.Store.insert store name value) key :=
+          insertMany_apply_of_not_mem hInsert hTail
+        _ = store key :=
+          Locals.Source.Store.insert_of_ne hHead
+
+theorem lookupMany_insertMany_self :
+    ∀ {names : List Name} {values : List Word}
+      {store store' : Store},
+      names.Nodup →
+      insertMany names values store = some store' →
+      lookupMany names store' = some values
+  | [], [], _store, _store', _hNodup, hInsert => by
+      simp [insertMany] at hInsert
+      cases hInsert
+      rfl
+  | [], _value :: _values, _store, _store', _hNodup, hInsert => by
+      simp [insertMany] at hInsert
+  | _name :: _names, [], _store, _store', _hNodup, hInsert => by
+      simp [insertMany] at hInsert
+  | name :: names, value :: values, store, store', hNodup, hInsert => by
+      change
+        insertMany names values
+            (Locals.Source.Store.insert store name value) =
+          some store' at hInsert
+      have hName :
+          store' name = some value := by
+        have hPreserved :=
+          insertMany_apply_of_not_mem hInsert
+            (List.nodup_cons.mp hNodup).1
+        simpa using hPreserved
+      have hTail :
+          lookupMany names store' = some values :=
+        lookupMany_insertMany_self
+          (List.nodup_cons.mp hNodup).2 hInsert
+      unfold lookupMany
+      rw [hName]
+      simp only [Bind.bind, Option.bind]
+      rw [hTail]
+
+theorem initReturns_apply_of_not_mem :
+    ∀ {returns : List Name} {store : Store} {key : Name},
+      key ∉ returns →
+      initReturns returns store key = store key
+  | [], _store, _key, _hNotMem => by
+      rfl
+  | name :: returns, store, key, hNotMem => by
+      have hHead : key ≠ name := by
+        intro hEq
+        subst key
+        exact hNotMem (by simp)
+      have hTail : key ∉ returns := by
+        intro hMem
+        exact hNotMem (by simp [hMem])
+      calc
+        initReturns (name :: returns) store key =
+            initReturns returns
+              (Locals.Source.Store.insert store name zero) key := rfl
+        _ = (Locals.Source.Store.insert store name zero) key :=
+          initReturns_apply_of_not_mem hTail
+        _ = store key :=
+          Locals.Source.Store.insert_of_ne hHead
+
+theorem lookupMany_initReturns_self :
+    ∀ {returns : List Name} {store : Store},
+      returns.Nodup →
+      lookupMany returns (initReturns returns store) =
+        some (returns.map fun _name => zero)
+  | [], _store, _hNodup => by
+      rfl
+  | name :: returns, store, hNodup => by
+      have hName :
+          initReturns returns
+              (Locals.Source.Store.insert store name zero) name =
+            some zero := by
+        have hPreserved :=
+          initReturns_apply_of_not_mem
+            (returns := returns)
+            (store := Locals.Source.Store.insert store name zero)
+            (key := name)
+            (List.nodup_cons.mp hNodup).1
+        simpa using hPreserved
+      have hTail :
+          lookupMany returns
+              (initReturns returns
+                (Locals.Source.Store.insert store name zero)) =
+            some (returns.map fun _name => zero) :=
+        lookupMany_initReturns_self
+          (returns := returns)
+          (store := Locals.Source.Store.insert store name zero)
+          (List.nodup_cons.mp hNodup).2
+      change
+        (do
+          let value ←
+            initReturns returns
+              (Locals.Source.Store.insert store name zero) name
+          let values ←
+            lookupMany returns
+              (initReturns returns
+                (Locals.Source.Store.insert store name zero))
+          some (value :: values)) =
+        some (zero :: returns.map fun _name => zero)
+      rw [hName]
+      simp only [Bind.bind, Option.bind]
+      rw [hTail]
+
+theorem lookupMany_congr
+    {names : List Name} {left right : Store}
+    (hEq : ∀ name, name ∈ names → left name = right name) :
+    lookupMany names left = lookupMany names right := by
+  induction names with
+  | nil =>
+      rfl
+  | cons name rest ih =>
+      have hHead := hEq name (by simp)
+      have hTail :
+          ∀ candidate, candidate ∈ rest →
+            left candidate = right candidate := by
+        intro candidate hMem
+        exact hEq candidate (by simp [hMem])
+      simp [lookupMany, hHead, ih hTail]
+
+theorem lookupMany_initReturns_of_disjoint
+    {returns params : List Name} {store : Store}
+    (hDisjoint :
+      ∀ name, name ∈ params → name ∉ returns) :
+    lookupMany params (initReturns returns store) =
+      lookupMany params store := by
+  apply lookupMany_congr
+  intro name hParam
+  exact initReturns_apply_of_not_mem (hDisjoint name hParam)
+
+/--
+The store constructed at function entry realizes the argument list at
+parameters and zero at named returns.
+-/
+theorem initializedStore_lookupMany
+    {params returns : List Name} {args : List Word}
+    {paramStore : Store}
+    (hSignature : (returns ++ params).Nodup)
+    (hInsert :
+      insertMany params args Locals.Source.Store.empty =
+        some paramStore) :
+    lookupMany params (initReturns returns paramStore) = some args ∧
+    lookupMany returns (initReturns returns paramStore) =
+      some (returns.map fun _name => zero) := by
+  have hParts := List.nodup_append.mp hSignature
+  have hDisjoint :
+      ∀ name, name ∈ params → name ∉ returns := by
+    intro name hParam hReturn
+    exact hParts.2.2 name hReturn name hParam rfl
+  constructor
+  · rw [lookupMany_initReturns_of_disjoint hDisjoint]
+    exact lookupMany_insertMany_self hParts.2.1 hInsert
+  · exact lookupMany_initReturns_self hParts.1
+
+theorem lookupMany_forall₂ :
+    ∀ {names : List Name} {store : Store} {values : List Word},
+      lookupMany names store = some values →
+      List.Forall₂ (fun name value => store name = some value)
+        names values
+  | [], _store, values, hLookup => by
+      simp [lookupMany] at hLookup
+      subst values
+      exact .nil
+  | name :: names, store, values, hLookup => by
+      cases hValue : store name with
+      | none =>
+          simp [lookupMany, hValue] at hLookup
+      | some value =>
+          cases hTail : lookupMany names store with
+          | none =>
+              simp [lookupMany, hValue, hTail] at hLookup
+          | some tail =>
+              simp [lookupMany, hValue, hTail] at hLookup
+              subst values
+              exact .cons hValue (lookupMany_forall₂ hTail)
+
+theorem lookupMany_getElem
+    {names : List Name} {store : Store} {values : List Word}
+    {index : Nat} {name : Name}
+    (hLookup : lookupMany names store = some values)
+    (hName : names[index]? = some name) :
+    ∃ value,
+      values[index]? = some value ∧
+        store name = some value := by
+  have hPairs := lookupMany_forall₂ hLookup
+  clear hLookup
+  induction hPairs generalizing index name with
+  | nil =>
+      simp at hName
+  | @cons headName headValue tailNames tailValues hHead _hTail ih =>
+      cases index with
+      | zero =>
+          simp at hName
+          subst name
+          exact ⟨headValue, by simp, hHead⟩
+      | succ index =>
+          simp only [List.getElem?_cons_succ] at hName
+          obtain ⟨value, hValue, hStore⟩ := ih hName
+          exact
+            ⟨value,
+              by simpa only [List.getElem?_cons_succ] using hValue,
+              hStore⟩
+
+private theorem forall₂_append
+    {α β : Type} {relation : α → β → Prop}
+    {leftNames rightNames : List α}
+    {leftValues rightValues : List β}
+    (hLeft : List.Forall₂ relation leftNames leftValues)
+    (hRight : List.Forall₂ relation rightNames rightValues) :
+    List.Forall₂ relation
+      (leftNames ++ rightNames) (leftValues ++ rightValues) := by
+  induction hLeft with
+  | nil =>
+      simpa using hRight
+  | cons hHead _hTail ih =>
+      exact .cons hHead ih
+
+private theorem forall₂_reverse
+    {α β : Type} {relation : α → β → Prop}
+    {names : List α} {values : List β}
+    (hPairs : List.Forall₂ relation names values) :
+    List.Forall₂ relation names.reverse values.reverse := by
+  induction hPairs with
+  | nil =>
+      exact .nil
+  | @cons name value names values hHead _hTail ih =>
+      simpa using
+        forall₂_append ih
+          (List.Forall₂.cons hHead List.Forall₂.nil)
+
+theorem lookupMany_of_forall₂
+    {names : List Name} {store : Store} {values : List Word}
+    (hPairs :
+      List.Forall₂ (fun name value => store name = some value)
+        names values) :
+    lookupMany names store = some values := by
+  induction hPairs with
+  | nil =>
+      rfl
+  | cons hHead _hTail ih =>
+      unfold lookupMany
+      rw [hHead]
+      simp only [Bind.bind, Option.bind]
+      rw [ih]
+
+theorem lookupMany_reverse
+    {names : List Name} {store : Store} {values : List Word}
+    (hLookup : lookupMany names store = some values) :
+    lookupMany names.reverse store = some values.reverse :=
+  lookupMany_of_forall₂
+    (forall₂_reverse (lookupMany_forall₂ hLookup))
+
 theorem lookupMany_length :
     ∀ {names : List Name} {store : Store} {values : List Word},
       lookupMany names store = some values →

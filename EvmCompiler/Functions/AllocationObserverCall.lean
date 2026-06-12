@@ -9,6 +9,134 @@ abbrev Word := Assembly.Word
 
 open AllocationObserverRelation
 
+namespace EntryMarkers
+
+theorem compileOpen
+    {localsCtx : Locals.Ctx}
+    {entryLayout : Locals.Layout}
+    {baseDepth : Nat}
+    {scratchBindings : List (Locals.Name × Nat)}
+    {needsFrame : Bool} :
+    Locals.Block.compileOpen localsCtx
+        { stmts :=
+            [AllocationLowering.bindEntryLayout entryLayout] ++
+              if needsFrame then
+                [AllocationLowering.bindScratchBindings
+                  baseDepth scratchBindings]
+              else
+                [] } =
+      some
+        ([Expressions.Stmt.code
+            [Structured.BasicInstr.bindLocals 0 entryLayout]] ++
+          if needsFrame then
+            [Expressions.Stmt.code
+              (AllocationSupport.bindScratchBindingsCode
+                baseDepth scratchBindings)]
+          else
+            [],
+         localsCtx) := by
+  cases needsFrame <;>
+    simp [AllocationLowering.bindEntryLayout,
+      AllocationLowering.bindScratchBindings,
+      Locals.Block.compileOpen, Locals.Stmt.compile,
+      Locals.Expr.compileCode, Locals.codeStmt]
+
+theorem run_bindScratchBindingsCode
+    {transcript : Trace}
+    (baseDepth : Nat)
+    (bindings : List (Locals.Name × Nat))
+    (target : Structured.ObserverSemantics.State transcript) :
+    Structured.ObserverSemantics.Code.run
+        (AllocationSupport.bindScratchBindingsCode baseDepth bindings)
+        target =
+      .ok target := by
+  induction bindings with
+  | nil =>
+      rfl
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      simp only [AllocationSupport.bindScratchBindingsCode, List.map_cons]
+      rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      change
+        (Except.ok target).bind
+          (Structured.ObserverSemantics.Code.run
+            (AllocationSupport.bindScratchBindingsCode baseDepth rest)) =
+          .ok target
+      simpa only [Except.bind] using ih
+
+theorem run
+    {transcript : Trace}
+    (entryLayout : Locals.Layout)
+    (baseDepth : Nat)
+    (scratchBindings : List (Locals.Name × Nat))
+    (needsFrame : Bool)
+    (target : Structured.ObserverSemantics.State transcript) :
+    Structured.ObserverSemantics.Code.run
+        ([Structured.BasicInstr.bindLocals 0 entryLayout] ++
+          if needsFrame then
+            AllocationSupport.bindScratchBindingsCode
+              baseDepth scratchBindings
+          else
+            [])
+        target =
+      .ok target := by
+  cases needsFrame with
+  | false =>
+      rfl
+  | true =>
+      rw [AllocationObserverPreservation.ObserverCode.run_append]
+      change
+        (Except.ok target).bind
+            (Structured.ObserverSemantics.Code.run
+              (AllocationSupport.bindScratchBindingsCode
+                baseDepth scratchBindings)) =
+          .ok target
+      simpa only [Except.bind] using
+        run_bindScratchBindingsCode baseDepth scratchBindings target
+
+theorem eval
+    {transcript : Trace}
+    (program : Structured.Program)
+    (entryLayout : Locals.Layout)
+    (baseDepth : Nat)
+    (scratchBindings : List (Locals.Name × Nat))
+    (needsFrame : Bool)
+    (target : Structured.ObserverSemantics.State transcript) :
+    ∃ fuel,
+      Structured.ObserverSemantics.Block.Eval program fuel
+        { stmts :=
+            [Structured.Stmt.code
+              [Structured.BasicInstr.bindLocals 0 entryLayout]] ++
+              if needsFrame then
+                [Structured.Stmt.code
+                  (AllocationSupport.bindScratchBindingsCode
+                    baseDepth scratchBindings)]
+              else
+                [] }
+        target
+        (Structured.EffectSemantics.Outcome.regular target) := by
+  cases needsFrame with
+  | false =>
+      exact
+        ⟨2,
+          Structured.EffectSemantics.Block.Eval.cons_regular
+            (Structured.EffectSemantics.Stmt.Eval.code (by rfl))
+            Structured.EffectSemantics.Block.Eval.nil⟩
+  | true =>
+      refine
+        ⟨3,
+          Structured.EffectSemantics.Block.Eval.cons_regular
+            (Structured.EffectSemantics.Stmt.Eval.code (by rfl))
+            ?_⟩
+      exact
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code
+            (run_bindScratchBindingsCode
+              baseDepth scratchBindings target))
+          Structured.EffectSemantics.Block.Eval.nil
+
+end EntryMarkers
+
 namespace ArgList
 
 /--

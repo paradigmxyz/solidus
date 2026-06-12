@@ -54,6 +54,12 @@ def ConsumedExactly {σ : Type} {transcript : Trace}
     (state : State σ transcript) (source : σ) :
     (state.withSource source).remaining = state.remaining := rfl
 
+@[simp] theorem withSource_self {σ : Type} {transcript : Trace}
+    (state : State σ transcript) :
+    state.withSource state.source = state := by
+  cases state
+  rfl
+
 theorem observed_eq_transcript_of_consumedExactly
     {σ : Type} {transcript : Trace} {state : State σ transcript}
     (hConsumed : state.ConsumedExactly) :

@@ -515,6 +515,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
+#print axioms EvmCompiler.Functions.Source.Store.initializedStore_lookupMany
+#print axioms EvmCompiler.Functions.Source.Store.lookupMany_reverse
+#print axioms EvmCompiler.Functions.Source.Store.lookupMany_getElem
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.StoreRel.of_lookupMany_currentStackOrder
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.declare_stack_live_existing
+#print axioms EvmCompiler.Functions.AllocationObserverCall.EntryMarkers.compileOpen
+#print axioms EvmCompiler.Functions.AllocationObserverCall.EntryMarkers.eval
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

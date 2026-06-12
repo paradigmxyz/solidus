@@ -46,6 +46,16 @@ theorem insert_of_ne {store : Store} {name other : Name} {value : Word}
     insert store name value other = store other := by
   simp [insert, hNe]
 
+theorem insert_eq_of_apply_eq
+    {store : Store} {name : Name} {value : Word}
+    (hValue : store name = some value) :
+    insert store name value = store := by
+  funext other
+  by_cases hName : other = name
+  · subst other
+    simp [insert, hValue]
+  · simp [insert, hName]
+
 theorem restrictTo_mem {scope : List Name} {store : Store} {name : Name}
     (hMem : name ∈ scope) :
     restrictTo scope store name = store name := by
@@ -82,6 +92,15 @@ def insert (state : State) (name : Name) (value : Word) : State :=
 
 @[simp] theorem insert_shared (state : State) (name : Name) (value : Word) :
     (insert state name value).shared = state.shared := rfl
+
+theorem insert_eq_of_apply_eq
+    {state : State} {name : Name} {value : Word}
+    (hValue : state.vars name = some value) :
+    state.insert name value = state := by
+  cases state with
+  | mk shared vars =>
+      simp only [insert]
+      rw [Store.insert_eq_of_apply_eq hValue]
 
 end State
 

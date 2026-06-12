@@ -1946,6 +1946,39 @@ theorem declare_stack_live
       · exact hBefore
     exact hRel.scratchBound other slot hOtherBefore hOtherLocation
 
+/--
+Activate an already initialized stack name. Function-entry source stores
+contain parameters and returns before their concrete stack realization is
+established, so the semantic insertion performed by `declare_stack_live` is
+the identity.
+-/
+theorem declare_stack_live_existing
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase frameDepth frameWords planDepth : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan beforeLive 1 frameBase
+        frameDepth frameWords source target)
+    (hStack : target.source.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive)
+    (hValue : source.source.vars name = some value) :
+    ScratchStateRel contract plan afterLive 0 frameBase
+      (frameDepth + 1) frameWords source target := by
+  have hDeclared :=
+    hRel.declare_stack_live hStack hAfter hNameAfter hLocation hStackOrder
+  rw [Locals.Source.State.insert_eq_of_apply_eq hValue] at hDeclared
+  simpa using hDeclared
+
 theorem assign_scratch_live
     {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -2178,6 +2211,51 @@ theorem assign_scratch_live
       cases hOtherLocation
       exact hAssignedBound
     · exact hRel.scratchBound other otherSlot hBefore hOtherLocation
+
+/--
+Activate an already initialized spilled name after writing its existing value
+to the compiler-owned frame.
+-/
+theorem assign_scratch_live_existing
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {slot : Nat} {value : Word}
+    {rest : List Word}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      ScratchStateRel contract plan beforeLive (stackOffset + 2) frameBase
+        frameDepth frameWords source target)
+    (hWF : plan.WellFormed)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        currentStackOrder plan beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hAssignedBound : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hRegion :
+      reservation.containsRegion (scratchAddress frameBase slot) 1)
+    (hStack :
+      target.source.evm.stack =
+        EvmYul.UInt256.ofNat (scratchAddress frameBase slot) ::
+          value :: rest)
+    (hValue : source.source.vars name = some value) :
+    ScratchStateRel contract plan afterLive stackOffset frameBase
+      frameDepth frameWords source
+      (StateRel.mstoreTarget
+        (EvmYul.UInt256.ofNat (scratchAddress frameBase slot))
+        value rest target) := by
+  have hAssigned :=
+    hRel.assign_scratch_live hWF hAfter hStackOrder hNameAfter hLocation
+      hAssignedBound hReservation hRegion hStack
+  rw [Locals.Source.State.insert_eq_of_apply_eq hValue] at hAssigned
+  simpa using hAssigned
 
 theorem assign_scratch
     {transcript : Trace}
@@ -2434,6 +2512,56 @@ def LiveStackOnly (plan : Plan) (live : List Locals.Name) : Prop :=
     name ∈ live →
     plan.location? name = some (.scratch slot) →
     False
+
+namespace StoreRel
+
+/--
+Construct the named-store relation from a concrete stack containing the source
+values in the allocation plan's current runtime order.
+
+This is the function-entry bridge: parameters arrive as raw EVM stack values
+before declaration/prelude execution has established the ordinary activation
+invariant.
+-/
+theorem of_lookupMany_currentStackOrder
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {source : Locals.Source.State}
+    {target : Structured.RunState} {values suffix : List Word}
+    (hWF : plan.WellFormed)
+    (hStackOnly : LiveStackOnly plan live)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (currentStackOrder plan live) source.vars =
+        some values)
+    (hStack : target.evm.stack = values ++ suffix) :
+    StoreRel plan live 0 frameBase source target := by
+  intro name location hLive hLocation
+  cases location with
+  | scratch slot =>
+      exact False.elim (hStackOnly name slot hLive hLocation)
+  | stack planDepth =>
+      have hValid :=
+        Locals.Allocation.Plan.bindingValid_of_wellFormed_of_location?_eq_some
+          hWF hLocation
+      have hPlanMem : name ∈ plan.stackOrder := by
+        exact List.mem_of_getElem? hValid
+      have hCurrentMem : name ∈ currentStackOrder plan live := by
+        simp [currentStackOrder, hPlanMem, hLive]
+      obtain ⟨depth, hDepth⟩ :=
+        Locals.Layout.exists_lookupDepth?_eq_some_of_mem hCurrentMem
+      have hNameAt :
+          (currentStackOrder plan live)[depth]? = some name :=
+        Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+      obtain ⟨value, hValueAt, hSourceValue⟩ :=
+        Functions.Source.Store.lookupMany_getElem hLookup hNameAt
+      have hValueBound : depth < values.length :=
+        List.getElem?_eq_some_iff.mp hValueAt |>.1
+      refine ⟨depth, hDepth, ?_⟩
+      rw [Nat.zero_add, hStack,
+        List.getElem?_append_left hValueBound,
+        hValueAt, hSourceValue]
+
+end StoreRel
 
 /--
 One relation for both allocator backends.
@@ -2737,6 +2865,32 @@ theorem declare_stack_live {transcript : Trace}
       exact .scratch
         (state.declare_stack_live hStack hAfter hNameAfter
           hLocation hStackOrder)
+
+theorem declare_stack_live_existing {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase planDepth : Nat} {mode : ActivationMode}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {name : Locals.Name} {value : Word} {rest : List Word}
+    (hRel :
+      ActivationStateRel contract plan beforeLive 1 frameBase
+        mode source target)
+    (hStack : target.source.evm.stack = value :: rest)
+    (hAfter :
+      ∀ other, other ∈ afterLive →
+        other = name ∨ other ∈ beforeLive)
+    (hNameAfter : name ∈ afterLive)
+    (hLocation : plan.location? name = some (.stack planDepth))
+    (hStackOrder :
+      currentStackOrder plan afterLive =
+        name :: currentStackOrder plan beforeLive)
+    (hValue : source.source.vars name = some value) :
+    ActivationStateRel contract plan afterLive 0 frameBase
+      mode.afterStackDeclaration source target := by
+  have hDeclared :=
+    hRel.declare_stack_live hStack hAfter hNameAfter hLocation hStackOrder
+  rw [Locals.Source.State.insert_eq_of_apply_eq hValue] at hDeclared
+  simpa using hDeclared
 
 theorem assign_stack_live {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}

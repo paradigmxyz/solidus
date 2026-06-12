@@ -29129,3 +29129,24 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
 - 2026-06-12 12:58:32 PDT - compiler-interface - Added generic index-cast stability for Locals expression-sequence compilation, pass-owned list compilation decomposition, complete `lowerFunction?_components`, `Block.compileToPreserving_components`, and `Proc.toExpressions?_components`. Procedure-entry proofs can now consume exact adjacent artifacts without unfolding either compiler.
 - 2026-06-12 12:58:32 PDT - architecture - Introduced `AllocationObserverCall.lean` as the dedicated adjacent call boundary and registered it in observer dependency, size, and proof-hole guards. The module defines no compiler, interpreter, replay certificate, or call oracle.
 - 2026-06-12 12:58:32 PDT - validation - The full 1,208-job `EvmCompiler.Verification` root, architecture guard, exact changed-file hole scan, `git diff --check`, and expanded observer axiom smoke pass. New declarations use only `propext`, `Classical.choice`, and `Quot.sound`.
+2026-06-12: compaction-resume — resumed the end-to-end observer proof at allocated function-entry construction; preserving adjacent pass ownership and auditing the uncommitted source-store, relation, and entry-marker lemmas before continuing.
+- 2026-06-12 theorem-boundary - Added canonical function-entry source-store
+  facts: inserted parameters and initialized returns are recoverable by
+  `lookupMany`, reversed lookups match the EVM entry orientation, and indexed
+  lookup values retain their source binding. Added identity-update wrappers for
+  activating already initialized stack and scratch locals.
+- 2026-06-12 compiler-interface - Proved that real entry-layout and scratch
+  binding markers compile through the Locals owner and execute as metadata
+  no-ops. Added `StoreRel.of_lookupMany_currentStackOrder`, the allocation-owned
+  bridge from a canonical source lookup to a concrete stack-local realization.
+- 2026-06-12 architecture - The remaining callee-entry mismatch is explicit:
+  scratch-designated parameters initially live on the raw procedure stack
+  before the real parameter prelude spills them. The next interface will be a
+  transient allocation-owned entry relation; no observer compiler, duplicate
+  interpreter, replay certificate, or public generated-code premise is being
+  introduced.
+- 2026-06-12 validation - Function-entry foundations passed the focused
+  1,149-job call build and full 1,208-job `EvmCompiler.Verification` root.
+  Architecture guards, exact changed-file hole scan, `git diff --check`, and
+  the expanded observer axiom smoke pass; new declarations use only `propext`,
+  `Classical.choice`, and `Quot.sound`.

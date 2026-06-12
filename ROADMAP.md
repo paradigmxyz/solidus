@@ -636,9 +636,16 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   `lowerExprList`/`exprSeqOfList` path has checked forward preservation and
   deterministic backward classification. Function and Locals compiler owners
   expose exact procedure-entry, prelude, open-body, return-expression, and
-  preserving-cleanup components. Constructing the callee activation from those
-  components, recursive function-body composition, call execution, and the
-  matching backward adequacy remain.
+  preserving-cleanup components. Canonical source-store lemmas now prove that
+  function entry realizes parameter arguments and zero-initialized returns,
+  including reversed entry-stack order. The allocation relation can construct
+  a stack-local store realization directly from a checked source lookup and
+  concrete entry stack, and metadata-only entry markers have checked
+  compilation and no-op execution. Constructing the transient callee relation
+  while scratch-designated parameters still reside on the raw entry stack,
+  converting it to the ordinary activation invariant through the real
+  parameter/return preludes, recursive function-body composition, call
+  execution, and matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
