@@ -21,7 +21,9 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     (targetFuel : Nat)
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
           (.switch scrutinee cases defaultBody) ctx
@@ -29,31 +31,27 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hRegular : continuations.regular = regular)
     (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              supply caseIdx remaining)
-            targetState))
+      ∀ caseIdx remaining,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompilerFacts.Switch.casesEntryLabel
+            supply caseIdx remaining))
     (hCaseEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchCaseLabel supply caseIdx))
     (hCaseBodyEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
-            targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchBodyLabel supply caseIdx))
     (hDefaultBodyEntryNotAccepted :
-      ∀ generatedSupply targetState,
+      ∀ generatedSupply,
         supply ≤ generatedSupply →
-        ¬ accept
-          (.jump
-            (.generated generatedSupply 2000)
-            targetState))
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (.generated generatedSupply 2000))
     (hBodyAdequate :
       ∀ {selected : Structured.Block}
         {afterScrutinee : ObserverSemantics.State transcript}
@@ -67,11 +65,24 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
         afterScrutinee.source.evm.stack.pop = some (stack, value) →
         Structured.Switch.select value cases defaultBody =
           some selected →
+        (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack })).source.returns =
+          source.source.returns →
+        OutcomeSimulation.ActivationInput tokens bodyShape →
+        supply + 1 ≤ bodySupply →
         bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
+        OutcomeSimulation.LabelBeforeSupply bodyEntry bodySupply →
+        OutcomeSimulation.EntryRejected cfg
+          (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack }))
+          tokens accept bodyEntry bodyShape →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -95,7 +106,7 @@ theorem adequateWithinFuel_switch_of_compileStmtFuel?
     targetOutcome hRel hReach
   exact
     outcome_switch_of_compileStmtFuel?_and_firstReaches
-      hCompile hBlocks hRegular hAccept
+      hActivation hCompile hBlocks hCalls hRegular hAccept
       hDispatchEntryNotAccepted hCaseEntryNotAccepted
       hCaseBodyEntryNotAccepted hDefaultBodyEntryNotAccepted
       hRel hReach hBodyAdequate
@@ -116,6 +127,8 @@ theorem adequateWithin_switch_of_compileStmtFuel?
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
           (.switch scrutinee cases defaultBody) ctx
@@ -123,31 +136,27 @@ theorem adequateWithin_switch_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hRegular : continuations.regular = regular)
     (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              supply caseIdx remaining)
-            targetState))
+      ∀ caseIdx remaining,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompilerFacts.Switch.casesEntryLabel
+            supply caseIdx remaining))
     (hCaseEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchCaseLabel supply caseIdx))
     (hCaseBodyEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
-            targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchBodyLabel supply caseIdx))
     (hDefaultBodyEntryNotAccepted :
-      ∀ generatedSupply targetState,
+      ∀ generatedSupply,
         supply ≤ generatedSupply →
-        ¬ accept
-          (.jump
-            (.generated generatedSupply 2000)
-            targetState))
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (.generated generatedSupply 2000))
     (hBodyAdequate :
       ∀ {selected : Structured.Block}
         {afterScrutinee : ObserverSemantics.State transcript}
@@ -160,10 +169,23 @@ theorem adequateWithin_switch_of_compileStmtFuel?
         afterScrutinee.source.evm.stack.pop = some (stack, value) →
         Structured.Switch.select value cases defaultBody =
           some selected →
+        (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack })).source.returns =
+          source.source.returns →
+        OutcomeSimulation.ActivationInput tokens bodyShape →
+        supply + 1 ≤ bodySupply →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
+        OutcomeSimulation.LabelBeforeSupply bodyEntry bodySupply →
+        OutcomeSimulation.EntryRejected cfg
+          (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack }))
+          tokens accept bodyEntry bodyShape →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -186,13 +208,17 @@ theorem adequateWithin_switch_of_compileStmtFuel?
     targetOutcome hRel hReach
   exact
     adequateWithinFuel_switch_of_compileStmtFuel?
-      targetFuel hCompile hBlocks hRegular
+      targetFuel hActivation hCompile hBlocks hCalls hRegular
       hDispatchEntryNotAccepted hCaseEntryNotAccepted
       hCaseBodyEntryNotAccepted hDefaultBodyEntryNotAccepted
-      (fun bodyTargetFuel hScrutinee hPop hSelect _hFuel
-          hBodyCompile hBodyBlocks =>
-        (hBodyAdequate hScrutinee hPop hSelect
-          hBodyCompile hBodyBlocks).fuel bodyTargetFuel)
+      (fun bodyTargetFuel hScrutinee hPop hSelect hReturns
+          hBodyActivation hBodySupply _hFuel
+          hBodyCompile hBodyBlocks hBodyCalls hEntryBefore hEntryRejected =>
+        (hBodyAdequate hScrutinee hPop hSelect hReturns
+          hBodyActivation hBodySupply
+          hBodyCompile hBodyBlocks hBodyCalls hEntryBefore
+          hEntryRejected).fuel
+          bodyTargetFuel)
       hAccept hRel hReach
 
 end Switch

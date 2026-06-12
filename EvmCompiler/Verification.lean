@@ -24,6 +24,7 @@ import EvmCompiler.Structured.ObserverLoopAdequacy
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.Structured.ObserverGeneratedAdequacy
+import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -58,6 +59,7 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_succ_elim
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_one_of_step
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_add_of_jump
+#check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_add_of_halt
 #check EvmCompiler.Structured.EffectSemantics.Program.runState
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.mono
 #check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.mono
@@ -113,6 +115,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationFreshExcept.pushJumpAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.pushJumpAt
 #check EvmCompiler.Structured.ObserverAdequacy.SourceContext.procedure
+#check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_block
+#check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_stmt
+#check EvmCompiler.Structured.ObserverAdequacy.Program.generateWithProcEntryShapes?_terminal_backward
+#check EvmCompiler.Structured.TypedCfgPreservation.Program.GeneratedContext.programEndBlock
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.procedureBody
 #check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_code
 #check EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_leave

@@ -428,6 +428,50 @@ theorem runN_add_of_jump
           | invalid afterState =>
               simp at hFirst'
 
+/--
+Once a fuel-indexed CFG run has halted, granting additional fuel does not
+change its outcome or observer trace.
+-/
+theorem runN_add_of_halt
+    {program : TypedCfg.Program}
+    {firstFuel restFuel : Nat} {entry : Label}
+    {initial final : EVMState}
+    {initialTrace finalTrace : Trace} {kind : Assembly.HaltKind}
+    (hFirst :
+      runN program firstFuel entry initial initialTrace =
+        .ok (.halt kind final, finalTrace)) :
+    runN program (firstFuel + restFuel)
+        entry initial initialTrace =
+      .ok (.halt kind final, finalTrace) := by
+  induction firstFuel generalizing entry initial initialTrace with
+  | zero =>
+      simp only [runN_zero] at hFirst
+      cases hFirst
+  | succ firstFuel ih =>
+      have hFirst' := hFirst
+      rw [runN_succ] at hFirst'
+      cases hStep : step program entry initial initialTrace with
+      | error err =>
+          rw [hStep] at hFirst'
+          contradiction
+      | ok result =>
+          rcases result with ⟨firstOutcome, firstTrace⟩
+          rw [hStep] at hFirst'
+          rw [show
+            Nat.succ firstFuel + restFuel =
+              (firstFuel + restFuel) + 1 by omega,
+            runN_succ, hStep]
+          cases firstOutcome with
+          | jump next state' =>
+              exact ih hFirst'
+          | halt firstKind state' =>
+              cases hFirst'
+              rfl
+          | fallthrough state'
+          | returnDispatch state'
+          | invalid state' =>
+              simp at hFirst'
+
 namespace Eventually
 
 theorem residual (program : TypedCfg.Program) (label : Label)

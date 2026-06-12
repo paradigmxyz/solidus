@@ -533,6 +533,9 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          TypedCfgPreservation.BlocksInProgram fragment.result cfg →
+          TypedCfgPreservation.CallsInProgram
+            fragment.result generated.calls →
           OutcomeSimulation.ActivationExtension
             source.source.returns tokens
             callSource.source.returns
@@ -718,7 +721,8 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
               ⟨bodySourceFuel, bodyOutcome,
                 hBodyEval, hBodyRel, hBodyArtifact⟩ :=
             hBodyAdequate (fragment := fragment)
-              (callSource := callSource) hLookup hCallExtension
+              (callSource := callSource) hLookup
+              hFragmentBlocks hFragmentCalls hCallExtension
               (bodyTargetFuel := bodyTargetFuel) (by omega)
               (fun bodyFuel bodyOutcome targetOutcome bodyTrace
                   hBodyEval hBodyRel _hBodyArtifact => by
@@ -1154,6 +1158,9 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_protected
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          TypedCfgPreservation.BlocksInProgram fragment.result cfg →
+          TypedCfgPreservation.CallsInProgram
+            fragment.result generated.calls →
           OutcomeSimulation.ActivationExtension
             source.source.returns tokens
             callSource.source.returns
@@ -1320,6 +1327,9 @@ theorem adequateWithin_call_of_compileStmtFuel?
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          TypedCfgPreservation.BlocksInProgram fragment.result cfg →
+          TypedCfgPreservation.CallsInProgram
+            fragment.result generated.calls →
           OutcomeSimulation.AdequateWithin
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1354,10 +1364,12 @@ theorem adequateWithin_call_of_compileStmtFuel?
       generated hCompile hBlocks hCalls hProcs hProgramWF hRegular
       hProcEntryNotAccepted hProcExitNotAccepted hBodyEntryNotAccepted
       (fun {proc} {fragment} {callSource} hLookup
+          _hFragmentBlocks _hFragmentCalls
           _hExtension {bodyTargetFuel} _hSmaller =>
         OutcomeSimulation.AdequateWithin.fuel
           (hBodyAdequate (fragment := fragment)
-            (callSource := callSource) hLookup)
+            (callSource := callSource) hLookup
+            _hFragmentBlocks _hFragmentCalls)
           bodyTargetFuel)
       hAccept hRel hReach
 

@@ -698,6 +698,7 @@ private theorem outcome_for_step_of_firstReaches
           accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        bodySource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches bodySource tokens
             { condOutput with slots := condOutput.slots.tail }
             targetState →
@@ -706,6 +707,7 @@ private theorem outcome_for_step_of_firstReaches
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
       ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        postSource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches postSource tokens
             { condOutput with slots := condOutput.slots.tail }
             targetState →
@@ -714,6 +716,7 @@ private theorem outcome_for_step_of_firstReaches
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
       ∀ (loopSource : ObserverSemantics.State transcript) targetState,
+        loopSource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches loopSource tokens
             loopInput targetState →
         ¬ accept (.jump loopLabel targetState))
@@ -852,6 +855,7 @@ private theorem outcome_for_step_of_firstReaches
       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
         hBodyReach
           (hBodyEntryNotAccepted afterCond targetAfterCond
+            (ObserverSemantics.Code.runCondition_returns_eq hCond)
             (OutcomeSimulation.FrameMatches.of_at hAfterCondRel))
     cases bodyPrefixFuel with
     | zero =>
@@ -1010,10 +1014,17 @@ private theorem outcome_for_step_of_firstReaches
                 hAfterBodyReach.run
                 (OutcomeSimulation.JumpAt.of_accept
                   hAfterBodyReach.boundary)
+            have hBodyReturns :
+                bodyState.source.returns = source.source.returns :=
+              (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                  hBodyEval
+                  (by simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                (ObserverSemantics.Code.runCondition_returns_eq hCond)
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                 hPostReach
                   (hPostEntryNotAccepted bodyState bodyTarget
+                    hBodyReturns
                     (OutcomeSimulation.FrameMatches.of_at hBodyAt))
             cases postPrefixFuel with
             | zero =>
@@ -1098,6 +1109,19 @@ private theorem outcome_for_step_of_firstReaches
                     have hAfterPostReach :=
                       OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                         hAfterBodyReach hPostReach hPostLe
+                    have hPostReturns :
+                        postState.source.returns =
+                          source.source.returns :=
+                      (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                          hPostEval
+                          (by
+                            simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                        ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                            hBodyEval
+                            (by
+                              simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                          (ObserverSemantics.Code.runCondition_returns_eq
+                            hCond))
                     have hLoopPositive :
                         0 <
                           (targetFuel - (bodyPrefixFuel + 1)) -
@@ -1105,6 +1129,7 @@ private theorem outcome_for_step_of_firstReaches
                       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                         hAfterPostReach
                           (hLoopEntryNotAccepted postState postTarget
+                            hPostReturns
                             (OutcomeSimulation.FrameMatches.of_at hPostAt))
                     cases hResidual :
                         (targetFuel - (bodyPrefixFuel + 1)) -
@@ -1294,10 +1319,17 @@ private theorem outcome_for_step_of_firstReaches
                 hAfterBodyReach.run
                 (OutcomeSimulation.JumpAt.of_accept
                   hAfterBodyReach.boundary)
+            have hBodyReturns :
+                bodyState.source.returns = source.source.returns :=
+              (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                  hBodyEval
+                  (by simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                (ObserverSemantics.Code.runCondition_returns_eq hCond)
             have hPostPositive : 0 < postPrefixFuel :=
               OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                 hPostReach
                   (hPostEntryNotAccepted bodyState bodyTarget
+                    hBodyReturns
                     (OutcomeSimulation.FrameMatches.of_at hBodyAt))
             cases postPrefixFuel with
             | zero =>
@@ -1382,6 +1414,19 @@ private theorem outcome_for_step_of_firstReaches
                     have hAfterPostReach :=
                       OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                         hAfterBodyReach hPostReach hPostLe
+                    have hPostReturns :
+                        postState.source.returns =
+                          source.source.returns :=
+                      (ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                          hPostEval
+                          (by
+                            simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                        ((ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+                            hBodyEval
+                            (by
+                              simp [ObserverSemantics.Outcome.Nonhalting])).trans
+                          (ObserverSemantics.Code.runCondition_returns_eq
+                            hCond))
                     have hLoopPositive :
                         0 <
                           (targetFuel - (bodyPrefixFuel + 1)) -
@@ -1389,6 +1434,7 @@ private theorem outcome_for_step_of_firstReaches
                       OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
                         hAfterPostReach
                           (hLoopEntryNotAccepted postState postTarget
+                            hPostReturns
                             (OutcomeSimulation.FrameMatches.of_at hPostAt))
                     cases hResidual :
                         (targetFuel - (bodyPrefixFuel + 1)) -
@@ -1586,6 +1632,7 @@ private theorem outcome_for_of_firstReaches
           accept forTarget)
     (hBodyEntryNotAccepted :
       ∀ (bodySource : ObserverSemantics.State transcript) targetState,
+        bodySource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches bodySource tokens
             { condOutput with slots := condOutput.slots.tail }
             targetState →
@@ -1594,6 +1641,7 @@ private theorem outcome_for_of_firstReaches
           (.jump bodyLabel targetState))
     (hPostEntryNotAccepted :
       ∀ (postSource : ObserverSemantics.State transcript) targetState,
+        postSource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches postSource tokens
             { condOutput with slots := condOutput.slots.tail }
             targetState →
@@ -1602,6 +1650,7 @@ private theorem outcome_for_of_firstReaches
           (.jump postLabel targetState))
     (hLoopEntryNotAccepted :
       ∀ (loopSource : ObserverSemantics.State transcript) targetState,
+        loopSource.source.returns = source.source.returns →
         OutcomeSimulation.FrameMatches loopSource tokens
             loopInput targetState →
         ¬ accept (.jump loopLabel targetState))
@@ -1675,7 +1724,17 @@ private theorem outcome_for_of_firstReaches
               hSmaller hLoopReturns hLoopClose hLoopRel hLoopReach
             exact
               ih smallerFuel hSmaller
-                hLoopClose hLoopRel hLoopReach
+                hLoopClose
+                (fun bodySource targetState hBodyReturns hFrame =>
+                  hBodyEntryNotAccepted bodySource targetState
+                    (hBodyReturns.trans hLoopReturns) hFrame)
+                (fun postSource targetState hPostReturns hFrame =>
+                  hPostEntryNotAccepted postSource targetState
+                    (hPostReturns.trans hLoopReturns) hFrame)
+                (fun nextLoopSource targetState hNextReturns hFrame =>
+                  hLoopEntryNotAccepted nextLoopSource targetState
+                    (hNextReturns.trans hLoopReturns) hFrame)
+                hLoopRel hLoopReach
                 (fun bodyTargetFuel hBodyLt {_bodySource} hBodyReturns =>
                   hBodyAdequate bodyTargetFuel
                     (Nat.lt_trans hBodyLt hSmaller)
@@ -1700,31 +1759,30 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {accept : TypedCfg.Outcome → Prop}
     (targetFuel : Nat)
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.for_ init cond post body) ctx supply entry input regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hInitEntryNotAccepted :
-      ∀ {accept : TypedCfg.Outcome → Prop}
-        (initSource : ObserverSemantics.State transcript)
-        (loopShape : TypedCfg.Shape) targetState,
-        OutcomeSimulation.FrameMatches initSource tokens input targetState →
-        ¬ OutcomeSimulation.JumpAt initSource tokens
+      ∀ (loopShape : TypedCfg.Shape) targetState,
+        OutcomeSimulation.FrameMatches source tokens input targetState →
+        ¬ OutcomeSimulation.JumpAt source tokens
           (LabelSupply.label supply 0) loopShape accept
           (.jump entry targetState))
     (hGeneratedEntryNotAccepted :
-      ∀ {accept : TypedCfg.Outcome → Prop}
-        {current : ObserverSemantics.State transcript}
-        generatedOffset shape targetState,
-        OutcomeSimulation.LabelShape cfg
-            (LabelSupply.label supply generatedOffset) shape →
-        OutcomeSimulation.FrameMatches current tokens shape targetState →
-        ¬ accept
-          (.jump (LabelSupply.label supply generatedOffset) targetState))
+      ∀ generatedOffset,
+        generatedOffset ≤ 2 →
+        OutcomeSimulation.SameActivationEntryRejected
+          cfg source tokens accept
+          (LabelSupply.label supply generatedOffset))
     (hInitAdequate :
       ∀ {initResult : TypedCfgCompiler.Result}
         {loopInput : TypedCfg.Shape},
@@ -1738,11 +1796,17 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
           some initResult →
         initResult.fallthrough? = some loopInput →
         TypedCfgPreservation.BlocksInProgram initResult cfg →
+        TypedCfgPreservation.CallsInProgram initResult globalCalls →
+        OutcomeSimulation.ActivationInput tokens loopInput →
+        OutcomeSimulation.LabelShape cfg
+          (LabelSupply.label supply 0) loopInput →
         ∀ initTargetFuel, initTargetFuel ≤ targetFuel →
-        ∀ {initSource : ObserverSemantics.State transcript}
-          {outer : OutcomeSimulation.Continuations}
-          {accept : TypedCfg.Outcome → Prop},
+        ∀ {initSource : ObserverSemantics.State transcript},
           initSource.source.returns = source.source.returns →
+          OutcomeSimulation.EntryRejected cfg initSource tokens
+            (OutcomeSimulation.JumpAt initSource tokens
+              (LabelSupply.label supply 0) loopInput accept)
+            entry input →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1754,7 +1818,9 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
               continueLabel? := none
               continueShape? := none }
             cfg
-            (postContinuations (LabelSupply.label supply 0) outer)
+            (postContinuations (LabelSupply.label supply 0)
+              (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                ctx regular))
             (OutcomeSimulation.JumpAt initSource tokens
               (LabelSupply.label supply 0) loopInput accept)
             entry input initSource tokens initTargetFuel)
@@ -1774,11 +1840,22 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
             (LabelSupply.label supply 2) =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
-        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
-        ∀ {bodySource : ObserverSemantics.State transcript}
-          {outer : OutcomeSimulation.Continuations}
-          {accept : TypedCfg.Outcome → Prop},
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
+        OutcomeSimulation.ActivationInput tokens
+          { condOutput with slots := condOutput.slots.tail } →
+        OutcomeSimulation.LabelShape cfg
+          (LabelSupply.label supply 2)
+          { condOutput with slots := condOutput.slots.tail } →
+        supply + 1 ≤ initResult.next →
+        ∀ {bodySource : ObserverSemantics.State transcript},
           bodySource.source.returns = source.source.returns →
+          OutcomeSimulation.EntryRejected cfg bodySource tokens
+            (OutcomeSimulation.JumpAt bodySource tokens
+              (LabelSupply.label supply 2)
+              { condOutput with slots := condOutput.slots.tail } accept)
+            (LabelSupply.label supply 1)
+            { condOutput with slots := condOutput.slots.tail } →
+        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1792,7 +1869,9 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
               continueShape? :=
                 some { condOutput with slots := condOutput.slots.tail } }
             cfg
-            (bodyContinuations regular (LabelSupply.label supply 2) outer)
+            (bodyContinuations regular (LabelSupply.label supply 2)
+              (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                ctx regular))
             (OutcomeSimulation.JumpAt bodySource tokens
               (LabelSupply.label supply 2)
               { condOutput with slots := condOutput.slots.tail } accept)
@@ -1813,11 +1892,21 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
             (LabelSupply.label supply 0) =
           some postResult →
         TypedCfgPreservation.BlocksInProgram postResult cfg →
-        ∀ postTargetFuel, postTargetFuel < targetFuel →
-        ∀ {postSource : ObserverSemantics.State transcript}
-          {outer : OutcomeSimulation.Continuations}
-          {accept : TypedCfg.Outcome → Prop},
+        TypedCfgPreservation.CallsInProgram postResult globalCalls →
+        OutcomeSimulation.ActivationInput tokens
+          { condOutput with slots := condOutput.slots.tail } →
+        OutcomeSimulation.ActivationInput tokens loopInput →
+        OutcomeSimulation.LabelShape cfg
+          (LabelSupply.label supply 0) loopInput →
+        supply + 1 ≤ bodyResult.next →
+        ∀ {postSource : ObserverSemantics.State transcript},
           postSource.source.returns = source.source.returns →
+          OutcomeSimulation.EntryRejected cfg postSource tokens
+            (OutcomeSimulation.JumpAt postSource tokens
+              (LabelSupply.label supply 0) loopInput accept)
+            (LabelSupply.label supply 2)
+            { condOutput with slots := condOutput.slots.tail } →
+        ∀ postTargetFuel, postTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
               ObserverSemantics.Block.Eval
@@ -1829,7 +1918,9 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
               continueLabel? := none
               continueShape? := none }
             cfg
-            (postContinuations (LabelSupply.label supply 0) outer)
+            (postContinuations (LabelSupply.label supply 0)
+              (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+                ctx regular))
             (OutcomeSimulation.JumpAt postSource tokens
               (LabelSupply.label supply 0) loopInput accept)
             (LabelSupply.label supply 2)
@@ -1872,6 +1963,21 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hInitCalls :
+      TypedCfgPreservation.CallsInProgram initResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram bodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hPostCalls :
+      TypedCfgPreservation.CallsInProgram postResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
   have hLoopMem :
       { label := LabelSupply.label supply 0
         input := loopInput
@@ -1901,6 +2007,26 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
         { condOutput with slots := condOutput.slots.tail } :=
     OutcomeSimulation.LabelShape.of_compileBlockFuel?
       hBodyCompile hBodyBlocks
+  have hLoopActivation :
+      OutcomeSimulation.ActivationInput tokens loopInput :=
+    hActivation.blockFallthrough hInitCompile hInitFallthrough
+  have hCondActivation :
+      OutcomeSimulation.ActivationInput tokens condOutput :=
+    hLoopActivation.code hType
+  have hCondSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength condOutput :=
+    TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+      hSource
+  have hBodyActivation :
+      OutcomeSimulation.ActivationInput tokens
+        { condOutput with slots := condOutput.slots.tail } :=
+    hCondActivation.tail hCondSourceOne
+  have hInitNext :
+      supply + 1 ≤ initResult.next :=
+    TypedCfgCompilerFacts.Supply.block_next_ge hInitCompile
+  have hBodyNext :
+      initResult.next ≤ bodyResult.next :=
+    TypedCfgCompilerFacts.Supply.block_next_ge hBodyCompile
   have hPostShape :
       OutcomeSimulation.LabelShape cfg
         (LabelSupply.label supply 2)
@@ -1915,7 +2041,7 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
   have hInitPositive : 0 < initPrefixFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
       hInitReach
-        (hInitEntryNotAccepted source loopInput target
+        (hInitEntryNotAccepted loopInput target
           (OutcomeSimulation.FrameMatches.of_at hRel))
   cases initPrefixFuel with
   | zero =>
@@ -1924,9 +2050,14 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
       obtain
           ⟨initSourceFuel, initOutcome,
             hInitEval, hInitOutcomeRel, hInitArtifact⟩ :=
-        hInitAdequate hInitCompile hInitFallthrough hInitBlocks
+        hInitAdequate hInitCompile hInitFallthrough hInitBlocks hInitCalls
+          hLoopActivation hLoopShape
           initPrefixFuel (by omega)
           rfl
+          (by
+            intro targetState hShape hFrame hAccepted
+            exact
+              hInitEntryNotAccepted loopInput targetState hFrame hAccepted)
           (fun _sourceFuel _sourceOutcome _targetOutcome _trace
               hEval hOutcomeRel hArtifact => by
             exact
@@ -1971,8 +2102,8 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
               0 < targetFuel + 1 - (initPrefixFuel + 1) :=
             OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
               hAfterInitReach
-              (hGeneratedEntryNotAccepted 0 loopInput loopTarget
-                hLoopShape
+              (hGeneratedEntryNotAccepted 0 (by omega) initState loopInput
+                hInitReturns hLoopActivation loopTarget hLoopShape
                 (OutcomeSimulation.FrameMatches.of_at hLoopAt))
           cases hResidual :
               targetFuel + 1 - (initPrefixFuel + 1) with
@@ -2002,34 +2133,69 @@ theorem adequateWithinFuel_for_of_compileStmtFuel?
                         (OutcomeSimulation.OutcomeArtifact.ofJoin
                           rfl hForJoin))
                   (by
-                    intro bodySource targetState hFrame
+                    intro bodySource targetState hBodyReturns hFrame
                     simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
                         hGeneratedEntryNotAccepted
-                          1 _ targetState hBodyShape hFrame⟩)
+                          1 (by omega) bodySource
+                          { condOutput with slots := condOutput.slots.tail }
+                          (hBodyReturns.trans hInitReturns)
+                          hBodyActivation targetState hBodyShape hFrame⟩)
                   (by
-                    intro postSource targetState hFrame
+                    intro postSource targetState hPostReturns hFrame
                     simp [OutcomeSimulation.JumpAt]
                     exact
                       ⟨by simp [LabelSupply.label],
                         hGeneratedEntryNotAccepted
-                          2 _ targetState hPostShape hFrame⟩)
-                  (fun loopSource targetState hFrame =>
+                          2 (by omega) postSource
+                          { condOutput with slots := condOutput.slots.tail }
+                          (hPostReturns.trans hInitReturns)
+                          hBodyActivation targetState hPostShape hFrame⟩)
+                  (fun loopSource targetState hLoopReturns hFrame =>
                     hGeneratedEntryNotAccepted
-                      0 loopInput targetState hLoopShape hFrame)
+                      0 (by omega) loopSource loopInput
+                      (hLoopReturns.trans hInitReturns)
+                      hLoopActivation targetState hLoopShape hFrame)
                   hLoopAt
                   (by simpa [hResidual] using hAfterInitReach)
                   (fun bodyTargetFuel hBodyLt {_bodySource} hBodyReturns =>
-                    hBodyAdequate hBodyCompile hBodyBlocks
+                    hBodyAdequate hBodyCompile hBodyBlocks hBodyCalls
+                      hBodyActivation hPostShape hInitNext
+                      (hBodyReturns.trans hInitReturns)
+                      (by
+                        intro targetState hShape hFrame hAccepted
+                        rcases hAccepted with hPost | hOuter
+                        · simp [LabelSupply.label] at hPost
+                        · exact
+                            hGeneratedEntryNotAccepted
+                              1 (by omega) _bodySource
+                              { condOutput with
+                                slots := condOutput.slots.tail }
+                              (hBodyReturns.trans hInitReturns)
+                              hBodyActivation targetState hShape hFrame hOuter)
                       bodyTargetFuel
                       (Nat.lt_trans hBodyLt (by omega))
-                      (hBodyReturns.trans hInitReturns))
+                      )
                   (fun postTargetFuel hPostLt {_postSource} hPostReturns =>
-                    hPostAdequate hPostCompile hPostBlocks
+                    hPostAdequate hPostCompile hPostBlocks hPostCalls
+                      hBodyActivation hLoopActivation hLoopShape
+                      (Nat.le_trans hInitNext hBodyNext)
+                      (hPostReturns.trans hInitReturns)
+                      (by
+                        intro targetState hShape hFrame hAccepted
+                        rcases hAccepted with hLoop | hOuter
+                        · simp [LabelSupply.label] at hLoop
+                        · exact
+                            hGeneratedEntryNotAccepted
+                              2 (by omega) _postSource
+                              { condOutput with
+                                slots := condOutput.slots.tail }
+                              (hPostReturns.trans hInitReturns)
+                              hBodyActivation targetState hShape hFrame hOuter)
                       postTargetFuel
                       (Nat.lt_trans hPostLt (by omega))
-                      (hPostReturns.trans hInitReturns))
+                      )
               let sourceFuel :=
                 Nat.max initSourceFuel loopSourceFuel
               exact

@@ -94,69 +94,6 @@ theorem procedure
 
 end SourceContext
 
-/--
-Entry classification used by generated-context adequacy.
-
-The top activation has no realized return tokens. Every procedure activation
-instead carries a compiler-owned return token in its TypedCfg input shape.
--/
-def ActivationInput
-    (tokens : List Word) (input : TypedCfg.Shape) : Prop :=
-  tokens = [] ∨ TypedCfgCompilerFacts.ReturnTokenActive input
-
-namespace ActivationInput
-
-theorem top (input : TypedCfg.Shape) :
-    ActivationInput [] input :=
-  Or.inl rfl
-
-theorem active
-    {tokens : List Word} {input : TypedCfg.Shape}
-    (hActive : TypedCfgCompilerFacts.ReturnTokenActive input) :
-    ActivationInput tokens input :=
-  Or.inr hActive
-
-theorem code
-    {tokens : List Word} {code : Structured.Code}
-    {input output : TypedCfg.Shape}
-    (hActivation : ActivationInput tokens input)
-    (hType : TypedCfgCompiler.Code.type? code input = some output) :
-    ActivationInput tokens output := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact Or.inr (hActive.code hType)
-
-theorem tail
-    {tokens : List Word} {shape : TypedCfg.Shape}
-    (hActivation : ActivationInput tokens shape)
-    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape) :
-    ActivationInput tokens
-      { shape with slots := shape.slots.tail } := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact Or.inr (hActive.tail hSource)
-
-theorem stmtFallthrough
-    {tokens : List Word} {fuel : Nat}
-    {stmt : Structured.Stmt}
-    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
-    {entry regular : Assembly.Label} {input output : TypedCfg.Shape}
-    {result : TypedCfgCompiler.Result}
-    (hActivation : ActivationInput tokens input)
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
-          supply entry input regular = some result)
-    (hFallthrough : result.fallthrough? = some output) :
-    ActivationInput tokens output := by
-  rcases hActivation with hTop | hActive
-  · exact Or.inl hTop
-  · exact
-      Or.inr
-        ((TypedCfgCompilerFacts.activeResult_of_compileStmtFuel?
-          hActive hCompile).fallthrough output hFallthrough)
-
-end ActivationInput
-
 namespace OutcomeSimulation.RecursiveBoundary
 
 /--
@@ -267,7 +204,7 @@ theorem rejectGenerated
     (hBoundary :
       OutcomeSimulation.RecursiveBoundary
         cfg source tokens accept supply regular)
-    (hActivation : ActivationInput tokens shape)
+    (hActivation : OutcomeSimulation.ActivationInput tokens shape)
     (hScope : supply ≤ scope)
     (hNe : .generated scope tag ≠ regular)
     (hAccepted : accept (.jump (.generated scope tag) target))
@@ -456,7 +393,8 @@ theorem adequateWithinFuel_if
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
-    (hActivation : ActivationInput tokens input)
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
     (hRegular :
       OutcomeSimulation.RegularAtSupply regular supply)
     (hBoundary :
@@ -468,6 +406,8 @@ theorem adequateWithinFuel_if
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hBodyAdequate :
       ∀ {bodyInput : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}
@@ -477,10 +417,13 @@ theorem adequateWithinFuel_if
             bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
         afterCond.source.returns = source.source.returns →
-        ActivationInput tokens bodyInput →
+        OutcomeSimulation.ActivationInput tokens bodyInput →
         OutcomeSimulation.RecursiveBoundary
           cfg afterCond tokens accept (supply + 1) regular →
+        OutcomeSimulation.EntryRejected cfg afterCond tokens accept
+          (LabelSupply.label supply 0) bodyInput →
         ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
           OutcomeSimulation.AdequateWithinFuel
             (fun sourceFuel sourceOutcome =>
@@ -517,6 +460,11 @@ theorem adequateWithinFuel_if
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hKnownBodyCalls :
+      TypedCfgPreservation.CallsInProgram knownBodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simpa using hMem
   have hKnownBodyShape :
       OutcomeSimulation.LabelShape cfg
         (LabelSupply.label supply 0)
@@ -549,11 +497,1051 @@ theorem adequateWithinFuel_if
         bodyInput = { output with slots := output.slots.tail } :=
       OutcomeSimulation.LabelShape.eq hBodyShape hKnownBodyShape
     subst bodyInput
+    have hResultEq : bodyResult = knownBodyResult :=
+      Option.some.inj (hBodyCompile.symm.trans hKnownBodyCompile)
+    subst bodyResult
     exact
-      hBodyAdequate hBodyCompile hBodyBlocks hReturns
+      hBodyAdequate hBodyCompile hBodyBlocks hKnownBodyCalls hReturns
         hBodyActivation
         (hBoundary.sameActivation hReturns.symm (Nat.le_succ supply))
+        (by
+          intro target hShape hFrame hAccepted
+          exact
+            (hBoundary.congr_returns hReturns.symm).rejectGenerated
+              hBodyActivation (Nat.le_refl supply)
+              (by
+                simpa [LabelSupply.label] using
+                  hRegular.current_generated_ne (by omega : 0 ≠ 100))
+              hAccepted hShape hFrame)
         bodyTargetFuel hFuel
+
+theorem adequateWithinFuel_switch
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    {canBreak canContinue canLeave : Bool}
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
+    (hRegular :
+      OutcomeSimulation.RegularAtSupply regular supply)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hCasesWF :
+      ∀ caseValue body, (caseValue, body) ∈ cases →
+        Structured.Block.WF
+          canBreak canContinue canLeave body)
+    (hDefaultWF :
+      ∀ body, defaultBody = some body →
+        Structured.Block.WF
+          canBreak canContinue canLeave body)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hBodyAdequate :
+      ∀ {selected : Structured.Block}
+        {afterScrutinee : ObserverSemantics.State transcript}
+        {stack : EvmYul.Stack Word} {value : Word}
+        {bodyCompilerFuel bodySupply : Nat}
+        {bodyEntry : Assembly.Label} {bodyShape : TypedCfg.Shape}
+        {bodyResult : TypedCfgCompiler.Result},
+        TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
+            bodySupply bodyEntry bodyShape regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
+        Structured.Block.WF
+          canBreak canContinue canLeave selected →
+        OutcomeSimulation.LabelBeforeSupply bodyEntry bodySupply →
+        OutcomeSimulation.EntryRejected cfg
+          (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack }))
+          tokens accept bodyEntry bodyShape →
+        (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack })).source.returns =
+          source.source.returns →
+        OutcomeSimulation.ActivationInput tokens bodyShape →
+        supply + 1 ≤ bodySupply →
+        OutcomeSimulation.RegularAtSupply regular bodySupply →
+        OutcomeSimulation.RecursiveBoundary
+          cfg
+            (afterScrutinee.withSource
+              (afterScrutinee.source.withEVM
+                { afterScrutinee.source.evm with stack := stack }))
+            tokens accept bodySupply regular →
+        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval program sourceFuel selected
+                (afterScrutinee.withSource
+                  (afterScrutinee.source.withEVM
+                    { afterScrutinee.source.evm with stack := stack }))
+                sourceOutcome)
+            bodyResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            accept bodyEntry bodyShape
+            (afterScrutinee.withSource
+              (afterScrutinee.source.withEVM
+                { afterScrutinee.source.evm with stack := stack }))
+            tokens bodyTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval program sourceFuel
+          (.switch scrutinee cases defaultBody) source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  apply
+    Switch.adequateWithinFuel_switch_of_compileStmtFuel?
+      targetFuel hActivation hCompile hBlocks hCalls rfl
+  · intro caseIdx remaining current shape
+      hReturns hCurrentActivation target hShape hFrame hAccepted
+    cases remaining with
+    | nil =>
+        exact
+          (hBoundary.congr_returns hReturns.symm).rejectGenerated
+            (scope := supply) (tag := 1)
+            hCurrentActivation (Nat.le_refl supply)
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                LabelSupply.label] using
+                hRegular.current_generated_ne (by omega : 1 ≠ 100))
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                LabelSupply.label] using hAccepted)
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                LabelSupply.label] using hShape)
+            hFrame
+    | cons head rest =>
+        exact
+          (hBoundary.congr_returns hReturns.symm).rejectGenerated
+            (scope := supply) (tag := 6 * caseIdx + 1001)
+            hCurrentActivation (Nat.le_refl supply)
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                TypedCfgCompiler.switchTestLabel] using
+                hRegular.current_generated_ne
+                  (by omega : 6 * caseIdx + 1001 ≠ 100))
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                TypedCfgCompiler.switchTestLabel] using hAccepted)
+            (by
+              simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel,
+                TypedCfgCompiler.switchTestLabel] using hShape)
+            hFrame
+  · intro caseIdx current shape
+      hReturns hCurrentActivation target hShape hFrame hAccepted
+    exact
+      (hBoundary.congr_returns hReturns.symm).rejectGenerated
+        (scope := supply) (tag := 6 * caseIdx + 1003)
+        hCurrentActivation (Nat.le_refl supply)
+        (by
+          simpa [TypedCfgCompiler.switchCaseLabel] using
+            hRegular.current_generated_ne
+              (by omega : 6 * caseIdx + 1003 ≠ 100))
+        (by simpa [TypedCfgCompiler.switchCaseLabel] using hAccepted)
+        (by simpa [TypedCfgCompiler.switchCaseLabel] using hShape)
+        hFrame
+  · intro caseIdx current shape
+      hReturns hCurrentActivation target hShape hFrame hAccepted
+    exact
+      (hBoundary.congr_returns hReturns.symm).rejectGenerated
+        (scope := supply) (tag := 6 * caseIdx + 1005)
+        hCurrentActivation (Nat.le_refl supply)
+        (by
+          simpa [TypedCfgCompiler.switchBodyLabel] using
+            hRegular.current_generated_ne
+              (by omega : 6 * caseIdx + 1005 ≠ 100))
+        (by simpa [TypedCfgCompiler.switchBodyLabel] using hAccepted)
+        (by simpa [TypedCfgCompiler.switchBodyLabel] using hShape)
+        hFrame
+  · intro generatedSupply hSupply current shape
+      hReturns hCurrentActivation target hShape hFrame hAccepted
+    apply
+      (hBoundary.congr_returns hReturns.symm).rejectGenerated
+        (scope := generatedSupply) (tag := 2000)
+        hCurrentActivation hSupply ?_ hAccepted hShape hFrame
+    rcases hRegular with hBefore | rfl
+    · exact hBefore.generated_ne hSupply
+    · simp [TypedCfgCompiler.restLabel]
+  · intro selected afterScrutinee stack value
+      bodyCompilerFuel bodySupply bodyEntry bodyShape bodyResult
+      bodyTargetFuel _hScrutinee _hPop _hSelect
+      hReturns hBodyActivation hBodySupply _hFuel
+      hBodyCompile hBodyBlocks hBodyCalls hBodyEntryBefore hBodyEntryRejected
+    exact
+      hBodyAdequate (value := value)
+        hBodyCompile hBodyBlocks hBodyCalls
+        (Structured.Switch.wf_of_select hCasesWF hDefaultWF _hSelect)
+        hBodyEntryBefore
+        hBodyEntryRejected hReturns hBodyActivation hBodySupply
+        (hRegular.advance hBodySupply)
+        (hBoundary.sameActivation hReturns.symm
+          (Nat.le_trans (Nat.le_succ supply) hBodySupply))
+        bodyTargetFuel _hFuel
+
+theorem adequateWithinFuel_for
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {init : Structured.Block} {cond : Structured.Code}
+    {post body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    {canBreak canContinue canLeave : Bool}
+    (hContext :
+      SourceContext program ctx tokens
+        canBreak canContinue canLeave)
+    (hInitWF :
+      Structured.Block.WF false false canLeave init)
+    (hPostWF :
+      Structured.Block.WF false false canLeave post)
+    (hBodyWF :
+      Structured.Block.WF true true canLeave body)
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
+    (hEntryBefore :
+      OutcomeSimulation.LabelBeforeSupply entry supply)
+    (hRegular :
+      OutcomeSimulation.RegularAtSupply regular supply)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hEntryRejected :
+      OutcomeSimulation.EntryRejected
+        cfg source tokens accept entry input)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.for_ init cond post body) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hBlockAdequate :
+      ∀ {block : Structured.Block}
+        {blockCtx : TypedCfgCompiler.Context}
+        {blockSupply : LabelSupply}
+        {blockEntry blockRegular : Assembly.Label}
+        {blockInput : TypedCfg.Shape}
+        {blockResult : TypedCfgCompiler.Result}
+        {blockSource : ObserverSemantics.State transcript}
+        {blockAccept : TypedCfg.Outcome → Prop}
+        {blockCanBreak blockCanContinue blockCanLeave : Bool},
+        SourceContext program blockCtx tokens
+            blockCanBreak blockCanContinue blockCanLeave →
+        Structured.Block.WF
+          blockCanBreak blockCanContinue blockCanLeave block →
+        OutcomeSimulation.ActivationInput tokens blockInput →
+        OutcomeSimulation.LabelBeforeSupply blockEntry blockSupply →
+        OutcomeSimulation.LabelBeforeSupply blockRegular blockSupply →
+        OutcomeSimulation.RecursiveBoundary
+          cfg blockSource tokens blockAccept blockSupply blockRegular →
+        OutcomeSimulation.EntryRejected cfg blockSource tokens blockAccept
+          blockEntry blockInput →
+        TypedCfgCompiler.compileBlockFuel? compilerFuel block blockCtx
+            blockSupply blockEntry blockInput blockRegular =
+          some blockResult →
+        TypedCfgPreservation.BlocksInProgram blockResult cfg →
+        TypedCfgPreservation.CallsInProgram blockResult globalCalls →
+        ∀ blockTargetFuel, blockTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel block blockSource sourceOutcome)
+            blockResult blockCtx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              blockCtx blockRegular)
+            blockAccept blockEntry blockInput blockSource tokens
+            blockTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval program sourceFuel
+          (.for_ init cond post body) source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  have hEntryShape :
+      OutcomeSimulation.LabelShape cfg entry input :=
+    OutcomeSimulation.LabelShape.of_compileStmtFuel?
+      hCompile hBlocks
+  apply
+    Loop.adequateWithinFuel_for_of_compileStmtFuel?
+      targetFuel hActivation hCompile hBlocks hCalls
+  · intro loopShape target hFrame
+    simp only [OutcomeSimulation.JumpAt]
+    intro hAccepted
+    rcases hAccepted with hCurrent | hOuter
+    · exact
+        (hEntryBefore.generated_ne (Nat.le_refl supply))
+          hCurrent.1.symm
+    · exact hEntryRejected target hEntryShape hFrame hOuter
+  · intro generatedOffset hOffset current shape
+      hReturns hCurrentActivation target hShape hFrame hAccepted
+    exact
+      (hBoundary.congr_returns hReturns.symm).rejectGenerated
+        (scope := supply) (tag := generatedOffset)
+        hCurrentActivation (Nat.le_refl supply)
+        (by
+          simpa [LabelSupply.label] using
+            hRegular.current_generated_ne (by omega))
+        (by simpa [LabelSupply.label] using hAccepted)
+        (by simpa [LabelSupply.label] using hShape)
+        hFrame
+  · intro initResult loopInput hInitCompile
+      hInitFallthrough hInitBlocks hInitCalls hLoopActivation hLoopShape
+      initTargetFuel hFuel initSource hReturns hInitEntryRejected
+    simpa [Loop.postContinuations,
+      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext] using
+      (hBlockAdequate hContext.withoutLoop hInitWF hActivation
+        (hEntryBefore.mono (Nat.le_succ supply))
+        (by
+          simp [OutcomeSimulation.LabelBeforeSupply,
+            LabelSupply.label])
+        ((hBoundary.congr_returns hReturns.symm).jumpAt_current
+          hRegular hLoopShape)
+        hInitEntryRejected
+        hInitCompile hInitBlocks hInitCalls
+        initTargetFuel hFuel)
+  · intro initResult bodyResult condOutput
+      hBodyCompile hBodyBlocks hBodyCalls hBodyActivation hPostShape hInitNext
+      bodySource hReturns hBodyEntryRejected bodyTargetFuel hFuel
+    have hBodySupplyBefore :
+        OutcomeSimulation.LabelBeforeSupply
+          (LabelSupply.label supply 1) initResult.next := by
+      simpa [OutcomeSimulation.LabelBeforeSupply,
+        LabelSupply.label] using
+        (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hInitNext)
+    have hPostBefore :
+        OutcomeSimulation.LabelBeforeSupply
+          (LabelSupply.label supply 2) initResult.next := by
+      simpa [OutcomeSimulation.LabelBeforeSupply,
+        LabelSupply.label] using
+        (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hInitNext)
+    exact
+      hBlockAdequate
+        (hContext.loopBody regular
+          (LabelSupply.label supply 2)
+          { condOutput with slots := condOutput.slots.tail })
+        hBodyWF hBodyActivation hBodySupplyBefore hPostBefore
+        ((hBoundary.sameActivation hReturns.symm
+            (Nat.le_trans (Nat.le_succ supply) hInitNext)).jumpAt_before
+          (hRegular.before_succ.mono hInitNext)
+          hPostBefore hPostShape)
+        hBodyEntryRejected
+        hBodyCompile hBodyBlocks hBodyCalls
+        bodyTargetFuel (Nat.le_of_lt hFuel)
+  · intro bodyResult postResult condOutput loopInput
+      hPostCompile hPostBlocks hPostCalls hBodyActivation hLoopActivation
+      hLoopShape hBodySupply
+      postSource hReturns hPostEntryRejected postTargetFuel hFuel
+    have hPostSupplyBefore :
+        OutcomeSimulation.LabelBeforeSupply
+          (LabelSupply.label supply 2) bodyResult.next := by
+      simpa [OutcomeSimulation.LabelBeforeSupply,
+        LabelSupply.label] using
+        (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hBodySupply)
+    have hLoopBefore :
+        OutcomeSimulation.LabelBeforeSupply
+          (LabelSupply.label supply 0) bodyResult.next := by
+      simpa [OutcomeSimulation.LabelBeforeSupply,
+        LabelSupply.label] using
+        (Nat.lt_of_lt_of_le (Nat.lt_succ_self supply) hBodySupply)
+    exact
+      hBlockAdequate hContext.withoutLoop hPostWF hBodyActivation
+        hPostSupplyBefore hLoopBefore
+        ((hBoundary.sameActivation hReturns.symm
+            (Nat.le_trans (Nat.le_succ supply) hBodySupply)).jumpAt_before
+          (hRegular.before_succ.mono
+            hBodySupply)
+          hLoopBefore hLoopShape)
+        hPostEntryRejected
+        hPostCompile hPostBlocks hPostCalls
+        postTargetFuel (Nat.le_of_lt hFuel)
+
+theorem adequateWithinFuel_call
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {name : Structured.Name}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {canBreak canContinue canLeave : Bool}
+    (hContext :
+      SourceContext program ctx tokens
+        canBreak canContinue canLeave)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hProgramWF : program.WF)
+    (hBodyAdequate :
+      ∀ {proc : Structured.Proc}
+        {fragment :
+          TypedCfgPreservation.Program.ProcFragment
+            entryShapes program.procs proc
+            generated.procBlocks generated.procCalls}
+        {callSource : ObserverSemantics.State transcript},
+        Structured.ProcList.lookup? name program.procs = some proc →
+        TypedCfgPreservation.BlocksInProgram fragment.result cfg →
+        TypedCfgPreservation.CallsInProgram
+          fragment.result generated.calls →
+        SourceContext program
+          { procs := program.procs
+            leaveLabel? := some (ProcLabel.exit proc.name)
+            leaveShape? :=
+              some (TypedCfgCompiler.Shape.procExit proc) }
+          (Structured.Stmt.callToken supply :: tokens)
+          false false true →
+        OutcomeSimulation.ActivationInput
+          (Structured.Stmt.callToken supply :: tokens) fragment.input →
+        OutcomeSimulation.LabelBeforeSupply
+          fragment.entry fragment.supply →
+        OutcomeSimulation.LabelBeforeSupply
+          (ProcLabel.exit proc.name) fragment.supply →
+        OutcomeSimulation.RecursiveBoundary cfg callSource
+          (Structured.Stmt.callToken supply :: tokens)
+          (OutcomeSimulation.JumpAt callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            (ProcLabel.exit proc.name)
+            (TypedCfgCompiler.Shape.procExit proc) accept)
+          fragment.supply (ProcLabel.exit proc.name) →
+        OutcomeSimulation.EntryRejected cfg callSource
+          (Structured.Stmt.callToken supply :: tokens)
+          (OutcomeSimulation.JumpAt callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            (ProcLabel.exit proc.name)
+            (TypedCfgCompiler.Shape.procExit proc) accept)
+          fragment.entry fragment.input →
+        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel proc.body callSource sourceOutcome)
+            fragment.result
+            { procs := program.procs
+              leaveLabel? := some (ProcLabel.exit proc.name)
+              leaveShape? :=
+                some (TypedCfgCompiler.Shape.procExit proc) }
+            cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              { procs := program.procs
+                leaveLabel? := some (ProcLabel.exit proc.name)
+                leaveShape? :=
+                  some (TypedCfgCompiler.Shape.procExit proc) }
+              (ProcLabel.exit proc.name))
+            (OutcomeSimulation.JumpAt callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (ProcLabel.exit proc.name)
+              (TypedCfgCompiler.Shape.procExit proc) accept)
+            fragment.entry fragment.input callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            bodyTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel (.call name) source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  apply
+    Call.adequateWithinFuel_call_of_compileStmtFuel?_protected
+      generated hCompile hBlocks hCalls hContext.procs hProgramWF rfl
+      hBoundary.ownership
+  intro proc fragment callSource hLookup hFragmentBlocks hFragmentCalls
+    hExtension bodyTargetFuel hFuel
+  have hInputActivation :
+      OutcomeSimulation.ActivationInput
+        (Structured.Stmt.callToken supply :: tokens) fragment.input :=
+    OutcomeSimulation.ActivationInput.active
+      ⟨proc.argc,
+        TypedCfgCompilerFacts.ActiveResult.procFragment_input fragment⟩
+  have hEntryBefore :
+      OutcomeSimulation.LabelBeforeSupply
+        fragment.entry fragment.supply := by
+    rcases fragment.route with hDirect | hAdapter
+    · rw [hDirect.1]
+      trivial
+    · rcases hAdapter with
+        ⟨_adapter, hEntry, _hInput, _hFrame, _hCompile, _hMem⟩
+      rw [hEntry]
+      trivial
+  have hRegularBefore :
+      OutcomeSimulation.LabelBeforeSupply
+        (ProcLabel.exit proc.name) fragment.supply :=
+    by trivial
+  have hExitShape :
+      OutcomeSimulation.LabelShape cfg
+        (ProcLabel.exit proc.name)
+        (TypedCfgCompiler.Shape.procExit proc) :=
+    OutcomeSimulation.LabelShape.procExit generated hLookup
+  exact
+    hBodyAdequate hLookup hFragmentBlocks hFragmentCalls
+      (SourceContext.procedure program proc
+        (Structured.Stmt.callToken supply) tokens)
+      hInputActivation hEntryBefore hRegularBefore
+      (hBoundary.procedureBody hExtension hExitShape fragment.supply)
+      (by
+        intro target hShape hFrame hAccepted
+        rcases hAccepted with hCurrent | hOuter
+        · exact
+            (OutcomeSimulation.ProcFragment.entry_ne_exit fragment)
+              hCurrent.1
+        · exact
+            hBoundary.ownership.reject_extension hOuter hShape
+              (TypedCfgCompilerFacts.ActiveResult.procFragment_input fragment)
+              hExtension hFrame)
+      bodyTargetFuel hFuel
+
+theorem adequateWithinFuel_cons
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {stmt : Structured.Stmt} {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
+    (hRegularBefore :
+      OutcomeSimulation.LabelBeforeSupply regular supply)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+          (stmt :: rest) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
+    (hEntryNotAccepted :
+      ∀ joinShape targetState,
+        OutcomeSimulation.LabelShape cfg entry input →
+          OutcomeSimulation.FrameMatches source tokens input targetState →
+          ¬ OutcomeSimulation.JumpAt source tokens
+              (TypedCfgCompiler.restLabel supply) joinShape accept
+              (.jump entry targetState))
+    (hHeadAdequate :
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {headAccept : TypedCfg.Outcome → Prop},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult globalCalls →
+        OutcomeSimulation.RecursiveBoundary cfg source tokens headAccept
+          supply (TypedCfgCompiler.restLabel supply) →
+        OutcomeSimulation.EntryRejected cfg source tokens headAccept
+          entry input →
+        ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Stmt.Eval
+                program sourceFuel stmt source sourceOutcome)
+            headResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx (TypedCfgCompiler.restLabel supply))
+            headAccept entry input source tokens headTargetFuel)
+    (hTailAdequate :
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
+        {tailInput : TypedCfg.Shape}
+        {tailSource : ObserverSemantics.State transcript},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        TypedCfgPreservation.CallsInProgram tailResult globalCalls →
+        tailSource.source.returns = source.source.returns →
+        OutcomeSimulation.ActivationInput tokens tailInput →
+        OutcomeSimulation.RegularAtSupply regular headResult.next →
+        OutcomeSimulation.RecursiveBoundary cfg tailSource tokens accept
+          headResult.next regular →
+        OutcomeSimulation.EntryRejected cfg tailSource tokens accept
+          (TypedCfgCompiler.restLabel supply) tailInput →
+        ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel { stmts := rest }
+                tailSource sourceOutcome)
+            tailResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            accept (TypedCfgCompiler.restLabel supply)
+            tailInput tailSource tokens tailTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Block.Eval
+          program sourceFuel { stmts := stmt :: rest }
+          source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  apply
+    Block.adequateWithinFuel_cons_of_compileStmtListFuel?
+      targetFuel hCompile hBlocks hCalls hEntryNotAccepted
+  · intro headResult joinShape hHeadCompile hFallthrough
+      hShape tailSource targetState hReturns hFrame hAccepted
+    exact
+      (hBoundary.congr_returns hReturns.symm).rejectGenerated
+        (hActivation.stmtFallthrough hHeadCompile hFallthrough)
+        (Nat.le_refl supply)
+        (by
+          simpa [TypedCfgCompiler.restLabel] using
+            hRegularBefore.generated_ne (Nat.le_refl supply))
+        hAccepted hShape hFrame
+  · intro headResult hHeadCompile hHeadBlocks hHeadCalls _hFallthrough
+      headTargetFuel hFuel
+    exact
+      hHeadAdequate hHeadCompile hHeadBlocks hHeadCalls
+        (hBoundary.restRegular (Or.inl hRegularBefore))
+        (by
+          intro target hShape hFrame hAccepted
+          exact
+            hEntryNotAccepted input target hShape hFrame (Or.inr hAccepted))
+        headTargetFuel hFuel
+  · intro headResult joinShape hHeadCompile hHeadBlocks hHeadCalls
+      _hFallthrough hShape headTargetFuel hFuel
+    exact
+      hHeadAdequate hHeadCompile hHeadBlocks hHeadCalls
+        (hBoundary.statementTail (Or.inl hRegularBefore) hShape)
+        (by
+          intro target hEntryShape hFrame hAccepted
+          exact
+            hEntryNotAccepted joinShape target hEntryShape hFrame hAccepted)
+        headTargetFuel hFuel
+  · intro headResult tailResult tailInput tailSource
+      hHeadCompile hFallthrough hTailCompile hTailBlocks hTailCalls hReturns
+      tailTargetFuel hFuel
+    have hNext :
+        supply ≤ headResult.next :=
+      TypedCfgCompilerFacts.Supply.stmt_next_ge hHeadCompile
+    exact
+      hTailAdequate hHeadCompile hFallthrough hTailCompile hTailBlocks
+        hTailCalls
+        hReturns
+        (hActivation.stmtFallthrough hHeadCompile hFallthrough)
+        (Or.inl (hRegularBefore.mono hNext))
+        (hBoundary.sameActivation hReturns.symm hNext)
+        (by
+          intro target hShape hFrame hAccepted
+          exact
+            (hBoundary.congr_returns hReturns.symm).rejectGenerated
+              (hActivation.stmtFallthrough hHeadCompile hFallthrough)
+              (Nat.le_refl supply)
+              (by
+                simpa [TypedCfgCompiler.restLabel] using
+                  hRegularBefore.generated_ne (Nat.le_refl supply))
+              hAccepted hShape hFrame)
+        tailTargetFuel hFuel
+
+mutual
+
+/--
+Generated-context backward adequacy for every well-formed Structured block.
+
+The recursion is horizontal and pass-owned: syntax children decrease compiler
+fuel, while procedure bodies decrease target execution fuel.
+-/
+theorem adequateWithinFuel_block
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {canBreak canContinue canLeave : Bool}
+    (hProgramWF : program.WF)
+    (hContext :
+      SourceContext program ctx tokens
+        canBreak canContinue canLeave)
+    (hWF :
+      Structured.Block.WF
+        canBreak canContinue canLeave block)
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
+    (hEntryBefore :
+      OutcomeSimulation.LabelBeforeSupply entry supply)
+    (hRegularBefore :
+      OutcomeSimulation.LabelBeforeSupply regular supply)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hEntryRejected :
+      OutcomeSimulation.EntryRejected
+        cfg source tokens accept entry input)
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel block ctx
+          supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Block.Eval
+          program sourceFuel block source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  cases compilerFuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileBlockFuel?] at hCompile
+  | succ blockFuel =>
+      rcases block with ⟨stmts⟩
+      cases stmts with
+      | nil =>
+          cases blockFuel with
+          | zero =>
+              simp [TypedCfgCompiler.compileBlockFuel?,
+                TypedCfgCompiler.compileStmtListFuel?] at hCompile
+          | succ listFuel =>
+              exact
+                (Block.adequateWithin_nil_of_compileBlockFuel?
+                  hCompile hBlocks rfl).fuel targetFuel
+      | cons stmt rest =>
+          cases hWF with
+          | cons hStmtWF hRestWF =>
+              cases blockFuel with
+              | zero =>
+                  simp [TypedCfgCompiler.compileBlockFuel?,
+                    TypedCfgCompiler.compileStmtListFuel?] at hCompile
+              | succ listFuel =>
+                  have hListCompile :
+                      TypedCfgCompiler.compileStmtListFuel? (listFuel + 1)
+                          (stmt :: rest) ctx supply entry input regular =
+                        some result := by
+                    simpa [TypedCfgCompiler.compileBlockFuel?] using hCompile
+                  apply
+                    adequateWithinFuel_cons
+                      hActivation hRegularBefore hBoundary
+                      hListCompile hBlocks hCalls
+                  · intro joinShape target hShape hFrame hAccepted
+                    rcases hAccepted with hCurrent | hOuter
+                    · exact
+                        (hEntryBefore.generated_ne (Nat.le_refl supply))
+                          hCurrent.1.symm
+                    · exact hEntryRejected target hShape hFrame hOuter
+                  · intro headResult headAccept hHeadCompile hHeadBlocks
+                      hHeadCalls hHeadBoundary hHeadEntryRejected
+                      headTargetFuel hHeadFuel
+                    by_cases hStrict : headTargetFuel < targetFuel
+                    · exact
+                        adequateWithinFuel_stmt generated hProgramWF
+                          hContext hStmtWF hActivation hEntryBefore
+                          (Or.inr rfl) hHeadBoundary hHeadEntryRejected
+                          hHeadCompile hHeadBlocks hHeadCalls
+                          (targetFuel := headTargetFuel)
+                    · have hEq : headTargetFuel = targetFuel := by
+                        omega
+                      subst headTargetFuel
+                      exact
+                        adequateWithinFuel_stmt generated hProgramWF
+                          hContext hStmtWF hActivation hEntryBefore
+                          (Or.inr rfl) hHeadBoundary hHeadEntryRejected
+                          hHeadCompile hHeadBlocks hHeadCalls
+                          (targetFuel := targetFuel)
+                  · intro headResult tailResult tailInput tailSource
+                      hHeadCompile hFallthrough hTailCompile hTailBlocks
+                      hTailCalls hReturns hTailActivation _hTailRegular
+                      hTailBoundary hTailEntryRejected
+                      tailTargetFuel hTailFuel
+                    have hTailBlockCompile :
+                        TypedCfgCompiler.compileBlockFuel? (listFuel + 1)
+                            { stmts := rest } ctx headResult.next
+                            (TypedCfgCompiler.restLabel supply)
+                            tailInput regular =
+                          some tailResult := by
+                      simpa [TypedCfgCompiler.compileBlockFuel?] using
+                        hTailCompile
+                    have hTailEntryBefore :
+                        OutcomeSimulation.LabelBeforeSupply
+                          (TypedCfgCompiler.restLabel supply)
+                          headResult.next := by
+                      simpa [OutcomeSimulation.LabelBeforeSupply,
+                        TypedCfgCompiler.restLabel] using
+                        TypedCfgCompilerFacts.Supply.stmt_next_ge_succ
+                          hHeadCompile
+                    have hTailRegularBefore :
+                        OutcomeSimulation.LabelBeforeSupply
+                          regular headResult.next :=
+                      hRegularBefore.mono
+                        (TypedCfgCompilerFacts.Supply.stmt_next_ge
+                          hHeadCompile)
+                    by_cases hStrict : tailTargetFuel < targetFuel
+                    · exact
+                        adequateWithinFuel_block generated hProgramWF
+                          hContext hRestWF hTailActivation
+                          hTailEntryBefore hTailRegularBefore
+                          hTailBoundary hTailEntryRejected
+                          hTailBlockCompile hTailBlocks hTailCalls
+                          (targetFuel := tailTargetFuel)
+                    · have hEq : tailTargetFuel = targetFuel := by
+                        omega
+                      subst tailTargetFuel
+                      exact
+                        adequateWithinFuel_block generated hProgramWF
+                          hContext hRestWF hTailActivation
+                          hTailEntryBefore hTailRegularBefore
+                          hTailBoundary hTailEntryRejected
+                          hTailBlockCompile hTailBlocks hTailCalls
+                          (targetFuel := targetFuel)
+  termination_by (targetFuel, compilerFuel, 1)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | apply Prod.Lex.right
+        apply Prod.Lex.left
+        omega
+
+/--
+Generated-context backward adequacy for every well-formed Structured statement.
+-/
+theorem adequateWithinFuel_stmt
+    {transcript : Trace} {compilerFuel targetFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {canBreak canContinue canLeave : Bool}
+    (hProgramWF : program.WF)
+    (hContext :
+      SourceContext program ctx tokens
+        canBreak canContinue canLeave)
+    (hWF :
+      Structured.Stmt.WF
+        canBreak canContinue canLeave stmt)
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
+    (hEntryBefore :
+      OutcomeSimulation.LabelBeforeSupply entry supply)
+    (hRegular :
+      OutcomeSimulation.RegularAtSupply regular supply)
+    (hBoundary :
+      OutcomeSimulation.RecursiveBoundary
+        cfg source tokens accept supply regular)
+    (hEntryRejected :
+      OutcomeSimulation.EntryRejected
+        cfg source tokens accept entry input)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx
+          supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel stmt source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  cases compilerFuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileStmtFuel?] at hCompile
+  | succ compilerFuel =>
+      cases hWF with
+      | code =>
+          exact adequateWithinFuel_code hCompile hBlocks
+      | if_ hBodyWF =>
+          apply
+            adequateWithinFuel_if hActivation hRegular hBoundary
+              hCompile hBlocks hCalls
+          intro bodyInput bodyResult afterCond hBodyCompile
+            hBodyBlocks hBodyCalls hReturns hBodyActivation
+            hBodyBoundary hBodyEntryRejected bodyTargetFuel hBodyFuel
+          exact
+            adequateWithinFuel_block generated hProgramWF
+              hContext hBodyWF hBodyActivation
+              (by
+                simp [OutcomeSimulation.LabelBeforeSupply,
+                  LabelSupply.label])
+              hRegular.before_succ hBodyBoundary hBodyEntryRejected
+              hBodyCompile hBodyBlocks hBodyCalls
+              (targetFuel := bodyTargetFuel)
+      | switch hCasesWF hDefaultWF =>
+          cases compilerFuel with
+          | zero =>
+              obtain
+                  ⟨_valueShape, _valueSlot, _caseResult, _defaultResult,
+                    _hType, _hSource, _hHead, hCasesCompile,
+                    _hDefaultCompile, _hResult⟩ :=
+                TypedCfgCompilerFacts.Switch.components_of_compileStmtFuel?_switch
+                  hCompile
+              simp [TypedCfgCompiler.compileCasesFuel?] at hCasesCompile
+          | succ switchFuel =>
+              apply
+                adequateWithinFuel_switch
+                  hActivation hRegular hBoundary hCasesWF hDefaultWF
+                  hCompile hBlocks hCalls
+              intro selected afterScrutinee stack value
+                bodyCompilerFuel bodySupply bodyEntry bodyShape bodyResult
+                hBodyCompile hBodyBlocks hBodyCalls hSelectedWF hBodyEntryBefore
+                hBodyEntryRejected hReturns hBodyActivation hBodySupply
+                _hBodyRegular hBodyBoundary bodyTargetFuel hBodyFuel
+              exact
+                adequateWithinFuel_block generated hProgramWF
+                  hContext hSelectedWF hBodyActivation
+                  hBodyEntryBefore
+                  (hRegular.before_succ.mono hBodySupply)
+                  hBodyBoundary hBodyEntryRejected
+                  hBodyCompile hBodyBlocks hBodyCalls
+                  (targetFuel := bodyTargetFuel)
+      | for_ hInitWF hPostWF hBodyWF =>
+          apply
+            adequateWithinFuel_for
+              hContext hInitWF hPostWF hBodyWF
+              hActivation hEntryBefore hRegular hBoundary
+              hEntryRejected hCompile hBlocks hCalls
+          intro block blockCtx blockSupply blockEntry blockRegular
+            blockInput blockResult blockSource blockAccept
+            blockCanBreak blockCanContinue blockCanLeave
+            hBlockContext hBlockWF hBlockActivation
+            hBlockEntryBefore hBlockRegularBefore hBlockBoundary
+            hBlockEntryRejected hBlockCompile hBlockBlocks hBlockCalls
+            blockTargetFuel hBlockFuel
+          by_cases hStrict : blockTargetFuel < targetFuel
+          · exact
+              adequateWithinFuel_block generated hProgramWF
+                hBlockContext hBlockWF hBlockActivation
+                hBlockEntryBefore hBlockRegularBefore
+                hBlockBoundary hBlockEntryRejected
+                hBlockCompile hBlockBlocks hBlockCalls
+                (targetFuel := blockTargetFuel)
+          · have hEq : blockTargetFuel = targetFuel := by
+              omega
+            subst blockTargetFuel
+            exact
+              adequateWithinFuel_block generated hProgramWF
+                hBlockContext hBlockWF hBlockActivation
+                hBlockEntryBefore hBlockRegularBefore
+                hBlockBoundary hBlockEntryRejected
+                hBlockCompile hBlockBlocks hBlockCalls
+                (targetFuel := targetFuel)
+      | brk hAllowed =>
+          exact
+            adequateWithinFuel_brk hContext hAllowed hCompile hBlocks
+      | cont hAllowed =>
+          exact
+            adequateWithinFuel_cont hContext hAllowed hCompile hBlocks
+      | leave hAllowed =>
+          exact
+            adequateWithinFuel_leave hContext hAllowed hCompile hBlocks
+      | call =>
+          apply
+            adequateWithinFuel_call generated hContext hBoundary
+              hCompile hBlocks hCalls hProgramWF
+          intro proc fragment callSource hLookup hFragmentBlocks
+            hFragmentCalls hProcContext hProcActivation
+            hProcEntryBefore hProcRegularBefore hProcBoundary
+            hProcEntryRejected bodyTargetFuel hBodyFuel
+          have hFragmentCompile :
+              TypedCfgCompiler.compileBlockFuel?
+                  (TypedCfgCompiler.blockFuel proc.body + 1)
+                  proc.body
+                  { procs := program.procs
+                    leaveLabel? := some (ProcLabel.exit proc.name)
+                    leaveShape? :=
+                      some (TypedCfgCompiler.Shape.procExit proc) }
+                  fragment.supply fragment.entry fragment.input
+                  (ProcLabel.exit proc.name) =
+                some fragment.result := by
+            simpa [TypedCfgCompiler.compileBlock?] using fragment.compile
+          exact
+            adequateWithinFuel_block generated hProgramWF
+              hProcContext
+              (Structured.Program.procWF_of_lookup?
+                hProgramWF hLookup).2.2
+              hProcActivation hProcEntryBefore hProcRegularBefore
+              hProcBoundary hProcEntryRejected
+              hFragmentCompile hFragmentBlocks hFragmentCalls
+              (targetFuel := bodyTargetFuel)
+      | terminal =>
+          exact
+            adequateWithinFuel_terminal
+              hCompile hBlocks generated.wellTyped
+  termination_by (targetFuel, compilerFuel, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | apply Prod.Lex.right
+        apply Prod.Lex.left
+        omega
+
+end
 
 end Generated
 

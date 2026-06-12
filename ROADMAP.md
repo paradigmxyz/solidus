@@ -96,7 +96,13 @@ Adjacent boundary status:
   leaves are checked in the pass-owned module; complete expression,
   statement, function, and program forward/backward theorems remain.
 - [ ] Functions -> allocated Locals/Expressions: shared allocation artifacts
-  exist, but observer-aware forward/backward theorems remain.
+  exist, but observer-aware forward/backward theorems remain. The scratch
+  backend also requires a source-facing memory-ownership contract and an
+  allocation-indexed state relation: exact machine-state equality is false
+  because compiler frames change gas, active memory, the free-memory pointer,
+  and frame bytes. The current frontend erases Solidity `memoryguard`
+  declarations, so that contract must be retained or supplied explicitly
+  before scratch artifacts can enter the public theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains.
 - [ ] Structured -> TypedCfg: complete observer-aware forward preservation is
@@ -162,7 +168,7 @@ Adjacent boundary status:
   theorem whose callee obligation is strictly smaller, and pushed return-frame
   realization proves that a recursive callee exit cannot satisfy its caller's
   same-label continuation. The generated-context mutual statement/block
-  theorem and whole-program backward adequacy remain.
+  theorem and whole-program terminal backward adequacy are now checked.
   Shared outcome artifacts and terminal leaves were extracted into sibling
   modules. Source-frame typing now distinguishes token-free caller frames,
   which retain a stack lower bound, from active procedure frames, whose
@@ -217,6 +223,14 @@ Adjacent boundary status:
   at the exact activation frame recovered from CFG input shape; the
   generated-context module checks the corresponding conditional wrapper and
   transports recursive boundaries across same-activation joins.
+  The compiler-generated whole-program terminal backward theorem is checked in
+  `Structured.ObserverProgramAdequacy`; it constructs the generated context
+  internally, selects the first activation-owned program-end-or-halt boundary,
+  rules out the compiler's invalid program-end sentinel for terminal target
+  runs, and exposes only source evaluation plus the adjacent outcome relation.
+  Generic first-boundary execution and residual-fuel lemmas now live in
+  `Structured.ObserverFirstReaches`, returning the central adequacy module below
+  the 5K-line architecture limit.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
@@ -224,7 +238,13 @@ Adjacent boundary status:
 - [x] Assembly -> bytecode: exact block simulation and terminal target-run
   inversion are checked.
 - [ ] End-to-end: `ClosedResourceCorrect` remains an unproved proposition
-  until every unchecked adjacent boundary above is composed.
+  until every unchecked adjacent boundary above is composed. Its current
+  exact-machine-state result relation is intentionally under correction:
+  resource replay determines all `gas()`/`msize()` observations, while the
+  final relation must erase remaining gas and relate memory modulo checked
+  compiler allocation. Scratch compilation additionally needs a source
+  memory-noninterference premise; replay alone cannot justify arbitrary
+  source/frame aliasing.
 
 The first exact Lean statement is now
 `Yul.EndToEnd.ClosedResourceCorrect`. It quantifies over a checked
@@ -400,8 +420,8 @@ The remaining observer-proof critical path is explicit:
 
 1. [x] Complete the indexed call-entry replay theorem.
 2. [x] Complete internal-call/return-dispatch adequacy.
-3. Complete the generated-context mutual Structured theorem and whole-program
-   backward adequacy.
+3. [x] Complete the generated-context mutual Structured theorem and
+   whole-program backward adequacy.
 4. Prove the Functions/allocation/Expressions and Yul adjacent backward
    boundaries, compose `ClosedResourceCorrect`, and run the final gates.
 

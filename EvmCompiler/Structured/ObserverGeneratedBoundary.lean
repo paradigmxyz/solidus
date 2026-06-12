@@ -85,6 +85,20 @@ theorem of_compileStmtListFuel?
     (TypedCfgCompilerFacts.stmtList_hasEntry hCompile)
     hBlocks
 
+theorem of_compileStmtFuel?
+    {fuel : Nat} {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    LabelShape cfg entry input :=
+  of_hasEntry
+    (TypedCfgCompilerFacts.stmt_hasEntry hCompile)
+    hBlocks
+
 theorem procExit
     {program : Structured.Program}
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}
@@ -150,6 +164,119 @@ theorem procEntry
     simpa [hLabel] using hFind
 
 end LabelShape
+
+/--
+Entry classification used by generated-context adequacy.
+
+The top activation has no realized return tokens. Every procedure activation
+instead carries a compiler-owned return token in its TypedCfg input shape.
+-/
+def ActivationInput
+    (tokens : List Word) (input : TypedCfg.Shape) : Prop :=
+  tokens = [] ∨ TypedCfgCompilerFacts.ReturnTokenActive input
+
+namespace ActivationInput
+
+theorem top (input : TypedCfg.Shape) :
+    ActivationInput [] input :=
+  Or.inl rfl
+
+theorem active
+    {tokens : List Word} {input : TypedCfg.Shape}
+    (hActive : TypedCfgCompilerFacts.ReturnTokenActive input) :
+    ActivationInput tokens input :=
+  Or.inr hActive
+
+theorem code
+    {tokens : List Word} {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    (hActivation : ActivationInput tokens input)
+    (hType : TypedCfgCompiler.Code.type? code input = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact Or.inr (hActive.code hType)
+
+theorem tail
+    {tokens : List Word} {shape : TypedCfg.Shape}
+    (hActivation : ActivationInput tokens shape)
+    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape) :
+    ActivationInput tokens
+      { shape with slots := shape.slots.tail } := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact Or.inr (hActive.tail hSource)
+
+theorem stmtFallthrough
+    {tokens : List Word} {fuel : Nat}
+    {stmt : Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input output : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hActivation : ActivationInput tokens input)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? fuel stmt ctx
+          supply entry input regular = some result)
+    (hFallthrough : result.fallthrough? = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact
+      Or.inr
+        ((TypedCfgCompilerFacts.activeResult_of_compileStmtFuel?
+          hActive hCompile).fallthrough output hFallthrough)
+
+theorem blockFallthrough
+    {tokens : List Word} {fuel : Nat}
+    {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input output : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hActivation : ActivationInput tokens input)
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? fuel block ctx
+          supply entry input regular = some result)
+    (hFallthrough : result.fallthrough? = some output) :
+    ActivationInput tokens output := by
+  rcases hActivation with hTop | hActive
+  · exact Or.inl hTop
+  · exact
+      Or.inr
+        ((TypedCfgCompilerFacts.activeResult_of_compileBlockFuel?
+          hActive hCompile).fallthrough output hFallthrough)
+
+end ActivationInput
+
+/--
+The enclosing target boundary cannot accept this fragment entry in the current
+dynamic activation.
+-/
+def EntryRejected {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop)
+    (entry : Assembly.Label) (input : TypedCfg.Shape) : Prop :=
+  ∀ target,
+    LabelShape cfg entry input →
+      FrameMatches source tokens input target →
+      ¬ accept (.jump entry target)
+
+/--
+Entry rejection transported across source states that retain the activation's
+return stack. The input shape may vary, but must retain the activation marker.
+-/
+def SameActivationEntryRejected {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop)
+    (entry : Assembly.Label) : Prop :=
+  ∀ (current : ObserverSemantics.State transcript)
+    (shape : TypedCfg.Shape),
+    current.source.returns = source.source.returns →
+      ActivationInput tokens shape →
+      EntryRejected cfg current tokens accept entry shape
 
 namespace ProcFragment
 
@@ -995,6 +1122,58 @@ theorem jumpAt_rest
       supply (TypedCfgCompiler.restLabel supply) :=
   ⟨hBoundary.ownership.jumpAt hShape,
     hBoundary.fresh.jumpAt_rest hRegular⟩
+
+/--
+Install an older same-activation continuation while compiling at a later
+supply. Every newly generated label is distinct from both the inherited outer
+regular label and the older local continuation.
+-/
+theorem jumpAt_before
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply : LabelSupply} {regular next : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hRegular : LabelBeforeSupply regular supply)
+    (hNext : LabelBeforeSupply next supply)
+    (hShape : LabelShape cfg next shape) :
+    RecursiveBoundary cfg source tokens
+      (JumpAt source tokens next shape accept) supply next := by
+  refine ⟨hBoundary.ownership.jumpAt hShape, ?_⟩
+  intro scope tag target hScope hNe hAccepted
+  rcases hAccepted with hCurrent | hOuter
+  · exact (hNe hCurrent.1).elim
+  · apply hBoundary.fresh scope tag target hScope
+    · exact hRegular.generated_ne hScope
+    · exact hOuter
+
+/--
+Install a continuation generated at the current supply, then continue
+compilation at the next supply.
+-/
+theorem jumpAt_current
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {accept : TypedCfg.Outcome → Prop}
+    {supply tag : LabelSupply} {regular : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    (hBoundary :
+      RecursiveBoundary cfg source tokens accept supply regular)
+    (hRegular : RegularAtSupply regular supply)
+    (hShape : LabelShape cfg (.generated supply tag) shape) :
+    RecursiveBoundary cfg source tokens
+      (JumpAt source tokens (.generated supply tag) shape accept)
+      (supply + 1) (.generated supply tag) := by
+  refine ⟨hBoundary.ownership.jumpAt hShape, ?_⟩
+  intro scope nextTag target hScope hNe hAccepted
+  rcases hAccepted with hCurrent | hOuter
+  · exact (hNe hCurrent.1).elim
+  · apply hBoundary.fresh scope nextTag target
+      (Nat.le_trans (Nat.le_succ supply) hScope)
+    · exact hRegular.before_succ.generated_ne hScope
+    · exact hOuter
 
 theorem pushJumpAt
     {transcript : Trace} {cfg : TypedCfg.Program}

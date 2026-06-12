@@ -5,6 +5,7 @@ import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverFrameInvariant
 import EvmCompiler.Structured.ObserverGeneratedAdequacy
+import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObserverSemantics
@@ -74,6 +75,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
 #check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithin_call_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Program.generateWithProcEntryShapes?_terminal_backward
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Yul.StateRelation.Replay.Rel
 #check EvmCompiler.Yul.FunctionsObserverPreservation.observerPrim
@@ -125,6 +127,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #print axioms EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.RecursiveBoundary.pushJumpAt
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_leave
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_block
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Generated.adequateWithinFuel_stmt
+#print axioms EvmCompiler.Structured.ObserverAdequacy.Program.generateWithProcEntryShapes?_terminal_backward
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.entry_step_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN

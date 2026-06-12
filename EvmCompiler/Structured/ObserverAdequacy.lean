@@ -1,4 +1,4 @@
-import EvmCompiler.Structured.ObserverGeneratedBoundary
+import EvmCompiler.Structured.ObserverFirstReaches
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
 
 namespace EvmCompiler
@@ -14,364 +14,6 @@ It does not reason about Assembly or bytecode execution.
 -/
 
 namespace OutcomeSimulation
-
-/--
-Execution to the first target outcome owned by the Structured fragment.
-
-This is stated entirely with the existing TypedCfg observer interpreter.
-Minimality supplies the compositional stopping rule needed by backward
-adequacy; it is not a replay trace or a second control interpreter.
--/
-structure FirstReaches
-    (program : TypedCfg.Program)
-    (accept : TypedCfg.Outcome → Prop)
-    (fuel : Nat) (entry : Assembly.Label)
-    (initial : EVMState) (initialTrace : Trace)
-    (outcome : TypedCfg.Outcome) (finalTrace : Trace) : Prop where
-  run :
-    TypedCfg.ObserverSemantics.Program.runN
-        program fuel entry initial initialTrace =
-      .ok (outcome, finalTrace)
-  boundary : accept outcome
-  minimal :
-    ∀ prefixFuel, prefixFuel < fuel →
-      ∀ prefixOutcome prefixTrace,
-        TypedCfg.ObserverSemantics.Program.runN
-            program prefixFuel entry initial initialTrace =
-          .ok (prefixOutcome, prefixTrace) →
-        ¬ accept prefixOutcome
-
-abbrev ReachesBoundary
-    (program : TypedCfg.Program) (continuations : Continuations) :=
-  FirstReaches program (TargetBoundary continuations)
-
-namespace ReachesBoundary
-
-theorem fuel_pos_of_entry_not_boundary
-    {program : TypedCfg.Program} {continuations : Continuations}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace : Trace}
-    {outcome : TypedCfg.Outcome}
-    (hReach :
-      ReachesBoundary program continuations fuel
-        entry initial initialTrace outcome finalTrace)
-    (hEntry :
-      ¬ TargetBoundary continuations (.jump entry initial)) :
-    0 < fuel := by
-  cases fuel with
-  | zero =>
-      have hRun := hReach.run
-      simp only
-        [TypedCfg.ObserverSemantics.Program.runN_zero] at hRun
-      cases hRun
-      exact False.elim (hEntry hReach.boundary)
-  | succ fuel =>
-      omega
-
-theorem tail_of_step_jump
-    {program : TypedCfg.Program} {continuations : Continuations}
-    {fuel : Nat} {entry next : Assembly.Label}
-    {initial middle : EVMState}
-    {initialTrace middleTrace finalTrace : Trace}
-    {outcome : TypedCfg.Outcome}
-    (hReach :
-      ReachesBoundary program continuations (fuel + 1)
-        entry initial initialTrace outcome finalTrace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          program entry initial initialTrace =
-        .ok (.jump next middle, middleTrace)) :
-    ReachesBoundary program continuations fuel
-      next middle middleTrace outcome finalTrace := by
-  refine ⟨?_, hReach.boundary, ?_⟩
-  · have hRun := hReach.run
-    rw [TypedCfg.ObserverSemantics.Program.runN_succ,
-      hStep] at hRun
-    exact hRun
-  · intro prefixFuel hPrefix prefixOutcome prefixTrace
-      hPrefixRun hPrefixBoundary
-    have hOriginalPrefix :
-        TypedCfg.ObserverSemantics.Program.runN
-            program (prefixFuel + 1) entry initial initialTrace =
-          .ok (prefixOutcome, prefixTrace) := by
-      rw [TypedCfg.ObserverSemantics.Program.runN_succ, hStep]
-      exact hPrefixRun
-    exact
-      hReach.minimal (prefixFuel + 1) (by omega)
-        prefixOutcome prefixTrace hOriginalPrefix hPrefixBoundary
-
-theorem fuel_eq_one_of_step_boundary
-    {program : TypedCfg.Program} {continuations : Continuations}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace firstTrace : Trace}
-    {outcome firstOutcome : TypedCfg.Outcome}
-    (hReach :
-      ReachesBoundary program continuations (fuel + 1)
-        entry initial initialTrace outcome finalTrace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          program entry initial initialTrace =
-        .ok (firstOutcome, firstTrace))
-    (hBoundary : TargetBoundary continuations firstOutcome) :
-    fuel = 0 := by
-  by_contra hFuel
-  have hOneLt : 1 < fuel + 1 := by omega
-  exact
-    hReach.minimal 1 hOneLt firstOutcome firstTrace
-      (TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep)
-      hBoundary
-
-theorem outcome_eq_of_step_boundary
-    {program : TypedCfg.Program} {continuations : Continuations}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace firstTrace : Trace}
-    {outcome firstOutcome : TypedCfg.Outcome}
-    (hReach :
-      ReachesBoundary program continuations (fuel + 1)
-        entry initial initialTrace outcome finalTrace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          program entry initial initialTrace =
-        .ok (firstOutcome, firstTrace))
-    (hBoundary : TargetBoundary continuations firstOutcome) :
-    outcome = firstOutcome ∧ finalTrace = firstTrace := by
-  have hFuel :=
-    fuel_eq_one_of_step_boundary hReach hStep hBoundary
-  subst fuel
-  have hOne :=
-    TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep
-  have hRun := hReach.run
-  rw [hOne] at hRun
-  simpa only [Prod.mk.injEq] using Except.ok.inj hRun.symm
-
-end ReachesBoundary
-
-namespace FirstReaches
-
-theorem fuel_pos_of_entry_not_accepted
-    {program : TypedCfg.Program}
-    {accept : TypedCfg.Outcome → Prop}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace : Trace}
-    {outcome : TypedCfg.Outcome}
-    (hReach :
-      FirstReaches program accept fuel
-        entry initial initialTrace outcome finalTrace)
-    (hEntry : ¬ accept (.jump entry initial)) :
-    0 < fuel := by
-  cases fuel with
-  | zero =>
-      have hRun := hReach.run
-      simp only
-        [TypedCfg.ObserverSemantics.Program.runN_zero] at hRun
-      cases hRun
-      exact False.elim (hEntry hReach.boundary)
-  | succ fuel =>
-      omega
-
-theorem tail_of_step_jump
-    {program : TypedCfg.Program}
-    {accept : TypedCfg.Outcome → Prop}
-    {fuel : Nat} {entry next : Assembly.Label}
-    {initial middle : EVMState}
-    {initialTrace middleTrace finalTrace : Trace}
-    {outcome : TypedCfg.Outcome}
-    (hReach :
-      FirstReaches program accept (fuel + 1)
-        entry initial initialTrace outcome finalTrace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          program entry initial initialTrace =
-        .ok (.jump next middle, middleTrace)) :
-    FirstReaches program accept fuel
-      next middle middleTrace outcome finalTrace := by
-  refine ⟨?_, hReach.boundary, ?_⟩
-  · have hRun := hReach.run
-    rw [TypedCfg.ObserverSemantics.Program.runN_succ,
-      hStep] at hRun
-    exact hRun
-  · intro prefixFuel hPrefix prefixOutcome prefixTrace
-      hPrefixRun hPrefixBoundary
-    have hOriginalPrefix :
-        TypedCfg.ObserverSemantics.Program.runN
-            program (prefixFuel + 1) entry initial initialTrace =
-          .ok (prefixOutcome, prefixTrace) := by
-      rw [TypedCfg.ObserverSemantics.Program.runN_succ, hStep]
-      exact hPrefixRun
-    exact
-      hReach.minimal (prefixFuel + 1) (by omega)
-        prefixOutcome prefixTrace hOriginalPrefix hPrefixBoundary
-
-theorem outcome_eq_of_step_accepted
-    {program : TypedCfg.Program}
-    {accept : TypedCfg.Outcome → Prop}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace firstTrace : Trace}
-    {outcome firstOutcome : TypedCfg.Outcome}
-    (hReach :
-      FirstReaches program accept (fuel + 1)
-        entry initial initialTrace outcome finalTrace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          program entry initial initialTrace =
-        .ok (firstOutcome, firstTrace))
-    (hAccept : accept firstOutcome) :
-    outcome = firstOutcome ∧ finalTrace = firstTrace := by
-  have hFuel : fuel = 0 := by
-    by_contra hFuel
-    exact
-      hReach.minimal 1 (by omega) firstOutcome firstTrace
-        (TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep)
-        hAccept
-  subst fuel
-  have hOne :=
-    TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep
-  have hRun := hReach.run
-  rw [hOne] at hRun
-  simpa only [Prod.mk.injEq] using Except.ok.inj hRun.symm
-
-theorem exists_of_run
-    {program : TypedCfg.Program}
-    {accept : TypedCfg.Outcome → Prop}
-    {fuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState} {initialTrace finalTrace : Trace}
-    {outcome : TypedCfg.Outcome}
-    (hRun :
-      TypedCfg.ObserverSemantics.Program.runN
-          program fuel entry initial initialTrace =
-        .ok (outcome, finalTrace))
-    (hAccept : accept outcome) :
-    ∃ prefixFuel prefixOutcome prefixTrace,
-      prefixFuel ≤ fuel ∧
-        FirstReaches program accept prefixFuel
-          entry initial initialTrace prefixOutcome prefixTrace := by
-  classical
-  let P : Nat → Prop :=
-    fun currentFuel =>
-      ∃ currentOutcome currentTrace,
-        TypedCfg.ObserverSemantics.Program.runN
-            program currentFuel entry initial initialTrace =
-          .ok (currentOutcome, currentTrace) ∧
-        accept currentOutcome
-  have hExists : ∃ currentFuel, P currentFuel :=
-    ⟨fuel, outcome, finalTrace, hRun, hAccept⟩
-  let prefixFuel := Nat.find hExists
-  have hSpec : P prefixFuel := by
-    simpa [prefixFuel] using Nat.find_spec hExists
-  rcases hSpec with
-    ⟨prefixOutcome, prefixTrace, hPrefixRun, hPrefixAccept⟩
-  refine
-    ⟨prefixFuel, prefixOutcome, prefixTrace, ?_,
-      hPrefixRun, hPrefixAccept, ?_⟩
-  · exact
-      Nat.find_min' hExists
-        ⟨outcome, finalTrace, hRun, hAccept⟩
-  · intro currentFuel hCurrent currentOutcome currentTrace
-      hCurrentRun hCurrentAccept
-    exact
-      Nat.find_min hExists hCurrent
-        ⟨currentOutcome, currentTrace,
-          hCurrentRun, hCurrentAccept⟩
-
-theorem remaining_run_of_jump
-    {program : TypedCfg.Program}
-    {accept : TypedCfg.Outcome → Prop}
-    {fullFuel prefixFuel : Nat} {entry next : Assembly.Label}
-    {initial middle : EVMState}
-    {initialTrace middleTrace finalTrace : Trace}
-    {finalOutcome : TypedCfg.Outcome}
-    (hFull :
-      TypedCfg.ObserverSemantics.Program.runN
-          program fullFuel entry initial initialTrace =
-        .ok (finalOutcome, finalTrace))
-    (hPrefix :
-      FirstReaches program accept prefixFuel
-        entry initial initialTrace
-        (.jump next middle) middleTrace)
-    (hLe : prefixFuel ≤ fullFuel) :
-    TypedCfg.ObserverSemantics.Program.runN
-        program (fullFuel - prefixFuel)
-        next middle middleTrace =
-      .ok (finalOutcome, finalTrace) := by
-  have hCompose :=
-    TypedCfg.ObserverSemantics.Program.runN_add_of_jump
-      (restFuel := fullFuel - prefixFuel) hPrefix.run
-  have hFuel :
-      prefixFuel + (fullFuel - prefixFuel) = fullFuel := by
-    omega
-  rw [hFuel, hFull] at hCompose
-  exact hCompose.symm
-
-theorem tail_of_prefix_jump
-    {program : TypedCfg.Program}
-    {accept prefixAccept : TypedCfg.Outcome → Prop}
-    {fullFuel prefixFuel : Nat} {entry next : Assembly.Label}
-    {initial middle : EVMState}
-    {initialTrace middleTrace finalTrace : Trace}
-    {finalOutcome : TypedCfg.Outcome}
-    (hFull :
-      FirstReaches program accept fullFuel
-        entry initial initialTrace finalOutcome finalTrace)
-    (hPrefix :
-      FirstReaches program prefixAccept prefixFuel
-        entry initial initialTrace
-        (.jump next middle) middleTrace)
-    (hLe : prefixFuel ≤ fullFuel) :
-    FirstReaches program accept (fullFuel - prefixFuel)
-      next middle middleTrace finalOutcome finalTrace := by
-  refine
-    ⟨remaining_run_of_jump hFull.run hPrefix hLe,
-      hFull.boundary, ?_⟩
-  intro tailFuel hTailLt tailOutcome tailTrace
-    hTailRun hTailAccepted
-  have hOriginalRun :
-      TypedCfg.ObserverSemantics.Program.runN
-          program (prefixFuel + tailFuel)
-          entry initial initialTrace =
-        .ok (tailOutcome, tailTrace) := by
-    rw [TypedCfg.ObserverSemantics.Program.runN_add_of_jump
-      hPrefix.run]
-    exact hTailRun
-  exact
-    hFull.minimal (prefixFuel + tailFuel) (by omega)
-      tailOutcome tailTrace hOriginalRun hTailAccepted
-
-theorem outcome_eq_of_prefix_accepted
-    {program : TypedCfg.Program}
-    {accept prefixAccept : TypedCfg.Outcome → Prop}
-    {fullFuel prefixFuel : Nat} {entry : Assembly.Label}
-    {initial : EVMState}
-    {initialTrace prefixTrace finalTrace : Trace}
-    {prefixOutcome finalOutcome : TypedCfg.Outcome}
-    (hFull :
-      FirstReaches program accept fullFuel
-        entry initial initialTrace finalOutcome finalTrace)
-    (hPrefix :
-      FirstReaches program prefixAccept prefixFuel
-        entry initial initialTrace prefixOutcome prefixTrace)
-    (hLe : prefixFuel ≤ fullFuel)
-    (hAccepted : accept prefixOutcome) :
-    prefixFuel = fullFuel ∧
-      finalOutcome = prefixOutcome ∧ finalTrace = prefixTrace := by
-  have hFuel : prefixFuel = fullFuel := by
-    by_contra hNe
-    exact
-      hFull.minimal prefixFuel (by omega)
-        prefixOutcome prefixTrace hPrefix.run hAccepted
-  subst fullFuel
-  have hRuns :
-      (.ok (finalOutcome, finalTrace) :
-          Except TypedCfg.EVMException
-            (TypedCfg.Outcome × Trace)) =
-        .ok (prefixOutcome, prefixTrace) :=
-    hFull.run.symm.trans hPrefix.run
-  have hEq :
-      finalOutcome = prefixOutcome ∧
-        finalTrace = prefixTrace := by
-    simpa only [Prod.mk.injEq] using Except.ok.inj hRuns
-  exact ⟨rfl, hEq.1, hEq.2⟩
-
-end FirstReaches
 
 theorem targetBoundary_of_rel
     {transcript : Trace}
@@ -1515,6 +1157,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
@@ -1524,6 +1167,8 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
@@ -1544,11 +1189,15 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome →
           accept acceptedOutcome)
     (hCaseEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept (.jump (TypedCfgCompiler.switchCaseLabel base idx) targetState))
+      OutcomeSimulation.EntryRejected cfg source tokens accept
+        (TypedCfgCompiler.switchCaseLabel base idx) valueShape)
     (hBodyEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept (.jump (TypedCfgCompiler.switchBodyLabel base idx) targetState))
+      OutcomeSimulation.EntryRejected cfg
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack }))
+        tokens accept
+        (TypedCfgCompiler.switchBodyLabel base idx) bodyShape)
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -1564,6 +1213,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -1597,6 +1247,23 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram bodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hCaseShape :
+      OutcomeSimulation.LabelShape cfg
+        (TypedCfgCompiler.switchCaseLabel base idx) valueShape :=
+    OutcomeSimulation.LabelShape.of_hasEntry
+      (TypedCfgCompilerFacts.Switch.cases_cons_case_hasEntry
+        hHead hPopType hCompile)
+      hBlocks
+  have hBodyShape :
+      OutcomeSimulation.LabelShape cfg
+        (TypedCfgCompiler.switchBodyLabel base idx) bodyShape :=
+    OutcomeSimulation.LabelShape.of_compileBlockFuel?
+      hBodyCompile hBodyBlocks
   obtain ⟨targetAfterTest, hTestStep, hAfterTestRel⟩ :=
     ObserverPreservation.Switch.step_test
       (testLabel := TypedCfgCompiler.switchTestLabel base idx)
@@ -1617,9 +1284,16 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
   have hAfterTestReach :=
     OutcomeSimulation.FirstReaches.tail_of_step_jump
       hReach hSelectedStep
+  have hAfterTestAt :
+      ObserverPreservation.StateRel.At
+        valueShape source tokens targetAfterTest trace :=
+    ObserverPreservation.StateRel.At.ofFits
+      hAfterTestRel hRel.sourceFrameFits
   have hCasePositive : 0 < targetFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hAfterTestReach (hCaseEntryNotAccepted targetAfterTest)
+      hAfterTestReach
+        (hCaseEntryNotAccepted targetAfterTest hCaseShape
+          (OutcomeSimulation.FrameMatches.of_at hAfterTestAt))
   cases targetFuel with
   | zero =>
       omega
@@ -1675,7 +1349,9 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           exact hTailFits)
       have hBodyPositive : 0 < popFuel :=
         OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-          hAfterPopReach (hBodyEntryNotAccepted targetAfterPop)
+          hAfterPopReach
+            (hBodyEntryNotAccepted targetAfterPop hBodyShape
+              (OutcomeSimulation.FrameMatches.of_at hAfterPopAt))
       cases popFuel with
       | zero =>
           omega
@@ -1684,7 +1360,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
               ⟨sourceFuel, sourceOutcome,
                 hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
             hBodyAdequate bodyFuel (by omega)
-              hBodyCompile hBodyBlocks
+              hBodyCompile hBodyBlocks hBodyCalls
               (fun bodySourceFuel bodyOutcome bodyTargetOutcome bodyTrace
                   hBodyEval hBodyRel hBodyArtifact => by
                 have hArtifact :
@@ -1802,6 +1478,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
@@ -1811,6 +1488,8 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
@@ -1831,11 +1510,12 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
           OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome →
           accept acceptedOutcome)
     (hNextEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
-            targetState))
+      OutcomeSimulation.EntryRejected cfg source tokens accept
+        (TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
+        valueShape)
+    (hDefaultEntryShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label base 1) valueShape)
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -1845,10 +1525,12 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
         target trace targetOutcome traceFinal)
     (hTailAdequate :
       ∀ {tailSupply : Nat} {tail : TypedCfgCompiler.Result},
+        supply ≤ tailSupply →
         TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
             base tailSupply (idx + 1) valueShape bodyShape regular =
           some tail →
         TypedCfgPreservation.BlocksInProgram tail cfg →
+        TypedCfgPreservation.CallsInProgram tail globalCalls →
         (∀ tailSourceFuel tailOutcome tailTargetOutcome tailFinalTrace,
           ObserverSemantics.Block.Eval program tailSourceFuel selected
               (source.withSource
@@ -1888,7 +1570,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
         OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   obtain
-      ⟨bodyResult, tail, _hBodyCompile, _hRequire,
+      ⟨bodyResult, tail, hBodyCompile, _hRequire,
         hTailCompile, hResult⟩ :=
     TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons
       hHead hPopType hCompile
@@ -1898,6 +1580,26 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hTailCalls :
+      TypedCfgPreservation.CallsInProgram tail globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hNextShape :
+      OutcomeSimulation.LabelShape cfg
+        (TypedCfgCompilerFacts.Switch.nextTestLabel base idx rest)
+        valueShape := by
+    cases rest with
+    | nil =>
+        simpa [TypedCfgCompilerFacts.Switch.nextTestLabel,
+          TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+          hDefaultEntryShape
+    | cons nextHead nextRest =>
+        exact
+          OutcomeSimulation.LabelShape.of_hasEntry
+            (TypedCfgCompilerFacts.Switch.cases_cons_test_hasEntry
+              hHead hPopType hTailCompile)
+            hTailBlocks
   obtain ⟨targetAfterTest, hTestStep, hAfterTestRel⟩ :=
     ObserverPreservation.Switch.step_test
       (testLabel := TypedCfgCompiler.switchTestLabel base idx)
@@ -1919,22 +1621,26 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
   have hTailReach :=
     OutcomeSimulation.FirstReaches.tail_of_step_jump
       hReach hSkippedStep
+  have hAfterTestAt :
+      ObserverPreservation.StateRel.At
+        valueShape source tokens targetAfterTest trace :=
+    ObserverPreservation.StateRel.At.ofFits
+      hAfterTestRel hRel.sourceFrameFits
   have hTailPositive : 0 < targetFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hTailReach (hNextEntryNotAccepted targetAfterTest)
+      hTailReach
+        (hNextEntryNotAccepted targetAfterTest hNextShape
+          (OutcomeSimulation.FrameMatches.of_at hAfterTestAt))
   cases targetFuel with
   | zero =>
       omega
   | succ tailFuel =>
-      have hAfterTestAt :
-          ObserverPreservation.StateRel.At
-            valueShape source tokens targetAfterTest trace :=
-        ObserverPreservation.StateRel.At.ofFits
-          hAfterTestRel hRel.sourceFrameFits
       obtain
           ⟨sourceFuel, sourceOutcome,
             hBodyEval, hOutcomeRel, hTailArtifact⟩ :=
-        hTailAdequate hTailCompile hTailBlocks
+        hTailAdequate
+          (TypedCfgCompilerFacts.Supply.block_next_ge hBodyCompile)
+          hTailCompile hTailBlocks hTailCalls
           (fun tailSourceFuel tailOutcome tailTargetOutcome tailFinalTrace
               hTailEval hTailRel hTailArtifact => by
             have hTailFallthrough :
@@ -2042,6 +1748,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
@@ -2050,6 +1757,8 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
     (hSourceOne :
@@ -2068,8 +1777,11 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
           OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome →
           accept acceptedOutcome)
     (hBodyEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept (.jump (.generated supply 2000) targetState))
+      OutcomeSimulation.EntryRejected cfg
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack }))
+        tokens accept (.generated supply 2000) bodyShape)
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -2084,6 +1796,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -2116,6 +1829,16 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
     intro block hMem
     apply hBlocks block
     simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram bodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simpa using hMem
+  have hBodyShape :
+      OutcomeSimulation.LabelShape cfg
+        (.generated supply 2000) bodyShape :=
+    OutcomeSimulation.LabelShape.of_compileBlockFuel?
+      hBodyCompile hBodyBlocks
   obtain ⟨targetAfterPop, hPopStep, hAfterPopRel⟩ :=
     ObserverPreservation.BlocksInProgram.step_pop_jump
       (entry := entry) (regular := .generated supply 2000)
@@ -2124,11 +1847,38 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
   have hAfterPopReach :=
     OutcomeSimulation.FirstReaches.tail_of_step_jump
       hReach hPopStep
-  have hBodyPositive : 0 < targetFuel :=
-    OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hAfterPopReach (hBodyEntryNotAccepted targetAfterPop)
   cases targetFuel with
   | zero =>
+      have hAfterPopAt :
+          ObserverPreservation.StateRel.At bodyShape
+            (source.withSource
+              (source.source.withEVM
+                { source.source.evm with stack := stack }))
+            tokens targetAfterPop trace :=
+        ObserverPreservation.StateRel.At.ofFits hAfterPopRel (by
+          have hPopLength :
+              source.source.evm.stack.length = stack.length + 1 := by
+            cases hStack : source.source.evm.stack with
+            | nil =>
+                simp [hStack, EvmYul.Stack.pop] at hPop
+            | cons head tail =>
+                simp [hStack, EvmYul.Stack.pop] at hPop
+                rcases hPop with ⟨rfl, rfl⟩
+                simp [hStack]
+          have hTailFits :=
+            TypedCfgCompilerFacts.Shape.sourceFrameFits_tail
+              hSourceOne
+              (show
+                TypedCfgCompiler.Shape.SourceFrameFits valueShape
+                  (stack.length + 1) by
+                simpa [hPopLength] using hRel.sourceFrameFits)
+          rw [TypedCfgCompilerFacts.Shape.eq_tail_of_type?_pop hPopType]
+          exact hTailFits)
+      have hBodyPositive : 0 < 0 :=
+        OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
+          hAfterPopReach
+            (hBodyEntryNotAccepted targetAfterPop hBodyShape
+              (OutcomeSimulation.FrameMatches.of_at hAfterPopAt))
       omega
   | succ bodyFuel =>
       have hPopLength :
@@ -2171,11 +1921,16 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
                 simpa [hPopLength] using hRel.sourceFrameFits)
           rw [TypedCfgCompilerFacts.Shape.eq_tail_of_type?_pop hPopType]
           exact hTailFits)
+      have hBodyPositive : 0 < bodyFuel.succ :=
+        OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
+          hAfterPopReach
+            (hBodyEntryNotAccepted targetAfterPop hBodyShape
+              (OutcomeSimulation.FrameMatches.of_at hAfterPopAt))
       obtain
           ⟨sourceFuel, sourceOutcome,
             hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
         hBodyAdequate bodyFuel (by omega)
-          hBodyCompile hBodyBlocks
+          hBodyCompile hBodyBlocks hBodyCalls
           (fun bodySourceFuel bodyOutcome bodyTargetOutcome bodyTrace
               hBodyEval hBodyRel hBodyArtifact => by
             have hArtifact :
@@ -2405,12 +2160,13 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
     (hSelect :
       Structured.Switch.select value cases defaultBody = none)
     (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              base caseIdx remaining)
-            targetState))
+      ∀ caseIdx remaining,
+        OutcomeSimulation.EntryRejected cfg source tokens accept
+          (TypedCfgCompilerFacts.Switch.casesEntryLabel
+            base caseIdx remaining) valueShape)
+    (hDefaultEntryShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label base 1) valueShape)
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -2513,20 +2269,36 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
           have hTailReach :=
             OutcomeSimulation.FirstReaches.tail_of_step_jump
               hReach hSkippedStep
+          have hAfterTestAt :
+              ObserverPreservation.StateRel.At
+                valueShape source tokens targetAfterTest trace :=
+            ObserverPreservation.StateRel.At.ofFits
+              hAfterTestRel hRel.sourceFrameFits
+          have hNextShape :
+              OutcomeSimulation.LabelShape cfg
+                (TypedCfgCompilerFacts.Switch.nextTestLabel
+                  base idx rest) valueShape := by
+            cases rest with
+            | nil =>
+                simpa [TypedCfgCompilerFacts.Switch.nextTestLabel,
+                  TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+                  hDefaultEntryShape
+            | cons nextHead nextRest =>
+                exact
+                  OutcomeSimulation.LabelShape.of_hasEntry
+                    (TypedCfgCompilerFacts.Switch.cases_cons_test_hasEntry
+                      hHead hPopType hTailCompile)
+                    hTailBlocks
           have hTailPositive : 0 < targetFuel :=
             OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
               hTailReach
               (hDispatchEntryNotAccepted
-                (idx + 1) rest targetAfterTest)
+                (idx + 1) rest targetAfterTest hNextShape
+                (OutcomeSimulation.FrameMatches.of_at hAfterTestAt))
           cases targetFuel with
           | zero =>
               omega
           | succ tailFuel =>
-              have hAfterTestAt :
-                  ObserverPreservation.StateRel.At
-                    valueShape source tokens targetAfterTest trace :=
-                ObserverPreservation.StateRel.At.ofFits
-                  hAfterTestRel hRel.sourceFrameFits
               obtain ⟨hOutcomeRel, hTailArtifact⟩ :=
                 ih hTailCompile hTailBlocks hTailSelect
                   hAfterTestAt hTailReach
@@ -2593,6 +2365,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome}
     {stack : EvmYul.Stack Word} {value : Word}
     (hCompile :
@@ -2601,6 +2374,8 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hHead : valueShape.slots.head? = some slot)
     (hPopType :
       TypedCfg.Instr.type? .pop valueShape = some bodyShape)
@@ -2609,6 +2384,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
     (hPop : source.source.evm.stack.pop = some (stack, value))
     (hSelect :
       Structured.Switch.select value cases defaultBody = some selected)
+    (hSupply : base + 1 ≤ supply)
     (hAccept :
       ∀ sourceFuel sourceOutcome acceptedOutcome acceptedTrace,
         ObserverSemantics.Block.Eval program sourceFuel selected
@@ -2622,20 +2398,26 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
           OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome →
           accept acceptedOutcome)
     (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              base caseIdx remaining)
-            targetState))
+      ∀ caseIdx remaining,
+        OutcomeSimulation.EntryRejected cfg source tokens accept
+          (TypedCfgCompilerFacts.Switch.casesEntryLabel
+            base caseIdx remaining) valueShape)
     (hCaseEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (TypedCfgCompiler.switchCaseLabel base caseIdx) targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.EntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchCaseLabel base caseIdx)
+          valueShape)
     (hBodyEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (TypedCfgCompiler.switchBodyLabel base caseIdx) targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.EntryRejected cfg
+          (source.withSource
+            (source.source.withEVM
+              { source.source.evm with stack := stack }))
+          tokens accept (TypedCfgCompiler.switchBodyLabel base caseIdx)
+          bodyShape)
+    (hDefaultEntryShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label base 1) valueShape)
     (hRel :
       ObserverPreservation.StateRel.At
         valueShape source tokens target trace)
@@ -2647,12 +2429,14 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
       ∀ {bodyCompilerFuel caseSupply caseIdx : Nat}
         {bodyResult : TypedCfgCompiler.Result}
         bodyTargetFuel,
+        base + 1 ≤ caseSupply →
         bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             caseSupply (TypedCfgCompiler.switchBodyLabel base caseIdx)
             bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -2731,13 +2515,16 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
             subst selected
             exact
               outcome_cases_head_of_compileCasesFuel?_and_firstReaches
-                hCompile hBlocks hHead hPopType hSourceOne hPop hEq hAccept
+                hCompile hBlocks hCalls hHead hPopType hSourceOne hPop hEq hAccept
                 (hCaseEntryNotAccepted idx)
                 (hBodyEntryNotAccepted idx)
                 hRel hReach
-                (fun bodyTargetFuel hBodyLt hBodyCompile hBodyBlocks =>
-                  hBodyAdequate bodyTargetFuel hBodyLt
-                    hBodyCompile hBodyBlocks)
+                (fun bodyTargetFuel hBodyLt hBodyCompile hBodyBlocks
+                    hBodyCalls =>
+                  hBodyAdequate bodyTargetFuel
+                    hSupply
+                    hBodyLt
+                    hBodyCompile hBodyBlocks hBodyCalls)
           · have hTailSelect :
                 Structured.Switch.select value rest defaultBody =
                   some selected := by
@@ -2745,19 +2532,25 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
             exact
               outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
                 (selected := selected)
-                hCompile hBlocks hHead hPopType hSourceOne hPop hEq
+                hCompile hBlocks hCalls hHead hPopType hSourceOne hPop hEq
                 hAccept
                 (hDispatchEntryNotAccepted (idx + 1) rest)
+                hDefaultEntryShape
                 hRel hReach
-                (fun {_tailSupply} {_tail} hTailCompile hTailBlocks
+                (fun {_tailSupply} {_tail} hTailSupply
+                    hTailCompile hTailBlocks hTailCalls
                     hTailAccept
                     {_tailTargetFuel} {_tailTarget} {_tailTrace}
                     hTailLt hTailRel hTailReach =>
-                  ih hTailCompile hTailBlocks hTailSelect
+                  ih hTailCompile hTailBlocks hTailCalls hTailSelect
+                    (hSupply.trans hTailSupply)
                     hTailAccept hTailRel hTailReach
-                    (fun bodyTargetFuel hBodyLt =>
+                    (fun bodyTargetFuel hBodySupply hBodyLt
+                        hBodyCompile hBodyBlocks hBodyCalls =>
                       hBodyAdequate bodyTargetFuel
-                        (Nat.lt_trans hBodyLt hTailLt))
+                        hBodySupply
+                        (Nat.lt_trans hBodyLt hTailLt)
+                        hBodyCompile hBodyBlocks hBodyCalls)
                     (fun hDefaultSelected {_defaultTargetFuel}
                         {_defaultTarget} {_defaultTrace}
                         hDefaultLe =>
@@ -2783,7 +2576,9 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word} {target : EVMState}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     {trace traceFinal : Trace} {targetOutcome : TypedCfg.Outcome}
+    (hActivation : OutcomeSimulation.ActivationInput tokens input)
     (hCompile :
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
           (.switch scrutinee cases defaultBody) ctx
@@ -2791,6 +2586,8 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hRegular : continuations.regular = regular)
     (hAccept :
       ∀ sourceFuel sourceOutcome acceptedOutcome acceptedTrace,
@@ -2802,29 +2599,23 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
           OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome →
           accept acceptedOutcome)
     (hDispatchEntryNotAccepted :
-      ∀ caseIdx remaining targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompilerFacts.Switch.casesEntryLabel
-              supply caseIdx remaining)
-            targetState))
+      ∀ caseIdx remaining,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompilerFacts.Switch.casesEntryLabel
+            supply caseIdx remaining))
     (hCaseEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump (TypedCfgCompiler.switchCaseLabel supply caseIdx) targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchCaseLabel supply caseIdx))
     (hCaseBodyEntryNotAccepted :
-      ∀ caseIdx targetState,
-        ¬ accept
-          (.jump
-            (TypedCfgCompiler.switchBodyLabel supply caseIdx)
-            targetState))
+      ∀ caseIdx,
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (TypedCfgCompiler.switchBodyLabel supply caseIdx))
     (hDefaultBodyEntryNotAccepted :
-      ∀ generatedSupply targetState,
+      ∀ generatedSupply,
         supply ≤ generatedSupply →
-        ¬ accept
-          (.jump
-            (.generated generatedSupply 2000)
-            targetState))
+        OutcomeSimulation.SameActivationEntryRejected cfg source tokens accept
+          (.generated generatedSupply 2000))
     (hRel :
       ObserverPreservation.StateRel.At
         input source tokens target trace)
@@ -2844,11 +2635,24 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
         afterScrutinee.source.evm.stack.pop = some (stack, value) →
         Structured.Switch.select value cases defaultBody =
           some selected →
+        (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack })).source.returns =
+          source.source.returns →
+        OutcomeSimulation.ActivationInput tokens bodyShape →
+        supply + 1 ≤ bodySupply →
         bodyTargetFuel < targetFuel →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel selected ctx
             bodySupply bodyEntry bodyShape regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult globalCalls →
+        OutcomeSimulation.LabelBeforeSupply bodyEntry bodySupply →
+        OutcomeSimulation.EntryRejected cfg
+          (afterScrutinee.withSource
+            (afterScrutinee.source.withEVM
+              { afterScrutinee.source.evm with stack := stack }))
+          tokens accept bodyEntry bodyShape →
         OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
@@ -2879,6 +2683,85 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
       (by simpa [Nat.add_assoc] using hCompile)
       hBlocks hRel hStep
   subst firstOutcome
+  let bodyShape : TypedCfg.Shape :=
+    { valueShape with slots := valueShape.slots.tail }
+  have hSourceOne :
+      1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
+    TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
+      hSource
+  have hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape := by
+    cases valueShape with
+    | mk slots tail =>
+        cases slots with
+        | nil =>
+            simp at hHead
+        | cons slot rest =>
+            simp [bodyShape, TypedCfg.Instr.type?]
+  have hCasesCompile' :
+      TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+          cases ctx supply (supply + 1) 0 valueShape
+          bodyShape regular =
+        some caseResult := by
+    simpa [bodyShape] using hCasesCompile
+  have hDefaultCompile' :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          defaultBody ctx caseResult.next
+          (LabelSupply.label supply 1) valueShape
+          bodyShape regular =
+        some defaultResult := by
+    simpa [bodyShape] using hDefaultCompile
+  subst result
+  have hCaseBlocks :
+      TypedCfgPreservation.BlocksInProgram caseResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hDefaultBlocks :
+      TypedCfgPreservation.BlocksInProgram defaultResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hCaseCalls :
+      TypedCfgPreservation.CallsInProgram caseResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hDefaultCalls :
+      TypedCfgPreservation.CallsInProgram defaultResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simp [hMem]
+  have hValueActivation :
+      OutcomeSimulation.ActivationInput tokens valueShape :=
+    hActivation.code hType
+  have hBodyActivation :
+      OutcomeSimulation.ActivationInput tokens bodyShape :=
+    hValueActivation.tail hSourceOne
+  have hAfterScrutineeReturns :
+      afterScrutinee.source.returns = source.source.returns :=
+    ObserverSemantics.Code.run_returns_eq hScrutinee
+  have hDefaultEntryShape :
+      OutcomeSimulation.LabelShape cfg
+        (LabelSupply.label supply 1) valueShape :=
+    OutcomeSimulation.LabelShape.of_hasEntry
+      (TypedCfgCompilerFacts.Switch.default_hasEntry
+        hPopType hDefaultCompile')
+      hDefaultBlocks
+  have hDispatchShape :
+      OutcomeSimulation.LabelShape cfg
+        (TypedCfgCompilerFacts.Switch.casesEntryLabel
+          supply 0 cases) valueShape := by
+    cases cases with
+    | nil =>
+        simpa [TypedCfgCompilerFacts.Switch.casesEntryLabel] using
+          hDefaultEntryShape
+    | cons head rest =>
+        exact
+          OutcomeSimulation.LabelShape.of_hasEntry
+            (TypedCfgCompilerFacts.Switch.cases_cons_test_hasEntry
+              hHead hPopType hCasesCompile')
+            hCaseBlocks
   have hDispatchReach :
       OutcomeSimulation.FirstReaches cfg accept targetFuel
         (TypedCfgCompilerFacts.Switch.casesEntryLabel supply 0 cases)
@@ -2888,50 +2771,14 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
   have hDispatchPositive : 0 < targetFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
       hDispatchReach
-      (hDispatchEntryNotAccepted 0 cases targetAfterScrutinee)
+      (hDispatchEntryNotAccepted 0 cases afterScrutinee valueShape
+        hAfterScrutineeReturns hValueActivation targetAfterScrutinee
+        hDispatchShape
+        (OutcomeSimulation.FrameMatches.of_at hAfterScrutineeRel))
   cases targetFuel with
   | zero =>
       omega
   | succ dispatchFuel =>
-      let bodyShape : TypedCfg.Shape :=
-        { valueShape with slots := valueShape.slots.tail }
-      have hSourceOne :
-          1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
-        TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
-          hSource
-      have hPopType :
-          TypedCfg.Instr.type? .pop valueShape = some bodyShape := by
-        cases valueShape with
-        | mk slots tail =>
-            cases slots with
-            | nil =>
-                simp at hHead
-            | cons slot rest =>
-                simp [bodyShape, TypedCfg.Instr.type?]
-      have hCasesCompile' :
-          TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
-              cases ctx supply (supply + 1) 0 valueShape
-              bodyShape regular =
-            some caseResult := by
-        simpa [bodyShape] using hCasesCompile
-      have hDefaultCompile' :
-          TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
-              defaultBody ctx caseResult.next
-              (LabelSupply.label supply 1) valueShape
-              bodyShape regular =
-            some defaultResult := by
-        simpa [bodyShape] using hDefaultCompile
-      subst result
-      have hCaseBlocks :
-          TypedCfgPreservation.BlocksInProgram caseResult cfg := by
-        intro block hMem
-        apply hBlocks block
-        simp [hMem]
-      have hDefaultBlocks :
-          TypedCfgPreservation.BlocksInProgram defaultResult cfg := by
-        intro block hMem
-        apply hBlocks block
-        simp [hMem]
       cases hSelect :
           Structured.Switch.select value cases defaultBody with
       | none =>
@@ -2939,7 +2786,11 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
             outcome_cases_none_of_compileCasesFuel?_and_firstReaches
               hCasesCompile' hCaseBlocks hHead hPopType hSourceOne hPop
               hSelect
-              hDispatchEntryNotAccepted
+              (fun caseIdx remaining targetState hShape hFrame =>
+                hDispatchEntryNotAccepted caseIdx remaining
+                  afterScrutinee valueShape hAfterScrutineeReturns
+                  hValueActivation targetState hShape hFrame)
+              hDefaultEntryShape
               hAfterScrutineeRel hDispatchReach
               (by
                 intro hDefaultNone defaultTargetFuel defaultTarget
@@ -3034,8 +2885,9 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
               ⟨bodyFuel, sourceOutcome,
                 hBodyEval, hOutcomeRel, hCaseArtifact⟩ :=
             outcome_cases_some_of_compileCasesFuel?_and_firstReaches
-              hCasesCompile' hCaseBlocks hHead hPopType hSourceOne hPop
+              hCasesCompile' hCaseBlocks hCaseCalls hHead hPopType hSourceOne hPop
               hSelect
+              (Nat.le_refl (supply + 1))
               (fun selectedFuel selectedOutcome selectedTarget
                   selectedTrace hSelectedEval hSelectedRel
                   hSelectedArtifact => by
@@ -3074,17 +2926,45 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                     (Structured.EffectSemantics.Stmt.Eval.switch_some
                       hScrutinee hPop rfl hSelect hSelectedEval)
                     hSelectedRel hParentArtifact)
-              hDispatchEntryNotAccepted hCaseEntryNotAccepted
-              hCaseBodyEntryNotAccepted
+              (fun caseIdx remaining targetState hShape hFrame =>
+                hDispatchEntryNotAccepted caseIdx remaining
+                  afterScrutinee valueShape hAfterScrutineeReturns
+                  hValueActivation targetState hShape hFrame)
+              (fun caseIdx targetState hShape hFrame =>
+                hCaseEntryNotAccepted caseIdx
+                  afterScrutinee valueShape hAfterScrutineeReturns
+                  hValueActivation targetState hShape hFrame)
+              (fun caseIdx targetState hShape hFrame =>
+                hCaseBodyEntryNotAccepted caseIdx
+                  (afterScrutinee.withSource
+                    (afterScrutinee.source.withEVM
+                      { afterScrutinee.source.evm with stack := stack }))
+                  bodyShape (by simpa using hAfterScrutineeReturns)
+                  hBodyActivation targetState hShape hFrame)
+              hDefaultEntryShape
               hAfterScrutineeRel hDispatchReach
               (by
                 intro bodyCompilerFuel caseSupply caseIdx bodyResult
-                  bodyTargetFuel hBodyLt hBodyCompile hBodyBlocks
+                  bodyTargetFuel hBodySupply hBodyLt
+                  hBodyCompile hBodyBlocks hBodyCalls
                 exact
                   hBodyAdequate bodyTargetFuel
                     hScrutinee hPop hSelect
+                    (by simpa using hAfterScrutineeReturns)
+                    hBodyActivation
+                    hBodySupply
                     (Nat.lt_trans hBodyLt (Nat.lt_succ_self dispatchFuel))
-                    hBodyCompile hBodyBlocks)
+                    hBodyCompile hBodyBlocks hBodyCalls
+                    (by
+                      simp [OutcomeSimulation.LabelBeforeSupply,
+                        TypedCfgCompiler.switchBodyLabel]
+                      omega)
+                    (hCaseBodyEntryNotAccepted caseIdx
+                      (afterScrutinee.withSource
+                        (afterScrutinee.source.withEVM
+                          { afterScrutinee.source.evm with stack := stack }))
+                      bodyShape (by simpa using hAfterScrutineeReturns)
+                      hBodyActivation))
               (by
                 intro hDefaultSelected defaultTargetFuel defaultTarget
                   defaultTrace hDefaultLe hDefaultRel hDefaultReach
@@ -3104,7 +2984,7 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                       hDefaultEval, hDefaultOutcomeRel,
                       hDefaultArtifact⟩ :=
                   outcome_default_some_of_compileDefaultFuel?_and_firstReaches
-                    hDefaultSelectedCompile hDefaultBlocks hPopType
+                    hDefaultSelectedCompile hDefaultBlocks hDefaultCalls hPopType
                     hSourceOne hPop
                     (fun selectedFuel selectedOutcome selectedTarget
                         selectedTrace hSelectedEval hSelectedRel
@@ -3148,23 +3028,46 @@ theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                           (Structured.EffectSemantics.Stmt.Eval.switch_some
                             hScrutinee hPop rfl hSelect hSelectedEval)
                           hSelectedRel hParentArtifact)
-                    (fun targetState =>
+                    (fun targetState hShape hFrame =>
                       hDefaultBodyEntryNotAccepted caseResult.next
-                        targetState
                         (Nat.le_trans (Nat.le_succ supply)
                           (TypedCfgCompilerFacts.Supply.cases_next_ge
-                            hHead hPopType hCasesCompile')))
+                            hHead hPopType hCasesCompile'))
+                        (afterScrutinee.withSource
+                          (afterScrutinee.source.withEVM
+                            { afterScrutinee.source.evm with stack := stack }))
+                        bodyShape (by simpa using hAfterScrutineeReturns)
+                        hBodyActivation targetState hShape hFrame)
                     hDefaultRel hDefaultReach
                     (by
                       intro bodyResult bodyTargetFuel hBodyLt
-                        hBodyCompile hBodyBlocks
+                        hBodyCompile hBodyBlocks hBodyCalls
                       exact
                         hBodyAdequate bodyTargetFuel
                           hScrutinee hPop hSelect
+                          (by simpa using hAfterScrutineeReturns)
+                          hBodyActivation
+                          (Nat.le_trans
+                            (TypedCfgCompilerFacts.Supply.cases_next_ge
+                              hHead hPopType hCasesCompile')
+                            (Nat.le_succ caseResult.next))
                           (Nat.lt_trans hBodyLt
                             (Nat.lt_of_le_of_lt hDefaultLe
                               (Nat.lt_succ_self dispatchFuel)))
-                          hBodyCompile hBodyBlocks)
+                          hBodyCompile hBodyBlocks hBodyCalls
+                          (by
+                            simp [OutcomeSimulation.LabelBeforeSupply])
+                          (hDefaultBodyEntryNotAccepted caseResult.next
+                            (Nat.le_trans (Nat.le_succ supply)
+                              (TypedCfgCompilerFacts.Supply.cases_next_ge
+                                hHead hPopType hCasesCompile'))
+                            (afterScrutinee.withSource
+                              (afterScrutinee.source.withEVM
+                                { afterScrutinee.source.evm with
+                                  stack := stack }))
+                            bodyShape
+                            (by simpa using hAfterScrutineeReturns)
+                            hBodyActivation))
                 have hExpectedFallthrough :
                     defaultResult.fallthrough? = some bodyShape :=
                   TypedCfgCompilerFacts.Switch.fallthrough_of_compileDefaultFuel?

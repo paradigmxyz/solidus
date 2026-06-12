@@ -30,11 +30,15 @@ private theorem adequateWithinFuel_cons_withTail
     (targetFuel : Nat)
     (hFallthrough :
       headResult.fallthrough? = some tailInput)
+    (hEntryShape :
+      OutcomeSimulation.LabelShape cfg entry input)
     (hEntryNotAccepted :
       ∀ targetState,
-        ¬ OutcomeSimulation.JumpAt source tokens
-            (TypedCfgCompiler.restLabel supply) tailInput accept
-            (.jump entry targetState))
+        OutcomeSimulation.LabelShape cfg entry input →
+          OutcomeSimulation.FrameMatches source tokens input targetState →
+          ¬ OutcomeSimulation.JumpAt source tokens
+              (TypedCfgCompiler.restLabel supply) tailInput accept
+              (.jump entry targetState))
     (hTailEntryNotAccepted :
       ∀ {tailSource : ObserverSemantics.State transcript} targetState,
         tailSource.source.returns = source.source.returns →
@@ -91,7 +95,10 @@ private theorem adequateWithinFuel_cons_withTail
       hReach.run hFinalAccepted
   have hPrefixPositive : 0 < prefixFuel :=
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-      hPrefix (hEntryNotAccepted target)
+      hPrefix
+        (hEntryNotAccepted target
+          hEntryShape
+          (OutcomeSimulation.FrameMatches.of_at hRel))
   cases prefixFuel with
   | zero =>
       omega
@@ -544,6 +551,7 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     (targetFuel : Nat)
     (hCompile :
       TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
@@ -551,11 +559,15 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hEntryNotAccepted :
       ∀ joinShape targetState,
-        ¬ OutcomeSimulation.JumpAt source tokens
-            (TypedCfgCompiler.restLabel supply) joinShape accept
-            (.jump entry targetState))
+        OutcomeSimulation.LabelShape cfg entry input →
+          OutcomeSimulation.FrameMatches source tokens input targetState →
+          ¬ OutcomeSimulation.JumpAt source tokens
+              (TypedCfgCompiler.restLabel supply) joinShape accept
+              (.jump entry targetState))
     (hTailEntryNotAccepted :
       ∀ {headResult : TypedCfgCompiler.Result}
         {joinShape : TypedCfg.Shape},
@@ -577,6 +589,7 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult globalCalls →
         headResult.fallthrough? = none →
         ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
           OutcomeSimulation.AdequateWithinFuel
@@ -595,6 +608,7 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult globalCalls →
         headResult.fallthrough? = some joinShape →
         OutcomeSimulation.LabelShape cfg
           (TypedCfgCompiler.restLabel supply) joinShape →
@@ -613,12 +627,16 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
       ∀ {headResult tailResult : TypedCfgCompiler.Result}
         {tailInput : TypedCfg.Shape}
         {tailSource : ObserverSemantics.State transcript},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
         headResult.fallthrough? = some tailInput →
         TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
             headResult.next (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        TypedCfgPreservation.CallsInProgram tailResult globalCalls →
         tailSource.source.returns = source.source.returns →
         ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
           OutcomeSimulation.AdequateWithinFuel
@@ -648,7 +666,7 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
     exact
       adequateWithinFuel_cons_noTail targetFuel
         hFallthrough
-        (hHeadNoTail hHeadCompile hBlocks hFallthrough)
+        (hHeadNoTail hHeadCompile hBlocks hCalls hFallthrough)
   · rcases hWithTail with
       ⟨tailInput, tailResult,
         hFallthrough, hTailCompile, rfl⟩
@@ -656,21 +674,29 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
       TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
     have hTailBlocks :=
       TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+    have hHeadCalls :=
+      TypedCfgPreservation.CallsInProgram.left_of_append hCalls
+    have hTailCalls :=
+      TypedCfgPreservation.CallsInProgram.right_of_append hCalls
     have hTailShape :
         OutcomeSimulation.LabelShape cfg
           (TypedCfgCompiler.restLabel supply) tailInput :=
       OutcomeSimulation.LabelShape.of_compileStmtListFuel?
         hTailCompile hTailBlocks
+    have hEntryShape :
+        OutcomeSimulation.LabelShape cfg entry input :=
+      OutcomeSimulation.LabelShape.of_compileStmtListFuel?
+        hCompile hBlocks
     exact
       adequateWithinFuel_cons_withTail targetFuel
-        hFallthrough (hEntryNotAccepted tailInput)
+        hFallthrough hEntryShape (hEntryNotAccepted tailInput)
         (fun targetState hReturns hFrame =>
           hTailEntryNotAccepted hHeadCompile hFallthrough hTailShape
             targetState hReturns hFrame)
-        (hHeadWithTail hHeadCompile hHeadBlocks
+        (hHeadWithTail hHeadCompile hHeadBlocks hHeadCalls
           hFallthrough hTailShape)
         (fun tailTargetFuel hFuel {_tailSource} hReturns =>
-          hTail hFallthrough hTailCompile hTailBlocks
+          hTail hHeadCompile hFallthrough hTailCompile hTailBlocks hTailCalls
             hReturns
             tailTargetFuel hFuel)
 
@@ -687,17 +713,22 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    {globalCalls : List TypedCfgCompiler.DispatchSite}
     (hCompile :
       TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
           (stmt :: rest) ctx supply entry input regular =
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result globalCalls)
     (hEntryNotAccepted :
       ∀ joinShape targetState,
-        ¬ OutcomeSimulation.JumpAt source tokens
-            (TypedCfgCompiler.restLabel supply) joinShape accept
-            (.jump entry targetState))
+        OutcomeSimulation.LabelShape cfg entry input →
+          OutcomeSimulation.FrameMatches source tokens input targetState →
+          ¬ OutcomeSimulation.JumpAt source tokens
+              (TypedCfgCompiler.restLabel supply) joinShape accept
+              (.jump entry targetState))
     (hTailEntryNotAccepted :
       ∀ {headResult : TypedCfgCompiler.Result}
         {joinShape : TypedCfg.Shape},
@@ -719,6 +750,7 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult globalCalls →
         headResult.fallthrough? = none →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
@@ -736,6 +768,7 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
             entry input (TypedCfgCompiler.restLabel supply) =
           some headResult →
         TypedCfgPreservation.BlocksInProgram headResult cfg →
+        TypedCfgPreservation.CallsInProgram headResult globalCalls →
         headResult.fallthrough? = some joinShape →
         OutcomeSimulation.LabelShape cfg
           (TypedCfgCompiler.restLabel supply) joinShape →
@@ -753,12 +786,16 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
       ∀ {headResult tailResult : TypedCfgCompiler.Result}
         {tailInput : TypedCfg.Shape}
         {tailSource : ObserverSemantics.State transcript},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
         headResult.fallthrough? = some tailInput →
         TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
             headResult.next (TypedCfgCompiler.restLabel supply)
             tailInput regular =
           some tailResult →
         TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        TypedCfgPreservation.CallsInProgram tailResult globalCalls →
         tailSource.source.returns = source.source.returns →
         OutcomeSimulation.AdequateWithin
           (fun sourceFuel sourceOutcome =>
@@ -783,20 +820,20 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
     targetOutcome hRel hReach
   exact
     adequateWithinFuel_cons_of_compileStmtListFuel?
-      targetFuel hCompile hBlocks hEntryNotAccepted
+      targetFuel hCompile hBlocks hCalls hEntryNotAccepted
       hTailEntryNotAccepted
-      (fun hHeadCompile hHeadBlocks hFallthrough
+      (fun hHeadCompile hHeadBlocks hHeadCalls hFallthrough
           headTargetFuel _hFuel =>
-        (hHeadNoTail hHeadCompile hHeadBlocks hFallthrough).fuel
+        (hHeadNoTail hHeadCompile hHeadBlocks hHeadCalls hFallthrough).fuel
           headTargetFuel)
-      (fun hHeadCompile hHeadBlocks hFallthrough hShape
+      (fun hHeadCompile hHeadBlocks hHeadCalls hFallthrough hShape
           headTargetFuel _hFuel =>
-        (hHeadWithTail hHeadCompile hHeadBlocks
+        (hHeadWithTail hHeadCompile hHeadBlocks hHeadCalls
           hFallthrough hShape).fuel headTargetFuel)
-      (fun hFallthrough hTailCompile hTailBlocks
-          hReturns tailTargetFuel _hFuel =>
-        (hTail hFallthrough hTailCompile hTailBlocks
-          hReturns).fuel
+      (fun hHeadCompile hFallthrough hTailCompile hTailBlocks
+          hTailCalls hReturns tailTargetFuel _hFuel =>
+        (hTail hHeadCompile hFallthrough hTailCompile hTailBlocks
+          hTailCalls hReturns).fuel
           tailTargetFuel)
       hAccept hRel hReach
 

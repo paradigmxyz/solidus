@@ -3034,6 +3034,40 @@ def calls
     List TypedCfgCompiler.DispatchSite :=
   context.main.calls ++ context.procCalls
 
+theorem entry_eq
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg) :
+    cfg.entry = TypedCfgCompiler.entryLabel := by
+  rw [context.cfgEq]
+
+theorem programEndBlock
+    {source : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (context : GeneratedContext source entryShapes cfg) :
+    cfg.findBlock? ProcLabel.programEnd =
+      some
+        { label := ProcLabel.programEnd
+          input :=
+            context.main.fallthrough?.getD TypedCfg.Shape.caller
+          body := []
+          output :=
+            context.main.fallthrough?.getD TypedCfg.Shape.caller
+          term := .invalid } := by
+  let block : TypedCfg.Block :=
+    { label := ProcLabel.programEnd
+      input := context.main.fallthrough?.getD TypedCfg.Shape.caller
+      body := []
+      output := context.main.fallthrough?.getD TypedCfg.Shape.caller
+      term := .invalid }
+  have hMem : block ∈ cfg.blocks := by
+    rw [context.cfgEq]
+    simp [block, List.append_assoc]
+  simpa [block] using
+    TypedCfg.Program.findBlock?_eq_some_of_mem context.wellTyped.1 hMem
+
 def of_generate
     {source : Structured.Program}
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}

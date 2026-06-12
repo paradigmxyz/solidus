@@ -259,6 +259,122 @@ theorem stmt_hasEntry
 
 end
 
+namespace Switch
+
+theorem cases_cons_test_hasEntry
+    {fuel : Nat} {caseValue : Word}
+    {body : Structured.Block}
+    {rest : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? fuel
+          ((caseValue, body) :: rest) ctx base supply idx
+          valueShape bodyShape regular =
+        some result) :
+    HasEntry result
+      (TypedCfgCompiler.switchTestLabel base idx) valueShape := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+  | succ compilerFuel =>
+      obtain ⟨bodyResult, tail, _hBody, _hRequire, _hTail, rfl⟩ :=
+        components_of_compileCasesFuel?_cons
+          hHead hPopType hCompile
+      exact
+        ⟨{ label := TypedCfgCompiler.switchTestLabel base idx
+           input := valueShape
+           body := [.dup 0, .push caseValue, .prim .eq]
+           output := testOutput valueShape
+           term :=
+             .jumpi (TypedCfgCompiler.switchCaseLabel base idx)
+               (nextTestLabel base idx rest) },
+          by simp, rfl, rfl⟩
+
+theorem cases_cons_case_hasEntry
+    {fuel : Nat} {caseValue : Word}
+    {body : Structured.Block}
+    {rest : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? fuel
+          ((caseValue, body) :: rest) ctx base supply idx
+          valueShape bodyShape regular =
+        some result) :
+    HasEntry result
+      (TypedCfgCompiler.switchCaseLabel base idx) valueShape := by
+  cases fuel with
+  | zero =>
+      simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+  | succ compilerFuel =>
+      obtain ⟨bodyResult, tail, _hBody, _hRequire, _hTail, rfl⟩ :=
+        components_of_compileCasesFuel?_cons
+          hHead hPopType hCompile
+      exact
+        ⟨{ label := TypedCfgCompiler.switchCaseLabel base idx
+           input := valueShape
+           body := [.pop]
+           output := bodyShape
+           term := .jump (TypedCfgCompiler.switchBodyLabel base idx) },
+          by simp, rfl, rfl⟩
+
+theorem default_hasEntry
+    {compilerFuel : Nat} {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hPopType :
+      TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel
+          defaultBody ctx supply entry valueShape bodyShape regular =
+        some result) :
+    HasEntry result entry valueShape := by
+  cases defaultBody with
+  | none =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileDefaultFuel?] at hCompile
+      | succ compilerFuel =>
+          rw [components_of_compileDefaultFuel?_none
+            hPopType hCompile]
+          exact
+            ⟨{ label := entry
+               input := valueShape
+               body := [.pop]
+               output := bodyShape
+               term := .jump regular },
+              by simp, rfl, rfl⟩
+  | some body =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileDefaultFuel?] at hCompile
+      | succ compilerFuel =>
+          obtain ⟨bodyResult, _hBody, _hRequire, rfl⟩ :=
+            components_of_compileDefaultFuel?_some
+              hPopType hCompile
+          exact
+            ⟨{ label := entry
+               input := valueShape
+               body := [.pop]
+               output := bodyShape
+               term := .jump (.generated supply 2000) },
+              by simp, rfl, rfl⟩
+
+end Switch
+
 end TypedCfgCompilerFacts
 end Structured
 end EvmCompiler
