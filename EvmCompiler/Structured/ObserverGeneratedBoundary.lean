@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.ObserverActivationBoundary
+import EvmCompiler.Structured.TypedCfgCompilerEntry
 
 namespace EvmCompiler
 namespace Structured
@@ -7,6 +8,314 @@ namespace OutcomeSimulation
 
 abbrev Continuations :=
   TypedCfgPreservation.OutcomeSimulation.Continuations
+
+/--
+The unique CFG block at `label` expects `shape`.
+-/
+def LabelShape (cfg : TypedCfg.Program)
+    (label : Assembly.Label) (shape : TypedCfg.Shape) : Prop :=
+  ∃ block,
+    cfg.findBlock? label = some block ∧
+      block.input = shape
+
+namespace LabelShape
+
+theorem of_hasEntry
+    {cfg : TypedCfg.Program} {result : TypedCfgCompiler.Result}
+    {entry : Assembly.Label} {input : TypedCfg.Shape}
+    (hEntry : TypedCfgCompilerFacts.HasEntry result entry input)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    LabelShape cfg entry input := by
+  rcases hEntry with ⟨block, hMem, hLabel, hInput⟩
+  subst entry
+  exact ⟨block, hBlocks block hMem, hInput⟩
+
+theorem of_compileBlockFuel?
+    {fuel : Nat} {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileBlockFuel? fuel block ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    LabelShape cfg entry input :=
+  of_hasEntry
+    (TypedCfgCompilerFacts.block_hasEntry hCompile)
+    hBlocks
+
+theorem of_compileBlock?
+    {block : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    (hCompile :
+      TypedCfgCompiler.compileBlock? block ctx
+          supply entry input regular = some result)
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
+    LabelShape cfg entry input := by
+  apply of_compileBlockFuel? (hBlocks := hBlocks)
+  simpa [TypedCfgCompiler.compileBlock?] using hCompile
+
+theorem procExit
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    (hLookup :
+      Structured.ProcList.lookup? name program.procs = some proc) :
+    LabelShape cfg (ProcLabel.exit proc.name)
+      (TypedCfgCompiler.Shape.procExit proc) := by
+  refine
+    ⟨TypedCfgCompiler.dispatchBlock proc generated.calls,
+      generated.dispatchBlock hLookup, rfl⟩
+
+theorem procEntry
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {name : Structured.Name} {proc : Structured.Proc}
+    (hLookup :
+      Structured.ProcList.lookup? name program.procs = some proc) :
+    LabelShape cfg (ProcLabel.entry proc.name)
+      (TypedCfgCompiler.Shape.procEntry proc) := by
+  obtain ⟨fragment, hBlocks, _hCalls⟩ :=
+    generated.procFragment_of_lookup? hLookup
+  rcases fragment.route with hDirect | hAdapter
+  · rcases hDirect with ⟨hEntry, hInput⟩
+    simpa [hEntry, hInput] using
+      (of_compileBlockFuel?
+        fragment.compile hBlocks)
+  · rcases hAdapter with
+      ⟨adapter, _hEntry, _hInput, _hFrame,
+        hAdapterCompile, hAdapterMem⟩
+    have hMem : adapter ∈ cfg.blocks := by
+      have hBlocksEq :
+          cfg.blocks =
+            generated.main.blocks ++ generated.procBlocks ++
+              TypedCfgCompiler.dispatchBlocks program.procs
+                generated.calls ++
+              [{ label := ProcLabel.programEnd
+                 input :=
+                   generated.main.fallthrough?.getD
+                     TypedCfg.Shape.caller
+                 body := []
+                 output :=
+                   generated.main.fallthrough?.getD
+                     TypedCfg.Shape.caller
+                 term := .invalid }] :=
+        congrArg TypedCfg.Program.blocks generated.cfgEq
+      rw [hBlocksEq]
+      simp [hAdapterMem, List.append_assoc]
+    have hFind :=
+      TypedCfg.Program.findBlock?_eq_some_of_mem
+        generated.wellTyped.1 hMem
+    obtain ⟨hLabel, hInput⟩ :=
+      TypedCfgCompilerFacts.mkBlock?_label_input hAdapterCompile
+    refine ⟨adapter, ?_, hInput⟩
+    simpa [hLabel] using hFind
+
+end LabelShape
+
+namespace ProcFragment
+
+theorem input_returnTokenDepth
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs : List Structured.Proc} {proc : Structured.Proc}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (fragment :
+      TypedCfgPreservation.Program.ProcFragment
+        entryShapes allProcs proc procBlocks procCalls) :
+    fragment.input.returnTokenDepth? = some proc.argc := by
+  rcases fragment.route with hDirect | hAdapter
+  · rcases hDirect with ⟨_hEntry, hInput⟩
+    simpa [hInput] using
+      TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc
+  · rcases hAdapter with
+      ⟨_adapter, _hEntry, _hInput, hFrame,
+        _hCompile, _hMem⟩
+    exact
+      TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
+        hFrame
+
+theorem entry_ne_exit
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs : List Structured.Proc} {proc : Structured.Proc}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (fragment :
+      TypedCfgPreservation.Program.ProcFragment
+        entryShapes allProcs proc procBlocks procCalls) :
+    fragment.entry ≠ ProcLabel.exit proc.name := by
+  rcases fragment.route with hDirect | hAdapter
+  · rcases hDirect with ⟨hEntry, _hInput⟩
+    rw [hEntry]
+    intro hEq
+    have hString :
+        "proc:" ++ proc.name ++ ":entry" =
+          "proc:" ++ proc.name ++ ":exit" := by
+      injection hEq
+    have hList := congrArg String.toList hString
+    simp [ProcLabel.entry, ProcLabel.exit,
+      String.toList_append, List.append_assoc] at hList
+    exact
+      (by decide :
+        (":entry".toList : List Char) ≠ ":exit".toList) hList
+  · rcases hAdapter with
+      ⟨_adapter, hEntry, _hInput, _hFrame,
+        _hCompile, _hMem⟩
+    rw [hEntry]
+    intro hEq
+    have hString :
+        "proc:" ++ proc.name ++ ":body" =
+          "proc:" ++ proc.name ++ ":exit" := by
+      injection hEq
+    have hList := congrArg String.toList hString
+    simp [ProcLabel.body, ProcLabel.exit,
+      String.toList_append, List.append_assoc] at hList
+    exact
+      (by decide :
+        (":body".toList : List Char) ≠ ":exit".toList) hList
+
+end ProcFragment
+
+/--
+The jump target belongs to the source activation that owns the CFG label.
+-/
+def OwnsJump {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word) (label : Assembly.Label)
+    (target : EVMState) : Prop :=
+  ∃ block,
+    cfg.findBlock? label = some block ∧
+      FrameMatches source tokens block.input target
+
+namespace OwnsJump
+
+theorem of_frameMatches
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {label : Assembly.Label}
+    {shape : TypedCfg.Shape} {target : EVMState}
+    (hShape : LabelShape cfg label shape)
+    (hFrame : FrameMatches source tokens shape target) :
+    OwnsJump cfg source tokens label target := by
+  rcases hShape with ⟨block, hFind, rfl⟩
+  exact ⟨block, hFind, hFrame⟩
+
+theorem congr_returns
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {label : Assembly.Label}
+    {target : EVMState}
+    (hReturns : left.source.returns = right.source.returns)
+    (hOwned : OwnsJump cfg left tokens label target) :
+    OwnsJump cfg right tokens label target := by
+  rcases hOwned with ⟨block, hFind, hFrame⟩
+  exact
+    ⟨block, hFind,
+      (FrameMatches.congr_returns hReturns).mp hFrame⟩
+
+theorem reject_extension
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {ancestor child : ObserverSemantics.State transcript}
+    {ancestorTokens childTokens : List Word}
+    {label : Assembly.Label} {shape : TypedCfg.Shape}
+    {target : EVMState} {depth : Nat}
+    (hOwned : OwnsJump cfg ancestor ancestorTokens label target)
+    (hShape : LabelShape cfg label shape)
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hExtension :
+      ActivationExtension
+        ancestor.source.returns ancestorTokens
+        child.source.returns childTokens)
+    (hAncestorHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        TypedCfgPreservation.realizeStack
+            [] ancestor.source.returns ancestorTokens = some hidden)
+    (hChild : FrameMatches child childTokens shape target) :
+    False := by
+  rcases hOwned with ⟨ownerBlock, hOwnerFind, hOwnerFrame⟩
+  rcases hShape with ⟨childBlock, hChildFind, hChildInput⟩
+  have hBlockEq : ownerBlock = childBlock :=
+    Option.some.inj (hOwnerFind.symm.trans hChildFind)
+  subst ownerBlock
+  subst shape
+  exact
+    (FrameMatches.not_of_extension
+      hDepth hExtension hAncestorHidden hChild) hOwnerFrame
+
+end OwnsJump
+
+/--
+Every accepted jump is activation-owned at its unique checked CFG input.
+-/
+def ActivationOwned {transcript : Trace}
+    (cfg : TypedCfg.Program)
+    (source : ObserverSemantics.State transcript)
+    (tokens : List Word)
+    (accept : TypedCfg.Outcome → Prop) : Prop :=
+  ∀ label target,
+    accept (.jump label target) →
+      OwnsJump cfg source tokens label target
+
+namespace ActivationOwned
+
+theorem reject_extension
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {ancestor child : ObserverSemantics.State transcript}
+    {ancestorTokens childTokens : List Word}
+    {accept : TypedCfg.Outcome → Prop}
+    {label : Assembly.Label} {shape : TypedCfg.Shape}
+    {target : EVMState} {depth : Nat}
+    (hOwned : ActivationOwned cfg ancestor ancestorTokens accept)
+    (hAccepted : accept (.jump label target))
+    (hShape : LabelShape cfg label shape)
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hExtension :
+      ActivationExtension
+        ancestor.source.returns ancestorTokens
+        child.source.returns childTokens)
+    (hAncestorHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        TypedCfgPreservation.realizeStack
+            [] ancestor.source.returns ancestorTokens = some hidden)
+    (hChild : FrameMatches child childTokens shape target) :
+    False :=
+  OwnsJump.reject_extension
+    (hOwned label target hAccepted)
+    hShape hDepth hExtension hAncestorHidden hChild
+
+theorem jumpAt
+    {transcript : Trace} {cfg : TypedCfg.Program}
+    {outerSource source : ObserverSemantics.State transcript}
+    {tokens : List Word} {next : Assembly.Label}
+    {shape : TypedCfg.Shape}
+    {accept : TypedCfg.Outcome → Prop}
+    (hOwned : ActivationOwned cfg outerSource tokens accept)
+    (hReturns :
+      outerSource.source.returns = source.source.returns)
+    (hShape : LabelShape cfg next shape) :
+    ActivationOwned cfg source tokens
+      (JumpAt source tokens next shape accept) := by
+  intro label target hAccept
+  rcases hAccept with hCurrent | hOuter
+  · rcases hCurrent with ⟨rfl, hFrame⟩
+    exact
+      OwnsJump.of_frameMatches hShape hFrame
+  · exact
+      OwnsJump.congr_returns hReturns
+        (hOwned label target hOuter)
+
+end ActivationOwned
 
 /--
 A target outcome has reached one of the Structured fragment's semantic

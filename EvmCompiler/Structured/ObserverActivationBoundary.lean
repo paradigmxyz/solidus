@@ -166,6 +166,16 @@ def JumpAt {transcript : Trace}
 
 namespace FrameMatches
 
+theorem congr_returns
+    {transcript : Trace} {shape : TypedCfg.Shape}
+    {left right : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState}
+    (hReturns : left.source.returns = right.source.returns) :
+    FrameMatches left tokens shape target ↔
+      FrameMatches right tokens shape target := by
+  unfold FrameMatches
+  rw [hReturns]
+
 theorem of_rel
     {transcript : Trace} {shape : TypedCfg.Shape}
     {initial final : ObserverSemantics.State transcript}

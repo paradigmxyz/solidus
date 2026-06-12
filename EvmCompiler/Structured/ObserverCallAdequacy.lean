@@ -469,9 +469,20 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
     (hProgramWF : program.WF)
     (hRegular : continuations.regular = regular)
     (hProcEntryNotAccepted :
-      ∀ {proc : Structured.Proc},
+      ∀ {proc : Structured.Proc}
+        {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
           ∀ target,
+            OutcomeSimulation.FrameMatches callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (TypedCfgCompiler.Shape.procEntry proc) target →
+            (∃ hidden : EvmYul.Stack Word,
+              TypedCfgPreservation.realizeStack
+                  [] source.source.returns tokens = some hidden) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ accept (.jump (ProcLabel.entry proc.name) target))
     (hProcExitNotAccepted :
       ∀ {proc : Structured.Proc}
@@ -484,9 +495,10 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
             (∃ hidden : EvmYul.Stack Word,
               TypedCfgPreservation.realizeStack
                   [] source.source.returns tokens = some hidden) →
-            (∃ frame : Structured.ReturnDest,
-              callSource.source.returns =
-                frame :: source.source.returns) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ accept (.jump (ProcLabel.exit proc.name) target))
     (hBodyEntryNotAccepted :
       ∀ {proc : Structured.Proc}
@@ -496,7 +508,18 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          TypedCfgPreservation.BlocksInProgram fragment.result cfg →
           ∀ target,
+            OutcomeSimulation.FrameMatches callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              fragment.input target →
+            (∃ hidden : EvmYul.Stack Word,
+              TypedCfgPreservation.realizeStack
+                  [] source.source.returns tokens = some hidden) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ OutcomeSimulation.JumpAt callSource
               (Structured.Stmt.callToken supply :: tokens)
               (ProcLabel.exit proc.name)
@@ -573,6 +596,28 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
         hSplit, hEntryStep, hEntryRel⟩ :=
     entry_step_of_compileStmtFuel?
       hLookupCtx hCompile hBlocks hProcWF hRel
+  let callSource : ObserverSemantics.State transcript :=
+    source.withSource
+      ((source.source.withEVM
+        { source.source.evm with stack := args }).pushReturn
+          callerStack proc.retc)
+  have hCallerHidden :
+      ∃ hidden : EvmYul.Stack Word,
+        TypedCfgPreservation.realizeStack
+            [] source.source.returns tokens = some hidden := by
+    obtain ⟨hidden, hHidden, _hStack⟩ :=
+      ObserverPreservation.StateRel.targetStack_decompose hRel
+    exact ⟨hidden, hHidden⟩
+  have hCallExtension :
+      OutcomeSimulation.ActivationExtension
+        source.source.returns tokens
+        callSource.source.returns
+        (Structured.Stmt.callToken supply :: tokens) := by
+    simpa [callSource, RunState.pushReturn, RunState.withEVM] using
+      (OutcomeSimulation.ActivationExtension.one
+        source.source.returns tokens
+        { callerStack := callerStack, retc := proc.retc }
+        (Structured.Stmt.callToken supply))
   have hAfterEntry :=
     OutcomeSimulation.FirstReaches.tail_of_step_jump
       hReach hEntryStep
@@ -580,7 +625,12 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
     OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
       hAfterEntry (by
         simpa [hName] using
-          hProcEntryNotAccepted hLookup targetAtEntry)
+          hProcEntryNotAccepted
+            (callSource := callSource) hLookup targetAtEntry
+            (by
+              simpa [callSource] using
+                OutcomeSimulation.FrameMatches.of_at hEntryRel)
+            hCallerHidden hCallExtension)
   cases targetFuel with
   | zero =>
       omega
@@ -638,11 +688,6 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
       have hAfterRoute :=
         OutcomeSimulation.FirstReaches.tail_of_prefix_jump
           hAfterEntryProc hRoutePrefix hRouteLe
-      let callSource : ObserverSemantics.State transcript :=
-        source.withSource
-          ((source.source.withEVM
-            { source.source.evm with stack := args }).pushReturn
-              callerStack proc.retc)
       have hBodyFinalAccepted :
           OutcomeSimulation.JumpAt callSource
             (Structured.Stmt.callToken supply :: tokens)
@@ -658,7 +703,9 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
       have hBodyPositive : 0 < bodyPrefixFuel :=
         OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
           hBodyReach
-          (hBodyEntryNotAccepted hLookup targetAtEntry)
+          (hBodyEntryNotAccepted hLookup hFragmentBlocks targetAtEntry
+            (OutcomeSimulation.FrameMatches.of_at hFragmentRel)
+            hCallerHidden hCallExtension)
       cases bodyPrefixFuel with
       | zero =>
           omega
@@ -857,17 +904,7 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
                         hBodyEval
                         (by simp [ObserverSemantics.Outcome.Nonhalting]))
                       hBodyStateRel hExitFits)
-                    (by
-                      obtain ⟨hidden, hHidden, _hStack⟩ :=
-                        ObserverPreservation.StateRel.targetStack_decompose
-                          hRel
-                      exact ⟨hidden, hHidden⟩)
-                    (by
-                      refine
-                        ⟨{ callerStack := callerStack, retc := proc.retc },
-                          ?_⟩
-                      simp [callSource, RunState.pushReturn,
-                        RunState.withEVM]))
+                    hCallerHidden hCallExtension)
               cases hResidual :
                   targetFuel + 1 - routePrefixFuel -
                     (bodyTargetFuel + 1) with
@@ -1002,17 +1039,7 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
                         hBodyEval
                         (by simp [ObserverSemantics.Outcome.Nonhalting]))
                       hBodyStateRel hExitFits)
-                    (by
-                      obtain ⟨hidden, hHidden, _hStack⟩ :=
-                        ObserverPreservation.StateRel.targetStack_decompose
-                          hRel
-                      exact ⟨hidden, hHidden⟩)
-                    (by
-                      refine
-                        ⟨{ callerStack := callerStack, retc := proc.retc },
-                          ?_⟩
-                      simp [callSource, RunState.pushReturn,
-                        RunState.withEVM]))
+                    hCallerHidden hCallExtension)
               cases hResidual :
                   targetFuel + 1 - routePrefixFuel -
                     (bodyTargetFuel + 1) with
@@ -1081,6 +1108,114 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?
                       ⟨returnShape, rfl, hFinalFits⟩⟩
 
 /--
+Fixed-fuel call adequacy from the shared activation-owned boundary. Recursive
+entry, body-entry, and exit separation are derived from checked CFG input
+shapes and activation extension rather than supplied as label oracles.
+-/
+theorem adequateWithinFuel_call_of_compileStmtFuel?_owned
+    {transcript : Trace} {compilerFuel : Nat}
+    {program : Structured.Program}
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {cfg : TypedCfg.Program}
+    (generated :
+      TypedCfgPreservation.Program.GeneratedContext
+        program entryShapes cfg)
+    {name : Structured.Name}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape} {result : TypedCfgCompiler.Result}
+    {continuations : OutcomeSimulation.Continuations}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    {targetFuel : Nat}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1) (.call name)
+          ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hCalls :
+      TypedCfgPreservation.CallsInProgram result generated.calls)
+    (hProcs : ctx.procs = program.procs)
+    (hProgramWF : program.WF)
+    (hRegular : continuations.regular = regular)
+    (hOwned :
+      OutcomeSimulation.ActivationOwned cfg source tokens accept)
+    (hBodyAdequate :
+      ∀ {proc : Structured.Proc}
+        {fragment :
+          TypedCfgPreservation.Program.ProcFragment
+            entryShapes program.procs proc
+            generated.procBlocks generated.procCalls}
+        {callSource : ObserverSemantics.State transcript},
+        Structured.ProcList.lookup? name program.procs = some proc →
+          ∀ {bodyTargetFuel : Nat},
+          bodyTargetFuel < targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel proc.body callSource sourceOutcome)
+            fragment.result
+            { procs := program.procs
+              leaveLabel? := some (ProcLabel.exit proc.name)
+              leaveShape? :=
+                some (TypedCfgCompiler.Shape.procExit proc) }
+            cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              { procs := program.procs
+                leaveLabel? := some (ProcLabel.exit proc.name)
+                leaveShape? :=
+                  some (TypedCfgCompiler.Shape.procExit proc) }
+              (ProcLabel.exit proc.name))
+            (OutcomeSimulation.JumpAt callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (ProcLabel.exit proc.name)
+              (TypedCfgCompiler.Shape.procExit proc) accept)
+            fragment.entry fragment.input callSource
+            (Structured.Stmt.callToken supply :: tokens)
+            bodyTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel (.call name) source sourceOutcome)
+      result ctx cfg continuations accept entry input source tokens
+      targetFuel := by
+  apply
+    adequateWithinFuel_call_of_compileStmtFuel?
+      generated hCompile hBlocks hCalls hProcs hProgramWF hRegular
+  · intro proc callSource hLookup target hFrame hHidden hExtension
+    intro hAccepted
+    exact
+      hOwned.reject_extension hAccepted
+        (OutcomeSimulation.LabelShape.procEntry generated hLookup)
+        (TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc)
+        hExtension hHidden hFrame
+  · intro proc callSource hLookup target hFrame hHidden hExtension
+    intro hAccepted
+    exact
+      hOwned.reject_extension hAccepted
+        (OutcomeSimulation.LabelShape.procExit generated hLookup)
+        (TypedCfgCompilerFacts.Call.returnTokenDepth?_procExit proc)
+        hExtension hHidden hFrame
+  · intro proc fragment callSource hLookup hFragmentBlocks
+      target hFrame hHidden hExtension
+    simp only [OutcomeSimulation.JumpAt]
+    intro hAccepted
+    rcases hAccepted with hCurrent | hOuter
+    · exact
+        (OutcomeSimulation.ProcFragment.entry_ne_exit fragment)
+          hCurrent.1
+    · exact
+        hOwned.reject_extension hOuter
+          (OutcomeSimulation.LabelShape.of_compileBlock?
+            fragment.compile hFragmentBlocks)
+          (OutcomeSimulation.ProcFragment.input_returnTokenDepth
+            fragment)
+          hExtension hHidden hFrame
+  · exact hBodyAdequate
+
+/--
 Unbounded adjacent-pass call interface. Generated-context recursion should use
 the fixed-fuel theorem above; callers that already own full callee adequacy can
 use this wrapper.
@@ -1113,9 +1248,20 @@ theorem adequateWithin_call_of_compileStmtFuel?
     (hProgramWF : program.WF)
     (hRegular : continuations.regular = regular)
     (hProcEntryNotAccepted :
-      ∀ {proc : Structured.Proc},
+      ∀ {proc : Structured.Proc}
+        {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
           ∀ target,
+            OutcomeSimulation.FrameMatches callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              (TypedCfgCompiler.Shape.procEntry proc) target →
+            (∃ hidden : EvmYul.Stack Word,
+              TypedCfgPreservation.realizeStack
+                  [] source.source.returns tokens = some hidden) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ accept (.jump (ProcLabel.entry proc.name) target))
     (hProcExitNotAccepted :
       ∀ {proc : Structured.Proc}
@@ -1128,9 +1274,10 @@ theorem adequateWithin_call_of_compileStmtFuel?
             (∃ hidden : EvmYul.Stack Word,
               TypedCfgPreservation.realizeStack
                   [] source.source.returns tokens = some hidden) →
-            (∃ frame : Structured.ReturnDest,
-              callSource.source.returns =
-                frame :: source.source.returns) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ accept (.jump (ProcLabel.exit proc.name) target))
     (hBodyEntryNotAccepted :
       ∀ {proc : Structured.Proc}
@@ -1140,7 +1287,18 @@ theorem adequateWithin_call_of_compileStmtFuel?
             generated.procBlocks generated.procCalls}
         {callSource : ObserverSemantics.State transcript},
         Structured.ProcList.lookup? name program.procs = some proc →
+          TypedCfgPreservation.BlocksInProgram fragment.result cfg →
           ∀ target,
+            OutcomeSimulation.FrameMatches callSource
+              (Structured.Stmt.callToken supply :: tokens)
+              fragment.input target →
+            (∃ hidden : EvmYul.Stack Word,
+              TypedCfgPreservation.realizeStack
+                  [] source.source.returns tokens = some hidden) →
+            OutcomeSimulation.ActivationExtension
+              source.source.returns tokens
+              callSource.source.returns
+              (Structured.Stmt.callToken supply :: tokens) →
             ¬ OutcomeSimulation.JumpAt callSource
               (Structured.Stmt.callToken supply :: tokens)
               (ProcLabel.exit proc.name)

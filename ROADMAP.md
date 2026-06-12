@@ -187,7 +187,10 @@ Adjacent boundary status:
   theorem can now use one lexicographic fuel/compiler measure across every
   recursive Structured control form. Switch tests, dispatch entries, and case
   bodies now use disjoint named label constructors, eliminating arithmetic tag
-  collisions with statement tails and with one another.
+  collisions with statement tails and with one another. Recursive calls now
+  expose an activation-owned fixed-fuel interface: compiler-derived CFG input
+  shapes separate proc entry, body entry, and exit across arbitrary recursion
+  depth without public label or call-oracle premises.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

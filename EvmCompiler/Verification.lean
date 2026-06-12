@@ -15,6 +15,7 @@ import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.ObserverGeneratedBoundary
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
+import EvmCompiler.Structured.TypedCfgCompilerEntry
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Structured.ObserverSwitchAdequacy
@@ -100,6 +101,9 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmtList_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge_succ
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.block_hasEntry
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.LabelShape.of_compileBlock?
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationOwned.reject_extension
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump
@@ -134,6 +138,7 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Call.procEntry_runN
 #check EvmCompiler.Structured.ObserverAdequacy.Call.dispatch_step
 #check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithinFuel_call_of_compileStmtFuel?_owned
 #check EvmCompiler.Structured.ObserverAdequacy.Call.adequateWithin_call_of_compileStmtFuel?
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
