@@ -473,6 +473,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_none_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_some_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_false_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_body_brk_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

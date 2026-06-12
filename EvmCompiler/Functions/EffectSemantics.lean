@@ -399,6 +399,61 @@ theorem run_for_false_of_runs {σ : Type}
     Locals.Source.Effectful.Outcome.regular]
 
 /--
+Canonical loop execution when the condition is true and the body breaks.
+-/
+theorem runForLoop_body_brk_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+      .ok (Outcome.brk afterBody)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.regular afterBody) := by
+  simp [Stmt.runForLoop, hCond, hBody, Outcome.brk,
+    Locals.Source.Effectful.Outcome.brk]
+
+/--
+Canonical source `for` execution whose initializer is regular and whose first
+body execution breaks.
+-/
+theorem run_for_body_brk_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source afterInit afterCond afterBody : σ}
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          (fuel + 1) init source =
+        .ok (Outcome.regular afterInit, initCtx))
+    (hCond :
+      Expr.evalCondition model prim cond afterInit =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body fuel afterCond =
+        .ok (Outcome.brk afterBody)) :
+    Stmt.run model prim program ctx (fuel + 2)
+        (.for_ init cond post body) source =
+      .ok
+        (Outcome.regular (model.restrictTo ctx.scope afterBody),
+          ctx) := by
+  simp [Stmt.run, hInit, Stmt.runForLoop, hCond, hBody,
+    Outcome.regular, Locals.Source.Effectful.Outcome.regular,
+    Outcome.brk, Locals.Source.Effectful.Outcome.brk]
+
+/--
 Canonical source `if` execution when the condition is false.
 -/
 theorem run_if_false_of_eval {σ : Type}
