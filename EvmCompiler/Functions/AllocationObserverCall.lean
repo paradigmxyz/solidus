@@ -137,6 +137,363 @@ theorem eval
 
 end EntryMarkers
 
+namespace ParameterPrelude
+
+/--
+Execute the concrete scratch-parameter sequence while converting one raw entry
+argument into an ordinary live spilled local.
+
+The code is exactly the value `DUP`, frame-address/store tail, compiler
+promotion swaps, and final `POP` emitted by `lowerScratchParam`.
+-/
+theorem scratch_step_code
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name}
+    {nameOp frameOp : Structured.BasicOp}
+    {promoteCode : Structured.Code}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      AllocationObserverRelation.CalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase frameDepth frameWords
+        source target)
+    (hWF : plan.WellFormed)
+    (hFresh : name ∉ realized)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan (name :: realized) =
+        AllocationObserverRelation.currentStackOrder plan realized)
+    (hSlot : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hNameOp :
+      Locals.StackOp.dup? (pending.length + 1) = some nameOp)
+    (hFrameOp :
+      Locals.StackOp.dup?
+          ((pending.length + 1) + frameDepth + 2) =
+        some frameOp)
+    (hPromote :
+      Locals.Ctx.swapRestoreUpTo? pending.length = some promoteCode) :
+    ∃ written promoted final,
+      Structured.ObserverSemantics.Code.run
+          ([Structured.BasicInstr.op nameOp] ++
+            [ Structured.BasicInstr.op frameOp,
+              Structured.BasicInstr.push
+                (AllocationSupport.slotOffset slot),
+              Structured.BasicInstr.op .add,
+              Structured.BasicInstr.op .mstore ])
+          target =
+        .ok written ∧
+      Structured.ObserverSemantics.Code.run promoteCode written =
+        .ok promoted ∧
+      Structured.ObserverSemantics.Code.run
+          [Structured.BasicInstr.op .pop] promoted =
+        .ok final ∧
+      Structured.ObserverSemantics.Code.run
+          ([Structured.BasicInstr.op nameOp] ++
+            [ Structured.BasicInstr.op frameOp,
+              Structured.BasicInstr.push
+                (AllocationSupport.slotOffset slot),
+              Structured.BasicInstr.op .add,
+              Structured.BasicInstr.op .mstore ] ++
+            promoteCode ++
+            [Structured.BasicInstr.op .pop])
+          target =
+        .ok final ∧
+      AllocationObserverRelation.CalleeEntryRel contract plan
+        (name :: realized) pending frameBase frameDepth frameWords
+        source final := by
+  obtain ⟨value, values, suffix, hValue, hLookup, hTargetStack⟩ :=
+    hRel.cons_parts
+  have hValuesLength :
+      values.length = pending.length := by
+    simpa using Functions.Source.Store.lookupMany_length hLookup
+  have hValueAt :
+      target.source.evm.stack[pending.length]? = some value := by
+    rw [hTargetStack]
+    simp [hValuesLength]
+  let afterValue :=
+    AllocationObserverRelation.StateRel.pushTarget value target
+  have hValueRun :
+      Structured.ObserverSemantics.Code.run
+          [Structured.BasicInstr.op nameOp] target =
+        .ok afterValue := by
+    exact
+      AllocationObserverPreservation.ObserverCode.run_dup
+        hNameOp hValueAt
+  have hAfterValueRel :
+      AllocationObserverRelation.ScratchStateRel contract plan realized
+        ((pending.length + 1) + 1) frameBase frameDepth frameWords
+        source afterValue := by
+    simpa using hRel.state.push_target value
+  have hAfterValueStack :
+      afterValue.source.evm.stack =
+        value :: target.source.evm.stack := by
+    rfl
+  have hRegion :
+      reservation.containsRegion
+        (AllocationObserverRelation.scratchAddress frameBase slot) 1 :=
+    hRel.state.scratchAddress_reserved_of_bound hSlot hReservation
+  obtain ⟨written, hStoreRun, hWrittenRel, hWrittenStack⟩ :=
+    AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
+      (stackOffset := pending.length + 1)
+      hAfterValueRel hAfterValueStack hWF
+      (fun other hOther => by
+        simp at hOther
+        exact hOther)
+      hStackOrder (by simp) hLocation hSlot hReservation hRegion hFrameOp
+  have hWrittenRel' :
+      AllocationObserverRelation.ScratchStateRel contract plan
+        (name :: realized) (pending.length + 1) frameBase
+        frameDepth frameWords source written := by
+    have hInsert :
+        source.source.insert name value = source.source :=
+      Locals.Source.State.insert_eq_of_apply_eq hValue
+    simpa [hInsert] using hWrittenRel
+  have hWrittenStack' :
+      written.source.evm.stack =
+        values.reverse ++ value :: suffix := by
+    rw [hWrittenStack, hTargetStack]
+  obtain
+      ⟨promoted, hPromoteRun, hPromoteCursor,
+        hPromoteStack, hPromoteShared, _hPromoteReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_swapRestoreUpTo?
+      hPromote (by simp [hValuesLength]) hWrittenStack'
+  let final :=
+    AllocationObserverRelation.StateRel.replaceStackBy
+      1 (values.reverse ++ suffix) promoted
+  have hPopRun :
+      Structured.ObserverSemantics.Code.run
+          [Structured.BasicInstr.op .pop] promoted =
+        .ok final := by
+    simpa [final] using
+      AllocationObserverPreservation.ObserverCode.run_pop hPromoteStack
+  have hFinalCursor : final.cursor = written.cursor := by
+    rw [show final.cursor = promoted.cursor by
+      simp [final, AllocationObserverRelation.StateRel.replaceStackBy,
+        Simulation.ResourceReplay.State.withSource]]
+    exact hPromoteCursor
+  have hFinalShared :
+      final.source.evm.toSharedState =
+        written.source.evm.toSharedState := by
+    rw [show
+        final.source.evm.toSharedState =
+          promoted.source.evm.toSharedState by
+      simp [final, AllocationObserverRelation.StateRel.replaceStackBy,
+        Simulation.ResourceReplay.State.withSource,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC]]
+    exact hPromoteShared
+  have hFinalStack :
+      final.source.evm.stack = values.reverse ++ suffix := by
+    rfl
+  have hFinalRel :
+      AllocationObserverRelation.CalleeEntryRel contract plan
+        (name :: realized) pending frameBase frameDepth frameWords
+        source final := by
+    apply hRel.activate_scratch_after hLookup hTargetStack hWrittenRel'
+    · exact hWrittenStack
+    · exact hFinalCursor
+    · exact hFinalShared
+    · exact hFinalStack
+  have hWholeStoreRun :
+      Structured.ObserverSemantics.Code.run
+          ([Structured.BasicInstr.op nameOp] ++
+            [ Structured.BasicInstr.op frameOp,
+              Structured.BasicInstr.push
+                (AllocationSupport.slotOffset slot),
+              Structured.BasicInstr.op .add,
+              Structured.BasicInstr.op .mstore ])
+          target =
+        .ok written := by
+    rw [AllocationObserverPreservation.ObserverCode.run_append, hValueRun]
+    exact hStoreRun
+  refine
+    ⟨written, promoted, final, hWholeStoreRun, hPromoteRun,
+      hPopRun, ?_, hFinalRel⟩
+  let storeCode : Structured.Code :=
+    [ Structured.BasicInstr.op frameOp,
+      Structured.BasicInstr.push (AllocationSupport.slotOffset slot),
+      Structured.BasicInstr.op .add,
+      Structured.BasicInstr.op .mstore ]
+  change
+    Structured.ObserverSemantics.Code.run
+        ((([Structured.BasicInstr.op nameOp] ++ storeCode) ++
+            promoteCode) ++
+          [Structured.BasicInstr.op .pop])
+        target =
+      .ok final
+  rw [AllocationObserverPreservation.ObserverCode.run_append]
+  change
+    (Structured.ObserverSemantics.Code.run
+        (([Structured.BasicInstr.op nameOp] ++ storeCode) ++ promoteCode)
+        target).bind
+      (Structured.ObserverSemantics.Code.run
+        [Structured.BasicInstr.op .pop]) =
+      .ok final
+  rw [AllocationObserverPreservation.ObserverCode.run_append]
+  change
+    ((Structured.ObserverSemantics.Code.run
+        ([Structured.BasicInstr.op nameOp] ++ storeCode) target).bind
+      (Structured.ObserverSemantics.Code.run promoteCode)).bind
+      (Structured.ObserverSemantics.Code.run
+        [Structured.BasicInstr.op .pop]) =
+      .ok final
+  rw [AllocationObserverPreservation.ObserverCode.run_append, hValueRun]
+  simp only [Except.bind]
+  change
+    ((Structured.ObserverSemantics.Code.run storeCode afterValue).bind
+        (Structured.ObserverSemantics.Code.run promoteCode)).bind
+      (Structured.ObserverSemantics.Code.run
+        [Structured.BasicInstr.op .pop]) =
+      .ok final
+  rw [show
+      Structured.ObserverSemantics.Code.run storeCode afterValue =
+        .ok written by simpa [storeCode] using hStoreRun]
+  simp only [Except.bind]
+  rw [hPromoteRun]
+  exact hPopRun
+
+/--
+Compile and evaluate one real scratch-parameter prelude step.
+
+The opcode witnesses are constructed from source-facing stack-depth bounds,
+and the resulting Structured block is the actual output of
+`lowerScratchParam` followed by `Locals.Block.compileOpen`.
+-/
+theorem scratch_step_of_lowerScratchParam
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameBase frameDepth frameWords slot : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name}
+    {ctx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {above suffix : Locals.Layout}
+    {targetProgram : Structured.Program}
+    {reservation : MemoryContract.ScratchReservation}
+    (hRel :
+      AllocationObserverRelation.CalleeEntryRel contract plan realized
+        ((name, slot) :: pending) frameBase frameDepth frameWords
+        source target)
+    (hWF : plan.WellFormed)
+    (hFresh : name ∉ realized)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hStackOrder :
+      AllocationObserverRelation.currentStackOrder plan (name :: realized) =
+        AllocationObserverRelation.currentStackOrder plan realized)
+    (hSlot : slot < frameWords)
+    (hReservation : contract.scratch? = some reservation)
+    (hLayout :
+      localsCtx.layout = above ++ name :: suffix)
+    (hAboveLength : above.length = pending.length)
+    (hAboveFresh : name ∉ above)
+    (hSuffixFresh : name ∉ suffix)
+    (hNameDepthBound : above.length + 1 ≤ 16)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName
+          (above ++ name :: suffix) =
+        some ((pending.length + 1) + frameDepth + 1))
+    (hFrameDepthBound :
+      1 + ((pending.length + 1) + frameDepth + 1) ≤ 16) :
+    ∃ compiled final,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerScratchParam ctx name slot
+                (above ++ name :: suffix)).1 } =
+        some
+          (compiled, localsCtx.withLayout (above ++ suffix)) ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram 4
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular final) ∧
+      AllocationObserverRelation.CalleeEntryRel contract plan
+        (name :: realized) pending frameBase frameDepth frameWords
+        source final := by
+  obtain ⟨nameOp, hNameOp⟩ :=
+    Locals.StackOp.exists_dup?_of_pos_of_le
+      (depth := above.length + 1) (by omega) hNameDepthBound
+  obtain ⟨frameOp, hFrameOp⟩ :=
+    Locals.StackOp.exists_dup?_of_pos_of_le
+      (depth := 1 + ((pending.length + 1) + frameDepth + 1))
+      (by omega) hFrameDepthBound
+  obtain ⟨promoteCode, hPromote⟩ :=
+    Locals.Ctx.exists_swapRestoreUpTo?_of_le
+      (depth := above.length) (by omega)
+  have hCompile :=
+    AllocationLowering.lowerScratchParam_compileOpen
+      (ctx := ctx) (name := name) (slot := slot)
+      (frameDepth := (pending.length + 1) + frameDepth + 1)
+      (above := above) (suffix := suffix) (localsCtx := localsCtx)
+      (nameOp := nameOp) (frameOp := frameOp)
+      (promoteCode := promoteCode)
+      hLayout hAboveFresh hSuffixFresh (by omega) hFrameDepth
+      hNameOp hFrameOp hPromote
+  have hNameOp' :
+      Locals.StackOp.dup? (pending.length + 1) = some nameOp := by
+    simpa [hAboveLength] using hNameOp
+  have hFrameOp' :
+      Locals.StackOp.dup?
+          ((pending.length + 1) + frameDepth + 2) =
+        some frameOp := by
+    simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hFrameOp
+  have hPromote' :
+      Locals.Ctx.swapRestoreUpTo? pending.length =
+        some promoteCode := by
+    simpa [hAboveLength] using hPromote
+  obtain
+      ⟨written, promoted, final, hStoreRun, hPromoteRun,
+        hPopRun, _hWholeRun, hFinalRel⟩ :=
+    scratch_step_code hRel hWF hFresh hLocation hStackOrder hSlot
+      hReservation hNameOp' hFrameOp' hPromote'
+  let compiled : Expressions.Block :=
+    { stmts :=
+        [ Expressions.Stmt.code
+            ([Structured.BasicInstr.op nameOp] ++
+              [ Structured.BasicInstr.op frameOp,
+                Structured.BasicInstr.push
+                  (AllocationSupport.slotOffset slot),
+                Structured.BasicInstr.op .add,
+                Structured.BasicInstr.op .mstore ]),
+          Expressions.Stmt.code promoteCode,
+          Expressions.Stmt.code [Structured.BasicInstr.op .pop] ] }
+  refine
+    ⟨compiled.stmts, final, by simpa [compiled] using hCompile, ?_,
+      hFinalRel⟩
+  change
+    Structured.ObserverSemantics.Block.Eval targetProgram 4
+      { stmts :=
+          [ Structured.Stmt.code
+              ([Structured.BasicInstr.op nameOp] ++
+                [ Structured.BasicInstr.op frameOp,
+                  Structured.BasicInstr.push
+                    (AllocationSupport.slotOffset slot),
+                  Structured.BasicInstr.op .add,
+                  Structured.BasicInstr.op .mstore ]),
+            Structured.Stmt.code promoteCode,
+            Structured.Stmt.code [Structured.BasicInstr.op .pop] ] }
+      target
+      (Structured.EffectSemantics.Outcome.regular final)
+  exact
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code hStoreRun)
+      (Structured.EffectSemantics.Block.Eval.cons_regular
+        (Structured.EffectSemantics.Stmt.Eval.code hPromoteRun)
+        (Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hPopRun)
+          Structured.EffectSemantics.Block.Eval.nil))
+
+end ParameterPrelude
+
 namespace ArgList
 
 /--

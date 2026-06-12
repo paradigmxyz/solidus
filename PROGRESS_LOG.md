@@ -29150,3 +29150,11 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   Architecture guards, exact changed-file hole scan, `git diff --check`, and
   the expanded observer axiom smoke pass; new declarations use only `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-12 compaction-resume - Continued the active end-to-end observer
+  proof from commit `3f4277e58`; the immediate target is the allocation-owned
+  transient callee-entry relation for scratch-designated parameters and its
+  conversion through the real parameter/return preludes.
+2026-06-12 compaction-resume: resumed at the transient callee-entry/parameter-prelude boundary; auditing checked status before continuing the horizontal Functions allocation proof.
+- 2026-06-12 theorem-boundary - Added allocation-owned `CalleeEntryRel` for the transient raw parameter stack and checked stack activation plus scratch activation after removal. Added pass-owned `lowerScratchParam_compileOpen` and `ParameterPrelude.scratch_step_of_lowerScratchParam`, which construct bounded `DUPn`/`SWAPn` code from the Locals owner, compile the real parameter lowerer, execute its three Structured statements, and establish the next entry relation without caller-supplied generated-code evidence.
+- 2026-06-12 validation - Focused `EvmCompiler.Functions.AllocationObserverCall` passed 1,149 jobs. The new checkpoint is registered in the verification root and resource-observer axiom smoke; full gates are running before the recursive complete-parameter prelude theorem.
+- 2026-06-12 validation - Full `EvmCompiler.Verification` passed 1,208 jobs; architecture guards, changed-file hole/axiom scan, `git diff --check`, and the expanded resource-observer axiom smoke pass. New entry/prelude declarations use only `propext`, `Classical.choice`, and `Quot.sound`.

@@ -104,6 +104,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
+#check EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
+#check EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
+#check EvmCompiler.Locals.Ctx.exists_swapRestoreUpTo?_of_le
+#check EvmCompiler.Functions.Source.Store.lookupMany_cons_parts
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.finish
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_stack
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_scratch_after
+#check EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
@@ -522,6 +532,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.declare_stack_live_existing
 #print axioms EvmCompiler.Functions.AllocationObserverCall.EntryMarkers.compileOpen
 #print axioms EvmCompiler.Functions.AllocationObserverCall.EntryMarkers.eval
+#print axioms EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
+#print axioms EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
+#print axioms EvmCompiler.Locals.Ctx.exists_swapRestoreUpTo?_of_le
+#print axioms EvmCompiler.Functions.Source.Store.lookupMany_cons_parts
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.finish
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_stack
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_scratch_after
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

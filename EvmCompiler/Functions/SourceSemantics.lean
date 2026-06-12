@@ -408,6 +408,26 @@ theorem lookupMany_getElem
               by simpa only [List.getElem?_cons_succ] using hValue,
               hStore⟩
 
+theorem lookupMany_cons_parts
+    {name : Name} {names : List Name} {store : Store}
+    {values : List Word}
+    (hLookup : lookupMany (name :: names) store = some values) :
+    ∃ value tail,
+      store name = some value ∧
+        lookupMany names store = some tail ∧
+        values = value :: tail := by
+  cases hValue : store name with
+  | none =>
+      simp [lookupMany, hValue] at hLookup
+  | some value =>
+      cases hTail : lookupMany names store with
+      | none =>
+          simp [lookupMany, hValue, hTail] at hLookup
+      | some tail =>
+          simp [lookupMany, hValue, hTail] at hLookup
+          subst values
+          exact ⟨value, tail, rfl, rfl, rfl⟩
+
 private theorem forall₂_append
     {α β : Type} {relation : α → β → Prop}
     {leftNames rightNames : List α}

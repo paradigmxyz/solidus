@@ -1,4 +1,5 @@
 import EvmCompiler.Locals.Syntax
+import Mathlib.Tactic.IntervalCases
 
 namespace EvmCompiler
 namespace Locals
@@ -225,6 +226,13 @@ def dup? : Nat → Option Structured.BasicOp
   | 16 => some .dup16
   | _ => none
 
+theorem exists_dup?_of_pos_of_le
+    {depth : Nat}
+    (hPos : 0 < depth)
+    (hLe : depth ≤ 16) :
+    ∃ op, dup? depth = some op := by
+  interval_cases depth <;> simp [dup?] at *
+
 def swap? : Nat → Option Structured.BasicOp
   | 1 => some .swap1
   | 2 => some .swap2
@@ -243,6 +251,13 @@ def swap? : Nat → Option Structured.BasicOp
   | 15 => some .swap15
   | 16 => some .swap16
   | _ => none
+
+theorem exists_swap?_of_pos_of_le
+    {depth : Nat}
+    (hPos : 0 < depth)
+    (hLe : depth ≤ 16) :
+    ∃ op, swap? depth = some op := by
+  interval_cases depth <;> simp [swap?] at *
 
 end StackOp
 
@@ -293,6 +308,22 @@ def swapRestoreUpTo? : Nat → Option Structured.Code
       let rest ← swapRestoreUpTo? n
       let op ← StackOp.swap? (n + 1)
       some (rest ++ [Structured.BasicInstr.op op])
+
+theorem exists_swapRestoreUpTo?_of_le
+    {depth : Nat}
+    (hLe : depth ≤ 16) :
+    ∃ code, swapRestoreUpTo? depth = some code := by
+  induction depth with
+  | zero =>
+      exact ⟨[], rfl⟩
+  | succ depth ih =>
+      obtain ⟨rest, hRest⟩ := ih (by omega)
+      obtain ⟨op, hOp⟩ :=
+        StackOp.exists_swap?_of_pos_of_le
+          (depth := depth + 1) (by omega) hLe
+      exact
+        ⟨rest ++ [Structured.BasicInstr.op op],
+          by simp [swapRestoreUpTo?, hRest, hOp]⟩
 
 def promoteNameStackOnly? (ctx : Ctx) (name : Name) :
     Option (Structured.Code × Layout) := do

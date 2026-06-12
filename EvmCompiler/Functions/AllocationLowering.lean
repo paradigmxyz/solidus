@@ -169,6 +169,40 @@ theorem exprSeqOfList_compileCode_cons
 def eraseName (name : Name) (layout : Locals.Layout) : Locals.Layout :=
   layout.filter fun candidate => candidate != name
 
+private theorem filter_ne_self
+    {name : Name} {layout : Locals.Layout}
+    (hNotMem : name ∉ layout) :
+    layout.filter (fun candidate => candidate != name) = layout := by
+  induction layout with
+  | nil =>
+      rfl
+  | cons head tail ih =>
+      have hHead : head ≠ name := by
+        intro hEq
+        subst head
+        exact hNotMem (by simp)
+      have hTail : name ∉ tail := by
+        intro hMem
+        exact hNotMem (by simp [hMem])
+      simp [hHead, ih hTail]
+
+theorem eraseName_append_name
+    {name : Name} {above suffix : Locals.Layout}
+    (hAbove : name ∉ above)
+    (hSuffix : name ∉ suffix) :
+    eraseName name (above ++ name :: suffix) = above ++ suffix := by
+  simp [eraseName, List.filter_append,
+    filter_ne_self hAbove, filter_ne_self hSuffix]
+
+theorem promoteAt_append_name
+    (name : Name) (above suffix : Locals.Layout) :
+    Locals.Layout.promoteAt above.length
+        (above ++ name :: suffix) =
+      name :: above ++ suffix := by
+  unfold Locals.Layout.promoteAt
+  rw [List.getElem?_append_right (Nat.le_refl above.length)]
+  simp
+
 def bindEntryLayout (layout : Locals.Layout) : Locals.Stmt :=
   .expr
     (Locals.Expr.code (results := 0)
@@ -202,6 +236,127 @@ def lowerScratchParam (ctx : Ctx) (name : Name) (slot : Nat)
      .promoteName name,
      .cleanupTo target ],
    target)
+
+/--
+The real scratch-parameter lowerer compiles to one value/frame store, the
+compiler's promotion swaps, and one final pop.
+-/
+theorem lowerScratchParam_compileOpen
+    {ctx : Ctx} {name : Name} {slot frameDepth : Nat}
+    {above suffix : Locals.Layout}
+    {localsCtx : Locals.Ctx}
+    {nameOp frameOp : Structured.BasicOp}
+    {promoteCode : Structured.Code}
+    (hLayout :
+      localsCtx.layout = above ++ name :: suffix)
+    (hAbove : name ∉ above)
+    (hSuffix : name ∉ suffix)
+    (hBound : above.length ≤ 16)
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName
+          (above ++ name :: suffix) =
+        some frameDepth)
+    (hNameOp :
+      Locals.StackOp.dup? (above.length + 1) = some nameOp)
+    (hFrameOp :
+      Locals.StackOp.dup? (1 + frameDepth) = some frameOp)
+    (hPromote :
+      Locals.Ctx.swapRestoreUpTo? above.length = some promoteCode) :
+    Locals.Block.compileOpen localsCtx
+        { stmts := (lowerScratchParam ctx name slot
+            (above ++ name :: suffix)).1 } =
+      some
+        ([ Expressions.Stmt.code
+              ([Structured.BasicInstr.op nameOp] ++
+                [ Structured.BasicInstr.op frameOp,
+                  Structured.BasicInstr.push
+                    (AllocationSupport.slotOffset slot),
+                  Structured.BasicInstr.op .add,
+                  Structured.BasicInstr.op .mstore ]),
+           Expressions.Stmt.code promoteCode,
+           Expressions.Stmt.code [Structured.BasicInstr.op .pop] ],
+         localsCtx.withLayout (above ++ suffix)) := by
+  have hNameDepth :
+      Locals.Layout.lookupDepth? name
+          (above ++ name :: suffix) =
+        some (above.length + 1) := by
+    apply Locals.Layout.lookupDepth?_append_of_not_mem hAbove
+    simp [Locals.Layout.lookupDepth?, Locals.Layout.lookupDepthFrom]
+  have hValueCompile :
+      Locals.Expr.compileCode localsCtx 0 (.var name) =
+        some [Structured.BasicInstr.op nameOp] := by
+    simp [Locals.Expr.compileCode, hLayout, hNameDepth, hNameOp]
+  have hStoreCompile :
+      Locals.Expr.compileCode localsCtx 0
+          (scratchStoreExpr ctx.frameName slot (.var name)) =
+        some
+          ([Structured.BasicInstr.op nameOp] ++
+            [ Structured.BasicInstr.op frameOp,
+              Structured.BasicInstr.push
+                (AllocationSupport.slotOffset slot),
+              Structured.BasicInstr.op .add,
+              Structured.BasicInstr.op .mstore ]) := by
+    apply scratchStoreExpr_compileCode hValueCompile
+    · simpa [hLayout] using hFrameDepth
+    · simpa using hFrameOp
+  have hTarget :
+      eraseName name (above ++ name :: suffix) =
+        above ++ suffix :=
+    eraseName_append_name hAbove hSuffix
+  have hPromoteAt :
+      Locals.Layout.promoteAt above.length
+          (above ++ name :: suffix) =
+        name :: above ++ suffix :=
+    promoteAt_append_name name above suffix
+  have hPromoteCtx :
+      localsCtx.promoteNameStackOnly? name =
+        some (promoteCode, name :: above ++ suffix) := by
+    unfold Locals.Ctx.promoteNameStackOnly?
+    rw [hLayout, hNameDepth]
+    have hDepthBound : above.length + 1 ≤ 17 := by
+      omega
+    simp [hDepthBound, hPromote, hPromoteAt]
+  have hCleanupCtx :
+      (localsCtx.withLayout
+          (name :: above ++ suffix)).cleanupTo?
+          (above ++ suffix).length =
+        some [Structured.BasicInstr.op .pop] := by
+    simp [Locals.Ctx.cleanupTo?, Locals.Ctx.withLayout]
+  have hStoreStmt :
+      Locals.Stmt.compile localsCtx
+          (.expr
+            (scratchStoreExpr ctx.frameName slot (.var name))) =
+        some
+          ([Expressions.Stmt.code
+              ([Structured.BasicInstr.op nameOp] ++
+                [ Structured.BasicInstr.op frameOp,
+                  Structured.BasicInstr.push
+                    (AllocationSupport.slotOffset slot),
+                  Structured.BasicInstr.op .add,
+                  Structured.BasicInstr.op .mstore ])],
+           localsCtx) := by
+    simp [Locals.Stmt.compile, hStoreCompile, Locals.codeStmt]
+  have hPromoteStmt :
+      Locals.Stmt.compile localsCtx (.promoteName name) =
+        some
+          ([Expressions.Stmt.code promoteCode],
+           localsCtx.withLayout (name :: above ++ suffix)) := by
+    simp [Locals.Stmt.compile, hPromoteCtx, Locals.codeStmt]
+  have hCleanupStmt :
+      Locals.Stmt.compile
+          (localsCtx.withLayout (name :: above ++ suffix))
+          (.cleanupTo (above ++ suffix)) =
+        some
+          ([Expressions.Stmt.code [Structured.BasicInstr.op .pop]],
+           localsCtx.withLayout (above ++ suffix)) := by
+    unfold Locals.Stmt.compile
+    rw [if_pos (by simp [Locals.Ctx.withLayout])]
+    rw [hCleanupCtx]
+    rfl
+  simp only [lowerScratchParam, hTarget]
+  simp only [Locals.Block.compileOpen, hStoreStmt, hPromoteStmt,
+    hCleanupStmt, Bind.bind, Option.bind, List.append_nil]
+  rfl
 
 def lowerParams (ctx : Ctx) :
     List (Name × Nat) → Locals.Layout →

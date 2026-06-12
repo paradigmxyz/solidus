@@ -124,6 +124,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.backward_of_safeEval
+#check EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
+#check EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
+#check EvmCompiler.Locals.Ctx.exists_swapRestoreUpTo?_of_le
+#check EvmCompiler.Functions.Source.Store.lookupMany_cons_parts
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.finish
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_stack
+#check EvmCompiler.Functions.AllocationObserverRelation.CalleeEntryRel.activate_scratch_after
+#check EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
