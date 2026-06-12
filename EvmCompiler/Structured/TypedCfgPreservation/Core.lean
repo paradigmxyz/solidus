@@ -1711,7 +1711,11 @@ theorem withoutLoop
     (hSupports :
       ContextSupports ctx canBreak canContinue canLeave) :
     ContextSupports
-      { ctx with breakLabel? := none, continueLabel? := none }
+      { ctx with
+        breakLabel? := none
+        breakShape? := none
+        continueLabel? := none
+        continueShape? := none }
       false false canLeave := by
   exact
     { breakLabel := by simp
@@ -1723,11 +1727,14 @@ theorem loopBody
     {canBreak canContinue canLeave : Bool}
     (hSupports :
       ContextSupports ctx canBreak canContinue canLeave)
-    (breakLabel continueLabel : Assembly.Label) :
+    (breakLabel continueLabel : Assembly.Label)
+    (shape : TypedCfg.Shape) :
     ContextSupports
       { ctx with
         breakLabel? := some breakLabel
-        continueLabel? := some continueLabel }
+        breakShape? := some shape
+        continueLabel? := some continueLabel
+        continueShape? := some shape }
       true true canLeave := by
   exact
     { breakLabel := by
@@ -2228,7 +2235,8 @@ structure ProcFragment
   compile :
     TypedCfgCompiler.compileBlock? proc.body
         { procs := allProcs
-          leaveLabel? := some (ProcLabel.exit proc.name) }
+          leaveLabel? := some (ProcLabel.exit proc.name)
+          leaveShape? := some (TypedCfgCompiler.Shape.procExit proc) }
         supply entry input (ProcLabel.exit proc.name) =
       some result
   blocks :
@@ -2279,7 +2287,9 @@ def procFragment_of_lowerProcBodiesWithShapes?
             cases hBody :
                 TypedCfgCompiler.compileBlock? head.body
                   { procs := allProcs
-                    leaveLabel? := some (ProcLabel.exit head.name) }
+                    leaveLabel? := some (ProcLabel.exit head.name)
+                    leaveShape? :=
+                      some (TypedCfgCompiler.Shape.procExit head) }
                   supply (ProcLabel.entry head.name)
                   (TypedCfgCompiler.Shape.procEntry head)
                   (ProcLabel.exit head.name) with
@@ -2322,7 +2332,9 @@ def procFragment_of_lowerProcBodiesWithShapes?
                 cases hBody :
                     TypedCfgCompiler.compileBlock? head.body
                       { procs := allProcs
-                        leaveLabel? := some (ProcLabel.exit head.name) }
+                        leaveLabel? := some (ProcLabel.exit head.name)
+                        leaveShape? :=
+                          some (TypedCfgCompiler.Shape.procExit head) }
                       supply (ProcLabel.body head.name) bodyInput
                       (ProcLabel.exit head.name) with
                 | none =>
@@ -2365,7 +2377,9 @@ def procFragment_of_lowerProcBodiesWithShapes?
             cases hBody :
                 TypedCfgCompiler.compileBlock? head.body
                   { procs := allProcs
-                    leaveLabel? := some (ProcLabel.exit head.name) }
+                    leaveLabel? := some (ProcLabel.exit head.name)
+                    leaveShape? :=
+                      some (TypedCfgCompiler.Shape.procExit head) }
                   supply (ProcLabel.entry head.name)
                   (TypedCfgCompiler.Shape.procEntry head)
                   (ProcLabel.exit head.name) with
@@ -2420,7 +2434,9 @@ def procFragment_of_lowerProcBodiesWithShapes?
                 cases hBody :
                     TypedCfgCompiler.compileBlock? head.body
                       { procs := allProcs
-                        leaveLabel? := some (ProcLabel.exit head.name) }
+                        leaveLabel? := some (ProcLabel.exit head.name)
+                        leaveShape? :=
+                          some (TypedCfgCompiler.Shape.procExit head) }
                       supply (ProcLabel.body head.name) bodyInput
                       (ProcLabel.exit head.name) with
                 | none =>

@@ -2244,10 +2244,9 @@ theorem adequateWithin_brk_of_compileStmtFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_brk
+      hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   let generated : TypedCfg.Block :=
@@ -2314,10 +2313,9 @@ theorem adequateWithin_cont_of_compileStmtFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_cont
+      hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   let generated : TypedCfg.Block :=
@@ -2385,10 +2383,9 @@ theorem adequateWithin_leave_of_compileStmtFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_leave
+      hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   let generated : TypedCfg.Block :=

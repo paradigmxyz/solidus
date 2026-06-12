@@ -28822,3 +28822,5 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   `break`/`continue` contexts carry labels without destination shapes. Complete
   backward adequacy requires pass-owned typed continuation destinations and
   checked joins; do not replace these with public shape premises.
+- 2026-06-11 18:38:10 PDT - proof - Compaction resume: typed continuation destinations are now enforced by `Structured.TypedCfgCompiler`; compiler facts and preservation core build, and ordinary preservation is being migrated before observer adequacy continues.
+- 2026-06-11 18:47:00 PDT - theorem-boundary - `Structured.TypedCfgCompiler.Context` now carries typed break/continue/leave destinations; switch and loop lowering check regular joins, and pass-owned decomposition theorems feed ordinary preservation, observer preservation, and adequacy leaves. `lake build EvmCompiler.Verification` passed 1,177 jobs; architecture, hole, public-artifact, and resource-observer axiom gates passed with only the standard Lean axioms. Recursive switch/loop, call, and whole-program backward adequacy remain.

@@ -736,10 +736,9 @@ theorem eventually_brk_of_compileStmtFuel?
     (hBlocks : BlocksInProgram result cfg) :
     cfg.Eventually entry state.evm
       (TypedCfg.Outcome.jump target state.evm) := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_brk
+      hTarget hCompile
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -768,10 +767,9 @@ theorem eventually_cont_of_compileStmtFuel?
     (hBlocks : BlocksInProgram result cfg) :
     cfg.Eventually entry state.evm
       (TypedCfg.Outcome.jump target state.evm) := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_cont
+      hTarget hCompile
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -800,10 +798,9 @@ theorem eventually_leave_of_compileStmtFuel?
     (hBlocks : BlocksInProgram result cfg) :
     cfg.Eventually entry state.evm
       (TypedCfg.Outcome.jump target state.evm) := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.jumpOrInvalid, hTarget,
-    TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
+  obtain ⟨_hShape, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_leave
+      hTarget hCompile
   let generated : TypedCfg.Block :=
     { label := entry
       input := input
@@ -1166,9 +1163,19 @@ theorem regular_cases_head_of_compileCasesFuel?
       simp [hBody] at hCompile
   | some bodyResult =>
       simp only [hBody] at hCompile
+      have hRequire :
+          bodyResult.requireFallthrough? bodyShape = some () := by
+        cases hRequire :
+            bodyResult.requireFallthrough? bodyShape with
+        | none =>
+            simp [hRequire] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [hRequire] at hCompile
       cases hTail :
-          TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
-            bodyResult.next (idx + 1) valueShape bodyShape regular with
+        TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+          bodyResult.next (idx + 1) valueShape bodyShape regular with
       | none =>
           simp [hTail] at hCompile
       | some tail =>
@@ -1263,9 +1270,19 @@ theorem regular_cases_tail_of_compileCasesFuel?
       simp [hBody] at hCompile
   | some bodyResult =>
       simp only [hBody] at hCompile
+      have hRequire :
+          bodyResult.requireFallthrough? bodyShape = some () := by
+        cases hRequire :
+            bodyResult.requireFallthrough? bodyShape with
+        | none =>
+            simp [hRequire] at hCompile
+        | some unit =>
+            cases unit
+            rfl
+      simp only [hRequire] at hCompile
       cases hTail :
-          TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
-            bodyResult.next (idx + 1) valueShape bodyShape regular with
+        TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx base
+          bodyResult.next (idx + 1) valueShape bodyShape regular with
       | none =>
           simp [hTail] at hCompile
       | some tail =>
@@ -1371,10 +1388,20 @@ theorem path_cases_some_of_compileCasesFuel?
               simp [hBody] at hCompile
           | some bodyResult =>
               simp only [hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough? bodyShape = some () := by
+                cases hRequire :
+                    bodyResult.requireFallthrough? bodyShape with
+                | none =>
+                    simp [hRequire] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp only [hRequire] at hCompile
               cases hTail :
-                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
-                    base bodyResult.next (idx + 1) valueShape bodyShape
-                    regular with
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                  base bodyResult.next (idx + 1) valueShape bodyShape
+                  regular with
               | none =>
                   simp [hTail] at hCompile
               | some tail =>
@@ -1494,10 +1521,20 @@ theorem outcome_cases_some_of_compileCasesFuel?
               simp [hBody] at hCompile
           | some bodyResult =>
               simp only [hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough? bodyShape = some () := by
+                cases hRequire :
+                    bodyResult.requireFallthrough? bodyShape with
+                | none =>
+                    simp [hRequire] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp only [hRequire] at hCompile
               cases hTail :
-                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
-                    base bodyResult.next (idx + 1) valueShape bodyShape
-                    regular with
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                  base bodyResult.next (idx + 1) valueShape bodyShape
+                  regular with
               | none =>
                   simp [hTail] at hCompile
               | some tail =>
@@ -1652,10 +1689,20 @@ theorem path_cases_none_of_compileCasesFuel?
               simp [hBody] at hCompile
           | some bodyResult =>
               simp only [hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough? bodyShape = some () := by
+                cases hRequire :
+                    bodyResult.requireFallthrough? bodyShape with
+                | none =>
+                    simp [hRequire] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp only [hRequire] at hCompile
               cases hTail :
-                  TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
-                    base bodyResult.next (idx + 1) valueShape bodyShape
-                    regular with
+                TypedCfgCompiler.compileCasesFuel? bodyCompilerFuel rest ctx
+                  base bodyResult.next (idx + 1) valueShape bodyShape
+                  regular with
               | none =>
                   simp [hTail] at hCompile
               | some tail =>
@@ -1743,8 +1790,18 @@ theorem regular_default_some_of_compileDefaultFuel?
       simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
         hBody] at hCompile
   | some bodyResult =>
+      have hRequire :
+          bodyResult.requireFallthrough? bodyShape = some () := by
+        cases hRequire :
+            bodyResult.requireFallthrough? bodyShape with
+        | none =>
+            simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
+              hBody, hRequire] at hCompile
+        | some unit =>
+            cases unit
+            rfl
       simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
-        hBody] at hCompile
+        hBody, hRequire] at hCompile
       cases hCompile
       have hBodyBlocks : BlocksInProgram bodyResult cfg := by
         intro block hMem
@@ -1808,8 +1865,18 @@ theorem outcome_default_some_of_compileDefaultFuel?
       simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
         hBody] at hCompile
   | some bodyResult =>
+      have hRequire :
+          bodyResult.requireFallthrough? bodyShape = some () := by
+        cases hRequire :
+            bodyResult.requireFallthrough? bodyShape with
+        | none =>
+            simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
+              hBody, hRequire] at hCompile
+        | some unit =>
+            cases unit
+            rfl
       simp [TypedCfgCompiler.mkBlock?, TypedCfg.Block.bodyType?, hType,
-        hBody] at hCompile
+        hBody, hRequire] at hCompile
       cases hCompile
       have hBodyBlocks : BlocksInProgram bodyResult cfg := by
         intro block hMem
@@ -2478,7 +2545,11 @@ theorem components_of_compileStmtFuel?_for
           some result) :
     ∃ initResult loopInput condOutput condition bodyResult postResult,
       TypedCfgCompiler.compileBlockFuel? compilerFuel init
-          { ctx with breakLabel? := none, continueLabel? := none }
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
           (supply + 1) entry input (LabelSupply.label supply 0) =
         some initResult ∧
       initResult.fallthrough? = some loopInput ∧
@@ -2489,18 +2560,29 @@ theorem components_of_compileStmtFuel?_for
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
           { ctx with
             breakLabel? := some regular
-            continueLabel? := some (LabelSupply.label supply 2) }
+            breakShape? :=
+              some { condOutput with slots := condOutput.slots.tail }
+            continueLabel? := some (LabelSupply.label supply 2)
+            continueShape? :=
+              some { condOutput with slots := condOutput.slots.tail } }
           initResult.next (LabelSupply.label supply 1)
           { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 2) =
         some bodyResult ∧
+      bodyResult.requireFallthrough?
+          { condOutput with slots := condOutput.slots.tail } =
+        some () ∧
       TypedCfgCompiler.compileBlockFuel? compilerFuel post
-          { ctx with breakLabel? := none, continueLabel? := none }
+          { ctx with
+            breakLabel? := none
+            breakShape? := none
+            continueLabel? := none
+            continueShape? := none }
           bodyResult.next (LabelSupply.label supply 2)
-          (bodyResult.fallthrough?.getD
-            { condOutput with slots := condOutput.slots.tail })
+          { condOutput with slots := condOutput.slots.tail }
           (LabelSupply.label supply 0) =
         some postResult ∧
+      postResult.requireFallthrough? loopInput = some () ∧
       result =
         { blocks :=
             initResult.blocks ++
@@ -2516,65 +2598,8 @@ theorem components_of_compileStmtFuel?_for
             initResult.calls ++ bodyResult.calls ++ postResult.calls
           fallthrough? :=
             some { condOutput with slots := condOutput.slots.tail } } := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hInit :
-      TypedCfgCompiler.compileBlockFuel? compilerFuel init
-        { ctx with breakLabel? := none, continueLabel? := none }
-        (supply + 1) entry input (LabelSupply.label supply 0) with
-  | none =>
-      simp [hInit] at hCompile
-  | some initResult =>
-      cases hLoopInput : initResult.fallthrough? with
-      | none =>
-          simp [hInit, hLoopInput] at hCompile
-      | some loopInput =>
-          cases hType :
-              TypedCfg.Block.bodyType?
-                (TypedCfgCompiler.Code.toCfg cond) loopInput with
-          | none =>
-              simp [hInit, hLoopInput, hType] at hCompile
-          | some condOutput =>
-              cases hHead : condOutput.slots.head? with
-              | none =>
-                  simp [hInit, hLoopInput, hType, hHead] at hCompile
-              | some condition =>
-                  cases hBody :
-                      TypedCfgCompiler.compileBlockFuel? compilerFuel body
-                        { ctx with
-                          breakLabel? := some regular
-                          continueLabel? :=
-                            some (LabelSupply.label supply 2) }
-                        initResult.next (LabelSupply.label supply 1)
-                        { condOutput with
-                          slots := condOutput.slots.tail }
-                        (LabelSupply.label supply 2) with
-                  | none =>
-                      simp [hInit, hLoopInput, hType, hHead,
-                        TypedCfgCompiler.mkBlock?, hBody] at hCompile
-                  | some bodyResult =>
-                      cases hPost :
-                          TypedCfgCompiler.compileBlockFuel? compilerFuel post
-                            { ctx with
-                              breakLabel? := none
-                              continueLabel? := none }
-                            bodyResult.next
-                            (LabelSupply.label supply 2)
-                            (bodyResult.fallthrough?.getD
-                              { condOutput with
-                                slots := condOutput.slots.tail })
-                            (LabelSupply.label supply 0) with
-                      | none =>
-                          simp [hInit, hLoopInput, hType, hHead,
-                            TypedCfgCompiler.mkBlock?, hBody, hPost] at hCompile
-                      | some postResult =>
-                          simp [hInit, hLoopInput, hType, hHead,
-                            TypedCfgCompiler.mkBlock?, hBody, hPost] at hCompile
-                          cases hCompile
-                          refine
-                            ⟨initResult, loopInput, condOutput, condition,
-                              bodyResult, postResult, ?_⟩
-                          simp [hInit, hLoopInput, hType, hHead, hBody, hPost,
-                            List.append_assoc]
+  exact
+    TypedCfgCompilerFacts.Loop.components_of_compileStmtFuel?_for hCompile
 
 /--
 The generated loop-condition block follows the independent source condition
@@ -2845,7 +2870,11 @@ theorem path_of_compileStmtFuel?_and_eval
         {initFuel : Nat} {initSource : RunState}
         {initOutcome : Structured.Outcome},
         TypedCfgCompiler.compileBlockFuel? compilerFuel init
-            { ctx with breakLabel? := none, continueLabel? := none }
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
             (supply + 1) entry input (LabelSupply.label supply 0) =
           some initResult →
         initResult.fallthrough? = some loopInput →
@@ -2866,7 +2895,11 @@ theorem path_of_compileStmtFuel?_and_eval
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
             { ctx with
               breakLabel? := some regular
-              continueLabel? := some (LabelSupply.label supply 2) }
+              breakShape? :=
+                some { condOutput with slots := condOutput.slots.tail }
+              continueLabel? := some (LabelSupply.label supply 2)
+              continueShape? :=
+                some { condOutput with slots := condOutput.slots.tail } }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) =
@@ -2886,10 +2919,13 @@ theorem path_of_compileStmtFuel?_and_eval
         {postFuel : Nat} {postSource : RunState}
         {postOutcome : Structured.Outcome},
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            { ctx with breakLabel? := none, continueLabel? := none }
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
             bodyResult.next (LabelSupply.label supply 2)
-            (bodyResult.fallthrough?.getD
-              { condOutput with slots := condOutput.slots.tail })
+            { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
           some postResult →
         BlocksInProgram postResult cfg →
@@ -2907,7 +2943,7 @@ theorem path_of_compileStmtFuel?_and_eval
   rcases components_of_compileStmtFuel?_for hCompile with
     ⟨initResult, loopInput, condOutput, _condition, bodyResult,
       postResult, hInitCompile, hInitFallthrough, hType, _hHead,
-      hBodyCompile, hPostCompile, rfl⟩
+      hBodyCompile, _hBodyRequire, hPostCompile, _hPostRequire, rfl⟩
   have hInitBlocks : BlocksInProgram initResult cfg := by
     intro block hMem
     apply hBlocks block
@@ -3005,7 +3041,11 @@ theorem outcome_of_compileStmtFuel?_and_eval
         {initFuel : Nat} {initSource : RunState}
         {initOutcome : Structured.Outcome},
         TypedCfgCompiler.compileBlockFuel? compilerFuel init
-            { ctx with breakLabel? := none, continueLabel? := none }
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
             (supply + 1) entry input (LabelSupply.label supply 0) =
           some initResult →
         initResult.fallthrough? = some loopInput →
@@ -3026,7 +3066,11 @@ theorem outcome_of_compileStmtFuel?_and_eval
         TypedCfgCompiler.compileBlockFuel? compilerFuel body
             { ctx with
               breakLabel? := some regular
-              continueLabel? := some (LabelSupply.label supply 2) }
+              breakShape? :=
+                some { condOutput with slots := condOutput.slots.tail }
+              continueLabel? := some (LabelSupply.label supply 2)
+              continueShape? :=
+                some { condOutput with slots := condOutput.slots.tail } }
             initResult.next (LabelSupply.label supply 1)
             { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 2) =
@@ -3046,10 +3090,13 @@ theorem outcome_of_compileStmtFuel?_and_eval
         {postFuel : Nat} {postSource : RunState}
         {postOutcome : Structured.Outcome},
         TypedCfgCompiler.compileBlockFuel? compilerFuel post
-            { ctx with breakLabel? := none, continueLabel? := none }
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
             bodyResult.next (LabelSupply.label supply 2)
-            (bodyResult.fallthrough?.getD
-              { condOutput with slots := condOutput.slots.tail })
+            { condOutput with slots := condOutput.slots.tail }
             (LabelSupply.label supply 0) =
           some postResult →
         BlocksInProgram postResult cfg →
@@ -3072,7 +3119,7 @@ theorem outcome_of_compileStmtFuel?_and_eval
   rcases components_of_compileStmtFuel?_for hCompile with
     ⟨_initResult, _loopInput, condOutput, _condition, _bodyResult,
       _postResult, _hInitCompile, _hInitFallthrough, _hType, _hHead,
-      _hBodyCompile, _hPostCompile, hResult⟩
+      _hBodyCompile, _hBodyRequire, _hPostCompile, _hPostRequire, hResult⟩
   subst result
   exact
     ⟨{ condOutput with slots := condOutput.slots.tail }, rfl⟩
@@ -4133,7 +4180,9 @@ mutual
                               hBodyWF hBodySafe hBodyCalls
                               (OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
-                                (LabelSupply.label supply 2))
+                                (LabelSupply.label supply 2)
+                                { condOutput with
+                                  slots := condOutput.slots.tail })
                               hProcs
                               hProgramWF hProgramFrameSafe).path
                         · intro bodyResult postResult condOutput postFuel
@@ -4185,7 +4234,9 @@ mutual
                               hBodyWF hBodySafe hBodyCalls
                               (OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
-                                (LabelSupply.label supply 2))
+                                (LabelSupply.label supply 2)
+                                { condOutput with
+                                  slots := condOutput.slots.tail })
                               hProcs
                               hProgramWF hProgramFrameSafe).path
                         · intro bodyResult postResult condOutput postFuel
@@ -4237,7 +4288,9 @@ mutual
                               hBodyWF hBodySafe hBodyCalls
                               (OutcomeSimulation.ContextSupports.loopBody
                                 hSupports regular
-                                (LabelSupply.label supply 2))
+                                (LabelSupply.label supply 2)
+                                { condOutput with
+                                  slots := condOutput.slots.tail })
                               hProcs
                               hProgramWF hProgramFrameSafe).path
                         · intro bodyResult postResult condOutput postFuel
@@ -4308,7 +4361,9 @@ mutual
               ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
             let procCtx : TypedCfgCompiler.Context :=
               { procs := program.procs
-                leaveLabel? := some (ProcLabel.exit proc.name) }
+                leaveLabel? := some (ProcLabel.exit proc.name)
+                leaveShape? :=
+                  some (TypedCfgCompiler.Shape.procExit proc) }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
@@ -4402,7 +4457,9 @@ mutual
               ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
             let procCtx : TypedCfgCompiler.Context :=
               { procs := program.procs
-                leaveLabel? := some (ProcLabel.exit proc.name) }
+                leaveLabel? := some (ProcLabel.exit proc.name)
+                leaveShape? :=
+                  some (TypedCfgCompiler.Shape.procExit proc) }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)
@@ -4486,7 +4543,9 @@ mutual
               ⟨fragment, hFragmentBlocks, hFragmentCalls⟩
             let procCtx : TypedCfgCompiler.Context :=
               { procs := program.procs
-                leaveLabel? := some (ProcLabel.exit proc.name) }
+                leaveLabel? := some (ProcLabel.exit proc.name)
+                leaveShape? :=
+                  some (TypedCfgCompiler.Shape.procExit proc) }
             have hFragmentCompile :
                 TypedCfgCompiler.compileBlockFuel?
                     (TypedCfgCompiler.blockFuel proc.body + 1)

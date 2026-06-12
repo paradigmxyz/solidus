@@ -20,8 +20,11 @@ def switchTestLabel (base idx : Nat) : Assembly.Label :=
 structure Context where
   procs : List Proc
   breakLabel? : Option Assembly.Label := none
+  breakShape? : Option Shape := none
   continueLabel? : Option Assembly.Label := none
+  continueShape? : Option Shape := none
   leaveLabel? : Option Assembly.Label := none
+  leaveShape? : Option Shape := none
 
 structure DispatchSite where
   procName : Name
@@ -164,6 +167,16 @@ def jumpOrInvalid (target? : Option Assembly.Label) : TypedCfg.Terminator :=
   | some target => .jump target
   | none => .invalid
 
+def checkedJumpOrInvalid
+    (target? : Option Assembly.Label) (expected? : Option Shape)
+    (input : Shape) : Option TypedCfg.Terminator := do
+  let target ← target?
+  let expected ← expected?
+  if input = expected then
+    some (.jump target)
+  else
+    none
+
 mutual
   def blockFuel : Block → Nat
     | ⟨stmts⟩ => stmtListFuel stmts + 1
@@ -282,7 +295,11 @@ mutual
           let postLabel := LabelSupply.label supply 2
           let endLabel := regular
           let outerCtx :=
-            { ctx with breakLabel? := none, continueLabel? := none }
+            { ctx with
+              breakLabel? := none
+              breakShape? := none
+              continueLabel? := none
+              continueShape? := none }
           let initResult ←
             compileBlockFuel? fuel init outerCtx (supply + 1) entry input
               loopLabel
@@ -297,14 +314,17 @@ mutual
           let bodyCtx :=
             { ctx with
               breakLabel? := some endLabel
-              continueLabel? := some postLabel }
+              breakShape? := some branchInput
+              continueLabel? := some postLabel
+              continueShape? := some branchInput }
           let bodyResult ←
             compileBlockFuel? fuel body bodyCtx initResult.next bodyLabel
               branchInput postLabel
-          let postInput := bodyResult.fallthrough?.getD branchInput
+          let _ ← bodyResult.requireFallthrough? branchInput
           let postResult ←
             compileBlockFuel? fuel post outerCtx bodyResult.next postLabel
-              postInput loopLabel
+              branchInput loopLabel
+          let _ ← postResult.requireFallthrough? loopInput
           some
             { blocks :=
                 initResult.blocks ++ [loopBlock] ++ bodyResult.blocks ++
@@ -314,24 +334,30 @@ mutual
                 initResult.calls ++ bodyResult.calls ++ postResult.calls
               fallthrough? := some branchInput }
       | .brk => do
+          let term ←
+            checkedJumpOrInvalid ctx.breakLabel? ctx.breakShape? input
           let block ←
-            mkBlock? entry input [] (jumpOrInvalid ctx.breakLabel?)
+            mkBlock? entry input [] term
           some
             { blocks := [block]
               next := supply + 1
               calls := []
               fallthrough? := none }
       | .cont => do
+          let term ←
+            checkedJumpOrInvalid ctx.continueLabel? ctx.continueShape? input
           let block ←
-            mkBlock? entry input [] (jumpOrInvalid ctx.continueLabel?)
+            mkBlock? entry input [] term
           some
             { blocks := [block]
               next := supply + 1
               calls := []
               fallthrough? := none }
       | .leave => do
+          let term ←
+            checkedJumpOrInvalid ctx.leaveLabel? ctx.leaveShape? input
           let block ←
-            mkBlock? entry input [] (jumpOrInvalid ctx.leaveLabel?)
+            mkBlock? entry input [] term
           some
             { blocks := [block]
               next := supply + 1
@@ -392,6 +418,7 @@ mutual
           let bodyResult ←
             compileBlockFuel? fuel body ctx supply caseBodyLabel bodyShape
               regular
+          let _ ← bodyResult.requireFallthrough? bodyShape
           let tail ←
             compileCasesFuel? fuel rest ctx base bodyResult.next (idx + 1)
               valueShape bodyShape regular
@@ -424,6 +451,7 @@ mutual
           let bodyResult ←
             compileBlockFuel? fuel body ctx (supply + 1) bodyLabel bodyShape
               regular
+          let _ ← bodyResult.requireFallthrough? bodyShape
           some
             { blocks := entryBlock :: bodyResult.blocks
               next := bodyResult.next
@@ -454,7 +482,8 @@ def lowerProcBodiesWithShapes? (entryShapes : ProcEntryShapes)
   | proc :: rest, supply => do
       let ctx : Context :=
         { procs := allProcs
-          leaveLabel? := some (ProcLabel.exit proc.name) }
+          leaveLabel? := some (ProcLabel.exit proc.name)
+          leaveShape? := some (Shape.procExit proc) }
       let body ← match entryShapes.find? proc.name with
         | none =>
             compileBlock? proc.body ctx supply (ProcLabel.entry proc.name)

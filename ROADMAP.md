@@ -129,10 +129,12 @@ Adjacent boundary status:
   target fuel and a reconstructed `StateRel.At` tail boundary. The
   no-fallthrough branch and compiler-driven sequence dispatcher are also
   checked, as are the `break`, `continue`, `leave`, and terminal
-  `AdequateWithin` leaves. Switch regular joins and loop abrupt destinations
-  still need shape checks in the compiler context before their backward rules
-  can be sound; recursive switch/loop control, internal calls, and whole-program
-  backward adequacy remain.
+  `AdequateWithin` leaves. Compiler contexts now carry typed break, continue,
+  and leave destinations; switch bodies and loop body/post fragments must pass
+  checked fallthrough joins before lowering succeeds. Ordinary and observer
+  preservation, plus the existing adequacy leaves, consume pass-owned
+  decomposition theorems for those checks. Recursive switch/loop control,
+  internal calls, and whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
@@ -876,6 +878,12 @@ Latest verified checkpoint:
   empty and nonempty default paths; source `Switch.select` is lifted through
   the generated case chain, and top-level regular switch outcomes compose
   through the scrutinee block and selected/default body path;
+- Structured compiler continuations now pair labels with checked TypedCfg
+  shapes. `break`, `continue`, and `leave` compilation rejects mismatched
+  source stack shapes, and switch/loop joins reject regularly completing
+  fragments with incompatible fallthrough shapes. Compiler facts, ordinary
+  preservation, observer preservation, and adequacy leaves use the shared
+  pass-owned interface;
 - Structured-to-TypedCfg preservation now instantiates the shared
   outcome-indexed simulation interface with concrete regular, break, continue,
   leave, and halt contracts. Reusable projections turn related outcomes back
