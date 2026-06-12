@@ -114,6 +114,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
+#check EvmCompiler.Locals.Block.compileOpen_append
+#check EvmCompiler.Functions.AllocationSupport.allocateNames_names
+#check EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
@@ -542,6 +548,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
+#print axioms EvmCompiler.Locals.Block.compileOpen_append
+#print axioms EvmCompiler.Functions.AllocationSupport.allocateNames_names
+#print axioms EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
+#print axioms EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

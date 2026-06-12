@@ -492,6 +492,161 @@ theorem scratch_step_of_lowerScratchParam
           (Structured.EffectSemantics.Stmt.Eval.code hPopRun)
           Structured.EffectSemantics.Block.Eval.nil))
 
+/--
+Execute and compile the complete real parameter prelude described by the
+allocation-owned entry context.
+
+This theorem is recursive over `lowerParams` itself. Its context remains an
+internal compiler invariant; the whole-function boundary must construct that
+context from the mixed-allocation plan and successful lowering.
+-/
+theorem forward_of_context
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Structured.Program}
+    {realized : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    (hContext :
+      AllocationObserverContext.ParameterPreludeContext
+        lowerCtx plan frameWords realized pending frameDepth localsCtx)
+    (hRel :
+      AllocationObserverRelation.CalleeEntryRel contract plan realized
+        pending frameBase frameDepth frameWords source target)
+    (hWF : plan.WellFormed)
+    (hReservation : contract.scratch? = some reservation) :
+    ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerParams lowerCtx pending
+          localsCtx.layout).2 ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ScratchStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
+        finalFrameDepth frameWords source finalTarget := by
+  cases hContext with
+  | nil =>
+      refine
+        ⟨[], localsCtx, target, frameDepth, 1, ?_, ?_, ?_, ?_⟩
+      · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerParams]
+      · exact Structured.EffectSemantics.Block.Eval.nil
+      · simpa using hRel.finish
+  | @stack _ _ _ _ name slot planDepth classification fresh location
+      stackOrder tail =>
+      have hNextRel :=
+        hRel.activate_stack fresh location stackOrder
+      obtain
+          ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
+            hCompile, hFinalLayout, hEval, hFinalRel⟩ :=
+        forward_of_context tail hNextRel hWF hReservation
+      refine
+        ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
+          ?_, ?_, hEval, ?_⟩
+      · simpa [AllocationLowering.lowerParams, classification] using hCompile
+      · simpa [AllocationLowering.lowerParams, classification] using
+          hFinalLayout
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+  | @scratch _ pending _ localsCtx name slot classification fresh location
+      stackOrder slotBound layout aboveFresh suffixFresh nameDepthBound
+      frameDepthLookup frameDepthBound tail =>
+      let above : Locals.Layout :=
+        (pending.map Prod.fst).reverse
+      let suffix : Locals.Layout :=
+        AllocationObserverRelation.currentStackOrder plan
+            (name :: realized) ++
+          [lowerCtx.frameName]
+      have hLayout :
+          localsCtx.layout = above ++ name :: suffix := by
+        simpa [above, suffix, stackOrder] using layout
+      have hSuffixFresh : name ∉ suffix := by
+        simpa [suffix, stackOrder] using suffixFresh
+      have hFrameDepthLookup :
+          Locals.Layout.lookupDepth? lowerCtx.frameName
+              (above ++ name :: suffix) =
+            some ((pending.length + 1) + frameDepth + 1) := by
+        simpa [above, suffix, stackOrder] using frameDepthLookup
+      obtain
+          ⟨headCompiled, midTarget, hHeadCompile, hHeadEval, hNextRel⟩ :=
+        scratch_step_of_lowerScratchParam
+          (contract := contract) (transcript := transcript)
+          (plan := plan) (realized := realized) (pending := pending)
+          (frameBase := frameBase) (frameDepth := frameDepth)
+          (frameWords := frameWords) (slot := slot)
+          (source := source) (target := target)
+          (name := name) (ctx := lowerCtx) (localsCtx := localsCtx)
+          (above := above) (suffix := suffix)
+          (targetProgram := targetProgram) (reservation := reservation)
+          hRel hWF fresh location stackOrder slotBound hReservation
+          hLayout (by simp [above]) (by simpa [above] using aboveFresh)
+          hSuffixFresh (by simpa [above] using nameDepthBound)
+          hFrameDepthLookup frameDepthBound
+      obtain
+          ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+        forward_of_context tail hNextRel hWF hReservation
+      have hHeadCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  (AllocationLowering.lowerScratchParam lowerCtx name slot
+                    localsCtx.layout).1 } =
+            some
+              (headCompiled,
+                localsCtx.withLayout (above ++ suffix)) := by
+        simpa [hLayout] using hHeadCompile
+      have hTailCompile' :
+          Locals.Block.compileOpen
+              (localsCtx.withLayout (above ++ suffix))
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx pending
+                    (above ++ suffix)).1 } =
+            some (tailCompiled, finalCtx) := by
+        simpa [above, suffix, List.append_assoc] using hTailCompile
+      have hCombinedCompile :=
+        Locals.Block.compileOpen_append hHeadCompile' hTailCompile'
+      obtain ⟨fuel, hCombinedEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hHeadEval hTailEval
+      have hErase :
+          AllocationLowering.eraseName name
+              (above ++ name :: suffix) =
+            above ++ suffix :=
+        AllocationLowering.eraseName_append_name aboveFresh hSuffixFresh
+      refine
+        ⟨headCompiled ++ tailCompiled, finalCtx, finalTarget,
+          finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+      · simpa [AllocationLowering.lowerParams, classification, hLayout,
+          AllocationLowering.lowerScratchParam, hErase] using
+          hCombinedCompile
+      · simpa [AllocationLowering.lowerParams, classification, hLayout,
+          AllocationLowering.lowerScratchParam, hErase] using
+          hFinalLayout
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  (headCompiled ++ tailCompiled) }
+            target
+            (Structured.EffectSemantics.Outcome.regular finalTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hCombinedEval
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+termination_by pending.length
+
 end ParameterPrelude
 
 namespace ArgList

@@ -134,6 +134,91 @@ def allocateFunctionSignatures : List FunDef → CompileState →
       let (tail, state) := allocateFunctionSignatures rest state
       (slots :: tail, state)
 
+namespace FunSlots
+
+def Matches (slots : FunSlots) (fn : FunDef) : Prop :=
+  slots.name = fn.name ∧
+    slots.params.map Prod.fst = fn.params ∧
+    slots.returns.map Prod.fst = fn.returns
+
+end FunSlots
+
+theorem allocateNames_names
+    (names : List Name) (state : CompileState) :
+    (allocateNames names state).1.map Prod.fst = names := by
+  induction names generalizing state with
+  | nil =>
+      rfl
+  | cons name rest ih =>
+      simp [allocateNames, allocateName, ih]
+
+theorem allocateFunctionSignatures_matches
+    (functions : List FunDef) (state : CompileState) :
+    List.Forall₂ (fun fn slots => slots.Matches fn) functions
+      (allocateFunctionSignatures functions state).1 := by
+  induction functions generalizing state with
+  | nil =>
+      exact .nil
+  | cons fn rest ih =>
+      let paramsResult := allocateNames fn.params state
+      let params := paramsResult.1
+      let afterParams := paramsResult.2
+      let returnsResult := allocateNames fn.returns afterParams
+      let returns := returnsResult.1
+      let afterReturns := returnsResult.2
+      let tailResult := allocateFunctionSignatures rest afterReturns
+      change
+        List.Forall₂ (fun fn slots => slots.Matches fn) (fn :: rest)
+          ({ name := fn.name, params := params, returns := returns } ::
+            tailResult.1)
+      apply List.Forall₂.cons
+      · exact
+          ⟨rfl,
+            by simpa [params, paramsResult] using
+              allocateNames_names fn.params state,
+            by simpa [returns, returnsResult, afterParams, paramsResult] using
+              allocateNames_names fn.returns afterParams⟩
+      · exact ih afterReturns
+
+theorem lookupFun?_of_matches
+    {functions : List FunDef} {slots : List FunSlots}
+    {fn : FunDef}
+    (hMatch :
+      List.Forall₂ (fun fn slots => slots.Matches fn) functions slots)
+    (hNames : (functions.map FunDef.name).Nodup)
+    (hMem : fn ∈ functions) :
+    ∃ fnSlots,
+      lookupFun? fn.name slots = some fnSlots ∧
+        fnSlots.Matches fn := by
+  induction hMatch with
+  | nil =>
+      simp at hMem
+  | @cons head headSlots functions slots hHead hTail ih =>
+      have hHeadName : headSlots.name = head.name := hHead.1
+      have hHeadFresh :
+          head.name ∉ functions.map FunDef.name :=
+        (List.nodup_cons.mp hNames).1
+      have hTailNames :
+          (functions.map FunDef.name).Nodup :=
+        (List.nodup_cons.mp hNames).2
+      rcases List.mem_cons.mp hMem with hEq | hTailMem
+      · subst fn
+        exact
+          ⟨headSlots,
+            by simp [lookupFun?, hHeadName],
+            hHead⟩
+      · have hNe : head.name ≠ fn.name := by
+          intro hName
+          apply hHeadFresh
+          rw [hName]
+          exact List.mem_map.mpr ⟨fn, hTailMem, rfl⟩
+        obtain ⟨fnSlots, hLookup, hSlots⟩ :=
+          ih hTailNames hTailMem
+        exact
+          ⟨fnSlots,
+            by simp [lookupFun?, hHeadName, hNe, hLookup],
+            hSlots⟩
+
 structure ScopedAllocation where
   scope : Locals.Allocation.ScopeId
   state : CompileState
@@ -269,6 +354,35 @@ def planRecipeCore? (program : Program) :
       lexicalScopes := mainPlan.scopes ++ functionPlan.lexicalScopes
       main := mainPlan.allocation
       frameWords := mainPlan.allocation.nextSlot }
+
+theorem planRecipeCore?_lookupFun_matches
+    {program : Program} {recipe : AllocationRecipe}
+    {fn : FunDef}
+    (hPlan : planRecipeCore? program = some recipe)
+    (hMem : fn ∈ program.functions) :
+    ∃ fnSlots,
+      lookupFun? fn.name recipe.functionSlots = some fnSlots ∧
+        fnSlots.Matches fn := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            have hMatch :=
+              allocateFunctionSignatures_matches
+                program.functions initial
+            rw [hSignatures] at hMatch
+            exact lookupFun?_of_matches hMatch hNames hMem
+  · simp [hNames] at hPlan
 
 def planRecipe? (maxFrameWords : Nat) (program : Program) :
     Option AllocationRecipe := do

@@ -134,6 +134,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.lowerScratchParam_compileOpen
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_code
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.scratch_step_of_lowerScratchParam
+#check EvmCompiler.Locals.Block.compileOpen_append
+#check EvmCompiler.Functions.AllocationSupport.allocateNames_names
+#check EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
+#check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward

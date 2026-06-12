@@ -607,6 +607,46 @@ theorem compileOpen_append_components
               · simp [Block.compileOpen, hStmt, hLeftTail]
               · simp [List.append_assoc]
 
+/--
+Compose two successful open-block compilations through the compiler context
+produced by the left block.
+-/
+theorem compileOpen_append
+    {ctx middle final : Ctx}
+    {left right : List Stmt}
+    {leftCode rightCode : List Expressions.Stmt}
+    (hLeft :
+      Block.compileOpen ctx { stmts := left } =
+        some (leftCode, middle))
+    (hRight :
+      Block.compileOpen middle { stmts := right } =
+        some (rightCode, final)) :
+    Block.compileOpen ctx { stmts := left ++ right } =
+      some (leftCode ++ rightCode, final) := by
+  induction left generalizing ctx leftCode middle with
+  | nil =>
+      simp [Block.compileOpen] at hLeft
+      rcases hLeft with ⟨rfl, rfl⟩
+      simpa [Block.compileOpen] using hRight
+  | cons stmt rest ih =>
+      cases hStmt : Stmt.compile ctx stmt with
+      | none =>
+          simp [Block.compileOpen, hStmt] at hLeft
+      | some stmtResult =>
+          rcases stmtResult with ⟨stmtCode, next⟩
+          cases hRest :
+              Block.compileOpen next { stmts := rest } with
+          | none =>
+              simp [Block.compileOpen, hStmt, hRest] at hLeft
+          | some restResult =>
+              rcases restResult with ⟨restCode, restFinal⟩
+              simp [Block.compileOpen, hStmt, hRest] at hLeft
+              rcases hLeft with ⟨rfl, rfl⟩
+              have hTail :=
+                ih hRest hRight
+              simpa [Block.compileOpen, hStmt, hTail,
+                List.append_assoc]
+
 def compileToPreserving (ctx : Ctx) (preserve targetDepth : Nat)
     (block : Block) : Option Expressions.Block := do
   let (code, finalCtx) ← Block.compileOpen ctx block

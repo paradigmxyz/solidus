@@ -8,6 +8,94 @@ namespace AllocationObserverContext
 open Locals.Allocation
 
 /--
+Internal compiler invariant for realizing a function's raw parameter stack.
+
+Each constructor follows the real `lowerParams` branch. Stack parameters
+become live without emitted code; scratch parameters compile one spill step and
+continue from the layout with that raw argument removed. A whole-function
+theorem must construct this context from the mixed-allocation planner and
+successful compiler artifacts before exposing preservation publicly.
+-/
+inductive ParameterPreludeContext
+    (lowerCtx : AllocationLowering.Ctx)
+    (plan : Plan) (frameWords : Nat) :
+    List Locals.Name → List (Locals.Name × Nat) → Nat →
+      Locals.Ctx → Prop where
+  | nil
+      {realized : List Locals.Name}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx} :
+      ParameterPreludeContext lowerCtx plan frameWords
+        realized [] frameDepth localsCtx
+  | stack
+      {realized : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth planDepth : Nat}
+      {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (fresh : name ∉ realized)
+      (location :
+        plan.location? name = some (.stack planDepth))
+      (stackOrder :
+        AllocationObserverRelation.currentStackOrder plan
+            (name :: realized) =
+          name ::
+            AllocationObserverRelation.currentStackOrder plan realized)
+      (tail :
+        ParameterPreludeContext lowerCtx plan frameWords
+          (name :: realized) pending (frameDepth + 1) localsCtx) :
+      ParameterPreludeContext lowerCtx plan frameWords realized
+        ((name, slot) :: pending) frameDepth localsCtx
+  | scratch
+      {realized : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (fresh : name ∉ realized)
+      (location :
+        plan.location? name = some (.scratch slot))
+      (stackOrder :
+        AllocationObserverRelation.currentStackOrder plan
+            (name :: realized) =
+          AllocationObserverRelation.currentStackOrder plan realized)
+      (slotBound : slot < frameWords)
+      (layout :
+        localsCtx.layout =
+          (pending.map Prod.fst).reverse ++
+            name ::
+              (AllocationObserverRelation.currentStackOrder plan realized ++
+                [lowerCtx.frameName]))
+      (aboveFresh :
+        name ∉ (pending.map Prod.fst).reverse)
+      (suffixFresh :
+        name ∉
+          AllocationObserverRelation.currentStackOrder plan realized ++
+            [lowerCtx.frameName])
+      (nameDepthBound : pending.length + 1 ≤ 16)
+      (frameDepthLookup :
+        Locals.Layout.lookupDepth? lowerCtx.frameName
+            ((pending.map Prod.fst).reverse ++
+              name ::
+                (AllocationObserverRelation.currentStackOrder plan realized ++
+                  [lowerCtx.frameName])) =
+          some ((pending.length + 1) + frameDepth + 1))
+      (frameDepthBound :
+        1 + ((pending.length + 1) + frameDepth + 1) ≤ 16)
+      (tail :
+        ParameterPreludeContext lowerCtx plan frameWords
+          (name :: realized) pending frameDepth
+          (localsCtx.withLayout
+            ((pending.map Prod.fst).reverse ++
+              AllocationObserverRelation.currentStackOrder plan
+                  (name :: realized) ++
+                [lowerCtx.frameName]))) :
+      ParameterPreludeContext lowerCtx plan frameWords realized
+        ((name, slot) :: pending) frameDepth localsCtx
+
+/--
 Compiler-owned interface connecting one Functions lowering state to the
 allocation plan and Locals stack layout used to compile its expressions.
 
