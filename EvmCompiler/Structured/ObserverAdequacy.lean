@@ -656,19 +656,19 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
       exact hBound
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
-        TypedCfg.Block.bodyType?] at hType
-      cases hHeadType :
-          TypedCfg.Instr.type?
-            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-      | none =>
+      by_cases hSafe :
+          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
+      · simp only [hSafe, if_true] at hType
+        cases hHeadType :
+            TypedCfg.Instr.type?
+              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+        | none =>
           simp [hHeadType] at hType
-      | some middle =>
-          simp [hHeadType] at hType
+        | some middle =>
+          simp only [hHeadType, Option.bind_some] at hType
           have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output := by
-            simpa [TypedCfgCompiler.Code.type?,
-              TypedCfgCompiler.Code.toCfg] using hType
+              TypedCfgCompiler.Code.type? rest middle = some output :=
+            hType
           unfold ObserverSemantics.Code.run
             EffectSemantics.Code.run at hRun
           simp only [ObserverSemantics.stateModel_evm,
@@ -702,6 +702,7 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
                       simpa [RunState.withEVM] using hAfterLength
                     omega
                   exact ih hTailType hMiddleBound hRun
+      · simp [hSafe] at hType
 
 /--
 Backward frame adequacy indexed by the checked input shape.
@@ -751,19 +752,19 @@ theorem frameReflectingAt
             (ObserverSemantics.Code.withHidden state hidden)⟩
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
-        TypedCfg.Block.bodyType?] at hType
-      cases hHeadType :
-          TypedCfg.Instr.type?
-            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-      | none =>
+      by_cases hSafe :
+          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
+      · simp only [hSafe, if_true] at hType
+        cases hHeadType :
+            TypedCfg.Instr.type?
+              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+        | none =>
           simp [hHeadType] at hType
-      | some middle =>
-          simp [hHeadType] at hType
+        | some middle =>
+          simp only [hHeadType, Option.bind_some] at hType
           have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output := by
-            simpa [TypedCfgCompiler.Code.type?,
-              TypedCfgCompiler.Code.toCfg] using hType
+              TypedCfgCompiler.Code.type? rest middle = some output :=
+            hType
           unfold ObserverSemantics.Code.run
             EffectSemantics.Code.run at hFramed
           simp only [ObserverSemantics.stateModel_evm,
@@ -891,6 +892,7 @@ theorem frameReflectingAt
                   · exact
                       ObserverPreservation.ReplayStateRel.trans
                         hTailRel hExpectedFinalRel
+      · simp [hSafe] at hType
 
 /--
 Backward straight-line adequacy across realized procedure frames.
@@ -1947,9 +1949,7 @@ private theorem head_of_compileStmtFuel?_and_step
         afterScrutinee stack value targetAfter,
       firstOutcome =
         .jump (casesEntryLabel supply 0 cases) targetAfter ∧
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg scrutinee) input =
-        some valueShape ∧
+      TypedCfgCompiler.Code.type? scrutinee input = some valueShape ∧
       valueShape.slots.head? = some valueSlot ∧
       TypedCfgCompiler.compileCasesFuel? compilerFuel
           cases ctx supply (supply + 1) 0 valueShape
@@ -2018,16 +2018,14 @@ private theorem head_of_compileStmtFuel?_and_step
         rcases hStep with ⟨rfl, rfl⟩
         obtain ⟨afterScrutinee, hScrutinee, hAfterRel⟩ :=
           Code.run_of_runBody_toCfg
-            (by simpa [TypedCfgCompiler.Code.type?] using hType)
-            hRel hBody
+            hType hRel hBody
         have hAfterAt :
             ObserverPreservation.StateRel.At
               valueShape afterScrutinee tokens bodyFinal bodyTrace := by
           exact
             ⟨hAfterRel,
               Code.shapeSound scrutinee
-                (by simpa [TypedCfgCompiler.Code.type?] using hType)
-                hRel.sourceStack hScrutinee⟩
+                hType hRel.sourceStack hScrutinee⟩
         have hShapeOne : 1 ≤ valueShape.length := by
           cases valueShape with
           | mk slots tail =>
@@ -3500,12 +3498,11 @@ theorem outcome_code_of_compileStmtFuel?_and_step
           final tokens targetFinal traceFinal := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
       let generated : TypedCfg.Block :=
         { label := entry
@@ -3542,8 +3539,7 @@ theorem outcome_code_of_compileStmtFuel?_and_step
             subst traceFinal
             obtain ⟨final, hSourceRun, hFinalRel⟩ :=
               Code.run_of_runBody_toCfg
-                (by simpa [TypedCfgCompiler.Code.type?] using hType)
-                hRel hBody
+                hType hRel hBody
             exact
               ⟨final,
                 Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
@@ -3595,12 +3591,11 @@ theorem outcome_code_of_compileStmtFuel?_and_firstReaches
   have hHeadStep := hStep
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
       let generated : TypedCfg.Block :=
         { label := entry
@@ -3637,8 +3632,7 @@ theorem outcome_code_of_compileStmtFuel?_and_firstReaches
             subst firstTrace
             obtain ⟨final, hSourceRun, hFinalRel⟩ :=
               Code.run_of_runBody_toCfg
-                (by simpa [TypedCfgCompiler.Code.type?] using hType)
-                hRel hBody
+                hType hRel hBody
             have hFirstBoundary :
                 OutcomeSimulation.TargetBoundary continuations
                   (.jump regular targetFinal) :=
@@ -4003,12 +3997,11 @@ theorem outcome_code_of_compileStmtFuel?_and_step_noFrames
           final [] targetFinal traceFinal := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
       let generated : TypedCfg.Block :=
         { label := entry
@@ -4045,8 +4038,7 @@ theorem outcome_code_of_compileStmtFuel?_and_step_noFrames
             subst traceFinal
             obtain ⟨final, hSourceRun, hFinalRel⟩ :=
               Code.run_of_runBody_toCfg_noFrames
-                (by simpa [TypedCfgCompiler.Code.type?] using hType)
-                hReturns hRel.rel hBody
+                hType hReturns hRel.rel hBody
             exact
               ⟨final,
                 Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
@@ -4089,14 +4081,13 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
           final tokens targetFinal traceFinal := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
+      TypedCfgCompiler.Code.type? cond input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
       cases hHead : output.slots.head? with
       | none =>
-          simp [hType, hHead] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
       | some condition =>
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? fuel body ctx
@@ -4104,7 +4095,7 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
                 { output with slots := output.slots.tail } regular with
           | none =>
               simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+                TypedCfgCompiler.mkCodeBlock?, hBody] at hCompile
           | some bodyResult =>
               have hRequire :
                   bodyResult.requireFallthrough?
@@ -4114,12 +4105,12 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
                     bodyResult.requireFallthrough?
                       { output with slots := output.slots.tail } with
                 | none =>
-                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                    simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                       hBody, hCheck] at hCompile
                 | some unit =>
                     cases unit
                     rfl
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+              simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                 hBody, hRequire] at hCompile
               cases hCompile
               let generated : TypedCfg.Block :=
@@ -4242,14 +4233,13 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
           final tokens targetFinal traceFinal := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
+      TypedCfgCompiler.Code.type? cond input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
       cases hHead : output.slots.head? with
       | none =>
-          simp [hType, hHead] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
       | some condition =>
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? fuel body ctx
@@ -4257,7 +4247,7 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
                 { output with slots := output.slots.tail } regular with
           | none =>
               simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+                TypedCfgCompiler.mkCodeBlock?, hBody] at hCompile
           | some bodyResult =>
               have hRequire :
                   bodyResult.requireFallthrough?
@@ -4267,12 +4257,12 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
                     bodyResult.requireFallthrough?
                       { output with slots := output.slots.tail } with
                 | none =>
-                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                    simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                       hBody, hCheck] at hCompile
                 | some unit =>
                     cases unit
                     rfl
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+              simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                 hBody, hRequire] at hCompile
               cases hCompile
               have hBodyBlocks :
@@ -4424,14 +4414,13 @@ theorem condition_if_of_compileStmtFuel?_and_step
             final tokens targetFinal firstTrace := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
+      TypedCfgCompiler.Code.type? cond input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
       cases hHead : output.slots.head? with
       | none =>
-          simp [hType, hHead] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
       | some condition =>
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? fuel body ctx
@@ -4439,7 +4428,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                 { output with slots := output.slots.tail } regular with
           | none =>
               simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+                TypedCfgCompiler.mkCodeBlock?, hBody] at hCompile
           | some bodyResult =>
               have hRequire :
                   bodyResult.requireFallthrough?
@@ -4449,12 +4438,12 @@ theorem condition_if_of_compileStmtFuel?_and_step
                     bodyResult.requireFallthrough?
                       { output with slots := output.slots.tail } with
                 | none =>
-                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                    simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                       hBody, hCheck] at hCompile
                 | some unit =>
                     cases unit
                     rfl
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+              simp [hType, hHead, TypedCfgCompiler.mkCodeBlock?,
                 hBody, hRequire] at hCompile
               cases hCompile
               have hBodyBlocks :

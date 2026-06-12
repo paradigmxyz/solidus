@@ -66,6 +66,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.outcome_block_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
+#check EvmCompiler.Structured.TypedCfgCompiler.BasicInstr.sourceSafe?
+#check EvmCompiler.Structured.TypedCfgCompiler.Code.bodyType?_toCfg_of_type?
 #check EvmCompiler.Structured.ObserverAdequacy.Code.shapeSound
 #check EvmCompiler.Structured.ObserverAdequacy.Code.FrameReflectingAt
 #check EvmCompiler.Structured.ObserverAdequacy.Code.frameReflectingAt

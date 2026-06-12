@@ -70,17 +70,13 @@ theorem components_of_compileStmtFuel?_code
           fallthrough? := some output } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
-      exact
-        ⟨output,
-          by simpa [TypedCfgCompiler.Code.type?] using hType,
-          rfl⟩
+      exact ⟨output, rfl, rfl⟩
 
 theorem components_of_compileStmtFuel?_if
     {compilerFuel : Nat}
@@ -93,8 +89,7 @@ theorem components_of_compileStmtFuel?_if
           (.if_ cond body) ctx supply entry input regular =
         some result) :
     ∃ output condition bodyResult,
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) input =
+      TypedCfgCompiler.Code.type? cond input =
         some output ∧
       output.slots.head? = some condition ∧
       TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
@@ -119,32 +114,31 @@ theorem components_of_compileStmtFuel?_if
             some { output with slots := output.slots.tail } } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
+      TypedCfgCompiler.Code.type? cond input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
       cases hHead : output.slots.head? with
       | none =>
-          simp [hType, hHead] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
       | some condition =>
           cases hBody :
               TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
                 (supply + 1) (LabelSupply.label supply 0)
                 { output with slots := output.slots.tail } regular with
           | none =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead,
+                hBody] at hCompile
           | some bodyResult =>
               cases hRequire :
                   bodyResult.requireFallthrough?
                     { output with slots := output.slots.tail } with
               | none =>
-                  simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                  simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead,
                     hBody, hRequire] at hCompile
               | some unit =>
                   cases unit
-                  simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                  simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead,
                     hBody, hRequire] at hCompile
                   cases hCompile
                   exact
@@ -269,8 +263,7 @@ theorem compileStmtFuel?_if_eq_none_of_body_fallthrough_mismatch
     {condition : TypedCfg.Slot}
     {bodyResult : TypedCfgCompiler.Result}
     (hType :
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) input =
+      TypedCfgCompiler.Code.type? cond input =
         some output)
     (hHead : output.slots.head? = some condition)
     (hBody :
@@ -285,7 +278,7 @@ theorem compileStmtFuel?_if_eq_none_of_body_fallthrough_mismatch
         (.if_ cond body) ctx supply entry input regular =
       none := by
   unfold TypedCfgCompiler.compileStmtFuel?
-  simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody,
+  simp [TypedCfgCompiler.mkCodeBlock?, hType, hHead, hBody,
     TypedCfgCompiler.Result.requireFallthrough?,
     hFallthrough, hMismatch]
 
@@ -621,8 +614,7 @@ theorem components_of_compileStmtFuel?_switch
           supply entry input regular =
         some result) :
     ∃ valueShape valueSlot caseResult defaultResult,
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg scrutinee) input =
+      TypedCfgCompiler.Code.type? scrutinee input =
         some valueShape ∧
       valueShape.slots.head? = some valueSlot ∧
       TypedCfgCompiler.compileCasesFuel? compilerFuel
@@ -650,16 +642,15 @@ theorem components_of_compileStmtFuel?_switch
             some { valueShape with slots := valueShape.slots.tail } } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+      TypedCfgCompiler.Code.type? scrutinee input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
       cases hValue : valueShape.slots.head? with
       | none =>
-          simp [hType, hValue] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
       | some valueSlot =>
-          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+          simp only [TypedCfgCompiler.mkCodeBlock?, hType, hValue,
             Bind.bind, Option.bind] at hCompile
           cases hCases :
               TypedCfgCompiler.compileCasesFuel? compilerFuel
@@ -718,9 +709,8 @@ theorem compileStmtFuel?_switch_one_eq_none
       none := by
   unfold TypedCfgCompiler.compileStmtFuel?
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input <;>
-    simp [hType, TypedCfgCompiler.mkBlock?,
+      TypedCfgCompiler.Code.type? scrutinee input <;>
+    simp [hType, TypedCfgCompiler.mkCodeBlock?,
       TypedCfgCompiler.compileCasesFuel?]
 
 end Switch
@@ -746,8 +736,7 @@ theorem components_of_compileStmtFuel?_for
           (supply + 1) entry input (LabelSupply.label supply 0) =
         some initResult ∧
       initResult.fallthrough? = some loopInput ∧
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) loopInput =
+      TypedCfgCompiler.Code.type? cond loopInput =
         some condOutput ∧
       condOutput.slots.head? = some condition ∧
       TypedCfgCompiler.compileBlockFuel? compilerFuel body
@@ -808,14 +797,15 @@ theorem components_of_compileStmtFuel?_for
           simp [hInit, hLoopInput] at hCompile
       | some loopInput =>
           cases hType :
-              TypedCfg.Block.bodyType?
-                (TypedCfgCompiler.Code.toCfg cond) loopInput with
+              TypedCfgCompiler.Code.type? cond loopInput with
           | none =>
-              simp [hInit, hLoopInput, hType] at hCompile
+              simp [hInit, hLoopInput,
+                TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
           | some condOutput =>
               cases hHead : condOutput.slots.head? with
               | none =>
-                  simp [hInit, hLoopInput, hType, hHead] at hCompile
+                  simp [hInit, hLoopInput,
+                    TypedCfgCompiler.mkCodeBlock?, hType, hHead] at hCompile
               | some condition =>
                   cases hBody :
                       TypedCfgCompiler.compileBlockFuel? compilerFuel body
@@ -835,7 +825,7 @@ theorem components_of_compileStmtFuel?_for
                         (LabelSupply.label supply 2) with
                   | none =>
                       simp [hInit, hLoopInput, hType, hHead,
-                        TypedCfgCompiler.mkBlock?, hBody] at hCompile
+                        TypedCfgCompiler.mkCodeBlock?, hBody] at hCompile
                   | some bodyResult =>
                       cases hBodyRequire :
                           bodyResult.requireFallthrough?
@@ -843,7 +833,7 @@ theorem components_of_compileStmtFuel?_for
                               slots := condOutput.slots.tail } with
                       | none =>
                           simp [hInit, hLoopInput, hType, hHead,
-                            TypedCfgCompiler.mkBlock?, hBody,
+                            TypedCfgCompiler.mkCodeBlock?, hBody,
                             hBodyRequire] at hCompile
                       | some unit =>
                           cases unit
@@ -862,7 +852,7 @@ theorem components_of_compileStmtFuel?_for
                                 (LabelSupply.label supply 0) with
                           | none =>
                               simp [hInit, hLoopInput, hType, hHead,
-                                TypedCfgCompiler.mkBlock?, hBody,
+                                TypedCfgCompiler.mkCodeBlock?, hBody,
                                 hBodyRequire, hPost] at hCompile
                           | some postResult =>
                               cases hPostRequire :
@@ -870,13 +860,13 @@ theorem components_of_compileStmtFuel?_for
                                     loopInput with
                               | none =>
                                   simp [hInit, hLoopInput, hType, hHead,
-                                    TypedCfgCompiler.mkBlock?, hBody,
+                                    TypedCfgCompiler.mkCodeBlock?, hBody,
                                     hBodyRequire, hPost,
                                     hPostRequire] at hCompile
                               | some unit =>
                                   cases unit
                                   simp [hInit, hLoopInput, hType, hHead,
-                                    TypedCfgCompiler.mkBlock?, hBody,
+                                    TypedCfgCompiler.mkCodeBlock?, hBody,
                                     hBodyRequire, hPost,
                                     hPostRequire] at hCompile
                                   cases hCompile

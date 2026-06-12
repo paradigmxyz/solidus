@@ -1189,36 +1189,37 @@ theorem runBody_toCfg
       rfl
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
-        TypedCfg.Block.bodyType?] at hType
-      cases hHeadType :
-          TypedCfg.Instr.type?
-            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-      | none =>
-          simp [hHeadType] at hType
-      | some middle =>
-          simp [hHeadType] at hType
-          have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output := by
-            simpa [TypedCfgCompiler.Code.type?,
-              TypedCfgCompiler.Code.toCfg] using hType
-          simp only [TypedCfgCompiler.Code.toCfg, List.map_cons]
-          unfold TypedCfg.Block.runBody
-          rw [BasicInstr.runAt_toCfg hHeadType]
-          cases hStep : instr.step state with
-          | error err =>
-              simp only [hStep, Except.map, Bind.bind, Except.bind,
-                Structured.Code.run, EffectSemantics.Code.run,
-                EffectSemantics.Ordinary.evmStateModel_evm,
-                EffectSemantics.Ordinary.evmStateModel_withEVM,
-                EffectSemantics.Ordinary.handler_afterInstr]
-          | ok state' =>
-              simp only [hStep, Except.map, Bind.bind, Except.bind,
-                Structured.Code.run, EffectSemantics.Code.run,
-                EffectSemantics.Ordinary.evmStateModel_evm,
-                EffectSemantics.Ordinary.evmStateModel_withEVM,
-                EffectSemantics.Ordinary.handler_afterInstr]
-              exact ih hTailType
+      by_cases hSafe :
+          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
+      · simp only [hSafe, if_true] at hType
+        cases hHeadType :
+            TypedCfg.Instr.type?
+              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+        | none =>
+            simp [hHeadType] at hType
+        | some middle =>
+            simp only [hHeadType, Option.bind_some] at hType
+            have hTailType :
+                TypedCfgCompiler.Code.type? rest middle = some output :=
+              hType
+            simp only [TypedCfgCompiler.Code.toCfg, List.map_cons]
+            unfold TypedCfg.Block.runBody
+            rw [BasicInstr.runAt_toCfg hHeadType]
+            cases hStep : instr.step state with
+            | error err =>
+                simp only [hStep, Except.map, Bind.bind, Except.bind,
+                  Structured.Code.run, EffectSemantics.Code.run,
+                  EffectSemantics.Ordinary.evmStateModel_evm,
+                  EffectSemantics.Ordinary.evmStateModel_withEVM,
+                  EffectSemantics.Ordinary.handler_afterInstr]
+            | ok state' =>
+                simp only [hStep, Except.map, Bind.bind, Except.bind,
+                  Structured.Code.run, EffectSemantics.Code.run,
+                  EffectSemantics.Ordinary.evmStateModel_evm,
+                  EffectSemantics.Ordinary.evmStateModel_withEVM,
+                  EffectSemantics.Ordinary.handler_afterInstr]
+                exact ih hTailType
+      · simp [hSafe] at hType
 
 theorem runState_toCfg
     {code : Structured.Code} {input output : TypedCfg.Shape}

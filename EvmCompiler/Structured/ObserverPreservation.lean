@@ -417,37 +417,38 @@ theorem runBody_toCfg
       rfl
   | cons instr rest ih =>
       unfold TypedCfgCompiler.Code.type? at hType
-      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
-        TypedCfg.Block.bodyType?] at hType
-      cases hHeadType :
-          TypedCfg.Instr.type?
-            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-      | none =>
-          simp [hHeadType] at hType
-      | some middle =>
-          simp [hHeadType] at hType
-          have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output := by
-            simpa [TypedCfgCompiler.Code.type?,
-              TypedCfgCompiler.Code.toCfg] using hType
-          simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
-            TypedCfg.ObserverSemantics.Block.runBody_cons]
-          rw [BasicInstr.runAt_toCfg hHeadType]
-          rw [
-            ObserverSemantics.Code.run_cons_eq_run_single_bind
-              instr rest state]
-          cases hHead : ObserverSemantics.Code.run [instr] state with
-          | error err =>
-              simp [hHead, Except.map, Bind.bind, Except.bind]
-          | ok middleState =>
-              simp [hHead, Except.map, Bind.bind, Except.bind]
-              change
-                TypedCfg.ObserverSemantics.Block.runBody
-                    (TypedCfgCompiler.Code.toCfg rest) middle
-                    middleState.source.evm middleState.remaining =
-                  _
-              rw [ih hTailType]
-              simp [hHead, Except.map, Bind.bind, Except.bind]
+      by_cases hSafe :
+          TypedCfgCompiler.BasicInstr.sourceSafe? instr input
+      · simp only [hSafe, if_true] at hType
+        cases hHeadType :
+            TypedCfg.Instr.type?
+              (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+        | none =>
+            simp [hHeadType] at hType
+        | some middle =>
+            simp only [hHeadType, Option.bind_some] at hType
+            have hTailType :
+                TypedCfgCompiler.Code.type? rest middle = some output :=
+              hType
+            simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
+              TypedCfg.ObserverSemantics.Block.runBody_cons]
+            rw [BasicInstr.runAt_toCfg hHeadType]
+            rw [
+              ObserverSemantics.Code.run_cons_eq_run_single_bind
+                instr rest state]
+            cases hHead : ObserverSemantics.Code.run [instr] state with
+            | error err =>
+                simp [hHead, Except.map, Bind.bind, Except.bind]
+            | ok middleState =>
+                simp [hHead, Except.map, Bind.bind, Except.bind]
+                change
+                  TypedCfg.ObserverSemantics.Block.runBody
+                      (TypedCfgCompiler.Code.toCfg rest) middle
+                      middleState.source.evm middleState.remaining =
+                    _
+                rw [ih hTailType]
+                simp [hHead, Except.map, Bind.bind, Except.bind]
+      · simp [hSafe] at hType
 
 /--
 Backward adequacy for the straight-line portion of the adjacent pass.
@@ -1606,12 +1607,11 @@ theorem regular_code_of_compileStmtFuel?
     RegularPreserves result cfg entry regular source final tokens := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
       intro target trace hRel
       obtain
@@ -1666,12 +1666,11 @@ theorem outcome_code_of_compileStmtFuel?
       (tokens := tokens) hCompile hBlocks hFrameSafe hRun
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg code) input with
+      TypedCfgCompiler.Code.type? code input with
   | none =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some output =>
-      simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
       cases hCompile
       exact
         OutcomeSimulation.Preserves.of_regular
@@ -2802,10 +2801,9 @@ theorem outcome_some_of_compileStmtFuel?
   intro target trace hRel
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+      TypedCfgCompiler.Code.type? scrutinee input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
       rcases
           StateRel.runCode hType hFrameSafe hScrutinee hRel with
@@ -2813,7 +2811,7 @@ theorem outcome_some_of_compileStmtFuel?
           hTargetScrutinee, hAfterScrutineeRel⟩
       cases hValue : valueShape.slots.head? with
       | none =>
-          simp [hType, hValue] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
       | some valueSlot =>
           let bodyShape : TypedCfg.Shape :=
             { valueShape with slots := valueShape.slots.tail }
@@ -2827,7 +2825,7 @@ theorem outcome_some_of_compileStmtFuel?
                     simp at hValue
                 | cons slot rest =>
                     simp [bodyShape, TypedCfg.Instr.type?]
-          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+          simp only [TypedCfgCompiler.mkCodeBlock?, hType, hValue,
             Bind.bind, Option.bind] at hCompile
           cases hCasesCompileRaw :
               TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
@@ -2997,10 +2995,9 @@ theorem outcome_none_of_compileStmtFuel?
   intro target trace hRel
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg scrutinee) input with
+      TypedCfgCompiler.Code.type? scrutinee input with
   | none =>
-      simp [hType] at hCompile
+      simp [TypedCfgCompiler.mkCodeBlock?, hType] at hCompile
   | some valueShape =>
       rcases
           StateRel.runCode hType hFrameSafe hScrutinee hRel with
@@ -3008,7 +3005,7 @@ theorem outcome_none_of_compileStmtFuel?
           hTargetScrutinee, hAfterScrutineeRel⟩
       cases hValue : valueShape.slots.head? with
       | none =>
-          simp [hType, hValue] at hCompile
+          simp [TypedCfgCompiler.mkCodeBlock?, hType, hValue] at hCompile
       | some valueSlot =>
           let bodyShape : TypedCfg.Shape :=
             { valueShape with slots := valueShape.slots.tail }
@@ -3022,7 +3019,7 @@ theorem outcome_none_of_compileStmtFuel?
                     simp at hValue
                 | cons slot rest =>
                     simp [bodyShape, TypedCfg.Instr.type?]
-          simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
+          simp only [TypedCfgCompiler.mkCodeBlock?, hType, hValue,
             Bind.bind, Option.bind] at hCompile
           cases hCasesCompileRaw :
               TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
@@ -3163,9 +3160,7 @@ theorem eventually_condition
         output := condOutput
         term := .jumpi bodyLabel endLabel } ∈ result.blocks)
     (hType :
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) loopInput =
-        some condOutput)
+      TypedCfgCompiler.Code.type? cond loopInput = some condOutput)
     (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
     (hCond :
       ObserverSemantics.Code.runCondition cond source =
@@ -3205,9 +3200,7 @@ theorem preserves_condition
         output := condOutput
         term := .jumpi bodyLabel endLabel } ∈ result.blocks)
     (hType :
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) loopInput =
-        some condOutput)
+      TypedCfgCompiler.Code.type? cond loopInput = some condOutput)
     (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
     (hCond :
       ObserverSemantics.Code.runCondition cond source =
@@ -3238,9 +3231,7 @@ theorem path_of_eval
         output := condOutput
         term := .jumpi bodyLabel endLabel } ∈ result.blocks)
     (hType :
-      TypedCfg.Block.bodyType?
-          (TypedCfgCompiler.Code.toCfg cond) loopInput =
-        some condOutput)
+      TypedCfgCompiler.Code.type? cond loopInput = some condOutput)
     (hFrameSafe : ObserverSemantics.Code.FrameSafe cond)
     (hOuterRegular : outer.regular = endLabel)
     (hFuelLt : fuel < bound)

@@ -135,6 +135,30 @@ def toCfg : BasicInstr → TypedCfg.Instr
   | .bindLocals offset names => .bindLocals offset names
   | .bindScratch baseDepth name slot => .bindScratch baseDepth name slot
 
+/--
+Source instructions may use only slots above the compiler-owned return token.
+
+Generated call-entry shuffles are typed directly as TypedCfg instructions and
+therefore remain able to move the token into place. This check applies only to
+Structured source code, preventing target execution from satisfying a missing
+source operand with hidden call-frame data.
+-/
+def sourceSafe? (instr : BasicInstr) (input : Shape) : Bool :=
+  match input.returnTokenDepth? with
+  | none => true
+  | some depth =>
+      match instr with
+      | .push _ => true
+      | .op op =>
+          match op.toPrimOp.stackArity? with
+          | none => false
+          | some (inputArity, _outputArity) =>
+              decide (inputArity ≤ depth)
+      | .bindLocals offset names =>
+          decide (offset + names.length ≤ depth)
+      | .bindScratch baseDepth _name _slot =>
+          decide (baseDepth < depth)
+
 end BasicInstr
 
 namespace Code
@@ -142,8 +166,36 @@ namespace Code
 def toCfg (code : Code) : List TypedCfg.Instr :=
   code.map BasicInstr.toCfg
 
-def type? (code : Code) (input : Shape) : Option Shape :=
-  TypedCfg.Block.bodyType? (Code.toCfg code) input
+def type? : Code → Shape → Option Shape
+  | [], input => some input
+  | instr :: rest, input =>
+      if BasicInstr.sourceSafe? instr input then do
+        let middle ← TypedCfg.Instr.type? (BasicInstr.toCfg instr) input
+        type? rest middle
+      else
+        none
+
+theorem bodyType?_toCfg_of_type?
+    {code : Code} {input output : Shape}
+    (hType : type? code input = some output) :
+    TypedCfg.Block.bodyType? (toCfg code) input = some output := by
+  induction code generalizing input with
+  | nil =>
+      simpa [type?, toCfg, TypedCfg.Block.bodyType?] using hType
+  | cons instr rest ih =>
+      unfold type? at hType
+      by_cases hSafe : BasicInstr.sourceSafe? instr input
+      · simp only [hSafe, if_true] at hType
+        cases hInstr :
+            TypedCfg.Instr.type? (BasicInstr.toCfg instr) input with
+        | none =>
+            simp [hInstr] at hType
+        | some middle =>
+            simp only [hInstr, Option.bind_some] at hType
+            simp only [toCfg, List.map_cons,
+              TypedCfg.Block.bodyType?, hInstr]
+            exact ih hType
+      · simp [hSafe] at hType
 
 end Code
 
@@ -155,6 +207,17 @@ def mkBlock? (label : Assembly.Label) (input : Shape)
     { label := label
       input := input
       body := body
+      output := output
+      term := term }
+
+def mkCodeBlock? (label : Assembly.Label) (input : Shape)
+    (code : Code) (term : TypedCfg.Terminator) :
+    Option CfgBlock := do
+  let output ← Code.type? code input
+  some
+    { label := label
+      input := input
+      body := Code.toCfg code
       output := output
       term := term }
 
@@ -240,8 +303,7 @@ mutual
     | fuel + 1, stmt, ctx, supply, entry, input, regular =>
       match stmt with
       | .code code => do
-          let body := Code.toCfg code
-          let block ← mkBlock? entry input body (.jump regular)
+          let block ← mkCodeBlock? entry input code (.jump regular)
           some
             { blocks := [block]
               next := supply + 1
@@ -249,13 +311,12 @@ mutual
               fallthrough? := some block.output }
       | .if_ cond body => do
           let bodyLabel := LabelSupply.label supply 0
-          let condBody := Code.toCfg cond
-          let condOutput ← TypedCfg.Block.bodyType? condBody input
+          let head ←
+            mkCodeBlock? entry input cond (.jumpi bodyLabel regular)
+          let condOutput := head.output
           let condition ← condOutput.slots.head?
           let branchInput :=
             { condOutput with slots := condOutput.slots.tail }
-          let head ←
-            mkBlock? entry input condBody (.jumpi bodyLabel regular)
           let bodyResult ←
             compileBlockFuel? fuel body ctx (supply + 1) bodyLabel
               branchInput regular
@@ -272,12 +333,12 @@ mutual
             match cases with
             | [] => defaultLabel
             | _ => switchTestLabel supply 0
-          let scrutineeBody := Code.toCfg scrutinee
-          let valueShape ← TypedCfg.Block.bodyType? scrutineeBody input
+          let head ←
+            mkCodeBlock? entry input scrutinee (.jump firstTest)
+          let valueShape := head.output
           let _value ← valueShape.slots.head?
           let bodyShape :=
             { valueShape with slots := valueShape.slots.tail }
-          let head ← mkBlock? entry input scrutineeBody (.jump firstTest)
           let caseResult ←
             compileCasesFuel? fuel cases ctx supply (supply + 1) 0 valueShape
               bodyShape regular
@@ -304,13 +365,13 @@ mutual
             compileBlockFuel? fuel init outerCtx (supply + 1) entry input
               loopLabel
           let loopInput ← initResult.fallthrough?
-          let condBody := Code.toCfg cond
-          let condOutput ← TypedCfg.Block.bodyType? condBody loopInput
+          let loopBlock ←
+            mkCodeBlock? loopLabel loopInput cond
+              (.jumpi bodyLabel endLabel)
+          let condOutput := loopBlock.output
           let _condition ← condOutput.slots.head?
           let branchInput :=
             { condOutput with slots := condOutput.slots.tail }
-          let loopBlock ←
-            mkBlock? loopLabel loopInput condBody (.jumpi bodyLabel endLabel)
           let bodyCtx :=
             { ctx with
               breakLabel? := some endLabel

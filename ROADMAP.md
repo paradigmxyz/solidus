@@ -188,6 +188,10 @@ Roadmap:
   under the same observation protocol.
 - [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
+- [ ] Complete the pass-owned Structured code/terminal typing invariant that
+  tracks source-visible stack capacity above compiler-owned return-token
+  slots, then prove generated call/procedure fragments satisfy the indexed
+  replay relation without a public generated-code premise.
 - [x] Prove exact observer-aware Assembly-step/assembled-target-block
   equivalence, including target `runN`, oracle remainder, errors, and the
   two-instruction jump encodings.
@@ -321,12 +325,14 @@ Implemented in this migration:
 - enforced syntax/semantics/compiler dependency directions;
 - layered verification, architecture metrics, and shared Lake dependency cache.
 
-The remaining critical path is deliberately narrow and explicit:
+The remaining observer-proof critical path is explicit:
 
-1. Complete generated-certificate composition and safety projections.
-2. Move the remaining internal regressions into focused proof artifacts.
-3. Split the oversized Structured preservation module and run the final
-   frontend, benchmark, proof-hole, and architecture gates.
+1. Complete source-visible Structured frame typing and its indexed call-entry
+   replay theorem.
+2. Complete internal-call/return-dispatch adequacy and the generated-context
+   mutual Structured theorem.
+3. Prove the Functions/allocation/Expressions and Yul adjacent backward
+   boundaries, compose `ClosedResourceCorrect`, and run the final gates.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
