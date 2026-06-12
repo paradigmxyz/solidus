@@ -31,6 +31,38 @@ def stackOrder (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : List Name :=
   (stackEntries stackSlots env).map Prod.fst
 
+theorem stackOrder_nodup
+    {stackSlots : SlotSet}
+    {env : AllocationSupport.SlotEnv}
+    (hNodup : (env.map Prod.fst).Nodup) :
+    (stackOrder stackSlots env).Nodup := by
+  induction env with
+  | nil =>
+      simp [stackOrder, stackEntries]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      have hNames :
+          (name :: rest.map Prod.fst).Nodup := by
+        simpa only [List.map_cons] using hNodup
+      have hFresh := (List.nodup_cons.mp hNames).1
+      have hRest := (List.nodup_cons.mp hNames).2
+      by_cases hSlot : slot ∈ stackSlots
+      · have hTailNodup := ih hRest
+        have hNameFresh :
+            name ∉ stackOrder stackSlots rest := by
+          intro hName
+          unfold stackOrder stackEntries at hName
+          obtain ⟨binding, hBinding, hNameEq⟩ :=
+            List.mem_map.mp hName
+          have hRestMem : binding ∈ rest :=
+            List.mem_of_mem_filter hBinding
+          apply hFresh
+          exact List.mem_map.mpr
+            ⟨binding, hRestMem, hNameEq⟩
+        simpa [stackOrder, stackEntries, hSlot] using
+          List.nodup_cons.mpr ⟨hNameFresh, hTailNodup⟩
+      · simpa [stackOrder, stackEntries, hSlot] using ih hRest
+
 theorem mem_stackOrder_iff
     {stackSlots : SlotSet}
     {env : AllocationSupport.SlotEnv}

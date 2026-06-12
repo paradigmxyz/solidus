@@ -348,8 +348,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.assign_scratch
 #check EvmCompiler.Functions.AllocationObserverContext.StackExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext
+#check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext
+#check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext.of_validated_function
 #check EvmCompiler.Functions.AllocationObserverContext.classify_activation_var
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext.stack_depth_lt_frame
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_toExpressions?_prelude_components
+#check EvmCompiler.Locals.Stmt.compile_cleanupTo_components
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_swap_pop
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_forward_result_activation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.stackVar_forward_result_activation

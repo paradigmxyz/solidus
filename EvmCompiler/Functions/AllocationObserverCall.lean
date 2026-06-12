@@ -35,11 +35,7 @@ theorem compileOpen
           else
             [],
          localsCtx) := by
-  cases needsFrame <;>
-    simp [AllocationLowering.bindEntryLayout,
-      AllocationLowering.bindScratchBindings,
-      Locals.Block.compileOpen, Locals.Stmt.compile,
-      Locals.Expr.compileCode, Locals.codeStmt]
+  exact AllocationLowering.entryMarkers_compileOpen
 
 theorem run_bindScratchBindingsCode
     {transcript : Trace}

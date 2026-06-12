@@ -279,6 +279,71 @@ end
 namespace Stmt
 
 /--
+Expression statements never change the Locals compiler context.
+-/
+theorem compile_expr_final
+    {ctx final : Ctx} {results : Nat}
+    {expr : Expr results}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.expr expr) = some (code, final)) :
+    final = ctx := by
+  cases hCode : Expr.compileCode ctx 0 expr with
+  | none =>
+      simp [Stmt.compile, hCode] at hCompile
+  | some result =>
+      simp [Stmt.compile, hCode] at hCompile
+      exact hCompile.2.symm
+
+/--
+Promotion statements change only the Locals layout.
+-/
+theorem compile_promoteName_final
+    {ctx final : Ctx} {name : Name}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.promoteName name) = some (code, final)) :
+    ∃ layout, final = ctx.withLayout layout := by
+  cases hPromote : ctx.promoteNameStackOnly? name with
+  | none =>
+      simp [Stmt.compile, hPromote] at hCompile
+  | some result =>
+      rcases result with ⟨promoteCode, layout⟩
+      simp [Stmt.compile, hPromote] at hCompile
+      exact ⟨layout, hCompile.2.symm⟩
+
+/--
+Successful cleanup compilation exposes the exact target layout installed by
+the ordinary Locals compiler.
+-/
+theorem compile_cleanupTo_components
+    {ctx final : Ctx}
+    {target : Layout}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.cleanupTo target) = some (code, final)) :
+    ∃ cleanup,
+      target =
+          ctx.layout.drop (ctx.layout.length - target.length) ∧
+        ctx.cleanupTo? target.length = some cleanup ∧
+        code = codeStmt cleanup ∧
+        final = ctx.withLayout target := by
+  unfold Stmt.compile at hCompile
+  by_cases hTarget :
+      target =
+        ctx.layout.drop (ctx.layout.length - target.length)
+  · rw [if_pos hTarget] at hCompile
+    cases hCleanup : ctx.cleanupTo? target.length with
+    | none =>
+        simp [hCleanup] at hCompile
+    | some cleanup =>
+        simp [hCleanup] at hCompile
+        rcases hCompile with ⟨rfl, rfl⟩
+        exact ⟨cleanup, hTarget, rfl, rfl, rfl⟩
+  · rw [if_neg hTarget] at hCompile
+    contradiction
+
+/--
 Successful compilation of a Locals `if` decomposes through the ordinary
 condition compiler, open-block compiler, and scoped cleanup.
 -/
@@ -606,6 +671,27 @@ theorem compileOpen_append_components
                   ?_, hRight, ?_⟩
               · simp [Block.compileOpen, hStmt, hLeftTail]
               · simp [List.append_assoc]
+
+/--
+Successful compilation of a singleton block is exactly successful compilation
+of its one statement.
+-/
+theorem compileOpen_single_components
+    {ctx final : Ctx}
+    {stmt : Stmt}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx { stmts := [stmt] } =
+        some (code, final)) :
+    Stmt.compile ctx stmt = some (code, final) := by
+  cases hStmt : Stmt.compile ctx stmt with
+  | none =>
+      simp [Block.compileOpen, hStmt] at hCompile
+  | some result =>
+      rcases result with ⟨stmtCode, next⟩
+      simp [Block.compileOpen, hStmt] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      rfl
 
 /--
 Compose two successful open-block compilations through the compiler context

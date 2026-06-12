@@ -633,6 +633,12 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   returned/halted decomposition and a checked allocation-lowering decomposition
   for the argument/frame/call/store/release sequence. Source-facing argument
   safety now follows the canonical `ArgList.eval`, and the complete real
+  function prelude artifact is constructed by
+  `AllocationObserverContext.FunctionPreludeContext.of_validated_function`
+  from the validator and actual Functions/Locals compiler outputs. The next
+  boundary is activation-indexed prelude execution: stack-only functions must
+  use the stack activation relation while spilled functions use the scratch
+  relation, without a synthetic frame.
   `lowerExprList`/`exprSeqOfList` path has checked forward preservation and
   deterministic backward classification. Function and Locals compiler owners
   expose exact procedure-entry, prelude, open-body, return-expression, and

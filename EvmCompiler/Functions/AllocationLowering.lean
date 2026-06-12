@@ -224,6 +224,38 @@ def bindScratchBindings (baseDepth : Nat)
     (Locals.Expr.code (results := 0)
       (AllocationSupport.bindScratchBindingsCode baseDepth bindings))
 
+/--
+The function-entry metadata emitted by this pass compiles without changing the
+ordinary Locals compiler context.
+-/
+theorem entryMarkers_compileOpen
+    {localsCtx : Locals.Ctx}
+    {entryLayout : Locals.Layout}
+    {baseDepth : Nat}
+    {scratchBindings : List (Name × Nat)}
+    {needsFrame : Bool} :
+    Locals.Block.compileOpen localsCtx
+        { stmts :=
+            [bindEntryLayout entryLayout] ++
+              if needsFrame then
+                [bindScratchBindings baseDepth scratchBindings]
+              else
+                [] } =
+      some
+        ([Expressions.Stmt.code
+            [Structured.BasicInstr.bindLocals 0 entryLayout]] ++
+          if needsFrame then
+            [Expressions.Stmt.code
+              (AllocationSupport.bindScratchBindingsCode
+                baseDepth scratchBindings)]
+          else
+            [],
+         localsCtx) := by
+  cases needsFrame <;>
+    simp [bindEntryLayout, bindScratchBindings,
+      Locals.Block.compileOpen, Locals.Stmt.compile,
+      Locals.Expr.compileCode, Locals.codeStmt]
+
 def frameExpr
     (config : AllocationSupport.ScratchFrameConfig) : Locals.Expr 1 :=
   .code (AllocationSupport.scratchFrameAcquireCode config)
@@ -427,6 +459,110 @@ theorem lowerScratchParam_compileOpen_depth_bounds
                 ⟨(Locals.StackOp.bounds_of_dup?_eq_some hNameOp).2,
                   (Locals.StackOp.bounds_of_dup?_eq_some hFrameOp).2⟩
 
+/--
+Successful compilation of the real scratch-parameter sequence installs the
+layout returned by `lowerScratchParam`.
+-/
+theorem lowerScratchParam_compileOpen_final_layout
+    {ctx : Ctx} {name : Name} {slot : Nat}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (lowerScratchParam ctx name slot localsCtx.layout).1 } =
+        some (compiled, finalCtx)) :
+    finalCtx.layout =
+      (lowerScratchParam ctx name slot localsCtx.layout).2 := by
+  let target := eraseName name localsCtx.layout
+  have hCompile' :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              [ .expr
+                  (scratchStoreExpr ctx.frameName slot (.var name)),
+                .promoteName name ] ++
+                [.cleanupTo target] } =
+        some (compiled, finalCtx) := by
+    simpa [lowerScratchParam, target] using hCompile
+  obtain
+      ⟨prefixCode, middle, cleanupCode,
+        _hPrefix, hCleanupBlock, _hCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile'
+  cases hCleanup :
+      Locals.Stmt.compile middle (.cleanupTo target) with
+  | none =>
+      simp [Locals.Block.compileOpen, hCleanup] at hCleanupBlock
+  | some cleanupResult =>
+      rcases cleanupResult with ⟨stmtCode, cleanupCtx⟩
+      have hCleanupComponents :=
+        Locals.Stmt.compile_cleanupTo_components hCleanup
+      simp [Locals.Block.compileOpen, hCleanup] at hCleanupBlock
+      rcases hCleanupBlock with ⟨rfl, rfl⟩
+      obtain ⟨_cleanup, _hTarget, _hCleanup, _hStmtCode, hFinal⟩ :=
+        hCleanupComponents
+      rw [hFinal]
+      simp [Locals.Ctx.withLayout, lowerScratchParam, target]
+
+/--
+The scratch-parameter sequence changes only the Locals layout, installing the
+layout returned by `lowerScratchParam`.
+-/
+theorem lowerScratchParam_compileOpen_final_ctx
+    {ctx : Ctx} {name : Name} {slot : Nat}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (lowerScratchParam ctx name slot localsCtx.layout).1 } =
+        some (compiled, finalCtx)) :
+    finalCtx =
+      localsCtx.withLayout
+        (lowerScratchParam ctx name slot localsCtx.layout).2 := by
+  let target := eraseName name localsCtx.layout
+  have hCompile' :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              [ .expr
+                  (scratchStoreExpr ctx.frameName slot (.var name)),
+                .promoteName name ] ++
+                [.cleanupTo target] } =
+        some (compiled, finalCtx) := by
+    simpa [lowerScratchParam, target] using hCompile
+  obtain
+      ⟨prefixCode, middle, cleanupCode,
+        hPrefix, hCleanupBlock, _hCode⟩ :=
+    Locals.Block.compileOpen_append_components hCompile'
+  have hPrefix' :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              [.expr
+                (scratchStoreExpr ctx.frameName slot (.var name))] ++
+                [.promoteName name] } =
+        some (prefixCode, middle) := by
+    simpa using hPrefix
+  obtain
+      ⟨storeCode, afterStore, promoteCode,
+        hStoreBlock, hPromoteBlock, _hPrefixCode⟩ :=
+    Locals.Block.compileOpen_append_components hPrefix'
+  have hStoreStmt :=
+    Locals.Block.compileOpen_single_components hStoreBlock
+  have hAfterStore :=
+    Locals.Stmt.compile_expr_final hStoreStmt
+  subst afterStore
+  have hPromoteStmt :=
+    Locals.Block.compileOpen_single_components hPromoteBlock
+  obtain ⟨promotedLayout, hMiddle⟩ :=
+    Locals.Stmt.compile_promoteName_final hPromoteStmt
+  subst middle
+  have hCleanupStmt :=
+    Locals.Block.compileOpen_single_components hCleanupBlock
+  obtain
+      ⟨cleanup, _hTarget, _hCleanup, _hCleanupCode, hFinal⟩ :=
+    Locals.Stmt.compile_cleanupTo_components hCleanupStmt
+  rw [hFinal]
+  simp [Locals.Ctx.withLayout, lowerScratchParam, target]
+
 def lowerParams (ctx : Ctx) :
     List (Name × Nat) → Locals.Layout →
       List Locals.Stmt × Locals.Layout
@@ -458,6 +594,102 @@ def lowerReturns (ctx : Ctx) :
       let (tail, finalLayout) :=
         lowerReturns ctx rest nextLayout
       (head ++ tail, finalLayout)
+
+/--
+Parameter lowering removes exactly the scratch-resident signature names from
+the canonical raw-entry layout.
+-/
+theorem lowerParams_layout_eq_stackOrder
+    {ctx : Ctx}
+    {params : List (Name × Nat)}
+    {suffix : Locals.Layout}
+    (hNodup : (params.map Prod.fst).Nodup)
+    (hDisjoint : List.Disjoint (params.map Prod.fst) suffix) :
+    (lowerParams ctx params
+        ((params.map Prod.fst).reverse ++ suffix)).2 =
+      MixedAllocation.stackOrder ctx.stackSlots params.reverse ++
+        suffix := by
+  induction params generalizing suffix with
+  | nil =>
+      simp [lowerParams, MixedAllocation.stackOrder,
+        MixedAllocation.stackEntries]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      have hNames :
+          (name :: rest.map Prod.fst).Nodup := by
+        simpa only [List.map_cons] using hNodup
+      have hNameRest := (List.nodup_cons.mp hNames).1
+      have hRestNodup := (List.nodup_cons.mp hNames).2
+      have hNameSuffix : name ∉ suffix := by
+        intro hName
+        exact
+          (List.disjoint_left.mp hDisjoint)
+            (by simp) hName
+      have hRestDisjoint :
+          List.Disjoint (rest.map Prod.fst) suffix := by
+        intro candidate hRestMem hSuffixMem
+        exact hDisjoint (by simp [hRestMem]) hSuffixMem
+      by_cases hSlot : slot ∈ ctx.stackSlots
+      · have hClass : isStackSlot ctx slot = true := by
+          simpa [isStackSlot] using hSlot
+        have hTailDisjoint :
+            List.Disjoint (rest.map Prod.fst) (name :: suffix) := by
+          apply List.disjoint_cons_right.mpr
+          exact
+            ⟨by simpa using hNameRest, hRestDisjoint⟩
+        have hTail := ih hRestNodup hTailDisjoint
+        simpa [lowerParams, hClass, List.reverse_cons,
+          MixedAllocation.stackOrder_append,
+          MixedAllocation.stackOrder,
+          MixedAllocation.stackEntries, hSlot,
+          List.append_assoc] using hTail
+      · have hClass : isStackSlot ctx slot = false := by
+          simpa [isStackSlot] using hSlot
+        have hErase :
+            eraseName name
+                ((rest.map Prod.fst).reverse ++ name :: suffix) =
+              (rest.map Prod.fst).reverse ++ suffix := by
+          apply eraseName_append_name
+          · simpa using hNameRest
+          · exact hNameSuffix
+        have hTail := ih hRestNodup hRestDisjoint
+        simpa [lowerParams, hClass, lowerScratchParam, hErase,
+          List.reverse_cons, MixedAllocation.stackOrder_append,
+          MixedAllocation.stackOrder,
+          MixedAllocation.stackEntries, hSlot,
+          List.append_assoc] using hTail
+
+/--
+Return initialization pushes exactly the stack-resident return names in the
+allocator's runtime order.
+-/
+theorem lowerReturns_layout_eq_stackOrder
+    (ctx : Ctx) (returns : List (Name × Nat))
+    (layout : Locals.Layout) :
+    (lowerReturns ctx returns layout).2 =
+      MixedAllocation.stackOrder ctx.stackSlots returns.reverse ++
+        layout := by
+  induction returns generalizing layout with
+  | nil =>
+      simp [lowerReturns, MixedAllocation.stackOrder,
+        MixedAllocation.stackEntries]
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      by_cases hSlot : slot ∈ ctx.stackSlots
+      · have hClass : isStackSlot ctx slot = true := by
+          simpa [isStackSlot] using hSlot
+        simpa [lowerReturns, hClass, List.reverse_cons,
+          MixedAllocation.stackOrder_append,
+          MixedAllocation.stackOrder,
+          MixedAllocation.stackEntries, hSlot,
+          List.append_assoc] using ih (name :: layout)
+      · have hClass : isStackSlot ctx slot = false := by
+          simpa [isStackSlot] using hSlot
+        simpa [lowerReturns, hClass, List.reverse_cons,
+          MixedAllocation.stackOrder_append,
+          MixedAllocation.stackOrder,
+          MixedAllocation.stackEntries, hSlot,
+          List.append_assoc] using ih layout
 
 theorem lowerStackReturn_compileOpen
     {name : Name} {localsCtx : Locals.Ctx} :
@@ -507,6 +739,32 @@ theorem lowerScratchReturn_compileOpen
   simp [Locals.Block.compileOpen, Locals.Stmt.compile,
     Locals.codeStmt, hStore]
 
+/--
+Successful compilation of one scratch return initializer leaves the Locals
+compiler context unchanged.
+-/
+theorem lowerScratchReturn_compileOpen_final_ctx
+    {ctx : Ctx} {name : Name} {slot : Nat}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              [Locals.Stmt.expr
+                (scratchStoreExpr ctx.frameName slot
+                  (.lit AllocationSupport.zeroWord))] } =
+        some (compiled, finalCtx)) :
+    finalCtx = localsCtx := by
+  cases hCode :
+      Locals.Expr.compileCode localsCtx 0
+        (scratchStoreExpr ctx.frameName slot
+          (.lit AllocationSupport.zeroWord)) with
+  | none =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile, hCode] at hCompile
+  | some code =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile, hCode] at hCompile
+      exact hCompile.2.symm
+
 theorem lowerScratchReturn_compileOpen_depth_bound
     {ctx : Ctx} {name : Name} {slot frameDepth : Nat}
     {localsCtx finalCtx : Locals.Ctx}
@@ -531,6 +789,138 @@ theorem lowerScratchReturn_compileOpen_depth_bound
         hFrameDepth, hFrameOp] at hCompile
   | some frameOp =>
       exact (Locals.StackOp.bounds_of_dup?_eq_some hFrameOp).2
+
+/--
+Successful compilation of the parameter lowerer installs the exact layout
+computed by `lowerParams`.
+-/
+theorem lowerParams_compileOpen_final_layout
+    {ctx : Ctx}
+    {pending : List (Name × Nat)}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts := (lowerParams ctx pending localsCtx.layout).1 } =
+        some (compiled, finalCtx)) :
+    finalCtx.layout =
+      (lowerParams ctx pending localsCtx.layout).2 := by
+  induction pending generalizing localsCtx finalCtx compiled with
+  | nil =>
+      symm
+      simpa [lowerParams, Locals.Block.compileOpen] using
+        congrArg (fun output => output.map (fun result => result.2.layout))
+          hCompile
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      by_cases hStack : isStackSlot ctx slot = true
+      · have hTailCompile :
+            Locals.Block.compileOpen localsCtx
+                { stmts := (lowerParams ctx rest localsCtx.layout).1 } =
+              some (compiled, finalCtx) := by
+          simpa [lowerParams, hStack] using hCompile
+        have hFinal := ih hTailCompile
+        simpa [lowerParams, hStack] using hFinal
+      · have hCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  (lowerScratchParam ctx name slot localsCtx.layout).1 ++
+                    (lowerParams ctx rest
+                      (lowerScratchParam ctx name slot
+                        localsCtx.layout).2).1 } =
+            some (compiled, finalCtx) := by
+          simpa [lowerParams, hStack] using hCompile
+        obtain
+            ⟨headCode, middle, tailCode,
+              hHead, hTail, _hCode⟩ :=
+          Locals.Block.compileOpen_append_components hCompile'
+        have hMiddle :=
+          lowerScratchParam_compileOpen_final_layout hHead
+        have hTail' :
+            Locals.Block.compileOpen middle
+                { stmts :=
+                    (lowerParams ctx rest middle.layout).1 } =
+              some (tailCode, finalCtx) := by
+          simpa [hMiddle] using hTail
+        have hFinal := ih hTail'
+        simpa [lowerParams, hStack, hMiddle] using hFinal
+
+/--
+Successful compilation of the return initializer installs the exact layout
+computed by `lowerReturns`.
+-/
+theorem lowerReturns_compileOpen_final_layout
+    {ctx : Ctx}
+    {pending : List (Name × Nat)}
+    {localsCtx finalCtx : Locals.Ctx}
+    {compiled : List Expressions.Stmt}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts := (lowerReturns ctx pending localsCtx.layout).1 } =
+        some (compiled, finalCtx)) :
+    finalCtx.layout =
+      (lowerReturns ctx pending localsCtx.layout).2 := by
+  induction pending generalizing localsCtx finalCtx compiled with
+  | nil =>
+      symm
+      simpa [lowerReturns, Locals.Block.compileOpen] using
+        congrArg (fun output => output.map (fun result => result.2.layout))
+          hCompile
+  | cons binding rest ih =>
+      rcases binding with ⟨name, slot⟩
+      by_cases hStack : isStackSlot ctx slot = true
+      · have hCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  [Locals.Stmt.let_ name
+                    (.lit AllocationSupport.zeroWord)] ++
+                    (lowerReturns ctx rest
+                      (name :: localsCtx.layout)).1 } =
+            some (compiled, finalCtx) := by
+          simpa [lowerReturns, hStack] using hCompile
+        obtain
+            ⟨headCode, middle, tailCode,
+              hHead, hTail, _hCode⟩ :=
+          Locals.Block.compileOpen_append_components hCompile'
+        have hHeadShape :=
+          lowerStackReturn_compileOpen
+            (name := name) (localsCtx := localsCtx)
+        rw [hHeadShape] at hHead
+        have hMiddle :
+            middle =
+              localsCtx.withLayout (name :: localsCtx.layout) :=
+          (congrArg Prod.snd (Option.some.inj hHead)).symm
+        subst middle
+        have hTail' :
+            Locals.Block.compileOpen
+                (localsCtx.withLayout (name :: localsCtx.layout))
+                { stmts :=
+                    (lowerReturns ctx rest
+                      (localsCtx.withLayout
+                        (name :: localsCtx.layout)).layout).1 } =
+              some (tailCode, finalCtx) := by
+          simpa [Locals.Ctx.withLayout] using hTail
+        have hFinal := ih hTail'
+        simpa [lowerReturns, hStack, Locals.Ctx.withLayout] using hFinal
+      · have hCompile' :
+          Locals.Block.compileOpen localsCtx
+              { stmts :=
+                  [Locals.Stmt.expr
+                    (scratchStoreExpr ctx.frameName slot
+                      (.lit AllocationSupport.zeroWord))] ++
+                    (lowerReturns ctx rest localsCtx.layout).1 } =
+            some (compiled, finalCtx) := by
+          simpa [lowerReturns, hStack] using hCompile
+        obtain
+            ⟨headCode, middle, tailCode,
+              hHead, hTail, _hCode⟩ :=
+          Locals.Block.compileOpen_append_components hCompile'
+        have hMiddle :=
+          lowerScratchReturn_compileOpen_final_ctx
+            (name := name) hHead
+        subst middle
+        have hFinal := ih hTail
+        simpa [lowerReturns, hStack] using hFinal
 
 def lowerReturnExprs (ctx : Ctx) (state : State)
     (names : List Name) : Option (Locals.ExprSeq names.length) :=
@@ -2007,6 +2397,162 @@ theorem lowerFunction?_components
                       needsFrame, scratchBindings, root, ctx,
                       List.append_assoc],
                   rfl⟩
+
+/--
+Successful adjacent compilation of one lowered function exposes the actual
+parameter and return prelude compiler phases. All generated layouts are
+recovered from `lowerFunction?` and `Locals.Proc.toExpressions?`.
+-/
+theorem lowerFunction?_toExpressions?_prelude_components
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state final : AllocationSupport.CompileState}
+    {fn : FunDef} {proc : Locals.Proc}
+    {lowerProc : Expressions.Proc}
+    (hLower :
+      lowerFunction? recipe stackSlots frameName frameConfig? state fn =
+        some (proc, final))
+    (hCompile : proc.toExpressions? = some lowerProc) :
+    ∃ slots paramCode paramCtx returnCode returnCtx,
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some slots ∧
+      let root := ScopeId.function fn.name
+      let scratchBindings :=
+        scratchBindingsForRoot recipe stackSlots root
+      let needsFrame := !scratchBindings.isEmpty
+      let entryLayout :=
+        fn.params.reverse ++ if needsFrame then [frameName] else []
+      let ctx : Ctx :=
+        { functions := recipe.functionSlots
+          frameConfig? := frameConfig?
+          frameName := frameName
+          stackSlots := stackSlots
+          root := root
+          scratchBindings := scratchBindings
+          frameFunctions := frameFunctions recipe stackSlots }
+      let paramResult := lowerParams ctx slots.params entryLayout
+      let returnResult :=
+        lowerReturns ctx slots.returns paramResult.2
+      let entryCtx :=
+        Locals.Ctx.procEntryWithLayoutAndRetc
+          entryLayout fn.returns.length
+      Locals.Block.compileOpen entryCtx
+          { stmts := paramResult.1 } =
+        some (paramCode, paramCtx) ∧
+        paramCtx.layout = paramResult.2 ∧
+        Locals.Block.compileOpen paramCtx
+            { stmts :=
+                (lowerReturns ctx slots.returns paramCtx.layout).1 } =
+          some (returnCode, returnCtx) ∧
+        returnCtx.layout = returnResult.2 := by
+  obtain
+      ⟨slots, body, bodyFinal, returnValues, hLookup, hComponents⟩ :=
+    lowerFunction?_components hLower
+  dsimp only at hComponents
+  rcases hComponents with
+    ⟨_hBody, _hReturnValues, hProc, _hFinal⟩
+  let root := ScopeId.function fn.name
+  let scratchBindings :=
+    scratchBindingsForRoot recipe stackSlots root
+  let needsFrame := !scratchBindings.isEmpty
+  let entryLayout :=
+    fn.params.reverse ++ if needsFrame then [frameName] else []
+  let ctx : Ctx :=
+    { functions := recipe.functionSlots
+      frameConfig? := frameConfig?
+      frameName := frameName
+      stackSlots := stackSlots
+      root := root
+      scratchBindings := scratchBindings
+      frameFunctions := frameFunctions recipe stackSlots }
+  let markers :=
+    [bindEntryLayout entryLayout] ++
+      if needsFrame then
+        [bindScratchBindings fn.params.length scratchBindings]
+      else
+        []
+  let paramResult := lowerParams ctx slots.params entryLayout
+  let returnResult :=
+    lowerReturns ctx slots.returns paramResult.2
+  let entryCtx :=
+    Locals.Ctx.procEntryWithLayoutAndRetc
+      entryLayout fn.returns.length
+  have hProc' :
+      proc =
+        { name := fn.name
+          argc := fn.params.length + if needsFrame then 1 else 0
+          retc := fn.returns.length
+          entryLayout := entryLayout
+          body :=
+            { stmts :=
+                markers ++ paramResult.1 ++ returnResult.1 ++
+                  body.stmts ++ [.exprs returnValues] } } := by
+    simpa [root, scratchBindings, needsFrame, entryLayout, ctx,
+      markers, paramResult, returnResult, List.append_assoc] using hProc
+  obtain ⟨compiledBody, hPreserving, _hLowerProc⟩ :=
+    Locals.Proc.toExpressions?_components hCompile
+  obtain ⟨fullCode, fullFinal, hOpen, _hFinish⟩ :=
+    Locals.Block.compileToPreserving_components hPreserving
+  have hOpen' :
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              markers ++
+                (paramResult.1 ++
+                  (returnResult.1 ++
+                    (body.stmts ++ [.exprs returnValues]))) } =
+        some (fullCode, fullFinal) := by
+    rw [hProc'] at hOpen
+    simpa [entryCtx, List.append_assoc] using hOpen
+  obtain
+      ⟨markerCode, afterMarkers, afterMarkerCode,
+        hMarkers, hAfterMarkers, _hFullCode⟩ :=
+    Locals.Block.compileOpen_append_components hOpen'
+  have hMarkerShape :=
+    entryMarkers_compileOpen
+      (localsCtx := entryCtx) (entryLayout := entryLayout)
+      (baseDepth := fn.params.length)
+      (scratchBindings := scratchBindings)
+      (needsFrame := needsFrame)
+  have hAfterMarkersEq : afterMarkers = entryCtx := by
+    rw [hMarkerShape] at hMarkers
+    exact (congrArg Prod.snd (Option.some.inj hMarkers)).symm
+  subst afterMarkers
+  obtain
+      ⟨paramCode, paramCtx, afterParamCode,
+        hParam, hAfterParam, _hMarkerRestCode⟩ :=
+    Locals.Block.compileOpen_append_components hAfterMarkers
+  have hParamLayout :=
+    lowerParams_compileOpen_final_layout
+      (ctx := ctx) (pending := slots.params) hParam
+  have hAfterParam' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              returnResult.1 ++
+                (body.stmts ++ [.exprs returnValues]) } =
+        some (afterParamCode, fullFinal) := by
+    simpa [List.append_assoc] using hAfterParam
+  obtain
+      ⟨returnCode, returnCtx, afterReturnCode,
+        hReturn, _hAfterReturn, _hParamRestCode⟩ :=
+    Locals.Block.compileOpen_append_components hAfterParam'
+  have hReturn' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              (lowerReturns ctx slots.returns paramCtx.layout).1 } =
+        some (returnCode, returnCtx) := by
+    simpa [returnResult, hParamLayout] using hReturn
+  have hReturnLayout :=
+    lowerReturns_compileOpen_final_layout hReturn'
+  refine
+    ⟨slots, paramCode, paramCtx, returnCode, returnCtx, hLookup, ?_⟩
+  dsimp only
+  refine ⟨?_, hParamLayout, hReturn', ?_⟩
+  · simpa [entryCtx, paramResult, entryLayout, needsFrame,
+      scratchBindings, root, ctx] using hParam
+  · simpa [returnResult, paramResult, entryCtx, entryLayout,
+      needsFrame, scratchBindings, root, ctx, hParamLayout] using
+      hReturnLayout
 
 /--
 State-threaded function-list lowering preserves source function lookup and
