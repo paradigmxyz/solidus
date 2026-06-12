@@ -40,6 +40,46 @@ theorem lookupDepth?_cons_of_ne
   rw [lookupDepthFrom_succ, hDepth']
   rfl
 
+theorem lookupDepth?_append_of_not_mem
+    {name : Name} {pre suffix : Layout} {depth : Nat}
+    (hNotMem : name ∉ pre)
+    (hDepth : lookupDepth? name suffix = some depth) :
+    lookupDepth? name (pre ++ suffix) =
+      some (pre.length + depth) := by
+  induction pre with
+  | nil =>
+      simpa using hDepth
+  | cons head tail ih =>
+      have hHeadNe : head ≠ name := by
+        intro hEq
+        subst head
+        exact hNotMem (by simp)
+      have hTailNotMem : name ∉ tail := by
+        intro hMem
+        exact hNotMem (List.mem_cons_of_mem head hMem)
+      have hTailDepth := ih hTailNotMem
+      simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+        lookupDepth?_cons_of_ne hHeadNe hTailDepth
+
+theorem exists_lookupDepth?_eq_some_of_mem
+    {name : Name} {layout : Layout}
+    (hMem : name ∈ layout) :
+    ∃ depth, lookupDepth? name layout = some (depth + 1) := by
+  induction layout with
+  | nil =>
+      simp at hMem
+  | cons head tail ih =>
+      by_cases hHead : head = name
+      · subst head
+        exact ⟨0, by simp [lookupDepth?, lookupDepthFrom]⟩
+      · have hTailMem : name ∈ tail := by
+          simpa [hHead, Ne.symm hHead] using hMem
+        obtain ⟨depth, hDepth⟩ := ih hTailMem
+        exact
+          ⟨depth + 1,
+            by simpa [Nat.add_assoc] using
+              lookupDepth?_cons_of_ne hHead hDepth⟩
+
 theorem mem_of_lookupDepth?_eq_some
     {name : Name} {layout : Layout} {depth : Nat}
     (hDepth : lookupDepth? name layout = some depth) :
@@ -87,6 +127,62 @@ theorem getElem?_eq_some_of_lookupDepth?_eq_some
   have hIndex : index = depth := by
     omega
   simpa [hIndex] using hAt
+
+theorem lookupDepth?_eq_some_of_getElem?_eq_some_of_nodup
+    {name : Name} {layout : Layout} {index : Nat}
+    (hNodup : layout.Nodup)
+    (hAt : layout[index]? = some name) :
+    lookupDepth? name layout = some (index + 1) := by
+  induction layout generalizing index with
+  | nil =>
+      simp at hAt
+  | cons head tail ih =>
+      have hTailNodup := (List.nodup_cons.mp hNodup).2
+      cases index with
+      | zero =>
+          simp at hAt
+          subst head
+          simp [lookupDepth?, lookupDepthFrom]
+      | succ index =>
+          simp only [List.getElem?_cons_succ] at hAt
+          have hTailDepth := ih hTailNodup hAt
+          have hNameMem : name ∈ tail :=
+            List.mem_of_getElem? hAt
+          have hHeadNe : head ≠ name := by
+            intro hEq
+            subst head
+            exact (List.nodup_cons.mp hNodup).1 hNameMem
+          simpa [Nat.add_assoc] using
+            lookupDepth?_cons_of_ne hHeadNe hTailDepth
+
+theorem lookupDepth?_getLast_of_nodup
+    {layout : Layout}
+    (hNodup : layout.Nodup)
+    (hNonempty : layout ≠ []) :
+    lookupDepth? (layout.getLast hNonempty) layout = some layout.length := by
+  induction layout with
+  | nil =>
+      exact False.elim (hNonempty rfl)
+  | cons head tail ih =>
+      cases tail with
+      | nil =>
+          simp [lookupDepth?, lookupDepthFrom]
+      | cons next rest =>
+          have hTailNodup :=
+            (List.nodup_cons.mp hNodup).2
+          have hTailNonempty : next :: rest ≠ [] := by
+            simp
+          have hTailDepth := ih hTailNodup hTailNonempty
+          have hLastMem :
+              (next :: rest).getLast hTailNonempty ∈ next :: rest :=
+            List.getLast_mem hTailNonempty
+          have hHeadNe :
+              head ≠ (next :: rest).getLast hTailNonempty := by
+            intro hEq
+            subst head
+            exact (List.nodup_cons.mp hNodup).1 hLastMem
+          simpa [Nat.add_assoc] using
+            lookupDepth?_cons_of_ne hHeadNe hTailDepth
 
 theorem name_eq_of_lookupDepth?_eq_some
     {left right : Name} {layout : Layout} {depth : Nat}

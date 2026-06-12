@@ -229,6 +229,87 @@ theorem run_pop {transcript : Trace}
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
+/--
+Running compiler cleanup made only of `POP`s drops exactly the requested stack
+prefix and preserves every non-stack component observed by the allocation
+relation.
+-/
+theorem run_replicate_pop {transcript : Trace}
+    (count : Nat)
+    {target : Structured.ObserverSemantics.State transcript}
+    (hBound : count ≤ target.source.evm.stack.length) :
+    ∃ final,
+      Structured.ObserverSemantics.Code.run
+          (List.replicate count (Structured.BasicInstr.op .pop))
+          target =
+        .ok final ∧
+      final.cursor = target.cursor ∧
+      final.source.evm.stack = target.source.evm.stack.drop count ∧
+      final.source.evm.toSharedState =
+        target.source.evm.toSharedState ∧
+      final.source.returns = target.source.returns := by
+  induction count generalizing target with
+  | zero =>
+      exact
+        ⟨target, rfl,
+          rfl, by simp, rfl, rfl⟩
+  | succ count ih =>
+      cases hStack : target.source.evm.stack with
+      | nil =>
+          simp [hStack] at hBound
+      | cons value rest =>
+          let mid :=
+            AllocationObserverRelation.StateRel.replaceStackBy
+              1 rest target
+          have hPop :
+              Structured.ObserverSemantics.Code.run
+                  [.op .pop] target =
+                .ok mid := by
+            simpa [mid] using run_pop (target := target) hStack
+          have hMidStack : mid.source.evm.stack = rest := by
+            simp [mid,
+              AllocationObserverRelation.StateRel.replaceStackBy,
+              Simulation.ResourceReplay.State.withSource,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC]
+          have hTailBound : count ≤ mid.source.evm.stack.length := by
+            rw [hMidStack]
+            simpa [hStack] using hBound
+          obtain
+              ⟨final, hTail, hCursor, hFinalStack,
+                hShared, hReturns⟩ :=
+            ih hTailBound
+          refine ⟨final, ?_, ?_, ?_, ?_, ?_⟩
+          · change
+              Structured.ObserverSemantics.Code.run
+                  ([.op .pop] ++
+                    List.replicate count
+                      (Structured.BasicInstr.op .pop))
+                  target =
+                .ok final
+            rw [run_append, hPop]
+            exact hTail
+          · rw [hCursor]
+            simp [mid,
+              AllocationObserverRelation.StateRel.replaceStackBy,
+              Simulation.ResourceReplay.State.withSource,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC]
+          · rw [hFinalStack, hMidStack]
+            simp [hStack]
+          · rw [hShared]
+            simp [mid,
+              AllocationObserverRelation.StateRel.replaceStackBy,
+              Simulation.ResourceReplay.State.withSource,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC]
+          · rw [hReturns]
+            simp [mid,
+              AllocationObserverRelation.StateRel.replaceStackBy,
+              Simulation.ResourceReplay.State.withSource,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC]
+
 theorem run_swap {transcript : Trace}
     {target : Structured.ObserverSemantics.State transcript}
     {depth : Nat} {value old : Word} {rest : List Word}

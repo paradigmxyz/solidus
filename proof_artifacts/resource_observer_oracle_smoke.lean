@@ -2,6 +2,7 @@ import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.AllocationObserverPreservation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverContext
+import EvmCompiler.Functions.AllocationObserverCleanup
 import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverStatement
@@ -126,6 +127,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.compiler_shape
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward
+#check EvmCompiler.Functions.AllocationObserverCleanup.Plain.backward
+#check EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.forward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.forward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.backward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel
@@ -346,6 +353,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.compiler_shape
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.backward
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.forward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.backward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.forward_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.backward_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_activation_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.backward_activation_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_activation_of_compilers
@@ -363,6 +376,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtForward.let_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtForward.assign_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.terminalArgs_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.brk_of_compilers
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.cont_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.BlockForward.nil
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.BlockForward.cons_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.BlockForward.cons_nonregular

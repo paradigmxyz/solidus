@@ -35,6 +35,34 @@ def currentStackOrder (plan : Plan) (live : List Locals.Name) :
   plan.stackOrder.filter fun name => decide (name ∈ live)
 
 /--
+Every source local that is semantically live has already been initialized.
+
+Allocation plans include declarations that may not have executed yet, so this
+cannot be inferred from plan well-formedness alone. Recursive source execution
+maintains it as a source-facing invariant.
+-/
+def LiveDefined (live : List Locals.Name) (source : Locals.Source.State) :
+    Prop :=
+  ∀ name, name ∈ live → ∃ value, source.vars name = some value
+
+theorem currentStackOrder_nodup
+    {plan : Plan} {live : List Locals.Name}
+    (hWF : plan.WellFormed) :
+    (currentStackOrder plan live).Nodup := by
+  rcases hWF with
+    ⟨_hBindings, _hScope, _hLength,
+      ⟨hStackNodup, _hStackScope⟩,
+      _hValid, _hScratch, _hKeys, _hIntervals, _hCalls, _hReturns⟩
+  exact hStackNodup.filter _
+
+theorem mem_live_of_mem_currentStackOrder
+    {plan : Plan} {live : List Locals.Name} {name : Locals.Name}
+    (hMem : name ∈ currentStackOrder plan live) :
+    name ∈ live := by
+  simp [currentStackOrder] at hMem
+  exact hMem.2
+
+/--
 Realization of the source store for names that are live at the current
 semantic point.
 
@@ -340,6 +368,126 @@ theorem mono {transcript : Trace}
   ⟨hRel.cursor,
     ⟨hRel.core.machine, hRel.core.world,
       hRel.core.store.restrict hSubset hStackOrder⟩⟩
+
+/--
+Discarding a prefix of stack-resident locals and restricting the source store
+to the surviving live scope re-establishes the allocation relation at stack
+offset zero.
+
+This is the semantic core of plain Locals cleanup. The actual `POP` execution
+and compiler equation are owned by the allocation cleanup module.
+-/
+theorem restrict_drop_stack_prefix {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {beforeLive afterLive dropped : List Locals.Name}
+    {frameBase : Nat}
+    {source : SourceState transcript}
+    {target targetFinal : TargetState transcript}
+    (hRel :
+      StateRel contract plan beforeLive 0 frameBase source target)
+    (hWF : plan.WellFormed)
+    (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hOrder :
+      currentStackOrder plan beforeLive =
+        dropped ++ currentStackOrder plan afterLive)
+    (hCursor : targetFinal.cursor = target.cursor)
+    (hShared :
+      targetFinal.source.evm.toSharedState =
+        target.source.evm.toSharedState)
+    (hStack :
+      targetFinal.source.evm.stack =
+        target.source.evm.stack.drop dropped.length) :
+    StateRel contract plan afterLive 0 frameBase
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        afterLive source)
+      targetFinal := by
+  let sourceFinal :=
+    (Functions.ObserverSemantics.stateModel transcript).restrictTo
+      afterLive source
+  have hSourceCursor : sourceFinal.cursor = source.cursor := by
+    rfl
+  have hSourceShared :
+      sourceFinal.source.shared = source.source.shared := by
+    rfl
+  refine ⟨?_, ?_⟩
+  · rw [hSourceCursor, hCursor]
+    exact hRel.cursor
+  · refine ⟨?_, ?_, ?_⟩
+    · rw [hSourceShared, hShared]
+      exact hRel.core.machine
+    · rw [hSourceShared, hShared]
+      exact hRel.core.world
+    · intro name location hAfterLive hLocation
+      have hBeforeLive := hSubset name hAfterLive
+      have hOld :=
+        hRel.core.store name location hBeforeLive hLocation
+      cases location with
+      | scratch slot =>
+          change
+            targetFinal.source.evm.toMachineState.lookupMemory
+                (EvmYul.UInt256.ofNat
+                  (scratchAddress frameBase slot)) =
+              (sourceFinal.source.vars name).getD
+                (EvmYul.UInt256.ofNat 0)
+          have hVars :
+              sourceFinal.source.vars name = source.source.vars name := by
+            simp [sourceFinal, Functions.ObserverSemantics.stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.restrictTo,
+              Locals.Source.State.restrictTo,
+              Locals.Source.Store.restrictTo, hAfterLive]
+          rw [hVars, hShared]
+          exact hOld
+      | stack planDepth =>
+          rcases hOld with ⟨oldDepth, hOldDepth, hOldValue⟩
+          have hNameBefore :
+              name ∈ currentStackOrder plan beforeLive :=
+            Locals.Layout.mem_of_lookupDepth?_eq_some hOldDepth
+          have hPlanStack : name ∈ plan.stackOrder := by
+            simp [currentStackOrder] at hNameBefore
+            exact hNameBefore.1
+          have hNameAfter :
+              name ∈ currentStackOrder plan afterLive := by
+            simp [currentStackOrder, hPlanStack, hAfterLive]
+          obtain ⟨afterDepth, hAfterDepth⟩ :=
+            Locals.Layout.exists_lookupDepth?_eq_some_of_mem hNameAfter
+          have hBeforeNodup :=
+            currentStackOrder_nodup (live := beforeLive) hWF
+          rw [hOrder] at hBeforeNodup
+          have hDisjoint :
+              List.Disjoint dropped
+                (currentStackOrder plan afterLive) :=
+            List.disjoint_of_nodup_append hBeforeNodup
+          have hNameNotDropped : name ∉ dropped := by
+            intro hDropped
+            exact
+              (List.disjoint_left.mp hDisjoint)
+                hDropped hNameAfter
+          have hExpectedDepth :
+              Locals.Layout.lookupDepth? name
+                  (currentStackOrder plan beforeLive) =
+                some (dropped.length + (afterDepth + 1)) := by
+            rw [hOrder]
+            exact
+              Locals.Layout.lookupDepth?_append_of_not_mem
+                hNameNotDropped hAfterDepth
+          have hOldDepthEq :
+              oldDepth = dropped.length + afterDepth := by
+            rw [hExpectedDepth] at hOldDepth
+            have :=
+              Option.some.inj hOldDepth
+            omega
+          refine ⟨afterDepth, hAfterDepth, ?_⟩
+          have hVars :
+              sourceFinal.source.vars name = source.source.vars name := by
+            simp [sourceFinal, Functions.ObserverSemantics.stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.restrictTo,
+              Locals.Source.State.restrictTo,
+              Locals.Source.Store.restrictTo, hAfterLive]
+          rw [hStack, hVars]
+          simpa [List.getElem?_drop, hOldDepthEq,
+            Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using hOldValue
 
 theorem push_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}

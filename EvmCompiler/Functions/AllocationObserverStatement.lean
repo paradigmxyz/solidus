@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Functions.AllocationObserverTerminal
+import EvmCompiler.Functions.AllocationObserverCleanup
 
 namespace EvmCompiler
 namespace Functions
@@ -2833,6 +2834,122 @@ theorem terminalArgs_of_compilers
   exact
     ⟨targetFinal,
       of_halt_runs hSource hTarget hOutcome⟩
+
+theorem brk_of_compilers
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : localsCtx.breakDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan afterLive frameBase
+        afterMode sourceProgram sourceCtx .brk source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.brk targetFinal)
+        sourceCtx := by
+  obtain ⟨targetFinal, hSource, hTarget, hOutcome⟩ :=
+    AllocationObserverCleanup.BreakLeaf.forward_of_compilers
+      hSourceScope hTargetDepth hCtx hTransition hWF hDefined
+      hLower hCompile hRel
+  exact
+    ⟨targetFinal,
+      of_runs hSource hTarget
+        (by
+          intro hMode
+          cases hMode)
+        hOutcome⟩
+
+theorem cont_of_compilers
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : localsCtx.continueDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan afterLive frameBase
+        afterMode sourceProgram sourceCtx .cont source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.cont targetFinal)
+        sourceCtx := by
+  obtain ⟨targetFinal, hSource, hTarget, hOutcome⟩ :=
+    AllocationObserverCleanup.ContinueLeaf.forward_of_compilers
+      hSourceScope hTargetDepth hCtx hTransition hWF hDefined
+      hLower hCompile hRel
+  exact
+    ⟨targetFinal,
+      of_runs hSource hTarget
+        (by
+          intro hMode
+          cases hMode)
+        hOutcome⟩
 
 end NonregularStmtForward
 

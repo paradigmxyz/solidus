@@ -1,0 +1,661 @@
+import EvmCompiler.Functions.AllocationObserverContext
+import EvmCompiler.Functions.AllocationObserverPreservation
+import EvmCompiler.Functions.AllocationObserverSafety
+
+namespace EvmCompiler
+namespace Functions
+namespace AllocationObserverCleanup
+
+open AllocationObserverRelation
+
+abbrev Trace := Assembly.ResourceTrace
+
+/--
+Representation change performed by plain stack cleanup.
+
+The surviving stack depth is allocation-owned. Scratch activations retain the
+same frame and move its hidden pointer upward by the number of discarded stack
+locals.
+-/
+inductive ModeTransition (finalStackDepth targetDepth : Nat) :
+    ActivationMode → ActivationMode → Prop where
+  | stack
+      (target : targetDepth = finalStackDepth) :
+      ModeTransition finalStackDepth targetDepth .stack .stack
+  | scratch
+      (beforeDepth afterDepth frameWords : Nat)
+      (after : afterDepth = finalStackDepth)
+      (target : targetDepth = afterDepth + 1) :
+      ModeTransition finalStackDepth targetDepth
+        (.scratch beforeDepth frameWords)
+        (.scratch afterDepth frameWords)
+
+/--
+Source/allocation-facing control transition for `break` and `continue`
+cleanup. It contains no target execution premise or generated code.
+-/
+structure Transition
+    (plan : Locals.Allocation.Plan)
+    (beforeLive afterLive : List Locals.Name)
+    (targetDepth : Nat)
+    (beforeMode afterMode : ActivationMode) where
+  dropped : List Locals.Name
+  subset :
+    ∀ name, name ∈ afterLive → name ∈ beforeLive
+  stackOrder :
+    currentStackOrder plan beforeLive =
+      dropped ++ currentStackOrder plan afterLive
+  mode :
+    ModeTransition
+      (currentStackOrder plan afterLive).length targetDepth
+      beforeMode afterMode
+
+namespace Plain
+
+theorem cleanupTo?_shape
+    {ctx : Locals.Ctx} {targetDepth : Nat}
+    {code : Structured.Code}
+    (hCleanup : ctx.cleanupTo? targetDepth = some code) :
+    targetDepth ≤ ctx.layout.length ∧
+      code =
+        List.replicate (ctx.layout.length - targetDepth)
+          (Structured.BasicInstr.op .pop) := by
+  unfold Locals.Ctx.cleanupTo? at hCleanup
+  by_cases hDepth : targetDepth ≤ ctx.layout.length
+  · simp only [hDepth, if_pos, Option.some.injEq] at hCleanup
+    exact ⟨hDepth, hCleanup.symm⟩
+  · simp [hDepth] at hCleanup
+
+/--
+Forward preservation for the exact `POP` sequence emitted by
+`Locals.Ctx.cleanupTo?`.
+-/
+theorem forward
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {cleanup : Structured.Code}
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target)
+    (hCleanup :
+      localsCtx.cleanupTo? targetDepth = some cleanup) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run cleanup target =
+          .ok targetFinal ∧
+        ActivationStateRel contract plan afterLive 0 frameBase
+          afterMode
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source)
+          targetFinal := by
+  obtain ⟨hTargetDepth, hCleanupCode⟩ :=
+    cleanupTo?_shape hCleanup
+  have hLayoutBound :=
+    hCtx.layout_length_le_target_stack hWF hDefined hRel
+  have hPopBound :
+      localsCtx.layout.length - targetDepth ≤
+        target.source.evm.stack.length :=
+    (Nat.sub_le _ _).trans hLayoutBound
+  obtain
+      ⟨targetFinal, hRun, hCursor, hFinalStack,
+        hShared, _hReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_replicate_pop
+      (localsCtx.layout.length - targetDepth) hPopBound
+  refine ⟨targetFinal, ?_, ?_⟩
+  · simpa [hCleanupCode] using hRun
+  · cases hTransition.mode with
+    | stack hFinalDepth =>
+        cases hCtx with
+        | stack hStackCtx =>
+            cases hRel with
+            | stack hOnly hActive hState =>
+                have hLayoutLength :
+                    localsCtx.layout.length =
+                      (currentStackOrder plan beforeLive).length := by
+                  rw [hStackCtx.layout, ← hStackCtx.stackOrder]
+                have hOrderLength :=
+                  congrArg List.length hTransition.stackOrder
+                have hCount :
+                    localsCtx.layout.length - targetDepth =
+                      hTransition.dropped.length := by
+                  simp only [List.length_append] at hOrderLength
+                  omega
+                have hBase :=
+                  hState.restrict_drop_stack_prefix hWF
+                    hTransition.subset hTransition.stackOrder
+                    hCursor hShared
+                    (by simpa [hCount] using hFinalStack)
+                exact
+                  .stack
+                    (fun name slot hLive hLocation =>
+                      hOnly name slot
+                        (hTransition.subset name hLive) hLocation)
+                    (by simpa [hShared] using hActive)
+                    hBase
+    | scratch beforeDepth afterDepth frameWords hAfterDepth hFinalDepth =>
+        cases hCtx with
+        | scratch hScratchCtx =>
+            cases hRel with
+            | scratch hScratch =>
+                have hBeforeDepth :
+                    beforeDepth =
+                      hTransition.dropped.length + afterDepth := by
+                  have hBeforeOrder :=
+                    hScratchCtx.currentStackOrder_length
+                  have hOrderLength :=
+                    congrArg List.length hTransition.stackOrder
+                  simp only [List.length_append] at hOrderLength
+                  omega
+                have hCount :
+                    localsCtx.layout.length - targetDepth =
+                      hTransition.dropped.length := by
+                  have hLayout :
+                      localsCtx.layout.length = beforeDepth + 1 := by
+                    rw [hScratchCtx.layout, hScratchCtx.frameBottom]
+                  omega
+                have hBase :=
+                  hScratch.base.restrict_drop_stack_prefix hWF
+                    hTransition.subset hTransition.stackOrder
+                    hCursor hShared
+                    (by simpa [hCount] using hFinalStack)
+                have hFramePointer :
+                    targetFinal.source.evm.stack[afterDepth]? =
+                      some (EvmYul.UInt256.ofNat frameBase) := by
+                  rw [hFinalStack, List.getElem?_drop]
+                  simpa [hCount, hBeforeDepth,
+                    Nat.add_comm, Nat.add_left_comm, Nat.add_assoc] using
+                    hScratch.framePointer
+                exact
+                  .scratch
+                    { base := hBase
+                      framePointer := by simpa using hFramePointer
+                      frameActive := by
+                        simpa [hShared] using hScratch.frameActive
+                      frameAllocated := by
+                        simpa [hShared] using hScratch.frameAllocated
+                      frameNoWrap := hScratch.frameNoWrap
+                      frameHostAddressable := hScratch.frameHostAddressable
+                      activeNoWrap := by
+                        simpa [hShared] using hScratch.activeNoWrap
+                      frameReserved := hScratch.frameReserved
+                      scratchBound := fun name slot hLive hLocation =>
+                        hScratch.scratchBound name slot
+                          (hTransition.subset name hLive) hLocation }
+
+/--
+Backward adequacy for plain cleanup follows from deterministic execution of the
+same compiler-emitted `POP` sequence.
+-/
+theorem backward
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    {cleanup : Structured.Code}
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target)
+    (hCleanup :
+      localsCtx.cleanupTo? targetDepth = some cleanup)
+    (hRun :
+      Structured.ObserverSemantics.Code.run cleanup target =
+        .ok targetFinal) :
+    ActivationStateRel contract plan afterLive 0 frameBase
+      afterMode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        afterLive source)
+      targetFinal := by
+  obtain ⟨expected, hExpectedRun, hExpectedRel⟩ :=
+    forward hCtx hTransition hWF hDefined hRel hCleanup
+  rw [hExpectedRun] at hRun
+  cases hRun
+  exact hExpectedRel
+
+end Plain
+
+namespace BreakLeaf
+
+theorem compiler_shape
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {targetDepth : Nat}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hDepth : localsCtx.breakDepth? = some targetDepth)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ cleanup,
+      localsCtx.cleanupTo? targetDepth = some cleanup ∧
+        loweredStmts = [.brk] ∧
+        lowerFinal = lowerState ∧
+        compiledStmts =
+          [Expressions.Stmt.code cleanup, Expressions.Stmt.brk] ∧
+        localsFinal = localsCtx := by
+  simp [AllocationLowering.lowerStmt] at hLower
+  rcases hLower with ⟨rfl, rfl⟩
+  cases hCleanup : localsCtx.cleanupTo? targetDepth with
+  | none =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        hDepth, hCleanup] at hCompile
+  | some cleanup =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        Locals.codeStmt, hDepth, hCleanup] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact ⟨cleanup, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem forward_of_compilers
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : localsCtx.breakDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx 0 .brk source =
+        .ok
+          (Functions.Source.Effectful.Outcome.brk
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source),
+            sourceCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target
+        (Structured.EffectSemantics.Outcome.brk targetFinal) ∧
+      ActivationOutcomeRel contract plan afterLive 0 frameBase afterMode
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.brk targetFinal) := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    compiler_shape hTargetDepth hLower hCompile
+  obtain ⟨targetFinal, hCleanupRun, hFinalRel⟩ :=
+    Plain.forward hCtx hTransition hWF hDefined hRel hCleanup
+  have hBreakStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .brk targetFinal
+          (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.brk
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.brk] }
+        target
+        (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_brk hBreakStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.brk
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  refine ⟨targetFinal, hSource, ?_, ActivationOutcomeRel.brk hFinalRel⟩
+  simpa [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using hTarget
+
+theorem backward_of_compilers
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {targetFuel : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : localsCtx.breakDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target)
+    (hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target
+        (Structured.EffectSemantics.Outcome.brk targetFinal)) :
+    Functions.Source.Effectful.Stmt.run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        sourceProgram sourceCtx 0 .brk source =
+      .ok
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source),
+          sourceCtx) ∧
+    ActivationOutcomeRel contract plan afterLive 0 frameBase afterMode
+      (Functions.Source.Effectful.Outcome.brk
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source))
+      (Structured.EffectSemantics.Outcome.brk targetFinal) := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    compiler_shape hTargetDepth hLower hCompile
+  simp only [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] at hTarget
+  cases hTarget with
+  | cons_regular hCleanupStmt hTail =>
+      cases hCleanupStmt with
+      | code hCleanupRun =>
+          cases hTail with
+          | cons_regular hBreak _hRest =>
+              cases hBreak
+          | cons_brk _hBreak =>
+              cases _hBreak
+              have hFinalRel :=
+                Plain.backward hCtx hTransition hWF hDefined hRel
+                  hCleanup hCleanupRun
+              have hSource :=
+                (AllocationObserverSafety.Stmt.LeafMemorySafeRun.brk
+                  (contract := contract) (transcript := transcript)
+                  (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+                  (source := source) hSourceScope).run_eq
+              exact ⟨hSource, ActivationOutcomeRel.brk hFinalRel⟩
+  | cons_brk hCleanupStmt =>
+      cases hCleanupStmt
+
+end BreakLeaf
+
+namespace ContinueLeaf
+
+theorem compiler_shape
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {targetDepth : Nat}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hDepth : localsCtx.continueDepth? = some targetDepth)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ cleanup,
+      localsCtx.cleanupTo? targetDepth = some cleanup ∧
+        loweredStmts = [.cont] ∧
+        lowerFinal = lowerState ∧
+        compiledStmts =
+          [Expressions.Stmt.code cleanup, Expressions.Stmt.cont] ∧
+        localsFinal = localsCtx := by
+  simp [AllocationLowering.lowerStmt] at hLower
+  rcases hLower with ⟨rfl, rfl⟩
+  cases hCleanup : localsCtx.cleanupTo? targetDepth with
+  | none =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        hDepth, hCleanup] at hCompile
+  | some cleanup =>
+      simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+        Locals.codeStmt, hDepth, hCleanup] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact ⟨cleanup, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem forward_of_compilers
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : localsCtx.continueDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx 0 .cont source =
+        .ok
+          (Functions.Source.Effectful.Outcome.cont
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source),
+            sourceCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target
+        (Structured.EffectSemantics.Outcome.cont targetFinal) ∧
+      ActivationOutcomeRel contract plan afterLive 0 frameBase afterMode
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.cont targetFinal) := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    compiler_shape hTargetDepth hLower hCompile
+  obtain ⟨targetFinal, hCleanupRun, hFinalRel⟩ :=
+    Plain.forward hCtx hTransition hWF hDefined hRel hCleanup
+  have hContinueStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .cont targetFinal
+          (Structured.EffectSemantics.Outcome.cont targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.cont
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.cont] }
+        target
+        (Structured.EffectSemantics.Outcome.cont targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_cont hContinueStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.cont
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  refine ⟨targetFinal, hSource, ?_, ActivationOutcomeRel.cont hFinalRel⟩
+  simpa [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using hTarget
+
+theorem backward_of_compilers
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {targetFuel : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : localsCtx.continueDepth? = some targetDepth)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan beforeLive beforeMode)
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hWF : plan.WellFormed)
+    (hDefined : LiveDefined beforeLive source.source)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal))
+    (hRel :
+      ActivationStateRel contract plan beforeLive 0 frameBase
+        beforeMode source target)
+    (hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target
+        (Structured.EffectSemantics.Outcome.cont targetFinal)) :
+    Functions.Source.Effectful.Stmt.run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        sourceProgram sourceCtx 0 .cont source =
+      .ok
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source),
+          sourceCtx) ∧
+    ActivationOutcomeRel contract plan afterLive 0 frameBase afterMode
+      (Functions.Source.Effectful.Outcome.cont
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source))
+      (Structured.EffectSemantics.Outcome.cont targetFinal) := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    compiler_shape hTargetDepth hLower hCompile
+  simp only [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] at hTarget
+  cases hTarget with
+  | cons_regular hCleanupStmt hTail =>
+      cases hCleanupStmt with
+      | code hCleanupRun =>
+          cases hTail with
+          | cons_regular hContinue _hRest =>
+              cases hContinue
+          | cons_cont hContinue =>
+              cases hContinue
+              have hFinalRel :=
+                Plain.backward hCtx hTransition hWF hDefined hRel
+                  hCleanup hCleanupRun
+              have hSource :=
+                (AllocationObserverSafety.Stmt.LeafMemorySafeRun.cont
+                  (contract := contract) (transcript := transcript)
+                  (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+                  (source := source) hSourceScope).run_eq
+              exact ⟨hSource, ActivationOutcomeRel.cont hFinalRel⟩
+  | cons_cont hCleanupStmt =>
+      cases hCleanupStmt
+
+end ContinueLeaf
+
+end AllocationObserverCleanup
+end Functions
+end EvmCompiler

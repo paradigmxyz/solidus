@@ -31,6 +31,12 @@ structure ExprContext
   frame :
     Locals.Layout.lookupDepth? lowerCtx.frameName lowerState.layout =
       some (frameDepth + 1)
+  frameBottom :
+    lowerState.layout.length = frameDepth + 1
+  location :
+    ∀ name,
+      name ∈ live →
+      ∃ location, plan.location? name = some location
   slot :
     ∀ name,
       name ∈ live →
@@ -133,6 +139,10 @@ structure StackExprContext
     lowerCtx.frameName ∉ lowerState.layout
   liveStackOnly :
     AllocationObserverRelation.LiveStackOnly plan live
+  location :
+    ∀ name,
+      name ∈ live →
+      ∃ location, plan.location? name = some location
   slot :
     ∀ name,
       name ∈ live →
@@ -179,6 +189,99 @@ inductive ActivationExprContext
         ExprContext lowerCtx lowerState localsCtx plan live frameDepth) :
       ActivationExprContext lowerCtx lowerState localsCtx plan live
         (.scratch frameDepth frameWords)
+
+namespace ActivationExprContext
+
+/--
+The compiler layout described by an activation context is backed by concrete
+target stack cells.
+
+For stack-only activations, source-definedness rules out the otherwise
+permitted `none = out-of-bounds` store relation at the bottom local. Scratch
+activations instead use the concrete hidden frame pointer as their bottom stack
+cell.
+-/
+theorem layout_length_le_target_stack
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCtx :
+      ActivationExprContext lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hDefined :
+      AllocationObserverRelation.LiveDefined live source.source)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 0 frameBase mode source target) :
+    localsCtx.layout.length ≤ target.source.evm.stack.length := by
+  cases hCtx with
+  | stack hStackCtx =>
+      cases hRel with
+      | stack hOnly _hActive hState =>
+          let order :=
+            AllocationObserverRelation.currentStackOrder plan live
+          by_cases hEmpty : order = []
+          · calc
+              localsCtx.layout.length = order.length := by
+                rw [hStackCtx.layout, ← hStackCtx.stackOrder]
+              _ = 0 := by simp [hEmpty]
+              _ ≤ target.source.evm.stack.length := Nat.zero_le _
+          · let name := order.getLast hEmpty
+            have hNameOrder : name ∈ order := by
+              exact List.getLast_mem hEmpty
+            have hNameLive : name ∈ live :=
+              AllocationObserverRelation.mem_live_of_mem_currentStackOrder
+                hNameOrder
+            obtain ⟨location, hLocation⟩ :=
+              hStackCtx.location name hNameLive
+            cases location with
+            | scratch slot =>
+                exact False.elim
+                  (hOnly name slot hNameLive hLocation)
+            | stack planDepth =>
+                obtain ⟨depth, hDepth, hValue⟩ :=
+                  hState.core.store name (.stack planDepth)
+                    hNameLive hLocation
+                obtain ⟨value, hSourceValue⟩ :=
+                  hDefined name hNameLive
+                have hLastDepth :
+                    Locals.Layout.lookupDepth? name order =
+                      some order.length := by
+                  exact
+                    Locals.Layout.lookupDepth?_getLast_of_nodup
+                      (AllocationObserverRelation.currentStackOrder_nodup hWF)
+                      hEmpty
+                have hDepthEq : depth + 1 = order.length := by
+                  rw [hLastDepth] at hDepth
+                  exact (Option.some.inj hDepth).symm
+                have hTargetValue :
+                    target.source.evm.stack[depth]? = some value := by
+                  simpa [hSourceValue] using hValue
+                have hDepthBound :
+                    depth < target.source.evm.stack.length :=
+                  List.getElem?_eq_some_iff.mp hTargetValue |>.1
+                calc
+                  localsCtx.layout.length = order.length := by
+                    rw [hStackCtx.layout, ← hStackCtx.stackOrder]
+                  _ = depth + 1 := hDepthEq.symm
+                  _ ≤ target.source.evm.stack.length :=
+                    Nat.succ_le_of_lt hDepthBound
+  | scratch hScratchCtx =>
+      cases hRel with
+      | scratch hScratch =>
+          have hFrameBound :=
+            List.getElem?_eq_some_iff.mp hScratch.framePointer |>.1
+          rw [hScratchCtx.layout, hScratchCtx.frameBottom]
+          exact Nat.succ_le_of_lt (by simpa using hFrameBound)
+
+end ActivationExprContext
 
 /--
 Exact compiler classification for a lowered source variable.
