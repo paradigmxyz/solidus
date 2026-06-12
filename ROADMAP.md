@@ -127,8 +127,12 @@ Adjacent boundary status:
   consuming compiler-owned frame data. The regular-fallthrough half of
   recursive statement-list composition is checked through exact residual
   target fuel and a reconstructed `StateRel.At` tail boundary. The
-  no-fallthrough list branch, recursive dispatcher, switch/loop control,
-  internal calls, and whole-program backward adequacy remain.
+  no-fallthrough branch and compiler-driven sequence dispatcher are also
+  checked, as are the `break`, `continue`, `leave`, and terminal
+  `AdequateWithin` leaves. Switch regular joins and loop abrupt destinations
+  still need shape checks in the compiler context before their backward rules
+  can be sound; recursive switch/loop control, internal calls, and whole-program
+  backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

@@ -28810,3 +28810,15 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   and `git diff --check` pass. Axiom prints for the new semantic monotonicity,
   prefix composition, compiler join, mismatch rejection, and strengthened
   adequacy facts report only `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 18:34:03 PDT `proof`: Completed the no-fallthrough
+  statement-list rule and compiler-driven sequence dispatcher, then added
+  `AdequateWithin` leaves for checked `break`, `continue`, `leave`, and
+  terminal statements. The 1,177-job verification root, architecture check,
+  exact hole scan, and diff check remain green.
+
+- 2026-06-11 18:34:03 PDT `architecture-risk`: Switch bodies still advertise
+  a fixed join shape without checking regular body fallthrough, and loop
+  `break`/`continue` contexts carry labels without destination shapes. Complete
+  backward adequacy requires pass-owned typed continuation destinations and
+  checked joins; do not replace these with public shape premises.
