@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 02:31 PDT.
+Last updated: 2026-06-12 02:53 PDT.
 
 ## Objective
 
@@ -140,10 +140,20 @@ Adjacent boundary status:
   read-after-write theorems are checked. `ScratchStateRel.assign_scratch_live`
   now preserves the allocation relation for both newly declared and already
   live spilled names, including every unaffected stack/scratch binding,
-  frame coverage, memory-size behavior, and observer cursor. The remaining
-  spill-write step is the compiler-derived execution wrapper for the emitted
-  `DUP`/`PUSH`/`ADD`/`MSTORE` sequence, followed by allocator initialization,
-  frame acquire/release, and recursive statement/function composition.
+  frame coverage, memory-size behavior, and observer cursor. Compiler-derived
+  spill writes now execute the actual `DUP`/`PUSH`/`ADD`/`MSTORE` sequence and
+  are checked in both directions. The private allocator initialization,
+  frame-pointer advance, last-slot preallocation, complete frame acquisition,
+  and frame release sequences have checked execution theorems. Acquisition
+  establishes allocator depth, frame activity, frame allocation, and machine
+  relation; release restores the previous allocator depth without changing the
+  data stack. Proving release exposed and fixed an operand-order bug in the
+  emitted `SUB`: the compiler now pushes frame bytes before loading the current
+  allocator value, so EVM subtraction computes `current - frameBytes`.
+  Remaining work at this boundary is recursive expression/statement/function
+  and call composition, construction of `ScratchStateRel` at function entry,
+  source-facing memory-safety/fuel premises, and the whole-program adjacent
+  forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

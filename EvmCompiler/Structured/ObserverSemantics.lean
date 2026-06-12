@@ -386,6 +386,14 @@ theorem run_cons_eq_run_single_bind
   Structured.EffectSemantics.Code.run_cons_eq_run_single_bind
     (stateModel transcript) (handler transcript) instr rest state
 
+theorem run_append
+    {transcript : Trace} (left right : Structured.Code)
+    (state : State transcript) :
+    run (left ++ right) state =
+      (run left state).bind (run right) :=
+  Structured.EffectSemantics.Code.run_append
+    (stateModel transcript) (handler transcript) left right state
+
 theorem run_returns_eq
     {transcript : Trace} {code : Structured.Code}
     {state final : State transcript}

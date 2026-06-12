@@ -106,6 +106,29 @@ theorem scratchLoadExpr_compileCode
   simp [scratchLoadExpr, scratchAddressExpr, exprSeqOne, exprSeqTwo,
     Locals.Expr.compileCode, Locals.ExprSeq.compileCode, hDepth, hDup]
 
+theorem scratchStoreExpr_compileCode
+    {frameName : Name} {slot offset depth : Nat}
+    {ctx : Locals.Ctx} {value : Locals.Expr 1}
+    {valueCode : Structured.Code} {op : Structured.BasicOp}
+    (hValue :
+      Locals.Expr.compileCode ctx offset value = some valueCode)
+    (hDepth :
+      Locals.Layout.lookupDepth? frameName ctx.layout =
+        some depth)
+    (hDup :
+      Locals.StackOp.dup? (offset + 1 + depth) = some op) :
+    Locals.Expr.compileCode ctx offset
+        (scratchStoreExpr frameName slot value) =
+      some
+        (valueCode ++
+          [ .op op,
+            .push (AllocationSupport.slotOffset slot),
+            .op .add,
+            .op .mstore ]) := by
+  simp [scratchStoreExpr, scratchAddressExpr, exprSeqTwo,
+    Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+    hValue, hDepth, hDup]
+
 def lowerExprList (ctx : Ctx) (state : State) :
     List (Expr 1) → Option (List (Locals.Expr 1))
   | [] => some []

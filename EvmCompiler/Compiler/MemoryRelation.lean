@@ -5,6 +5,16 @@ namespace EvmCompiler
 namespace Compiler
 namespace MemoryRelation
 
+theorem usize_size_lt_uint256_size :
+    USize.size < EvmYul.UInt256.size := by
+  rcases USize.size_eq with h | h <;>
+    simp [h, EvmYul.UInt256.size]
+
+theorem usize_size_add_31_lt_uint256_size :
+    USize.size + 31 < EvmYul.UInt256.size := by
+  rcases USize.size_eq with h | h <;>
+    simp [h, EvmYul.UInt256.size]
+
 def byteAt (memory : ByteArray) (address : Nat) : UInt8 :=
   memory.data.getD address 0
 
@@ -298,6 +308,85 @@ theorem writeWord_memory_size_eq_of_end_le
   rw [hPrefix, hZero, hWord, hSuffix]
   omega
 
+theorem writeWord_memory_size_ge_end
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + 32 < USize.size) :
+    address + 32 ≤
+      (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.size := by
+  change
+    address + 32 ≤
+      (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.data.size
+  rw [writeWord_memory_data value machine address hAddress hHost]
+  have hPrefix :
+      (machine.memory.data.extract 0 address).size =
+        min address machine.memory.size := by
+    simp [Array.size_extract]
+  have hPadding :
+      (ffi.ByteArray.zeroes
+        (OfNat.ofNat
+          (address - machine.memory.size))).data.size =
+        address - machine.memory.size := by
+    change
+      (ffi.ByteArray.zeroes
+        (OfNat.ofNat
+          (address - machine.memory.size))).size =
+        address - machine.memory.size
+    rw [ffi.ByteArray.size_zeroes]
+    apply USize.toNat_ofNat_of_lt'
+    omega
+  have hWord : value.toByteArray.data.size = 32 :=
+    EvmYul.UInt256.size_toByteArray value
+  simp only [Array.size_append]
+  rw [hPrefix, hPadding, hWord]
+  omega
+
+theorem writeWord_memory_size_ge
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + 32 < USize.size) :
+    machine.memory.size ≤
+      (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.size := by
+  change
+    machine.memory.size ≤
+      (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.data.size
+  rw [writeWord_memory_data value machine address hAddress hHost]
+  have hPrefix :
+      (machine.memory.data.extract 0 address).size =
+        min address machine.memory.size := by
+    simp [Array.size_extract]
+  have hPadding :
+      (ffi.ByteArray.zeroes
+        (OfNat.ofNat
+          (address - machine.memory.size))).data.size =
+        address - machine.memory.size := by
+    change
+      (ffi.ByteArray.zeroes
+        (OfNat.ofNat
+          (address - machine.memory.size))).size =
+        address - machine.memory.size
+    rw [ffi.ByteArray.size_zeroes]
+    apply USize.toNat_ofNat_of_lt'
+    omega
+  have hWord : value.toByteArray.data.size = 32 :=
+    EvmYul.UInt256.size_toByteArray value
+  have hPost :
+      (machine.memory.data.extract
+        (address + 32) machine.memory.size).size =
+          machine.memory.size - (address + 32) := by
+    simp [Array.size_extract]
+  simp only [Array.size_append]
+  rw [hPrefix, hPadding, hWord, hPost]
+  omega
+
 private theorem readWithPadding_word_eq_extract
     (memory : ByteArray) (address : Nat)
     (hEnd : address + 32 ≤ memory.size) :
@@ -341,6 +430,86 @@ private theorem byteAt_eq_get
     rw [Array.getElem?_eq_getElem hIndex]
     congr 1]
   rfl
+
+theorem readWithPadding_writeWord_same_growing
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + 32 < USize.size) :
+    (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+          address 32 =
+      value.toByteArray := by
+  have hEnd :=
+    writeWord_memory_size_ge_end
+      machine address value hAddress hHost
+  rw [readWithPadding_word_eq_extract _ _ hEnd]
+  apply ByteArray.ext
+  simp only [ByteArray.extract, ByteArray.data_copySlice]
+  simp only [ByteArray.empty, ByteArray.emptyWithCapacity,
+    Nat.add_sub_cancel_left]
+  simp only [Array.extract_empty_of_start_eq_stop,
+    Array.empty_append]
+  let pre := machine.memory.data.extract 0 address
+  let pad :=
+    (ffi.ByteArray.zeroes
+      (OfNat.ofNat (address - machine.memory.size))).data
+  let bytes := value.toByteArray.data
+  let post :=
+    machine.memory.data.extract (address + 32) machine.memory.size
+  have hData :=
+    writeWord_memory_data value machine address hAddress hHost
+  change
+    (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.data.extract
+          address (address + 32) ++
+        (#[] : Array UInt8).extract
+          (0 + min 32
+            ((machine.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory.data.size -
+                address)) =
+      bytes
+  have hSuffix :
+      (#[] : Array UInt8).extract
+          (0 + min 32
+            ((machine.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory.data.size -
+                address)) =
+        #[] := by
+    apply Array.extract_empty_of_size_le_start
+    simp
+  rw [hSuffix, Array.append_empty, hData]
+  change
+    (pre ++ (pad ++ (bytes ++ post))).extract
+        address (address + 32) =
+      bytes
+  have hPrefixSize :
+      (pre ++ pad).size = address := by
+    have hPre :
+        pre.size = min address machine.memory.size := by
+      simp [pre, Array.size_extract]
+    have hPad :
+        pad.size = address - machine.memory.size := by
+      change
+        (ffi.ByteArray.zeroes
+          (OfNat.ofNat
+            (address - machine.memory.size))).size =
+          address - machine.memory.size
+      rw [ffi.ByteArray.size_zeroes]
+      apply USize.toNat_ofNat_of_lt'
+      omega
+    simp only [Array.size_append, hPre, hPad]
+    omega
+  have hBytesSize : bytes.size = 32 := by
+    simp [bytes]
+  rw [← Array.append_assoc]
+  rw [Array.extract_append_of_size_left_le_start hPrefixSize.le]
+  simp only [hPrefixSize, Nat.sub_self, Nat.add_sub_cancel_left]
+  rw [Array.extract_append_of_stop_le_size_left]
+  · rw [← hBytesSize]
+    exact Array.extract_size
+  · simpa [hBytesSize]
 
 theorem readWithPadding_writeWord_same
     (machine : EvmYul.MachineState) (address : Nat)
@@ -488,6 +657,168 @@ theorem mstore_activeWords_eq_of_end_le
   rw [hWords]
   exact EvmYul.UInt256.ofNat_toNat machine.activeWords
 
+theorem mload_eq_lookup_of_end_le
+    (machine : EvmYul.MachineState) (address : Nat)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hActive :
+      address + 32 ≤ machine.activeWords.toNat * 32) :
+    machine.mload (EvmYul.UInt256.ofNat address) =
+      (machine.lookupMemory (EvmYul.UInt256.ofNat address), machine) := by
+  have hWords :
+      EvmYul.MachineState.M machine.activeWords.toNat address 32 =
+        machine.activeWords.toNat := by
+    simp only [EvmYul.MachineState.M]
+    rw [max_eq_left]
+    rw [Nat.div_le_iff_le_mul_add_pred (by decide : 0 < 32)]
+    omega
+  simp [EvmYul.MachineState.mload, hAddress, hWords,
+    EvmYul.UInt256.ofNat_toNat]
+
+theorem mstore_end_le_activeBytes
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hEnd : address + 32 < EvmYul.UInt256.size) :
+    address + 32 ≤
+      (machine.mstore
+          (EvmYul.UInt256.ofNat address) value).activeWords.toNat * 32 := by
+  have hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address :=
+    EvmYul.UInt256.toNat_ofNat_of_lt
+      (lt_of_le_of_lt (Nat.le_add_right address _) hEnd)
+  have hM :
+      EvmYul.MachineState.M machine.activeWords.toNat address 32 <
+        EvmYul.UInt256.size := by
+    simp only [EvmYul.MachineState.M]
+    exact Nat.max_lt.mpr
+      ⟨machine.activeWords.val.isLt,
+        lt_of_le_of_lt (by omega) hEnd⟩
+  simp only [EvmYul.MachineState.mstore, hAddress]
+  change
+    address + 32 ≤
+      (EvmYul.UInt256.ofNat
+        (EvmYul.MachineState.M machine.activeWords.toNat address 32)).toNat *
+        32
+  rw [EvmYul.UInt256.toNat_ofNat_of_lt hM]
+  simp only [EvmYul.MachineState.M]
+  omega
+
+theorem mstore_activeBytes_lt_size_of_activeBytes_lt_size
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hActive :
+      machine.activeWords.toNat * 32 < EvmYul.UInt256.size)
+    (hHost : address + 32 < USize.size) :
+    (machine.mstore
+        (EvmYul.UInt256.ofNat address) value).activeWords.toNat * 32 <
+      EvmYul.UInt256.size := by
+  have hAddressLt : address < EvmYul.UInt256.size := by
+    have hSize := usize_size_lt_uint256_size
+    omega
+  have hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt
+  have hCeil :
+      ((address + 32 + 31) / 32) * 32 <
+        EvmYul.UInt256.size := by
+    have hPlatform :
+        USize.size + 31 < EvmYul.UInt256.size :=
+      usize_size_add_31_lt_uint256_size
+    have hDiv :=
+      Nat.div_mul_le_self (address + 32 + 31) 32
+    omega
+  have hM :
+      EvmYul.MachineState.M machine.activeWords.toNat address 32 <
+        EvmYul.UInt256.size := by
+    simp only [EvmYul.MachineState.M]
+    exact Nat.max_lt.mpr
+      ⟨machine.activeWords.val.isLt,
+        lt_of_le_of_lt (Nat.le_mul_of_pos_right _ (by decide)) hCeil⟩
+  have hToNat :
+      (machine.mstore
+          (EvmYul.UInt256.ofNat address) value).activeWords.toNat =
+        EvmYul.MachineState.M machine.activeWords.toNat address 32 := by
+    simp only [EvmYul.MachineState.mstore, hAddress]
+    exact EvmYul.UInt256.toNat_ofNat_of_lt hM
+  rw [hToNat]
+  simp only [EvmYul.MachineState.M]
+  by_cases hOrder :
+      machine.activeWords.toNat ≤ (address + 32 + 31) / 32
+  · rw [max_eq_right hOrder]
+    exact hCeil
+  · rw [max_eq_left (Nat.le_of_not_ge hOrder)]
+    exact hActive
+
+theorem lookupMemory_mstore_same_growing
+    (machine : EvmYul.MachineState) (address : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + 32 < USize.size)
+    (hEnd : address + 32 < EvmYul.UInt256.size)
+    (hActiveNoWrap :
+      (machine.mstore
+          (EvmYul.UInt256.ofNat address) value).activeWords.toNat * 32 <
+        EvmYul.UInt256.size) :
+    (machine.mstore
+        (EvmYul.UInt256.ofNat address) value).lookupMemory
+          (EvmYul.UInt256.ofNat address) =
+      value := by
+  let written :=
+    machine.mstore (EvmYul.UInt256.ofNat address) value
+  have hMemory :
+      address + 32 ≤ written.memory.size := by
+    simpa [written, EvmYul.MachineState.mstore] using
+      (writeWord_memory_size_ge_end
+        machine address value hAddress hHost)
+  have hActive :
+      address + 32 ≤ written.activeWords.toNat * 32 := by
+    simpa [written] using
+      (mstore_end_le_activeBytes machine address value hEnd)
+  have hAddressLt : address < EvmYul.UInt256.size := by
+    omega
+  have hProduct :
+      (written.activeWords * (⟨32⟩ : EvmYul.UInt256)).toNat =
+        (written.activeWords.toNat * 32) %
+          EvmYul.UInt256.size := by
+    change
+      (EvmYul.UInt256.mul written.activeWords
+        (⟨32⟩ : EvmYul.UInt256)).toNat =
+          (written.activeWords.toNat * 32) %
+            EvmYul.UInt256.size
+    unfold EvmYul.UInt256.mul EvmYul.UInt256.toNat
+    rfl
+  have hProductNoWrap :
+      (written.activeWords * (⟨32⟩ : EvmYul.UInt256)).toNat =
+        written.activeWords.toNat * 32 := by
+    rw [hProduct, Nat.mod_eq_of_lt hActiveNoWrap]
+  unfold EvmYul.MachineState.lookupMemory
+  rw [if_neg]
+  · simp only [EvmYul.MachineState.mstore, hAddress]
+    change
+      EvmYul.UInt256.ofNat
+          (EvmYul.fromByteArrayBigEndian
+            ((machine.writeWord
+              (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+                address 32)) =
+        value
+    rw [readWithPadding_writeWord_same_growing
+      machine address value hAddress hHost]
+    simp
+  · simp only [not_or, not_le]
+    constructor
+    · simpa [written, hAddress] using
+        (show address < written.memory.size by omega)
+    · intro hLe
+      have hLeNat :
+          (written.activeWords *
+              (⟨32⟩ : EvmYul.UInt256)).toNat ≤
+            (EvmYul.UInt256.ofNat address).toNat :=
+        hLe
+      rw [hProductNoWrap,
+        EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt] at hLeNat
+      omega
+
 theorem lookupMemory_mstore_same
     (machine : EvmYul.MachineState) (address : Nat)
     (value : EvmYul.UInt256)
@@ -609,6 +940,55 @@ theorem lookupMemory_mstore_disjoint
       machine address query value hAddress hHost
       hWriteMemory hReadMemory hDisjoint]
 
+theorem readWithPadding_writeWord_disjoint_growing
+    (machine : EvmYul.MachineState) (address query : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + 32 < USize.size)
+    (hReadEnd : query + 32 ≤ machine.memory.size)
+    (hDisjoint :
+      query + 32 ≤ address ∨ address + 32 ≤ query) :
+    (machine.writeWord
+        (EvmYul.UInt256.ofNat address) value).memory.readWithPadding
+          query 32 =
+      machine.memory.readWithPadding query 32 := by
+  have hSizeGe :=
+    writeWord_memory_size_ge
+      machine address value hAddress hHost
+  have hWrittenEnd :
+      query + 32 ≤
+        (machine.writeWord
+          (EvmYul.UInt256.ofNat address) value).memory.size :=
+    hReadEnd.trans hSizeGe
+  rw [readWithPadding_word_eq_extract _ _ hWrittenEnd,
+    readWithPadding_word_eq_extract _ _ hReadEnd]
+  apply byteArray_ext_of_size_get
+  · simp [ByteArray.size_extract, hWrittenEnd, hReadEnd]
+  · intro index hLeft hRight
+    rw [ByteArray.get_extract hLeft,
+      ByteArray.get_extract hRight]
+    have hIndexLt : index < 32 := by
+      simpa [Nat.min_eq_left hReadEnd] using hRight
+    have hOriginal :
+        query + index < machine.memory.size := by omega
+    have hWritten :
+        query + index <
+          (machine.writeWord
+            (EvmYul.UInt256.ofNat address) value).memory.size :=
+      lt_of_lt_of_le hOriginal hSizeGe
+    rw [← byteAt_eq_get _ _ hWritten,
+      ← byteAt_eq_get _ _ hOriginal]
+    apply
+      byteAt_writeWord_of_outside
+        value machine address (query + index)
+        hAddress hHost
+    rcases hDisjoint with hBefore | hAfter
+    · left
+      omega
+    · right
+      omega
+
 def OutsideReservation
     (reservation : MemoryContract.ScratchReservation)
     (source target : ByteArray) : Prop :=
@@ -701,6 +1081,107 @@ theorem activeWords_toNat_le_mstore
           machine.activeWords.toNat address 32)).toNat
   rw [EvmYul.UInt256.toNat_ofNat_of_lt hM]
   simp [EvmYul.MachineState.M]
+
+theorem lookupMemory_mstore_disjoint_growing
+    (machine : EvmYul.MachineState) (address query : Nat)
+    (value : EvmYul.UInt256)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hQuery :
+      (EvmYul.UInt256.ofNat query).toNat = query)
+    (hHost : address + 32 < USize.size)
+    (hReadMemory : query + 32 ≤ machine.memory.size)
+    (hReadActive :
+      query + 32 ≤ machine.activeWords.toNat * 32)
+    (hActiveNoWrap :
+      machine.activeWords.toNat * 32 < EvmYul.UInt256.size)
+    (hDisjoint :
+      query + 32 ≤ address ∨ address + 32 ≤ query) :
+    (machine.mstore
+        (EvmYul.UInt256.ofNat address) value).lookupMemory
+          (EvmYul.UInt256.ofNat query) =
+      machine.lookupMemory (EvmYul.UInt256.ofNat query) := by
+  let written :=
+    machine.mstore (EvmYul.UInt256.ofNat address) value
+  have hSizeGe :=
+    writeWord_memory_size_ge
+      machine address value hAddress hHost
+  have hWrittenReadMemory :
+      query + 32 ≤ written.memory.size := by
+    simpa [written, EvmYul.MachineState.mstore] using
+      hReadMemory.trans hSizeGe
+  have hEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size := by
+    simpa [MemoryContract.wordBytes] using
+      (lt_trans hHost usize_size_lt_uint256_size)
+  have hActiveMono :=
+    activeWords_toNat_le_mstore machine address value hEnd
+  have hWrittenReadActive :
+      query + 32 ≤ written.activeWords.toNat * 32 := by
+    exact hReadActive.trans
+      (Nat.mul_le_mul_right 32 (by simpa [written] using hActiveMono))
+  have hWrittenActiveNoWrap :
+      written.activeWords.toNat * 32 < EvmYul.UInt256.size := by
+    simpa [written] using
+      (mstore_activeBytes_lt_size_of_activeBytes_lt_size
+        machine address value hActiveNoWrap hHost)
+  have hQueryLt : query < EvmYul.UInt256.size := by
+    have hSize := usize_size_lt_uint256_size
+    omega
+  have hProduct
+      (words : EvmYul.UInt256)
+      (hNoWrap : words.toNat * 32 < EvmYul.UInt256.size) :
+      (words * (⟨32⟩ : EvmYul.UInt256)).toNat =
+        words.toNat * 32 := by
+    have hMod :
+        (words * (⟨32⟩ : EvmYul.UInt256)).toNat =
+          (words.toNat * 32) % EvmYul.UInt256.size := by
+      change
+        (EvmYul.UInt256.mul words
+          (⟨32⟩ : EvmYul.UInt256)).toNat =
+            (words.toNat * 32) % EvmYul.UInt256.size
+      unfold EvmYul.UInt256.mul EvmYul.UInt256.toNat
+      rfl
+    rw [hMod, Nat.mod_eq_of_lt hNoWrap]
+  have hSourceGuard :
+      ¬ ((EvmYul.UInt256.ofNat query).toNat ≥ machine.memory.size ∨
+        EvmYul.UInt256.ofNat query ≥
+          machine.activeWords * (⟨32⟩ : EvmYul.UInt256)) := by
+    simp only [not_or, not_le]
+    constructor
+    · simpa [hQuery] using
+        (show query < machine.memory.size by omega)
+    · intro hLe
+      have hLeNat :
+          (machine.activeWords *
+              (⟨32⟩ : EvmYul.UInt256)).toNat ≤
+            (EvmYul.UInt256.ofNat query).toNat :=
+        hLe
+      rw [hProduct machine.activeWords hActiveNoWrap,
+        EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt] at hLeNat
+      omega
+  have hWrittenGuard :
+      ¬ ((EvmYul.UInt256.ofNat query).toNat ≥ written.memory.size ∨
+        EvmYul.UInt256.ofNat query ≥
+          written.activeWords * (⟨32⟩ : EvmYul.UInt256)) := by
+    simp only [not_or, not_le]
+    constructor
+    · simpa [hQuery] using
+        (show query < written.memory.size by omega)
+    · intro hLe
+      have hLeNat :
+          (written.activeWords *
+              (⟨32⟩ : EvmYul.UInt256)).toNat ≤
+            (EvmYul.UInt256.ofNat query).toNat :=
+        hLe
+      rw [hProduct written.activeWords hWrittenActiveNoWrap,
+        EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt] at hLeNat
+      omega
+  unfold EvmYul.MachineState.lookupMemory
+  rw [if_neg hWrittenGuard, if_neg hSourceGuard]
+  simp only [written, EvmYul.MachineState.mstore, hQuery]
+  rw [readWithPadding_writeWord_disjoint_growing
+    machine address query value hAddress hHost hReadMemory hDisjoint]
 
 /--
 Machine-state relation used across allocation lowering.

@@ -396,26 +396,6 @@ theorem of_wellFormed
     fun name slot _hLive hLocation =>
       plan.scratch_bound_of_wellFormed hWF hLocation hRegion⟩
 
-private theorem memoryWords_eq_of_region_active
-    {active address : Nat}
-    (hActive :
-      address + MemoryContract.wordBytes ≤
-        active * MemoryContract.wordBytes) :
-    EvmYul.MachineState.M active address 32 = active := by
-  simp only [EvmYul.MachineState.M, MemoryContract.wordBytes]
-  rw [max_eq_left]
-  rw [Nat.div_le_iff_le_mul_add_pred (by decide : 0 < 32)]
-  simp only [MemoryContract.wordBytes] at hActive
-  omega
-
-private theorem uint256_ofNat_toNat (value : Word) :
-    EvmYul.UInt256.ofNat value.toNat = value := by
-  cases value with
-  | mk val =>
-      unfold EvmYul.UInt256.ofNat EvmYul.UInt256.toNat
-      simp
-      rfl
-
 theorem scratchAddress_end_le_active {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
@@ -563,15 +543,12 @@ theorem mload_machine_eq {transcript : Trace}
         (scratchAddress frameBase slot)).toNat =
           scratchAddress frameBase slot :=
     EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt
-  have hWords :
-      EvmYul.MachineState.M
-          target.source.evm.activeWords.toNat
-          (scratchAddress frameBase slot)
-          32 =
-        target.source.evm.activeWords.toNat :=
-    memoryWords_eq_of_region_active hEndActive
-  simp [EvmYul.MachineState.mload, hAddressToNat, hWords,
-    uint256_ofNat_toNat]
+  exact
+    Compiler.MemoryRelation.mload_eq_lookup_of_end_le
+      target.source.evm.toMachineState
+      (scratchAddress frameBase slot)
+      hAddressToNat
+      (by simpa [MemoryContract.wordBytes] using hEndActive)
 
 theorem mono {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1075,36 +1052,30 @@ def AllocatorAt {transcript : Trace} (config : Config) (depth : Nat)
       (EvmYul.UInt256.ofNat config.allocatorCell) =
     EvmYul.UInt256.ofNat (baseAt config depth)
 
+structure AllocatorReady {transcript : Trace}
+    (config : Config) (depth : Nat)
+    (target : TargetState transcript) : Prop where
+  allocatorAt : AllocatorAt config depth target
+  cellActive :
+    config.allocatorCell + MemoryContract.wordBytes ≤
+      target.source.evm.activeWords.toNat * MemoryContract.wordBytes
+  cellAllocated :
+    config.allocatorCell + MemoryContract.wordBytes ≤
+      target.source.evm.toMachineState.memory.size
+  activeNoWrap :
+    target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
     address + MemoryContract.wordBytes ≤
       (machine.mstore (EvmYul.UInt256.ofNat address) value).activeWords.toNat *
         MemoryContract.wordBytes := by
-  have hAddress :
-      (EvmYul.UInt256.ofNat address).toNat = address :=
-    EvmYul.UInt256.toNat_ofNat_of_lt
-      (lt_of_le_of_lt (Nat.le_add_right address _) hEnd)
-  have hEnd32 :
-      address + 32 < EvmYul.UInt256.size := by
-    simpa [MemoryContract.wordBytes] using hEnd
-  have hM :
-      EvmYul.MachineState.M machine.activeWords.toNat address 32 <
-        EvmYul.UInt256.size := by
-    simp only [EvmYul.MachineState.M]
-    exact Nat.max_lt.mpr
-      ⟨machine.activeWords.val.isLt,
-        lt_of_le_of_lt (by omega) hEnd32⟩
-  simp only [EvmYul.MachineState.mstore,
-    EvmYul.MachineState.writeWord, EvmYul.writeBytes, hAddress]
-  change
-    address + 32 ≤
-      (EvmYul.UInt256.ofNat
-        (EvmYul.MachineState.M machine.activeWords.toNat address 32)).toNat *
-        32
-  rw [EvmYul.UInt256.toNat_ofNat_of_lt hM]
-  simp only [EvmYul.MachineState.M]
-  omega
+  simpa [MemoryContract.wordBytes] using
+    (Compiler.MemoryRelation.mstore_end_le_activeBytes
+      machine address value
+      (by simpa [MemoryContract.wordBytes] using hEnd))
 
 @[simp] theorem baseAt_zero (config : Config) :
     baseAt config 0 = config.firstFrame := by
@@ -1210,6 +1181,178 @@ theorem budget_zero_of_scratchFrameConfig?
     reservation.base + 32 + 32 * frameWords ≤
       reservation.base + 32 * reservation.words
   omega
+
+theorem allocatorAt_zero_after_init
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {frameWords : Nat}
+    {config : Config}
+    {target : TargetState transcript} {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hActiveNoWrap :
+      target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorAt config 0
+      (StateRel.mstoreTarget
+        (EvmYul.UInt256.ofNat config.allocatorCell)
+        (EvmYul.UInt256.ofNat config.firstFrame)
+        rest target) := by
+  obtain
+    ⟨reservation, _hReservation, hAllocator, hFirst, _hLimit,
+      _hWords, hWF, hHost, hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellEnd :
+      config.allocatorCell + MemoryContract.wordBytes ≤
+        reservation.endExclusive := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    omega
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hCellEnd hHost
+  have hCellEnd256 :
+      config.allocatorCell + MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    lt_of_le_of_lt hCellEnd hWF.2
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt (by omega)
+  have hPostActive :
+      (target.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat config.allocatorCell)
+          (EvmYul.UInt256.ofNat config.firstFrame)).activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    simpa [MemoryContract.wordBytes] using
+      (Compiler.MemoryRelation.mstore_activeBytes_lt_size_of_activeBytes_lt_size
+          target.source.evm.toMachineState config.allocatorCell
+          (EvmYul.UInt256.ofNat config.firstFrame)
+          (by simpa [MemoryContract.wordBytes] using hActiveNoWrap)
+          (by simpa [MemoryContract.wordBytes] using hCellHost))
+  have hLookup :=
+    Compiler.MemoryRelation.lookupMemory_mstore_same_growing
+      target.source.evm.toMachineState config.allocatorCell
+      (EvmYul.UInt256.ofNat config.firstFrame)
+      hCellAddress
+      (by simpa [MemoryContract.wordBytes] using hCellHost)
+      (by simpa [MemoryContract.wordBytes] using hCellEnd256)
+      (by simpa [MemoryContract.wordBytes] using hPostActive)
+  simpa [AllocatorAt, StateRel.mstoreTarget, baseAt_zero,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC] using hLookup
+
+theorem activeNoWrap_after_init
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {frameWords : Nat}
+    {config : Config}
+    {target : TargetState transcript} {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hActiveNoWrap :
+      target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    (StateRel.mstoreTarget
+        (EvmYul.UInt256.ofNat config.allocatorCell)
+        (EvmYul.UInt256.ofNat config.firstFrame)
+        rest target).source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+      EvmYul.UInt256.size := by
+  obtain
+    ⟨reservation, _hReservation, hAllocator, _hFirst, _hLimit,
+      _hWords, _hWF, hHost, hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+    unfold MemoryContract.ScratchReservation.HostAddressable at hHost
+    unfold MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes at hHost
+    simp only [MemoryContract.wordBytes] at hHost ⊢
+    omega
+  simpa [StateRel.mstoreTarget,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, MemoryContract.wordBytes] using
+      (Compiler.MemoryRelation.mstore_activeBytes_lt_size_of_activeBytes_lt_size
+          target.source.evm.toMachineState config.allocatorCell
+          (EvmYul.UInt256.ofNat config.firstFrame)
+          (by simpa [MemoryContract.wordBytes] using hActiveNoWrap)
+          (by simpa [MemoryContract.wordBytes] using hCellHost))
+
+theorem allocatorReady_zero_after_init
+    {transcript : Trace}
+    {contract : MemoryContract.Contract} {frameWords : Nat}
+    {config : Config}
+    {target : TargetState transcript} {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hActiveNoWrap :
+      target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorReady config 0
+      (StateRel.mstoreTarget
+        (EvmYul.UInt256.ofNat config.allocatorCell)
+        (EvmYul.UInt256.ofNat config.firstFrame)
+        rest target) := by
+  obtain
+    ⟨reservation, _hReservation, hAllocator, _hFirst, _hLimit,
+      _hWords, hWF, hHost, hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellEnd :
+      config.allocatorCell + MemoryContract.wordBytes ≤
+        reservation.endExclusive := by
+    rw [hAllocator]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.endExclusive
+      MemoryContract.ScratchReservation.bytes
+    simp only [MemoryContract.wordBytes]
+    omega
+  have hCellHost :
+      config.allocatorCell + MemoryContract.wordBytes < USize.size :=
+    lt_of_le_of_lt hCellEnd hHost
+  have hCellEnd256 :
+      config.allocatorCell + MemoryContract.wordBytes <
+        EvmYul.UInt256.size :=
+    lt_of_le_of_lt hCellEnd hWF.2
+  have hCellAddress :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt (by omega)
+  let final :=
+    StateRel.mstoreTarget
+      (EvmYul.UInt256.ofNat config.allocatorCell)
+      (EvmYul.UInt256.ofNat config.firstFrame)
+      rest target
+  refine
+    { allocatorAt := ?_
+      cellActive := ?_
+      cellAllocated := ?_
+      activeNoWrap := ?_ }
+  · exact allocatorAt_zero_after_init hConfig hActiveNoWrap
+  · simpa [final, StateRel.mstoreTarget,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC, MemoryContract.wordBytes] using
+        (Compiler.MemoryRelation.mstore_end_le_activeBytes
+          target.source.evm.toMachineState config.allocatorCell
+          (EvmYul.UInt256.ofNat config.firstFrame)
+          (by simpa [MemoryContract.wordBytes] using hCellEnd256))
+  · simpa [final, StateRel.mstoreTarget,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC,
+      EvmYul.MachineState.mstore] using
+        (Compiler.MemoryRelation.writeWord_memory_size_ge_end
+          target.source.evm.toMachineState config.allocatorCell
+          (EvmYul.UInt256.ofNat config.firstFrame)
+          hCellAddress
+          (by simpa [MemoryContract.wordBytes] using hCellHost))
+  · exact activeNoWrap_after_init hConfig hActiveNoWrap
 
 theorem noWrap_of_budget_of_scratchFrameConfig?
     {contract : MemoryContract.Contract} {frameWords depth : Nat}

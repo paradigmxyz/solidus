@@ -285,6 +285,27 @@ theorem run_cons_eq_run_single_bind
           simp only [hStep, hAfter, Bind.bind, Except.bind]
           rw [show run model handler [] final = .ok final from rfl]
 
+theorem run_append
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (left right : Structured.Code) (state : σ) :
+    run model handler (left ++ right) state =
+      (run model handler left state).bind
+        (run model handler right) := by
+  induction left generalizing state with
+  | nil =>
+      rfl
+  | cons instr rest ih =>
+      rw [List.cons_append,
+        run_cons_eq_run_single_bind
+          model handler instr (rest ++ right) state,
+        run_cons_eq_run_single_bind
+          model handler instr rest state]
+      cases hHead : run model handler [instr] state with
+      | error error =>
+          rfl
+      | ok afterHead =>
+          simpa [hHead] using ih afterHead
+
 end Code
 
 mutual

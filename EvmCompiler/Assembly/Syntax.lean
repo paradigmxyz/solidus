@@ -30,6 +30,32 @@ theorem UInt256_ofNat_add (left right : Nat) :
   ext
   simp [Id.run, Fin.val_add, Nat.add_mod]
 
+theorem UInt256_ofNat_add_sub_right (left right : Nat)
+    (hLt : left + right < EvmYul.UInt256.size) :
+    EvmYul.UInt256.sub
+        (EvmYul.UInt256.ofNat (left + right))
+        (EvmYul.UInt256.ofNat right) =
+      EvmYul.UInt256.ofNat left := by
+  unfold EvmYul.UInt256.sub EvmYul.UInt256.ofNat
+  congr 1
+  apply Fin.ext
+  rw [Fin.sub_val_of_le]
+  · have hRightLt : right < EvmYul.UInt256.size := by omega
+    have hLeftLt : left < EvmYul.UInt256.size := by omega
+    change
+      (left + right) % EvmYul.UInt256.size -
+          right % EvmYul.UInt256.size =
+        left % EvmYul.UInt256.size
+    rw [Nat.mod_eq_of_lt hLt, Nat.mod_eq_of_lt hRightLt,
+      Nat.mod_eq_of_lt hLeftLt]
+    omega
+  · change
+      right % EvmYul.UInt256.size ≤
+        (left + right) % EvmYul.UInt256.size
+    have hRightLt : right < EvmYul.UInt256.size := by omega
+    rw [Nat.mod_eq_of_lt hLt, Nat.mod_eq_of_lt hRightLt]
+    omega
+
 theorem UInt256_add_assoc
     (left middle right : EvmYul.UInt256) :
     (left + middle) + right = left + (middle + right) := by

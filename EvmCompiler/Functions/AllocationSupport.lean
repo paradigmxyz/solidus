@@ -352,9 +352,9 @@ def scratchFrameAcquireCode
 
 def scratchFrameReleaseCode
     (config : ScratchFrameConfig) : Structured.Code :=
-  [ Structured.BasicInstr.push (word config.allocatorCell),
+  [ Structured.BasicInstr.push (frameBytes config.frameWords),
+    Structured.BasicInstr.push (word config.allocatorCell),
     Structured.BasicInstr.op .mload,
-    Structured.BasicInstr.push (frameBytes config.frameWords),
     Structured.BasicInstr.op .sub,
     Structured.BasicInstr.push (word config.allocatorCell),
     Structured.BasicInstr.op .mstore ]
