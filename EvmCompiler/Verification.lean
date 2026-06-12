@@ -72,6 +72,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate
+#check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_primitiveForward
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr

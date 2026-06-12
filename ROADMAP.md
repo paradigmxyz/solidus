@@ -156,6 +156,13 @@ Adjacent boundary status:
   allocator value, so EVM subtraction computes `current - frameBytes`.
   `Functions.AllocationObserverSafety` defines source-facing primitive and
   terminal memory-safety contracts relative to the authorized reservation.
+  Memory-touching primitives additionally require ordinary source-memory
+  consistency and a source-facing non-wrapping expansion bound, preventing
+  target spill allocation from exposing dormant bytes or invalidating later
+  `msize()` observations. Canonical `mload` now has a checked adjacent forward
+  theorem: padded reads agree outside the reservation, active memory grows
+  monotonically without wrapping, every live spill lookup remains stable, and
+  the real one-op Structured execution returns the source word.
   Its checked `Expr.MemorySafeEval` and `ExprSeq.MemorySafeEval` derivations
   reuse the canonical parameterized Functions evaluator and erase back to
   ordinary evaluation; they are not alternate interpreters or compiler
@@ -163,8 +170,9 @@ Adjacent boundary status:
   target stack prefixes, allocation offsets, active scratch-frame invariants,
   and observer state. Forward and backward wrappers are checked for literals,
   stack variables, scratch variables, `gas()`, and `msize()`.
-  Remaining work at this boundary is recursive expression/statement/function
-  and call composition, construction of `ScratchStateRel` at function entry,
+  Remaining work at this boundary is the other memory primitive families, a
+  total canonical primitive interface, recursive statement/function and call
+  composition, construction of `ScratchStateRel` at function entry,
   propagation of source-facing memory safety and fuel through those recursive
   judgments, and the whole-program adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

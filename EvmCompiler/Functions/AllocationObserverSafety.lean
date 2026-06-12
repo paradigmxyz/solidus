@@ -19,6 +19,46 @@ def RegionAllowed (contract : MemoryContract.Contract)
       reservation.sourceAccessAllowed address size
 
 /--
+Ordinary EVM memory states do not contain materialized bytes beyond the active
+memory extent. This source-facing invariant prevents target spill allocation
+from exposing dormant source bytes through a later `mload`.
+-/
+def MemoryConsistent (machine : EvmYul.MachineState) : Prop :=
+  Compiler.MemoryRelation.MemoryConsistent machine
+
+/--
+Every memory expansion performed by a primitive remains representable by the
+ordinary EVM active-word counter and its `MSIZE` byte value.
+-/
+def PrimitiveExpansionSafe (op : Structured.BasicOp)
+    (values : List Word) : Prop :=
+  let stack := values.reverse
+  match op, stack with
+  | .mload, [address]
+  | .mstore, [address, _] =>
+      Compiler.MemoryRelation.ExpansionNoWrap
+        address.toNat MemoryContract.wordBytes
+  | .mstore8, [address, _] =>
+      Compiler.MemoryRelation.ExpansionNoWrap address.toNat 1
+  | .calldatacopy, [destination, _source, size]
+  | .codecopy, [destination, _source, size]
+  | .returndatacopy, [destination, _source, size]
+  | .extcodecopy, [_, destination, _source, size] =>
+      Compiler.MemoryRelation.ExpansionNoWrap
+        destination.toNat size.toNat
+  | .mcopy, [destination, source, size] =>
+      Compiler.MemoryRelation.ExpansionNoWrap
+        (max destination.toNat source.toNat) size.toNat
+  | .keccak256, [address, size]
+  | .log0, [address, size]
+  | .log1, [address, size, _]
+  | .log2, [address, size, _, _]
+  | .log3, [address, size, _, _, _]
+  | .log4, [address, size, _, _, _, _] =>
+      Compiler.MemoryRelation.ExpansionNoWrap address.toNat size.toNat
+  | _, _ => True
+
+/--
 Source-facing memory safety for one primitive application.
 
 `values` is the argument list passed to the canonical stack-free Functions
@@ -28,32 +68,49 @@ no-external-effects primitive surface. External call/create operations are
 deliberately false here; they belong to the later request/response theorem.
 -/
 def PrimitiveMemorySafe (contract : MemoryContract.Contract)
-    (op : Structured.BasicOp) (values : List Word) : Prop :=
+    (op : Structured.BasicOp) (machine : EvmYul.MachineState)
+    (values : List Word) : Prop :=
   let stack := values.reverse
   match op, stack with
   | .mload, [address] =>
-      RegionAllowed contract address.toNat MemoryContract.wordBytes
+      MemoryConsistent machine ∧
+        RegionAllowed contract address.toNat MemoryContract.wordBytes ∧
+        PrimitiveExpansionSafe op values
   | .mstore, [address, _value] =>
-      RegionAllowed contract address.toNat MemoryContract.wordBytes
+      MemoryConsistent machine ∧
+        RegionAllowed contract address.toNat MemoryContract.wordBytes ∧
+        PrimitiveExpansionSafe op values
   | .mstore8, [address, _value] =>
-      RegionAllowed contract address.toNat 1
+      MemoryConsistent machine ∧
+        RegionAllowed contract address.toNat 1 ∧
+        PrimitiveExpansionSafe op values
   | .calldatacopy, [destination, _source, size]
   | .codecopy, [destination, _source, size]
   | .returndatacopy, [destination, _source, size] =>
-      RegionAllowed contract destination.toNat size.toNat
+      MemoryConsistent machine ∧
+        RegionAllowed contract destination.toNat size.toNat ∧
+        PrimitiveExpansionSafe op values
   | .extcodecopy, [_account, destination, _source, size] =>
-      RegionAllowed contract destination.toNat size.toNat
+      MemoryConsistent machine ∧
+        RegionAllowed contract destination.toNat size.toNat ∧
+        PrimitiveExpansionSafe op values
   | .mcopy, [destination, source, size] =>
-      RegionAllowed contract destination.toNat size.toNat ∧
-        RegionAllowed contract source.toNat size.toNat
+      MemoryConsistent machine ∧
+        RegionAllowed contract destination.toNat size.toNat ∧
+        RegionAllowed contract source.toNat size.toNat ∧
+        PrimitiveExpansionSafe op values
   | .keccak256, [address, size] =>
-      RegionAllowed contract address.toNat size.toNat
+      MemoryConsistent machine ∧
+        RegionAllowed contract address.toNat size.toNat ∧
+        PrimitiveExpansionSafe op values
   | .log0, [address, size]
   | .log1, [address, size, _topic0]
   | .log2, [address, size, _topic0, _topic1]
   | .log3, [address, size, _topic0, _topic1, _topic2]
   | .log4, [address, size, _topic0, _topic1, _topic2, _topic3] =>
-      RegionAllowed contract address.toNat size.toNat
+      MemoryConsistent machine ∧
+        RegionAllowed contract address.toNat size.toNat ∧
+        PrimitiveExpansionSafe op values
   | .create, _
   | .call, _
   | .callcode, _
@@ -83,23 +140,30 @@ def TerminalMemorySafe (contract : MemoryContract.Contract)
   simp [RegionAllowed, MemoryContract.unrestricted]
 
 theorem primitiveMemorySafe_unrestricted_of_noExternal
-    {op : Structured.BasicOp} {values : List Word}
+    {op : Structured.BasicOp} {machine : EvmYul.MachineState}
+    {values : List Word}
     (hNoExternal : op.toPrimOp.isExternalCallCreate = false) :
-    PrimitiveMemorySafe MemoryContract.unrestricted op values := by
+    MemoryConsistent machine →
+      PrimitiveExpansionSafe op values →
+      PrimitiveMemorySafe MemoryContract.unrestricted op machine values := by
+  intro hConsistent hExpansion
   unfold PrimitiveMemorySafe
   simp only [RegionAllowed, MemoryContract.unrestricted]
   split <;>
-    simp_all [Structured.BasicOp.toPrimOp,
+    simp_all [MemoryConsistent, PrimitiveExpansionSafe,
+      Structured.BasicOp.toPrimOp,
       Assembly.PrimOp.isExternalCallCreate]
 
 @[simp] theorem primitiveMemorySafe_gas
-    (contract : MemoryContract.Contract) :
-    PrimitiveMemorySafe contract .gas [] := by
+    (contract : MemoryContract.Contract)
+    (machine : EvmYul.MachineState) :
+    PrimitiveMemorySafe contract .gas machine [] := by
   simp [PrimitiveMemorySafe]
 
 @[simp] theorem primitiveMemorySafe_msize
-    (contract : MemoryContract.Contract) :
-    PrimitiveMemorySafe contract .msize [] := by
+    (contract : MemoryContract.Contract)
+    (machine : EvmYul.MachineState) :
+    PrimitiveMemorySafe contract .msize machine [] := by
   simp [PrimitiveMemorySafe]
 
 @[simp] theorem terminalMemorySafe_stop
@@ -145,7 +209,9 @@ mutual
         (hArgs :
           ExprSeq.MemorySafeEval contract transcript args
             source afterArgs values)
-        (hMemory : PrimitiveMemorySafe contract op values)
+        (hMemory :
+          PrimitiveMemorySafe contract op
+            afterArgs.source.shared.toMachineState values)
         (hPrim :
           (Functions.ObserverSemantics.primitiveSemantics transcript).eval
               op afterArgs values =

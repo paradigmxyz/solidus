@@ -161,7 +161,7 @@ theorem scratch {plan : Plan} {live : List Locals.Name}
   rw [← hValue]
   simp
 
-theorem rebase_prefix
+theorem rebase_prefix_of_lookup
     {plan : Plan} {live : List Locals.Name}
     {stackOffset frameBase : Nat}
     {source sourceFinal : Locals.Source.State}
@@ -172,8 +172,14 @@ theorem rebase_prefix
         source target)
     (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
     (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
-    (hMachine :
-      targetFinal.evm.toMachineState = target.evm.toMachineState)
+    (hScratch :
+      ∀ name slot,
+        name ∈ live →
+        plan.location? name = some (.scratch slot) →
+        targetFinal.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) =
+          target.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)))
     (hVars : sourceFinal.vars = source.vars) :
     StoreRel plan live (stackOffset + newPrefix.length) frameBase
       sourceFinal targetFinal := by
@@ -208,7 +214,28 @@ theorem rebase_prefix
         (Nat.le_add_right newPrefix.length (stackOffset + depth))]
       simpa using hBase
   | scratch slot =>
-      simpa [locationValue?, hMachine, hVars] using hValue
+      simpa [locationValue?,
+        hScratch name slot hLive hLocation, hVars] using hValue
+
+theorem rebase_prefix
+    {plan : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source sourceFinal : Locals.Source.State}
+    {target targetFinal : Structured.RunState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      StoreRel plan live (stackOffset + oldPrefix.length) frameBase
+        source target)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
+    (hMachine :
+      targetFinal.evm.toMachineState = target.evm.toMachineState)
+    (hVars : sourceFinal.vars = source.vars) :
+    StoreRel plan live (stackOffset + newPrefix.length) frameBase
+      sourceFinal targetFinal := by
+  apply rebase_prefix_of_lookup hRel hOldStack hNewStack _ hVars
+  intro name slot hLive hLocation
+  simp [hMachine]
 
 end StoreRel
 
@@ -640,6 +667,65 @@ theorem rebase_prefix {transcript : Trace}
   · simpa [hMachine] using hRel.frameActive
   · simpa [hMachine] using hRel.frameAllocated
   · simpa [hMachine] using hRel.activeNoWrap
+
+theorem rebase_prefix_mono {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source sourceFinal : SourceState transcript}
+    {target targetFinal : TargetState transcript}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      ScratchStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase
+        frameDepth frameWords source target)
+    (hBase :
+      StateRel contract plan live
+        (stackOffset + newPrefix.length) frameBase
+        sourceFinal targetFinal)
+    (hOldStack :
+      target.source.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack :
+      targetFinal.source.evm.stack = newPrefix ++ baseStack)
+    (hMemory :
+      target.source.evm.toMachineState.memory.size ≤
+        targetFinal.source.evm.toMachineState.memory.size)
+    (hActive :
+      target.source.evm.activeWords.toNat ≤
+        targetFinal.source.evm.activeWords.toNat)
+    (hActiveNoWrap :
+      targetFinal.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ScratchStateRel contract plan live
+      (stackOffset + newPrefix.length) frameBase
+      frameDepth frameWords sourceFinal targetFinal := by
+  refine ⟨hBase, ?_, ?_, ?_, hRel.frameNoWrap,
+    hRel.frameHostAddressable, hActiveNoWrap, hRel.scratchBound⟩
+  · have hPointer := hRel.framePointer
+    rw [hOldStack] at hPointer
+    have hBasePointer :
+        baseStack[stackOffset + frameDepth]? =
+          some (EvmYul.UInt256.ofNat frameBase) := by
+      rw [show
+          stackOffset + oldPrefix.length + frameDepth =
+            oldPrefix.length + (stackOffset + frameDepth) by omega]
+        at hPointer
+      rw [List.getElem?_append_right
+        (Nat.le_add_right oldPrefix.length
+          (stackOffset + frameDepth))] at hPointer
+      simpa using hPointer
+    rw [hNewStack]
+    rw [show
+        stackOffset + newPrefix.length + frameDepth =
+          newPrefix.length + (stackOffset + frameDepth) by omega]
+    rw [List.getElem?_append_right
+      (Nat.le_add_right newPrefix.length
+        (stackOffset + frameDepth))]
+    simpa using hBasePointer
+  · exact hRel.frameActive.trans
+      (Nat.mul_le_mul_right MemoryContract.wordBytes hActive)
+  · exact hRel.frameAllocated.trans hMemory
 
 theorem of_wellFormed
     {transcript : Trace}

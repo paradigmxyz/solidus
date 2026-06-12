@@ -35,7 +35,8 @@ structure PrimitiveForward (contract : MemoryContract.Contract)
           stackOffset frameBase frameDepth frameWords
           (Expressions.Structured.BasicOp.inputs op)
           sourceArgs targetInitial targetArgs values →
-        AllocationObserverSafety.PrimitiveMemorySafe contract op values →
+        AllocationObserverSafety.PrimitiveMemorySafe contract op
+          sourceArgs.source.shared.toMachineState values →
         (Functions.ObserverSemantics.primitiveSemantics transcript).eval
             op sourceArgs values =
           .ok (sourceFinal, outputs) →
