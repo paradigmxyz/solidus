@@ -6,6 +6,25 @@ namespace TypedCfgCompilerFacts
 
 open Assembly
 
+namespace Result
+
+theorem requireFallthrough?_eq_some_iff
+    {result : TypedCfgCompiler.Result} {expected : TypedCfg.Shape} :
+    result.requireFallthrough? expected = some () ↔
+      result.fallthrough? = none ∨
+        result.fallthrough? = some expected := by
+  cases hFallthrough : result.fallthrough? with
+  | none =>
+      simp [TypedCfgCompiler.Result.requireFallthrough?, hFallthrough]
+  | some actual =>
+      by_cases hShape : actual = expected
+      · subst actual
+        simp [TypedCfgCompiler.Result.requireFallthrough?, hFallthrough]
+      · simp [TypedCfgCompiler.Result.requireFallthrough?,
+          hFallthrough, hShape]
+
+end Result
+
 namespace Block
 
 theorem fallthrough_nil_of_compileBlockFuel?
@@ -28,7 +47,7 @@ end Block
 
 namespace Stmt
 
-theorem fallthrough_code_of_compileStmtFuel?
+theorem components_of_compileStmtFuel?_code
     {compilerFuel : Nat} {code : Structured.Code}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
     {entry regular : Assembly.Label} {input : TypedCfg.Shape}
@@ -37,7 +56,18 @@ theorem fallthrough_code_of_compileStmtFuel?
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.code code) ctx supply entry input regular =
         some result) :
-    ∃ output, result.fallthrough? = some output := by
+    ∃ output,
+      TypedCfgCompiler.Code.type? code input = some output ∧
+      result =
+        { blocks :=
+            [{ label := entry
+               input := input
+               body := TypedCfgCompiler.Code.toCfg code
+               output := output
+               term := .jump regular }]
+          next := supply + 1
+          calls := []
+          fallthrough? := some output } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
       TypedCfg.Block.bodyType?
@@ -47,9 +77,12 @@ theorem fallthrough_code_of_compileStmtFuel?
   | some output =>
       simp [TypedCfgCompiler.mkBlock?, hType] at hCompile
       cases hCompile
-      exact ⟨output, rfl⟩
+      exact
+        ⟨output,
+          by simpa [TypedCfgCompiler.Code.type?] using hType,
+          rfl⟩
 
-theorem fallthrough_if_of_compileStmtFuel?
+theorem components_of_compileStmtFuel?_if
     {compilerFuel : Nat}
     {cond : Structured.Code} {body : Structured.Block}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
@@ -59,7 +92,31 @@ theorem fallthrough_if_of_compileStmtFuel?
       TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.if_ cond body) ctx supply entry input regular =
         some result) :
-    ∃ output, result.fallthrough? = some output := by
+    ∃ output condition bodyResult,
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) input =
+        some output ∧
+      output.slots.head? = some condition ∧
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+          (supply + 1) (LabelSupply.label supply 0)
+          { output with slots := output.slots.tail } regular =
+        some bodyResult ∧
+      bodyResult.requireFallthrough?
+          { output with slots := output.slots.tail } =
+        some () ∧
+      result =
+        { blocks :=
+            { label := entry
+              input := input
+              body := TypedCfgCompiler.Code.toCfg cond
+              output := output
+              term :=
+                .jumpi (LabelSupply.label supply 0) regular } ::
+              bodyResult.blocks
+          next := bodyResult.next
+          calls := bodyResult.calls
+          fallthrough? :=
+            some { output with slots := output.slots.tail } } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
       TypedCfg.Block.bodyType?
@@ -79,11 +136,84 @@ theorem fallthrough_if_of_compileStmtFuel?
               simp [hType, hHead,
                 TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-              cases hCompile
-              exact
-                ⟨{ output with slots := output.slots.tail }, rfl⟩
+              cases hRequire :
+                  bodyResult.requireFallthrough?
+                    { output with slots := output.slots.tail } with
+              | none =>
+                  simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                    hBody, hRequire] at hCompile
+              | some unit =>
+                  cases unit
+                  simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                    hBody, hRequire] at hCompile
+                  cases hCompile
+                  exact
+                    ⟨output, condition, bodyResult,
+                      rfl, hHead, hBody, hRequire, rfl⟩
+
+/--
+A conditional whose regularly completing body changes the branch join shape is
+rejected. This prevents later code from treating compiler-owned frame data as a
+source stack value.
+-/
+theorem compileStmtFuel?_if_eq_none_of_body_fallthrough_mismatch
+    {compilerFuel : Nat}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input output actual : TypedCfg.Shape}
+    {condition : TypedCfg.Slot}
+    {bodyResult : TypedCfgCompiler.Result}
+    (hType :
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg cond) input =
+        some output)
+    (hHead : output.slots.head? = some condition)
+    (hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+          (supply + 1) (LabelSupply.label supply 0)
+          { output with slots := output.slots.tail } regular =
+        some bodyResult)
+    (hFallthrough : bodyResult.fallthrough? = some actual)
+    (hMismatch :
+      actual ≠ { output with slots := output.slots.tail }) :
+    TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+        (.if_ cond body) ctx supply entry input regular =
+      none := by
+  unfold TypedCfgCompiler.compileStmtFuel?
+  simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody,
+    TypedCfgCompiler.Result.requireFallthrough?,
+    hFallthrough, hMismatch]
+
+theorem fallthrough_code_of_compileStmtFuel?
+    {compilerFuel : Nat} {code : Structured.Code}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.code code) ctx supply entry input regular =
+        some result) :
+    ∃ output, result.fallthrough? = some output := by
+  obtain ⟨output, _hType, rfl⟩ :=
+    components_of_compileStmtFuel?_code hCompile
+  exact ⟨output, rfl⟩
+
+theorem fallthrough_if_of_compileStmtFuel?
+    {compilerFuel : Nat}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular =
+        some result) :
+    ∃ output, result.fallthrough? = some output := by
+  obtain ⟨output, _condition, _bodyResult,
+      _hType, _hHead, _hBody, _hRequire, rfl⟩ :=
+    components_of_compileStmtFuel?_if hCompile
+  exact
+    ⟨{ output with slots := output.slots.tail }, rfl⟩
 
 end Stmt
 

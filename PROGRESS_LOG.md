@@ -28787,3 +28787,26 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   prints for residual-fuel composition, minimal-prefix selection, pass-owned
   fallthrough facts, and strengthened empty/code adequacy report only
   `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 18:09:34 PDT `proof`: Compaction resume; continue Structured
+  statement-list backward adequacy by strengthening the pass-owned regular
+  fallthrough contract with the indexed state relation required for sequence
+  composition.
+
+- 2026-06-11 18:30:46 PDT `theorem-boundary`: Statement-list adequacy exposed
+  an unsound conditional join: raw compiler success allowed a regular body to
+  change the advertised branch shape, so later code could consume a hidden
+  return token. `TypedCfgCompiler.Result.requireFallthrough?` now rejects that
+  merge, with pass-owned decomposition and mismatch-rejection theorems.
+
+- 2026-06-11 18:30:46 PDT `proof`: Strengthened `RegularArtifact` with the
+  source post-stack bound, proved shared `Block.Eval.mono`,
+  `Stmt.Eval.mono`, and `For.Eval.mono`, added generic first-prefix residual
+  composition, and checked the regular-fallthrough statement-list adequacy
+  rule through exact residual target fuel and `StateRel.At`.
+
+- 2026-06-11 18:30:46 PDT `audit`: `lake build EvmCompiler.Verification`
+  passes 1,177 jobs; architecture checks, exact changed-file hole scanning,
+  and `git diff --check` pass. Axiom prints for the new semantic monotonicity,
+  prefix composition, compiler join, mismatch rejection, and strengthened
+  adequacy facts report only `propext`, `Classical.choice`, and `Quot.sound`.

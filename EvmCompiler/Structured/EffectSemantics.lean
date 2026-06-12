@@ -785,6 +785,236 @@ mutual
           (Outcome.halt kind postState)
 end
 
+mutual
+  /--
+  Relational Structured evaluation is monotone in source fuel. Fuel bounds only
+  recursive control depth; increasing the bound does not change the
+  reconstructed outcome.
+  -/
+  theorem Block.Eval.mono
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel fuel' : Nat}
+      {block : Block} {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        Block.Eval model handler program fuel block state outcome)
+      (hFuel : fuel ≤ fuel') :
+      Block.Eval model handler program fuel' block state outcome := by
+    cases hEval with
+    | nil =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' => exact Block.Eval.nil
+    | cons_regular hStmt hRest =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Block.Eval.cons_regular
+                (Stmt.Eval.mono hStmt (by omega))
+                (Block.Eval.mono hRest (by omega))
+    | cons_brk hStmt =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Block.Eval.cons_brk
+                (Stmt.Eval.mono hStmt (by omega))
+    | cons_cont hStmt =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Block.Eval.cons_cont
+                (Stmt.Eval.mono hStmt (by omega))
+    | cons_leave hStmt =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Block.Eval.cons_leave
+                (Stmt.Eval.mono hStmt (by omega))
+    | cons_halt hStmt =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Block.Eval.cons_halt
+                (Stmt.Eval.mono hStmt (by omega))
+
+  theorem Stmt.Eval.mono
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel fuel' : Nat}
+      {stmt : Stmt} {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        Stmt.Eval model handler program fuel stmt state outcome)
+      (hFuel : fuel ≤ fuel') :
+      Stmt.Eval model handler program fuel' stmt state outcome := by
+    cases hEval with
+    | code hCode =>
+        exact Stmt.Eval.code hCode
+    | if_false hCond =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' => exact Stmt.Eval.if_false hCond
+    | if_true hCond hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.if_true hCond
+                (Block.Eval.mono hBody (by omega))
+    | switch_none hScrutinee hPop hSelect =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.switch_none hScrutinee hPop hSelect
+    | switch_some hScrutinee hPop hStateAfterPop hSelect hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.switch_some hScrutinee hPop hStateAfterPop
+                hSelect (Block.Eval.mono hBody (by omega))
+    | for_init_regular hInit hLoop =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.for_init_regular
+                (Block.Eval.mono hInit (by omega))
+                (For.Eval.mono hLoop (by omega))
+    | for_init_leave hInit =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.for_init_leave
+                (Block.Eval.mono hInit (by omega))
+    | for_init_halt hInit =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.for_init_halt
+                (Block.Eval.mono hInit (by omega))
+    | brk =>
+        exact Stmt.Eval.brk
+    | cont =>
+        exact Stmt.Eval.cont
+    | leave hReturns =>
+        exact Stmt.Eval.leave hReturns
+    | call_regular hLookup hSplit hBody hPop hAttach =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.call_regular hLookup hSplit
+                (Block.Eval.mono hBody (by omega)) hPop hAttach
+    | call_leave hLookup hSplit hBody hPop hAttach =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.call_leave hLookup hSplit
+                (Block.Eval.mono hBody (by omega)) hPop hAttach
+    | call_halt hLookup hSplit hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              Stmt.Eval.call_halt hLookup hSplit
+                (Block.Eval.mono hBody (by omega))
+    | terminal hStep =>
+        exact Stmt.Eval.terminal hStep
+
+  theorem For.Eval.mono
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel fuel' : Nat}
+      {cond : Code} {post body : Block}
+      {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        For.Eval model handler program fuel cond post body state outcome)
+      (hFuel : fuel ≤ fuel') :
+      For.Eval model handler program fuel' cond post body state outcome := by
+    cases hEval with
+    | false hCond =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' => exact For.Eval.false hCond
+    | body_brk hCond hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.body_brk hCond
+                (Block.Eval.mono hBody (by omega))
+    | body_leave hCond hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.body_leave hCond
+                (Block.Eval.mono hBody (by omega))
+    | body_halt hCond hBody =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.body_halt hCond
+                (Block.Eval.mono hBody (by omega))
+    | regular_post_regular hCond hBody hPost hLoop =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.regular_post_regular hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+                (For.Eval.mono hLoop (by omega))
+    | cont_post_regular hCond hBody hPost hLoop =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.cont_post_regular hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+                (For.Eval.mono hLoop (by omega))
+    | regular_post_leave hCond hBody hPost =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.regular_post_leave hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+    | cont_post_leave hCond hBody hPost =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.cont_post_leave hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+    | regular_post_halt hCond hBody hPost =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.regular_post_halt hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+    | cont_post_halt hCond hBody hPost =>
+        cases fuel' with
+        | zero => omega
+        | succ fuel' =>
+            exact
+              For.Eval.cont_post_halt hCond
+                (Block.Eval.mono hBody (by omega))
+                (Block.Eval.mono hPost (by omega))
+end
+
 set_option linter.unusedSimpArgs false in
 mutual
   theorem Block.eval_of_run {σ : Type} {model : StateModel σ}

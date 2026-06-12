@@ -44,6 +44,17 @@ def append (left right : Result) : Result where
   calls := left.calls ++ right.calls
   fallthrough? := right.fallthrough?
 
+/--
+Check that every regular path through a nested fragment reaches the enclosing
+join with the shape expected there. A fragment with no regular path is
+compatible with any join shape.
+-/
+def requireFallthrough? (result : Result) (expected : Shape) : Option Unit :=
+  match result.fallthrough? with
+  | none => some ()
+  | some actual =>
+      if actual = expected then some () else none
+
 end Result
 
 namespace Shape
@@ -235,6 +246,7 @@ mutual
           let bodyResult ←
             compileBlockFuel? fuel body ctx (supply + 1) bodyLabel
               branchInput regular
+          let _ ← bodyResult.requireFallthrough? branchInput
           let _ := condition
           some
             { blocks := head :: bodyResult.blocks

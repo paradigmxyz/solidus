@@ -119,11 +119,16 @@ Adjacent boundary status:
   the interface, and conditional composition is checked with strictly smaller
   target fuel in the taken branch. The interface now generalizes to
   `AdequateWithin`, which stops at any checked enclosing target boundary while
-  retaining the pass-owned compiler fallthrough artifact for regular source
-  outcomes. Generic earliest-prefix selection and residual jump-fuel
-  composition are checked over the existing TypedCfg interpreter. Recursive
-  statement-list composition, switch/loop control, internal calls, and
-  whole-program backward adequacy remain.
+  retaining the pass-owned compiler fallthrough shape and source stack bound
+  for regular source outcomes. Generic earliest-prefix selection, residual
+  jump-fuel composition, and shared source-evaluation fuel monotonicity are
+  checked. Conditional lowering now rejects a regularly completing body whose
+  output shape disagrees with the branch join, preventing subsequent code from
+  consuming compiler-owned frame data. The regular-fallthrough half of
+  recursive statement-list composition is checked through exact residual
+  target fuel and a reconstructed `StateRel.At` tail boundary. The
+  no-fallthrough list branch, recursive dispatcher, switch/loop control,
+  internal calls, and whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

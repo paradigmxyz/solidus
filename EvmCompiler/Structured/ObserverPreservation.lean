@@ -1,5 +1,6 @@
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.ObserverSemantics
+import EvmCompiler.Structured.TypedCfgCompilerFacts
 import EvmCompiler.Structured.TypedCfgPreservation.Core
 import EvmCompiler.TypedCfg.ObserverSemantics
 
@@ -1656,53 +1657,36 @@ theorem regular_if_false_of_compileStmtFuel?
       ObserverSemantics.Code.runCondition cond source =
         .ok (final, false)) :
     RegularPreserves result cfg entry regular source final tokens := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
-  | none =>
-      simp [hType] at hCompile
-  | some output =>
-      cases hHead : output.slots.head? with
-      | none =>
-          simp [hType, hHead] at hCompile
-      | some condition =>
-          cases hBody :
-              TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-                (supply + 1) (LabelSupply.label supply 0)
-                { output with slots := output.slots.tail } regular with
-          | none =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-          | some bodyResult =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-              cases hCompile
-              intro target trace hRel
-              obtain
-                  ⟨targetFinal, traceFinal,
-                    hBlockRun, hFinalRel⟩ :=
-                Code.run_jumpi_toCfg
-                  (jumpTarget := LabelSupply.label supply 0)
-                  (fallthrough := regular)
-                  hType hFrameSafe hCond hRel
-              let generated : TypedCfg.Block :=
-                { label := entry
-                  input := input
-                  body := TypedCfgCompiler.Code.toCfg cond
-                  output := output
-                  term :=
-                    .jumpi (LabelSupply.label supply 0) regular }
-              have hEventually :=
-                BlocksInProgram.eventually_of_run
-                  hBlocks (block := generated)
-                    (by simp [generated])
-                    (by simpa [generated] using hBlockRun)
-              exact
-                ⟨targetFinal, traceFinal,
-                  ⟨{ output with slots := output.slots.tail },
-                    rfl, hEventually⟩,
-                  hFinalRel⟩
+  obtain
+      ⟨output, _condition, _bodyResult,
+        hType, _hHead, _hBody, _hRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
+      hCompile
+  intro target trace hRel
+  obtain
+      ⟨targetFinal, traceFinal,
+        hBlockRun, hFinalRel⟩ :=
+    Code.run_jumpi_toCfg
+      (jumpTarget := LabelSupply.label supply 0)
+      (fallthrough := regular)
+      hType hFrameSafe hCond hRel
+  let generated : TypedCfg.Block :=
+    { label := entry
+      input := input
+      body := TypedCfgCompiler.Code.toCfg cond
+      output := output
+      term :=
+        .jumpi (LabelSupply.label supply 0) regular }
+  have hEventually :=
+    BlocksInProgram.eventually_of_run
+      hBlocks (block := generated)
+        (by simp [generated])
+        (by simpa [generated] using hBlockRun)
+  exact
+    ⟨targetFinal, traceFinal,
+      ⟨{ output with slots := output.slots.tail },
+        rfl, hEventually⟩,
+      hFinalRel⟩
 
 /--
 The false conditional branch satisfies the uniform observer outcome
@@ -1731,33 +1715,16 @@ theorem outcome_if_false_of_compileStmtFuel?
   have hPreserves :=
     regular_if_false_of_compileStmtFuel?
       (tokens := tokens) hCompile hBlocks hFrameSafe hCond
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
-  | none =>
-      simp [hType] at hCompile
-  | some output =>
-      cases hHead : output.slots.head? with
-      | none =>
-          simp [hType, hHead] at hCompile
-      | some condition =>
-          cases hBody :
-              TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-                (supply + 1) (LabelSupply.label supply 0)
-                { output with slots := output.slots.tail } regular with
-          | none =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-          | some bodyResult =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-              cases hCompile
-              exact
-                OutcomeSimulation.Preserves.of_regular
-                  rfl
-                  ⟨{ output with slots := output.slots.tail }, rfl⟩
-                  hPreserves
+  obtain
+      ⟨output, _condition, _bodyResult,
+        _hType, _hHead, _hBody, _hRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
+      hCompile
+  exact
+    OutcomeSimulation.Preserves.of_regular
+      rfl
+      ⟨{ output with slots := output.slots.tail }, rfl⟩
+      hPreserves
 
 /--
 Outcome-indexed true-branch preservation composes the generated conditional
@@ -1802,74 +1769,57 @@ theorem outcome_if_true_of_compileStmtFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       source outcome tokens := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
-  | none =>
-      simp [hType] at hCompile
-  | some output =>
-      cases hHead : output.slots.head? with
-      | none =>
-          simp [hType, hHead] at hCompile
-      | some condition =>
-          cases hBody :
-              TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
-                (supply + 1) (LabelSupply.label supply 0)
-                { output with slots := output.slots.tail } regular with
-          | none =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-          | some bodyResult =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-              cases hCompile
-              have hBodyBlocks :
-                  TypedCfgPreservation.BlocksInProgram
-                    bodyResult cfg := by
-                intro block hMem
-                apply hBlocks block
-                simp [hMem]
-              have hBodyCalls :
-                  TypedCfgPreservation.CallsInProgram
-                    bodyResult globalCalls := by
-                intro site hMem
-                apply hCalls site
-                simpa using hMem
-              refine ⟨?_, ?_⟩
-              · intro target trace hRel
-                obtain
-                    ⟨targetAfterCond, traceAfterCond,
-                      hBlockRun, hAfterCondRel⟩ :=
-                  Code.run_jumpi_toCfg
-                    (jumpTarget := LabelSupply.label supply 0)
-                    (fallthrough := regular)
-                    hType hFrameSafe hCond hRel
-                let generated : TypedCfg.Block :=
-                  { label := entry
-                    input := input
-                    body := TypedCfgCompiler.Code.toCfg cond
-                    output := output
-                    term :=
-                      .jumpi (LabelSupply.label supply 0) regular }
-                have hHeadEventually :=
-                  BlocksInProgram.eventually_of_run
-                    hBlocks (block := generated)
-                      (by simp [generated])
-                      (by simpa [generated] using hBlockRun)
-                obtain
-                    ⟨targetOutcome, traceFinal,
-                      hBodyEventually, hOutcomeRel⟩ :=
-                  hBodyPreserves hBody hBodyBlocks hBodyCalls
-                    targetAfterCond traceAfterCond hAfterCondRel
-                exact
-                  ⟨targetOutcome, traceFinal,
-                    TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
-                      hHeadEventually hBodyEventually,
-                    hOutcomeRel⟩
-              · intro _hRegular
-                exact
-                  ⟨{ output with slots := output.slots.tail }, rfl⟩
+  obtain
+      ⟨output, _condition, bodyResult,
+        hType, _hHead, hBody, _hRequire, rfl⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
+      hCompile
+  have hBodyBlocks :
+      TypedCfgPreservation.BlocksInProgram
+        bodyResult cfg := by
+    intro block hMem
+    apply hBlocks block
+    simp [hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram
+        bodyResult globalCalls := by
+    intro site hMem
+    apply hCalls site
+    simpa using hMem
+  refine ⟨?_, ?_⟩
+  · intro target trace hRel
+    obtain
+        ⟨targetAfterCond, traceAfterCond,
+          hBlockRun, hAfterCondRel⟩ :=
+      Code.run_jumpi_toCfg
+        (jumpTarget := LabelSupply.label supply 0)
+        (fallthrough := regular)
+        hType hFrameSafe hCond hRel
+    let generated : TypedCfg.Block :=
+      { label := entry
+        input := input
+        body := TypedCfgCompiler.Code.toCfg cond
+        output := output
+        term :=
+          .jumpi (LabelSupply.label supply 0) regular }
+    have hHeadEventually :=
+      BlocksInProgram.eventually_of_run
+        hBlocks (block := generated)
+          (by simp [generated])
+          (by simpa [generated] using hBlockRun)
+    obtain
+        ⟨targetOutcome, traceFinal,
+          hBodyEventually, hOutcomeRel⟩ :=
+      hBodyPreserves hBody hBodyBlocks hBodyCalls
+        targetAfterCond traceAfterCond hAfterCondRel
+    exact
+      ⟨targetOutcome, traceFinal,
+        TypedCfg.ObserverSemantics.Program.Eventually.bind_jump
+          hHeadEventually hBodyEventually,
+        hOutcomeRel⟩
+  · intro _hRegular
+    exact
+      ⟨{ output with slots := output.slots.tail }, rfl⟩
 
 theorem outcome_brk_of_compileStmtFuel?
     {transcript : Trace} {fuel : Nat}

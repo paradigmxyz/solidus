@@ -172,7 +172,21 @@ theorem eventually_if_false_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               let generated : TypedCfg.Block :=
                 { label := entry
@@ -225,7 +239,21 @@ theorem regular_if_false_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               exact
                 ⟨{ output with slots := output.slots.tail }, rfl,
@@ -330,7 +358,21 @@ theorem eventually_if_true_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               let generated : TypedCfg.Block :=
                 { label := entry
@@ -413,7 +455,21 @@ theorem regular_if_true_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               exact
                 ⟨{ output with slots := output.slots.tail }, rfl,
@@ -469,7 +525,21 @@ theorem preserves_if_true_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               have hBodyBlocks : BlocksInProgram bodyResult cfg := by
                 intro block hMem
@@ -561,7 +631,21 @@ theorem outcome_if_true_of_compileStmtFuel?
           | none =>
               simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
           | some bodyResult =>
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?, hBody] at hCompile
+              have hRequire :
+                  bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } =
+                    some () := by
+                cases hCheck :
+                    bodyResult.requireFallthrough?
+                      { output with slots := output.slots.tail } with
+                | none =>
+                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                      hBody, hCheck] at hCompile
+                | some unit =>
+                    cases unit
+                    rfl
+              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
+                hBody, hRequire] at hCompile
               cases hCompile
               have hBodyBlocks : BlocksInProgram bodyResult cfg := by
                 intro block hMem

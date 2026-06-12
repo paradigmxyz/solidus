@@ -48,6 +48,9 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_one_of_step
 #check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_add_of_jump
 #check EvmCompiler.Structured.EffectSemantics.Program.runState
+#check EvmCompiler.Structured.EffectSemantics.Block.Eval.mono
+#check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.mono
+#check EvmCompiler.Structured.EffectSemantics.For.Eval.mono
 #check EvmCompiler.Structured.ObserverSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCode
@@ -75,6 +78,11 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.tail_of_prefix_jump
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.outcome_eq_of_prefix_accepted
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_if
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.compileStmtFuel?_if_eq_none_of_body_fallthrough_mismatch
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Block.fallthrough_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.fallthrough_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Stmt.fallthrough_if_of_compileStmtFuel?
