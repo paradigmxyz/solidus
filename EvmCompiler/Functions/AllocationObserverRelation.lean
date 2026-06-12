@@ -55,6 +55,21 @@ def StoreRel (plan : Plan) (live : List Locals.Name)
     plan.location? name = some location →
     locationValue? stackOffset frameBase target location = source.vars name
 
+/--
+The shared-state portion of allocation correctness.
+
+Primitive-family proofs use this relation without acquiring ownership of the
+allocation plan, concrete stack layout, or local-variable realization.
+-/
+structure SharedRel
+    (contract : MemoryContract.Contract)
+    (source target : EvmYul.SharedState .EVM) : Prop where
+  machine :
+    Compiler.MemoryRelation.MachineRel contract
+      source.toMachineState target.toMachineState
+  world :
+    source.toState = target.toState
+
 structure CoreRel
     (contract : MemoryContract.Contract) (plan : Plan)
     (live : List Locals.Name) (stackOffset frameBase : Nat)
@@ -67,6 +82,40 @@ structure CoreRel
   world :
     source.shared.toState = target.evm.toSharedState.toState
   store : StoreRel plan live stackOffset frameBase source target
+
+namespace SharedRel
+
+theorem executionEnv_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target) :
+    source.executionEnv = target.executionEnv :=
+  congrArg EvmYul.State.executionEnv hRel.world
+
+theorem replaceToState_same
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (world : EvmYul.State .EVM) :
+    SharedRel contract
+      ({ source with toState := world } : EvmYul.SharedState .EVM)
+      ({ target with toState := world } : EvmYul.SharedState .EVM) := by
+  exact ⟨by simpa using hRel.machine, rfl⟩
+
+end SharedRel
+
+namespace CoreRel
+
+theorem shared
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : Locals.Source.State} {target : Structured.RunState}
+    (hRel :
+      CoreRel contract plan live stackOffset frameBase source target) :
+    SharedRel contract source.shared target.evm.toSharedState :=
+  ⟨hRel.machine, hRel.world⟩
+
+end CoreRel
 
 structure StateRel {transcript : Trace}
     (contract : MemoryContract.Contract) (plan : Plan)
@@ -111,6 +160,55 @@ theorem scratch {plan : Plan} {live : List Locals.Name}
   simp only [locationValue?] at hValue
   rw [← hValue]
   simp
+
+theorem rebase_prefix
+    {plan : Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {source sourceFinal : Locals.Source.State}
+    {target targetFinal : Structured.RunState}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      StoreRel plan live (stackOffset + oldPrefix.length) frameBase
+        source target)
+    (hOldStack : target.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack : targetFinal.evm.stack = newPrefix ++ baseStack)
+    (hMachine :
+      targetFinal.evm.toMachineState = target.evm.toMachineState)
+    (hVars : sourceFinal.vars = source.vars) :
+    StoreRel plan live (stackOffset + newPrefix.length) frameBase
+      sourceFinal targetFinal := by
+  intro name location hLive hLocation
+  have hValue := hRel name location hLive hLocation
+  cases location with
+  | stack depth =>
+      change
+        targetFinal.evm.stack[
+            stackOffset + newPrefix.length + depth]? =
+          sourceFinal.vars name
+      change
+        target.evm.stack[
+            stackOffset + oldPrefix.length + depth]? =
+          source.vars name at hValue
+      rw [hOldStack] at hValue
+      have hBase :
+          baseStack[stackOffset + depth]? = source.vars name := by
+        rw [show
+            stackOffset + oldPrefix.length + depth =
+              oldPrefix.length + (stackOffset + depth) by omega]
+          at hValue
+        rw [List.getElem?_append_right
+          (Nat.le_add_right oldPrefix.length (stackOffset + depth))]
+          at hValue
+        simpa using hValue
+      rw [hNewStack, hVars]
+      rw [show
+          stackOffset + newPrefix.length + depth =
+            newPrefix.length + (stackOffset + depth) by omega]
+      rw [List.getElem?_append_right
+        (Nat.le_add_right newPrefix.length (stackOffset + depth))]
+      simpa using hBase
+  | scratch slot =>
+      simpa [locationValue?, hMachine, hVars] using hValue
 
 end StoreRel
 
@@ -490,6 +588,58 @@ theorem append {transcript : Trace}
 end ScratchExprResultRel
 
 namespace ScratchStateRel
+
+theorem rebase_prefix {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source sourceFinal : SourceState transcript}
+    {target targetFinal : TargetState transcript}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      ScratchStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase
+        frameDepth frameWords source target)
+    (hBase :
+      StateRel contract plan live
+        (stackOffset + newPrefix.length) frameBase
+        sourceFinal targetFinal)
+    (hOldStack :
+      target.source.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack :
+      targetFinal.source.evm.stack = newPrefix ++ baseStack)
+    (hMachine :
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState) :
+    ScratchStateRel contract plan live
+      (stackOffset + newPrefix.length) frameBase
+      frameDepth frameWords sourceFinal targetFinal := by
+  refine ⟨hBase, ?_, ?_, ?_, hRel.frameNoWrap,
+    hRel.frameHostAddressable, ?_, hRel.scratchBound⟩
+  · have hPointer := hRel.framePointer
+    rw [hOldStack] at hPointer
+    have hBasePointer :
+        baseStack[stackOffset + frameDepth]? =
+          some (EvmYul.UInt256.ofNat frameBase) := by
+      rw [show
+          stackOffset + oldPrefix.length + frameDepth =
+            oldPrefix.length + (stackOffset + frameDepth) by omega]
+        at hPointer
+      rw [List.getElem?_append_right
+        (Nat.le_add_right oldPrefix.length
+          (stackOffset + frameDepth))] at hPointer
+      simpa using hPointer
+    rw [hNewStack]
+    rw [show
+        stackOffset + newPrefix.length + frameDepth =
+          newPrefix.length + (stackOffset + frameDepth) by omega]
+    rw [List.getElem?_append_right
+      (Nat.le_add_right newPrefix.length
+        (stackOffset + frameDepth))]
+    simpa using hBasePointer
+  · simpa [hMachine] using hRel.frameActive
+  · simpa [hMachine] using hRel.frameAllocated
+  · simpa [hMachine] using hRel.activeNoWrap
 
 theorem of_wellFormed
     {transcript : Trace}

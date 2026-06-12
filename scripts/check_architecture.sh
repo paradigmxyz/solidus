@@ -126,7 +126,8 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverPreservation.lean \
   EvmCompiler/Functions/AllocationObserverContext.lean \
-  EvmCompiler/Functions/AllocationObserverExpression.lean
+  EvmCompiler/Functions/AllocationObserverExpression.lean \
+  EvmCompiler/Functions/AllocationObserverPrimitive.lean
 
 report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
@@ -457,6 +458,8 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverPreservation.lean \
   EvmCompiler/Functions/AllocationObserverContext.lean \
   EvmCompiler/Functions/AllocationObserverExpression.lean \
+  EvmCompiler/Functions/AllocationObserverPrimitive.lean \
+  EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \

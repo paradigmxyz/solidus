@@ -3,6 +3,7 @@ import EvmCompiler.Functions.AllocationObserverPreservation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverContext
 import EvmCompiler.Functions.AllocationObserverExpression
+import EvmCompiler.Functions.AllocationObserverPrimitive
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -40,6 +41,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
+#check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
+#check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+#check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
@@ -218,6 +223,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverContext.classify_var
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
+#print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
+#print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval

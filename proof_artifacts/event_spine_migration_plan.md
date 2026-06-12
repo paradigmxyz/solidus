@@ -16,17 +16,17 @@ The implemented proof tower is organized as adjacent, pass-owned boundaries:
 | Boundary | Status |
 |---|---|
 | Yul → Functions | Partial: canonical effect semantics and checked gas/msize leaves exist; general program theorem remains |
-| Functions → allocated Locals/Expressions | Partial: memory contract, allocation relation, spill reads/writes, frame lifecycle, recursive expression/sequence theorem, and gas/msize primitive instances are checked; ordinary primitive families and statement/block/program lifting remain |
+| Functions → allocated Locals/Expressions | Partial: memory contract, allocation relation, spill reads/writes, frame lifecycle, recursive expression/sequence theorem, gas/msize instances, and the shared-state primitive families are checked; memory/copy/hash/log families and statement/block/program lifting remain |
 | Locals/Expressions → Structured | Checked transparent Expressions adapter; allocation-owned code correctness is being completed at the boundary above |
 | Structured → TypedCfg | Checked forward preservation and backward adequacy, including recursive calls, loops, switches, terminal outcomes, and generated-program wrapper |
 | TypedCfg → Assembly | Checked |
 | Assembly → bytecode | Checked |
 | End-to-end composition | Not closed: the public theorem must not accept primitive-family or compiler-generated evidence |
 
-Estimated completion is **roughly 60–65%**. The dominant remaining work is not
-spill mechanics; it is proving the canonical no-external-effects primitive families,
-lifting the allocation theorem through Functions control and calls, completing the
-general Yul-to-Functions boundary, and composing the short public theorem.
+Estimated completion is **roughly 65%**. The dominant remaining work is not spill
+mechanics; it is closing the memory-touching primitive families, lifting the allocation
+theorem through Functions control and calls, completing the general Yul-to-Functions
+boundary, and composing the short public theorem.
 
 Architecture constraints remain normative: no observer-specific compiler,
 interpreter, replay certificate, call oracle, or generated-code premise may appear at
