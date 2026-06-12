@@ -159,11 +159,14 @@ Adjacent boundary status:
   Memory-touching primitives additionally require ordinary source-memory
   consistency and a source-facing non-wrapping expansion bound, preventing
   target spill allocation from exposing dormant bytes or invalidating later
-  `msize()` observations. Canonical `mload` and `mstore` now have checked
+  `msize()` observations. Canonical `mload`, `mstore`, and `mstore8` now have checked
   adjacent forward theorems: padded reads agree outside the reservation,
   synchronized source writes preserve reservation-relative memory, active
   memory grows monotonically without wrapping, every live spill lookup remains
   stable, and the real one-op Structured executions return the source results.
+  Fixed-length byte writes share an exact decomposition, locality,
+  monotone-growth, synchronized-relation, and disjoint spill-lookup interface;
+  this is also the common substrate for the remaining copy primitive families.
   `ScratchStateRel` retains an actual reservation witness for its active frame,
   ruling out impossible unrestricted scratch states and making source-write
   disjointness an allocation-owned invariant.

@@ -233,6 +233,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_primitiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_simulate
 #print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore_primitiveForward
+#print axioms EvmCompiler.Compiler.MemoryRelation.writeBytes_memory_data
+#print axioms EvmCompiler.Compiler.MemoryRelation.lookupMemory_eq_of_writeBytes_disjoint_growing
+#print axioms EvmCompiler.Compiler.MemoryRelation.MachineRel.mstore8_both
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore8_simulate
+#print axioms EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mstore8_primitiveForward
 #print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #print axioms EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
