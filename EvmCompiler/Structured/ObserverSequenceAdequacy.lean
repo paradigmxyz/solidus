@@ -17,7 +17,7 @@ Private regular-fallthrough composition for adjacent statements. Compiler
 decomposition and recursive adequacy instances are supplied by the enclosing
 mutual theorem.
 -/
-private theorem adequateWithin_cons_withTail
+private theorem adequateWithinFuel_cons_withTail
     {transcript : Trace} {program : Structured.Program}
     {stmt : Structured.Stmt} {rest : List Structured.Stmt}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
@@ -27,6 +27,7 @@ private theorem adequateWithin_cons_withTail
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    (targetFuel : Nat)
     (hFallthrough :
       headResult.fallthrough? = some tailInput)
     (hEntryNotAccepted :
@@ -39,29 +40,31 @@ private theorem adequateWithin_cons_withTail
         ¬ accept
             (.jump (TypedCfgCompiler.restLabel supply) targetState))
     (hHeadAdequate :
-      OutcomeSimulation.AdequateWithin
-        (fun sourceFuel sourceOutcome =>
-          ObserverSemantics.Stmt.Eval
-            program sourceFuel stmt source sourceOutcome)
-        headResult ctx cfg
-        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-          ctx (TypedCfgCompiler.restLabel supply))
-        (OutcomeSimulation.JumpAt source tokens
-          (TypedCfgCompiler.restLabel supply) tailInput accept)
-        entry input source tokens)
-    (hTailAdequate :
-      ∀ {tailSource : ObserverSemantics.State transcript},
-        OutcomeSimulation.AdequateWithin
+      ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
+        OutcomeSimulation.AdequateWithinFuel
           (fun sourceFuel sourceOutcome =>
-            ObserverSemantics.Block.Eval
-              program sourceFuel { stmts := rest }
-              tailSource sourceOutcome)
-          tailResult ctx cfg
+            ObserverSemantics.Stmt.Eval
+              program sourceFuel stmt source sourceOutcome)
+          headResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-            ctx regular)
-          accept (TypedCfgCompiler.restLabel supply)
-          tailInput tailSource tokens) :
-    OutcomeSimulation.AdequateWithin
+            ctx (TypedCfgCompiler.restLabel supply))
+          (OutcomeSimulation.JumpAt source tokens
+            (TypedCfgCompiler.restLabel supply) tailInput accept)
+          entry input source tokens headTargetFuel)
+    (hTailAdequate :
+      ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
+        ∀ {tailSource : ObserverSemantics.State transcript},
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel { stmts := rest }
+                tailSource sourceOutcome)
+            tailResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            accept (TypedCfgCompiler.restLabel supply)
+            tailInput tailSource tokens tailTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := stmt :: rest }
@@ -69,8 +72,8 @@ private theorem adequateWithin_cons_withTail
       (headResult.append tailResult) ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
-      accept entry input source tokens := by
-  intro hAccept targetFuel target trace traceFinal
+      accept entry input source tokens targetFuel := by
+  intro hAccept target trace traceFinal
     targetOutcome hRel hReach
   have hFinalAccepted :
       OutcomeSimulation.JumpAt source tokens
@@ -92,7 +95,7 @@ private theorem adequateWithin_cons_withTail
       obtain
           ⟨headSourceFuel, headOutcome,
             hHeadEval, hHeadRel, hHeadArtifact⟩ :=
-        hHeadAdequate
+        hHeadAdequate headTargetFuel (by omega)
           (fun headFuel headOutcome targetOutcome headTrace
               hHeadEval hHeadRel hHeadArtifact => by
             rcases headOutcome with ⟨headSource, headMode⟩
@@ -213,7 +216,7 @@ private theorem adequateWithin_cons_withTail
               obtain
                   ⟨tailSourceFuel, tailOutcome,
                     hTailEval, hTailOutcomeRel, hTailArtifact⟩ :=
-                hTailAdequate
+                hTailAdequate tailTargetFuel (by omega)
                   (fun tailFuel tailOutcome targetOutcome tailTrace
                       hTailEval hTailRel hTailArtifact => by
                     let sourceFuel :=
@@ -388,7 +391,7 @@ Private composition for a head statement whose compiler result has no regular
 fallthrough. The strengthened regular artifact makes a regular source result
 impossible; every abrupt result is transported to the enclosing continuations.
 -/
-private theorem adequateWithin_cons_noTail
+private theorem adequateWithinFuel_cons_noTail
     {transcript : Trace} {program : Structured.Program}
     {stmt : Structured.Stmt} {rest : List Structured.Stmt}
     {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
@@ -398,6 +401,7 @@ private theorem adequateWithin_cons_noTail
     {accept : TypedCfg.Outcome → Prop}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
+    (targetFuel : Nat)
     (hFallthrough : headResult.fallthrough? = none)
     (hEntryNotAccepted :
       ∀ targetState,
@@ -405,17 +409,18 @@ private theorem adequateWithin_cons_noTail
             (TypedCfgCompiler.restLabel supply) input accept
             (.jump entry targetState))
     (hHeadAdequate :
-      OutcomeSimulation.AdequateWithin
-        (fun sourceFuel sourceOutcome =>
-          ObserverSemantics.Stmt.Eval
-            program sourceFuel stmt source sourceOutcome)
-        headResult ctx cfg
-        (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
-          ctx (TypedCfgCompiler.restLabel supply))
-        (OutcomeSimulation.JumpAt source tokens
-          (TypedCfgCompiler.restLabel supply) input accept)
-        entry input source tokens) :
-    OutcomeSimulation.AdequateWithin
+      ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
+        OutcomeSimulation.AdequateWithinFuel
+          (fun sourceFuel sourceOutcome =>
+            ObserverSemantics.Stmt.Eval
+              program sourceFuel stmt source sourceOutcome)
+          headResult ctx cfg
+          (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+            ctx (TypedCfgCompiler.restLabel supply))
+          (OutcomeSimulation.JumpAt source tokens
+            (TypedCfgCompiler.restLabel supply) input accept)
+          entry input source tokens headTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := stmt :: rest }
@@ -423,8 +428,8 @@ private theorem adequateWithin_cons_noTail
       headResult ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
-      accept entry input source tokens := by
-  intro hAccept targetFuel target trace traceFinal
+      accept entry input source tokens targetFuel := by
+  intro hAccept target trace traceFinal
     targetOutcome hRel hReach
   have hFinalAccepted :
       OutcomeSimulation.JumpAt source tokens
@@ -446,7 +451,7 @@ private theorem adequateWithin_cons_noTail
       obtain
           ⟨headSourceFuel, headOutcome,
             hHeadEval, hHeadRel, hHeadArtifact⟩ :=
-        hHeadAdequate
+        hHeadAdequate headTargetFuel (by omega)
           (fun headFuel headOutcome targetOutcome headTrace
               hHeadEval hHeadRel hHeadArtifact => by
             rcases headOutcome with ⟨headSource, headMode⟩
@@ -624,6 +629,105 @@ Compiler-driven statement-list composition. The recursive statement and tail
 instances are private callbacks; successful compiler decomposition and ambient
 block inheritance are discharged here.
 -/
+theorem adequateWithinFuel_cons_of_compileStmtListFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {program : Structured.Program}
+    {stmt : Structured.Stmt} {rest : List Structured.Stmt}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (targetFuel : Nat)
+    (hCompile :
+      TypedCfgCompiler.compileStmtListFuel? (compilerFuel + 1)
+          (stmt :: rest) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hEntryNotAccepted :
+      ∀ joinShape targetState,
+        ¬ OutcomeSimulation.JumpAt source tokens
+            (TypedCfgCompiler.restLabel supply) joinShape accept
+            (.jump entry targetState))
+    (hTailEntryNotAccepted :
+      ∀ targetState,
+        ¬ accept
+            (.jump (TypedCfgCompiler.restLabel supply) targetState))
+    (hHead :
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {headAccept : TypedCfg.Outcome → Prop},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        TypedCfgPreservation.BlocksInProgram headResult cfg →
+        ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Stmt.Eval
+                program sourceFuel stmt source sourceOutcome)
+            headResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx (TypedCfgCompiler.restLabel supply))
+            headAccept entry input source tokens headTargetFuel)
+    (hTail :
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
+        {tailInput : TypedCfg.Shape}
+        {tailSource : ObserverSemantics.State transcript},
+        headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        ∀ tailTargetFuel, tailTargetFuel ≤ targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel { stmts := rest }
+                tailSource sourceOutcome)
+            tailResult ctx cfg
+            (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+              ctx regular)
+            accept (TypedCfgCompiler.restLabel supply)
+            tailInput tailSource tokens tailTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Block.Eval
+          program sourceFuel { stmts := stmt :: rest }
+          source sourceOutcome)
+      result ctx cfg
+      (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
+        ctx regular)
+      accept entry input source tokens targetFuel := by
+  rcases
+      TypedCfgPreservation.Block.components_of_compileStmtListFuel?_cons
+        hCompile with
+    ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
+  · rcases hNoTail with ⟨hFallthrough, rfl⟩
+    exact
+      adequateWithinFuel_cons_noTail targetFuel
+        hFallthrough (hEntryNotAccepted input)
+        (hHead hHeadCompile hBlocks)
+  · rcases hWithTail with
+      ⟨tailInput, tailResult,
+        hFallthrough, hTailCompile, rfl⟩
+    have hHeadBlocks :=
+      TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
+    have hTailBlocks :=
+      TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
+    exact
+      adequateWithinFuel_cons_withTail targetFuel
+        hFallthrough (hEntryNotAccepted tailInput) hTailEntryNotAccepted
+        (hHead hHeadCompile hHeadBlocks)
+        (fun tailTargetFuel hFuel {_tailSource} =>
+          hTail hFallthrough hTailCompile hTailBlocks
+            tailTargetFuel hFuel)
+
+/--
+Unbounded statement-list adequacy recovered from the fixed-fuel rule.
+-/
 theorem adequateWithin_cons_of_compileStmtListFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
@@ -693,28 +797,19 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  rcases
-      TypedCfgPreservation.Block.components_of_compileStmtListFuel?_cons
-        hCompile with
-    ⟨headResult, hHeadCompile, hNoTail | hWithTail⟩
-  · rcases hNoTail with ⟨hFallthrough, rfl⟩
-    exact
-      adequateWithin_cons_noTail
-        hFallthrough (hEntryNotAccepted input)
-        (hHead hHeadCompile hBlocks)
-  · rcases hWithTail with
-      ⟨tailInput, tailResult,
-        hFallthrough, hTailCompile, rfl⟩
-    have hHeadBlocks :=
-      TypedCfgPreservation.BlocksInProgram.left_of_append hBlocks
-    have hTailBlocks :=
-      TypedCfgPreservation.BlocksInProgram.right_of_append hBlocks
-    exact
-      adequateWithin_cons_withTail
-        hFallthrough (hEntryNotAccepted tailInput) hTailEntryNotAccepted
-        (hHead hHeadCompile hHeadBlocks)
-        (fun {_tailSource} =>
-          hTail hFallthrough hTailCompile hTailBlocks)
+  intro hAccept targetFuel target trace traceFinal
+    targetOutcome hRel hReach
+  exact
+    adequateWithinFuel_cons_of_compileStmtListFuel?
+      targetFuel hCompile hBlocks hEntryNotAccepted
+      hTailEntryNotAccepted
+      (fun hHeadCompile hHeadBlocks headTargetFuel _hFuel =>
+        (hHead hHeadCompile hHeadBlocks).fuel headTargetFuel)
+      (fun hFallthrough hTailCompile hTailBlocks
+          tailTargetFuel _hFuel =>
+        (hTail hFallthrough hTailCompile hTailBlocks).fuel
+          tailTargetFuel)
+      hAccept hRel hReach
 
 end Block
 

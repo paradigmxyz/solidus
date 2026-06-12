@@ -1,4 +1,4 @@
-import EvmCompiler.Structured.ObserverActivationBoundary
+import EvmCompiler.Structured.ObserverGeneratedBoundary
 
 namespace EvmCompiler
 namespace Structured
@@ -13,25 +13,6 @@ It does not reason about Assembly or bytecode execution.
 -/
 
 namespace OutcomeSimulation
-
-abbrev Continuations :=
-  TypedCfgPreservation.OutcomeSimulation.Continuations
-
-/--
-A target outcome has reached one of the Structured fragment's semantic
-continuations or has halted. Fallthrough, return dispatch, and invalid target
-outcomes are internal to lower control machinery and are not Structured
-statement outcomes.
--/
-def TargetBoundary (continuations : Continuations) :
-    TypedCfg.Outcome → Prop
-  | .jump label _ =>
-      label = continuations.regular ∨
-        continuations.breakLabel? = some label ∨
-        continuations.continueLabel? = some label ∨
-        continuations.leaveLabel? = some label
-  | .halt _ _ => True
-  | .fallthrough _ | .returnDispatch _ | .invalid _ => False
 
 /--
 Execution to the first target outcome owned by the Structured fragment.
@@ -4671,8 +4652,7 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
       ∀ {bodyInput : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}
         {afterCond : ObserverSemantics.State transcript}
-        {bodyTarget : EVMState} {bodyTrace : Trace}
-        {bodyTargetFuel : Nat},
+        {bodyTarget : EVMState} {bodyTrace : Trace},
         TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
             (supply + 1) (LabelSupply.label supply 0)
             bodyInput regular =
@@ -4690,7 +4670,7 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
         ObserverPreservation.StateRel.At
           bodyInput afterCond tokens bodyTarget bodyTrace →
         OutcomeSimulation.FirstReaches
-          cfg accept bodyTargetFuel
+          cfg accept targetFuel
           (LabelSupply.label supply 0)
           bodyTarget bodyTrace targetOutcome traceFinal →
         ∃ bodySourceFuel bodyOutcome,
@@ -4849,6 +4829,86 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
 Pass-owned `AdequateWithin` composition rule for conditionals. The generated
 context theorem supplies the body instance.
 -/
+theorem adequateWithinFuel_if_of_compileStmtFuel?
+    {transcript : Trace} {compilerFuel : Nat}
+    {program : Structured.Program}
+    {cond : Structured.Code} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {continuations : OutcomeSimulation.Continuations}
+    {accept : TypedCfg.Outcome → Prop}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word}
+    (targetFuel : Nat)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.if_ cond body) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hRegular : continuations.regular = regular)
+    (hBodyEntry :
+      ∀ targetState,
+        ¬ accept
+            (.jump (LabelSupply.label supply 0) targetState))
+    (hBodyAdequate :
+      ∀ {bodyInput : TypedCfg.Shape}
+        {bodyResult : TypedCfgCompiler.Result}
+        {afterCond : ObserverSemantics.State transcript},
+        TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+            (supply + 1) (LabelSupply.label supply 0)
+            bodyInput regular =
+          some bodyResult →
+        TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        ∀ bodyTargetFuel, bodyTargetFuel < targetFuel →
+          OutcomeSimulation.AdequateWithinFuel
+            (fun sourceFuel sourceOutcome =>
+              ObserverSemantics.Block.Eval
+                program sourceFuel body afterCond sourceOutcome)
+            bodyResult ctx cfg continuations accept
+            (LabelSupply.label supply 0)
+            bodyInput afterCond tokens bodyTargetFuel) :
+    OutcomeSimulation.AdequateWithinFuel
+      (fun sourceFuel sourceOutcome =>
+        ObserverSemantics.Stmt.Eval
+          program sourceFuel (.if_ cond body) source sourceOutcome)
+      result ctx cfg continuations accept entry input source tokens
+      targetFuel := by
+  intro hAccept target trace traceFinal
+    targetOutcome hRel hReach
+  obtain
+      ⟨sourceFuel, sourceOutcome,
+        hEval, hOutcomeRel, hArtifact⟩ :=
+    outcome_if_of_compileStmtFuel?_and_firstReaches
+      hCompile hBlocks hRegular hAccept hRel hReach
+      (by
+        intro bodyInput bodyResult afterCond bodyTarget bodyTrace
+          hBodyCompile hBodyBlocks hBodyAccept hAfterCondRel
+          hBodyReach
+        have hPositive :
+            0 < targetFuel :=
+          OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
+            hBodyReach (hBodyEntry bodyTarget)
+        cases targetFuel with
+        | zero =>
+            omega
+        | succ bodyTargetFuel =>
+            obtain
+                ⟨bodySourceFuel, bodyOutcome,
+                  hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
+              hBodyAdequate hBodyCompile hBodyBlocks
+                bodyTargetFuel (by omega)
+                hBodyAccept hAfterCondRel hBodyReach
+            exact
+              ⟨bodySourceFuel, bodyOutcome,
+                hBodyEval, hOutcomeRel, hBodyArtifact⟩)
+  exact
+    ⟨sourceFuel, sourceOutcome, hEval, hOutcomeRel, hArtifact⟩
+
+/--
+Unbounded conditional adequacy recovered from the fixed-fuel rule.
+-/
 theorem adequateWithin_if_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
     {program : Structured.Program}
@@ -4894,33 +4954,13 @@ theorem adequateWithin_if_of_compileStmtFuel?
       result ctx cfg continuations accept entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
-  obtain
-      ⟨sourceFuel, sourceOutcome,
-        hEval, hOutcomeRel, hArtifact⟩ :=
-    outcome_if_of_compileStmtFuel?_and_firstReaches
-      hCompile hBlocks hRegular hAccept hRel hReach
-      (by
-        intro bodyInput bodyResult afterCond bodyTarget bodyTrace
-          bodyTargetFuel hBodyCompile hBodyBlocks hBodyAccept hAfterCondRel
-          hBodyReach
-        have hPositive :
-            0 < bodyTargetFuel :=
-          OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-            hBodyReach (hBodyEntry bodyTarget)
-        cases bodyTargetFuel with
-        | zero =>
-            omega
-        | succ bodyTargetFuel =>
-            obtain
-                ⟨bodySourceFuel, bodyOutcome,
-                  hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
-              hBodyAdequate hBodyCompile hBodyBlocks
-                hBodyAccept hAfterCondRel hBodyReach
-            exact
-              ⟨bodySourceFuel, bodyOutcome,
-                hBodyEval, hOutcomeRel, hBodyArtifact⟩)
   exact
-    ⟨sourceFuel, sourceOutcome, hEval, hOutcomeRel, hArtifact⟩
+    adequateWithinFuel_if_of_compileStmtFuel?
+      targetFuel hCompile hBlocks hRegular hBodyEntry
+      (fun hBodyCompile hBodyBlocks bodyTargetFuel _hFuel =>
+        (hBodyAdequate hBodyCompile hBodyBlocks).fuel
+          bodyTargetFuel)
+      hAccept hRel hReach
 
 end Stmt
 

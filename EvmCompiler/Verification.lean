@@ -13,6 +13,7 @@ import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
+import EvmCompiler.Structured.ObserverGeneratedBoundary
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
@@ -87,6 +88,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.not_of_pushed_return
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.GeneratedFresh.jumpAt
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.targetBoundary_generatedFresh
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.block_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmtList_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge
@@ -105,8 +108,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequate_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithin_cons_of_compileStmtListFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Block.adequateWithinFuel_cons_of_compileStmtListFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Switch.adequateWithin_switch_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_if_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithinFuel_if_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Loop.adequateWithin_for_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
