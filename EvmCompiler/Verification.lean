@@ -192,6 +192,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.assign_of_compilers
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_none_of_components
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_some_of_components
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.nil
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward.cons_regular
@@ -200,15 +201,18 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_false_of_eval
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_true_of_eval
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_none_of_eval
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_some_of_eval
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_if_components
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_switch_components
 #check EvmCompiler.Functions.AllocationLowering.lowerSwitch_select_none
+#check EvmCompiler.Functions.AllocationLowering.lowerSwitch_select_some
 #check EvmCompiler.Functions.AllocationLowering.lowerBlockScoped_components
 #check EvmCompiler.Locals.Stmt.compile_if_components
 #check EvmCompiler.Locals.Stmt.compile_switch_components
 #check EvmCompiler.Locals.Block.compileOpen_single_if_components
 #check EvmCompiler.Locals.Block.compileOpen_single_switch_components
 #check EvmCompiler.Locals.Switch.select_none_of_compile
+#check EvmCompiler.Locals.Switch.select_some_of_compile
 #check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_cons_components
 #check EvmCompiler.Functions.AllocationLowering.StateExtends
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_stateExtends

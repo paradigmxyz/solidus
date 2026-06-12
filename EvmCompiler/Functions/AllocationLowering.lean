@@ -575,6 +575,116 @@ theorem lowerSwitch_select_none
                   hLoweredTail
 
 /--
+Case/default lowering preserves a selected source branch and exposes the
+ordinary scoped-body lowering that produced its Locals counterpart.
+
+Earlier unselected cases may advance the fresh-slot cursor, but scoped lowering
+preserves the incoming allocation environment and concrete layout. Those are
+the only lowering-state components needed to transport a statement-boundary
+activation invariant to the selected body.
+-/
+theorem lowerSwitch_select_some
+    {ctx : Ctx} {returns : List Name}
+    {state afterCases final : State}
+    {value : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {selected : Block}
+    {loweredCases : List (Word × Locals.Block)}
+    {loweredDefault : Option Locals.Block}
+    (hCases :
+      lowerCases ctx returns state cases =
+        some (loweredCases, afterCases))
+    (hDefault :
+      lowerDefault ctx returns afterCases defaultBody =
+        some (loweredDefault, final))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selected) :
+    ∃ selectedLowered selectedStart selectedFinal,
+      Locals.Source.Switch.select value loweredCases loweredDefault =
+          some selectedLowered ∧
+        lowerBlockScoped ctx returns selectedStart selected =
+          some (selectedLowered, selectedFinal) ∧
+        selectedStart.allocation.env = state.allocation.env ∧
+        selectedStart.layout = state.layout := by
+  induction cases generalizing state afterCases loweredCases with
+  | nil =>
+      simp [lowerCases] at hCases
+      rcases hCases with ⟨rfl, rfl⟩
+      cases defaultBody with
+      | none =>
+          simp [Source.Switch.select] at hSelect
+      | some body =>
+          simp [Source.Switch.select] at hSelect
+          subst selected
+          cases hBody :
+              lowerBlockScoped ctx returns state body with
+          | none =>
+              simp [lowerDefault, hBody] at hDefault
+          | some bodyResult =>
+              rcases bodyResult with ⟨loweredBody, bodyFinal⟩
+              simp [lowerDefault, hBody] at hDefault
+              rcases hDefault with ⟨rfl, rfl⟩
+              exact
+                ⟨loweredBody, state, bodyFinal,
+                  rfl, hBody, rfl, rfl⟩
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerCases, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, afterBody⟩
+          cases hRest :
+              lowerCases ctx returns afterBody rest with
+          | none =>
+              simp [lowerCases, hBody, hRest] at hCases
+          | some restResult =>
+              rcases restResult with ⟨loweredRest, restFinal⟩
+              simp [lowerCases, hBody, hRest] at hCases
+              rcases hCases with ⟨rfl, rfl⟩
+              by_cases hMatch : caseValue = value
+              · simp [Source.Switch.select, hMatch] at hSelect
+                subst selected
+                exact
+                  ⟨loweredBody, state, afterBody,
+                    by simp [Locals.Source.Switch.select, hMatch],
+                    hBody, rfl, rfl⟩
+              · have hTailSelect :
+                    Source.Switch.select value rest defaultBody =
+                      some selected := by
+                  simpa [Source.Switch.select, hMatch] using hSelect
+                obtain
+                    ⟨selectedLowered, selectedStart, selectedFinal,
+                      hLoweredSelect, hSelectedBody,
+                      hSelectedEnv, hSelectedLayout⟩ :=
+                  ih hRest hDefault hTailSelect
+                have hBodyShape :
+                    afterBody.allocation.env =
+                        state.allocation.env ∧
+                      afterBody.layout = state.layout := by
+                  unfold lowerBlockScoped at hBody
+                  cases hOpen :
+                      lowerBlockOpen ctx returns state body with
+                  | none =>
+                      simp [hOpen] at hBody
+                  | some openResult =>
+                      rcases openResult with
+                        ⟨loweredOpen, openFinal⟩
+                      simp [hOpen] at hBody
+                      rcases hBody with ⟨rfl, rfl⟩
+                      exact ⟨rfl, rfl⟩
+                exact
+                  ⟨selectedLowered, selectedStart, selectedFinal,
+                    by
+                      simpa [Locals.Source.Switch.select, hMatch] using
+                        hLoweredSelect,
+                    hSelectedBody,
+                    hSelectedEnv.trans hBodyShape.1,
+                    hSelectedLayout.trans hBodyShape.2⟩
+
+/--
 The part of lowering-state evolution visible at an open source-block boundary.
 
 New stack locals form a removable prefix of the incoming Locals layout, while

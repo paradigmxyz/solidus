@@ -407,6 +407,33 @@ theorem run_switch_none_of_eval {σ : Type}
       .ok (Outcome.regular afterScrutinee, ctx) := by
   simp [Stmt.run, hScrutinee, hSelect]
 
+/--
+Canonical source `switch` execution when a case or default body is selected.
+-/
+theorem run_switch_some_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selected : Functions.Block}
+    {source afterScrutinee : σ} {value : Word}
+    {outcome : Outcome σ}
+    (hScrutinee :
+      Expr.evalOne model prim scrutinee source =
+        .ok (afterScrutinee, value))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selected)
+    (hBody :
+      Block.runScoped model prim program ctx selected fuel
+          afterScrutinee =
+        .ok outcome) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.switch scrutinee cases defaultBody) source =
+      .ok (outcome, ctx) := by
+  simp [Stmt.run, hScrutinee, hSelect, hBody]
+
 end Stmt
 
 set_option maxHeartbeats 1000000 in

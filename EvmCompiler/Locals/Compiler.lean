@@ -525,6 +525,99 @@ theorem select_none_of_compile
                     simpa [Expressions.CaseList.toStructured,
                       Structured.Switch.select, hMatch] using hCompiledTail
 
+/--
+Case/default compilation followed by the ordinary Expressions-to-Structured
+translation preserves a selected branch and exposes the open-body compilation
+and scoped cleanup that produced the selected target block.
+-/
+theorem select_some_of_compile
+    {ctx : Ctx}
+    {value : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {selected : Block}
+    {compiledCases : List (Word × Expressions.Block)}
+    {compiledDefault : Option Expressions.Block}
+    (hCases :
+      CaseList.compile ctx cases = some compiledCases)
+    (hDefault :
+      Default.compile ctx defaultBody = some compiledDefault)
+    (hSelect :
+      Locals.Source.Switch.select value cases defaultBody = some selected) :
+    ∃ selectedCompiled bodyCode bodyCtx,
+      Structured.Switch.select value
+          (Expressions.CaseList.toStructured compiledCases)
+          (Expressions.Default.toStructured compiledDefault) =
+        some selectedCompiled.toStructured ∧
+      Block.compileOpen ctx selected = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some selectedCompiled := by
+  induction cases generalizing compiledCases with
+  | nil =>
+      simp [CaseList.compile] at hCases
+      subst compiledCases
+      cases defaultBody with
+      | none =>
+          simp [Locals.Source.Switch.select] at hSelect
+      | some body =>
+          simp [Locals.Source.Switch.select] at hSelect
+          subst selected
+          cases hBody : Block.compileOpen ctx body with
+          | none =>
+              simp [Default.compile, hBody] at hDefault
+          | some bodyResult =>
+              rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+              cases hFinish : finishScoped ctx bodyCtx bodyCode with
+              | none =>
+                  simp [Default.compile, hBody, hFinish] at hDefault
+              | some compiledBody =>
+                  simp [Default.compile, hBody, hFinish] at hDefault
+                  subst compiledDefault
+                  exact
+                    ⟨compiledBody, bodyCode, bodyCtx,
+                      rfl, rfl, hFinish⟩
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody : Block.compileOpen ctx body with
+      | none =>
+          simp [CaseList.compile, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+          cases hFinish : finishScoped ctx bodyCtx bodyCode with
+          | none =>
+              simp [CaseList.compile, hBody, hFinish] at hCases
+          | some compiledBody =>
+              cases hRest : CaseList.compile ctx rest with
+              | none =>
+                  simp [CaseList.compile, hBody, hFinish, hRest] at hCases
+              | some compiledRest =>
+                  simp [CaseList.compile, hBody, hFinish, hRest] at hCases
+                  subst compiledCases
+                  by_cases hMatch : caseValue = value
+                  · simp [Locals.Source.Switch.select, hMatch] at hSelect
+                    subst selected
+                    exact
+                      ⟨compiledBody, bodyCode, bodyCtx,
+                        by
+                          simp [Expressions.CaseList.toStructured,
+                            Structured.Switch.select, hMatch],
+                        hBody, hFinish⟩
+                  · have hTailSelect :
+                        Locals.Source.Switch.select
+                            value rest defaultBody =
+                          some selected := by
+                      simpa [Locals.Source.Switch.select, hMatch] using hSelect
+                    obtain
+                        ⟨selectedCompiled, selectedCode, selectedCtx,
+                          hTargetSelect, hSelectedBody, hSelectedFinish⟩ :=
+                      ih hRest hTailSelect
+                    exact
+                      ⟨selectedCompiled, selectedCode, selectedCtx,
+                        by
+                          simpa [Expressions.CaseList.toStructured,
+                            Structured.Switch.select, hMatch] using
+                            hTargetSelect,
+                        hSelectedBody, hSelectedFinish⟩
+
 end Switch
 
 namespace Proc
