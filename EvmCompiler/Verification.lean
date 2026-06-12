@@ -119,6 +119,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverTerminal.Invocation.simulate
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward_runtime
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward_runtime
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
@@ -186,6 +190,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalActivationAllocatorPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverSafety.Stmt.LeafMemorySafeRun.run_eq
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.compiler_shape
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_compilers

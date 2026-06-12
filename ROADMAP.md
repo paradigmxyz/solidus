@@ -673,9 +673,15 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   the caller activation and allocator depth. Functions-owned
   `ScratchFrame.acquire_from_runtime` and `ScratchFrame.release_to_runtime`
   expose those checked transitions without a second compiler or interpreter.
-  The immediate remaining theorem is allocator-aware source-fuel recursion for
-  ordinary statements and the internal-call case; matching whole-function and
-  whole-program backward adequacy follows after that forward recursion closes.
+  Canonical expression evaluation now preserves `AllocatorReady` across every
+  primitive family, including observer consumption, read-only memory
+  expansion, source-owned stores, and byte copies. The checked
+  `forwardExprRuntime` / `forwardExprSeqRuntime` interfaces retain the ordinary
+  adjacent result relation and thread allocator metadata without duplicating
+  semantics. The immediate remaining theorem is allocator-aware source-fuel
+  recursion for ordinary statements and the internal-call case; matching
+  whole-function and whole-program backward adequacy follows after that
+  forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

@@ -4046,7 +4046,9 @@ theorem scratchVar_forward {transcript : Trace}
         (stackOffset + 1) frameBase frameDepth frameWords
         source targetFinal ∧
       targetFinal.source.evm.stack =
-        value :: target.source.evm.stack := by
+        value :: target.source.evm.stack ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState := by
   let frameWord := EvmYul.UInt256.ofNat frameBase
   let offsetWord := AllocationSupport.slotOffset slot
   let address :=
@@ -4115,7 +4117,7 @@ theorem scratchVar_forward {transcript : Trace}
     exact
       hAfterAddRel.replace_top_by
         (value := value) hAfterAddStack 1
-  refine ⟨targetFinal, ?_, ?_, hFinalRel, rfl⟩
+  refine ⟨targetFinal, ?_, ?_, hFinalRel, rfl, ?_⟩
   · simp [Functions.Source.Effectful.Expr.eval,
       Locals.Source.Effectful.Expr.eval,
       Functions.ObserverSemantics.stateModel,
@@ -4159,6 +4161,13 @@ theorem scratchVar_forward {transcript : Trace}
               rfl
       _ = .ok targetFinal := by
         exact ObserverCode.run_mload hAfterAddStack hLoad
+  · simp [targetFinal, afterAdd, afterPush, afterDup,
+      AllocationObserverRelation.StateRel.pushTarget,
+      AllocationObserverRelation.StateRel.pushTargetBy,
+      AllocationObserverRelation.StateRel.contractTargetBy,
+      Simulation.ResourceReplay.State.withSource,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
 
 theorem scratchVar_backward {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -4196,7 +4205,8 @@ theorem scratchVar_backward {transcript : Trace}
     targetFinal.source.evm.stack =
       value :: target.source.evm.stack := by
   obtain
-      ⟨expected, hSourceEval, hExpectedRun, hExpectedRel, hExpectedStack⟩ :=
+      ⟨expected, hSourceEval, hExpectedRun, hExpectedRel, hExpectedStack,
+        _hExpectedMachine⟩ :=
     scratchVar_forward hRel hLive hLocation hSource hOp
   rw [hExpectedRun] at hRun
   cases hRun
@@ -4252,7 +4262,8 @@ theorem scratchVar_forward_of_compileCode {transcript : Trace}
       rw [hCode] at hCompile
       cases hCompile
       obtain
-          ⟨targetFinal, hSourceEval, hTargetRun, hTargetRel, _hStack⟩ :=
+          ⟨targetFinal, hSourceEval, hTargetRun, hTargetRel, _hStack,
+            _hMachine⟩ :=
         scratchVar_forward hRel hLive hLocation hSource
           (by
             simpa [Nat.add_assoc] using hDup)
@@ -5052,7 +5063,8 @@ theorem scratchVar_forward_result {transcript : Trace}
         stackOffset frameBase frameDepth frameWords 1
         source target targetFinal [value] := by
   obtain
-      ⟨targetFinal, hSourceEval, hTargetRun, hFinalRel, hStack⟩ :=
+      ⟨targetFinal, hSourceEval, hTargetRun, hFinalRel, hStack,
+        _hMachine⟩ :=
     scratchVar_forward hRel hLive hLocation hSource hOp
   exact
     ⟨targetFinal, hSourceEval, hTargetRun,
