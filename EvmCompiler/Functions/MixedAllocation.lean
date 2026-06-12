@@ -10,6 +10,14 @@ def stackEntries (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : AllocationSupport.SlotEnv :=
   env.filter fun binding => binding.2 ∈ stackSlots
 
+theorem mem_stackEntries_iff
+    {stackSlots : SlotSet}
+    {env : AllocationSupport.SlotEnv}
+    {binding : Name × Nat} :
+    binding ∈ stackEntries stackSlots env ↔
+      binding ∈ env ∧ binding.2 ∈ stackSlots := by
+  simp [stackEntries]
+
 def stackOrder (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : List Name :=
   (stackEntries stackSlots env).map Prod.fst
@@ -21,10 +29,73 @@ def bindingLocation (stackEntries : AllocationSupport.SlotEnv)
   | some depth => .stack depth
   | none => .scratch binding.2
 
+theorem bindingLocation_stack_of_mem
+    {entries : AllocationSupport.SlotEnv}
+    {binding : Name × Nat}
+    (hMem : binding ∈ entries) :
+    ∃ depth,
+      bindingLocation entries binding = .stack depth := by
+  cases hFind :
+      entries.findIdx? (fun entry => entry = binding) with
+  | none =>
+      have hAll :=
+        List.findIdx?_eq_none_iff.mp hFind binding hMem
+      simp at hAll
+  | some depth =>
+      exact ⟨depth, by simp [bindingLocation, hFind]⟩
+
+theorem bindingLocation_scratch_of_not_mem
+    {entries : AllocationSupport.SlotEnv}
+    {binding : Name × Nat}
+    (hNotMem : binding ∉ entries) :
+    bindingLocation entries binding = .scratch binding.2 := by
+  have hFind :
+      entries.findIdx? (fun entry => entry = binding) = none := by
+    apply List.findIdx?_eq_none_iff.mpr
+    intro entry hEntry
+    have hNe : entry ≠ binding := by
+      intro hEq
+      subst entry
+      exact hNotMem hEntry
+    simp [hNe]
+  simp [bindingLocation, hFind]
+
 def bindings (stackEntries env : AllocationSupport.SlotEnv) :
     List Locals.Allocation.Binding :=
   env.map fun binding =>
     (binding.1, bindingLocation stackEntries binding)
+
+private theorem find_bindings_of_mem
+    {entries env : AllocationSupport.SlotEnv}
+    {name : Name} {slot : Nat}
+    (hNodup : (env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ env) :
+    ((bindings entries env).find? fun binding =>
+        decide (binding.1 = name)).map Prod.snd =
+      some (bindingLocation entries (name, slot)) := by
+  induction env with
+  | nil =>
+      exact False.elim (by simpa using hMem)
+  | cons head tail ih =>
+      have hNodup' :
+          (head.1 :: tail.map Prod.fst).Nodup := by
+        simpa only [List.map_cons] using hNodup
+      have hTailNodup :
+          (tail.map Prod.fst).Nodup :=
+        (List.nodup_cons.mp hNodup').2
+      rcases List.mem_cons.mp hMem with hHead | hTail
+      · subst head
+        simp [bindings]
+      · have hNameNe : head.1 ≠ name := by
+          intro hEq
+          have hNameMem :
+              name ∈ tail.map Prod.fst :=
+            List.mem_map.mpr ⟨(name, slot), hTail, rfl⟩
+          have hHeadFresh :=
+            (List.nodup_cons.mp hNodup').1
+          rw [hEq] at hHeadFresh
+          exact hHeadFresh hNameMem
+        simpa [bindings, hNameNe] using ih hTailNodup hTail
 
 def usesScratch (stackSlots : SlotSet)
     (env : AllocationSupport.SlotEnv) : Bool :=
@@ -54,6 +125,60 @@ def allocationOfState (contract : MemoryContract.Contract)
           words := frameWords }
     else
       none
+
+theorem allocationOfState_location_of_mem
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {entries : AllocationSupport.SlotEnv}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ state.env) :
+    (allocationOfState contract frameWords entries state).location? name =
+      some (bindingLocation entries (name, slot)) := by
+  simpa [allocationOfState, Locals.Allocation.Plan.location?] using
+    find_bindings_of_mem (entries := entries) hNodup hMem
+
+theorem allocationOfState_location_stack_of_mem
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat} {stackSlots : SlotSet}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ state.env)
+    (hStack : slot ∈ stackSlots) :
+    ∃ depth,
+      (allocationOfState contract frameWords
+          (stackEntries stackSlots state.env) state).location? name =
+        some (.stack depth) := by
+  have hEntry :
+      (name, slot) ∈ stackEntries stackSlots state.env :=
+    mem_stackEntries_iff.mpr ⟨hMem, hStack⟩
+  obtain ⟨depth, hLocation⟩ :=
+    bindingLocation_stack_of_mem hEntry
+  exact
+    ⟨depth, by
+      rw [allocationOfState_location_of_mem hNodup hMem, hLocation]⟩
+
+theorem allocationOfState_location_scratch_of_mem
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat} {stackSlots : SlotSet}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ state.env)
+    (hScratch : slot ∉ stackSlots) :
+    (allocationOfState contract frameWords
+        (stackEntries stackSlots state.env) state).location? name =
+      some (.scratch slot) := by
+  have hNotEntry :
+      (name, slot) ∉ stackEntries stackSlots state.env := by
+    intro hEntry
+    exact hScratch (mem_stackEntries_iff.mp hEntry).2
+  rw [allocationOfState_location_of_mem hNodup hMem]
+  exact
+    congrArg some
+      (by simpa using bindingLocation_scratch_of_not_mem hNotEntry)
 
 namespace AllocationRecipe
 

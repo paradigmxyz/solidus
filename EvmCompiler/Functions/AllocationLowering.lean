@@ -27,6 +27,16 @@ structure Ctx where
 def isStackSlot (ctx : Ctx) (slot : Nat) : Bool :=
   decide (slot ∈ ctx.stackSlots)
 
+theorem isStackSlot_eq_true_iff
+    (ctx : Ctx) (slot : Nat) :
+    isStackSlot ctx slot = true ↔ slot ∈ ctx.stackSlots := by
+  simp [isStackSlot]
+
+theorem isStackSlot_eq_false_iff
+    (ctx : Ctx) (slot : Nat) :
+    isStackSlot ctx slot = false ↔ slot ∉ ctx.stackSlots := by
+  simp [isStackSlot]
+
 def frameDepth? (ctx : Ctx) (state : State) : Option Nat := do
   let depth ← Locals.Layout.lookupDepth? ctx.frameName state.layout
   some (depth - 1)
@@ -389,6 +399,54 @@ def lowerReturns (ctx : Ctx) :
       let (tail, finalLayout) :=
         lowerReturns ctx rest nextLayout
       (head ++ tail, finalLayout)
+
+theorem lowerStackReturn_compileOpen
+    {name : Name} {localsCtx : Locals.Ctx} :
+    Locals.Block.compileOpen localsCtx
+        { stmts :=
+            [Locals.Stmt.let_ name
+              (.lit AllocationSupport.zeroWord)] } =
+      some
+        ([Expressions.Stmt.code
+            ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+              Locals.bindLocals 0 (name :: localsCtx.layout))],
+          localsCtx.withLayout (name :: localsCtx.layout)) := by
+  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+    Locals.Expr.compileCode, Locals.codeStmt]
+
+theorem lowerScratchReturn_compileOpen
+    {ctx : Ctx} {name : Name} {slot frameDepth : Nat}
+    {localsCtx : Locals.Ctx} {frameOp : Structured.BasicOp}
+    (hFrameDepth :
+      Locals.Layout.lookupDepth? ctx.frameName localsCtx.layout =
+        some frameDepth)
+    (hFrameOp :
+      Locals.StackOp.dup? (1 + frameDepth) = some frameOp) :
+    Locals.Block.compileOpen localsCtx
+        { stmts :=
+            [Locals.Stmt.expr
+              (scratchStoreExpr ctx.frameName slot
+                (.lit AllocationSupport.zeroWord))] } =
+      some
+        ([Expressions.Stmt.code
+            ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+              [ Structured.BasicInstr.op frameOp,
+                Structured.BasicInstr.push
+                  (AllocationSupport.slotOffset slot),
+                Structured.BasicInstr.op .add,
+                Structured.BasicInstr.op .mstore ])],
+          localsCtx) := by
+  have hValue :
+      Locals.Expr.compileCode localsCtx 0
+          (.lit AllocationSupport.zeroWord) =
+        some [Structured.BasicInstr.push AllocationSupport.zeroWord] := by
+    rfl
+  have hStore :=
+    scratchStoreExpr_compileCode
+      (frameName := ctx.frameName) (slot := slot)
+      (offset := 0) hValue hFrameDepth hFrameOp
+  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+    Locals.codeStmt, hStore]
 
 def lowerReturnExprs (ctx : Ctx) (state : State)
     (names : List Name) : Option (Locals.ExprSeq names.length) :=

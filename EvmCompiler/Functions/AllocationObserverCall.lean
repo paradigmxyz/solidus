@@ -649,6 +649,290 @@ termination_by pending.length
 
 end ParameterPrelude
 
+namespace ReturnPrelude
+
+/--
+Compile and execute the complete real return-initialization prelude.
+
+The source function store already contains zero for every named return, so the
+compiler-only declarations and frame stores preserve the source state while
+establishing the ordinary allocation relation for all returns.
+-/
+theorem forward_of_context
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {frameBase frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {localsCtx : Locals.Ctx}
+    {targetProgram : Structured.Program}
+    {live : List Locals.Name}
+    {pending : List (Locals.Name × Nat)}
+    {frameDepth : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    (hContext :
+      AllocationObserverContext.ReturnPreludeContext
+        lowerCtx plan frameWords live pending frameDepth localsCtx)
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live 0
+        frameBase frameDepth frameWords source target)
+    (hZero :
+      ∀ name, name ∈ pending.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord)
+    (hWF : plan.WellFormed)
+    (hReservation : contract.scratch? = some reservation) :
+    ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
+      Locals.Block.compileOpen localsCtx
+          { stmts :=
+              (AllocationLowering.lowerReturns lowerCtx pending
+                localsCtx.layout).1 } =
+        some (compiled, finalCtx) ∧
+      finalCtx.layout =
+        (AllocationLowering.lowerReturns lowerCtx pending
+          localsCtx.layout).2 ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ScratchStateRel contract plan
+        ((pending.map Prod.fst).reverse ++ live) 0 frameBase
+        finalFrameDepth frameWords source finalTarget := by
+  cases hContext with
+  | nil =>
+      refine
+        ⟨[], localsCtx, target, frameDepth, 1, ?_, ?_, ?_, ?_⟩
+      · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
+      · simp [AllocationLowering.lowerReturns]
+      · exact Structured.EffectSemantics.Block.Eval.nil
+      · simpa using hRel
+  | @stack _ pending _ planDepth _ name slot classification fresh location
+      stackOrder tail =>
+      let pushed :=
+        AllocationObserverRelation.StateRel.pushTargetBy
+          33 AllocationSupport.zeroWord target
+      have hPushRun :
+          Structured.ObserverSemantics.Code.run
+              [Structured.BasicInstr.push AllocationSupport.zeroWord]
+              target =
+            .ok pushed :=
+        AllocationObserverPreservation.ObserverCode.run_push
+          AllocationSupport.zeroWord target
+      have hPushedRel :
+          AllocationObserverRelation.ScratchStateRel contract plan live 1
+            frameBase frameDepth frameWords source pushed := by
+        simpa [pushed] using
+          hRel.push_target_by 33 AllocationSupport.zeroWord
+      have hPushedStack :
+          pushed.source.evm.stack =
+            AllocationSupport.zeroWord :: target.source.evm.stack := by
+        rfl
+      have hNameZero :
+          source.source.vars name =
+            some AllocationSupport.zeroWord :=
+        hZero name (by simp)
+      have hNextRel :
+          AllocationObserverRelation.ScratchStateRel contract plan
+            (name :: live) 0 frameBase (frameDepth + 1) frameWords
+            source pushed :=
+        hPushedRel.declare_stack_live_existing hPushedStack
+          (fun other hOther => by
+            simp at hOther
+            exact hOther)
+          (by simp) location stackOrder hNameZero
+      obtain
+          ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+        forward_of_context tail hNextRel
+          (fun other hOther => hZero other (by simp [hOther]))
+          hWF hReservation
+      have hHeadCompile :=
+        AllocationLowering.lowerStackReturn_compileOpen
+          (name := name) (localsCtx := localsCtx)
+      have hHeadRun :
+          Structured.ObserverSemantics.Code.run
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                Locals.bindLocals 0 (name :: localsCtx.layout))
+              target =
+            .ok pushed := by
+        rw [AllocationObserverPreservation.ObserverCode.run_append,
+          hPushRun]
+        rfl
+      have hHeadEval :
+          Structured.ObserverSemantics.Block.Eval targetProgram 2
+              { stmts :=
+                  [Structured.Stmt.code
+                    ([Structured.BasicInstr.push
+                        AllocationSupport.zeroWord] ++
+                      Locals.bindLocals 0
+                        (name :: localsCtx.layout))] }
+              target
+              (Structured.EffectSemantics.Outcome.regular pushed) :=
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hHeadRun)
+          Structured.EffectSemantics.Block.Eval.nil
+      have hCombinedCompile :=
+        Locals.Block.compileOpen_append hHeadCompile hTailCompile
+      obtain ⟨fuel, hCombinedEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hHeadEval hTailEval
+      refine
+        ⟨[Expressions.Stmt.code
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                Locals.bindLocals 0 (name :: localsCtx.layout))] ++
+            tailCompiled,
+          finalCtx, finalTarget, finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hCombinedCompile
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hFinalLayout
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  ([Expressions.Stmt.code
+                      ([Structured.BasicInstr.push
+                          AllocationSupport.zeroWord] ++
+                        Locals.bindLocals 0
+                          (name :: localsCtx.layout))] ++
+                    tailCompiled) }
+            target
+            (Structured.EffectSemantics.Outcome.regular finalTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hCombinedEval
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+  | @scratch _ pending _ _ name slot classification fresh location
+      stackOrder slotBound frameDepthLookup frameDepthBound tail =>
+      obtain ⟨frameOp, hFrameOp⟩ :=
+        Locals.StackOp.exists_dup?_of_pos_of_le
+          (depth := 1 + (frameDepth + 1)) (by omega) frameDepthBound
+      let pushed :=
+        AllocationObserverRelation.StateRel.pushTargetBy
+          33 AllocationSupport.zeroWord target
+      have hPushRun :
+          Structured.ObserverSemantics.Code.run
+              [Structured.BasicInstr.push AllocationSupport.zeroWord]
+              target =
+            .ok pushed :=
+        AllocationObserverPreservation.ObserverCode.run_push
+          AllocationSupport.zeroWord target
+      have hPushedRel :
+          AllocationObserverRelation.ScratchStateRel contract plan live 1
+            frameBase frameDepth frameWords source pushed := by
+        simpa [pushed] using
+          hRel.push_target_by 33 AllocationSupport.zeroWord
+      have hPushedStack :
+          pushed.source.evm.stack =
+            AllocationSupport.zeroWord :: target.source.evm.stack := by
+        rfl
+      have hRegion :
+          reservation.containsRegion
+            (AllocationObserverRelation.scratchAddress frameBase slot) 1 :=
+        hRel.scratchAddress_reserved_of_bound slotBound hReservation
+      obtain ⟨midTarget, hStoreRun, hStoredRel, _hStoredStack⟩ :=
+        AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
+          (stackOffset := 0) hPushedRel hPushedStack hWF
+          (fun other hOther => by
+            simp at hOther
+            exact hOther)
+          stackOrder (by simp) location slotBound hReservation hRegion
+          (by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using
+            hFrameOp)
+      have hNameZero :
+          source.source.vars name =
+            some AllocationSupport.zeroWord :=
+        hZero name (by simp)
+      have hNextRel :
+          AllocationObserverRelation.ScratchStateRel contract plan
+            (name :: live) 0 frameBase frameDepth frameWords
+            source midTarget := by
+        have hInsert :
+            source.source.insert name AllocationSupport.zeroWord =
+              source.source :=
+          Locals.Source.State.insert_eq_of_apply_eq hNameZero
+        simpa [hInsert] using hStoredRel
+      obtain
+          ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+        forward_of_context tail hNextRel
+          (fun other hOther => hZero other (by simp [hOther]))
+          hWF hReservation
+      have hHeadCompile :=
+        AllocationLowering.lowerScratchReturn_compileOpen
+          (ctx := lowerCtx) (name := name) (slot := slot)
+          (frameDepth := frameDepth + 1) (localsCtx := localsCtx)
+          (frameOp := frameOp) frameDepthLookup hFrameOp
+      have hHeadRun :
+          Structured.ObserverSemantics.Code.run
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                [ Structured.BasicInstr.op frameOp,
+                  Structured.BasicInstr.push
+                    (AllocationSupport.slotOffset slot),
+                  Structured.BasicInstr.op .add,
+                  Structured.BasicInstr.op .mstore ])
+              target =
+            .ok midTarget := by
+        rw [AllocationObserverPreservation.ObserverCode.run_append,
+          hPushRun]
+        exact hStoreRun
+      have hHeadEval :
+          Structured.ObserverSemantics.Block.Eval targetProgram 2
+              { stmts :=
+                  [Structured.Stmt.code
+                    ([Structured.BasicInstr.push
+                        AllocationSupport.zeroWord] ++
+                      [ Structured.BasicInstr.op frameOp,
+                        Structured.BasicInstr.push
+                          (AllocationSupport.slotOffset slot),
+                        Structured.BasicInstr.op .add,
+                        Structured.BasicInstr.op .mstore ])] }
+              target
+              (Structured.EffectSemantics.Outcome.regular midTarget) :=
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hHeadRun)
+          Structured.EffectSemantics.Block.Eval.nil
+      have hCombinedCompile :=
+        Locals.Block.compileOpen_append hHeadCompile hTailCompile
+      obtain ⟨fuel, hCombinedEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hHeadEval hTailEval
+      refine
+        ⟨[Expressions.Stmt.code
+              ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
+                [ Structured.BasicInstr.op frameOp,
+                  Structured.BasicInstr.push
+                    (AllocationSupport.slotOffset slot),
+                  Structured.BasicInstr.op .add,
+                  Structured.BasicInstr.op .mstore ])] ++
+            tailCompiled,
+          finalCtx, finalTarget, finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hCombinedCompile
+      · simpa [AllocationLowering.lowerReturns, classification] using
+          hFinalLayout
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  ([Expressions.Stmt.code
+                      ([Structured.BasicInstr.push
+                          AllocationSupport.zeroWord] ++
+                        [ Structured.BasicInstr.op frameOp,
+                          Structured.BasicInstr.push
+                            (AllocationSupport.slotOffset slot),
+                          Structured.BasicInstr.op .add,
+                          Structured.BasicInstr.op .mstore ])] ++
+                    tailCompiled) }
+            target
+            (Structured.EffectSemantics.Outcome.regular finalTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hCombinedEval
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+termination_by pending.length
+
+end ReturnPrelude
+
 namespace ArgList
 
 /--

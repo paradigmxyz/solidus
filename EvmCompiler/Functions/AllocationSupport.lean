@@ -332,6 +332,51 @@ def planFunctions (functionSlots : List FunSlots) :
           lexicalScopes := bodyPlan.scopes ++ tail.lexicalScopes
           state := tail.state }
 
+theorem planFunctions_member_valid
+    {functionSlots : List FunSlots}
+    {state : CompileState} {functions : List FunDef}
+    {result : FunctionPlanResult} {fn : FunDef}
+    (hPlan :
+      planFunctions functionSlots state functions = some result)
+    (hMem : fn ∈ functions) :
+    (fn.returns ++ fn.params).Nodup ∧
+      fn.returns.length < 16 := by
+  induction functions generalizing state result with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      by_cases hSignature :
+          (head.returns ++ head.params).Nodup
+      · by_cases hReturns : head.returns.length < 16
+        · cases hSlots : lookupFun? head.name functionSlots with
+          | none =>
+              simp [planFunctions, hSignature, hReturns, hSlots] at hPlan
+          | some slots =>
+              let bodyStart : CompileState :=
+                { env := functionEnv slots
+                  nextSlot := state.nextSlot }
+              let bodyPlan :=
+                planBlockOpen (.function head.name)
+                  { allocation := bodyStart, nextScope := 0, scopes := [] }
+                  head.body
+              let stateAfter : CompileState :=
+                { env := state.env
+                  nextSlot := bodyPlan.allocation.nextSlot }
+              cases hTail :
+                  planFunctions functionSlots stateAfter rest with
+              | none =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+              | some tail =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+                  rcases List.mem_cons.mp hMem with hEq | hRest
+                  · subst fn
+                    exact ⟨hSignature, hReturns⟩
+                  · exact ih hTail hRest
+        · simp [planFunctions, hSignature, hReturns] at hPlan
+      · simp [planFunctions, hSignature] at hPlan
+
 def planRecipeCore? (program : Program) :
     Option AllocationRecipe := do
   if (program.functions.map FunDef.name).Nodup then pure () else none
@@ -382,6 +427,28 @@ theorem planRecipeCore?_lookupFun_matches
                 program.functions initial
             rw [hSignatures] at hMatch
             exact lookupFun?_of_matches hMatch hNames hMem
+  · simp [hNames] at hPlan
+
+theorem planRecipeCore?_function_signature_valid
+    {program : Program} {recipe : AllocationRecipe}
+    {fn : FunDef}
+    (hPlan : planRecipeCore? program = some recipe)
+    (hMem : fn ∈ program.functions) :
+    (fn.returns ++ fn.params).Nodup ∧
+      fn.returns.length < 16 := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            exact planFunctions_member_valid hFunctions hMem
   · simp [hNames] at hPlan
 
 def planRecipe? (maxFrameWords : Nat) (program : Program) :

@@ -118,8 +118,18 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationSupport.allocateNames_names
 #check EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#check EvmCompiler.Functions.AllocationSupport.planFunctions_member_valid
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_signature_valid
+#check EvmCompiler.Functions.MixedAllocation.mem_stackEntries_iff
+#check EvmCompiler.Functions.MixedAllocation.allocationOfState_location_of_mem
+#check EvmCompiler.Functions.MixedAllocation.allocationOfState_location_stack_of_mem
+#check EvmCompiler.Functions.MixedAllocation.allocationOfState_location_scratch_of_mem
 #check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
+#check EvmCompiler.Functions.AllocationLowering.lowerStackReturn_compileOpen
+#check EvmCompiler.Functions.AllocationLowering.lowerScratchReturn_compileOpen
+#check EvmCompiler.Functions.AllocationObserverContext.ReturnPreludeContext
+#check EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
@@ -552,7 +562,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationSupport.allocateNames_names
 #print axioms EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
 #print axioms EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#print axioms EvmCompiler.Functions.AllocationSupport.planFunctions_member_valid
+#print axioms EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_signature_valid
+#print axioms EvmCompiler.Functions.MixedAllocation.allocationOfState_location_of_mem
+#print axioms EvmCompiler.Functions.MixedAllocation.allocationOfState_location_stack_of_mem
+#print axioms EvmCompiler.Functions.MixedAllocation.allocationOfState_location_scratch_of_mem
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerStackReturn_compileOpen
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerScratchReturn_compileOpen
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_name
 #print axioms EvmCompiler.Locals.Proc.toExpressions?_components
 #print axioms EvmCompiler.Locals.Block.compileToPreserving_components

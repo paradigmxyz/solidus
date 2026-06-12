@@ -96,6 +96,71 @@ inductive ParameterPreludeContext
         ((name, slot) :: pending) frameDepth localsCtx
 
 /--
+Internal compiler invariant for zero-initializing named function returns.
+
+Unlike raw parameters, returns are introduced from an already initialized
+source store. Stack returns emit an ordinary Locals declaration; scratch
+returns emit one canonical frame store.
+-/
+inductive ReturnPreludeContext
+    (lowerCtx : AllocationLowering.Ctx)
+    (plan : Plan) (frameWords : Nat) :
+    List Locals.Name → List (Locals.Name × Nat) → Nat →
+      Locals.Ctx → Prop where
+  | nil
+      {live : List Locals.Name}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx} :
+      ReturnPreludeContext lowerCtx plan frameWords
+        live [] frameDepth localsCtx
+  | stack
+      {live : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth planDepth : Nat}
+      {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (fresh : name ∉ live)
+      (location :
+        plan.location? name = some (.stack planDepth))
+      (stackOrder :
+        AllocationObserverRelation.currentStackOrder plan
+            (name :: live) =
+          name ::
+            AllocationObserverRelation.currentStackOrder plan live)
+      (tail :
+        ReturnPreludeContext lowerCtx plan frameWords
+          (name :: live) pending (frameDepth + 1)
+          (localsCtx.withLayout (name :: localsCtx.layout))) :
+      ReturnPreludeContext lowerCtx plan frameWords live
+        ((name, slot) :: pending) frameDepth localsCtx
+  | scratch
+      {live : List Locals.Name}
+      {pending : List (Locals.Name × Nat)}
+      {frameDepth : Nat} {localsCtx : Locals.Ctx}
+      {name : Locals.Name} {slot : Nat}
+      (classification :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (fresh : name ∉ live)
+      (location :
+        plan.location? name = some (.scratch slot))
+      (stackOrder :
+        AllocationObserverRelation.currentStackOrder plan
+            (name :: live) =
+          AllocationObserverRelation.currentStackOrder plan live)
+      (slotBound : slot < frameWords)
+      (frameDepthLookup :
+        Locals.Layout.lookupDepth? lowerCtx.frameName localsCtx.layout =
+          some (frameDepth + 1))
+      (frameDepthBound :
+        1 + (frameDepth + 1) ≤ 16)
+      (tail :
+        ReturnPreludeContext lowerCtx plan frameWords
+          (name :: live) pending frameDepth localsCtx) :
+      ReturnPreludeContext lowerCtx plan frameWords live
+        ((name, slot) :: pending) frameDepth localsCtx
+
+/--
 Compiler-owned interface connecting one Functions lowering state to the
 allocation plan and Locals stack layout used to compile its expressions.
 
