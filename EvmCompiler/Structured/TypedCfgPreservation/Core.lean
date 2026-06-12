@@ -472,6 +472,66 @@ theorem step_stack_bound_of_type
       omega
 
 /--
+One successfully executed Structured instruction preserves an exact symbolic
+stack length when no untracked caller suffix is present.
+-/
+theorem step_stack_length_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final : EVMState}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hLength : input.length = state.stack.length)
+    (hStep : instr.step state = .ok final) :
+    output.length = final.stack.length := by
+  cases instr with
+  | push value =>
+      simp [TypedCfgCompiler.BasicInstr.toCfg,
+        TypedCfg.Instr.type?] at hType
+      cases hType
+      simp [Structured.BasicInstr.step,
+        Assembly.Target.stepInstr] at hStep
+      cases hStep
+      change input.slots.length = state.stack.length at hLength
+      simp [TypedCfg.Shape.length,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+      omega
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            hShapeBound, hOutputLength⟩ :=
+        BasicOp.type_length_toCfg hType
+      have hActualBound :
+          inputArity ≤ state.stack.length := by
+        rw [← hLength]
+        exact hShapeBound
+      have hFinalLength :
+          final.stack.length =
+            state.stack.length - inputArity + outputArity := by
+        apply
+          Assembly.PrimOp.step_stack_length_of_stackArity
+            hArity
+        simpa [Structured.BasicInstr.step,
+          Structured.BasicOp.step,
+          Assembly.Target.stepInstr] using hStep
+      omega
+  | bindLocals offset names =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindLocals hType
+      simp [Structured.BasicInstr.step] at hStep
+      cases hStep
+      omega
+  | bindScratch baseDepth name slot =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindScratch hType
+      simp [Structured.BasicInstr.step] at hStep
+      cases hStep
+      omega
+
+/--
 One accepted Structured source instruction preserves the stack bound tracked
 by the source-visible projection of its full TypedCfg shape.
 -/
@@ -489,6 +549,104 @@ theorem step_sourceLength_bound_of_type
     TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe
   exact
     step_stack_bound_of_type hSourceType hBound hStep
+
+/--
+One accepted Structured source instruction preserves an exact source-visible
+frame length.
+-/
+theorem step_sourceLength_eq_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final : EVMState}
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true)
+    (hLength :
+      TypedCfgCompiler.Shape.sourceLength input = state.stack.length)
+    (hStep : instr.step state = .ok final) :
+    TypedCfgCompiler.Shape.sourceLength output =
+      final.stack.length := by
+  have hSourceType :=
+    TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe
+  exact
+    step_stack_length_of_type hSourceType hLength hStep
+
+/--
+An accepted Structured source instruction cannot introduce a compiler-owned
+return token. If the output carries one, the input already carried one.
+-/
+theorem input_returnTokenDepth?_eq_some_of_output
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {outputDepth : Nat}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true)
+    (hOutputDepth : output.returnTokenDepth? = some outputDepth) :
+    ∃ inputDepth, input.returnTokenDepth? = some inputDepth := by
+  cases hInputDepth : input.returnTokenDepth? with
+  | some inputDepth =>
+      exact ⟨inputDepth, rfl⟩
+  | none =>
+      have hInputView :
+          TypedCfgCompiler.Shape.sourceView input = input :=
+        TypedCfgCompilerFacts.Shape.sourceView_eq_self_of_returnTokenDepth?_eq_none
+          hInputDepth
+      have hSourceType :=
+        TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe
+      rw [hInputView] at hSourceType
+      have hOutputEq :
+          output = TypedCfgCompiler.Shape.sourceView output :=
+        Option.some.inj (hType.symm.trans hSourceType)
+      exact False.elim
+        (TypedCfgCompilerFacts.Shape.sourceView_ne_self_of_returnTokenDepth?_eq_some
+            hOutputDepth hOutputEq.symm)
+
+/--
+An accepted Structured source instruction preserves the two-mode source-frame
+invariant: caller frames retain a lower bound, while active procedure frames
+retain an exact source-visible length above their return token.
+-/
+theorem step_sourceFrameFits_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final : EVMState}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input state.stack.length)
+    (hStep : instr.step state = .ok final) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      output final.stack.length := by
+  constructor
+  · exact step_sourceLength_bound_of_type hSafe hFits.1 hStep
+  · intro outputDepth hOutputDepth
+    obtain ⟨inputDepth, hInputDepth⟩ :=
+      input_returnTokenDepth?_eq_some_of_output
+        hType hSafe hOutputDepth
+    have hInputSource :
+        TypedCfgCompiler.Shape.sourceLength input = inputDepth :=
+      TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
+        hInputDepth
+    have hInputLength : state.stack.length = inputDepth :=
+      hFits.2 inputDepth hInputDepth
+    have hStepLength :
+        TypedCfgCompiler.Shape.sourceLength output =
+          final.stack.length :=
+      step_sourceLength_eq_of_type hSafe
+        (hInputSource.trans hInputLength.symm) hStep
+    have hOutputSource :
+        TypedCfgCompiler.Shape.sourceLength output = outputDepth :=
+      TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
+        hOutputDepth
+    omega
 
 /--
 Typed Structured execution cannot become successful only by appending

@@ -1,4 +1,4 @@
-import EvmCompiler.Structured.ObserverAdequacyArtifact
+import EvmCompiler.Structured.ObserverFrameInvariant
 
 namespace EvmCompiler
 namespace Structured
@@ -625,89 +625,6 @@ end BasicInstr
 namespace Code
 
 /--
-Typed observer execution respects the symbolic stack lower bound.
-
-This pass-owned semantic interface is discharged structurally by `shapeSound`;
-callers supply no layout, replay, emitted-code, or stack-shape evidence.
--/
-def ShapeSound (code : Structured.Code) : Prop :=
-  ∀ {transcript : Trace} {input output : TypedCfg.Shape}
-      {source final : ObserverSemantics.State transcript},
-    TypedCfgCompiler.Code.type? code input = some output →
-      TypedCfgCompiler.Shape.sourceLength input ≤
-        source.source.evm.stack.length →
-      ObserverSemantics.Code.run code source = .ok final →
-      TypedCfgCompiler.Shape.sourceLength output ≤
-        final.source.evm.stack.length
-
-/--
-Every straight-line fragment accepted by the existing Structured-to-TypedCfg
-body typer is shape-sound under observer replay.
--/
-theorem shapeSound (code : Structured.Code) : ShapeSound code := by
-  intro transcript input output source final hType hBound hRun
-  induction code generalizing input output source final with
-  | nil =>
-      simp [TypedCfgCompiler.Code.type?,
-        TypedCfgCompiler.Code.toCfg,
-        TypedCfg.Block.bodyType?,
-        ObserverSemantics.Code.run,
-        EffectSemantics.Code.run] at hType hRun
-      cases hType
-      cases hRun
-      exact hBound
-  | cons instr rest ih =>
-      unfold TypedCfgCompiler.Code.type? at hType
-      cases hHeadType :
-          TypedCfg.Instr.type?
-            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
-      | none =>
-          simp [hHeadType] at hType
-      | some middle =>
-        cases hSafe :
-            TypedCfgCompiler.BasicInstr.sourceSafe? instr input middle with
-        | false =>
-          simp [hHeadType, hSafe] at hType
-        | true =>
-          have hTailType :
-              TypedCfgCompiler.Code.type? rest middle = some output := by
-            simpa [hHeadType, hSafe] using hType
-          unfold ObserverSemantics.Code.run
-            EffectSemantics.Code.run at hRun
-          simp only [ObserverSemantics.stateModel_evm,
-            ObserverSemantics.stateModel_withEVM] at hRun
-          cases hStep : instr.step source.source.evm with
-          | error err =>
-              simp [hStep, Bind.bind, Except.bind] at hRun
-          | ok evm =>
-              simp only [hStep, Bind.bind, Except.bind] at hRun
-              cases hAfter :
-                  (ObserverSemantics.handler transcript).afterInstr instr
-                    (source.withSource
-                      (source.source.withEVM evm)) with
-              | error err =>
-                  rw [hAfter] at hRun
-                  contradiction
-              | ok middleState =>
-                  rw [hAfter] at hRun
-                  have hStepBound :
-                      TypedCfgCompiler.Shape.sourceLength middle ≤
-                        evm.stack.length :=
-                    TypedCfgPreservation.BasicInstr.step_sourceLength_bound_of_type
-                      hSafe hBound hStep
-                  have hAfterLength :=
-                    ObserverSemantics.handler_stack_length hAfter
-                  have hMiddleBound :
-                      TypedCfgCompiler.Shape.sourceLength middle ≤
-                        middleState.source.evm.stack.length := by
-                    have hLength :
-                        middleState.source.evm.stack.length =
-                          evm.stack.length := by
-                      simpa [RunState.withEVM] using hAfterLength
-                    omega
-                  exact ih hTailType hMiddleBound hRun
-
-/--
 Backward frame adequacy indexed by the checked input shape.
 
 Unlike the former unindexed source predicate, this interface quantifies only
@@ -1066,7 +983,20 @@ theorem runCondition_of_runBody_toCfg
           hSourcePop hAfterRel
       rw [hPop] at hProducedPop
       cases hProducedPop
-      refine ⟨final, ?_, hFinalRel, ?_⟩
+      have hAfterFits :
+          TypedCfgCompiler.Shape.SourceFrameFits output
+            after.source.evm.stack.length :=
+        sourceFrameFits code hType hRel.sourceFrameFits hSourceCode
+      have hTailFits :
+          TypedCfgCompiler.Shape.SourceFrameFits
+              { output with slots := output.slots.tail }
+            stack.length := by
+        apply TypedCfgCompilerFacts.Shape.sourceFrameFits_tail hOutputPos
+        simpa [hAfterStack] using hAfterFits
+      refine
+        ⟨final, ?_,
+          ObserverPreservation.StateRel.At.ofFits hFinalRel
+            (by simpa [final, hAfterStack] using hTailFits)⟩
       · unfold ObserverSemantics.Code.runCondition
           EffectSemantics.Code.runCondition
         have hEffectRun :
@@ -1078,14 +1008,6 @@ theorem runCondition_of_runBody_toCfg
           hSourceCode
         rw [hEffectRun]
         exact hSourcePop
-      · have hTailLength :=
-          TypedCfgCompilerFacts.Shape.sourceLength_tail_of_one_le
-            output hOutputPos
-        simp [hAfterStack] at hOutputBound
-        simpa [hTailLength, final, hAfterStack] using
-          (show
-            TypedCfgCompiler.Shape.sourceLength output - 1 ≤
-              stack.length by omega)
 
 /--
 Backward straight-line adequacy at a source boundary with no active ghost
@@ -1383,7 +1305,7 @@ theorem adequateWithin_nil_of_compileBlockFuel?
   exact
     ⟨1, Structured.OutcomeT.regular source,
       Structured.EffectSemantics.Block.Eval.nil, hOutcomeRel,
-      ⟨input, hFallthrough, hRel.sourceStack⟩⟩
+      ⟨input, hFallthrough, hRel.sourceFrameFits⟩⟩
 
 theorem adequate_nil_of_compileBlockFuel?
     {transcript : Trace} {compilerFuel : Nat}
@@ -1526,7 +1448,8 @@ private theorem adequateWithin_cons_withTail
               ObserverPreservation.StateRel.At
                 tailInput headSource tokens
                 tailTarget prefixTrace :=
-            ⟨hTailRel, hHeadBound⟩
+            ObserverPreservation.StateRel.At.ofFits
+              hTailRel hHeadBound
           have hTailReach :=
             OutcomeSimulation.FirstReaches.tail_of_prefix_jump
               hReach hPrefix hPrefixLe
@@ -2036,10 +1959,9 @@ private theorem head_of_compileStmtFuel?_and_step
         have hAfterAt :
             ObserverPreservation.StateRel.At
               valueShape afterScrutinee tokens bodyFinal bodyTrace := by
-          exact
-            ⟨hAfterRel,
-              Code.shapeSound scrutinee
-                hType hRel.sourceStack hScrutinee⟩
+          exact ObserverPreservation.StateRel.At.ofFits hAfterRel
+            (Code.sourceFrameFits scrutinee
+              hType hRel.sourceFrameFits hScrutinee)
         have hShapeOne :
             1 ≤ TypedCfgCompiler.Shape.sourceLength valueShape :=
           TypedCfgCompilerFacts.Shape.requireSourceWords?_eq_some_iff.mp
@@ -2220,7 +2142,16 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
               (source.source.withEVM
                 { source.source.evm with stack := stack }))
             tokens targetAfterPop trace :=
-        ⟨hAfterPopRel, hBodyBound⟩
+        ObserverPreservation.StateRel.At.ofFits hAfterPopRel (by
+          have hTailFits :=
+            TypedCfgCompilerFacts.Shape.sourceFrameFits_tail
+              hSourceOne
+              (show
+                TypedCfgCompiler.Shape.SourceFrameFits valueShape
+                  (stack.length + 1) by
+                simpa [hPopLength] using hRel.sourceFrameFits)
+          rw [TypedCfgCompilerFacts.Shape.eq_tail_of_type?_pop hPopType]
+          exact hTailFits)
       have hBodyPositive : 0 < popFuel :=
         OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
           hAfterPopReach (hBodyEntryNotAccepted targetAfterPop)
@@ -2406,7 +2337,8 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
       have hAfterTestAt :
           ObserverPreservation.StateRel.At
             valueShape source tokens targetAfterTest trace :=
-        ⟨hAfterTestRel, hRel.sourceStack⟩
+        ObserverPreservation.StateRel.At.ofFits
+          hAfterTestRel hRel.sourceFrameFits
       obtain
           ⟨sourceFuel, sourceOutcome,
             hBodyEval, hOutcomeRel, hTailArtifact⟩ :=
@@ -2582,7 +2514,16 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
               (source.source.withEVM
                 { source.source.evm with stack := stack }))
             tokens targetAfterPop trace :=
-        ⟨hAfterPopRel, hBodyBound⟩
+        ObserverPreservation.StateRel.At.ofFits hAfterPopRel (by
+          have hTailFits :=
+            TypedCfgCompilerFacts.Shape.sourceFrameFits_tail
+              hSourceOne
+              (show
+                TypedCfgCompiler.Shape.SourceFrameFits valueShape
+                  (stack.length + 1) by
+                simpa [hPopLength] using hRel.sourceFrameFits)
+          rw [TypedCfgCompilerFacts.Shape.eq_tail_of_type?_pop hPopType]
+          exact hTailFits)
       obtain
           ⟨sourceFuel, sourceOutcome,
             hBodyEval, hOutcomeRel, hBodyArtifact⟩ :=
@@ -2717,14 +2658,25 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
   have hBodyBound :
       TypedCfgCompiler.Shape.sourceLength bodyShape ≤ stack.length := by
     omega
+  have hBodyFits :
+      TypedCfgCompiler.Shape.SourceFrameFits bodyShape stack.length := by
+    have hTailFits :=
+      TypedCfgCompilerFacts.Shape.sourceFrameFits_tail
+        hSourceOne
+        (show
+          TypedCfgCompiler.Shape.SourceFrameFits valueShape
+            (stack.length + 1) by
+          simpa [hPopLength] using hRel.sourceFrameFits)
+    rw [TypedCfgCompilerFacts.Shape.eq_tail_of_type?_pop hPopType]
+    exact hTailFits
   exact
     ⟨ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
         ⟨hRegular.symm, hAfterPopRel⟩,
       by
         show ∃ output,
           (some bodyShape : Option TypedCfg.Shape) = some output ∧
-            TypedCfgCompiler.Shape.sourceLength output ≤ stack.length
-        exact ⟨bodyShape, rfl, hBodyBound⟩⟩
+            TypedCfgCompiler.Shape.SourceFrameFits output stack.length
+        exact ⟨bodyShape, rfl, hBodyFits⟩⟩
 
 /--
 Recursive backward adequacy for a switch case chain with no selected body.
@@ -2790,7 +2742,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
                   (source.source.withEVM
                     { source.source.evm with stack := stack })))
               targetOutcome traceFinal ∧
-            TypedCfgCompiler.Shape.sourceLength bodyShape ≤ stack.length) :
+            TypedCfgCompiler.Shape.SourceFrameFits bodyShape stack.length) :
     ObserverPreservation.OutcomeSimulation.Rel
         continuations tokens
         (Structured.OutcomeT.regular
@@ -2814,15 +2766,15 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
           cases hCompile
           have hDefault : defaultBody = none := by
             simpa [Structured.Switch.select] using hSelect
-          obtain ⟨hOutcomeRel, hBodyBound⟩ :=
+          obtain ⟨hOutcomeRel, hBodyFits⟩ :=
             hDefaultAdequate hDefault hRel hReach
           exact
             ⟨hOutcomeRel,
               by
                 show ∃ output,
                   (some bodyShape : Option TypedCfg.Shape) = some output ∧
-                    TypedCfgCompiler.Shape.sourceLength output ≤ stack.length
-                exact ⟨bodyShape, rfl, hBodyBound⟩⟩
+                    TypedCfgCompiler.Shape.SourceFrameFits output stack.length
+                exact ⟨bodyShape, rfl, hBodyFits⟩⟩
   | cons head rest ih =>
       rcases head with ⟨caseValue, body⟩
       cases compilerFuel with
@@ -2880,7 +2832,8 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
               have hAfterTestAt :
                   ObserverPreservation.StateRel.At
                     valueShape source tokens targetAfterTest trace :=
-                ⟨hAfterTestRel, hRel.sourceStack⟩
+                ObserverPreservation.StateRel.At.ofFits
+                  hAfterTestRel hRel.sourceFrameFits
               obtain ⟨hOutcomeRel, hTailArtifact⟩ :=
                 ih hTailCompile hTailBlocks hTailSelect
                   hAfterTestAt hTailReach
@@ -3762,12 +3715,12 @@ theorem adequateWithin_code_of_compileStmtFuel?
   cases hEval with
   | code hSourceRun =>
       exact
-        ⟨sourceFuel, Structured.OutcomeT.regular _,
+          ⟨sourceFuel, Structured.OutcomeT.regular _,
           Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
           hOutcomeRel,
           ⟨output, rfl,
-            Code.shapeSound code hType
-              hRel.sourceStack hSourceRun⟩⟩
+            Code.sourceFrameFits code hType
+              hRel.sourceFrameFits hSourceRun⟩⟩
 
 theorem adequate_code_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
@@ -3864,7 +3817,7 @@ theorem adequateWithin_brk_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.brk,
       ObserverPreservation.OutcomeSimulation.Rel.brk_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      ⟨input, hShape, hRel.sourceStack⟩⟩
+      ⟨input, hShape, hRel.sourceFrameFits⟩⟩
 
 /--
 Backward adequacy for a checked `continue` continuation.
@@ -3933,7 +3886,7 @@ theorem adequateWithin_cont_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.cont,
       ObserverPreservation.OutcomeSimulation.Rel.cont_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      ⟨input, hShape, hRel.sourceStack⟩⟩
+      ⟨input, hShape, hRel.sourceFrameFits⟩⟩
 
 /--
 Backward adequacy for a checked procedure `leave` continuation.
@@ -4003,7 +3956,7 @@ theorem adequateWithin_leave_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.leave hReturns,
       ObserverPreservation.OutcomeSimulation.Rel.leave_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      ⟨input, hShape, hRel.sourceStack⟩⟩
+      ⟨input, hShape, hRel.sourceFrameFits⟩⟩
 
 /--
 Compiler-facing backward adequacy for a straight-line statement at a boundary
@@ -4589,7 +4542,11 @@ theorem condition_if_of_compileStmtFuel?_and_step
                         ObserverPreservation.StateRel.At
                           output afterCode tokens
                           targetAfter targetTrace :=
-                      ⟨hAfterCodeRel, hOutputBound⟩
+                      ObserverPreservation.StateRel.At.ofFits hAfterCodeRel
+                        (Code.sourceFrameFits cond
+                          (by simpa [TypedCfgCompiler.Code.type?]
+                            using hType)
+                          hRel.sourceFrameFits hSourceCode)
                     obtain ⟨hidden, hTargetStack⟩ :=
                       ObserverPreservation.StateRel.targetStack_eq_source_append_hidden
                         hAfterCodeAt
@@ -4852,11 +4809,11 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
         by
           show ∃ regularOutput,
             result.fallthrough? = some regularOutput ∧
-              TypedCfgCompiler.Shape.sourceLength regularOutput ≤
+              TypedCfgCompiler.Shape.SourceFrameFits regularOutput
                 final.source.evm.stack.length
           exact
             ⟨{ output with slots := output.slots.tail },
-              hParentFallthrough, hFinalRel.sourceStack⟩⟩
+              hParentFallthrough, hFinalRel.sourceFrameFits⟩⟩
   · rcases hTrue with
       ⟨output, condition, bodyResult, afterCond, bodyTarget,
         hFirst, _hType, _hHead, hBodyCompile, hRequire,

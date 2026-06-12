@@ -561,6 +561,10 @@ structure At {transcript : Trace}
   sourceStack :
     TypedCfgCompiler.Shape.sourceLength shape ≤
       source.source.evm.stack.length
+  sourceFrame :
+    ∀ depth,
+      shape.returnTokenDepth? = some depth →
+        source.source.evm.stack.length = depth
 
 theorem initial (state : EVMState) (transcript : Trace) :
     StateRel
@@ -583,33 +587,11 @@ theorem At.initial (state : EVMState) (transcript : Trace) :
           TypedCfgCompiler.Shape.sourceView,
           TypedCfg.Shape.caller, TypedCfg.Shape.length,
           TypedCfg.Shape.returnTokenDepth?,
-          TypedCfg.Shape.returnTokenDepthList?]⟩
-
-theorem targetStack_eq_source_append_hidden
-    {transcript : Trace} {shape : TypedCfg.Shape}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word} {target : EVMState} {trace : Trace}
-    (hRel : At shape source tokens target trace) :
-    ∃ hidden : EvmYul.Stack Word,
-      target.stack = source.source.evm.stack ++ hidden := by
-  rcases hRel.rel.1 with ⟨realized, hRealize, hSame⟩
-  have hAppend :=
-    TypedCfgPreservation.realizeStack_append_prefix
-      source.source.evm.stack [] source.source.returns tokens
-  cases hHidden :
-      TypedCfgPreservation.realizeStack
-        [] source.source.returns tokens with
-  | none =>
-      simp [hHidden] at hAppend
-      rw [hAppend] at hRealize
-      cases hRealize
-  | some hidden =>
-      simp [hHidden] at hAppend
-      rw [hAppend] at hRealize
-      cases hRealize
-      exact
-        ⟨hidden,
-          by simpa using Assembly.SameRuntimeData.stack_eq hSame⟩
+          TypedCfg.Shape.returnTokenDepthList?],
+      by
+        intro depth hDepth
+        simp [TypedCfg.Shape.caller, TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] at hDepth⟩
 
 /--
 Observer-aware terminal execution lifts the ordinary frame-realization theorem;

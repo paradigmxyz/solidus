@@ -27,6 +27,125 @@ end Result
 
 namespace Shape
 
+namespace SourceFrameFits
+
+theorem bound
+    {shape : TypedCfg.Shape} {stackLength : Nat}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape stackLength) :
+    TypedCfgCompiler.Shape.sourceLength shape ≤ stackLength :=
+  hFits.1
+
+theorem exact
+    {shape : TypedCfg.Shape} {stackLength depth : Nat}
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape stackLength)
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    stackLength = depth :=
+  hFits.2 depth hDepth
+
+end SourceFrameFits
+
+theorem sourceLength_eq_of_returnTokenDepth?_eq_some
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    TypedCfgCompiler.Shape.sourceLength shape = depth := by
+  rcases shape with ⟨slots, tail⟩
+  unfold TypedCfgCompiler.Shape.sourceLength
+    TypedCfgCompiler.Shape.sourceView
+  rw [hDepth]
+  simp only [TypedCfg.Shape.length]
+  unfold TypedCfg.Shape.returnTokenDepth? at hDepth
+  induction slots generalizing depth with
+  | nil =>
+      simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
+  | cons slot rest ih =>
+      cases slot
+      case returnToken =>
+        simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
+        subst depth
+        simp
+      all_goals
+        simp only [TypedCfg.Shape.returnTokenDepthList?,
+          Option.map_eq_some_iff] at hDepth
+        obtain ⟨restDepth, hRest, rfl⟩ := hDepth
+        simp only [List.take_succ_cons, List.length_cons]
+        have hTake := ih hRest
+        omega
+
+theorem returnTokenDepth?_lt_length
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    depth < shape.length := by
+  rcases shape with ⟨slots, tail⟩
+  unfold TypedCfg.Shape.returnTokenDepth? at hDepth
+  change depth < slots.length
+  induction slots generalizing depth with
+  | nil =>
+      simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
+  | cons slot rest ih =>
+      cases slot
+      case returnToken =>
+        simp [TypedCfg.Shape.returnTokenDepthList?] at hDepth
+        subst depth
+        simp
+      all_goals
+        simp only [TypedCfg.Shape.returnTokenDepthList?,
+          Option.map_eq_some_iff] at hDepth
+        obtain ⟨restDepth, hRest, rfl⟩ := hDepth
+        simp only [List.length_cons]
+        have hRestLt := ih hRest
+        omega
+
+theorem sourceView_eq_self_of_returnTokenDepth?_eq_none
+    {shape : TypedCfg.Shape}
+    (hDepth : shape.returnTokenDepth? = none) :
+    TypedCfgCompiler.Shape.sourceView shape = shape := by
+  simp [TypedCfgCompiler.Shape.sourceView, hDepth]
+
+theorem sourceView_ne_self_of_returnTokenDepth?_eq_some
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    TypedCfgCompiler.Shape.sourceView shape ≠ shape := by
+  intro hEq
+  have hLengthEq :
+      (TypedCfgCompiler.Shape.sourceView shape).length = shape.length :=
+    congrArg TypedCfg.Shape.length hEq
+  have hSourceLength :
+      (TypedCfgCompiler.Shape.sourceView shape).length = depth := by
+    simpa [TypedCfgCompiler.Shape.sourceLength] using
+      sourceLength_eq_of_returnTokenDepth?_eq_some hDepth
+  have hLt := returnTokenDepth?_lt_length hDepth
+  omega
+
+theorem sourceFrameFits_iff_eq_of_returnTokenDepth?_eq_some
+    {shape : TypedCfg.Shape} {stackLength depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    TypedCfgCompiler.Shape.SourceFrameFits shape stackLength ↔
+      stackLength = depth := by
+  constructor
+  · intro hFits
+    exact hFits.2 depth hDepth
+  · intro hLength
+    constructor
+    · rw [sourceLength_eq_of_returnTokenDepth?_eq_some hDepth,
+        hLength]
+    · intro actualDepth hActual
+      have : actualDepth = depth :=
+        Option.some.inj (hActual.symm.trans hDepth)
+      simpa [this] using hLength
+
+theorem sourceFrameFits_of_returnTokenDepth?_eq_none
+    {shape : TypedCfg.Shape} {stackLength : Nat}
+    (hDepth : shape.returnTokenDepth? = none)
+    (hBound :
+      TypedCfgCompiler.Shape.sourceLength shape ≤ stackLength) :
+    TypedCfgCompiler.Shape.SourceFrameFits shape stackLength := by
+  exact
+    ⟨hBound, fun depth hSome => by
+      rw [hDepth] at hSome
+      cases hSome⟩
+
 theorem requireSourceWords?_eq_some_iff
     {count : Nat} {shape : TypedCfg.Shape} :
     TypedCfgCompiler.Shape.requireSourceWords? count shape = some () ↔
@@ -60,6 +179,49 @@ theorem sourceLength_tail_of_one_le
             TypedCfg.Shape.returnTokenDepth?,
             TypedCfg.Shape.returnTokenDepthList?] at hSource ⊢
 
+theorem returnTokenDepth?_tail_lift
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape)
+    (hTail :
+      ({ shape with slots := shape.slots.tail } :
+        TypedCfg.Shape).returnTokenDepth? = some depth) :
+    shape.returnTokenDepth? = some (depth + 1) := by
+  rcases shape with ⟨slots, tail⟩
+  cases slots with
+  | nil =>
+      simp [TypedCfgCompiler.Shape.sourceLength,
+        TypedCfgCompiler.Shape.sourceView, TypedCfg.Shape.length,
+        TypedCfg.Shape.returnTokenDepth?,
+        TypedCfg.Shape.returnTokenDepthList?] at hSource
+  | cons slot rest =>
+      cases slot
+      case returnToken =>
+        simp [TypedCfgCompiler.Shape.sourceLength,
+          TypedCfgCompiler.Shape.sourceView, TypedCfg.Shape.length,
+          TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] at hSource
+      all_goals
+        simpa [TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] using hTail
+
+theorem sourceFrameFits_tail
+    {shape : TypedCfg.Shape} {stackLength : Nat}
+    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits shape (stackLength + 1)) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      { shape with slots := shape.slots.tail } stackLength := by
+  constructor
+  · have hTailLength := sourceLength_tail_of_one_le shape hSource
+    have hBound := hFits.1
+    have hRestore :=
+      Nat.sub_add_cancel hSource
+    omega
+  · intro depth hDepth
+    have hLift := returnTokenDepth?_tail_lift hSource hDepth
+    have hExact := hFits.2 (depth + 1) hLift
+    omega
+
 theorem sourceLength_of_type?_pop
     {input output : TypedCfg.Shape}
     (hSource :
@@ -78,6 +240,19 @@ theorem sourceLength_of_type?_pop
           exact
             sourceLength_tail_of_one_le
               { slots := slot :: rest, tail := tail } hSource
+
+theorem eq_tail_of_type?_pop
+    {input output : TypedCfg.Shape}
+    (hType : TypedCfg.Instr.type? .pop input = some output) :
+    output = { input with slots := input.slots.tail } := by
+  rcases input with ⟨slots, tail⟩
+  cases slots with
+  | nil =>
+      simp [TypedCfg.Instr.type?] at hType
+  | cons slot rest =>
+      simp [TypedCfg.Instr.type?] at hType
+      cases hType
+      rfl
 
 end Shape
 

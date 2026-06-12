@@ -106,6 +106,12 @@ def sourceView (shape : Shape) : Shape :=
 def sourceLength (shape : Shape) : Nat :=
   shape.sourceView.length
 
+def SourceFrameFits (shape : Shape) (stackLength : Nat) : Prop :=
+  shape.sourceLength ≤ stackLength ∧
+    ∀ depth,
+      shape.returnTokenDepth? = some depth →
+        stackLength = depth
+
 def requireSourceWords? (count : Nat) (shape : Shape) : Option Unit :=
   if count ≤ shape.sourceLength then some () else none
 

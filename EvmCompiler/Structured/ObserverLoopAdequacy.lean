@@ -272,7 +272,9 @@ theorem condition_of_step
             ObserverPreservation.StateRel.At
               condOutput afterCode tokens
               targetAfter targetTrace :=
-          ⟨hAfterCodeRel, hOutputBound⟩
+          ObserverPreservation.StateRel.At.ofFits hAfterCodeRel
+            (Code.sourceFrameFits cond hType
+              hRel.sourceFrameFits hSourceCode)
         obtain ⟨hidden, hTargetStack⟩ :=
           ObserverPreservation.StateRel.targetStack_eq_source_append_hidden
             hAfterCodeAt
@@ -482,7 +484,7 @@ private theorem outcome_for_step_of_firstReaches
           (fuel := 0) hCond,
         ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
           ⟨hOuterRegular.symm, hAfterCondRel.rel⟩,
-        hAfterCondRel.sourceStack⟩
+        hAfterCondRel.sourceFrameFits⟩
   · rcases hTrue with
       ⟨afterCond, targetAfterCond, rfl, hCond, hAfterCondRel⟩
     have hTailReach :
@@ -554,7 +556,7 @@ private theorem outcome_for_step_of_firstReaches
                 (some { condOutput with
                     slots := condOutput.slots.tail } :
                   Option TypedCfg.Shape) = some output ∧
-                TypedCfgCompiler.Shape.sourceLength output ≤
+                TypedCfgCompiler.Shape.SourceFrameFits output
                   bodyState.source.evm.stack.length
               at hBodyJoin
             obtain ⟨output, hOutput, hBound⟩ := hBodyJoin
@@ -616,14 +618,15 @@ private theorem outcome_for_step_of_firstReaches
                 hBodyOutcomeRel
             subst bodyTargetOutcome
             change
-              TypedCfgCompiler.Shape.sourceLength
-                  { condOutput with slots := condOutput.slots.tail } ≤
+              TypedCfgCompiler.Shape.SourceFrameFits
+                  { condOutput with slots := condOutput.slots.tail }
                 bodyState.source.evm.stack.length at hBodyJoin
             have hBodyAt :
                 ObserverPreservation.StateRel.At
                   { condOutput with slots := condOutput.slots.tail }
                   bodyState tokens bodyTarget bodyTrace :=
-              ⟨hBodyStateRel, hBodyJoin⟩
+              ObserverPreservation.StateRel.At.ofFits
+                hBodyStateRel hBodyJoin
             have hAfterBodyReach :=
               OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                 hTailReach hBodyReach hBodyLe
@@ -668,12 +671,13 @@ private theorem outcome_for_step_of_firstReaches
                         hPostOutcomeRel
                     subst postTargetOutcome
                     change
-                      TypedCfgCompiler.Shape.sourceLength loopInput ≤
+                      TypedCfgCompiler.Shape.SourceFrameFits loopInput
                         postState.source.evm.stack.length at hPostJoin
                     have hPostAt :
                         ObserverPreservation.StateRel.At
                           loopInput postState tokens postTarget postTrace :=
-                      ⟨hPostStateRel, hPostJoin⟩
+                      ObserverPreservation.StateRel.At.ofFits
+                        hPostStateRel hPostJoin
                     have hAfterPostReach :=
                       OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                         hAfterBodyReach hPostReach hPostLe
@@ -773,7 +777,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          TypedCfgCompiler.Shape.sourceLength output ≤
+                          TypedCfgCompiler.Shape.SourceFrameFits output
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -781,7 +785,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          TypedCfgCompiler.Shape.sourceLength output ≤
+                          TypedCfgCompiler.Shape.SourceFrameFits output
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -801,10 +805,10 @@ private theorem outcome_for_step_of_firstReaches
                 (some { condOutput with
                     slots := condOutput.slots.tail } :
                   Option TypedCfg.Shape) = some output ∧
-                TypedCfgCompiler.Shape.sourceLength output ≤
+                TypedCfgCompiler.Shape.SourceFrameFits output
                   bodyState.source.evm.stack.length
               at hBodyJoin
-            obtain ⟨output, hOutput, hBodyBound⟩ := hBodyJoin
+            obtain ⟨output, hOutput, hBodyFits⟩ := hBodyJoin
             have hOutputEq :
                 output =
                   { condOutput with slots := condOutput.slots.tail } :=
@@ -814,7 +818,8 @@ private theorem outcome_for_step_of_firstReaches
                 ObserverPreservation.StateRel.At
                   { condOutput with slots := condOutput.slots.tail }
                   bodyState tokens bodyTarget bodyTrace :=
-              ⟨hBodyStateRel, hBodyBound⟩
+              ObserverPreservation.StateRel.At.ofFits
+                hBodyStateRel hBodyFits
             have hAfterBodyReach :=
               OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                 hTailReach hBodyReach hBodyLe
@@ -859,12 +864,13 @@ private theorem outcome_for_step_of_firstReaches
                         hPostOutcomeRel
                     subst postTargetOutcome
                     change
-                      TypedCfgCompiler.Shape.sourceLength loopInput ≤
+                      TypedCfgCompiler.Shape.SourceFrameFits loopInput
                         postState.source.evm.stack.length at hPostJoin
                     have hPostAt :
                         ObserverPreservation.StateRel.At
                           loopInput postState tokens postTarget postTrace :=
-                      ⟨hPostStateRel, hPostJoin⟩
+                      ObserverPreservation.StateRel.At.ofFits
+                        hPostStateRel hPostJoin
                     have hAfterPostReach :=
                       OutcomeSimulation.FirstReaches.tail_of_prefix_jump
                         hAfterBodyReach hPostReach hPostLe
@@ -964,7 +970,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          TypedCfgCompiler.Shape.sourceLength output ≤
+                          TypedCfgCompiler.Shape.SourceFrameFits output
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -972,7 +978,7 @@ private theorem outcome_for_step_of_firstReaches
                     change
                       ∃ output,
                         (none : Option TypedCfg.Shape) = some output ∧
-                          TypedCfgCompiler.Shape.sourceLength output ≤
+                          TypedCfgCompiler.Shape.SourceFrameFits output
                             postState.source.evm.stack.length at hPostJoin
                     obtain ⟨output, hNone, _hBound⟩ := hPostJoin
                     cases hNone
@@ -1317,13 +1323,14 @@ private theorem adequateWithin_for_of_compileStmtFuel?
               hInitOutcomeRel
           subst initTargetOutcome
           change
-            TypedCfgCompiler.Shape.sourceLength loopInput ≤
+            TypedCfgCompiler.Shape.SourceFrameFits loopInput
               initState.source.evm.stack.length
             at hInitJoin
           have hLoopAt :
               ObserverPreservation.StateRel.At
                 loopInput initState tokens loopTarget initTrace :=
-            ⟨hInitStateRel, hInitJoin⟩
+            ObserverPreservation.StateRel.At.ofFits
+              hInitStateRel hInitJoin
           have hAfterInitReach :=
             OutcomeSimulation.FirstReaches.tail_of_prefix_jump
               hReach hInitReach hInitLe
@@ -1418,7 +1425,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           change
             ∃ output,
               (none : Option TypedCfg.Shape) = some output ∧
-                TypedCfgCompiler.Shape.sourceLength output ≤
+                TypedCfgCompiler.Shape.SourceFrameFits output
                   initState.source.evm.stack.length
             at hInitJoin
           obtain ⟨output, hNone, _hBound⟩ := hInitJoin
@@ -1427,7 +1434,7 @@ private theorem adequateWithin_for_of_compileStmtFuel?
           change
             ∃ output,
               (none : Option TypedCfg.Shape) = some output ∧
-                TypedCfgCompiler.Shape.sourceLength output ≤
+                TypedCfgCompiler.Shape.SourceFrameFits output
                   initState.source.evm.stack.length
             at hInitJoin
           obtain ⟨output, hNone, _hBound⟩ := hInitJoin

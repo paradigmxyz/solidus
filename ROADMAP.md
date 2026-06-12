@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 19:10 PDT.
+Last updated: 2026-06-11 20:48 PDT.
 
 ## Objective
 
@@ -145,8 +145,14 @@ Adjacent boundary status:
   `Structured.ObserverLoopAdequacy` module. Internal calls/return dispatch, the
   mutual statement/block theorem, and whole-program backward adequacy remain.
   Shared outcome artifacts and terminal leaves were extracted into sibling
-  modules; the central `Structured.ObserverAdequacy` module is below the 5K
-  soft limit.
+  modules. Source-frame typing now distinguishes token-free caller frames,
+  which retain a stack lower bound, from active procedure frames, whose
+  source-visible stack length is exact above the compiler-owned return token.
+  The invariant is preserved by accepted instructions, observer handlers,
+  straight-line code, condition pops, statement sequencing, switches, and
+  loops, and is carried by the outcome-indexed adequacy artifact. The
+  frame-invariant proofs live in `Structured.ObserverFrameInvariant`; both
+  central observer modules remain below the 5K soft limit.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
@@ -188,10 +194,11 @@ Roadmap:
   under the same observation protocol.
 - [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
-- [ ] Complete the pass-owned Structured code/terminal typing invariant that
+- [x] Complete the pass-owned Structured code/terminal typing invariant that
   tracks source-visible stack capacity above compiler-owned return-token
-  slots, then prove generated call/procedure fragments satisfy the indexed
-  replay relation without a public generated-code premise.
+  slots. Generated call/procedure fragments still need the indexed backward
+  replay theorem, but no public generated-code premise is required by the
+  invariant.
 - [x] Prove exact observer-aware Assembly-step/assembled-target-block
   equivalence, including target `runN`, oracle remainder, errors, and the
   two-instruction jump encodings.
@@ -327,8 +334,7 @@ Implemented in this migration:
 
 The remaining observer-proof critical path is explicit:
 
-1. Complete source-visible Structured frame typing and its indexed call-entry
-   replay theorem.
+1. Complete the indexed call-entry replay theorem.
 2. Complete internal-call/return-dispatch adequacy and the generated-context
    mutual Structured theorem.
 3. Prove the Functions/allocation/Expressions and Yul adjacent backward
