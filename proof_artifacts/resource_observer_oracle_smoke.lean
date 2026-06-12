@@ -1,4 +1,6 @@
 import EvmCompiler.Functions.ObserverSemantics
+import EvmCompiler.Functions.AllocationObserverPreservation
+import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
 import EvmCompiler.Simulation.ObserverPass
@@ -22,6 +24,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.ObserverSemantics.stmt_run_let_gas_cons
 #check EvmCompiler.Functions.ObserverSemantics.runBody_let_gas_cons
 #check EvmCompiler.Functions.ObserverSemantics.stmt_run_call_let_gas_cons
+#check EvmCompiler.Functions.AllocationObserverRelation.StateRel
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.FuelSafe
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
+#check EvmCompiler.Expressions.ObserverPreservation.verified
 #check EvmCompiler.Locals.ObserverSemantics.eval_gas_cons
 #check EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
 #check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.run
@@ -97,6 +106,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.ObserverSemantics.stmt_run_let_gas_cons
 #print axioms EvmCompiler.Functions.ObserverSemantics.runBody_let_gas_cons
 #print axioms EvmCompiler.Functions.ObserverSemantics.stmt_run_call_let_gas_cons
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward
+#print axioms EvmCompiler.Expressions.ObserverPreservation.verified
 #print axioms EvmCompiler.Locals.ObserverSemantics.eval_msize_cons
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_gas_cons
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.evalValues_msize_cons

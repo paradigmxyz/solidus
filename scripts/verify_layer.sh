@@ -29,6 +29,9 @@ case "$layer" in
       EvmCompiler.Functions.AllocationSupport
       EvmCompiler.Functions.MixedAllocation
       EvmCompiler.Functions.AllocationLowering
+      EvmCompiler.Functions.AllocationObserverRelation
+      EvmCompiler.Functions.AllocationObserverPreservation
+      EvmCompiler.Expressions.ObserverPreservation
       EvmCompiler.Objects.Compiler
     )
     ;;

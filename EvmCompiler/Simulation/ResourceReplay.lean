@@ -85,6 +85,20 @@ def consume? {σ : Type} {transcript : Trace}
       else
         none
 
+theorem consume?_withSource {σ : Type} {transcript : Trace}
+    (kind : Observer) (state : State σ transcript) (source : σ) :
+    consume? kind (state.withSource source) =
+      (consume? kind state).map fun consumed =>
+        (consumed.1, consumed.2.withSource source) := by
+  unfold consume?
+  cases hGet : transcript[state.cursor]? with
+  | none =>
+      simp [hGet]
+  | some observation =>
+      by_cases hKind : observation.kind = kind
+      · simp [hGet, hKind, State.withSource]
+      · simp [hGet, hKind]
+
 @[simp] theorem consume?_zero_cons
     {σ : Type} (kind : Observer) (source : σ)
     (value : Word) (rest : Trace) :

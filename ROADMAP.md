@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 00:42 PDT.
+Last updated: 2026-06-12 01:00 PDT.
 
 ## Objective
 
@@ -106,9 +106,21 @@ Adjacent boundary status:
   inside the reservation and in target memory growth, while preserving return
   data and output. Remaining proof work is to connect source memory-access
   safety, dynamic frame-depth bounds, named-variable locations, outcomes, and
-  observer cursors to this relation.
+  observer cursors to this relation. `Functions.AllocationObserverRelation`
+  now supplies the allocation-indexed live-store relation, stack-prefix index,
+  source/target machine relation, outcome modes, and depth-indexed frame
+  budget. Successful scratch configuration constructs its reservation facts
+  and rejects empty reservations. Fuel-indexed frame safety derives every
+  smaller active depth. Replay consumption is checked in both directions.
+  `Functions.AllocationObserverPreservation` proves forward preservation and
+  backward classification for compiled `gas()` and `msize()` expression
+  leaves, including the temporary result above stack-allocated locals.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
-  complete allocation-sensitive observer theorem remains.
+  complete allocation-sensitive observer theorem remains. The transparent
+  Expressions-to-Structured adapter now has checked forward and backward
+  `ObserverPass` theorems in `Expressions.ObserverPreservation`, reusing the
+  canonical Structured control interpreter rather than defining an
+  observer-specific interpreter.
 - [ ] Structured -> TypedCfg: complete observer-aware forward preservation is
   checked for statements, blocks, recursive switch/loop/call control, halts,
   and whole-program artifacts. Terminal stack-suffix preservation is now a
