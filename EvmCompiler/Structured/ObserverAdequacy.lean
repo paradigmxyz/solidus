@@ -4852,9 +4852,15 @@ theorem adequateWithinFuel_if_of_compileStmtFuel?
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hRegular : continuations.regular = regular)
     (hBodyEntry :
-      ∀ targetState,
-        ¬ accept
-            (.jump (LabelSupply.label supply 0) targetState))
+      ∀ {current : ObserverSemantics.State transcript}
+        {bodyInput : TypedCfg.Shape} targetState,
+        current.source.returns = source.source.returns →
+          OutcomeSimulation.LabelShape cfg
+            (LabelSupply.label supply 0) bodyInput →
+          OutcomeSimulation.FrameMatches
+            current tokens bodyInput targetState →
+          ¬ accept
+              (.jump (LabelSupply.label supply 0) targetState))
     (hBodyAdequate :
       ∀ {bodyInput : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}
@@ -4893,7 +4899,11 @@ theorem adequateWithinFuel_if_of_compileStmtFuel?
         have hPositive :
             0 < targetFuel :=
           OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-            hBodyReach (hBodyEntry bodyTarget)
+            hBodyReach
+              (hBodyEntry bodyTarget hReturns
+                (OutcomeSimulation.LabelShape.of_compileBlockFuel?
+                  hBodyCompile hBodyBlocks)
+                (OutcomeSimulation.FrameMatches.of_at hAfterCondRel))
         cases targetFuel with
         | zero =>
             omega
@@ -4933,9 +4943,15 @@ theorem adequateWithin_if_of_compileStmtFuel?
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hRegular : continuations.regular = regular)
     (hBodyEntry :
-      ∀ targetState,
-        ¬ accept
-            (.jump (LabelSupply.label supply 0) targetState))
+      ∀ {current : ObserverSemantics.State transcript}
+        {bodyInput : TypedCfg.Shape} targetState,
+        current.source.returns = source.source.returns →
+          OutcomeSimulation.LabelShape cfg
+            (LabelSupply.label supply 0) bodyInput →
+          OutcomeSimulation.FrameMatches
+            current tokens bodyInput targetState →
+          ¬ accept
+              (.jump (LabelSupply.label supply 0) targetState))
     (hBodyAdequate :
       ∀ {bodyInput : TypedCfg.Shape}
         {bodyResult : TypedCfgCompiler.Result}

@@ -21,6 +21,19 @@ def LabelShape (cfg : TypedCfg.Program)
 
 namespace LabelShape
 
+theorem eq
+    {cfg : TypedCfg.Program} {label : Assembly.Label}
+    {left right : TypedCfg.Shape}
+    (hLeft : LabelShape cfg label left)
+    (hRight : LabelShape cfg label right) :
+    left = right := by
+  rcases hLeft with ⟨leftBlock, hLeftFind, hLeftInput⟩
+  rcases hRight with ⟨rightBlock, hRightFind, hRightInput⟩
+  have hBlock : leftBlock = rightBlock :=
+    Option.some.inj (hLeftFind.symm.trans hRightFind)
+  subst rightBlock
+  exact hLeftInput.symm.trans hRightInput
+
 theorem of_hasEntry
     {cfg : TypedCfg.Program} {result : TypedCfgCompiler.Result}
     {entry : Assembly.Label} {input : TypedCfg.Shape}
@@ -553,6 +566,18 @@ def LabelBeforeSupply
 
 namespace LabelBeforeSupply
 
+theorem mono
+    {label : Assembly.Label} {supply next : LabelSupply}
+    (hBefore : LabelBeforeSupply label supply)
+    (hSupply : supply ≤ next) :
+    LabelBeforeSupply label next := by
+  cases label with
+  | named name =>
+      trivial
+  | generated scope tag =>
+      simp only [LabelBeforeSupply] at hBefore ⊢
+      exact Nat.lt_of_lt_of_le hBefore hSupply
+
 theorem generated_ne
     {label : Assembly.Label} {supply scope tag : Nat}
     (hBefore : LabelBeforeSupply label supply)
@@ -620,6 +645,13 @@ theorem current_generated_ne
   rcases hRegular with hBefore | rfl
   · exact hBefore.generated_ne (Nat.le_refl supply)
   · simpa [TypedCfgCompiler.restLabel] using hTag
+
+theorem advance
+    {regular : Assembly.Label} {supply next : LabelSupply}
+    (hRegular : RegularAtSupply regular supply)
+    (hNext : supply + 1 ≤ next) :
+    RegularAtSupply regular next :=
+  Or.inl (hRegular.before_succ.mono hNext)
 
 end RegularAtSupply
 

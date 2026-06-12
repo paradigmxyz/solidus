@@ -48,6 +48,15 @@ theorem trans
   | push frame token hExtension ih =>
       exact .push frame token ih
 
+theorem childTokens_ne_nil
+    {ancestorReturns childReturns : List Structured.ReturnDest}
+    {ancestorTokens childTokens : List Word}
+    (hExtension :
+      ActivationExtension ancestorReturns ancestorTokens
+        childReturns childTokens) :
+    childTokens ≠ [] := by
+  cases hExtension <;> simp
+
 theorem realize_length_lt
     {ancestorReturns childReturns : List Structured.ReturnDest}
     {ancestorTokens childTokens : List Word}

@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 22:41 PDT.
+Last updated: 2026-06-11 23:01 PDT.
 
 ## Objective
 
@@ -213,6 +213,10 @@ Adjacent boundary status:
   procedure return token, including sequences, conditionals, switches, loops,
   calls, and allocation-shaped procedure fragments. Observer modules consume
   this checked result invariant rather than accepting generated shape evidence.
+  Conditional and statement-list adequacy now reject generated entries only
+  at the exact activation frame recovered from CFG input shape; the
+  generated-context module checks the corresponding conditional wrapper and
+  transports recursive boundaries across same-activation joins.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

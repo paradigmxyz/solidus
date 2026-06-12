@@ -36,9 +36,12 @@ private theorem adequateWithinFuel_cons_withTail
             (TypedCfgCompiler.restLabel supply) tailInput accept
             (.jump entry targetState))
     (hTailEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept
-            (.jump (TypedCfgCompiler.restLabel supply) targetState))
+      ∀ {tailSource : ObserverSemantics.State transcript} targetState,
+        tailSource.source.returns = source.source.returns →
+          OutcomeSimulation.FrameMatches
+            tailSource tokens tailInput targetState →
+          ¬ accept
+              (.jump (TypedCfgCompiler.restLabel supply) targetState))
     (hHeadAdequate :
       ∀ headTargetFuel, headTargetFuel ≤ targetFuel →
         OutcomeSimulation.AdequateWithinFuel
@@ -208,7 +211,12 @@ private theorem adequateWithinFuel_cons_withTail
           have hTailPositive :
               0 < targetFuel + 1 - (headTargetFuel + 1) :=
             OutcomeSimulation.FirstReaches.fuel_pos_of_entry_not_accepted
-              hTailReach (hTailEntryNotAccepted tailTarget)
+              hTailReach
+                (hTailEntryNotAccepted tailTarget
+                  (ObserverSemantics.Stmt.Eval.returns_eq_of_nonhalting
+                    hHeadEval
+                    (by simp [ObserverSemantics.Outcome.Nonhalting]))
+                  (OutcomeSimulation.FrameMatches.of_at hTailAt))
           cases hResidual :
               targetFuel + 1 - (headTargetFuel + 1) with
           | zero =>
@@ -549,9 +557,20 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
             (TypedCfgCompiler.restLabel supply) joinShape accept
             (.jump entry targetState))
     (hTailEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept
-            (.jump (TypedCfgCompiler.restLabel supply) targetState))
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {joinShape : TypedCfg.Shape},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        headResult.fallthrough? = some joinShape →
+        OutcomeSimulation.LabelShape cfg
+          (TypedCfgCompiler.restLabel supply) joinShape →
+        ∀ {tailSource : ObserverSemantics.State transcript} targetState,
+          tailSource.source.returns = source.source.returns →
+            OutcomeSimulation.FrameMatches
+              tailSource tokens joinShape targetState →
+            ¬ accept
+                (.jump (TypedCfgCompiler.restLabel supply) targetState))
     (hHeadNoTail :
       ∀ {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
@@ -644,7 +663,10 @@ theorem adequateWithinFuel_cons_of_compileStmtListFuel?
         hTailCompile hTailBlocks
     exact
       adequateWithinFuel_cons_withTail targetFuel
-        hFallthrough (hEntryNotAccepted tailInput) hTailEntryNotAccepted
+        hFallthrough (hEntryNotAccepted tailInput)
+        (fun targetState hReturns hFrame =>
+          hTailEntryNotAccepted hHeadCompile hFallthrough hTailShape
+            targetState hReturns hFrame)
         (hHeadWithTail hHeadCompile hHeadBlocks
           hFallthrough hTailShape)
         (fun tailTargetFuel hFuel {_tailSource} hReturns =>
@@ -677,9 +699,20 @@ theorem adequateWithin_cons_of_compileStmtListFuel?
             (TypedCfgCompiler.restLabel supply) joinShape accept
             (.jump entry targetState))
     (hTailEntryNotAccepted :
-      ∀ targetState,
-        ¬ accept
-            (.jump (TypedCfgCompiler.restLabel supply) targetState))
+      ∀ {headResult : TypedCfgCompiler.Result}
+        {joinShape : TypedCfg.Shape},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        headResult.fallthrough? = some joinShape →
+        OutcomeSimulation.LabelShape cfg
+          (TypedCfgCompiler.restLabel supply) joinShape →
+        ∀ {tailSource : ObserverSemantics.State transcript} targetState,
+          tailSource.source.returns = source.source.returns →
+            OutcomeSimulation.FrameMatches
+              tailSource tokens joinShape targetState →
+            ¬ accept
+                (.jump (TypedCfgCompiler.restLabel supply) targetState))
     (hHeadNoTail :
       ∀ {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
