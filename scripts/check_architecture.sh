@@ -200,6 +200,11 @@ report_matches \
   EvmCompiler/Structured/ObserverAdequacy.lean
 
 report_matches \
+  'Structured observer adequacy must invert the shared TypedCfg interpreter, not define an observer-specific target interpreter:' \
+  '^[[:space:]]*(private[[:space:]]+)?def[[:space:]]+(runN|step)([^A-Za-z0-9_]|$)' \
+  EvmCompiler/Structured/ObserverAdequacy.lean
+
+report_matches \
   'Structured observer adequacy must derive stack-shape soundness instead of accepting generated evidence:' \
   'h[A-Za-z0-9_]*[[:space:]]*:[[:space:]]*.*ShapeSound' \
   EvmCompiler/Structured/ObserverAdequacy.lean

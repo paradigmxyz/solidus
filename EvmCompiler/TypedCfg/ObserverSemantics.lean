@@ -324,6 +324,68 @@ theorem runN_succ (program : TypedCfg.Program)
       rcases result with ⟨outcome, trace'⟩
       cases outcome <;> simp [hStep]
 
+/--
+Decompose one successful positive-fuel execution into the existing program
+step and the remaining execution. This is an inversion theorem for `runN`,
+not a second control semantics.
+-/
+theorem runN_succ_elim
+    {program : TypedCfg.Program} {fuel : Nat} {label : Label}
+    {state : EVMState} {trace traceFinal : Trace}
+    {outcome : TypedCfg.Outcome}
+    (hRun :
+      runN program (fuel + 1) label state trace =
+        .ok (outcome, traceFinal)) :
+    ∃ firstOutcome firstTrace,
+      step program label state trace =
+          .ok (firstOutcome, firstTrace) ∧
+        match firstOutcome with
+        | .jump next state' =>
+            runN program fuel next state' firstTrace =
+              .ok (outcome, traceFinal)
+        | .fallthrough state' =>
+            outcome = .fallthrough state' ∧
+              traceFinal = firstTrace
+        | .returnDispatch state' =>
+            outcome = .returnDispatch state' ∧
+              traceFinal = firstTrace
+        | .halt kind state' =>
+            outcome = .halt kind state' ∧
+              traceFinal = firstTrace
+        | .invalid state' =>
+            outcome = .invalid state' ∧
+              traceFinal = firstTrace := by
+  rw [runN_succ] at hRun
+  cases hStep : step program label state trace with
+  | error err =>
+      rw [hStep] at hRun
+      contradiction
+  | ok result =>
+      rcases result with ⟨firstOutcome, firstTrace⟩
+      rw [hStep] at hRun
+      refine ⟨firstOutcome, firstTrace, rfl, ?_⟩
+      cases firstOutcome with
+      | jump next state' =>
+          exact hRun
+      | fallthrough state'
+      | returnDispatch state'
+      | halt kind state'
+      | invalid state' =>
+          cases hRun
+          exact ⟨rfl, rfl⟩
+
+theorem runN_one_of_step
+    {program : TypedCfg.Program} {label : Label}
+    {state : EVMState} {trace trace' : Trace}
+    {outcome : TypedCfg.Outcome}
+    (hStep :
+      step program label state trace =
+        .ok (outcome, trace')) :
+    runN program 1 label state trace =
+      .ok (outcome, trace') := by
+  rw [show 1 = 0 + 1 by rfl, runN_succ, hStep]
+  cases outcome <;> rfl
+
 namespace Eventually
 
 theorem residual (program : TypedCfg.Program) (label : Label)

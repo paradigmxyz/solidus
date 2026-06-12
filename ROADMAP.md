@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 17:38 PDT.
+Last updated: 2026-06-11 17:55 PDT.
 
 ## Objective
 
@@ -113,8 +113,13 @@ Adjacent boundary status:
   ensure typed code cannot consume compiler-owned return data. Terminal and
   false-if leaves also remain checked at the closed no-frame boundary. Halt
   typing enforces operand arity, so compiler-owned return data cannot satisfy
-  missing source operands. True branches, recursive sequence/switch/loop
-  control, internal calls, and whole-program backward adequacy remain.
+  missing source operands. Backward execution now uses the existing TypedCfg
+  `runN` through a checked minimal first-boundary relation and shared
+  `AdequateAt` interface; empty blocks and straight-line statements implement
+  the interface, and conditional composition is checked with strictly smaller
+  target fuel in the taken branch. Recursive statement-list splitting,
+  switch/loop control, internal calls, and whole-program backward adequacy
+  remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

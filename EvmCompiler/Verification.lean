@@ -44,6 +44,8 @@ or audit-alias corridor.
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_step_accountsForHalt
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.lower?_terminal_backward
 #check EvmCompiler.TypedCfg.ObserverPreservation.Program.compileCertified?_entry_terminal_backward
+#check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_succ_elim
+#check EvmCompiler.TypedCfg.ObserverSemantics.Program.runN_one_of_step
 #check EvmCompiler.Structured.EffectSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
@@ -65,10 +67,16 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Code.runCondition_of_runBody_toCfg
 #check EvmCompiler.Structured.ObserverAdequacy.Code.runCondition_of_runBody_toCfg_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.TargetBoundary
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ReachesBoundary
+#check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
+#check EvmCompiler.Structured.ObserverAdequacy.Block.adequate_nil_of_compileBlockFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_code_of_compileStmtFuel?_and_step
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequate_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step_noFrames
+#check EvmCompiler.Structured.ObserverAdequacy.Stmt.condition_if_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_outcome_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_terminal_of_compileStmtFuel?

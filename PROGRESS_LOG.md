@@ -28733,3 +28733,31 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   and `git diff --check`. Focused axiom prints for primitive suffix reflection,
   `Code.frameReflectingAt`, code/condition adequacy, and false-if adequacy
   report only `propext`, `Classical.choice`, and `Quot.sound`.
+
+- 2026-06-11 17:55:27 PDT `proof`: Added checked positive-fuel inversion for
+  the existing TypedCfg observer `runN`, then defined the outcome-indexed
+  `TargetBoundary`, minimal `ReachesBoundary`, and shared `AdequateAt`
+  backward interface in the Structured pass-owned adequacy module.
+
+- 2026-06-11 17:55:27 PDT `proof`: Strengthened condition inversion to retain
+  the typed post-pop body-entry shape, proved a generated conditional-head
+  classifier, and checked private conditional composition that closes false
+  branches immediately and recurses on strictly smaller target fuel for taken
+  branches. The body callback remains private recursive proof machinery.
+
+- 2026-06-11 17:55:27 PDT `proof`: Proved `AdequateAt` instances for empty
+  blocks and straight-line statements. Successful conditional-head
+  classification rules out target `invalid` from source-backed shape bounds,
+  rather than assuming a nonempty target stack.
+
+- 2026-06-11 17:55:27 PDT `architecture`: Added a guard forbidding
+  `Structured.ObserverAdequacy` from defining its own target `runN` or `step`;
+  backward recursion must continue to invert the shared TypedCfg observer
+  interpreter.
+
+- 2026-06-11 17:56:16 PDT `audit`: The first-boundary adequacy checkpoint
+  passes `lake build EvmCompiler.Verification` (1,177 jobs), architecture
+  checks, exact changed-source hole scanning, and `git diff --check`. Axiom
+  prints for `runN` inversion, boundary-tail/minimality lemmas, empty/code
+  `AdequateAt` instances, and conditional-head classification report only
+  `propext`, `Classical.choice`, and `Quot.sound`.
