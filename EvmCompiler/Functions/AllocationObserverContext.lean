@@ -284,6 +284,37 @@ theorem layout_length_le_target_stack
 end ActivationExprContext
 
 /--
+Complete allocation invariant at a Functions statement boundary.
+
+The exact stack-length field rules out a hidden caller suffix inside an active
+Structured procedure. Calls store that suffix in the return-frame stack, so
+the active data stack contains exactly the compiler layout at source statement
+boundaries.
+-/
+structure ActivationInvariant
+    {transcript : AllocationObserverRelation.Trace}
+    (contract : MemoryContract.Contract)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : AllocationObserverRelation.ActivationMode)
+    (source : Functions.ObserverSemantics.State transcript)
+    (target : Structured.ObserverSemantics.State transcript) : Prop where
+  compiler :
+    ActivationExprContext lowerCtx lowerState localsCtx plan live mode
+  planWF :
+    plan.WellFormed
+  defined :
+    AllocationObserverRelation.LiveDefined live source.source
+  state :
+    AllocationObserverRelation.ActivationStateRel
+      contract plan live 0 frameBase mode source target
+  stackLength :
+    target.source.evm.stack.length = localsCtx.layout.length
+
+/--
 Exact compiler classification for a lowered source variable.
 
 The constructors retain only semantic location facts and the concrete code

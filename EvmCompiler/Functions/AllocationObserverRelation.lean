@@ -45,6 +45,50 @@ def LiveDefined (live : List Locals.Name) (source : Locals.Source.State) :
     Prop :=
   ∀ name, name ∈ live → ∃ value, source.vars name = some value
 
+namespace LiveDefined
+
+theorem congr_vars
+    {live : List Locals.Name}
+    {source final : Locals.Source.State}
+    (hDefined : LiveDefined live source)
+    (hVars : final.vars = source.vars) :
+    LiveDefined live final := by
+  intro name hLive
+  rw [hVars]
+  exact hDefined name hLive
+
+theorem insert_preserves
+    {live : List Locals.Name}
+    {source : Locals.Source.State}
+    {name : Locals.Name} {value : Word}
+    (hDefined : LiveDefined live source) :
+    LiveDefined live (source.insert name value) := by
+  intro other hLive
+  by_cases hName : other = name
+  · subst other
+    exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+  · obtain ⟨old, hOld⟩ := hDefined other hLive
+    exact
+      ⟨old, by
+        simpa [Locals.Source.State.insert] using
+          (Locals.Source.Store.insert_of_ne
+            (store := source.vars) (name := name)
+            (other := other) (value := value) hName).trans hOld⟩
+
+theorem insert_cons
+    {live : List Locals.Name}
+    {source : Locals.Source.State}
+    {name : Locals.Name} {value : Word}
+    (hDefined : LiveDefined live source) :
+    LiveDefined (name :: live) (source.insert name value) := by
+  intro other hLive
+  rcases List.mem_cons.mp hLive with hName | hLive
+  · subst other
+    exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
+  · exact hDefined.insert_preserves other hLive
+
+end LiveDefined
+
 theorem lookupMany_of_liveDefined
     {live names : List Locals.Name} {source : Locals.Source.State}
     (hDefined : LiveDefined live source)

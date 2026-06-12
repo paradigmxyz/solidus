@@ -255,6 +255,14 @@ Adjacent boundary status:
   nonregular execution skips the unreachable cleanup in both semantics. The
   actual `.block` lowerer/compiler expansion has a pass-owned decomposition
   theorem exposing only its adjacent open-body and `finishScoped` components.
+  `ActivationInvariant` now bundles the compiler context, plan
+  well-formedness, live-source definedness, allocation state relation, and
+  exact active-stack/layout equality. Zero-result expressions, declarations,
+  and assignments preserve that invariant through the real lowering and
+  Locals compilation paths; declaration and assignment preservation retain
+  exact pass-owned stack-effect equations, including scratch stores. The
+  stable `RegularStmtInvariantForward` interface is ready for recursive
+  statement-list induction without reconstructing leaf stack facts.
   Remaining work at this boundary is recursive statement/function/call
   composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program

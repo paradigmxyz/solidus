@@ -2679,7 +2679,8 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
       AllocationObserverRelation.ScratchStateRel contract plan afterLive
         stackOffset frameBase frameDepth frameWords
         (source.withSource (source.source.insert name value))
-        targetFinal := by
+        targetFinal ∧
+      targetFinal.source.evm.stack = rest := by
   let frameWord := EvmYul.UInt256.ofNat frameBase
   let offsetWord := AllocationSupport.slotOffset slot
   let address := EvmYul.UInt256.add offsetWord frameWord
@@ -2755,7 +2756,7 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
     simpa [frameWord,
       show stackOffset + 1 + frameDepth =
         stackOffset + frameDepth + 1 by omega] using hRel.framePointer
-  refine ⟨targetFinal, ?_, hFinalRel⟩
+  refine ⟨targetFinal, ?_, hFinalRel, rfl⟩
   calc
     Structured.ObserverSemantics.Code.run
         [ .op op,
@@ -2838,7 +2839,7 @@ theorem scratchAssignTop_backward_live {transcript : Trace}
       stackOffset frameBase frameDepth frameWords
       (source.withSource (source.source.insert name value))
       targetFinal := by
-  obtain ⟨expected, hExpectedRun, hExpectedRel⟩ :=
+  obtain ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack⟩ :=
     scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
       hNameAfter
       hLocation hAssignedBound hReservation hRegion hOp
@@ -2900,10 +2901,11 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
         AllocationSupport.slotAddressCode?,
         AllocationSupport.dupCode?, hDup] at hCode
       subst code
-      exact
+      obtain ⟨targetFinal, hRun, hFinalRel, _hFinalStack⟩ :=
         scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
           hNameAfter hLocation hAssignedBound hReservation hRegion
           (by simpa [Nat.add_assoc] using hDup)
+      exact ⟨targetFinal, hRun, hFinalRel⟩
 
 theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
     {transcript : Trace}

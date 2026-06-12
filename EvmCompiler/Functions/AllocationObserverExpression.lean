@@ -665,6 +665,51 @@ theorem forwardExprSeq
   forwardExprSeqFuel hPrimitive (exprSeqHeight exprs) hSafe (by rfl)
     hCtx hScoped hLower hCompile hRel
 
+/--
+A zero-result expression preserves the complete statement-boundary activation
+invariant. Expression safety keeps named variables unchanged, while the result
+relation says that no value was added to the exact active stack.
+-/
+theorem Expr.invariant_zero
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr 0}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal values)
+    (hResult :
+      ActivationExprResultRel contract plan live 0 frameBase 0 mode
+        sourceFinal target targetFinal values) :
+    AllocationObserverContext.ActivationInvariant
+      contract lowerCtx lowerState localsCtx plan live frameBase mode
+      sourceFinal targetFinal := by
+  have hValues : values = [] :=
+    List.eq_nil_of_length_eq_zero hResult.valuesLength
+  subst values
+  refine
+    ⟨hInvariant.compiler, hInvariant.planWF, ?_, ?_, ?_⟩
+  · intro name hLive
+    rw [hSafe.vars_eq]
+    exact hInvariant.defined name hLive
+  · simpa using hResult.state
+  · rw [hResult.stack]
+    simpa using hInvariant.stackLength
+
 theorem Expr.backward_of_safeEval
     {contract : MemoryContract.Contract}
     (hPrimitive :
