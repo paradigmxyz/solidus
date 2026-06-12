@@ -13,6 +13,8 @@ import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverAdequacy
+import EvmCompiler.Structured.ObserverLoopAdequacy
+import EvmCompiler.Structured.ObserverTerminalAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
@@ -93,11 +95,11 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequateWithin_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.adequate_code_of_compileStmtFuel?
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step
-#check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_if_false_of_compileStmtFuel?_and_step_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.condition_if_of_compileStmtFuel?_and_step
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.terminal_outcome_of_wellTyped_halt
 #check EvmCompiler.Structured.ObserverAdequacy.Stmt.outcome_terminal_of_compileStmtFuel?
+#check EvmCompiler.Structured.ObserverAdequacy.Loop.condition_of_step
 #check EvmCompiler.Assembly.Source.runNResultWithOracle_compare_halted
 #check EvmCompiler.Assembly.Preservation.assemble_terminal_target_run_source_exists
 #check EvmCompiler.Assembly.Preservation.compile_terminal_target_run_source_exists

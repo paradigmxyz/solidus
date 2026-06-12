@@ -137,11 +137,16 @@ Adjacent boundary status:
   is now checked end to end within this adjacent pass: scrutinee inversion,
   matched and skipped cases, nonempty and empty defaults, `switch_some`,
   `switch_none`, exact residual target fuel, and regular stack-shape artifacts
-  compose through a private `AdequateWithin` rule. Recursive loop control,
-  internal calls/return dispatch, the mutual statement/block theorem, and
-  whole-program backward adequacy remain. `Structured.ObserverAdequacy` is now
-  5,280 lines, so loop and call work should be extracted into pass-owned
-  submodules rather than extending the central module further.
+  compose through a private `AdequateWithin` rule. Recursive loop backward
+  adequacy is also checked: condition inversion, exact first-prefix splitting,
+  body break/continue/regular/leave/halt outcomes, post execution, strictly
+  decreasing residual target fuel, initializer composition, and checked
+  fallthrough joins all live in the pass-owned
+  `Structured.ObserverLoopAdequacy` module. Internal calls/return dispatch, the
+  mutual statement/block theorem, and whole-program backward adequacy remain.
+  Shared outcome artifacts and terminal leaves were extracted into sibling
+  modules; the central `Structured.ObserverAdequacy` module is below the 5K
+  soft limit.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

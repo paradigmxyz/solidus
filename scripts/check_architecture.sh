@@ -192,22 +192,34 @@ report_matches \
 report_matches \
   'Structured observer adequacy must remain owned by the adjacent TypedCfg boundary:' \
   '^import EvmCompiler\.(Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Expressions|Locals|Functions|Objects|Yul|Public)' \
-  EvmCompiler/Structured/ObserverAdequacy.lean
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 report_matches \
   'Structured observer adequacy must not reason through Assembly execution or lower-pass preservation:' \
   '(TypedCfg\.ObserverPreservation|Assembly\.(Source|Compiled|Preservation|ObserverPreservation|StackShufflePreservation))' \
-  EvmCompiler/Structured/ObserverAdequacy.lean
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 report_matches \
   'Structured observer adequacy must invert the shared TypedCfg interpreter, not define an observer-specific target interpreter:' \
   '^[[:space:]]*(private[[:space:]]+)?def[[:space:]]+(runN|step)([^A-Za-z0-9_]|$)' \
-  EvmCompiler/Structured/ObserverAdequacy.lean
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 report_matches \
   'Structured observer adequacy must derive stack-shape soundness instead of accepting generated evidence:' \
   'h[A-Za-z0-9_]*[[:space:]]*:[[:space:]]*.*ShapeSound' \
-  EvmCompiler/Structured/ObserverAdequacy.lean
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 report_matches \
   'Structured observer semantics must not restore an unindexed backward frame-reflection contract:' \
@@ -217,7 +229,10 @@ report_matches \
 report_matches \
   'Structured observer adequacy must derive frame reflection from typing instead of accepting it as a premise:' \
   'hFrameReflecting[[:space:]]*:' \
-  EvmCompiler/Structured/ObserverAdequacy.lean
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 report_matches \
   'Structured terminal frame safety must remain a proved semantic fact, not a public premise:' \
@@ -363,7 +378,11 @@ report_matches \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \
-  EvmCompiler/Structured/TypedCfgCompiler.lean
+  EvmCompiler/Structured/TypedCfgCompiler.lean \
+  EvmCompiler/Structured/ObserverAdequacy.lean \
+  EvmCompiler/Structured/ObserverAdequacyArtifact.lean \
+  EvmCompiler/Structured/ObserverTerminalAdequacy.lean \
+  EvmCompiler/Structured/ObserverLoopAdequacy.lean
 
 oversized="$(
   find EvmCompiler -type f -name '*.lean' -print0 |

@@ -1,5 +1,4 @@
-import EvmCompiler.Structured.ObserverPreservation
-import EvmCompiler.Structured.TypedCfgCompilerFacts
+import EvmCompiler.Structured.ObserverAdequacyArtifact
 
 namespace EvmCompiler
 namespace Structured
@@ -12,8 +11,6 @@ This module consumes only the existing Structured compiler, its TypedCfg
 typing facts, the shared observer semantics, and the pass-owned state relation.
 It does not reason about Assembly or bytecode execution.
 -/
-
-abbrev Trace := Assembly.ResourceTrace
 
 namespace OutcomeSimulation
 
@@ -507,24 +504,12 @@ theorem jumpOr_of_targetBoundary_ofContext
   | invalid target =>
       exact False.elim hBoundary
 
-/--
-Backward adequacy when an enclosing proof stops at any accepted target
-outcome containing the fragment's own continuations.
--/
-def RegularArtifact {transcript : Trace}
-    (result : TypedCfgCompiler.Result)
-    (outcome : ObserverSemantics.Outcome
-      (transcript := transcript)) : Prop :=
-  outcome.mode = .regular →
-    ∃ output,
-      result.fallthrough? = some output ∧
-        output.length ≤ outcome.state.source.evm.stack.length
-
 def AdequateWithin {transcript : Trace}
     (eval :
       Nat →
         ObserverSemantics.Outcome (transcript := transcript) → Prop)
     (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context)
     (program : TypedCfg.Program) (continuations : Continuations)
     (accept : TypedCfg.Outcome → Prop)
     (entry : Assembly.Label) (input : TypedCfg.Shape)
@@ -544,7 +529,7 @@ def AdequateWithin {transcript : Trace}
               ObserverPreservation.OutcomeSimulation.Rel
                 continuations tokens sourceOutcome
                 targetOutcome traceFinal ∧
-              RegularArtifact result sourceOutcome
+              OutcomeArtifact result ctx sourceOutcome
 
 /--
 Stable backward-adequacy interface for a source evaluation relation at a typed
@@ -555,6 +540,7 @@ def AdequateAt {transcript : Trace}
       Nat →
         ObserverSemantics.Outcome (transcript := transcript) → Prop)
     (result : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context)
     (program : TypedCfg.Program) (continuations : Continuations)
     (entry : Assembly.Label) (input : TypedCfg.Shape)
     (source : ObserverSemantics.State transcript)
@@ -571,7 +557,7 @@ def AdequateAt {transcript : Trace}
             ObserverPreservation.OutcomeSimulation.Rel
               continuations tokens sourceOutcome
               targetOutcome traceFinal ∧
-            RegularArtifact result sourceOutcome
+            OutcomeArtifact result ctx sourceOutcome
 
 namespace AdequateWithin
 
@@ -581,15 +567,16 @@ theorem toAdequateAt
       Nat →
         ObserverSemantics.Outcome (transcript := transcript) → Prop}
     {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
     {program : TypedCfg.Program} {continuations : Continuations}
     {entry : Assembly.Label} {input : TypedCfg.Shape}
     {source : ObserverSemantics.State transcript}
     {tokens : List Word}
     (hAdequate :
-      AdequateWithin eval result program continuations
+      AdequateWithin eval result ctx program continuations
         (TargetBoundary continuations)
         entry input source tokens) :
-    AdequateAt eval result program continuations
+    AdequateAt eval result ctx program continuations
       entry input source tokens :=
   hAdequate (fun _ hBoundary => hBoundary)
 
@@ -1367,7 +1354,7 @@ theorem adequateWithin_nil_of_compileBlockFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := [] } source sourceOutcome)
-      result cfg continuations accept entry input source tokens := by
+      result ctx cfg continuations accept entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   obtain ⟨sourceFuel, sourceOutcome, hEval, hOutcomeRel⟩ :=
@@ -1382,7 +1369,7 @@ theorem adequateWithin_nil_of_compileBlockFuel?
   exact
     ⟨1, Structured.OutcomeT.regular source,
       Structured.EffectSemantics.Block.Eval.nil, hOutcomeRel,
-      fun _ => ⟨input, hFallthrough, hRel.sourceStack⟩⟩
+      ⟨input, hFallthrough, hRel.sourceStack⟩⟩
 
 theorem adequate_nil_of_compileBlockFuel?
     {transcript : Trace} {compilerFuel : Nat}
@@ -1404,7 +1391,7 @@ theorem adequate_nil_of_compileBlockFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := [] } source sourceOutcome)
-      result cfg continuations entry input source tokens := by
+      result ctx cfg continuations entry input source tokens := by
   exact
     OutcomeSimulation.AdequateWithin.toAdequateAt
       (adequateWithin_nil_of_compileBlockFuel?
@@ -1443,7 +1430,7 @@ private theorem adequateWithin_cons_withTail
         (fun sourceFuel sourceOutcome =>
           ObserverSemantics.Stmt.Eval
             program sourceFuel stmt source sourceOutcome)
-        headResult cfg
+        headResult ctx cfg
         (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
           ctx (TypedCfgCompiler.restLabel supply))
         (OutcomeSimulation.JumpOr
@@ -1456,7 +1443,7 @@ private theorem adequateWithin_cons_withTail
             ObserverSemantics.Block.Eval
               program sourceFuel { stmts := rest }
               tailSource sourceOutcome)
-          tailResult cfg
+          tailResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
             ctx regular)
           accept (TypedCfgCompiler.restLabel supply)
@@ -1466,7 +1453,7 @@ private theorem adequateWithin_cons_withTail
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := stmt :: rest }
           source sourceOutcome)
-      (headResult.append tailResult) cfg
+      (headResult.append tailResult) ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
@@ -1516,7 +1503,7 @@ private theorem adequateWithin_cons_withTail
           subst prefixOutcome
           obtain
               ⟨headOutput, hHeadFallthrough, hHeadBound⟩ :=
-            hHeadArtifact rfl
+            hHeadArtifact
           rw [hFallthrough] at hHeadFallthrough
           have hOutputEq : headOutput = tailInput :=
             Option.some.inj hHeadFallthrough.symm
@@ -1556,17 +1543,19 @@ private theorem adequateWithin_cons_withTail
               exact
                 ⟨sourceFuel + 1, tailOutcome,
                   hBlockEval, hTailOutcomeRel,
-                  by
+                  OutcomeSimulation.OutcomeArtifact.replaceRegular
+                    hTailArtifact (by
                     intro hMode
                     obtain
                         ⟨output, hTailFallthrough, hOutputBound⟩ :=
-                      hTailArtifact hMode
+                      OutcomeSimulation.OutcomeArtifact.regular
+                        hTailArtifact hMode
                     exact
                       ⟨output,
                         by
                           simpa [TypedCfgCompiler.Result.append] using
                             hTailFallthrough,
-                        hOutputBound⟩⟩
+                        hOutputBound⟩)⟩
       | brk =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1587,7 +1576,7 @@ private theorem adequateWithin_cons_withTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.brk headSource,
               Structured.EffectSemantics.Block.Eval.cons_brk hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | cont =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1608,7 +1597,7 @@ private theorem adequateWithin_cons_withTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.cont headSource,
               Structured.EffectSemantics.Block.Eval.cons_cont hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | leave =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1629,7 +1618,7 @@ private theorem adequateWithin_cons_withTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.leave headSource,
               Structured.EffectSemantics.Block.Eval.cons_leave hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | halt kind =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1651,7 +1640,7 @@ private theorem adequateWithin_cons_withTail
             ⟨headSourceFuel + 1,
               Structured.OutcomeT.halt kind headSource,
               Structured.EffectSemantics.Block.Eval.cons_halt hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
 
 /--
 Private composition for a head statement whose compiler result has no regular
@@ -1679,7 +1668,7 @@ private theorem adequateWithin_cons_noTail
         (fun sourceFuel sourceOutcome =>
           ObserverSemantics.Stmt.Eval
             program sourceFuel stmt source sourceOutcome)
-        headResult cfg
+        headResult ctx cfg
         (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
           ctx (TypedCfgCompiler.restLabel supply))
         (OutcomeSimulation.JumpOr
@@ -1690,7 +1679,7 @@ private theorem adequateWithin_cons_noTail
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := stmt :: rest }
           source sourceOutcome)
-      headResult cfg
+      headResult ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
@@ -1735,7 +1724,7 @@ private theorem adequateWithin_cons_noTail
       | regular =>
           obtain
               ⟨headOutput, hHeadFallthrough, _hHeadBound⟩ :=
-            hHeadArtifact rfl
+            hHeadArtifact
           rw [hFallthrough] at hHeadFallthrough
           cases hHeadFallthrough
       | brk =>
@@ -1757,7 +1746,7 @@ private theorem adequateWithin_cons_noTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.brk headSource,
               Structured.EffectSemantics.Block.Eval.cons_brk hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | cont =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1777,7 +1766,7 @@ private theorem adequateWithin_cons_noTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.cont headSource,
               Structured.EffectSemantics.Block.Eval.cons_cont hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | leave =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1797,7 +1786,7 @@ private theorem adequateWithin_cons_noTail
           exact
             ⟨headSourceFuel + 1, Structured.OutcomeT.leave headSource,
               Structured.EffectSemantics.Block.Eval.cons_leave hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
       | halt kind =>
           have hOuterRel :
               ObserverPreservation.OutcomeSimulation.Rel
@@ -1818,7 +1807,7 @@ private theorem adequateWithin_cons_noTail
             ⟨headSourceFuel + 1,
               Structured.OutcomeT.halt kind headSource,
               Structured.EffectSemantics.Block.Eval.cons_halt hHeadEval,
-              hOuterRel, by simp [OutcomeSimulation.RegularArtifact]⟩
+              hOuterRel, hHeadArtifact⟩
 
 /--
 Compiler-driven statement-list composition. The recursive statement and tail
@@ -1861,7 +1850,7 @@ private theorem adequateWithin_cons_of_compileStmtListFuel?
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Stmt.Eval
               program sourceFuel stmt source sourceOutcome)
-          headResult cfg
+          headResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
             ctx (TypedCfgCompiler.restLabel supply))
           headAccept entry input source tokens)
@@ -1880,7 +1869,7 @@ private theorem adequateWithin_cons_of_compileStmtListFuel?
             ObserverSemantics.Block.Eval
               program sourceFuel { stmts := rest }
               tailSource sourceOutcome)
-          tailResult cfg
+          tailResult ctx cfg
           (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
             ctx regular)
           accept (TypedCfgCompiler.restLabel supply)
@@ -1890,7 +1879,7 @@ private theorem adequateWithin_cons_of_compileStmtListFuel?
         ObserverSemantics.Block.Eval
           program sourceFuel { stmts := stmt :: rest }
           source sourceOutcome)
-      result cfg
+      result ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
@@ -2130,7 +2119,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
                 (source.source.withEVM
                   { source.source.evm with stack := stack }))
               sourceOutcome)
-          bodyResult cfg continuations accept
+          bodyResult ctx cfg continuations accept
           (.generated base (2000 + idx)) bodyShape
           (source.withSource
             (source.source.withEVM
@@ -2144,7 +2133,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
           sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   obtain
       ⟨bodyResult, tail, hBodyCompile, hRequire, _hTailCompile, hResult⟩ :=
     TypedCfgCompilerFacts.Switch.components_of_compileCasesFuel?_cons
@@ -2230,7 +2219,7 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
             hBodyAdequate hBodyCompile hBodyBlocks
               hAccept hAfterPopAt hAfterPopReach
           have hArtifact :
-              OutcomeSimulation.RegularArtifact
+              OutcomeSimulation.OutcomeArtifact
                 { blocks :=
                     { label := TypedCfgCompiler.switchTestLabel base idx
                       input := valueShape
@@ -2251,11 +2240,15 @@ private theorem outcome_cases_head_of_compileCasesFuel?_and_firstReaches
                   next := tail.next
                   calls := bodyResult.calls ++ tail.calls
                   fallthrough? := some bodyShape }
-                sourceOutcome := by
+                ctx sourceOutcome := by
+            apply
+              OutcomeSimulation.OutcomeArtifact.replaceRegular
+                hBodyArtifact
             intro hRegular
             obtain
                 ⟨bodyOutput, hBodyFallthrough, hBodyBound⟩ :=
-              hBodyArtifact hRegular
+              OutcomeSimulation.OutcomeArtifact.regular
+                hBodyArtifact hRegular
             rcases
                 TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
                   hRequire with
@@ -2344,7 +2337,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
               ObserverPreservation.OutcomeSimulation.Rel
                 continuations tokens sourceOutcome
                 targetOutcome traceFinal ∧
-              OutcomeSimulation.RegularArtifact tail sourceOutcome) :
+              OutcomeSimulation.OutcomeArtifact tail ctx sourceOutcome) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Block.Eval program sourceFuel selected
           (source.withSource
@@ -2353,7 +2346,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
           sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   obtain
       ⟨bodyResult, tail, _hBodyCompile, _hRequire,
         hTailCompile, hResult⟩ :=
@@ -2407,7 +2400,7 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
         TypedCfgCompilerFacts.Switch.fallthrough_of_compileCasesFuel?
           hHead hPopType hTailCompile
       have hArtifact :
-          OutcomeSimulation.RegularArtifact
+          OutcomeSimulation.OutcomeArtifact
             { blocks :=
                 { label := TypedCfgCompiler.switchTestLabel base idx
                   input := valueShape
@@ -2428,10 +2421,14 @@ private theorem outcome_cases_tail_of_compileCasesFuel?_and_firstReaches
               next := tail.next
               calls := bodyResult.calls ++ tail.calls
               fallthrough? := some bodyShape }
-            sourceOutcome := by
+            ctx sourceOutcome := by
+        apply
+          OutcomeSimulation.OutcomeArtifact.replaceRegular
+            hTailArtifact
         intro hRegular
         obtain ⟨tailOutput, hTailOutput, hTailBound⟩ :=
-          hTailArtifact hRegular
+          OutcomeSimulation.OutcomeArtifact.regular
+            hTailArtifact hRegular
         have hOutputEq : tailOutput = bodyShape := by
           exact
             Option.some.inj
@@ -2497,7 +2494,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
                 (source.source.withEVM
                   { source.source.evm with stack := stack }))
               sourceOutcome)
-          bodyResult cfg continuations accept
+          bodyResult ctx cfg continuations accept
           (.generated supply 2000) bodyShape
           (source.withSource
             (source.source.withEVM
@@ -2511,7 +2508,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
           sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   obtain ⟨bodyResult, hBodyCompile, hRequire, hResult⟩ :=
     TypedCfgCompilerFacts.Switch.components_of_compileDefaultFuel?_some
       hPopType hCompile
@@ -2568,7 +2565,7 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
         hBodyAdequate hBodyCompile hBodyBlocks
           hAccept hAfterPopAt hAfterPopReach
       have hArtifact :
-          OutcomeSimulation.RegularArtifact
+          OutcomeSimulation.OutcomeArtifact
             { blocks :=
                 { label := entry
                   input := valueShape
@@ -2579,11 +2576,15 @@ private theorem outcome_default_some_of_compileDefaultFuel?_and_firstReaches
               next := bodyResult.next
               calls := bodyResult.calls
               fallthrough? := some bodyShape }
-            sourceOutcome := by
+            ctx sourceOutcome := by
+        apply
+          OutcomeSimulation.OutcomeArtifact.replaceRegular
+            hBodyArtifact
         intro hRegular
         obtain
             ⟨bodyOutput, hBodyFallthrough, hBodyBound⟩ :=
-          hBodyArtifact hRegular
+          OutcomeSimulation.OutcomeArtifact.regular
+            hBodyArtifact hRegular
         rcases
             TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
               hRequire with
@@ -2644,7 +2645,7 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
             (source.source.withEVM
               { source.source.evm with stack := stack })))
         targetOutcome traceFinal ∧
-      OutcomeSimulation.RegularArtifact result
+      OutcomeSimulation.OutcomeArtifact result ctx
         (Structured.OutcomeT.regular
           (source.withSource
             (source.source.withEVM
@@ -2689,7 +2690,11 @@ private theorem outcome_default_none_of_compileDefaultFuel?_and_firstReaches
   exact
     ⟨ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
         ⟨hRegular.symm, hAfterPopRel⟩,
-      fun _ => ⟨bodyShape, rfl, hBodyBound⟩⟩
+      by
+        show ∃ output,
+          (some bodyShape : Option TypedCfg.Shape) = some output ∧
+            output.length ≤ stack.length
+        exact ⟨bodyShape, rfl, hBodyBound⟩⟩
 
 /--
 Recursive backward adequacy for a switch case chain with no selected body.
@@ -2761,7 +2766,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
             (source.source.withEVM
               { source.source.evm with stack := stack })))
         targetOutcome traceFinal ∧
-      OutcomeSimulation.RegularArtifact result
+      OutcomeSimulation.OutcomeArtifact result ctx
         (Structured.OutcomeT.regular
           (source.withSource
             (source.source.withEVM
@@ -2781,7 +2786,11 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
             hDefaultAdequate hDefault hRel hReach
           exact
             ⟨hOutcomeRel,
-              fun _ => ⟨bodyShape, rfl, hBodyBound⟩⟩
+              by
+                show ∃ output,
+                  (some bodyShape : Option TypedCfg.Shape) = some output ∧
+                    output.length ≤ stack.length
+                exact ⟨bodyShape, rfl, hBodyBound⟩⟩
   | cons head rest ih =>
       rcases head with ⟨caseValue, body⟩
       cases compilerFuel with
@@ -2848,7 +2857,7 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
                 TypedCfgCompilerFacts.Switch.fallthrough_of_compileCasesFuel?
                   hHead hPopType hTailCompile
               have hArtifact :
-                  OutcomeSimulation.RegularArtifact
+                  OutcomeSimulation.OutcomeArtifact
                     { blocks :=
                         { label :=
                             TypedCfgCompiler.switchTestLabel base idx
@@ -2872,13 +2881,13 @@ private theorem outcome_cases_none_of_compileCasesFuel?_and_firstReaches
                       next := tail.next
                       calls := bodyResult.calls ++ tail.calls
                       fallthrough? := some bodyShape }
-                    (Structured.OutcomeT.regular
+                    ctx (Structured.OutcomeT.regular
                       (source.withSource
                         (source.source.withEVM
                           { source.source.evm with stack := stack }))) := by
-                intro hRegular
                 obtain ⟨tailOutput, hTailOutput, hTailBound⟩ :=
-                  hTailArtifact hRegular
+                  OutcomeSimulation.OutcomeArtifact.regular
+                    hTailArtifact rfl
                 have hOutputEq : tailOutput = bodyShape := by
                   exact
                     Option.some.inj
@@ -2963,7 +2972,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
                 (source.source.withEVM
                   { source.source.evm with stack := stack }))
               sourceOutcome)
-          bodyResult cfg continuations accept
+          bodyResult ctx cfg continuations accept
           (.generated base (2000 + caseIdx)) bodyShape
           (source.withSource
             (source.source.withEVM
@@ -2988,9 +2997,8 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
               ObserverPreservation.OutcomeSimulation.Rel
                 continuations tokens sourceOutcome
                 targetOutcome traceFinal ∧
-              (sourceOutcome.mode = .regular →
-                bodyShape.length ≤
-                  sourceOutcome.state.source.evm.stack.length)) :
+              OutcomeSimulation.JoinArtifact
+                ctx bodyShape sourceOutcome) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Block.Eval program sourceFuel selected
           (source.withSource
@@ -2999,7 +3007,7 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
           sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   induction cases generalizing
       compilerFuel supply idx result selected targetFuel target trace with
   | nil =>
@@ -3013,13 +3021,13 @@ private theorem outcome_cases_some_of_compileCasesFuel?_and_firstReaches
             simpa [Structured.Switch.select] using hSelect
           obtain
               ⟨sourceFuel, sourceOutcome,
-                hBodyEval, hOutcomeRel, hRegularBound⟩ :=
+                hBodyEval, hOutcomeRel, hDefaultArtifact⟩ :=
             hDefaultAdequate hDefault hRel hReach
           exact
             ⟨sourceFuel, sourceOutcome,
               hBodyEval, hOutcomeRel,
-              fun hRegular =>
-                ⟨bodyShape, rfl, hRegularBound hRegular⟩⟩
+              OutcomeSimulation.OutcomeArtifact.ofJoin
+                rfl hDefaultArtifact⟩
   | cons head rest ih =>
       rcases head with ⟨caseValue, body⟩
       cases compilerFuel with
@@ -3134,7 +3142,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                 (afterScrutinee.source.withEVM
                   { afterScrutinee.source.evm with stack := stack }))
               sourceOutcome)
-          bodyResult cfg continuations accept bodyEntry bodyShape
+          bodyResult ctx cfg continuations accept bodyEntry bodyShape
           (afterScrutinee.withSource
             (afterScrutinee.source.withEVM
               { afterScrutinee.source.evm with stack := stack }))
@@ -3144,7 +3152,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
           (.switch scrutinee cases defaultBody) source sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx sourceOutcome := by
   obtain ⟨firstOutcome, firstTrace, hStep, _hAfterStep⟩ :=
     TypedCfg.ObserverSemantics.Program.runN_succ_elim hReach.run
   obtain
@@ -3230,7 +3238,8 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                 obtain
                     ⟨defaultOutput, hDefaultFallthrough,
                       hDefaultBound⟩ :=
-                  hDefaultArtifact rfl
+                  OutcomeSimulation.OutcomeArtifact.regular
+                    hDefaultArtifact rfl
                 have hExpectedFallthrough :
                     defaultResult.fallthrough? = some bodyShape :=
                   TypedCfgCompilerFacts.Switch.fallthrough_of_compileDefaultFuel?
@@ -3246,7 +3255,7 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
             TypedCfgCompilerFacts.Switch.fallthrough_of_compileCasesFuel?
               hHead hPopType hCasesCompile'
           have hArtifact :
-              OutcomeSimulation.RegularArtifact
+              OutcomeSimulation.OutcomeArtifact
                 { blocks :=
                     { label := entry
                       input := input
@@ -3260,13 +3269,13 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                   next := defaultResult.next
                   calls := caseResult.calls ++ defaultResult.calls
                   fallthrough? := some bodyShape }
-                (Structured.OutcomeT.regular
+                ctx (Structured.OutcomeT.regular
                   (afterScrutinee.withSource
                     (afterScrutinee.source.withEVM
                       { afterScrutinee.source.evm with stack := stack }))) := by
-            intro hMode
             obtain ⟨caseOutput, hCaseOutput, hCaseBound⟩ :=
-              hCaseArtifact hMode
+              OutcomeSimulation.OutcomeArtifact.regular
+                hCaseArtifact rfl
             have hOutputEq : caseOutput = bodyShape :=
               Option.some.inj
                 (hCaseOutput.symm.trans hCaseFallthrough)
@@ -3328,23 +3337,14 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                 exact
                   ⟨defaultBodyFuel, defaultOutcome,
                     hDefaultEval, hDefaultOutcomeRel,
-                    fun hMode => by
-                      obtain
-                          ⟨defaultOutput, hDefaultFallthrough,
-                            hDefaultBound⟩ :=
-                        hDefaultArtifact hMode
-                      have hOutputEq : defaultOutput = bodyShape :=
-                        Option.some.inj
-                          (hDefaultFallthrough.symm.trans
-                            hExpectedFallthrough)
-                      subst defaultOutput
-                      exact hDefaultBound⟩)
+                    OutcomeSimulation.OutcomeArtifact.toJoin
+                      hExpectedFallthrough hDefaultArtifact⟩)
           have hCaseFallthrough :
               caseResult.fallthrough? = some bodyShape :=
             TypedCfgCompilerFacts.Switch.fallthrough_of_compileCasesFuel?
               hHead hPopType hCasesCompile'
           have hArtifact :
-              OutcomeSimulation.RegularArtifact
+              OutcomeSimulation.OutcomeArtifact
                 { blocks :=
                     { label := entry
                       input := input
@@ -3358,10 +3358,14 @@ private theorem outcome_switch_of_compileStmtFuel?_and_firstReaches
                   next := defaultResult.next
                   calls := caseResult.calls ++ defaultResult.calls
                   fallthrough? := some bodyShape }
-                sourceOutcome := by
+                ctx sourceOutcome := by
+            apply
+              OutcomeSimulation.OutcomeArtifact.replaceRegular
+                hCaseArtifact
             intro hMode
             obtain ⟨caseOutput, hCaseOutput, hCaseBound⟩ :=
-              hCaseArtifact hMode
+              OutcomeSimulation.OutcomeArtifact.regular
+                hCaseArtifact hMode
             have hOutputEq : caseOutput = bodyShape :=
               Option.some.inj
                 (hCaseOutput.symm.trans hCaseFallthrough)
@@ -3440,7 +3444,7 @@ private theorem adequateWithin_switch_of_compileStmtFuel?
                 (afterScrutinee.source.withEVM
                   { afterScrutinee.source.evm with stack := stack }))
               sourceOutcome)
-          bodyResult cfg continuations accept bodyEntry bodyShape
+          bodyResult ctx cfg continuations accept bodyEntry bodyShape
           (afterScrutinee.withSource
             (afterScrutinee.source.withEVM
               { afterScrutinee.source.evm with stack := stack }))
@@ -3449,7 +3453,7 @@ private theorem adequateWithin_switch_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval program sourceFuel
           (.switch scrutinee cases defaultBody) source sourceOutcome)
-      result cfg continuations accept entry input source tokens := by
+      result ctx cfg continuations accept entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   exact
@@ -3707,7 +3711,7 @@ theorem adequateWithin_code_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel (.code code) source sourceOutcome)
-      result cfg continuations accept entry input source tokens := by
+      result ctx cfg continuations accept entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   obtain ⟨sourceFuel, sourceOutcome, hEval, hOutcomeRel⟩ :=
@@ -3724,10 +3728,9 @@ theorem adequateWithin_code_of_compileStmtFuel?
         ⟨sourceFuel, Structured.OutcomeT.regular _,
           Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
           hOutcomeRel,
-          fun _ =>
-            ⟨output, rfl,
-              Code.shapeSound code hType
-                hRel.sourceStack hSourceRun⟩⟩
+          ⟨output, rfl,
+            Code.shapeSound code hType
+              hRel.sourceStack hSourceRun⟩⟩
 
 theorem adequate_code_of_compileStmtFuel?
     {transcript : Trace} {compilerFuel : Nat}
@@ -3749,7 +3752,7 @@ theorem adequate_code_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel (.code code) source sourceOutcome)
-      result cfg continuations entry input source tokens := by
+      result ctx cfg continuations entry input source tokens := by
   exact
     OutcomeSimulation.AdequateWithin.toAdequateAt
       (adequateWithin_code_of_compileStmtFuel?
@@ -3781,11 +3784,11 @@ theorem adequateWithin_brk_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel .brk source sourceOutcome)
-      result cfg
+      result ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  obtain ⟨_hShape, rfl⟩ :=
+  obtain ⟨hShape, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_brk
       hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
@@ -3824,7 +3827,7 @@ theorem adequateWithin_brk_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.brk,
       ObserverPreservation.OutcomeSimulation.Rel.brk_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      by simp [OutcomeSimulation.RegularArtifact]⟩
+      ⟨input, hShape, hRel.sourceStack⟩⟩
 
 /--
 Backward adequacy for a checked `continue` continuation.
@@ -3850,11 +3853,11 @@ theorem adequateWithin_cont_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel .cont source sourceOutcome)
-      result cfg
+      result ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  obtain ⟨_hShape, rfl⟩ :=
+  obtain ⟨hShape, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_cont
       hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
@@ -3893,7 +3896,7 @@ theorem adequateWithin_cont_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.cont,
       ObserverPreservation.OutcomeSimulation.Rel.cont_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      by simp [OutcomeSimulation.RegularArtifact]⟩
+      ⟨input, hShape, hRel.sourceStack⟩⟩
 
 /--
 Backward adequacy for a checked procedure `leave` continuation.
@@ -3920,11 +3923,11 @@ theorem adequateWithin_leave_of_compileStmtFuel?
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel .leave source sourceOutcome)
-      result cfg
+      result ctx cfg
       (TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext
         ctx regular)
       accept entry input source tokens := by
-  obtain ⟨_hShape, rfl⟩ :=
+  obtain ⟨hShape, rfl⟩ :=
     TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_leave
       hTarget hCompile
   intro hAccept targetFuel target trace traceFinal
@@ -3963,7 +3966,7 @@ theorem adequateWithin_leave_of_compileStmtFuel?
       Structured.EffectSemantics.Stmt.Eval.leave hReturns,
       ObserverPreservation.OutcomeSimulation.Rel.leave_iff.mpr
         ⟨hTarget, hRel.rel⟩,
-      by simp [OutcomeSimulation.RegularArtifact]⟩
+      ⟨input, hShape, hRel.sourceStack⟩⟩
 
 /--
 Compiler-facing backward adequacy for a straight-line statement at a boundary
@@ -4735,16 +4738,16 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
             ObserverPreservation.OutcomeSimulation.Rel
               continuations tokens bodyOutcome
               targetOutcome traceFinal ∧
-            OutcomeSimulation.RegularArtifact
-              bodyResult bodyOutcome) :
+            OutcomeSimulation.OutcomeArtifact
+              bodyResult ctx bodyOutcome) :
     ∃ sourceFuel sourceOutcome,
       ObserverSemantics.Stmt.Eval
           program sourceFuel (.if_ cond body) source sourceOutcome ∧
         ObserverPreservation.OutcomeSimulation.Rel
           continuations tokens sourceOutcome
           targetOutcome traceFinal ∧
-        OutcomeSimulation.RegularArtifact
-          result sourceOutcome := by
+        OutcomeSimulation.OutcomeArtifact
+          result ctx sourceOutcome := by
   obtain ⟨firstOutcome, firstTrace, hStep, _hAfterStep⟩ :=
     TypedCfg.ObserverSemantics.Program.runN_succ_elim
       hReach.run
@@ -4773,9 +4776,13 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
           (fuel := 0) hCond,
         ObserverPreservation.OutcomeSimulation.Rel.regular_iff.mpr
           ⟨hRegular.symm, hFinalRel.rel⟩,
-        fun _ =>
-          ⟨{ output with slots := output.slots.tail },
-            hParentFallthrough, hFinalRel.sourceStack⟩⟩
+        by
+          show ∃ regularOutput,
+            result.fallthrough? = some regularOutput ∧
+              regularOutput.length ≤ final.source.evm.stack.length
+          exact
+            ⟨{ output with slots := output.slots.tail },
+              hParentFallthrough, hFinalRel.sourceStack⟩⟩
   · rcases hTrue with
       ⟨output, condition, bodyResult, afterCond, bodyTarget,
         hFirst, _hType, _hHead, hBodyCompile, hRequire,
@@ -4794,11 +4801,15 @@ private theorem outcome_if_of_compileStmtFuel?_and_firstReaches
       hBodyAdequate hBodyCompile hBodyBlocks
         hAfterCondRel hBodyReach
     have hArtifact :
-        OutcomeSimulation.RegularArtifact result bodyOutcome := by
+        OutcomeSimulation.OutcomeArtifact result ctx bodyOutcome := by
+      apply
+        OutcomeSimulation.OutcomeArtifact.replaceRegular
+          hBodyArtifact
       intro hMode
       obtain
           ⟨bodyOutput, hBodyFallthrough, hBodyBound⟩ :=
-        hBodyArtifact hMode
+        OutcomeSimulation.OutcomeArtifact.regular
+          hBodyArtifact hMode
       rcases
           TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
             hRequire with
@@ -4859,14 +4870,14 @@ private theorem adequateWithin_if_of_compileStmtFuel?
           (fun sourceFuel sourceOutcome =>
             ObserverSemantics.Block.Eval
               program sourceFuel body afterCond sourceOutcome)
-          bodyResult cfg continuations accept
+          bodyResult ctx cfg continuations accept
           (LabelSupply.label supply 0)
           bodyInput afterCond tokens) :
     OutcomeSimulation.AdequateWithin
       (fun sourceFuel sourceOutcome =>
         ObserverSemantics.Stmt.Eval
           program sourceFuel (.if_ cond body) source sourceOutcome)
-      result cfg continuations accept entry input source tokens := by
+      result ctx cfg continuations accept entry input source tokens := by
   intro hAccept targetFuel target trace traceFinal
     targetOutcome hRel hReach
   obtain
@@ -4896,382 +4907,6 @@ private theorem adequateWithin_if_of_compileStmtFuel?
                 hBodyEval, hOutcomeRel, hBodyArtifact⟩)
   exact
     ⟨sourceFuel, sourceOutcome, hEval, hOutcomeRel, hArtifact⟩
-
-/--
-Backward adequacy for the false branch of a compiled conditional at a no-frame
-boundary. Label distinctness is the local compiler-freshness fact; whole-program
-generation will discharge it internally.
--/
-theorem outcome_if_false_of_compileStmtFuel?_and_step_noFrames
-    {transcript : Trace} {fuel : Nat}
-    {program : Structured.Program}
-    {cond : Structured.Code} {body : Structured.Block}
-    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
-    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
-    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
-    {source : ObserverSemantics.State transcript}
-    {target targetFinal : EVMState}
-    {trace traceFinal : Trace}
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (fuel + 1)
-          (.if_ cond body) ctx supply entry input regular =
-        some result)
-    (hBlocks :
-      TypedCfgPreservation.BlocksInProgram result cfg)
-    (hDistinct : LabelSupply.label supply 0 ≠ regular)
-    (hReturns : source.source.returns = [])
-    (hRel :
-      ObserverPreservation.StateRel.At
-        input source [] target trace)
-    (hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          cfg entry target trace =
-        .ok (.jump regular targetFinal, traceFinal)) :
-    ∃ final : ObserverSemantics.State transcript,
-      ObserverSemantics.Stmt.Eval program (fuel + 1)
-          (.if_ cond body) source
-          (Structured.OutcomeT.regular final) ∧
-        ObserverPreservation.StateRel
-          final [] targetFinal traceFinal := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  cases hType :
-      TypedCfg.Block.bodyType?
-        (TypedCfgCompiler.Code.toCfg cond) input with
-  | none =>
-      simp [hType] at hCompile
-  | some output =>
-      cases hHead : output.slots.head? with
-      | none =>
-          simp [hType, hHead] at hCompile
-      | some condition =>
-          cases hBody :
-              TypedCfgCompiler.compileBlockFuel? fuel body ctx
-                (supply + 1) (LabelSupply.label supply 0)
-                { output with slots := output.slots.tail } regular with
-          | none =>
-              simp [hType, hHead,
-                TypedCfgCompiler.mkBlock?, hBody] at hCompile
-          | some bodyResult =>
-              have hRequire :
-                  bodyResult.requireFallthrough?
-                      { output with slots := output.slots.tail } =
-                    some () := by
-                cases hCheck :
-                    bodyResult.requireFallthrough?
-                      { output with slots := output.slots.tail } with
-                | none =>
-                    simp [hType, hHead, TypedCfgCompiler.mkBlock?,
-                      hBody, hCheck] at hCompile
-                | some unit =>
-                    cases unit
-                    rfl
-              simp [hType, hHead, TypedCfgCompiler.mkBlock?,
-                hBody, hRequire] at hCompile
-              cases hCompile
-              let generated : TypedCfg.Block :=
-                { label := entry
-                  input := input
-                  body := TypedCfgCompiler.Code.toCfg cond
-                  output := output
-                  term :=
-                    .jumpi (LabelSupply.label supply 0) regular }
-              have hFind :
-                  cfg.findBlock? entry = some generated :=
-                hBlocks generated (by simp [generated])
-              unfold TypedCfg.ObserverSemantics.Program.step at hStep
-              rw [hFind] at hStep
-              change
-                TypedCfg.ObserverSemantics.Block.run
-                    generated target trace =
-                  .ok (.jump regular targetFinal, traceFinal) at hStep
-              unfold TypedCfg.ObserverSemantics.Block.run at hStep
-              dsimp [generated] at hStep
-              cases hCondBody :
-                  TypedCfg.ObserverSemantics.Block.runBody
-                    (TypedCfgCompiler.Code.toCfg cond)
-                    input target trace with
-              | error err =>
-                  simp [hCondBody, Bind.bind, Except.bind] at hStep
-              | ok bodyRun =>
-                  rcases bodyRun with
-                    ⟨⟨targetAfter, targetOutput⟩, targetTrace⟩
-                  rw [hCondBody] at hStep
-                  simp only [Bind.bind, Except.bind] at hStep
-                  by_cases hOutput : targetOutput = output
-                  · simp [hOutput] at hStep
-                    subst targetOutput
-                    rcases hStep with ⟨hTerm, hTrace⟩
-                    unfold TypedCfg.Block.runTerm at hTerm
-                    cases hStack : targetAfter.stack with
-                    | nil =>
-                        simp [hStack, EvmYul.Stack.pop] at hTerm
-                    | cons value stack =>
-                        by_cases hZero :
-                            value = EvmYul.UInt256.ofNat 0
-                        · simp [hStack, EvmYul.Stack.pop, hZero] at hTerm
-                          subst targetFinal
-                          subst traceFinal
-                          have hBne :
-                              (value != EvmYul.UInt256.ofNat 0) =
-                                false := by
-                            rw [hZero]
-                            exact
-                              TypedCfg.Preservation.uint256_bne_zero_self
-                          have hPop :
-                              Structured.Code.popCondition targetAfter =
-                                .ok
-                                  ({ targetAfter with stack := stack },
-                                    false) := by
-                            unfold Structured.Code.popCondition
-                              EffectSemantics.Code.popCondition
-                            simp [hStack, EvmYul.Stack.pop, hBne]
-                          obtain ⟨final, hCond, hFinalRel⟩ :=
-                            Code.runCondition_of_runBody_toCfg_noFrames
-                              (by simpa [TypedCfgCompiler.Code.type?]
-                                using hType)
-                              hReturns hRel.rel hCondBody hPop
-                          exact
-                            ⟨final,
-                              Structured.EffectSemantics.Stmt.Eval.if_false
-                                hCond,
-                              hFinalRel⟩
-                        · simp [hStack, EvmYul.Stack.pop, hZero] at hTerm
-                          exact False.elim (hDistinct hTerm.1)
-                  · simp [hOutput] at hStep
-
-/--
-A well-typed TypedCfg halt cannot obtain missing operands from compiler-owned
-return data. The shape-indexed relation therefore reconstructs the
-corresponding observer-aware Structured terminal evaluation.
--/
-theorem terminal_of_wellTyped_halt
-    {transcript : Trace} {program : Structured.Program}
-    {cfg : TypedCfg.Program} {block : TypedCfg.Block}
-    {kind : Assembly.HaltKind}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word} {target : EVMState} {trace : Trace}
-    {fuel : Nat}
-    (hTyped : block.WellTyped cfg)
-    (hTerm : block.term = .halt kind)
-    (hRel :
-      ObserverPreservation.StateRel.At
-        block.output source tokens target trace) :
-    ∃ finalEVM,
-      Structured.Terminal.step kind source.source.evm =
-          .ok finalEVM ∧
-        ObserverSemantics.Stmt.Eval program fuel
-          (.terminal kind) source
-          (Structured.OutcomeT.halt kind
-            (source.withSource
-              (source.source.withEVM finalEVM))) := by
-  have hArityShape :
-      kind.argCount ≤ block.output.length :=
-    TypedCfg.Block.halt_argCount_le_of_wellTyped hTyped hTerm
-  have hAritySource :
-      kind.argCount ≤ source.source.evm.stack.length :=
-    Nat.le_trans hArityShape hRel.sourceStack
-  obtain ⟨finalEVM, hStep⟩ :=
-    Structured.Terminal.exists_step_of_argCount_le
-      kind source.source.evm hAritySource
-  exact
-    ⟨finalEVM, hStep,
-      Structured.EffectSemantics.Stmt.Eval.terminal hStep⟩
-
-/--
-The terminal backward leaf also reconstructs the post-terminal target relation.
-This is the outcome-indexed fact needed by the recursive statement adequacy
-proof; no terminal-safety premise remains at the boundary.
--/
-theorem terminal_outcome_of_wellTyped_halt
-    {transcript : Trace} {program : Structured.Program}
-    {cfg : TypedCfg.Program} {block : TypedCfg.Block}
-    {kind : Assembly.HaltKind}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word} {target : EVMState} {trace : Trace}
-    {fuel : Nat}
-    (hTyped : block.WellTyped cfg)
-    (hTerm : block.term = .halt kind)
-    (hRel :
-      ObserverPreservation.StateRel.At
-        block.output source tokens target trace) :
-    ∃ sourceFinal targetFinal,
-      Structured.Terminal.step kind source.source.evm =
-          .ok sourceFinal ∧
-        Structured.Terminal.step kind target =
-          .ok targetFinal ∧
-        ObserverSemantics.Stmt.Eval program fuel
-          (.terminal kind) source
-          (Structured.OutcomeT.halt kind
-            (source.withSource
-              (source.source.withEVM sourceFinal))) ∧
-        ObserverPreservation.StateRel
-          (source.withSource
-            (source.source.withEVM sourceFinal))
-          tokens targetFinal trace := by
-  obtain ⟨sourceFinal, hSourceStep, hEval⟩ :=
-    terminal_of_wellTyped_halt hTyped hTerm hRel
-  obtain ⟨targetFinal, hTargetStep, hFinalRel⟩ :=
-    ObserverPreservation.StateRel.terminal hRel.rel hSourceStep
-  exact
-    ⟨sourceFinal, targetFinal, hSourceStep, hTargetStep,
-      hEval, hFinalRel⟩
-
-/--
-Compiler-facing backward adequacy for a terminal statement.
-
-The checked compiler block and ambient CFG typing construct all target evidence
-internally. The public inputs are the existing compiler result, its generated
-block inclusion, and the adjacent shape-indexed state relation.
--/
-theorem outcome_terminal_of_compileStmtFuel?
-    {transcript : Trace} {fuel : Nat}
-    {program : Structured.Program} {kind : Assembly.HaltKind}
-    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
-    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
-    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word} {target : EVMState} {trace : Trace}
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (fuel + 1)
-          (.terminal kind) ctx supply entry input regular =
-        some result)
-    (hBlocks :
-      TypedCfgPreservation.BlocksInProgram result cfg)
-    (hWellTyped : cfg.WellTyped)
-    (hRel :
-      ObserverPreservation.StateRel.At
-        input source tokens target trace) :
-    ∃ sourceFinal targetFinal,
-      ObserverSemantics.Stmt.Eval program fuel
-          (.terminal kind) source
-          (Structured.OutcomeT.halt kind
-            (source.withSource
-              (source.source.withEVM sourceFinal))) ∧
-        TypedCfg.ObserverSemantics.Program.Eventually
-          cfg entry target trace (.halt kind target) trace ∧
-        Structured.Terminal.step kind target =
-          .ok targetFinal ∧
-        ObserverPreservation.StateRel
-          (source.withSource
-            (source.source.withEVM sourceFinal))
-          tokens targetFinal trace := by
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile
-  simp [TypedCfgCompiler.mkBlock?] at hCompile
-  cases hCompile
-  let generated : TypedCfg.Block :=
-    { label := entry
-      input := input
-      body := []
-      output := input
-      term := .halt kind }
-  have hFind :
-      cfg.findBlock? entry = some generated :=
-    hBlocks generated (by simp [generated])
-  have hMem : generated ∈ cfg.blocks := by
-    unfold TypedCfg.Program.findBlock? at hFind
-    exact List.mem_of_find?_eq_some hFind
-  have hTyped : generated.WellTyped cfg :=
-    (List.forall_iff_forall_mem.mp hWellTyped.2.1) generated hMem
-  obtain
-      ⟨sourceFinal, targetFinal, _hSourceStep,
-        hTargetStep, hEval, hFinalRel⟩ :=
-    terminal_outcome_of_wellTyped_halt
-      (fuel := fuel) hTyped (by rfl) hRel
-  have hRun :
-      TypedCfg.ObserverSemantics.Block.run
-          generated target trace =
-        .ok (.halt kind target, trace) := by
-    unfold TypedCfg.ObserverSemantics.Block.run
-    rw [TypedCfg.ObserverSemantics.Block.runBody_nil]
-    simp [generated, TypedCfg.Block.runTerm,
-      Bind.bind, Except.bind]
-  have hEventually :=
-    ObserverPreservation.BlocksInProgram.eventually_of_run
-      hBlocks (block := generated) (by simp [generated]) hRun
-  exact
-    ⟨sourceFinal, targetFinal, hEval, hEventually,
-      hTargetStep, hFinalRel⟩
-
-/--
-Stable backward-adequacy interface for terminal statements.
--/
-theorem adequateWithin_terminal_of_compileStmtFuel?
-    {transcript : Trace} {compilerFuel : Nat}
-    {program : Structured.Program} {kind : Assembly.HaltKind}
-    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
-    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
-    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
-    {continuations : OutcomeSimulation.Continuations}
-    {accept : TypedCfg.Outcome → Prop}
-    {source : ObserverSemantics.State transcript}
-    {tokens : List Word}
-    (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
-          (.terminal kind) ctx supply entry input regular =
-        some result)
-    (hBlocks :
-      TypedCfgPreservation.BlocksInProgram result cfg)
-    (hWellTyped : cfg.WellTyped) :
-    OutcomeSimulation.AdequateWithin
-      (fun sourceFuel sourceOutcome =>
-        ObserverSemantics.Stmt.Eval
-          program sourceFuel (.terminal kind) source sourceOutcome)
-      result cfg continuations accept entry input source tokens := by
-  intro hAccept targetFuel target trace traceFinal
-    targetOutcome hRel hReach
-  obtain
-      ⟨sourceFinal, targetFinal, hEval, _hEventually,
-        hTargetStep, hFinalRel⟩ :=
-    outcome_terminal_of_compileStmtFuel?
-      (program := program)
-      hCompile hBlocks hWellTyped hRel
-  have hCompile' := hCompile
-  unfold TypedCfgCompiler.compileStmtFuel? at hCompile'
-  simp [TypedCfgCompiler.mkBlock?] at hCompile'
-  cases hCompile'
-  let generated : TypedCfg.Block :=
-    { label := entry
-      input := input
-      body := []
-      output := input
-      term := .halt kind }
-  have hFind :
-      cfg.findBlock? entry = some generated :=
-    hBlocks generated (by simp [generated])
-  have hStep :
-      TypedCfg.ObserverSemantics.Program.step
-          cfg entry target trace =
-        .ok (.halt kind target, trace) := by
-    unfold TypedCfg.ObserverSemantics.Program.step
-    rw [hFind]
-    simp [generated, TypedCfg.ObserverSemantics.Block.run,
-      TypedCfg.ObserverSemantics.Block.runBody_nil,
-      TypedCfg.Block.runTerm, Bind.bind, Except.bind]
-  have hBoundary :
-      OutcomeSimulation.TargetBoundary continuations
-        (.halt kind target) := by
-    trivial
-  obtain ⟨hOutcomeEq, hTraceEq⟩ :=
-    OutcomeSimulation.FirstReaches.outcome_eq_of_step_accepted
-      hReach hStep (hAccept _ hBoundary)
-  subst targetOutcome
-  subst traceFinal
-  let final :
-      ObserverSemantics.State transcript :=
-    source.withSource
-      (source.source.withEVM sourceFinal)
-  have hOutcomeRel :
-      ObserverPreservation.OutcomeSimulation.Rel
-        continuations tokens
-        (Structured.OutcomeT.halt kind final)
-        (.halt kind target) trace :=
-    ObserverPreservation.OutcomeSimulation.Rel.halt_iff.mpr
-      ⟨rfl, targetFinal, hTargetStep, ⟨tokens, hFinalRel⟩⟩
-  exact
-    ⟨compilerFuel, Structured.OutcomeT.halt kind final,
-      by simpa [final] using hEval,
-      hOutcomeRel,
-      by simp [OutcomeSimulation.RegularArtifact]⟩
 
 end Stmt
 
