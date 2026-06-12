@@ -203,7 +203,9 @@ theorem scratch_step_code
         .ok final ∧
       AllocationObserverRelation.CalleeEntryRel contract plan
         (name :: realized) pending frameBase frameDepth frameWords
-        source final := by
+        source final ∧
+      final.source.evm.stack.length + 1 =
+        target.source.evm.stack.length := by
   obtain ⟨value, values, suffix, hValue, hLookup, hTargetStack⟩ :=
     hRel.cons_parts
   have hValuesLength :
@@ -311,7 +313,7 @@ theorem scratch_step_code
     exact hStoreRun
   refine
     ⟨written, promoted, final, hWholeStoreRun, hPromoteRun,
-      hPopRun, ?_, hFinalRel⟩
+      hPopRun, ?_, hFinalRel, ?_⟩
   let storeCode : Structured.Code :=
     [ Structured.BasicInstr.op frameOp,
       Structured.BasicInstr.push (AllocationSupport.slotOffset slot),
@@ -353,7 +355,11 @@ theorem scratch_step_code
         .ok written by simpa [storeCode] using hStoreRun]
   simp only [Except.bind]
   rw [hPromoteRun]
-  exact hPopRun
+  · exact hPopRun
+  · rw [hFinalStack, hTargetStack]
+    simp only [List.length_append, List.length_reverse,
+      List.length_cons, hValuesLength]
+    omega
 
 /--
 Compile and evaluate one real scratch-parameter prelude step.
@@ -414,7 +420,9 @@ theorem scratch_step_of_lowerScratchParam
           (Structured.EffectSemantics.Outcome.regular final) ∧
       AllocationObserverRelation.CalleeEntryRel contract plan
         (name :: realized) pending frameBase frameDepth frameWords
-        source final := by
+        source final ∧
+      final.source.evm.stack.length + 1 =
+        target.source.evm.stack.length := by
   obtain ⟨nameOp, hNameOp⟩ :=
     Locals.StackOp.exists_dup?_of_pos_of_le
       (depth := above.length + 1) (by omega) hNameDepthBound
@@ -448,7 +456,7 @@ theorem scratch_step_of_lowerScratchParam
     simpa [hAboveLength] using hPromote
   obtain
       ⟨written, promoted, final, hStoreRun, hPromoteRun,
-        hPopRun, _hWholeRun, hFinalRel⟩ :=
+        hPopRun, _hWholeRun, hFinalRel, hStackLength⟩ :=
     scratch_step_code hRel hWF hFresh hLocation hStackOrder hSlot
       hReservation hNameOp' hFrameOp' hPromote'
   let compiled : Expressions.Block :=
@@ -464,7 +472,7 @@ theorem scratch_step_of_lowerScratchParam
           Expressions.Stmt.code [Structured.BasicInstr.op .pop] ] }
   refine
     ⟨compiled.stmts, final, by simpa [compiled] using hCompile, ?_,
-      hFinalRel⟩
+      hFinalRel, hStackLength⟩
   change
     Structured.ObserverSemantics.Block.Eval targetProgram 4
       { stmts :=
@@ -516,6 +524,11 @@ theorem forward_of_context
     (hRel :
       AllocationObserverRelation.CalleeEntryRel contract plan realized
         pending frameBase frameDepth frameWords source target)
+    (hFrameDepth :
+      frameDepth =
+        (AllocationObserverRelation.currentStackOrder plan realized).length)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length)
     (hWF : plan.WellFormed)
     (hReservation : contract.scratch? = some reservation) :
     ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
@@ -533,30 +546,44 @@ theorem forward_of_context
           (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
       AllocationObserverRelation.ScratchStateRel contract plan
         ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
-        finalFrameDepth frameWords source finalTarget := by
+        finalFrameDepth frameWords source finalTarget ∧
+      finalFrameDepth =
+        (AllocationObserverRelation.currentStackOrder plan
+          ((pending.map Prod.fst).reverse ++ realized)).length ∧
+      finalTarget.source.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
       refine
-        ⟨[], localsCtx, target, frameDepth, 1, ?_, ?_, ?_, ?_⟩
+        ⟨[], localsCtx, target, frameDepth, 1,
+          ?_, ?_, ?_, ?_, ?_, ?_⟩
       · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerParams]
       · exact Structured.EffectSemantics.Block.Eval.nil
       · simpa using hRel.finish
+      · simpa using hFrameDepth
+      · exact hStackLength
   | @stack _ _ _ _ name slot planDepth classification fresh location
       stackOrder tail =>
       have hNextRel :=
         hRel.activate_stack fresh location stackOrder
       obtain
           ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
-            hCompile, hFinalLayout, hEval, hFinalRel⟩ :=
-        forward_of_context tail hNextRel hWF hReservation
+            hCompile, hFinalLayout, hEval, hFinalRel, hFinalDepth,
+            hFinalStackLength⟩ :=
+        forward_of_context tail hNextRel
+          (by
+            rw [stackOrder, hFrameDepth]
+            simp)
+          hStackLength hWF hReservation
       refine
         ⟨compiled, finalCtx, finalTarget, finalFrameDepth, fuel,
-          ?_, ?_, hEval, ?_⟩
+          ?_, ?_, hEval, ?_, ?_, ?_⟩
       · simpa [AllocationLowering.lowerParams, classification] using hCompile
       · simpa [AllocationLowering.lowerParams, classification] using
           hFinalLayout
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+      · exact hFinalStackLength
   | @scratch _ pending _ localsCtx name slot classification fresh location
       stackOrder slotBound layout aboveFresh suffixFresh nameDepthBound
       frameDepthLookup frameDepthBound tail =>
@@ -577,7 +604,8 @@ theorem forward_of_context
             some ((pending.length + 1) + frameDepth + 1) := by
         simpa [above, suffix, stackOrder] using frameDepthLookup
       obtain
-          ⟨headCompiled, midTarget, hHeadCompile, hHeadEval, hNextRel⟩ :=
+          ⟨headCompiled, midTarget, hHeadCompile, hHeadEval, hNextRel,
+            hStepLength⟩ :=
         scratch_step_of_lowerScratchParam
           (contract := contract) (transcript := transcript)
           (plan := plan) (realized := realized) (pending := pending)
@@ -591,10 +619,26 @@ theorem forward_of_context
           hLayout (by simp [above]) (by simpa [above] using aboveFresh)
           hSuffixFresh (by simpa [above] using nameDepthBound)
           hFrameDepthLookup frameDepthBound
+      have hMidStackLength :
+          midTarget.source.evm.stack.length =
+            (localsCtx.withLayout (above ++ suffix)).layout.length := by
+        simp only [Locals.Ctx.withLayout]
+        have hInitialLength :
+            target.source.evm.stack.length =
+              (above ++ name :: suffix).length := by
+          rw [hStackLength, hLayout]
+        simp only [List.length_append, List.length_cons] at hInitialLength
+        simp only [List.length_append]
+        omega
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
-        forward_of_context tail hNextRel hWF hReservation
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hFinalDepth, hFinalStackLength⟩ :=
+        forward_of_context tail hNextRel
+          (by simpa [stackOrder] using hFrameDepth)
+          (by
+            simpa [above, suffix, List.append_assoc] using hMidStackLength)
+          hWF hReservation
       have hHeadCompile' :
           Locals.Block.compileOpen localsCtx
               { stmts :=
@@ -624,7 +668,7 @@ theorem forward_of_context
         AllocationLowering.eraseName_append_name aboveFresh hSuffixFresh
       refine
         ⟨headCompiled ++ tailCompiled, finalCtx, finalTarget,
-          finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+          finalFrameDepth, fuel, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · simpa [AllocationLowering.lowerParams, classification, hLayout,
           AllocationLowering.lowerScratchParam, hErase] using
           hCombinedCompile
@@ -641,6 +685,8 @@ theorem forward_of_context
         rw [Expressions.StmtList.toStructured_append]
         exact hCombinedEval
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+      · exact hFinalStackLength
 termination_by pending.length
 
 /--
@@ -672,7 +718,9 @@ theorem forward_stack_of_context
         AllocationLowering.isStackSlot lowerCtx binding.2 = true)
     (hRel :
       AllocationObserverRelation.ActivationCalleeEntryRel contract plan
-        realized pending frameBase .stack source target) :
+        realized pending frameBase .stack source target)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length) :
     ∃ compiled finalCtx finalTarget fuel,
       Locals.Block.compileOpen localsCtx
           { stmts :=
@@ -688,15 +736,17 @@ theorem forward_stack_of_context
           (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
       AllocationObserverRelation.ActivationStateRel contract plan
         ((pending.map Prod.fst).reverse ++ realized) 0 frameBase
-        .stack source finalTarget := by
+        .stack source finalTarget ∧
+      finalTarget.source.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
       refine
-        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_⟩
+        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_, ?_⟩
       · simp [AllocationLowering.lowerParams, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerParams]
       · exact Structured.EffectSemantics.Block.Eval.nil
       · simpa using hRel.finish
+      · exact hStackLength
   | @stack _ _ _ _ name slot planDepth classification fresh location
       stackOrder tail =>
       have hNextRel := by
@@ -704,18 +754,20 @@ theorem forward_stack_of_context
           using hRel.activate_stack fresh location stackOrder
       obtain
           ⟨compiled, finalCtx, finalTarget, fuel,
-            hCompile, hFinalLayout, hEval, hFinalRel⟩ :=
+            hCompile, hFinalLayout, hEval, hFinalRel,
+            hFinalStackLength⟩ :=
         forward_stack_of_context tail
           (fun binding hBinding =>
             hAllStack binding (by simp [hBinding]))
-          hNextRel
+          hNextRel hStackLength
       refine
         ⟨compiled, finalCtx, finalTarget, fuel,
-          ?_, ?_, hEval, ?_⟩
+          ?_, ?_, hEval, ?_, ?_⟩
       · simpa [AllocationLowering.lowerParams, classification] using hCompile
       · simpa [AllocationLowering.lowerParams, classification] using
           hFinalLayout
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · exact hFinalStackLength
   | @scratch _ pending _ _ name slot classification _fresh _location
       _stackOrder _slotBound _layout _aboveFresh _suffixFresh
       _nameDepthBound _frameDepthLookup _frameDepthBound _tail =>
@@ -759,6 +811,11 @@ theorem forward_of_context
     (hZero :
       ∀ name, name ∈ pending.map Prod.fst →
         source.source.vars name = some AllocationSupport.zeroWord)
+    (hFrameDepth :
+      frameDepth =
+        (AllocationObserverRelation.currentStackOrder plan live).length)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length)
     (hWF : plan.WellFormed)
     (hReservation : contract.scratch? = some reservation) :
     ∃ compiled finalCtx finalTarget finalFrameDepth fuel,
@@ -776,15 +833,22 @@ theorem forward_of_context
           (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
       AllocationObserverRelation.ScratchStateRel contract plan
         ((pending.map Prod.fst).reverse ++ live) 0 frameBase
-        finalFrameDepth frameWords source finalTarget := by
+        finalFrameDepth frameWords source finalTarget ∧
+      finalFrameDepth =
+        (AllocationObserverRelation.currentStackOrder plan
+          ((pending.map Prod.fst).reverse ++ live)).length ∧
+      finalTarget.source.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
       refine
-        ⟨[], localsCtx, target, frameDepth, 1, ?_, ?_, ?_, ?_⟩
+        ⟨[], localsCtx, target, frameDepth, 1,
+          ?_, ?_, ?_, ?_, ?_, ?_⟩
       · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerReturns]
       · exact Structured.EffectSemantics.Block.Eval.nil
       · simpa using hRel
+      · simpa using hFrameDepth
+      · exact hStackLength
   | @stack _ pending _ planDepth _ name slot classification fresh location
       stackOrder tail =>
       let pushed :=
@@ -818,13 +882,23 @@ theorem forward_of_context
           (fun other hOther => by
             simp at hOther
             exact hOther)
-          (by simp) location stackOrder hNameZero
+            (by simp) location stackOrder hNameZero
+      have hNextStackLength :
+          pushed.source.evm.stack.length =
+            (localsCtx.withLayout
+              (name :: localsCtx.layout)).layout.length := by
+        rw [hPushedStack]
+        simp [Locals.Ctx.withLayout, hStackLength]
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hFinalDepth, hFinalStackLength⟩ :=
         forward_of_context tail hNextRel
           (fun other hOther => hZero other (by simp [hOther]))
-          hWF hReservation
+          (by
+            rw [stackOrder, hFrameDepth]
+            simp)
+          hNextStackLength hWF hReservation
       have hHeadCompile :=
         AllocationLowering.lowerStackReturn_compileOpen
           (name := name) (localsCtx := localsCtx)
@@ -860,7 +934,8 @@ theorem forward_of_context
               ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
                 Locals.bindLocals 0 (name :: localsCtx.layout))] ++
             tailCompiled,
-          finalCtx, finalTarget, finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+          finalCtx, finalTarget, finalFrameDepth, fuel,
+          ?_, ?_, ?_, ?_, ?_, ?_⟩
       · simpa [AllocationLowering.lowerReturns, classification] using
           hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -880,6 +955,8 @@ theorem forward_of_context
         rw [Expressions.StmtList.toStructured_append]
         exact hCombinedEval
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+      · exact hFinalStackLength
   | @scratch _ pending _ _ name slot classification fresh location
       stackOrder slotBound frameDepthLookup frameDepthBound tail =>
       obtain ⟨frameOp, hFrameOp⟩ :=
@@ -908,7 +985,7 @@ theorem forward_of_context
           reservation.containsRegion
             (AllocationObserverRelation.scratchAddress frameBase slot) 1 :=
         hRel.scratchAddress_reserved_of_bound slotBound hReservation
-      obtain ⟨midTarget, hStoreRun, hStoredRel, _hStoredStack⟩ :=
+      obtain ⟨midTarget, hStoreRun, hStoredRel, hStoredStack⟩ :=
         AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
           (stackOffset := 0) hPushedRel hPushedStack hWF
           (fun other hOther => by
@@ -930,12 +1007,18 @@ theorem forward_of_context
               source.source :=
           Locals.Source.State.insert_eq_of_apply_eq hNameZero
         simpa [hInsert] using hStoredRel
+      have hNextStackLength :
+          midTarget.source.evm.stack.length = localsCtx.layout.length := by
+        rw [hStoredStack]
+        exact hStackLength
       obtain
           ⟨tailCompiled, finalCtx, finalTarget, finalFrameDepth,
-            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hFinalDepth, hFinalStackLength⟩ :=
         forward_of_context tail hNextRel
           (fun other hOther => hZero other (by simp [hOther]))
-          hWF hReservation
+          (by simpa [stackOrder] using hFrameDepth)
+          hNextStackLength hWF hReservation
       have hHeadCompile :=
         AllocationLowering.lowerScratchReturn_compileOpen
           (ctx := lowerCtx) (name := name) (slot := slot)
@@ -984,7 +1067,8 @@ theorem forward_of_context
                   Structured.BasicInstr.op .add,
                   Structured.BasicInstr.op .mstore ])] ++
             tailCompiled,
-          finalCtx, finalTarget, finalFrameDepth, fuel, ?_, ?_, ?_, ?_⟩
+          finalCtx, finalTarget, finalFrameDepth, fuel,
+          ?_, ?_, ?_, ?_, ?_, ?_⟩
       · simpa [AllocationLowering.lowerReturns, classification] using
           hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -1007,6 +1091,8 @@ theorem forward_of_context
         rw [Expressions.StmtList.toStructured_append]
         exact hCombinedEval
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · simpa [List.reverse_cons, List.append_assoc] using hFinalDepth
+      · exact hFinalStackLength
 termination_by pending.length
 
 /--
@@ -1037,7 +1123,9 @@ theorem forward_stack_of_context
         frameBase .stack source target)
     (hZero :
       ∀ name, name ∈ pending.map Prod.fst →
-        source.source.vars name = some AllocationSupport.zeroWord) :
+        source.source.vars name = some AllocationSupport.zeroWord)
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length) :
     ∃ compiled finalCtx finalTarget fuel,
       Locals.Block.compileOpen localsCtx
           { stmts :=
@@ -1053,15 +1141,17 @@ theorem forward_stack_of_context
           (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
       AllocationObserverRelation.ActivationStateRel contract plan
         ((pending.map Prod.fst).reverse ++ live) 0 frameBase
-        .stack source finalTarget := by
+        .stack source finalTarget ∧
+      finalTarget.source.evm.stack.length = finalCtx.layout.length := by
   cases hContext with
   | nil =>
       refine
-        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_⟩
+        ⟨[], localsCtx, target, 1, ?_, ?_, ?_, ?_, ?_⟩
       · simp [AllocationLowering.lowerReturns, Locals.Block.compileOpen]
       · simp [AllocationLowering.lowerReturns]
       · exact Structured.EffectSemantics.Block.Eval.nil
       · simpa using hRel
+      · exact hStackLength
   | @stack _ pending _ planDepth _ name slot classification fresh location
       stackOrder tail =>
       let pushed :=
@@ -1096,14 +1186,22 @@ theorem forward_stack_of_context
               simp at hOther
               exact hOther)
             (by simp) location stackOrder hNameZero
+      have hNextStackLength :
+          pushed.source.evm.stack.length =
+            (localsCtx.withLayout
+              (name :: localsCtx.layout)).layout.length := by
+        rw [hPushedStack]
+        simp [Locals.Ctx.withLayout, hStackLength]
       obtain
           ⟨tailCompiled, finalCtx, finalTarget,
-            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel⟩ :=
+            tailFuel, hTailCompile, hFinalLayout, hTailEval, hFinalRel,
+            hFinalStackLength⟩ :=
         forward_stack_of_context tail
           (fun binding hBinding =>
             hAllStack binding (by simp [hBinding]))
           hNextRel
           (fun other hOther => hZero other (by simp [hOther]))
+          hNextStackLength
       have hHeadCompile :=
         AllocationLowering.lowerStackReturn_compileOpen
           (name := name) (localsCtx := localsCtx)
@@ -1139,7 +1237,7 @@ theorem forward_stack_of_context
               ([Structured.BasicInstr.push AllocationSupport.zeroWord] ++
                 Locals.bindLocals 0 (name :: localsCtx.layout))] ++
             tailCompiled,
-          finalCtx, finalTarget, fuel, ?_, ?_, ?_, ?_⟩
+          finalCtx, finalTarget, fuel, ?_, ?_, ?_, ?_, ?_⟩
       · simpa [AllocationLowering.lowerReturns, classification] using
           hCombinedCompile
       · simpa [AllocationLowering.lowerReturns, classification] using
@@ -1159,6 +1257,7 @@ theorem forward_stack_of_context
         rw [Expressions.StmtList.toStructured_append]
         exact hCombinedEval
       · simpa [List.reverse_cons, List.append_assoc] using hFinalRel
+      · exact hFinalStackLength
   | @scratch _ pending _ _ name slot classification _fresh _location
       _stackOrder _slotBound _frameDepthLookup _frameDepthBound _tail =>
       have hCurrent :=
@@ -1168,6 +1267,184 @@ theorem forward_stack_of_context
 termination_by pending.length
 
 end ReturnPrelude
+
+namespace FunctionPrelude
+
+/--
+Scratch authorization is required exactly for frame-backed activations.
+-/
+def ScratchAuthorized
+    (contract : MemoryContract.Contract) :
+    AllocationObserverRelation.ActivationMode → Prop
+  | .stack => True
+  | .scratch _frameDepth _frameWords =>
+      ∃ reservation,
+        contract.scratch? = some reservation
+
+/--
+Compile and execute the complete parameter/return prelude selected by a
+checked function compiler artifact.
+
+No generated code is accepted from the caller: both compilation phases are
+recovered from `FunctionPreludeContext`, which is constructed by the real
+validator, Functions lowerer, and Locals compiler.
+-/
+theorem forward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan} {frameWords frameBase : Nat}
+    {slots : AllocationSupport.FunSlots}
+    {entryCtx paramCtx returnCtx : Locals.Ctx}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    (hContext :
+      AllocationObserverContext.FunctionPreludeContext
+        lowerCtx plan frameWords slots entryCtx paramCtx returnCtx mode)
+    (hEntry :
+      AllocationObserverRelation.ActivationCalleeEntryRel contract plan
+        [] slots.params frameBase mode source target)
+    (hEntryStackLength :
+      target.source.evm.stack.length = entryCtx.layout.length)
+    (hZero :
+      ∀ name, name ∈ slots.returns.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord)
+    (hWF : plan.WellFormed)
+    (hScratch : ScratchAuthorized contract mode) :
+    ∃ compiled finalTarget finalMode fuel,
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx slots.params
+                entryCtx.layout).1 ++
+              (AllocationLowering.lowerReturns lowerCtx slots.returns
+                paramCtx.layout).1 } =
+        some (compiled, returnCtx) ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ActivationStateRel contract plan
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        0 frameBase finalMode source finalTarget ∧
+      finalTarget.source.evm.stack.length = returnCtx.layout.length ∧
+      AllocationObserverRelation.SameFrame mode finalMode := by
+  cases hContext with
+  | stack parameterSlots returnSlots parameters returns
+      parameterCompile returnCompile entryLayout parameterLayout bodyLayout =>
+      obtain ⟨paramExpected, hParamExpected⟩ := parameterCompile
+      obtain
+          ⟨paramCompiled, paramFinalCtx, paramTarget, paramFuel,
+            hParamCompile, _hParamLayout, hParamEval, hParamRel,
+            hParamStackLength⟩ :=
+        ParameterPrelude.forward_stack_of_context
+          parameters parameterSlots hEntry hEntryStackLength
+      rw [hParamExpected] at hParamCompile
+      cases hParamCompile
+      have hParamRel' :
+          AllocationObserverRelation.ActivationStateRel contract plan
+            (slots.params.map Prod.fst).reverse 0 frameBase .stack
+            source paramTarget := by
+        simpa using hParamRel
+      obtain ⟨returnExpected, hReturnExpected⟩ := returnCompile
+      obtain
+          ⟨returnCompiled, returnFinalCtx, returnTarget, returnFuel,
+            hReturnCompile, _hReturnLayout, hReturnEval, hReturnRel,
+            hReturnStackLength⟩ :=
+        ReturnPrelude.forward_stack_of_context
+          returns returnSlots hParamRel' hZero hParamStackLength
+      rw [hReturnExpected] at hReturnCompile
+      cases hReturnCompile
+      have hCompile :=
+        Locals.Block.compileOpen_append hParamExpected hReturnExpected
+      obtain ⟨fuel, hEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hParamEval hReturnEval
+      refine
+        ⟨paramExpected ++ returnExpected, returnTarget, .stack, fuel,
+          hCompile, ?_, ?_, hReturnStackLength,
+          AllocationObserverRelation.SameFrame.stack⟩
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  (paramExpected ++ returnExpected) }
+            target
+            (Structured.EffectSemantics.Outcome.regular returnTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hEval
+      · exact hReturnRel
+  | scratch parameters returns parameterCompile returnCompile
+      entryLayout parameterLayout bodyLayout =>
+      obtain ⟨reservation, hReservation⟩ := hScratch
+      have hScratchEntry :=
+        AllocationObserverRelation.ActivationCalleeEntryRel.to_scratch hEntry
+      obtain ⟨paramExpected, hParamExpected⟩ := parameterCompile
+      obtain
+          ⟨paramCompiled, paramFinalCtx, paramTarget, paramFrameDepth,
+            paramFuel, hParamCompile, _hParamLayout, hParamEval,
+            hParamRel, hParamDepth, hParamStackLength⟩ :=
+        ParameterPrelude.forward_of_context
+          parameters hScratchEntry
+            (by
+              simp [AllocationObserverRelation.currentStackOrder])
+            hEntryStackLength hWF hReservation
+      rw [hParamExpected] at hParamCompile
+      cases hParamCompile
+      have hParamDepth' :
+          paramFrameDepth =
+            (AllocationObserverRelation.currentStackOrder plan
+              (slots.params.map Prod.fst).reverse).length := by
+        simpa using hParamDepth
+      have hParamRel' :
+          AllocationObserverRelation.ScratchStateRel contract plan
+            (slots.params.map Prod.fst).reverse 0 frameBase
+            paramFrameDepth frameWords source paramTarget := by
+        simpa using hParamRel
+      have hParamRelExact :
+          AllocationObserverRelation.ScratchStateRel contract plan
+            (slots.params.map Prod.fst).reverse 0 frameBase
+            (AllocationObserverRelation.currentStackOrder plan
+              (slots.params.map Prod.fst).reverse).length
+            frameWords source paramTarget := by
+        simpa [hParamDepth'] using hParamRel'
+      obtain ⟨returnExpected, hReturnExpected⟩ := returnCompile
+      obtain
+          ⟨returnCompiled, returnFinalCtx, returnTarget, returnFrameDepth,
+            returnFuel, hReturnCompile, _hReturnLayout, hReturnEval,
+            hReturnRel, hReturnDepth, hReturnStackLength⟩ :=
+        ReturnPrelude.forward_of_context
+          returns hParamRelExact hZero rfl hParamStackLength
+          hWF hReservation
+      rw [hReturnExpected] at hReturnCompile
+      cases hReturnCompile
+      have hCompile :=
+        Locals.Block.compileOpen_append hParamExpected hReturnExpected
+      obtain ⟨fuel, hEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hParamEval hReturnEval
+      let finalMode : AllocationObserverRelation.ActivationMode :=
+        .scratch returnFrameDepth frameWords
+      refine
+        ⟨paramExpected ++ returnExpected, returnTarget, finalMode, fuel,
+          hCompile, ?_, ?_, hReturnStackLength, ?_⟩
+      · change
+          Structured.ObserverSemantics.Block.Eval targetProgram fuel
+            { stmts :=
+                Expressions.StmtList.toStructured
+                  (paramExpected ++ returnExpected) }
+            target
+            (Structured.EffectSemantics.Outcome.regular returnTarget)
+        rw [Expressions.StmtList.toStructured_append]
+        exact hEval
+      · exact AllocationObserverRelation.ActivationStateRel.scratch hReturnRel
+      · exact
+          AllocationObserverRelation.SameFrame.scratch
+            0 returnFrameDepth frameWords
+
+end FunctionPrelude
 
 namespace ArgList
 

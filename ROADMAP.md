@@ -641,7 +641,9 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   return preludes are checked through the actual compiler output without a
   synthetic frame. The existing scratch prelude proofs remain on the real
   frame-backed path and have checked conversions to the shared entry
-  interface.
+  interface. `FunctionPrelude.forward` now composes both phases for either
+  compiler-selected activation mode, tracks exact scratch-frame depth, and
+  proves the final target stack length equals the compiler body layout.
   `lowerExprList`/`exprSeqOfList` path has checked forward preservation and
   deterministic backward classification. Function and Locals compiler owners
   expose exact procedure-entry, prelude, open-body, return-expression, and
@@ -650,8 +652,8 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   including reversed entry-stack order. The allocation relation can construct
   a stack-local store realization directly from a checked source lookup and
   concrete entry stack, and metadata-only entry markers have checked
-  compilation and no-op execution. Whole-function composition of entry
-  markers, parameter/return preludes, recursive body execution, call
+  compilation and no-op execution. Constructing the validated body
+  `ActivationExprContext`, composing recursive body execution and call
   execution, and matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,

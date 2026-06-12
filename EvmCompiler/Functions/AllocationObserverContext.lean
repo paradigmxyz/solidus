@@ -1133,7 +1133,8 @@ inductive FunctionPreludeContext
     (lowerCtx : AllocationLowering.Ctx)
     (plan : Plan) (frameWords : Nat)
     (slots : AllocationSupport.FunSlots)
-    (entryCtx paramCtx returnCtx : Locals.Ctx) : Prop where
+    (entryCtx paramCtx returnCtx : Locals.Ctx) :
+    AllocationObserverRelation.ActivationMode → Prop where
   | stack
       (parameterSlots :
         ∀ binding ∈ slots.params,
@@ -1150,6 +1151,20 @@ inductive FunctionPreludeContext
           (AllocationObserverRelation.currentStackOrder plan
             (slots.params.map Prod.fst).reverse).length
           paramCtx)
+      (parameterCompile :
+        ∃ code,
+          Locals.Block.compileOpen entryCtx
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx slots.params
+                    entryCtx.layout).1 } =
+            some (code, paramCtx))
+      (returnCompile :
+        ∃ code,
+          Locals.Block.compileOpen paramCtx
+              { stmts :=
+                  (AllocationLowering.lowerReturns lowerCtx slots.returns
+                    paramCtx.layout).1 } =
+            some (code, returnCtx))
       (entryLayout :
         entryCtx.layout = (slots.params.map Prod.fst).reverse)
       (parameterLayout :
@@ -1162,7 +1177,7 @@ inductive FunctionPreludeContext
             ((slots.returns.map Prod.fst).reverse ++
               (slots.params.map Prod.fst).reverse)) :
       FunctionPreludeContext lowerCtx plan frameWords slots
-        entryCtx paramCtx returnCtx
+        entryCtx paramCtx returnCtx .stack
   | scratch
       (parameters :
         ParameterPreludeContext lowerCtx plan frameWords
@@ -1173,6 +1188,20 @@ inductive FunctionPreludeContext
           (AllocationObserverRelation.currentStackOrder plan
             (slots.params.map Prod.fst).reverse).length
           paramCtx)
+      (parameterCompile :
+        ∃ code,
+          Locals.Block.compileOpen entryCtx
+              { stmts :=
+                  (AllocationLowering.lowerParams lowerCtx slots.params
+                    entryCtx.layout).1 } =
+            some (code, paramCtx))
+      (returnCompile :
+        ∃ code,
+          Locals.Block.compileOpen paramCtx
+              { stmts :=
+                  (AllocationLowering.lowerReturns lowerCtx slots.returns
+                    paramCtx.layout).1 } =
+            some (code, returnCtx))
       (entryLayout :
         entryCtx.layout =
           (slots.params.map Prod.fst).reverse ++
@@ -1189,7 +1218,7 @@ inductive FunctionPreludeContext
                 (slots.params.map Prod.fst).reverse) ++
             [lowerCtx.frameName]) :
       FunctionPreludeContext lowerCtx plan frameWords slots
-        entryCtx paramCtx returnCtx
+        entryCtx paramCtx returnCtx (.scratch 0 frameWords)
 
 namespace FunctionPreludeContext
 
@@ -1213,7 +1242,7 @@ theorem of_validated_function
           frameConfig? state fn =
         some (proc, final))
     (hCompile : proc.toExpressions? = some lowerProc) :
-    ∃ slots plan paramCtx returnCtx,
+    ∃ slots plan paramCtx returnCtx mode,
       let root := ScopeId.function fn.name
       let scratchBindings :=
         AllocationLowering.scratchBindingsForRoot
@@ -1236,7 +1265,7 @@ theorem of_validated_function
       allocation.find? (.function fn.name) = some plan ∧
         plan.WellFormed ∧
         FunctionPreludeContext lowerCtx plan recipe.frameWords slots
-          entryCtx paramCtx returnCtx := by
+          entryCtx paramCtx returnCtx mode := by
   obtain
       ⟨validatedSlots, entry, added, hLookup, hMatches,
         hEntry, hScope, hEnv, hFind⟩ :=
@@ -1435,9 +1464,9 @@ theorem of_validated_function
   refine
     ⟨slots, plan, paramCtx, returnCtx, ?_⟩
   dsimp only
-  refine ⟨hFindPlan, hPlanWF, ?_⟩
   by_cases hNeedsFrame : needsFrame = true
-  · have hEntryLayout :
+  · refine ⟨.scratch 0 recipe.frameWords, hFindPlan, hPlanWF, ?_⟩
+    have hEntryLayout :
         entryCtx.layout =
           (slots.params.map Prod.fst).reverse ++ [frameName] := by
       change entryLayout =
@@ -1545,9 +1574,11 @@ theorem of_validated_function
                   (slots.params.map Prod.fst).reverse) ++
               [frameName] := by rw [hBodyOrder]
     exact
-      .scratch hParamContext hReturnContext hEntryLayout
+      .scratch hParamContext hReturnContext
+        ⟨paramCode, hParamCompile'⟩ ⟨returnCode, hReturnCompile⟩ hEntryLayout
         hParamLayout hBodyLayout
-  · have hNeedsFrameFalse : needsFrame = false :=
+  · refine ⟨.stack, hFindPlan, hPlanWF, ?_⟩
+    have hNeedsFrameFalse : needsFrame = false :=
       Bool.eq_false_of_not_eq_true hNeedsFrame
     have hRootNoFrame :
         AllocationLowering.rootNeedsFrame recipe stackSlots
@@ -1643,7 +1674,8 @@ theorem of_validated_function
                 (slots.params.map Prod.fst).reverse) := hBodyOrder.symm
     exact
       .stack hParamAllStack hReturnAllStack
-        hParamContext hReturnContext hEntryLayout
+        hParamContext hReturnContext
+        ⟨paramCode, hParamCompile'⟩ ⟨returnCode, hReturnCompile⟩ hEntryLayout
         hParamLayout hBodyLayout
 
 end FunctionPreludeContext

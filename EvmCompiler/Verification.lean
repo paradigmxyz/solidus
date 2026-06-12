@@ -163,6 +163,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ReturnPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_of_context
 #check EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_stack_of_context
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
