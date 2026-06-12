@@ -284,6 +284,13 @@ Adjacent boundary status:
   branch-selection lemmas handle unmatched fallthrough; selected cases and
   defaults expose their ordinary scoped lowering/compilation equations to the
   recursive body theorem and restore the common outer activation invariant.
+  All `for` outcomes are now checked through a construct-specific adjacent
+  module. Canonical source-fuel inversion proves regular recursion, body
+  breaks, direct body/post leave or halt, and leave/halt reached after
+  arbitrarily many regular or continuing iterations. The public statement
+  boundary derives recursive loop evidence internally from one-step body/post
+  preservation. It also covers initializer leave/halt and proves the ordinary
+  compiler-emitted outer cleanup unreachable for every abrupt outcome.
   Remaining work at this boundary is recursive statement/function/call
   composition, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
@@ -617,13 +624,13 @@ The remaining observer-proof critical path is explicit:
 4. Prove the Functions/allocation/Expressions and Yul adjacent backward
    boundaries, compose `ClosedResourceCorrect`, and run the final gates.
 
-The recursive Functions boundary now has checked regular preservation for
-leaves, lexical blocks, and both `if` paths. Condition evaluation consumes its
-single target result through a reusable activation relation theorem; true
-branches invoke the adjacent scoped-body theorem through the real lowerer and
-Locals compiler, while false branches transport only allocator bookkeeping.
-Switch, loop, call, abrupt recursive outcomes, and the matching backward
-adequacy remain.
+The recursive Functions boundary now has checked preservation for leaves,
+lexical blocks, both `if` paths, both switch-selection paths, and every `for`
+outcome. Condition evaluation consumes its single target result through a
+reusable activation relation theorem; recursive loop preservation descends on
+canonical source fuel and abrupt outcomes skip compiler cleanup through the
+shared outcome relation. Recursive statement/function composition, calls, and
+the matching backward adequacy remain.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

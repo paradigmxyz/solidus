@@ -237,6 +237,11 @@ abbrev cont {σ : Type} := @OutcomeT.cont σ
 abbrev leave {σ : Type} := @OutcomeT.leave σ
 abbrev halt {σ : Type} := @OutcomeT.halt σ
 
+def IsExit {σ : Type} (outcome : OutcomeT σ) : Prop :=
+  match outcome.mode with
+  | .leave | .halt _ => True
+  | .regular | .brk | .cont => False
+
 end Outcome
 
 namespace Code
@@ -1099,6 +1104,60 @@ theorem Block.Eval.append_nonregular
   | cons_halt hStmt =>
       exact Block.Eval.cons_halt hStmt
 termination_by left.length
+
+/--
+A nonregular statement result exits its enclosing block immediately, making
+the remaining statement list unreachable.
+-/
+theorem Block.Eval.cons_nonregular
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {fuel : Nat} {stmt : Stmt} {rest : List Stmt}
+    {state : σ} {outcome : OutcomeT σ}
+    (hStmt :
+      Stmt.Eval model handler program fuel stmt state outcome)
+    (hMode : outcome.mode ≠ .regular) :
+    Block.Eval model handler program (fuel + 1)
+      { stmts := stmt :: rest } state outcome := by
+  rcases outcome with ⟨final, outcomeMode⟩
+  cases outcomeMode with
+  | regular =>
+      exact False.elim (hMode rfl)
+  | brk =>
+      exact Block.Eval.cons_brk hStmt
+  | cont =>
+      exact Block.Eval.cons_cont hStmt
+  | leave =>
+      exact Block.Eval.cons_leave hStmt
+  | halt kind =>
+      exact Block.Eval.cons_halt hStmt
+
+/--
+An activation-exiting initializer determines the result of the whole `for`
+statement without evaluating its condition or loop bodies.
+-/
+theorem Stmt.Eval.for_init_exit
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {fuel : Nat} {init : Block} {cond : Code} {post body : Block}
+    {state : σ} {outcome : OutcomeT σ}
+    (hInit :
+      Block.Eval model handler program fuel init state outcome)
+    (hExit : Outcome.IsExit outcome) :
+    Stmt.Eval model handler program (fuel + 1)
+      (.for_ init cond post body) state outcome := by
+  rcases outcome with ⟨final, outcomeMode⟩
+  cases outcomeMode with
+  | regular =>
+      simp [Outcome.IsExit, Outcome.regular] at hExit
+  | brk =>
+      simp [Outcome.IsExit, Outcome.brk] at hExit
+  | cont =>
+      simp [Outcome.IsExit, Outcome.cont] at hExit
+  | leave =>
+      exact Stmt.Eval.for_init_leave hInit
+  | halt kind =>
+      exact Stmt.Eval.for_init_halt hInit
 
 set_option linter.unusedSimpArgs false in
 mutual

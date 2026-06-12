@@ -3014,6 +3014,44 @@ theorem target_nonregular {transcript : Trace}
   | halt _ _ =>
       simp [Structured.EffectSemantics.Outcome.halt]
 
+/--
+The shared outcome relation preserves activation exit status.
+-/
+theorem target_isExit {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source :
+      Functions.ObserverSemantics.Outcome (SourceState transcript)}
+    {target :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target)
+    (hSource :
+      Functions.Source.Effectful.Outcome.IsExit source) :
+    Structured.EffectSemantics.Outcome.IsExit target := by
+  cases hRel with
+  | regular _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hSource
+  | brk _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.brk,
+        Locals.Source.Effectful.Outcome.brk] at hSource
+  | cont _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.cont,
+        Locals.Source.Effectful.Outcome.cont] at hSource
+  | leave _ =>
+      simp [Structured.EffectSemantics.Outcome.IsExit,
+        Structured.EffectSemantics.Outcome.leave]
+  | halt kind _ =>
+      simp [Structured.EffectSemantics.Outcome.IsExit,
+        Structured.EffectSemantics.Outcome.halt]
+
 end ActivationOutcomeRel
 
 /--

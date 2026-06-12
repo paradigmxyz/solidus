@@ -1201,6 +1201,83 @@ theorem run_for_halt_of_runs {σ : Type}
     Locals.Source.Effectful.Outcome.halt]
 
 /--
+Canonical source `for` execution when a regular initializer is followed by an
+activation-exiting loop outcome.
+-/
+theorem run_for_exit_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source afterInit : σ} {outcome : Outcome σ}
+    (hExit : outcome.IsExit)
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          fuel init source =
+        .ok (Outcome.regular afterInit, initCtx))
+    (hLoop :
+      Stmt.runForLoop model prim program initCtx cond
+          initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body fuel afterInit =
+        .ok outcome) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.for_ init cond post body) source =
+      .ok (outcome, ctx) := by
+  rcases outcome with ⟨final, outcomeMode⟩
+  cases outcomeMode with
+  | regular =>
+      simp [Outcome.IsExit, Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hExit
+  | brk =>
+      simp [Outcome.IsExit, Outcome.brk,
+        Locals.Source.Effectful.Outcome.brk] at hExit
+  | cont =>
+      simp [Outcome.IsExit, Outcome.cont,
+        Locals.Source.Effectful.Outcome.cont] at hExit
+  | leave =>
+      exact run_for_leave_of_runs model prim program hInit hLoop
+  | halt kind =>
+      exact run_for_halt_of_runs model prim program hInit hLoop
+
+/--
+Canonical source `for` execution when its initializer exits the activation.
+-/
+theorem run_for_init_exit_of_runOpen {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hExit : outcome.IsExit)
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          fuel init source =
+        .ok (outcome, initCtx)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.for_ init cond post body) source =
+      .ok (outcome, ctx) := by
+  rcases outcome with ⟨final, outcomeMode⟩
+  cases outcomeMode with
+  | regular =>
+      simp [Outcome.IsExit, Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hExit
+  | brk =>
+      simp [Outcome.IsExit, Outcome.brk,
+        Locals.Source.Effectful.Outcome.brk] at hExit
+  | cont =>
+      simp [Outcome.IsExit, Outcome.cont,
+        Locals.Source.Effectful.Outcome.cont] at hExit
+  | leave =>
+      rw [Stmt.run, hInit]
+      rfl
+  | halt kind =>
+      rw [Stmt.run, hInit]
+      rfl
+
+/--
 Canonical source `if` execution when the condition is false.
 -/
 theorem run_if_false_of_eval {σ : Type}
