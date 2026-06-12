@@ -1439,17 +1439,66 @@ inductive ModeRel :
   | halt (kind : Assembly.HaltKind) :
       ModeRel (.halt kind) (.halt kind)
 
-structure OutcomeRel {transcript : Trace}
+/--
+Terminal outcomes retain only observable shared state. Local-variable
+realization is intentionally absent: the Locals compiler may discard every
+local stack slot immediately before a halt, and no source continuation can
+observe those bindings afterward.
+-/
+structure HaltStateRel {transcript : Trace}
     (contract : MemoryContract.Contract) (plan : Plan)
-    (live : List Locals.Name) (stackOffset frameBase : Nat)
-    (source : Functions.ObserverSemantics.Outcome
-      (SourceState transcript))
-    (target : Structured.ObserverSemantics.Outcome
-      (transcript := transcript)) : Prop where
-  state :
-    StateRel contract plan live stackOffset frameBase
-      source.state target.state
-  mode : ModeRel source.mode target.mode
+    (source : SourceState transcript) (target : TargetState transcript) :
+    Prop where
+  cursor : source.cursor = target.cursor
+  shared : SharedRel contract source.source.shared target.source.evm.toSharedState
+
+/--
+Outcome-indexed allocation relation.
+
+Continuing control modes retain the complete named-local realization. Halting
+outcomes retain only the shared EVM state and observer cursor because compiler
+cleanup is free to erase dead local representation before the terminal step.
+-/
+inductive OutcomeRel {transcript : Trace}
+    (contract : MemoryContract.Contract) (plan : Plan)
+    (live : List Locals.Name) (stackOffset frameBase : Nat) :
+    Functions.ObserverSemantics.Outcome (SourceState transcript) →
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript) → Prop where
+  | regular
+      {source : SourceState transcript} {target : TargetState transcript}
+      (state :
+        StateRel contract plan live stackOffset frameBase source target) :
+      OutcomeRel contract plan live stackOffset frameBase
+        (Functions.Source.Effectful.Outcome.regular source)
+        (Structured.EffectSemantics.Outcome.regular target)
+  | brk
+      {source : SourceState transcript} {target : TargetState transcript}
+      (state :
+        StateRel contract plan live stackOffset frameBase source target) :
+      OutcomeRel contract plan live stackOffset frameBase
+        (Functions.Source.Effectful.Outcome.brk source)
+        (Structured.EffectSemantics.Outcome.brk target)
+  | cont
+      {source : SourceState transcript} {target : TargetState transcript}
+      (state :
+        StateRel contract plan live stackOffset frameBase source target) :
+      OutcomeRel contract plan live stackOffset frameBase
+        (Functions.Source.Effectful.Outcome.cont source)
+        (Structured.EffectSemantics.Outcome.cont target)
+  | leave
+      {source : SourceState transcript} {target : TargetState transcript}
+      (state :
+        StateRel contract plan live stackOffset frameBase source target) :
+      OutcomeRel contract plan live stackOffset frameBase
+        (Functions.Source.Effectful.Outcome.leave source)
+        (Structured.EffectSemantics.Outcome.leave target)
+  | halt (kind : Assembly.HaltKind)
+      {source : SourceState transcript} {target : TargetState transcript}
+      (state : HaltStateRel contract plan source target) :
+      OutcomeRel contract plan live stackOffset frameBase
+        (Functions.Source.Effectful.Outcome.halt kind source)
+        (Structured.EffectSemantics.Outcome.halt kind target)
 
 namespace Frame
 

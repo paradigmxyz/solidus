@@ -35,6 +35,7 @@ case "$layer" in
       EvmCompiler.Functions.AllocationObserverContext
       EvmCompiler.Functions.AllocationObserverExpression
       EvmCompiler.Functions.AllocationObserverPrimitive
+      EvmCompiler.Functions.AllocationObserverTerminal
       EvmCompiler.Locals.PrimitivePreservation
       EvmCompiler.Expressions.ObserverPreservation
       EvmCompiler.Objects.Compiler

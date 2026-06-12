@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 04:56 PDT.
+Last updated: 2026-06-12 05:09 PDT.
 
 ## Objective
 
@@ -200,7 +200,13 @@ Adjacent boundary status:
   target stack prefixes, allocation offsets, active scratch-frame invariants,
   and observer state. Forward and backward wrappers are checked for literals,
   stack variables, scratch variables, `gas()`, and `msize()`.
-  Remaining work at this boundary is terminal memory families, recursive statement/function and call
+  Terminal memory behavior is now checked through the pass-owned
+  `AllocationObserverTerminal` family. `STOP`, `RETURN`, `REVERT`, and
+  `SELFDESTRUCT` share one source-memory-safe invocation interface; return and
+  revert use reservation-relative read preservation, terminal execution
+  replays over an arbitrary caller stack suffix, and halting outcomes retain
+  only observable shared state after compiler cleanup discards dead locals.
+  Remaining work at this boundary is recursive statement/function and call
   composition, construction of `ScratchStateRel` at function entry,
   propagation of source-facing memory safety and fuel through those recursive
   judgments, and the whole-program adjacent forward/backward theorem.

@@ -12,6 +12,7 @@ import EvmCompiler.Functions.AllocationObserverPreservation
 import EvmCompiler.Functions.AllocationObserverContext
 import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Functions.AllocationObserverPrimitive
+import EvmCompiler.Functions.AllocationObserverTerminal
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
@@ -106,6 +107,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mcopy_primitiveForward
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_step_exists
 #check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_eval_length
+#check EvmCompiler.Locals.Source.PrimitiveSemantics.structured_terminal_step_exists
+#check EvmCompiler.Functions.AllocationObserverTerminal.Machine.evmReturn_both
+#check EvmCompiler.Functions.AllocationObserverTerminal.Machine.evmRevert_both
+#check EvmCompiler.Functions.AllocationObserverTerminal.Invocation.simulate
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval

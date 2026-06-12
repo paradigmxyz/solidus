@@ -165,7 +165,10 @@ def TerminalMemorySafe (contract : MemoryContract.Contract)
   match kind, values.reverse with
   | .return, [address, size]
   | .revert, [address, size] =>
-      RegionAllowed contract address.toNat size.toNat
+      RegionAllowed contract address.toNat size.toNat ∧
+        Compiler.MemoryRelation.ExpansionNoWrap
+          address.toNat size.toNat ∧
+        address.toNat + size.toNat < USize.size
   | .stop, []
   | .selfdestruct, [_recipient] =>
       True

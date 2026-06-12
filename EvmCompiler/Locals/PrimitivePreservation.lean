@@ -176,6 +176,85 @@ theorem structured_eval_length
               List.length_reverse] using hStackLength
   · simp [hLength] at hEval
 
+/--
+Successful canonical terminal evaluation can be replayed over an arbitrary
+caller stack suffix. Runtime PC and execution-length counters may differ, but
+the projected shared state and the untouched suffix agree exactly.
+-/
+theorem structured_terminal_step_exists
+    {kind : Assembly.HaltKind}
+    {shared sharedFinal : EvmYul.SharedState .EVM}
+    {values : List Word} {evm : EVMState}
+    {baseStack : EvmYul.Stack Word}
+    (hEval :
+      structured.terminal kind shared values = .ok sharedFinal)
+    (hShared : evm.toSharedState = shared)
+    (hStack : evm.stack = values.reverse ++ baseStack) :
+    ∃ evmFinal,
+      Structured.Terminal.step kind evm = .ok evmFinal ∧
+        evmFinal.toSharedState = sharedFinal ∧
+          ∃ isolatedFinal,
+            Structured.Terminal.step kind
+                { toSharedState := shared
+                  pc := EvmYul.UInt256.ofNat 0
+                  stack := values.reverse
+                  execLength := 0 } =
+              .ok isolatedFinal ∧
+            evmFinal.stack = isolatedFinal.stack ++ baseStack := by
+  let isolated : EVMState :=
+    { toSharedState := shared
+      pc := EvmYul.UInt256.ofNat 0
+      stack := values.reverse
+      execLength := 0 }
+  change
+    (match Structured.Terminal.step kind isolated with
+      | .ok state' =>
+          Except.ok state'.toSharedState
+      | .error err =>
+          Except.error err) =
+        Except.ok sharedFinal at hEval
+  cases hIsolated :
+      Structured.Terminal.step kind isolated with
+  | error err =>
+      simp [hIsolated] at hEval
+  | ok isolatedFinal =>
+      have hIsolatedShared :
+          isolatedFinal.toSharedState = sharedFinal := by
+        simpa [hIsolated] using hEval
+      have hFramed :=
+        Structured.Terminal.step_append_stack
+          kind isolated isolatedFinal baseStack hIsolated
+      let framed : EVMState :=
+        { isolated with stack := isolated.stack ++ baseStack }
+      have hInitialRel :
+          Assembly.SameRuntimeData evm framed := by
+        simp [Assembly.SameRuntimeData, Assembly.eraseRuntimeControl,
+          framed, isolated, hShared, hStack]
+      have hCongruence :=
+        Structured.Terminal.step_map_eraseRuntimeControl
+          kind hInitialRel
+      change
+        Structured.Terminal.step kind framed =
+          .ok { isolatedFinal with
+            stack := isolatedFinal.stack ++ baseStack } at hFramed
+      rw [hFramed] at hCongruence
+      cases hTarget : Structured.Terminal.step kind evm with
+      | error err =>
+          simp [hTarget, Except.map] at hCongruence
+      | ok evmFinal =>
+          simp [hTarget, Except.map] at hCongruence
+          have hFinalShared :
+              evmFinal.toSharedState = isolatedFinal.toSharedState := by
+            simpa [Assembly.eraseRuntimeControl] using
+              congrArg EvmYul.EVM.State.toSharedState hCongruence
+          have hFinalStack :
+              evmFinal.stack = isolatedFinal.stack ++ baseStack := by
+            simpa [Assembly.eraseRuntimeControl] using
+              congrArg EvmYul.EVM.State.stack hCongruence
+          exact
+            ⟨evmFinal, rfl, hFinalShared.trans hIsolatedShared,
+              isolatedFinal, rfl, hFinalStack⟩
+
 end PrimitiveSemantics
 end Source
 end Locals
