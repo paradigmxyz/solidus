@@ -234,11 +234,18 @@ Adjacent boundary status:
   The single recursive expression forward/backward proof now runs through the
   activation interface for both genuinely stack-only and scratch-frame
   artifacts, with one exhaustive primitive family and no parallel interpreter.
-  Declaration and assignment consumers use that shared expression theorem;
-  their public APIs still need to be generalized from scratch contexts to
-  activation contexts. Remaining work at this boundary is recursive
-  statement/function/call composition, abrupt cleanup and terminal statement
-  composition, construction of the activation relation at function entry,
+  Declaration and assignment consumers now expose activation-general
+  forward/backward APIs. Canonical Functions fuel monotonicity and Structured
+  block append lemmas are owned by their semantic modules; the allocation
+  statement boundary composes them through checked empty, regular-head, and
+  abrupt-head block interfaces. Expression, declaration, and assignment leaves
+  lift into the regular interface. Terminal arguments execute through the real
+  lowerer/compiler, the shared expression-sequence theorem, and a terminal-owned
+  halt relation; `RETURN`, `REVERT`, and `SELFDESTRUCT` therefore lift into the
+  nonregular interface without retaining dead local/frame realization.
+  Remaining work at this boundary is recursive statement/function/call
+  composition, abrupt cleanup for break/continue/leave and no-argument
+  terminals, construction of the activation relation at function entry,
   propagation of source-facing memory safety and fuel, and the whole-program
   adjacent forward/backward theorem.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;

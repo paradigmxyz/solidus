@@ -427,6 +427,63 @@ theorem Invocation.simulate
             EvmYul.EVM.State.incrPC,
             EvmYul.MachineState.setHReturn, hRel.world]
 
+/--
+Observer-state terminal preservation over an arbitrary target stack suffix.
+
+Terminal execution preserves the observer cursor and relates only shared
+observable state. Named-local and scratch-frame realization is intentionally
+discarded because no continuation can observe it after a halt.
+-/
+theorem Invocation.forward_observer
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {kind : Assembly.HaltKind} {values : List Word}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {baseStack : EvmYul.Stack Word}
+    (invocation : Invocation contract kind values)
+    (hRel :
+      ActivationStateRel contract plan live stackOffset frameBase
+        mode source target)
+    (hEval :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind source values =
+        .ok sourceFinal)
+    (hStack :
+      target.source.evm.stack = values.reverse ++ baseStack) :
+    ∃ evmFinal,
+      Structured.Terminal.step kind target.source.evm =
+          .ok evmFinal ∧
+        HaltStateRel contract plan sourceFinal
+          (target.withSource (target.source.withEVM evmFinal)) := by
+  unfold Functions.ObserverSemantics.primitiveSemantics at hEval
+  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
+  cases hSourceEval :
+      Locals.Source.PrimitiveSemantics.structured.terminal
+        kind source.source.shared values with
+  | error err =>
+      simp [hSourceEval] at hEval
+  | ok sourceSharedFinal =>
+      simp [hSourceEval] at hEval
+      subst sourceFinal
+      obtain ⟨targetSharedFinal, hTargetEval, hSharedRel⟩ :=
+        invocation.simulate hRel.base.core.shared hRel.activeNoWrap
+          hSourceEval
+      obtain
+          ⟨evmFinal, hStep, hFinalShared, _isolated, _hIsolated,
+            _hFinalStack⟩ :=
+        Locals.Source.PrimitiveSemantics.structured_terminal_step_exists
+          hTargetEval rfl hStack
+      refine ⟨evmFinal, hStep, ?_⟩
+      refine ⟨hRel.base.cursor, ?_⟩
+      simpa [Simulation.ResourceReplay.State.withSource,
+        Structured.RunState.withEVM, Locals.Source.State.withShared,
+        hFinalShared] using hSharedRel
+
 end AllocationObserverTerminal
 end Functions
 end EvmCompiler

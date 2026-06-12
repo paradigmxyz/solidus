@@ -2342,6 +2342,62 @@ inductive ActivationOutcomeRel {transcript : Trace}
         (Functions.Source.Effectful.Outcome.halt kind source)
         (Structured.EffectSemantics.Outcome.halt kind target)
 
+namespace ActivationOutcomeRel
+
+/--
+Related continuing and terminal outcomes have exactly the same control mode.
+
+This is the allocation-owned fact used by recursive statement-list
+composition to show that both semantics skip the same unreachable tail.
+-/
+theorem modeRel {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source :
+      Functions.ObserverSemantics.Outcome (SourceState transcript)}
+    {target :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target) :
+    ModeRel source.mode target.mode := by
+  cases hRel with
+  | regular _ => exact ModeRel.regular
+  | brk _ => exact ModeRel.brk
+  | cont _ => exact ModeRel.cont
+  | leave _ => exact ModeRel.leave
+  | halt kind _ => exact ModeRel.halt kind
+
+theorem target_nonregular {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source :
+      Functions.ObserverSemantics.Outcome (SourceState transcript)}
+    {target :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase mode
+        source target)
+    (hSource : source.mode ≠ .regular) :
+    target.mode ≠ .regular := by
+  cases hRel with
+  | regular _ =>
+      exact False.elim (hSource rfl)
+  | brk _ =>
+      simp [Structured.EffectSemantics.Outcome.brk]
+  | cont _ =>
+      simp [Structured.EffectSemantics.Outcome.cont]
+  | leave _ =>
+      simp [Structured.EffectSemantics.Outcome.leave]
+  | halt _ _ =>
+      simp [Structured.EffectSemantics.Outcome.halt]
+
+end ActivationOutcomeRel
+
 /--
 Outcome-indexed allocation relation.
 

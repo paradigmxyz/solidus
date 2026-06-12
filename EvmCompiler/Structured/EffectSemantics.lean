@@ -1036,6 +1036,70 @@ mutual
                 (Block.Eval.mono hPost (by omega))
 end
 
+/--
+Sequential composition for two independently reconstructed regular-prefix
+block evaluations. The resulting fuel is hidden because fuel bounds proof
+recursion rather than observable execution.
+-/
+theorem Block.Eval.append_regular_exists
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {leftFuel rightFuel : Nat} {left right : List Stmt}
+    {state mid : σ} {outcome : OutcomeT σ}
+    (hLeft :
+      Block.Eval model handler program leftFuel { stmts := left } state
+        (Outcome.regular mid))
+    (hRight :
+      Block.Eval model handler program rightFuel { stmts := right } mid
+        outcome) :
+    ∃ fuel,
+      Block.Eval model handler program fuel
+        { stmts := left ++ right } state outcome := by
+  cases hLeft with
+  | nil =>
+      exact ⟨rightFuel, by simpa using hRight⟩
+  | @cons_regular fuel stmt rest state headMid _ hStmt hRest =>
+      obtain ⟨tailFuel, hTail⟩ :=
+        Block.Eval.append_regular_exists hRest hRight
+      let combinedFuel := Nat.max fuel tailFuel
+      exact
+        ⟨combinedFuel + 1,
+          Block.Eval.cons_regular
+            (Stmt.Eval.mono hStmt (Nat.le_max_left _ _))
+            (Block.Eval.mono hTail (Nat.le_max_right _ _))⟩
+termination_by left.length
+
+/--
+Appending unreachable statements after a nonregular block outcome preserves
+the exact evaluation and fuel.
+-/
+theorem Block.Eval.append_nonregular
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {fuel : Nat} {left right : List Stmt}
+    {state : σ} {outcome : OutcomeT σ}
+    (hLeft :
+      Block.Eval model handler program fuel { stmts := left } state outcome)
+    (hMode : outcome.mode ≠ .regular) :
+    Block.Eval model handler program fuel
+      { stmts := left ++ right } state outcome := by
+  cases hLeft with
+  | nil =>
+      exact False.elim (hMode rfl)
+  | cons_regular hStmt hRest =>
+      exact
+        Block.Eval.cons_regular hStmt
+          (Block.Eval.append_nonregular hRest hMode)
+  | cons_brk hStmt =>
+      exact Block.Eval.cons_brk hStmt
+  | cons_cont hStmt =>
+      exact Block.Eval.cons_cont hStmt
+  | cons_leave hStmt =>
+      exact Block.Eval.cons_leave hStmt
+  | cons_halt hStmt =>
+      exact Block.Eval.cons_halt hStmt
+termination_by left.length
+
 set_option linter.unusedSimpArgs false in
 mutual
   theorem Block.eval_of_run {σ : Type} {model : StateModel σ}
