@@ -291,6 +291,92 @@ mutual
     | _ => state
 end
 
+private theorem planBlockScoped_env
+    (parent : Locals.Allocation.ScopeId)
+    (state : PlanningState) (block : Block) :
+    (planBlockScoped parent state block).allocation.env =
+      state.allocation.env := by
+  simp [planBlockScoped]
+
+private theorem planCases_env
+    (current : Locals.Allocation.ScopeId) :
+    ∀ (state : PlanningState) (cases : List (Word × Block)),
+      (planCases current state cases).allocation.env =
+        state.allocation.env
+  | state, [] => by
+      simp [planCases]
+  | state, (_, body) :: rest => by
+      simp only [planCases]
+      rw [planCases_env current (planBlockScoped current state body) rest]
+      exact planBlockScoped_env current state body
+
+private theorem planDefault_env
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∀ (body : Option Block),
+      (planDefault current state body).allocation.env =
+        state.allocation.env
+  | none => by
+      simp [planDefault]
+  | some body => by
+      simpa [planDefault] using planBlockScoped_env current state body
+
+private theorem planStmt_env_extension
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) (stmt : Stmt) :
+    ∃ added,
+      (planStmt current state stmt).allocation.env =
+        added ++ state.allocation.env := by
+  cases stmt with
+  | expr _ | assign _ _ | brk | cont | leave | call _ _ _
+  | terminal _ | terminalArgs _ _ =>
+      exact ⟨[], by simp [planStmt]⟩
+  | let_ name _ =>
+      exact
+        ⟨[(name, state.allocation.nextSlot)],
+          by simp [planStmt, allocateName]⟩
+  | block body =>
+      exact
+        ⟨[], by
+          simpa [planStmt] using planBlockScoped_env current state body⟩
+  | if_ _ body =>
+      exact
+        ⟨[], by
+          simpa [planStmt] using planBlockScoped_env current state body⟩
+  | switch _ cases defaultBody =>
+      refine ⟨[], ?_⟩
+      simp only [planStmt, List.nil_append]
+      rw [planDefault_env, planCases_env]
+  | for_ init _ post body =>
+      exact ⟨[], by simp [planStmt]⟩
+
+private theorem planStmtList_env_extension
+    (current : Locals.Allocation.ScopeId) :
+    ∀ (state : PlanningState) (stmts : List Stmt),
+      ∃ added,
+        (planStmtList current state stmts).allocation.env =
+          added ++ state.allocation.env
+  | state, [] => ⟨[], by simp [planStmtList]⟩
+  | state, stmt :: rest => by
+      obtain ⟨headPrefix, hHead⟩ :=
+        planStmt_env_extension current state stmt
+      obtain ⟨tailPrefix, hTail⟩ :=
+        planStmtList_env_extension current
+          (planStmt current state stmt) rest
+      refine ⟨tailPrefix ++ headPrefix, ?_⟩
+      simp only [planStmtList]
+      rw [hTail, hHead, List.append_assoc]
+
+theorem planBlockOpen_env_extension
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) (block : Block) :
+    ∃ added,
+      (planBlockOpen current state block).allocation.env =
+        added ++ state.allocation.env := by
+  rcases block with ⟨stmts⟩
+  simpa [planBlockOpen] using
+    planStmtList_env_extension current state stmts
+
 structure FunctionPlanResult where
   functions : List ScopedAllocation
   lexicalScopes : List ScopedAllocation
@@ -341,7 +427,7 @@ theorem planFunctions_member_valid
     (hMem : fn ∈ functions) :
     (fn.returns ++ fn.params).Nodup ∧
       fn.returns.length < 16 := by
-  induction functions generalizing state result with
+  induction functions generalizing state result fn with
   | nil =>
       simp at hMem
   | cons head rest ih =>
@@ -374,6 +460,129 @@ theorem planFunctions_member_valid
                   · subst fn
                     exact ⟨hSignature, hReturns⟩
                   · exact ih hTail hRest
+        · simp [planFunctions, hSignature, hReturns] at hPlan
+      · simp [planFunctions, hSignature] at hPlan
+
+theorem planFunctions_member_scope
+    {functionSlots : List FunSlots}
+    {state : CompileState} {functions : List FunDef}
+    {result : FunctionPlanResult} {fn : FunDef}
+    (hPlan :
+      planFunctions functionSlots state functions = some result)
+    (hMem : fn ∈ functions) :
+    ∃ entry,
+      entry ∈ result.functions ∧
+        entry.scope = .function fn.name := by
+  induction functions generalizing state result fn with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      by_cases hSignature :
+          (head.returns ++ head.params).Nodup
+      · by_cases hReturns : head.returns.length < 16
+        · cases hSlots : lookupFun? head.name functionSlots with
+          | none =>
+              simp [planFunctions, hSignature, hReturns, hSlots] at hPlan
+          | some slots =>
+              let bodyStart : CompileState :=
+                { env := functionEnv slots
+                  nextSlot := state.nextSlot }
+              let bodyPlan :=
+                planBlockOpen (.function head.name)
+                  { allocation := bodyStart, nextScope := 0, scopes := [] }
+                  head.body
+              let stateAfter : CompileState :=
+                { env := state.env
+                  nextSlot := bodyPlan.allocation.nextSlot }
+              cases hTail :
+                  planFunctions functionSlots stateAfter rest with
+              | none =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+              | some tail =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+                  subst result
+                  rcases List.mem_cons.mp hMem with hEq | hRest
+                  · subst fn
+                    refine
+                      ⟨{ scope := .function head.name
+                         state := bodyPlan.allocation },
+                        ?_, rfl⟩
+                    exact
+                      List.mem_cons.mpr
+                        (Or.inl (by simp [bodyPlan, bodyStart]))
+                  · obtain ⟨entry, hEntry, hScope⟩ :=
+                      ih hTail hRest
+                    exact ⟨entry, by simp [hEntry], hScope⟩
+        · simp [planFunctions, hSignature, hReturns] at hPlan
+      · simp [planFunctions, hSignature] at hPlan
+
+theorem planFunctions_member_entry
+    {functionSlots : List FunSlots}
+    {state : CompileState} {functions : List FunDef}
+    {result : FunctionPlanResult} {fn : FunDef}
+    (hPlan :
+      planFunctions functionSlots state functions = some result)
+    (hMem : fn ∈ functions) :
+    ∃ slots entry added,
+      lookupFun? fn.name functionSlots = some slots ∧
+        entry ∈ result.functions ∧
+        entry.scope = .function fn.name ∧
+        entry.state.env = added ++ functionEnv slots := by
+  induction functions generalizing state result fn with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      by_cases hSignature :
+          (head.returns ++ head.params).Nodup
+      · by_cases hReturns : head.returns.length < 16
+        · cases hSlots : lookupFun? head.name functionSlots with
+          | none =>
+              simp [planFunctions, hSignature, hReturns, hSlots] at hPlan
+          | some slots =>
+              let bodyStart : CompileState :=
+                { env := functionEnv slots
+                  nextSlot := state.nextSlot }
+              let bodyPlan :=
+                planBlockOpen (.function head.name)
+                  { allocation := bodyStart, nextScope := 0, scopes := [] }
+                  head.body
+              let stateAfter : CompileState :=
+                { env := state.env
+                  nextSlot := bodyPlan.allocation.nextSlot }
+              cases hTail :
+                  planFunctions functionSlots stateAfter rest with
+              | none =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+              | some tail =>
+                  simp [planFunctions, hSignature, hReturns, hSlots,
+                    bodyStart, bodyPlan, stateAfter, hTail] at hPlan
+                  subst result
+                  rcases List.mem_cons.mp hMem with hEq | hRest
+                  · subst fn
+                    obtain ⟨added, hEnv⟩ :=
+                      planBlockOpen_env_extension
+                        (.function head.name)
+                        { allocation := bodyStart
+                          nextScope := 0
+                          scopes := [] }
+                        head.body
+                    refine
+                      ⟨slots,
+                        { scope := .function head.name
+                          state := bodyPlan.allocation },
+                        added, hSlots, ?_, rfl, ?_⟩
+                    · simp [bodyPlan, bodyStart]
+                    · simpa [bodyPlan, bodyStart] using hEnv
+                  · obtain
+                      ⟨tailSlots, entry, added, hLookup, hEntry,
+                        hScope, hEnv⟩ :=
+                    ih hTail hRest
+                    exact
+                      ⟨tailSlots, entry, added, hLookup,
+                        by simp [hEntry], hScope, hEnv⟩
         · simp [planFunctions, hSignature, hReturns] at hPlan
       · simp [planFunctions, hSignature] at hPlan
 
@@ -449,6 +658,74 @@ theorem planRecipeCore?_function_signature_valid
             simp [hNames, initial, hSignatures, hFunctions] at hPlan
         | some functionPlan =>
             exact planFunctions_member_valid hFunctions hMem
+  · simp [hNames] at hPlan
+
+theorem planRecipeCore?_function_scope
+    {program : Program} {recipe : AllocationRecipe}
+    {fn : FunDef}
+    (hPlan : planRecipeCore? program = some recipe)
+    (hMem : fn ∈ program.functions) :
+    ∃ entry,
+      entry ∈ recipe.functions ∧
+        entry.scope = .function fn.name := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            exact planFunctions_member_scope hFunctions hMem
+  · simp [hNames] at hPlan
+
+theorem planRecipeCore?_function_entry
+    {program : Program} {recipe : AllocationRecipe}
+    {fn : FunDef}
+    (hPlan : planRecipeCore? program = some recipe)
+    (hMem : fn ∈ program.functions) :
+    ∃ slots entry added,
+      lookupFun? fn.name recipe.functionSlots = some slots ∧
+        slots.Matches fn ∧
+        entry ∈ recipe.functions ∧
+        entry.scope = .function fn.name ∧
+        entry.state.env = added ++ functionEnv slots := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            obtain
+                ⟨slots, entry, added, hLookup, hEntry, hScope, hEnv⟩ :=
+              planFunctions_member_entry hFunctions hMem
+            have hMatch :=
+              allocateFunctionSignatures_matches
+                program.functions initial
+            rw [hSignatures] at hMatch
+            obtain ⟨matched, hMatched, hMatches⟩ :=
+              lookupFun?_of_matches hMatch hNames hMem
+            rw [hLookup] at hMatched
+            have hSlots : slots = matched :=
+              Option.some.inj hMatched
+            subst matched
+            exact
+              ⟨slots, entry, added, hLookup, hMatches,
+                hEntry, hScope, hEnv⟩
   · simp [hNames] at hPlan
 
 def planRecipe? (maxFrameWords : Nat) (program : Program) :

@@ -139,6 +139,77 @@ theorem allocationOfState_location_of_mem
   simpa [allocationOfState, Locals.Allocation.Plan.location?] using
     find_bindings_of_mem (entries := entries) hNodup hMem
 
+theorem allocationOfState_location_stack_of_entry
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {entries : AllocationSupport.SlotEnv}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ state.env)
+    (hEntry : (name, slot) ∈ entries) :
+    ∃ depth,
+      (allocationOfState contract frameWords entries state).location? name =
+        some (.stack depth) := by
+  obtain ⟨depth, hLocation⟩ :=
+    bindingLocation_stack_of_mem hEntry
+  exact
+    ⟨depth, by
+      rw [allocationOfState_location_of_mem hNodup hMem, hLocation]⟩
+
+theorem allocationOfState_location_scratch_of_not_entry
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {entries : AllocationSupport.SlotEnv}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hNodup : (state.env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ state.env)
+    (hNotEntry : (name, slot) ∉ entries) :
+    (allocationOfState contract frameWords entries state).location? name =
+      some (.scratch slot) := by
+  rw [allocationOfState_location_of_mem hNodup hMem]
+  exact
+    congrArg some
+      (by simpa using bindingLocation_scratch_of_not_mem hNotEntry)
+
+theorem allocationOfState_scratchRegion_of_wellFormed
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {entries : AllocationSupport.SlotEnv}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hWF : (allocationOfState contract frameWords entries state).WellFormed)
+    (hLocation :
+      (allocationOfState contract frameWords entries state).location? name =
+        some (.scratch slot)) :
+    (allocationOfState contract frameWords entries state).scratchRegion? =
+      some
+        { base := scratchRegionBase contract
+          words := frameWords } := by
+  by_cases hScratch : entries.length < state.env.length
+  · simp [allocationOfState, hScratch]
+  · have hValid :=
+      Locals.Allocation.Plan.bindingValid_of_wellFormed_of_location?_eq_some
+        hWF hLocation
+    simp [allocationOfState, hScratch,
+      Locals.Allocation.Plan.BindingValid] at hValid
+
+theorem allocationOfState_scratch_bound_of_wellFormed
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {entries : AllocationSupport.SlotEnv}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hWF : (allocationOfState contract frameWords entries state).WellFormed)
+    (hLocation :
+      (allocationOfState contract frameWords entries state).location? name =
+        some (.scratch slot)) :
+    slot < frameWords := by
+  exact
+    Locals.Allocation.Plan.scratch_bound_of_wellFormed hWF hLocation
+      (allocationOfState_scratchRegion_of_wellFormed hWF hLocation)
+
 theorem allocationOfState_location_stack_of_mem
     {contract : MemoryContract.Contract}
     {frameWords : Nat} {stackSlots : SlotSet}
@@ -204,6 +275,26 @@ def stackEntriesForScope (recipe : AllocationSupport.AllocationRecipe)
             stackEntries stackSlots slots.returns.reverse ++
             stackEntries stackSlots slots.params.reverse
 
+theorem stackEntriesForScope_function_of_env_extension
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {functionName : Name}
+    {slots : AllocationSupport.FunSlots}
+    {state : AllocationSupport.CompileState}
+    {added : AllocationSupport.SlotEnv}
+    (hLookup :
+      AllocationSupport.lookupFun? functionName recipe.functionSlots =
+        some slots)
+    (hEnv :
+      state.env = added ++ AllocationSupport.functionEnv slots) :
+    stackEntriesForScope recipe stackSlots (.function functionName) state =
+      stackEntries stackSlots added ++
+        stackEntries stackSlots slots.returns.reverse ++
+        stackEntries stackSlots slots.params.reverse := by
+  simp [stackEntriesForScope, functionRoot?, hLookup, hEnv,
+    AllocationSupport.functionEnv, stackEntries,
+    List.filter_append, List.take_append]
+
 def scopeRoot : Locals.Allocation.ScopeId → Locals.Allocation.ScopeId
   | .main => .main
   | .function name => .function name
@@ -266,6 +357,38 @@ def toMixedProgramPlan (recipe : AllocationSupport.AllocationRecipe)
             allocationOfState contract recipe.frameWords
               (stackEntriesForScope recipe stackSlots entry.scope entry.state)
               entry.state }) }
+
+theorem toMixedProgramPlan_find_function_entry
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {contract : MemoryContract.Contract}
+    {entry : AllocationSupport.ScopedAllocation}
+    (hWF :
+      (toMixedProgramPlan recipe stackSlots contract).WellFormed)
+    (hMem : entry ∈ recipe.functions) :
+    (toMixedProgramPlan recipe stackSlots contract).find? entry.scope =
+      some
+        (allocationOfState contract recipe.frameWords
+          (stackEntriesForScope recipe stackSlots entry.scope entry.state)
+          entry.state) := by
+  let scopePlan : Locals.Allocation.ScopePlan :=
+    { scope := entry.scope
+      allocation :=
+        allocationOfState contract recipe.frameWords
+          (stackEntriesForScope recipe stackSlots entry.scope entry.state)
+          entry.state }
+  have hScopeMem :
+      scopePlan ∈
+        (toMixedProgramPlan recipe stackSlots contract).scopes := by
+    simp only [toMixedProgramPlan, List.mem_cons, List.mem_append,
+      List.mem_map]
+    exact
+      Or.inl
+        (Or.inr
+          ⟨entry, hMem, by simp [scopePlan]⟩)
+  exact
+    Locals.Allocation.ProgramPlan.find?_of_mem_of_wellFormed
+      hWF hScopeMem
 
 end AllocationRecipe
 

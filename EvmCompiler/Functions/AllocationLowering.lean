@@ -2148,6 +2148,78 @@ theorem validatePlan?_memoryAuthorized
     · simp [hWF, hAuthorized] at hValidate
   · simp [hWF] at hValidate
 
+theorem validatePlan?_eq_some_exact
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots)) :
+    allocation.WellFormed ∧
+      allocation.MemoryAuthorized program.memoryContract ∧
+      AllocationSupport.planRecipeCore? program = some recipe ∧
+      inferStackSlots? recipe allocation = some stackSlots ∧
+      stackSlots.Nodup ∧
+      MixedAllocation.AllocationRecipe.executable?
+          recipe stackSlots program = true ∧
+      MixedAllocation.AllocationRecipe.toMixedProgramPlan
+          recipe stackSlots program.memoryContract = allocation := by
+  have hSound := validatePlan?_sound hValidate
+  have hAuthorized := validatePlan?_memoryAuthorized hValidate
+  have hCompatible :
+      compatiblePlan? allocation program = some (recipe, stackSlots) := by
+    unfold validatePlan? at hValidate
+    by_cases hWF : allocation.wellFormed? = true
+    · by_cases hMemory :
+          allocation.MemoryAuthorized program.memoryContract
+      · simpa [hWF, hMemory] using hValidate
+      · simp [hWF, hMemory] at hValidate
+    · simp [hWF] at hValidate
+  exact
+    ⟨hSound.1, hAuthorized,
+      compatiblePlan?_eq_some_exact hCompatible⟩
+
+theorem validatePlan?_function_components
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {fn : FunDef}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots))
+    (hMem : fn ∈ program.functions) :
+    ∃ fnSlots entry added,
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some fnSlots ∧
+        fnSlots.Matches fn ∧
+        entry ∈ recipe.functions ∧
+        entry.scope = .function fn.name ∧
+        entry.state.env =
+          added ++ AllocationSupport.functionEnv fnSlots ∧
+        allocation.find? (.function fn.name) =
+          some
+            (MixedAllocation.allocationOfState
+              program.memoryContract recipe.frameWords
+              (MixedAllocation.AllocationRecipe.stackEntriesForScope
+                recipe stackSlots entry.scope entry.state)
+              entry.state) := by
+  rcases validatePlan?_eq_some_exact hValidate with
+    ⟨hWF, _hAuthorized, hRecipe, _hInfer, _hNodup,
+      _hExecutable, hExact⟩
+  obtain
+      ⟨fnSlots, entry, added, hLookup, hMatches,
+        hEntry, hScope, hEnv⟩ :=
+    AllocationSupport.planRecipeCore?_function_entry hRecipe hMem
+  have hMixedWF :
+      (MixedAllocation.AllocationRecipe.toMixedProgramPlan
+        recipe stackSlots program.memoryContract).WellFormed := by
+    rw [hExact]
+    exact hWF
+  have hFind :=
+    MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_function_entry
+      hMixedWF hEntry
+  rw [hExact] at hFind
+  exact
+    ⟨fnSlots, entry, added, hLookup, hMatches, hEntry, hScope, hEnv,
+      by simpa [hScope] using hFind⟩
+
 def lowerLocalsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Locals.Program := do
   let (recipe, stackSlots) ← validatePlan? allocation program

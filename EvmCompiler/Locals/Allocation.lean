@@ -420,6 +420,46 @@ theorem main_find? (allocation : Plan) :
     (main allocation).find? .main = some allocation := by
   simp [main, singleton, find?]
 
+private theorem findScope?_of_mem_of_nodup
+    {scopes : List ScopePlan} {scopePlan : ScopePlan}
+    (hScopes : (scopes.map ScopePlan.scope).Nodup)
+    (hMem : scopePlan ∈ scopes) :
+    (scopes.find? fun candidate =>
+        decide (candidate.scope = scopePlan.scope)).map
+        ScopePlan.allocation =
+      some scopePlan.allocation := by
+  induction scopes with
+  | nil =>
+      exact False.elim (by simpa using hMem)
+  | cons head tail ih =>
+      have hScopes' :
+          (head.scope :: tail.map ScopePlan.scope).Nodup := by
+        simpa only [List.map_cons] using hScopes
+      rcases List.mem_cons.mp hMem with hHead | hTail
+      · subst head
+        simp
+      · have hScopeMem :
+          scopePlan.scope ∈ tail.map ScopePlan.scope :=
+        List.mem_map.mpr ⟨scopePlan, hTail, rfl⟩
+        have hNe : head.scope ≠ scopePlan.scope := by
+          intro hEq
+          have hFresh := (List.nodup_cons.mp hScopes').1
+          rw [hEq] at hFresh
+          exact hFresh hScopeMem
+        exact
+          by simpa [hNe] using
+            ih (List.nodup_cons.mp hScopes').2 hTail
+
+theorem find?_of_mem_of_wellFormed
+    {plan : ProgramPlan} {scopePlan : ScopePlan}
+    (hWF : plan.WellFormed)
+    (hMem : scopePlan ∈ plan.scopes) :
+    plan.find? scopePlan.scope = some scopePlan.allocation := by
+  rcases hWF with ⟨hScopes, _hPlans⟩
+  exact
+    findScope?_of_mem_of_nodup
+      (by simpa [scopeIds] using hScopes) hMem
+
 theorem wellFormed_main {allocation : Plan}
     (hWF : allocation.WellFormed) :
     (main allocation).WellFormed := by
