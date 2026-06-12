@@ -346,6 +346,48 @@ mutual
           (Prod.Lex.left _ _ (by omega))
 end
 
+namespace Stmt
+
+/--
+Canonical source `if` execution when the condition is false.
+-/
+theorem run_if_false_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {source afterCond : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, false)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.if_ cond body) source =
+      .ok (Outcome.regular afterCond, ctx) := by
+  simp [Stmt.run, hCond, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular]
+
+/--
+Canonical source `if` execution when the condition is true.
+-/
+theorem run_if_true_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {source afterCond : σ} {outcome : Outcome σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program ctx body fuel afterCond =
+        .ok outcome) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.if_ cond body) source =
+      .ok (outcome, ctx) := by
+  simp [Stmt.run, hCond, hBody]
+
+end Stmt
+
 set_option maxHeartbeats 1000000 in
 mutual
   theorem Block.runOpen_mono {σ : Type}

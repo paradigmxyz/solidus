@@ -440,6 +440,37 @@ mutual
 end
 
 /--
+Successful lowering of a source `if` exposes only the adjacent expression and
+scoped-block lowerers owned by this pass.
+-/
+theorem lowerStmt_if_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {cond : Expr 1} {body : Block}
+    {loweredStmts : List Locals.Stmt}
+    (hLower :
+      lowerStmt ctx returns state (.if_ cond body) =
+        some (loweredStmts, final)) :
+    ∃ loweredCond loweredBody,
+      lowerExpr ctx state cond = some loweredCond ∧
+      lowerBlockScoped ctx returns state body =
+        some (loweredBody, final) ∧
+      loweredStmts = [.if_ loweredCond loweredBody] := by
+  cases hCond : lowerExpr ctx state cond with
+  | none =>
+      simp [lowerStmt, hCond] at hLower
+  | some loweredCond =>
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerStmt, hCond, hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, bodyFinal⟩
+          simp [lowerStmt, hCond, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨loweredCond, loweredBody, rfl, rfl, rfl⟩
+
+/--
 The part of lowering-state evolution visible at an open source-block boundary.
 
 New stack locals form a removable prefix of the incoming Locals layout, while
@@ -512,6 +543,34 @@ theorem lowerBlockScoped_state_shape
       simp [hOpen] at hLower
       rcases hLower with ⟨rfl, rfl⟩
       exact ⟨rfl, rfl⟩
+
+/--
+Successful scoped lowering exposes its ordinary open-block lowering state.
+The scoped result restores the incoming environment and layout while retaining
+only the fresh-slot cursor reached by the open body.
+-/
+theorem lowerBlockScoped_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State} {block : Block}
+    {lowered : Locals.Block}
+    (hLower :
+      lowerBlockScoped ctx returns state block =
+        some (lowered, final)) :
+    ∃ openFinal,
+      lowerBlockOpen ctx returns state block =
+        some (lowered, openFinal) ∧
+      final.allocation.env = state.allocation.env ∧
+      final.allocation.nextSlot = openFinal.allocation.nextSlot ∧
+      final.layout = state.layout := by
+  unfold lowerBlockScoped at hLower
+  cases hOpen : lowerBlockOpen ctx returns state block with
+  | none =>
+      simp [hOpen] at hLower
+  | some result =>
+      rcases result with ⟨body, bodyFinal⟩
+      simp [hOpen] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨bodyFinal, rfl, rfl, rfl, rfl⟩
 
 theorem lowerCases_state_shape
     {ctx : Ctx} {returns : List Name} :

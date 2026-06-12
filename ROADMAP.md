@@ -612,6 +612,14 @@ The remaining observer-proof critical path is explicit:
 4. Prove the Functions/allocation/Expressions and Yul adjacent backward
    boundaries, compose `ClosedResourceCorrect`, and run the final gates.
 
+The recursive Functions boundary now has checked regular preservation for
+leaves, lexical blocks, and both `if` paths. Condition evaluation consumes its
+single target result through a reusable activation relation theorem; true
+branches invoke the adjacent scoped-body theorem through the real lowerer and
+Locals compiler, while false branches transport only allocator bookkeeping.
+Switch, loop, call, abrupt recursive outcomes, and the matching backward
+adequacy remain.
+
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
 its preservation/spill/call-depth cone have been deleted. The retained source

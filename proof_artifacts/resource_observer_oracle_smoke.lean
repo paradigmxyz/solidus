@@ -93,11 +93,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchAssignTop_backward_live
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.invariant_zero
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularBlockInvariantForward
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
+#check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_true_of_components
 #check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_cons_components
 #check EvmCompiler.Locals.Block.compileOpen_append_components
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorInit_forward
@@ -453,6 +456,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.symm
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_restrict
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.SameFrame.trans
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.pop_target
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.transport_plan
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_stateExtends
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.planAgreesOn
@@ -461,6 +465,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward_exact
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.block_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_true_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

@@ -519,6 +519,13 @@ def replaceStackBy {transcript : Trace} (pcDelta : Nat)
     (target.source.withEVM
       (target.source.evm.replaceStackAndIncrPC stack (pcΔ := pcDelta)))
 
+def popTarget {transcript : Trace}
+    (stack : List Word) (target : TargetState transcript) :
+    TargetState transcript :=
+  target.withSource
+    (target.source.withEVM
+      { target.source.evm with stack := stack })
+
 theorem mono {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {smaller larger : List Locals.Name} {stackOffset frameBase : Nat}
@@ -711,6 +718,38 @@ theorem push_target {transcript : Trace}
     StateRel contract plan live (stackOffset + 1) frameBase source
       (pushTarget value target) := by
   exact push_target_by 1 value hRel
+
+theorem pop_target {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {value : Word} {rest : List Word}
+    (hRel :
+      StateRel contract plan live (stackOffset + 1) frameBase
+        source target)
+    (hStack : target.source.evm.stack = value :: rest) :
+    StateRel contract plan live stackOffset frameBase source
+      (popTarget rest target) := by
+  refine ⟨hRel.cursor, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [popTarget] using hRel.core.machine
+  · simpa [popTarget] using hRel.core.world
+  · intro name location hLive hLocation
+    have hValue :=
+      hRel.core.store name location hLive hLocation
+    cases location with
+    | stack planDepth =>
+        rcases hValue with ⟨depth, hDepth, hValue⟩
+        refine ⟨depth, hDepth, ?_⟩
+        change rest[stackOffset + depth]? = source.source.vars name
+        change
+          target.source.evm.stack[stackOffset + 1 + depth]? =
+            source.source.vars name at hValue
+        rw [hStack] at hValue
+        simpa [show stackOffset + 1 + depth =
+            (stackOffset + depth) + 1 by omega] using hValue
+    | scratch slot =>
+        simpa [popTarget] using hValue
 
 theorem contract_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -1650,6 +1689,33 @@ theorem push_target {transcript : Trace}
       (StateRel.pushTarget value target) := by
   exact hRel.push_target_by 1 value
 
+theorem pop_target {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {value : Word} {rest : List Word}
+    (hRel :
+      ScratchStateRel contract plan live (stackOffset + 1) frameBase
+        frameDepth frameWords source target)
+    (hStack : target.source.evm.stack = value :: rest) :
+    ScratchStateRel contract plan live stackOffset frameBase
+      frameDepth frameWords source (StateRel.popTarget rest target) := by
+  refine
+    ⟨hRel.base.pop_target hStack, ?_, ?_, ?_,
+      hRel.frameNoWrap, hRel.frameHostAddressable, ?_,
+      hRel.frameReserved, hRel.scratchBound⟩
+  · change
+      rest[stackOffset + frameDepth]? =
+        some (EvmYul.UInt256.ofNat frameBase)
+    have hPointer := hRel.framePointer
+    rw [hStack] at hPointer
+    simpa [show stackOffset + 1 + frameDepth =
+        (stackOffset + frameDepth) + 1 by omega] using hPointer
+  · simpa [StateRel.popTarget] using hRel.frameActive
+  · simpa [StateRel.popTarget] using hRel.frameAllocated
+  · simpa [StateRel.popTarget] using hRel.activeNoWrap
+
 theorem contract_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
@@ -2473,6 +2539,27 @@ theorem push_target {transcript : Trace}
     ActivationStateRel contract plan live (stackOffset + 1) frameBase
       mode source (StateRel.pushTarget value target) := by
   simpa [StateRel.pushTarget] using hRel.push_target_by 1 value
+
+theorem pop_target {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript} {target : TargetState transcript}
+    {value : Word} {rest : List Word}
+    (hRel :
+      ActivationStateRel contract plan live (stackOffset + 1) frameBase
+        mode source target)
+    (hStack : target.source.evm.stack = value :: rest) :
+    ActivationStateRel contract plan live stackOffset frameBase mode
+      source (StateRel.popTarget rest target) := by
+  cases hRel with
+  | stack hOnly activeNoWrap state =>
+      exact
+        .stack hOnly
+          (by simpa [StateRel.popTarget] using activeNoWrap)
+          (state.pop_target hStack)
+  | scratch state =>
+      exact .scratch (state.pop_target hStack)
 
 theorem consume_forward {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}

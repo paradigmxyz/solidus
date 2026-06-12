@@ -3293,6 +3293,104 @@ theorem assign_of_compilers
     ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
       SameFrame.refl mode⟩
 
+theorem if_false_of_components
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterCond :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript cond source sourceAfterCond [value])
+    (hFalse : value = EvmYul.UInt256.ofNat 0)
+    (hScoped : Functions.Scope.ExprScoped live cond)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.if_ cond body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtInvariantForward
+        contract transcript lowerCtx lowerFinal localsFinal plan live
+        frameBase mode mode sourceProgram sourceCtx (.if_ cond body)
+        source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceAfterCond targetFinal sourceCtx := by
+  obtain
+      ⟨loweredCond, loweredBody,
+        hLowerCond, hLowerBody, rfl⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  obtain
+      ⟨condCode, bodyCode, bodyLocals, compiledBody,
+        hCompileCond, _hCompileBody, _hFinish, rfl, rfl⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+    AllocationObserverExpression.Expr.condition_forward
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hInvariant hSafe hScoped hLowerCond hCompileCond
+  have hSourceCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          cond source =
+        .ok (sourceAfterCond, false) := by
+    simpa [hFalse] using hSafe.evalCondition_eq
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_if_false_of_eval
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (fuel := 0)
+      (body := body) hSourceCond
+  have hTargetCondFalse :
+      Structured.ObserverSemantics.Code.runCondition condCode target =
+        .ok (targetAfterCond, false) := by
+    simpa [hFalse] using hTargetCond
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 1
+        (.if_ condCode compiledBody.toStructured)
+        target
+        (Structured.EffectSemantics.Outcome.regular targetAfterCond) :=
+    Structured.EffectSemantics.Stmt.Eval.if_false hTargetCondFalse
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [(.if_ condCode compiledBody.toStructured)] }
+        target
+        (Structured.EffectSemantics.Outcome.regular targetAfterCond) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      hTargetStmt Structured.EffectSemantics.Block.Eval.nil
+  have hShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  exact
+    ⟨targetAfterCond, 1, 2, hSource,
+      by
+        simpa [Expressions.StmtList.toStructured,
+          Expressions.Stmt.toStructured,
+          Expressions.Block.toStructured] using hTarget,
+      hCondInvariant.transport_state hShape.1 hShape.2,
+      SameFrame.refl mode⟩
+
 end RegularStmtInvariantForward
 
 /--
@@ -4528,6 +4626,173 @@ theorem block_of_components
   exact
     ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,
       hFinalInvariant, SameFrame.refl afterMode⟩
+
+theorem if_true_of_components
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan bodyPlan : Locals.Allocation.Plan}
+    {outerLive bodyLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode bodyMode : ActivationMode}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterCond sourceBodyFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript cond source sourceAfterCond [value])
+    (hTrue :
+      (value != EvmYul.UInt256.ofNat 0) = true)
+    (hCondScoped : Functions.Scope.ExprScoped outerLive cond)
+    (hBodyScoped :
+      Functions.Scope.Block.Scoped outerLive body)
+    (hSourceScope : sourceCtx.scope = outerLive)
+    (hSubset :
+      ∀ name, name ∈ outerLive → name ∈ bodyLive)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx outerPlan outerLive
+        frameBase outerMode source target)
+    (hBody :
+      ∀ {loweredBody : Locals.Block}
+        {bodyLowerState : AllocationLowering.State}
+        {bodyCode : List Expressions.Stmt}
+        {bodyLocals : Locals.Ctx}
+        {targetAfterCond :
+          Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState body =
+          some (loweredBody, bodyLowerState) →
+        Locals.Block.compileOpen localsCtx loweredBody =
+          some (bodyCode, bodyLocals) →
+        AllocationObserverContext.ActivationInvariant
+            contract lowerCtx lowerState localsCtx outerPlan outerLive
+            frameBase outerMode sourceAfterCond targetAfterCond →
+        ∃ targetBodyMid,
+          RegularBlockInvariantForward
+            contract transcript lowerCtx bodyLowerState bodyLocals bodyPlan
+            bodyLive frameBase outerMode bodyMode sourceProgram sourceCtx
+            body sourceAfterCond targetProgram
+            { stmts := Expressions.StmtList.toStructured bodyCode }
+            targetAfterCond sourceBodyFinal targetBodyMid finalCtx)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.if_ cond body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtInvariantForward
+        contract transcript lowerCtx lowerFinal localsFinal outerPlan
+        outerLive frameBase outerMode outerMode sourceProgram sourceCtx
+        (.if_ cond body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          outerLive sourceBodyFinal)
+        targetFinal sourceCtx := by
+  obtain
+      ⟨loweredCond, loweredBody,
+        hLowerCond, hLowerScoped, rfl⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  obtain
+      ⟨_openFinal, hLowerBody, hFinalEnv, _hFinalSlot, hFinalLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerScoped
+  obtain
+      ⟨condCode, compiledOpenBody, compiledBodyLocals, compiledBody,
+        hCompileCond, hCompileBody, hFinish, rfl, rfl⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+    AllocationObserverExpression.Expr.condition_forward
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hInvariant hSafe hCondScoped hLowerCond hCompileCond
+  obtain ⟨targetBodyMid, hBodyForward⟩ :=
+    hBody hLowerBody hCompileBody hCondInvariant
+  obtain
+      ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
+        hSourceBody, hTargetBody, hFinalInvariant⟩ :=
+    RegularScopedBlockInvariantForward.finish_regular
+      hBodyForward hSourceScope rfl hCondInvariant.compiler
+      hCondInvariant.planWF hSubset hBodyScoped hLowerBody hFinish
+  have hSourceCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          cond source =
+        .ok (sourceAfterCond, true) := by
+    simpa [hTrue] using hSafe.evalCondition_eq
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_if_true_of_eval
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (fuel := bodySourceFuel)
+      hSourceCond hSourceBody
+  have hTargetCondTrue :
+      Structured.ObserverSemantics.Code.runCondition condCode target =
+        .ok (targetAfterCond, true) := by
+    simpa [hTrue] using hTargetCond
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (bodyTargetFuel + 1)
+        (.if_ condCode
+          { stmts :=
+              Expressions.StmtList.toStructured compiledBody.stmts })
+        target
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.if_true
+      hTargetCondTrue hTargetBody
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (bodyTargetFuel + 2)
+        { stmts :=
+            [(.if_ condCode
+              { stmts :=
+                  Expressions.StmtList.toStructured compiledBody.stmts })] }
+        target
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      hTargetStmt Structured.EffectSemantics.Block.Eval.nil
+  exact
+    ⟨targetFinal, bodySourceFuel + 1, bodyTargetFuel + 2,
+      hSource,
+      by
+        change
+          Structured.ObserverSemantics.Block.Eval
+            targetProgram (bodyTargetFuel + 2)
+            { stmts :=
+                [Structured.Stmt.if_
+                  (Expressions.Expr.code
+                    (results := 1) condCode).compile
+                  compiledBody.toStructured] }
+            target
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+        have hCondCompile :
+            Expressions.Expr.compile
+                (Expressions.Expr.code (results := 1) condCode) =
+              condCode := by
+          rfl
+        have hBodyCompile :
+            Expressions.Block.toStructured compiledBody =
+              { stmts :=
+                  Expressions.StmtList.toStructured
+                    compiledBody.stmts } := by
+          cases compiledBody
+          rfl
+        rw [hCondCompile, hBodyCompile]
+        exact hTarget,
+      hFinalInvariant.transport_state hFinalEnv hFinalLayout,
+      SameFrame.refl outerMode⟩
 
 end RegularStmtInvariantForward
 

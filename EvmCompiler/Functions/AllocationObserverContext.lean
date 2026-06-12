@@ -193,6 +193,86 @@ inductive ActivationExprContext
 namespace ActivationExprContext
 
 /--
+Transport an activation compiler context across lowering-state changes that
+leave the concrete layout and live allocation environment unchanged.
+
+Scoped branches use this when only the allocator's fresh-slot cursor advances.
+-/
+theorem transport_state
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {mode : AllocationObserverRelation.ActivationMode}
+    (hCtx :
+      ActivationExprContext
+        lowerCtx before localsCtx plan live mode)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationExprContext
+      lowerCtx after localsCtx plan live mode := by
+  cases hCtx with
+  | stack hStack =>
+      refine .stack
+        { layout := hStack.layout.trans hLayout.symm
+          stackOrder := hStack.stackOrder.trans hLayout.symm
+          frameAbsent := by
+            simpa [hLayout] using hStack.frameAbsent
+          liveStackOnly := hStack.liveStackOnly
+          location := hStack.location
+          slot := ?_
+          stack := ?_ }
+      · intro name hLive
+        obtain ⟨slot, hSlot⟩ := hStack.slot name hLive
+        exact ⟨slot, by simpa [hEnv] using hSlot⟩
+      · intro name slot hLive hSlot hIsStack
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot?
+                name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain
+            ⟨planDepth, depth, hLocation, hCurrent, hDepth⟩ :=
+          hStack.stack name slot hLive hBeforeSlot hIsStack
+        exact
+          ⟨planDepth, depth, hLocation, hCurrent,
+            by simpa [hLayout] using hDepth⟩
+  | @scratch frameDepth frameWords hScratch =>
+      refine .scratch
+        { layout := hScratch.layout.trans hLayout.symm
+          stackPrefix := by simpa [hLayout] using hScratch.stackPrefix
+          frame := by simpa [hLayout] using hScratch.frame
+          frameBottom := by simpa [hLayout] using hScratch.frameBottom
+          location := hScratch.location
+          slot := ?_
+          stack := ?_
+          scratch := ?_ }
+      · intro name hLive
+        obtain ⟨slot, hSlot⟩ := hScratch.slot name hLive
+        exact ⟨slot, by simpa [hEnv] using hSlot⟩
+      · intro name slot hLive hSlot hIsStack
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot?
+                name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain
+            ⟨planDepth, depth, hLocation, hCurrent, hDepth⟩ :=
+          hScratch.stack name slot hLive hBeforeSlot hIsStack
+        exact
+          ⟨planDepth, depth, hLocation, hCurrent,
+            by simpa [hLayout] using hDepth⟩
+      · intro name slot hLive hSlot hIsScratch
+        have hBeforeSlot :
+            AllocationSupport.lookupSlot?
+                name before.allocation.env =
+              some slot := by
+          simpa [hEnv] using hSlot
+        obtain ⟨hLocation, hFrame⟩ :=
+          hScratch.scratch name slot hLive hBeforeSlot hIsScratch
+        exact ⟨hLocation, by simpa [hLayout] using hFrame⟩
+
+/--
 Two plans certified against the same concrete compiler state realize the same
 live locals.
 
@@ -392,6 +472,34 @@ structure ActivationInvariant
       contract plan live 0 frameBase mode source target
   stackLength :
     target.source.evm.stack.length = localsCtx.layout.length
+
+namespace ActivationInvariant
+
+theorem transport_state
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationInvariant contract lowerCtx before localsCtx plan live
+        frameBase mode source target)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationInvariant contract lowerCtx after localsCtx plan live
+      frameBase mode source target :=
+  { compiler := hInvariant.compiler.transport_state hEnv hLayout
+    planWF := hInvariant.planWF
+    defined := hInvariant.defined
+    state := hInvariant.state
+    stackLength := hInvariant.stackLength }
+
+end ActivationInvariant
 
 /--
 Exact compiler classification for a lowered source variable.

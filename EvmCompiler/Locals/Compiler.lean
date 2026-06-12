@@ -258,7 +258,73 @@ mutual
         some (some lowerBody)
 end
 
+namespace Stmt
+
+/--
+Successful compilation of a Locals `if` decomposes through the ordinary
+condition compiler, open-block compiler, and scoped cleanup.
+-/
+theorem compile_if_components
+    {ctx final : Ctx}
+    {cond : Expr 1} {body : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.if_ cond body) = some (code, final)) :
+    ∃ condCode bodyCode bodyCtx lowerBody,
+      Expr.compileCode ctx 0 cond = some condCode ∧
+      Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      code = [Expressions.Stmt.if_ (.code condCode) lowerBody] ∧
+      final = ctx := by
+  cases hCond : Expr.compileCode ctx 0 cond with
+  | none =>
+      simp [Stmt.compile, Expr.compile, hCond] at hCompile
+  | some condCode =>
+      cases hBody : Block.compileOpen ctx body with
+      | none =>
+          simp [Stmt.compile, Expr.compile, hCond, hBody] at hCompile
+      | some bodyResult =>
+          rcases bodyResult with ⟨bodyCode, bodyCtx⟩
+          cases hFinish : finishScoped ctx bodyCtx bodyCode with
+          | none =>
+              simp [Stmt.compile, Expr.compile, hCond, hBody, hFinish]
+                at hCompile
+          | some lowerBody =>
+              simp [Stmt.compile, Expr.compile, hCond, hBody, hFinish]
+                at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact
+                ⟨condCode, bodyCode, bodyCtx, lowerBody,
+                  rfl, rfl, hFinish, rfl, rfl⟩
+
+end Stmt
+
 namespace Block
+
+/--
+The singleton open-block form used by the allocation boundary for `if`.
+-/
+theorem compileOpen_single_if_components
+    {ctx final : Ctx}
+    {cond : Expr 1} {body : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx { stmts := [.if_ cond body] } =
+        some (code, final)) :
+    ∃ condCode bodyCode bodyCtx lowerBody,
+      Expr.compileCode ctx 0 cond = some condCode ∧
+      Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      code = [Expressions.Stmt.if_ (.code condCode) lowerBody] ∧
+      final = ctx := by
+  cases hStmt : Stmt.compile ctx (.if_ cond body) with
+  | none =>
+      simp [Block.compileOpen, hStmt] at hCompile
+  | some stmtResult =>
+      rcases stmtResult with ⟨stmtCode, stmtCtx⟩
+      simp [Block.compileOpen, hStmt] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Stmt.compile_if_components hStmt
 
 /--
 Successful open-block compilation over an appended statement list decomposes

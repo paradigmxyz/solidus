@@ -710,6 +710,81 @@ theorem Expr.invariant_zero
   · rw [hResult.stack]
     simpa using hInvariant.stackLength
 
+/--
+Evaluate one source condition through the real allocation and Locals
+compilers, then consume the target result exactly as Structured control flow
+does. The returned state is again at the statement-boundary activation
+invariant.
+-/
+theorem Expr.condition_forward
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal [value])
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.runCondition code target =
+          .ok (targetFinal, value != EvmYul.UInt256.ofNat 0) ∧
+        AllocationObserverContext.ActivationInvariant
+          contract lowerCtx lowerState localsCtx plan live frameBase mode
+          sourceFinal targetFinal := by
+  obtain ⟨targetWithValue, hRun, hResult⟩ :=
+    forwardExpr hPrimitive
+      hSafe hInvariant.compiler hScoped hLower hCompile hInvariant.state
+  have hStack :
+      targetWithValue.source.evm.stack =
+        value :: target.source.evm.stack := by
+    simpa using hResult.stack
+  let targetFinal :=
+    StateRel.popTarget target.source.evm.stack targetWithValue
+  have hCondition :
+      Structured.ObserverSemantics.Code.runCondition code target =
+        .ok (targetFinal, value != EvmYul.UInt256.ofNat 0) := by
+    unfold Structured.ObserverSemantics.Code.runCondition
+    unfold Structured.EffectSemantics.Code.runCondition
+    change
+      Structured.EffectSemantics.Code.run
+          (Structured.ObserverSemantics.stateModel transcript)
+          (Structured.ObserverSemantics.handler transcript)
+          code target =
+        .ok targetWithValue at hRun
+    rw [hRun]
+    simp [Structured.EffectSemantics.Code.popCondition, hStack,
+      EvmYul.Stack.pop, targetFinal, StateRel.popTarget]
+  refine ⟨targetFinal, hCondition, ?_⟩
+  refine
+    ⟨hInvariant.compiler, hInvariant.planWF, ?_,
+      hResult.state.pop_target hStack, ?_⟩
+  · intro name hLive
+    rw [hSafe.vars_eq]
+    exact hInvariant.defined name hLive
+  · simpa [targetFinal, StateRel.popTarget] using hInvariant.stackLength
+
 theorem Expr.backward_of_safeEval
     {contract : MemoryContract.Contract}
     (hPrimitive :
