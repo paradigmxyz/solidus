@@ -422,6 +422,69 @@ theorem runForLoop_body_brk_of_runs {σ : Type}
     Locals.Source.Effectful.Outcome.brk]
 
 /--
+Canonical loop execution for one regular body/post iteration followed by a
+recursive regular loop result.
+-/
+theorem runForLoop_regular_post_regular_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost final : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.regular afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.regular afterPost))
+    (hLoop :
+      Stmt.runForLoop model prim program loopCtx cond postBase post
+          bodyBase body fuel afterPost =
+        .ok (Outcome.regular final)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.regular final) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular]
+
+/--
+Canonical loop execution for a continuing body, regular post, and recursive
+regular loop result.
+-/
+theorem runForLoop_cont_post_regular_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost final : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.cont afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.regular afterPost))
+    (hLoop :
+      Stmt.runForLoop model prim program loopCtx cond postBase post
+          bodyBase body fuel afterPost =
+        .ok (Outcome.regular final)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.regular final) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop,
+    Outcome.regular, Locals.Source.Effectful.Outcome.regular,
+    Outcome.cont, Locals.Source.Effectful.Outcome.cont]
+
+/--
 Canonical source `for` execution whose initializer is regular and whose first
 body execution breaks.
 -/
@@ -452,6 +515,35 @@ theorem run_for_body_brk_of_runs {σ : Type}
   simp [Stmt.run, hInit, Stmt.runForLoop, hCond, hBody,
     Outcome.regular, Locals.Source.Effectful.Outcome.regular,
     Outcome.brk, Locals.Source.Effectful.Outcome.brk]
+
+/--
+Canonical source `for` execution from a regular initializer and regular loop
+result.
+-/
+theorem run_for_regular_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source afterInit final : σ}
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          fuel init source =
+        .ok (Outcome.regular afterInit, initCtx))
+    (hLoop :
+      Stmt.runForLoop model prim program initCtx cond
+          initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body fuel afterInit =
+        .ok (Outcome.regular final)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.for_ init cond post body) source =
+      .ok
+        (Outcome.regular (model.restrictTo ctx.scope final),
+          ctx) := by
+  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular]
 
 /--
 Canonical source `if` execution when the condition is false.
