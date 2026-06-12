@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 14:40 PDT.
+Last updated: 2026-06-12 15:04 PDT.
 
 ## Objective
 
@@ -291,13 +291,15 @@ Adjacent boundary status:
   boundary derives recursive loop evidence internally from one-step body/post
   preservation. It also covers initializer leave/halt and proves the ordinary
   compiler-emitted outer cleanup unreachable for every abrupt outcome.
-  Remaining work at this boundary is recursive statement/function/call
-  composition, construction of the activation relation at function entry,
-  propagation of source-facing memory safety and fuel, and the whole-program
-  adjacent forward/backward theorem. The final scratch theorem must expose or
-  derive an actual-execution source memory-safety contract; no-external-effects
-  alone does not prove that source memory accesses avoid the reserved spill
-  interval.
+  Validated function artifacts now construct the exact all-stack or
+  scratch-frame parameter/return prelude, execute it, and package the
+  compiler-derived body context as the standard `ActivationInvariant`.
+  Remaining work at this boundary is source-fuel recursive
+  statement/function/call composition, propagation of source-facing memory
+  safety and fuel, and the whole-program adjacent forward/backward theorem.
+  The final scratch theorem must expose or derive an actual-execution source
+  memory-safety contract; no-external-effects alone does not prove that source
+  memory accesses avoid the reserved spill interval.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

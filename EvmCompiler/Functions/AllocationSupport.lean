@@ -102,6 +102,26 @@ def lookupSlot? (name : Name) : SlotEnv → Option Nat
   | (candidate, slot) :: rest =>
       if candidate = name then some slot else lookupSlot? name rest
 
+theorem lookupSlot?_eq_some_of_mem
+    {env : SlotEnv} {name : Name} {slot : Nat}
+    (hNodup : (env.map Prod.fst).Nodup)
+    (hMem : (name, slot) ∈ env) :
+    lookupSlot? name env = some slot := by
+  induction env with
+  | nil =>
+      simp at hMem
+  | cons binding rest ih =>
+      rcases binding with ⟨candidate, candidateSlot⟩
+      have hParts := List.nodup_cons.mp hNodup
+      rcases List.mem_cons.mp hMem with hHead | hTail
+      · cases hHead
+        simp [lookupSlot?]
+      · have hNe : candidate ≠ name := by
+          intro hEq
+          subst candidate
+          exact hParts.1 (List.mem_map.mpr ⟨(name, slot), hTail, rfl⟩)
+        simp [lookupSlot?, hNe, ih hParts.2 hTail]
+
 def lookupFun? (name : Name) : List FunSlots → Option FunSlots
   | [] => none
   | fn :: rest => if fn.name = name then some fn else lookupFun? name rest

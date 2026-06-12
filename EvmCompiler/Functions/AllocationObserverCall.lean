@@ -1313,7 +1313,7 @@ theorem forward
         source.source.vars name = some AllocationSupport.zeroWord)
     (hWF : plan.WellFormed)
     (hScratch : ScratchAuthorized contract mode) :
-    ∃ compiled finalTarget finalMode fuel,
+    ∃ compiled finalTarget fuel,
       Locals.Block.compileOpen entryCtx
           { stmts :=
               (AllocationLowering.lowerParams lowerCtx slots.params
@@ -1328,11 +1328,21 @@ theorem forward
       AllocationObserverRelation.ActivationStateRel contract plan
         ((slots.returns.map Prod.fst).reverse ++
           (slots.params.map Prod.fst).reverse)
-        0 frameBase finalMode source finalTarget ∧
+        0 frameBase
+        (mode.atStackDepth
+          (AllocationObserverRelation.currentStackOrder plan
+            ((slots.returns.map Prod.fst).reverse ++
+              (slots.params.map Prod.fst).reverse)).length)
+        source finalTarget ∧
       finalTarget.source.evm.stack.length = returnCtx.layout.length ∧
-      AllocationObserverRelation.SameFrame mode finalMode := by
+      AllocationObserverRelation.SameFrame mode
+        (mode.atStackDepth
+          (AllocationObserverRelation.currentStackOrder plan
+            ((slots.returns.map Prod.fst).reverse ++
+              (slots.params.map Prod.fst).reverse)).length) := by
   cases hContext with
-  | stack parameterSlots returnSlots parameters returns
+  | stack parameterSlots returnSlots signatureNodup frameFresh
+      parameters returns
       parameterCompile returnCompile entryLayout parameterLayout bodyLayout =>
       obtain ⟨paramExpected, hParamExpected⟩ := parameterCompile
       obtain
@@ -1363,7 +1373,7 @@ theorem forward
         Structured.EffectSemantics.Block.Eval.append_regular_exists
           hParamEval hReturnEval
       refine
-        ⟨paramExpected ++ returnExpected, returnTarget, .stack, fuel,
+        ⟨paramExpected ++ returnExpected, returnTarget, fuel,
           hCompile, ?_, ?_, hReturnStackLength,
           AllocationObserverRelation.SameFrame.stack⟩
       · change
@@ -1376,7 +1386,8 @@ theorem forward
         rw [Expressions.StmtList.toStructured_append]
         exact hEval
       · exact hReturnRel
-  | scratch parameters returns parameterCompile returnCompile
+  | scratch signatureNodup frameFresh parameters returns
+      parameterCompile returnCompile
       entryLayout parameterLayout bodyLayout =>
       obtain ⟨reservation, hReservation⟩ := hScratch
       have hScratchEntry :=
@@ -1425,10 +1436,8 @@ theorem forward
       obtain ⟨fuel, hEval⟩ :=
         Structured.EffectSemantics.Block.Eval.append_regular_exists
           hParamEval hReturnEval
-      let finalMode : AllocationObserverRelation.ActivationMode :=
-        .scratch returnFrameDepth frameWords
       refine
-        ⟨paramExpected ++ returnExpected, returnTarget, finalMode, fuel,
+        ⟨paramExpected ++ returnExpected, returnTarget, fuel,
           hCompile, ?_, ?_, hReturnStackLength, ?_⟩
       · change
           Structured.ObserverSemantics.Block.Eval targetProgram fuel
@@ -1439,10 +1448,97 @@ theorem forward
             (Structured.EffectSemantics.Outcome.regular returnTarget)
         rw [Expressions.StmtList.toStructured_append]
         exact hEval
-      · exact AllocationObserverRelation.ActivationStateRel.scratch hReturnRel
+      · exact
+          AllocationObserverRelation.ActivationStateRel.scratch
+            (by simpa [hReturnDepth] using hReturnRel)
       · exact
           AllocationObserverRelation.SameFrame.scratch
-            0 returnFrameDepth frameWords
+            0
+            (AllocationObserverRelation.currentStackOrder plan
+              ((slots.returns.map Prod.fst).reverse ++
+                (slots.params.map Prod.fst).reverse)).length
+            frameWords
+
+/--
+Compile and execute the complete function prelude, then package its exact
+post-state with the compiler-derived body context as the standard recursive
+statement invariant.
+-/
+theorem forward_invariant
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan} {frameWords frameBase : Nat}
+    {slots : AllocationSupport.FunSlots}
+    {entryCtx paramCtx returnCtx : Locals.Ctx}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {bodyState : AllocationLowering.State}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    (hContext :
+      AllocationObserverContext.FunctionPreludeContext
+        lowerCtx plan frameWords slots entryCtx paramCtx returnCtx mode)
+    (hEntry :
+      AllocationObserverRelation.ActivationCalleeEntryRel contract plan
+        [] slots.params frameBase mode source target)
+    (hEntryStackLength :
+      target.source.evm.stack.length = entryCtx.layout.length)
+    (hZero :
+      ∀ name, name ∈ slots.returns.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord)
+    (hWF : plan.WellFormed)
+    (hScratch : ScratchAuthorized contract mode)
+    (hBodyEnv :
+      bodyState.allocation.env =
+        AllocationSupport.functionEnv slots)
+    (hBodyLayout : bodyState.layout = returnCtx.layout)
+    (hDefined :
+      AllocationObserverRelation.LiveDefined
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        source.source) :
+    ∃ compiled finalTarget fuel,
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx slots.params
+                entryCtx.layout).1 ++
+              (AllocationLowering.lowerReturns lowerCtx slots.returns
+                paramCtx.layout).1 } =
+        some (compiled, returnCtx) ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx bodyState returnCtx plan
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        frameBase
+        (mode.atStackDepth
+          (AllocationObserverRelation.currentStackOrder plan
+            ((slots.returns.map Prod.fst).reverse ++
+              (slots.params.map Prod.fst).reverse)).length)
+        source finalTarget ∧
+      AllocationObserverRelation.SameFrame mode
+        (mode.atStackDepth
+          (AllocationObserverRelation.currentStackOrder plan
+            ((slots.returns.map Prod.fst).reverse ++
+              (slots.params.map Prod.fst).reverse)).length) := by
+  obtain
+      ⟨compiled, finalTarget, fuel, hCompile, hEval, hRel,
+        hStackLength, hSameFrame⟩ :=
+    forward hContext hEntry hEntryStackLength hZero hWF hScratch
+  refine
+    ⟨compiled, finalTarget, fuel, hCompile, hEval, ?_, hSameFrame⟩
+  exact
+    { compiler :=
+        AllocationObserverContext.FunctionPreludeContext.bodyCompiler
+          hContext hBodyEnv hBodyLayout hWF
+      planWF := hWF
+      defined := hDefined
+      state := hRel
+      stackLength := hStackLength }
 
 end FunctionPrelude
 

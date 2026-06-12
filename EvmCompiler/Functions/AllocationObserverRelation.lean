@@ -2764,6 +2764,12 @@ def StackDepthValid : ActivationMode → Nat → Prop
   | .stack, _depth => True
   | .scratch frameDepth _frameWords, depth => depth < frameDepth
 
+def atStackDepth (mode : ActivationMode) (depth : Nat) : ActivationMode :=
+  match mode with
+  | .stack => .stack
+  | .scratch _frameDepth frameWords =>
+      .scratch depth frameWords
+
 end ActivationMode
 
 /--
@@ -2818,6 +2824,14 @@ theorem afterStackDeclaration (mode : ActivationMode) :
       exact .stack
   | scratch frameDepth frameWords =>
       exact .scratch frameDepth (frameDepth + 1) frameWords
+
+theorem atStackDepth (mode : ActivationMode) (depth : Nat) :
+    SameFrame mode (mode.atStackDepth depth) := by
+  cases mode with
+  | stack =>
+      exact .stack
+  | scratch frameDepth frameWords =>
+      exact .scratch frameDepth depth frameWords
 
 end SameFrame
 
