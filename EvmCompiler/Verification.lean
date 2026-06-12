@@ -15,6 +15,7 @@ import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.ObserverGeneratedBoundary
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
+import EvmCompiler.Structured.TypedCfgCompilerActive
 import EvmCompiler.Structured.TypedCfgCompilerEntry
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
@@ -102,6 +103,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmtList_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge_succ
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.activeResult_of_compileBlock?
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.ActiveResult.of_procFragment
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.block_hasEntry
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.LabelShape.of_compileBlock?
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.ActivationOwned.reject_extension

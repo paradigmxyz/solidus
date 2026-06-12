@@ -1218,7 +1218,7 @@ theorem adequateWithinFuel_call_of_compileStmtFuel?_protected
         hProtected.reject_extension hOuter
           (OutcomeSimulation.LabelShape.of_compileBlock?
             fragment.compile hFragmentBlocks)
-          (OutcomeSimulation.ProcFragment.input_returnTokenDepth
+          (TypedCfgCompilerFacts.ActiveResult.procFragment_input
             fragment)
           hExtension hFrame
   · exact hBodyAdequate

@@ -1,4 +1,5 @@
 import EvmCompiler.Structured.ObserverActivationBoundary
+import EvmCompiler.Structured.TypedCfgCompilerActive
 import EvmCompiler.Structured.TypedCfgCompilerEntry
 
 namespace EvmCompiler
@@ -138,26 +139,6 @@ theorem procEntry
 end LabelShape
 
 namespace ProcFragment
-
-theorem input_returnTokenDepth
-    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
-    {allProcs : List Structured.Proc} {proc : Structured.Proc}
-    {procBlocks : List TypedCfg.Block}
-    {procCalls : List TypedCfgCompiler.DispatchSite}
-    (fragment :
-      TypedCfgPreservation.Program.ProcFragment
-        entryShapes allProcs proc procBlocks procCalls) :
-    fragment.input.returnTokenDepth? = some proc.argc := by
-  rcases fragment.route with hDirect | hAdapter
-  · rcases hDirect with ⟨_hEntry, hInput⟩
-    simpa [hInput] using
-      TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc
-  · rcases hAdapter with
-      ⟨_adapter, _hEntry, _hInput, hFrame,
-        _hCompile, _hMem⟩
-    exact
-      TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
-        hFrame
 
 theorem entry_ne_exit
     {entryShapes : TypedCfgCompiler.ProcEntryShapes}

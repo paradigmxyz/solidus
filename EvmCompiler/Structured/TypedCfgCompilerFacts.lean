@@ -216,6 +216,188 @@ theorem returnTokenDepth?_tail_lift
         simpa [TypedCfg.Shape.returnTokenDepth?,
           TypedCfg.Shape.returnTokenDepthList?] using hTail
 
+theorem returnTokenDepth?_some_of_tail_some
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hTail :
+      ({ shape with slots := shape.slots.tail } :
+        TypedCfg.Shape).returnTokenDepth? = some depth) :
+    ∃ inputDepth, shape.returnTokenDepth? = some inputDepth := by
+  rcases shape with ⟨slots, tail⟩
+  cases slots with
+  | nil =>
+      simp [TypedCfg.Shape.returnTokenDepth?,
+        TypedCfg.Shape.returnTokenDepthList?] at hTail
+  | cons slot rest =>
+      cases slot
+      case returnToken =>
+        exact
+          ⟨0, by
+            simp [TypedCfg.Shape.returnTokenDepth?,
+              TypedCfg.Shape.returnTokenDepthList?]⟩
+      all_goals
+        refine ⟨depth + 1, ?_⟩
+        simpa [TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] using hTail
+
+theorem returnTokenDepth?_some_of_pop_some
+    {shape : TypedCfg.Shape} {count depth : Nat}
+    (hOutput :
+      (TypedCfg.Shape.pop count shape).returnTokenDepth? =
+        some depth) :
+    ∃ inputDepth, shape.returnTokenDepth? = some inputDepth := by
+  induction count generalizing shape depth with
+  | zero =>
+      exact ⟨depth, by simpa [TypedCfg.Shape.pop] using hOutput⟩
+  | succ count ih =>
+      rcases shape with ⟨slots, tail⟩
+      cases slots with
+      | nil =>
+          simp [TypedCfg.Shape.pop,
+            TypedCfg.Shape.returnTokenDepth?,
+            TypedCfg.Shape.returnTokenDepthList?] at hOutput
+      | cons slot rest =>
+          have hTailOutput :
+              (TypedCfg.Shape.pop count
+                { slots := rest, tail := tail }).returnTokenDepth? =
+                  some depth := by
+            simpa [TypedCfg.Shape.pop] using hOutput
+          obtain ⟨tailDepth, hTailDepth⟩ := ih hTailOutput
+          exact
+            returnTokenDepth?_some_of_tail_some
+              (shape := { slots := slot :: rest, tail := tail })
+              hTailDepth
+
+theorem returnTokenDepth?_some_of_pushWords_some
+    {shape : TypedCfg.Shape} {count depth : Nat}
+    (hOutput :
+      (TypedCfg.Shape.pushWords count shape).returnTokenDepth? =
+        some depth) :
+    ∃ inputDepth, shape.returnTokenDepth? = some inputDepth := by
+  induction count generalizing depth with
+  | zero =>
+      exact ⟨depth, by simpa [TypedCfg.Shape.pushWords] using hOutput⟩
+  | succ count ih =>
+      cases hTail :
+          (TypedCfg.Shape.pushWords count shape).returnTokenDepth? with
+      | none =>
+          have hCons :
+              (TypedCfg.Shape.pushWords (count + 1) shape).returnTokenDepth? =
+                ((TypedCfg.Shape.pushWords count shape).returnTokenDepth?).map
+                  (· + 1) := by
+            simp [TypedCfg.Shape.pushWords, List.replicate_succ,
+              List.append_assoc, TypedCfg.Shape.returnTokenDepth?,
+              TypedCfg.Shape.returnTokenDepthList?]
+          rw [hCons, hTail] at hOutput
+          cases hOutput
+      | some tailDepth =>
+          exact ih hTail
+
+theorem returnTokenDepth?_some_of_afterCall_some
+    {input output : TypedCfg.Shape} {argc retc depth : Nat}
+    (hAfter :
+      TypedCfgCompiler.Shape.afterCall input argc retc = some output)
+    (hOutput : output.returnTokenDepth? = some depth) :
+    ∃ inputDepth, input.returnTokenDepth? = some inputDepth := by
+  unfold TypedCfgCompiler.Shape.afterCall at hAfter
+  split at hAfter
+  · cases hAfter
+    obtain ⟨popDepth, hPopDepth⟩ :=
+      returnTokenDepth?_some_of_pushWords_some hOutput
+    exact returnTokenDepth?_some_of_pop_some hPopDepth
+  · contradiction
+
+theorem returnTokenDepth?_tail_some_of_some
+    {shape : TypedCfg.Shape} {depth : Nat}
+    (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape)
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    ∃ tailDepth,
+      ({ shape with slots := shape.slots.tail } :
+        TypedCfg.Shape).returnTokenDepth? = some tailDepth := by
+  rcases shape with ⟨slots, tail⟩
+  cases slots with
+  | nil =>
+      simp [TypedCfg.Shape.returnTokenDepth?,
+        TypedCfg.Shape.returnTokenDepthList?] at hDepth
+  | cons slot rest =>
+      cases slot
+      case returnToken =>
+        simp [TypedCfgCompiler.Shape.sourceLength,
+          TypedCfgCompiler.Shape.sourceView, TypedCfg.Shape.length,
+          TypedCfg.Shape.returnTokenDepth?,
+          TypedCfg.Shape.returnTokenDepthList?] at hSource
+      all_goals
+        cases hRest :
+            TypedCfg.Shape.returnTokenDepthList? rest with
+        | none =>
+            simp [TypedCfg.Shape.returnTokenDepth?,
+              TypedCfg.Shape.returnTokenDepthList?, hRest] at hDepth
+        | some tailDepth =>
+            exact
+              ⟨tailDepth, by
+                simpa [TypedCfg.Shape.returnTokenDepth?,
+                  TypedCfg.Shape.returnTokenDepthList?] using hRest⟩
+
+theorem returnTokenDepth?_pop_some_of_some
+    {shape : TypedCfg.Shape} {count depth : Nat}
+    (hCount : count ≤ TypedCfgCompiler.Shape.sourceLength shape)
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    ∃ outputDepth,
+      (TypedCfg.Shape.pop count shape).returnTokenDepth? =
+        some outputDepth := by
+  induction count generalizing shape depth with
+  | zero =>
+      exact ⟨depth, by simpa [TypedCfg.Shape.pop] using hDepth⟩
+  | succ count ih =>
+      have hSource :
+          1 ≤ TypedCfgCompiler.Shape.sourceLength shape := by
+        omega
+      obtain ⟨tailDepth, hTailDepth⟩ :=
+        returnTokenDepth?_tail_some_of_some hSource hDepth
+      have hTailLength :=
+        sourceLength_tail_of_one_le shape hSource
+      have hTailCount :
+          count ≤
+            TypedCfgCompiler.Shape.sourceLength
+              { shape with slots := shape.slots.tail } := by
+        omega
+      obtain ⟨outputDepth, hOutputDepth⟩ :=
+        ih hTailCount hTailDepth
+      exact
+        ⟨outputDepth, by
+          simpa [TypedCfg.Shape.pop] using hOutputDepth⟩
+
+theorem returnTokenDepth?_pushWords_some_of_some
+    {shape : TypedCfg.Shape} {count depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth) :
+    ∃ outputDepth,
+      (TypedCfg.Shape.pushWords count shape).returnTokenDepth? =
+        some outputDepth := by
+  induction count with
+  | zero =>
+      exact ⟨depth, by simpa [TypedCfg.Shape.pushWords] using hDepth⟩
+  | succ count ih =>
+      obtain ⟨tailDepth, hTailDepth⟩ := ih
+      exact
+        ⟨tailDepth + 1, by
+          simpa [TypedCfg.Shape.pushWords, List.replicate_succ,
+            List.append_assoc, TypedCfg.Shape.returnTokenDepth?,
+            TypedCfg.Shape.returnTokenDepthList?] using hTailDepth⟩
+
+theorem returnTokenDepth?_afterCall_some_of_some
+    {input output : TypedCfg.Shape} {argc retc depth : Nat}
+    (hSource : argc ≤ TypedCfgCompiler.Shape.sourceLength input)
+    (hInputDepth : input.returnTokenDepth? = some depth)
+    (hAfter :
+      TypedCfgCompiler.Shape.afterCall input argc retc = some output) :
+    ∃ outputDepth, output.returnTokenDepth? = some outputDepth := by
+  unfold TypedCfgCompiler.Shape.afterCall at hAfter
+  split at hAfter
+  · cases hAfter
+    obtain ⟨popDepth, hPopDepth⟩ :=
+      returnTokenDepth?_pop_some_of_some hSource hInputDepth
+    exact returnTokenDepth?_pushWords_some_of_some hPopDepth
+  · contradiction
+
 theorem sourceFrameFits_tail
     {shape : TypedCfg.Shape} {stackLength : Nat}
     (hSource : 1 ≤ TypedCfgCompiler.Shape.sourceLength shape)

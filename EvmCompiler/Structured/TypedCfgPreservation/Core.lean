@@ -617,6 +617,201 @@ theorem input_returnTokenDepth?_eq_some_of_output
             hOutputDepth hOutputEq.symm)
 
 /--
+Accepted Structured instructions transform the source-visible prefix and the
+full TypedCfg shape by the same stack delta. Equivalently, the size of the
+compiler-owned hidden suffix is unchanged.
+-/
+theorem length_balance_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true) :
+    output.length + TypedCfgCompiler.Shape.sourceLength input =
+      TypedCfgCompiler.Shape.sourceLength output + input.length := by
+  have hSourceType :=
+    TypedCfgCompiler.BasicInstr.sourceType_of_sourceSafe hSafe
+  cases instr with
+  | push value =>
+      simp [TypedCfgCompiler.BasicInstr.toCfg,
+        TypedCfg.Instr.type?] at hType hSourceType
+      subst output
+      have hSourceLength := congrArg TypedCfg.Shape.length hSourceType
+      simp [TypedCfgCompiler.Shape.sourceLength,
+        TypedCfg.Shape.length] at hSourceLength ⊢
+      omega
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            _hInputBound, hOutputLength⟩ :=
+        BasicOp.type_length_toCfg hType
+      obtain
+          ⟨sourceInputArity, sourceOutputArity, hSourceArity,
+            _hSourceInputBound, hSourceOutputLength⟩ :=
+        BasicOp.type_length_toCfg hSourceType
+      have hArities :
+          (sourceInputArity, sourceOutputArity) =
+            (inputArity, outputArity) :=
+        Option.some.inj (hSourceArity.symm.trans hArity)
+      cases hArities
+      change
+        output.length +
+            (TypedCfgCompiler.Shape.sourceView input).length =
+          (TypedCfgCompiler.Shape.sourceView output).length +
+            input.length
+      omega
+  | bindLocals offset names =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindLocals hType
+      have hSourceOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindLocals hSourceType
+      change
+        output.length +
+            (TypedCfgCompiler.Shape.sourceView input).length =
+          (TypedCfgCompiler.Shape.sourceView output).length +
+            input.length
+      omega
+  | bindScratch baseDepth name slot =>
+      have hOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindScratch hType
+      have hSourceOutputLength :=
+        TypedCfg.Instr.length_of_type?_bindScratch hSourceType
+      change
+        output.length +
+            (TypedCfgCompiler.Shape.sourceView input).length =
+          (TypedCfgCompiler.Shape.sourceView output).length +
+            input.length
+      omega
+
+/--
+Accepted Structured instructions cannot consume the active procedure's hidden
+return token.
+-/
+theorem output_returnTokenDepth?_eq_some_of_input
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {inputDepth : Nat}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hSafe :
+      TypedCfgCompiler.BasicInstr.sourceSafe? instr input output = true)
+    (hInputDepth : input.returnTokenDepth? = some inputDepth) :
+    ∃ outputDepth, output.returnTokenDepth? = some outputDepth := by
+  have hInputSource :
+      TypedCfgCompiler.Shape.sourceLength input = inputDepth :=
+    TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
+      hInputDepth
+  have hInputLt :
+      inputDepth < input.length :=
+    TypedCfgCompilerFacts.Shape.returnTokenDepth?_lt_length hInputDepth
+  have hBalance := length_balance_of_type hType hSafe
+  have hOutputGap :
+      TypedCfgCompiler.Shape.sourceLength output < output.length := by
+    omega
+  cases hOutputDepth : output.returnTokenDepth? with
+  | some outputDepth =>
+      exact ⟨outputDepth, rfl⟩
+  | none =>
+      have hOutputSource :
+          TypedCfgCompiler.Shape.sourceLength output = output.length := by
+        unfold TypedCfgCompiler.Shape.sourceLength
+        rw [
+          TypedCfgCompilerFacts.Shape.sourceView_eq_self_of_returnTokenDepth?_eq_none
+            hOutputDepth]
+      omega
+
+namespace Code
+
+/--
+Accepted Structured code cannot introduce a compiler-owned return token.
+Therefore an active output shape implies an active input shape for the entire
+typed straight-line fragment.
+-/
+theorem input_returnTokenDepth?_eq_some_of_output
+    {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {outputDepth : Nat}
+    (hType :
+      TypedCfgCompiler.Code.type? code input = some output)
+    (hOutputDepth : output.returnTokenDepth? = some outputDepth) :
+    ∃ inputDepth, input.returnTokenDepth? = some inputDepth := by
+  induction code generalizing input output with
+  | nil =>
+      simp [TypedCfgCompiler.Code.type?] at hType
+      subst output
+      exact ⟨outputDepth, hOutputDepth⟩
+  | cons instr rest ih =>
+      unfold TypedCfgCompiler.Code.type? at hType
+      cases hMiddle :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hMiddle] at hType
+      | some middle =>
+          cases hSafe :
+              TypedCfgCompiler.BasicInstr.sourceSafe?
+                instr input middle with
+          | false =>
+              simp [hMiddle, hSafe] at hType
+          | true =>
+              have hRestType :
+                  TypedCfgCompiler.Code.type? rest middle =
+                    some output := by
+                simpa [hMiddle, hSafe] using hType
+              obtain ⟨middleDepth, hMiddleDepth⟩ :=
+                ih hRestType hOutputDepth
+              exact
+                BasicInstr.input_returnTokenDepth?_eq_some_of_output
+                  hMiddle hSafe hMiddleDepth
+
+end Code
+
+/--
+Accepted Structured code cannot consume the active procedure's hidden return
+token.
+-/
+theorem Code.output_returnTokenDepth?_eq_some_of_input
+    {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {inputDepth : Nat}
+    (hType :
+      TypedCfgCompiler.Code.type? code input = some output)
+    (hInputDepth : input.returnTokenDepth? = some inputDepth) :
+    ∃ outputDepth, output.returnTokenDepth? = some outputDepth := by
+  induction code generalizing input output inputDepth with
+  | nil =>
+      simp [TypedCfgCompiler.Code.type?] at hType
+      subst output
+      exact ⟨inputDepth, hInputDepth⟩
+  | cons instr rest ih =>
+      unfold TypedCfgCompiler.Code.type? at hType
+      cases hMiddle :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hMiddle] at hType
+      | some middle =>
+          cases hSafe :
+              TypedCfgCompiler.BasicInstr.sourceSafe?
+                instr input middle with
+          | false =>
+              simp [hMiddle, hSafe] at hType
+          | true =>
+              have hRestType :
+                  TypedCfgCompiler.Code.type? rest middle =
+                    some output := by
+                simpa [hMiddle, hSafe] using hType
+              obtain ⟨middleDepth, hMiddleDepth⟩ :=
+                BasicInstr.output_returnTokenDepth?_eq_some_of_input
+                  hMiddle hSafe hInputDepth
+              exact ih hRestType hMiddleDepth
+
+/--
 An accepted Structured source instruction preserves the two-mode source-frame
 invariant: caller frames retain a lower bound, while active procedure frames
 retain an exact source-visible length above their return token.

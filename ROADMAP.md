@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 22:36 PDT.
+Last updated: 2026-06-11 22:41 PDT.
 
 ## Objective
 
@@ -208,6 +208,11 @@ Adjacent boundary status:
   terminal statements at fixed target fuel. Loop callbacks now receive
   source-return preservation and reject loop/body/post entries using exact
   activation frames rather than a global generated-label blacklist.
+  `Structured.TypedCfgCompilerActive` proves from the existing compiler that
+  every emitted block input and regular fallthrough preserves an active
+  procedure return token, including sequences, conditionals, switches, loops,
+  calls, and allocation-shaped procedure fragments. Observer modules consume
+  this checked result invariant rather than accepting generated shape evidence.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

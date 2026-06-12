@@ -430,6 +430,7 @@ report_matches \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
   EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \
+  EvmCompiler/Structured/TypedCfgCompilerActive.lean \
   EvmCompiler/Structured/TypedCfgCompilerEntry.lean \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
