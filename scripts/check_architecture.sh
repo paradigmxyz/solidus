@@ -120,6 +120,15 @@ report_matches \
   EvmCompiler -g '*Observer*.lean'
 
 report_matches \
+  'The allocation observer boundary must stop at allocated Expressions/Structured code:' \
+  '^import EvmCompiler\.(TypedCfg|Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Objects|Yul|Public)' \
+  EvmCompiler/Functions/AllocationObserverRelation.lean \
+  EvmCompiler/Functions/AllocationObserverSafety.lean \
+  EvmCompiler/Functions/AllocationObserverPreservation.lean \
+  EvmCompiler/Functions/AllocationObserverContext.lean \
+  EvmCompiler/Functions/AllocationObserverExpression.lean
+
+report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
@@ -443,6 +452,11 @@ report_matches \
   EvmCompiler/Simulation \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
+  EvmCompiler/Functions/AllocationObserverRelation.lean \
+  EvmCompiler/Functions/AllocationObserverSafety.lean \
+  EvmCompiler/Functions/AllocationObserverPreservation.lean \
+  EvmCompiler/Functions/AllocationObserverContext.lean \
+  EvmCompiler/Functions/AllocationObserverExpression.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \

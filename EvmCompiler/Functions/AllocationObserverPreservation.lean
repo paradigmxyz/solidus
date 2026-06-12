@@ -2657,13 +2657,40 @@ theorem literal_forward_result {transcript : Trace}
       Structured.ObserverSemantics.Code.run [.push value] target =
         .ok targetFinal ∧
       AllocationObserverRelation.ExprResultRel contract plan live
-        stackOffset frameBase source target targetFinal [value] := by
+        stackOffset frameBase 1 source target targetFinal [value] := by
   obtain ⟨hSource, hTarget, hFinalRel⟩ :=
     literal_forward value hRel
   refine
     ⟨AllocationObserverRelation.StateRel.pushTargetBy 33 value target,
       hSource, hTarget, ?_⟩
-  exact ⟨by simpa using hFinalRel, rfl⟩
+  exact ⟨by simpa using hFinalRel, rfl, rfl⟩
+
+theorem literal_forward_result_scratch {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (value : Word)
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (.lit value : Functions.Expr 1) source =
+        .ok (source, [value]) ∧
+      Structured.ObserverSemantics.Code.run [.push value] target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ScratchExprResultRel contract plan live
+        stackOffset frameBase frameDepth frameWords 1
+        source target targetFinal [value] := by
+  let targetFinal :=
+    AllocationObserverRelation.StateRel.pushTargetBy 33 value target
+  exact
+    ⟨targetFinal, rfl, ObserverCode.run_push value target,
+      hRel.push_target_by 33 value, rfl, rfl⟩
 
 theorem stackVar_forward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2690,13 +2717,54 @@ theorem stackVar_forward_result {transcript : Trace}
       Structured.ObserverSemantics.Code.run [.op op] target =
         .ok targetFinal ∧
       AllocationObserverRelation.ExprResultRel contract plan live
-        stackOffset frameBase source target targetFinal [value] := by
+        stackOffset frameBase 1 source target targetFinal [value] := by
   obtain ⟨hSourceEval, hTargetRun, hFinalRel⟩ :=
     stackVar_forward hRel hLive hLocation hSource hOp
   refine
     ⟨AllocationObserverRelation.StateRel.pushTarget value target,
       hSourceEval, hTargetRun, ?_⟩
-  exact ⟨by simpa using hFinalRel, rfl⟩
+  exact ⟨by simpa using hFinalRel, rfl, rfl⟩
+
+theorem stackVar_forward_result_scratch {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords depth : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation :
+      plan.location? name = some (.stack depth))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + depth + 1) = some op) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (.var name : Functions.Expr 1) source =
+        .ok (source, [value]) ∧
+      Structured.ObserverSemantics.Code.run [.op op] target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ScratchExprResultRel contract plan live
+        stackOffset frameBase frameDepth frameWords 1
+        source target targetFinal [value] := by
+  have hTargetGet :
+      target.source.evm.stack[stackOffset + depth]? = some value := by
+    rw [hRel.base.core.store.stack hLive hLocation, hSource]
+  let targetFinal :=
+    AllocationObserverRelation.StateRel.pushTarget value target
+  refine
+    ⟨targetFinal, ?_, ObserverCode.run_dup hOp hTargetGet,
+      hRel.push_target value, rfl, rfl⟩
+  simp [Functions.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.eval,
+    Functions.ObserverSemantics.stateModel,
+    Locals.ObserverSemantics.stateModel,
+    Locals.Source.Effectful.StateModel.vars, hSource]
 
 theorem scratchVar_forward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2727,14 +2795,14 @@ theorem scratchVar_forward_result {transcript : Trace}
             .op .mload ] target =
         .ok targetFinal ∧
       AllocationObserverRelation.ScratchExprResultRel contract plan live
-        stackOffset frameBase frameDepth frameWords
+        stackOffset frameBase frameDepth frameWords 1
         source target targetFinal [value] := by
   obtain
       ⟨targetFinal, hSourceEval, hTargetRun, hFinalRel, hStack⟩ :=
     scratchVar_forward hRel hLive hLocation hSource hOp
   exact
     ⟨targetFinal, hSourceEval, hTargetRun,
-      ⟨by simpa using hFinalRel, by simpa using hStack⟩⟩
+      ⟨by simpa using hFinalRel, rfl, by simpa using hStack⟩⟩
 
 theorem gas_forward_result_scratch {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2757,7 +2825,7 @@ theorem gas_forward_result_scratch {transcript : Trace}
       Structured.ObserverSemantics.Code.run [.op .gas] target =
         .ok targetFinal ∧
       AllocationObserverRelation.ScratchExprResultRel contract plan live
-        stackOffset frameBase frameDepth frameWords
+        stackOffset frameBase frameDepth frameWords 1
         sourceConsumed target targetFinal [value] := by
   obtain ⟨targetConsumed, hTargetConsume, hConsumedRel⟩ :=
     hRel.consume_forward hConsume
@@ -2770,7 +2838,7 @@ theorem gas_forward_result_scratch {transcript : Trace}
     ⟨targetFinal,
       Functions.ObserverSemantics.expr_eval_gas hConsume,
       ObserverCode.run_gas hTargetConsume,
-      hConsumedRel.push_target value, ?_⟩
+      hConsumedRel.push_target value, rfl, ?_⟩
   simp [targetFinal,
     AllocationObserverRelation.StateRel.pushTarget,
     AllocationObserverRelation.StateRel.pushTargetBy,
@@ -2799,7 +2867,7 @@ theorem msize_forward_result_scratch {transcript : Trace}
       Structured.ObserverSemantics.Code.run [.op .msize] target =
         .ok targetFinal ∧
       AllocationObserverRelation.ScratchExprResultRel contract plan live
-        stackOffset frameBase frameDepth frameWords
+        stackOffset frameBase frameDepth frameWords 1
         sourceConsumed target targetFinal [value] := by
   obtain ⟨targetConsumed, hTargetConsume, hConsumedRel⟩ :=
     hRel.consume_forward hConsume
@@ -2812,7 +2880,7 @@ theorem msize_forward_result_scratch {transcript : Trace}
     ⟨targetFinal,
       Functions.ObserverSemantics.expr_eval_msize hConsume,
       ObserverCode.run_msize hTargetConsume,
-      hConsumedRel.push_target value, ?_⟩
+      hConsumedRel.push_target value, rfl, ?_⟩
   simp [targetFinal,
     AllocationObserverRelation.StateRel.pushTarget,
     AllocationObserverRelation.StateRel.pushTargetBy,
@@ -2839,12 +2907,39 @@ theorem literal_backward_result {transcript : Trace}
         (.lit value : Functions.Expr 1) source =
       .ok (source, [value]) ∧
     AllocationObserverRelation.ExprResultRel contract plan live
-      stackOffset frameBase source target targetFinal [value] := by
+      stackOffset frameBase 1 source target targetFinal [value] := by
   rw [ObserverCode.run_push value target] at hRun
   cases hRun
   exact
     ⟨rfl,
-      ⟨by simpa using hRel.push_target_by 33 value, rfl⟩⟩
+      ⟨by simpa using hRel.push_target_by 33 value, rfl, rfl⟩⟩
+
+theorem literal_backward_result_scratch {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (value : Word)
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hRun :
+      Structured.ObserverSemantics.Code.run [.push value] target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.lit value : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.ScratchExprResultRel contract plan live
+      stackOffset frameBase frameDepth frameWords 1
+      source target targetFinal [value] := by
+  obtain ⟨expected, hSource, hExpectedRun, hExpectedRel⟩ :=
+    literal_forward_result_scratch value hRel
+  rw [hExpectedRun] at hRun
+  cases hRun
+  exact ⟨hSource, hExpectedRel⟩
 
 theorem stackVar_backward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2870,18 +2965,51 @@ theorem stackVar_backward_result {transcript : Trace}
         (.var name : Functions.Expr 1) source =
       .ok (source, [value]) ∧
     AllocationObserverRelation.ExprResultRel contract plan live
-      stackOffset frameBase source target targetFinal [value] := by
+      stackOffset frameBase 1 source target targetFinal [value] := by
   have hTargetGet :
       target.source.evm.stack[stackOffset + depth]? = some value := by
     rw [hRel.core.store.stack hLive hLocation, hSource]
   rw [ObserverCode.run_dup hOp hTargetGet] at hRun
   cases hRun
-  refine ⟨?_, ⟨by simpa using hRel.push_target value, rfl⟩⟩
+  refine ⟨?_, ⟨by simpa using hRel.push_target value, rfl, rfl⟩⟩
   simp [Functions.Source.Effectful.Expr.eval,
     Locals.Source.Effectful.Expr.eval,
     Functions.ObserverSemantics.stateModel,
     Locals.ObserverSemantics.stateModel,
     Locals.Source.Effectful.StateModel.vars, hSource]
+
+theorem stackVar_backward_result_scratch {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords depth : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word} {op : Structured.BasicOp}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel contract plan live
+        stackOffset frameBase frameDepth frameWords source target)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.stack depth))
+    (hSource : source.source.vars name = some value)
+    (hOp :
+      Locals.StackOp.dup? (stackOffset + depth + 1) = some op)
+    (hRun :
+      Structured.ObserverSemantics.Code.run [.op op] target =
+        .ok targetFinal) :
+    Functions.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        (.var name : Functions.Expr 1) source =
+      .ok (source, [value]) ∧
+    AllocationObserverRelation.ScratchExprResultRel contract plan live
+      stackOffset frameBase frameDepth frameWords 1
+      source target targetFinal [value] := by
+  obtain ⟨expected, hSourceEval, hExpectedRun, hExpectedRel⟩ :=
+    stackVar_forward_result_scratch
+      hRel hLive hLocation hSource hOp
+  rw [hExpectedRun] at hRun
+  cases hRun
+  exact ⟨hSourceEval, hExpectedRel⟩
 
 theorem scratchVar_backward_result {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2911,13 +3039,13 @@ theorem scratchVar_backward_result {transcript : Trace}
         (.var name : Functions.Expr 1) source =
       .ok (source, [value]) ∧
     AllocationObserverRelation.ScratchExprResultRel contract plan live
-      stackOffset frameBase frameDepth frameWords
+      stackOffset frameBase frameDepth frameWords 1
       source target targetFinal [value] := by
   obtain ⟨hSourceEval, hFinalRel, hStack⟩ :=
     scratchVar_backward hRel hLive hLocation hSource hOp hRun
   exact
     ⟨hSourceEval,
-      ⟨by simpa using hFinalRel, by simpa using hStack⟩⟩
+      ⟨by simpa using hFinalRel, rfl, by simpa using hStack⟩⟩
 
 theorem gas_backward_result_scratch {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -2938,7 +3066,7 @@ theorem gas_backward_result_scratch {transcript : Trace}
           (.prim .gas .nil : Functions.Expr 1) source =
         .ok (sourceConsumed, [value]) ∧
       AllocationObserverRelation.ScratchExprResultRel contract plan live
-        stackOffset frameBase frameDepth frameWords
+        stackOffset frameBase frameDepth frameWords 1
         sourceConsumed target targetFinal [value] := by
   obtain ⟨value, targetConsumed, hTargetConsume, rfl⟩ :=
     ObserverCode.run_gas_backward hRun
@@ -2950,7 +3078,7 @@ theorem gas_backward_result_scratch {transcript : Trace}
   refine
     ⟨value, sourceConsumed,
       Functions.ObserverSemantics.expr_eval_gas hSourceConsume,
-      hConsumedRel.push_target value, ?_⟩
+      hConsumedRel.push_target value, rfl, ?_⟩
   simp [AllocationObserverRelation.StateRel.pushTarget,
     AllocationObserverRelation.StateRel.pushTargetBy,
     Simulation.ResourceReplay.State.withSource,
@@ -2976,7 +3104,7 @@ theorem msize_backward_result_scratch {transcript : Trace}
           (.prim .msize .nil : Functions.Expr 1) source =
         .ok (sourceConsumed, [value]) ∧
       AllocationObserverRelation.ScratchExprResultRel contract plan live
-        stackOffset frameBase frameDepth frameWords
+        stackOffset frameBase frameDepth frameWords 1
         sourceConsumed target targetFinal [value] := by
   obtain ⟨value, targetConsumed, hTargetConsume, rfl⟩ :=
     ObserverCode.run_msize_backward hRun
@@ -2988,7 +3116,7 @@ theorem msize_backward_result_scratch {transcript : Trace}
   refine
     ⟨value, sourceConsumed,
       Functions.ObserverSemantics.expr_eval_msize hSourceConsume,
-      hConsumedRel.push_target value, ?_⟩
+      hConsumedRel.push_target value, rfl, ?_⟩
   simp [AllocationObserverRelation.StateRel.pushTarget,
     AllocationObserverRelation.StateRel.pushTargetBy,
     Simulation.ResourceReplay.State.withSource,

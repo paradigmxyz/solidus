@@ -1,6 +1,8 @@
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.AllocationObserverPreservation
 import EvmCompiler.Functions.AllocationObserverSafety
+import EvmCompiler.Functions.AllocationObserverContext
+import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -34,6 +36,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.eval_eq
+#check EvmCompiler.Functions.AllocationObserverContext.ExprContext
+#check EvmCompiler.Functions.AllocationObserverContext.classify_var
+#check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
+#check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
+#check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward
@@ -205,6 +215,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.eval_eq
 #print axioms EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.eval_eq
+#print axioms EvmCompiler.Functions.AllocationObserverContext.classify_var
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
+#print axioms EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ExprResultRel.append
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ScratchExprResultRel.append
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.literal_forward_result

@@ -375,13 +375,15 @@ number of produced values.
 -/
 structure ExprResultRel {transcript : Trace}
     (contract : MemoryContract.Contract) (plan : Plan)
-    (live : List Locals.Name) (stackOffset frameBase : Nat)
+    (live : List Locals.Name) (stackOffset frameBase resultCount : Nat)
     (source : SourceState transcript)
     (targetInitial targetFinal : TargetState transcript)
     (values : List Word) : Prop where
   state :
-    StateRel contract plan live (stackOffset + values.length) frameBase
+    StateRel contract plan live (stackOffset + resultCount) frameBase
       source targetFinal
+  valuesLength :
+    values.length = resultCount
   stack :
     targetFinal.source.evm.stack =
       values.reverse ++ targetInitial.source.evm.stack
@@ -393,14 +395,16 @@ invariants needed by spilled variable reads and writes.
 structure ScratchExprResultRel {transcript : Trace}
     (contract : MemoryContract.Contract) (plan : Plan)
     (live : List Locals.Name)
-    (stackOffset frameBase frameDepth frameWords : Nat)
+    (stackOffset frameBase frameDepth frameWords resultCount : Nat)
     (source : SourceState transcript)
     (targetInitial targetFinal : TargetState transcript)
     (values : List Word) : Prop where
   state :
     ScratchStateRel contract plan live
-      (stackOffset + values.length) frameBase frameDepth frameWords
+      (stackOffset + resultCount) frameBase frameDepth frameWords
       source targetFinal
+  valuesLength :
+    values.length = resultCount
   stack :
     targetFinal.source.evm.stack =
       values.reverse ++ targetInitial.source.evm.stack
@@ -413,27 +417,30 @@ theorem nil {transcript : Trace}
     {source : SourceState transcript} {target : TargetState transcript}
     (hRel :
       StateRel contract plan live stackOffset frameBase source target) :
-    ExprResultRel contract plan live stackOffset frameBase
+    ExprResultRel contract plan live stackOffset frameBase 0
       source target target [] := by
-  exact ⟨by simpa using hRel, by simp⟩
+  exact ⟨by simpa using hRel, rfl, by simp⟩
 
 theorem append {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
     {sourceHead sourceFinal : SourceState transcript}
     {targetInitial targetHead targetFinal : TargetState transcript}
+    {headCount tailCount : Nat}
     {headValues tailValues : List Word}
     (hHead :
-      ExprResultRel contract plan live stackOffset frameBase
+      ExprResultRel contract plan live stackOffset frameBase headCount
         sourceHead targetInitial targetHead headValues)
     (hTail :
       ExprResultRel contract plan live
-        (stackOffset + headValues.length) frameBase
+        (stackOffset + headCount) frameBase tailCount
         sourceFinal targetHead targetFinal tailValues) :
     ExprResultRel contract plan live stackOffset frameBase
+      (headCount + tailCount)
       sourceFinal targetInitial targetFinal (headValues ++ tailValues) := by
-  refine ⟨?_, ?_⟩
-  · simpa [List.length_append, Nat.add_assoc] using hTail.state
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Nat.add_assoc] using hTail.state
+  · simp [List.length_append, hHead.valuesLength, hTail.valuesLength]
   · rw [hTail.stack, hHead.stack]
     simp [List.reverse_append, List.append_assoc]
 
@@ -450,8 +457,8 @@ theorem nil {transcript : Trace}
       ScratchStateRel contract plan live stackOffset frameBase
         frameDepth frameWords source target) :
     ScratchExprResultRel contract plan live stackOffset frameBase
-      frameDepth frameWords source target target [] := by
-  exact ⟨by simpa using hRel, by simp⟩
+      frameDepth frameWords 0 source target target [] := by
+  exact ⟨by simpa using hRel, rfl, by simp⟩
 
 theorem append {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -459,19 +466,24 @@ theorem append {transcript : Trace}
     {stackOffset frameBase frameDepth frameWords : Nat}
     {sourceHead sourceFinal : SourceState transcript}
     {targetInitial targetHead targetFinal : TargetState transcript}
+    {headCount tailCount : Nat}
     {headValues tailValues : List Word}
     (hHead :
       ScratchExprResultRel contract plan live stackOffset frameBase
-        frameDepth frameWords sourceHead targetInitial targetHead headValues)
+        frameDepth frameWords headCount
+        sourceHead targetInitial targetHead headValues)
     (hTail :
       ScratchExprResultRel contract plan live
-        (stackOffset + headValues.length) frameBase
-        frameDepth frameWords sourceFinal targetHead targetFinal tailValues) :
+        (stackOffset + headCount) frameBase
+        frameDepth frameWords tailCount
+        sourceFinal targetHead targetFinal tailValues) :
     ScratchExprResultRel contract plan live stackOffset frameBase
-      frameDepth frameWords sourceFinal targetInitial targetFinal
+      frameDepth frameWords (headCount + tailCount)
+      sourceFinal targetInitial targetFinal
       (headValues ++ tailValues) := by
-  refine ⟨?_, ?_⟩
-  · simpa [List.length_append, Nat.add_assoc] using hTail.state
+  refine ⟨?_, ?_, ?_⟩
+  · simpa [Nat.add_assoc] using hTail.state
+  · simp [List.length_append, hHead.valuesLength, hTail.valuesLength]
   · rw [hTail.stack, hHead.stack]
     simp [List.reverse_append, List.append_assoc]
 

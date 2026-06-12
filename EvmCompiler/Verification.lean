@@ -9,6 +9,8 @@ import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
 import EvmCompiler.Functions.AllocationObserverSafety
 import EvmCompiler.Functions.AllocationObserverPreservation
+import EvmCompiler.Functions.AllocationObserverContext
+import EvmCompiler.Functions.AllocationObserverExpression
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
@@ -62,6 +64,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
 #check EvmCompiler.Functions.AllocationObserverSafety.PrimitiveMemorySafe
 #check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
+#check EvmCompiler.Functions.AllocationObserverContext.ExprContext
+#check EvmCompiler.Functions.AllocationObserverContext.classify_var
+#check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
+#check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExpr
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
+#check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.of_wellFormed
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit

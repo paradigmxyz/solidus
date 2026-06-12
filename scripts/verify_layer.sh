@@ -30,7 +30,10 @@ case "$layer" in
       EvmCompiler.Functions.MixedAllocation
       EvmCompiler.Functions.AllocationLowering
       EvmCompiler.Functions.AllocationObserverRelation
+      EvmCompiler.Functions.AllocationObserverSafety
       EvmCompiler.Functions.AllocationObserverPreservation
+      EvmCompiler.Functions.AllocationObserverContext
+      EvmCompiler.Functions.AllocationObserverExpression
       EvmCompiler.Expressions.ObserverPreservation
       EvmCompiler.Objects.Compiler
     )
