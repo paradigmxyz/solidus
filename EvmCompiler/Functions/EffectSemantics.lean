@@ -485,6 +485,187 @@ theorem runForLoop_cont_post_regular_of_runs {σ : Type}
     Outcome.cont, Locals.Source.Effectful.Outcome.cont]
 
 /--
+Inversion for a canonical regular loop execution.
+
+The four alternatives are exactly the regular-producing branches of
+`runForLoop`: false condition, body break, regular body/post recursion, and
+continuing body/post recursion.
+-/
+theorem runForLoop_regular_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source final : σ}
+    (hRun :
+      Stmt.runForLoop model prim program loopCtx cond postBase post
+          bodyBase body fuel source =
+        .ok (Outcome.regular final)) :
+    ∃ stepFuel, fuel = stepFuel + 1 ∧
+      ((∃ afterCond,
+          Expr.evalCondition model prim cond source =
+              .ok (afterCond, false) ∧
+            final = model.restrictTo loopCtx.scope afterCond) ∨
+        (∃ afterCond afterBody,
+          Expr.evalCondition model prim cond source =
+              .ok (afterCond, true) ∧
+            Block.runScoped model prim program bodyBase body stepFuel
+                afterCond =
+              .ok (Outcome.brk afterBody) ∧
+            final = afterBody) ∨
+        (∃ afterCond afterBody afterPost,
+          Expr.evalCondition model prim cond source =
+              .ok (afterCond, true) ∧
+            Block.runScoped model prim program bodyBase body stepFuel
+                afterCond =
+              .ok (Outcome.regular afterBody) ∧
+            Block.runScoped model prim program postBase post stepFuel
+                afterBody =
+              .ok (Outcome.regular afterPost) ∧
+            Stmt.runForLoop model prim program loopCtx cond postBase post
+                bodyBase body stepFuel afterPost =
+              .ok (Outcome.regular final)) ∨
+        (∃ afterCond afterBody afterPost,
+          Expr.evalCondition model prim cond source =
+              .ok (afterCond, true) ∧
+            Block.runScoped model prim program bodyBase body stepFuel
+                afterCond =
+              .ok (Outcome.cont afterBody) ∧
+            Block.runScoped model prim program postBase post stepFuel
+                afterBody =
+              .ok (Outcome.regular afterPost) ∧
+            Stmt.runForLoop model prim program loopCtx cond postBase post
+                bodyBase body stepFuel afterPost =
+              .ok (Outcome.regular final))) := by
+  cases fuel with
+  | zero =>
+      simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+  | succ stepFuel =>
+      refine ⟨stepFuel, rfl, ?_⟩
+      rw [Stmt.runForLoop] at hRun
+      cases hCond :
+          Expr.evalCondition model prim cond source with
+      | error err =>
+          simp [hCond] at hRun
+      | ok condResult =>
+          rcases condResult with ⟨afterCond, condTrue⟩
+          cases condTrue with
+          | false =>
+              left
+              refine ⟨afterCond, rfl, ?_⟩
+              simpa [hCond, Outcome.regular,
+                Locals.Source.Effectful.Outcome.regular] using hRun.symm
+          | true =>
+              cases hBody :
+                  Block.runScoped model prim program bodyBase body stepFuel
+                    afterCond with
+              | error err =>
+                  simp [hCond, hBody] at hRun
+              | ok bodyOutcome =>
+                  rcases bodyOutcome with ⟨afterBody, bodyMode⟩
+                  cases bodyMode with
+                  | regular =>
+                      cases hPost :
+                          Block.runScoped model prim program postBase post
+                            stepFuel afterBody with
+                      | error err =>
+                          simp [hCond, hBody, hPost] at hRun
+                      | ok postOutcome =>
+                          rcases postOutcome with ⟨afterPost, postMode⟩
+                          cases postMode with
+                          | regular =>
+                              simp [hCond, hBody, hPost] at hRun
+                              right
+                              right
+                              left
+                              exact
+                                ⟨afterCond, afterBody, afterPost,
+                                  rfl, hBody, hPost, hRun⟩
+                          | brk =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | cont =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | leave =>
+                              simp [hCond, hBody, hPost] at hRun
+                              have hMode :=
+                                congrArg
+                                  Locals.Source.Effectful.Outcome.mode hRun
+                              simp [Outcome.regular,
+                                Locals.Source.Effectful.Outcome.regular]
+                                at hMode
+                          | halt kind =>
+                              simp [hCond, hBody, hPost] at hRun
+                              have hMode :=
+                                congrArg
+                                  Locals.Source.Effectful.Outcome.mode hRun
+                              simp [Outcome.regular,
+                                Locals.Source.Effectful.Outcome.regular]
+                                at hMode
+                  | brk =>
+                      right
+                      left
+                      refine ⟨afterCond, afterBody, rfl, hBody, ?_⟩
+                      simpa [hCond, hBody, Outcome.regular,
+                        Locals.Source.Effectful.Outcome.regular,
+                        Outcome.brk,
+                        Locals.Source.Effectful.Outcome.brk] using hRun.symm
+                  | cont =>
+                      cases hPost :
+                          Block.runScoped model prim program postBase post
+                            stepFuel afterBody with
+                      | error err =>
+                          simp [hCond, hBody, hPost] at hRun
+                      | ok postOutcome =>
+                          rcases postOutcome with ⟨afterPost, postMode⟩
+                          cases postMode with
+                          | regular =>
+                              simp [hCond, hBody, hPost] at hRun
+                              right
+                              right
+                              right
+                              exact
+                                ⟨afterCond, afterBody, afterPost,
+                                  rfl, hBody, hPost, hRun⟩
+                          | brk =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | cont =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | leave =>
+                              simp [hCond, hBody, hPost] at hRun
+                              have hMode :=
+                                congrArg
+                                  Locals.Source.Effectful.Outcome.mode hRun
+                              simp [Outcome.regular,
+                                Locals.Source.Effectful.Outcome.regular]
+                                at hMode
+                          | halt kind =>
+                              simp [hCond, hBody, hPost] at hRun
+                              have hMode :=
+                                congrArg
+                                  Locals.Source.Effectful.Outcome.mode hRun
+                              simp [Outcome.regular,
+                                Locals.Source.Effectful.Outcome.regular]
+                                at hMode
+                  | leave =>
+                      simp [hCond, hBody] at hRun
+                      have hMode :=
+                        congrArg Locals.Source.Effectful.Outcome.mode hRun
+                      simp [Outcome.regular,
+                        Locals.Source.Effectful.Outcome.regular] at hMode
+                  | halt kind =>
+                      simp [hCond, hBody] at hRun
+                      have hMode :=
+                        congrArg Locals.Source.Effectful.Outcome.mode hRun
+                      simp [Outcome.regular,
+                        Locals.Source.Effectful.Outcome.regular] at hMode
+
+/--
 Canonical source `for` execution whose initializer is regular and whose first
 body execution breaks.
 -/

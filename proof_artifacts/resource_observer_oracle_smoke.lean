@@ -476,6 +476,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.regular_post_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.cont_post_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_regular_of_components
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.runForLoop_regular_cases
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_body_brk_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
