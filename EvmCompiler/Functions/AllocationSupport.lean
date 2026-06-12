@@ -51,7 +51,8 @@ def scratchFrameConfig?
     (contract : MemoryContract.Contract)
     (frameWords : Nat) : Option ScratchFrameConfig := do
   let reservation ← contract.scratch?
-  if 0 < reservation.words ∧
+  if reservation.WellFormed ∧
+      0 < reservation.words ∧
       frameWords ≤ reservation.usableWords then
     some
       { allocatorCell := reservation.allocatorCell
@@ -72,6 +73,7 @@ theorem scratchFrameConfig?_sound
       config.firstFrame = reservation.frameBase ∧
       config.limit = reservation.endExclusive ∧
       config.frameWords = frameWords ∧
+      reservation.WellFormed ∧
       0 < reservation.words ∧
       frameWords ≤ reservation.usableWords := by
   unfold scratchFrameConfig? at hConfig
@@ -79,15 +81,17 @@ theorem scratchFrameConfig?_sound
   | none =>
       simp [hReservation] at hConfig
   | some reservation =>
-      by_cases hPositive : 0 < reservation.words
-      · by_cases hFits : frameWords ≤ reservation.usableWords
-        · simp [hReservation, hPositive, hFits] at hConfig
-          subst config
-          exact
-            ⟨reservation, rfl, rfl, rfl, rfl, rfl,
-              hPositive, hFits⟩
-        · simp [hReservation, hPositive, hFits] at hConfig
-      · simp [hReservation, hPositive] at hConfig
+      by_cases hWF : reservation.WellFormed
+      · by_cases hPositive : 0 < reservation.words
+        · by_cases hFits : frameWords ≤ reservation.usableWords
+          · simp [hReservation, hWF, hPositive, hFits] at hConfig
+            subst config
+            exact
+              ⟨reservation, rfl, rfl, rfl, rfl, rfl,
+                hWF, hPositive, hFits⟩
+          · simp [hReservation, hWF, hPositive, hFits] at hConfig
+        · simp [hReservation, hWF, hPositive] at hConfig
+      · simp [hReservation, hWF] at hConfig
 
 def lookupSlot? (name : Name) : SlotEnv → Option Nat
   | [] => none

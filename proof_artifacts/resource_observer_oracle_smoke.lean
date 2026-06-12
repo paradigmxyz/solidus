@@ -39,6 +39,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward_of_compileCode
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward_of_compileCode
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
+#check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_mstore
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward_scratch
 #check EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward_scratch
@@ -132,6 +135,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_forward_of_compileCode
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.scratchVar_backward_of_compileCode
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
+#print axioms EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_mstore
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_forward_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.gas_backward_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward_scratch

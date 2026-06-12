@@ -128,6 +128,12 @@ Adjacent boundary status:
   well-formed plans derive live scratch-slot bounds, and successful
   `Locals.Expr.compileCode` execution constructs the exact spill-read code
   consumed by the observer theorem instead of requiring caller-supplied code.
+  Static plan regions certify frame width independently of the current
+  activation's dynamic frame base, so recursive activations can construct the
+  same relation from allocator depth rather than an impossible base equality.
+  Scratch-frame configuration now rejects malformed wrapping reservations and
+  derives each budgeted activation's no-wrap invariant from checked compiler
+  configuration.
 - [ ] Locals/Expressions -> Structured: generic effect semantics exists;
   complete allocation-sensitive observer theorem remains. The transparent
   Expressions-to-Structured adapter now has checked forward and backward

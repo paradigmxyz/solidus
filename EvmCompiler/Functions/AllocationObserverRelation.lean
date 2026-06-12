@@ -133,6 +133,16 @@ def contractTargetBy {transcript : Trace} (pcDelta : Nat)
       (target.source.evm.replaceStackAndIncrPC
         (value :: rest) (pcΔ := pcDelta)))
 
+def mstoreTarget {transcript : Trace}
+    (address value : Word) (rest : List Word)
+    (target : TargetState transcript) : TargetState transcript :=
+  target.withSource
+    (target.source.withEVM
+      (({ target.source.evm with
+          toMachineState :=
+            target.source.evm.toMachineState.mstore address value }).replaceStackAndIncrPC
+        rest))
+
 theorem mono {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {smaller larger : List Locals.Name} {stackOffset frameBase : Nat}
@@ -342,6 +352,7 @@ theorem of_wellFormed
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name}
     {stackOffset frameBase frameDepth frameWords : Nat}
+    {regionBase : Locals.Allocation.RegionBase}
     {source : SourceState transcript} {target : TargetState transcript}
     (hBase :
       StateRel contract plan live stackOffset frameBase source target)
@@ -358,7 +369,7 @@ theorem of_wellFormed
     (hRegion :
       plan.scratchRegion? =
         some
-          { base := .absolute frameBase
+          { base := regionBase
             words := frameWords }) :
     ScratchStateRel contract plan live stackOffset frameBase
       frameDepth frameWords source target :=
@@ -706,6 +717,37 @@ def AllocatorAt {transcript : Trace} (config : Config) (depth : Nat)
       (EvmYul.UInt256.ofNat config.allocatorCell) =
     EvmYul.UInt256.ofNat (baseAt config depth)
 
+theorem mstore_end_le_activeBytes
+    {machine : EvmYul.MachineState} {address : Nat} {value : Word}
+    (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
+    address + MemoryContract.wordBytes ≤
+      (machine.mstore (EvmYul.UInt256.ofNat address) value).activeWords.toNat *
+        MemoryContract.wordBytes := by
+  have hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address :=
+    EvmYul.UInt256.toNat_ofNat_of_lt
+      (lt_of_le_of_lt (Nat.le_add_right address _) hEnd)
+  have hEnd32 :
+      address + 32 < EvmYul.UInt256.size := by
+    simpa [MemoryContract.wordBytes] using hEnd
+  have hM :
+      EvmYul.MachineState.M machine.activeWords.toNat address 32 <
+        EvmYul.UInt256.size := by
+    simp only [EvmYul.MachineState.M]
+    exact Nat.max_lt.mpr
+      ⟨machine.activeWords.val.isLt,
+        lt_of_le_of_lt (by omega) hEnd32⟩
+  simp only [EvmYul.MachineState.mstore,
+    EvmYul.MachineState.writeWord, EvmYul.writeBytes, hAddress]
+  change
+    address + 32 ≤
+      (EvmYul.UInt256.ofNat
+        (EvmYul.MachineState.M machine.activeWords.toNat address 32)).toNat *
+        32
+  rw [EvmYul.UInt256.toNat_ofNat_of_lt hM]
+  simp only [EvmYul.MachineState.M]
+  omega
+
 @[simp] theorem baseAt_zero (config : Config) :
     baseAt config 0 = config.firstFrame := by
   simp [baseAt]
@@ -800,7 +842,7 @@ theorem budget_zero_of_scratchFrameConfig?
     Budget config 0 := by
   obtain
     ⟨reservation, _hReservation, hAllocator, hFirst, hLimit,
-      hWords, hPositive, hFits⟩ :=
+      hWords, _hWF, hPositive, hFits⟩ :=
     AllocationSupport.scratchFrameConfig?_sound hConfig
   simp only [Budget, baseAt_zero, bytes]
   rw [hFirst, hLimit, hWords]
@@ -810,6 +852,20 @@ theorem budget_zero_of_scratchFrameConfig?
     reservation.base + 32 + 32 * frameWords ≤
       reservation.base + 32 * reservation.words
   omega
+
+theorem noWrap_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    baseAt config depth + bytes config < EvmYul.UInt256.size := by
+  obtain
+    ⟨reservation, _hReservation, _hAllocator, _hFirst, hLimit,
+      _hWords, hWF, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  exact lt_of_le_of_lt (by simpa [Budget, hLimit] using hBudget) hWF.2
 
 end Frame
 

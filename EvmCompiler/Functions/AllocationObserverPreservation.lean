@@ -201,6 +201,37 @@ theorem run_mload {transcript : Trace}
     EvmYul.EVM.State.replaceStackAndIncrPC,
     EvmYul.EVM.State.incrPC]
 
+theorem run_mstore {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript}
+    {address value : Word} {rest : List Word}
+    (hStack : target.source.evm.stack = address :: value :: rest) :
+    Structured.ObserverSemantics.Code.run [.op .mstore] target =
+      .ok
+        (AllocationObserverRelation.StateRel.mstoreTarget
+          address value rest target) := by
+  unfold Structured.ObserverSemantics.Code.run
+    Structured.EffectSemantics.Code.run
+  simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
+    Assembly.Target.stepInstr,
+    Structured.ObserverSemantics.stateModel_evm]
+  simp only [Structured.BasicOp.toPrimOp]
+  rw [Assembly.PrimOp.step_eq_continuingStep_run
+    (by rfl : Assembly.PrimOp.mstore.continuingStep? =
+      some (.binaryMachineState EvmYul.MachineState.mstore))]
+  unfold Assembly.PrimStep.run EvmYul.EVM.binaryMachineStateOp
+  rw [hStack]
+  simp [Structured.ObserverSemantics.stateModel_withEVM,
+    Structured.ObserverSemantics.handler,
+    Structured.ObserverSemantics.basicOpObserver?,
+    Structured.BasicOp.toPrimOp,
+    Assembly.ResourceObserver.ofPrimOp?,
+    Structured.EffectSemantics.Code.run,
+    EvmYul.Stack.pop2, Id.run,
+    AllocationObserverRelation.StateRel.mstoreTarget,
+    Simulation.ResourceReplay.State.withSource,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
 theorem run_gas {transcript : Trace}
     {target targetConsumed :
       Structured.ObserverSemantics.State transcript}
