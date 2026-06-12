@@ -13,6 +13,7 @@ import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
+import EvmCompiler.Structured.TypedCfgCompilerFreshness
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Structured.ObserverLoopAdequacy
@@ -86,6 +87,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.AdequateAt
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.of_at
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FrameMatches.not_of_pushed_return
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.block_next_ge
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmtList_next_ge
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge
+#check EvmCompiler.Structured.TypedCfgCompilerFacts.Supply.stmt_next_ge_succ
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.JumpAt.of_rel
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.exists_of_run
 #check EvmCompiler.Structured.ObserverAdequacy.OutcomeSimulation.FirstReaches.remaining_run_of_jump

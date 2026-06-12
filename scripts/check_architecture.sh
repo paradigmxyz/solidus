@@ -411,6 +411,7 @@ report_matches \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
+  EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \
   EvmCompiler/Structured/ObserverAdequacy.lean \
   EvmCompiler/Structured/ObserverSequenceAdequacy.lean \
   EvmCompiler/Structured/ObserverAdequacyArtifact.lean \

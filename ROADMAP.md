@@ -174,7 +174,10 @@ Adjacent boundary status:
   `Structured.ObserverSequenceAdequacy` now owns recursive statement-list
   composition and exposes one compiler-driven adjacent-pass theorem for the
   forthcoming mutual proof. Both central observer modules remain below the 5K
-  soft limit.
+  soft limit. `Structured.TypedCfgCompilerFreshness` now proves monotone supply
+  allocation for blocks, lists, cases, and defaults, plus strict supply growth
+  for every successful statement lowering; the generated-context mutual proof
+  can therefore derive nested-label freshness from the existing compiler pass.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact
