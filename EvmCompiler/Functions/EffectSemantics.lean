@@ -422,6 +422,53 @@ theorem runForLoop_body_brk_of_runs {σ : Type}
     Locals.Source.Effectful.Outcome.brk]
 
 /--
+Canonical loop execution when the condition is true and the body leaves.
+-/
+theorem runForLoop_body_leave_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.leave afterBody)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.leave afterBody) := by
+  simp [Stmt.runForLoop, hCond, hBody, Outcome.leave,
+    Locals.Source.Effectful.Outcome.leave]
+
+/--
+Canonical loop execution when the condition is true and the body halts.
+-/
+theorem runForLoop_body_halt_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody : σ}
+    {kind : Assembly.HaltKind}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.halt kind afterBody)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.halt kind afterBody) := by
+  simp [Stmt.runForLoop, hCond, hBody, Outcome.halt,
+    Locals.Source.Effectful.Outcome.halt]
+
+/--
 Canonical loop execution for one regular body/post iteration followed by a
 recursive regular loop result.
 -/
@@ -483,6 +530,116 @@ theorem runForLoop_cont_post_regular_of_runs {σ : Type}
   simp [Stmt.runForLoop, hCond, hBody, hPost, hLoop,
     Outcome.regular, Locals.Source.Effectful.Outcome.regular,
     Outcome.cont, Locals.Source.Effectful.Outcome.cont]
+
+/--
+Canonical loop execution for a regular body followed by a leaving post.
+-/
+theorem runForLoop_regular_post_leave_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.regular afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.leave afterPost)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.leave afterPost) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular, Outcome.leave,
+    Locals.Source.Effectful.Outcome.leave]
+
+/--
+Canonical loop execution for a continuing body followed by a leaving post.
+-/
+theorem runForLoop_cont_post_leave_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost : σ}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.cont afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.leave afterPost)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.leave afterPost) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
+    Locals.Source.Effectful.Outcome.cont, Outcome.leave,
+    Locals.Source.Effectful.Outcome.leave]
+
+/--
+Canonical loop execution for a regular body followed by a halting post.
+-/
+theorem runForLoop_regular_post_halt_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost : σ}
+    {kind : Assembly.HaltKind}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.regular afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.halt kind afterPost)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.halt kind afterPost) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular, Outcome.halt,
+    Locals.Source.Effectful.Outcome.halt]
+
+/--
+Canonical loop execution for a continuing body followed by a halting post.
+-/
+theorem runForLoop_cont_post_halt_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block}
+    {source afterCond afterBody afterPost : σ}
+    {kind : Assembly.HaltKind}
+    (hCond :
+      Expr.evalCondition model prim cond source =
+        .ok (afterCond, true))
+    (hBody :
+      Block.runScoped model prim program bodyBase body fuel afterCond =
+        .ok (Outcome.cont afterBody))
+    (hPost :
+      Block.runScoped model prim program postBase post fuel afterBody =
+        .ok (Outcome.halt kind afterPost)) :
+    Stmt.runForLoop model prim program loopCtx cond postBase post
+        bodyBase body (fuel + 1) source =
+      .ok (Outcome.halt kind afterPost) := by
+  simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
+    Locals.Source.Effectful.Outcome.cont, Outcome.halt,
+    Locals.Source.Effectful.Outcome.halt]
 
 /--
 Inversion for a canonical regular loop execution.
@@ -725,6 +882,63 @@ theorem run_for_regular_of_runs {σ : Type}
           ctx) := by
   simp [Stmt.run, hInit, hLoop, Outcome.regular,
     Locals.Source.Effectful.Outcome.regular]
+
+/--
+Canonical source `for` execution from a regular initializer and a leaving
+loop result.
+-/
+theorem run_for_leave_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source afterInit final : σ}
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          fuel init source =
+        .ok (Outcome.regular afterInit, initCtx))
+    (hLoop :
+      Stmt.runForLoop model prim program initCtx cond
+          initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body fuel afterInit =
+        .ok (Outcome.leave final)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.for_ init cond post body) source =
+      .ok (Outcome.leave final, ctx) := by
+  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular, Outcome.leave,
+    Locals.Source.Effectful.Outcome.leave]
+
+/--
+Canonical source `for` execution from a regular initializer and a halting loop
+result.
+-/
+theorem run_for_halt_of_runs {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx initCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source afterInit final : σ}
+    {kind : Assembly.HaltKind}
+    (hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+          fuel init source =
+        .ok (Outcome.regular afterInit, initCtx))
+    (hLoop :
+      Stmt.runForLoop model prim program initCtx cond
+          initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body fuel afterInit =
+        .ok (Outcome.halt kind final)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.for_ init cond post body) source =
+      .ok (Outcome.halt kind final, ctx) := by
+  simp [Stmt.run, hInit, hLoop, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular, Outcome.halt,
+    Locals.Source.Effectful.Outcome.halt]
 
 /--
 Canonical source `if` execution when the condition is false.
