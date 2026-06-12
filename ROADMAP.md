@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 18:06 PDT.
+Last updated: 2026-06-11 19:10 PDT.
 
 ## Objective
 
@@ -133,8 +133,15 @@ Adjacent boundary status:
   and leave destinations; switch bodies and loop body/post fragments must pass
   checked fallthrough joins before lowering succeeds. Ordinary and observer
   preservation, plus the existing adequacy leaves, consume pass-owned
-  decomposition theorems for those checks. Recursive switch/loop control,
-  internal calls, and whole-program backward adequacy remain.
+  decomposition theorems for those checks. Recursive switch backward adequacy
+  is now checked end to end within this adjacent pass: scrutinee inversion,
+  matched and skipped cases, nonempty and empty defaults, `switch_some`,
+  `switch_none`, exact residual target fuel, and regular stack-shape artifacts
+  compose through a private `AdequateWithin` rule. Recursive loop control,
+  internal calls/return dispatch, the mutual statement/block theorem, and
+  whole-program backward adequacy remain. `Structured.ObserverAdequacy` is now
+  5,280 lines, so loop and call work should be extracted into pass-owned
+  submodules rather than extending the central module further.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

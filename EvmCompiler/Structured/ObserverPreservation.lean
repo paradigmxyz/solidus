@@ -795,6 +795,22 @@ end StateRel
 
 namespace BlocksInProgram
 
+theorem step_of_run
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {block : TypedCfg.Block} {state : EVMState}
+    {trace trace' : Trace} {outcome : TypedCfg.Outcome}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result program)
+    (hMem : block ∈ result.blocks)
+    (hRun :
+      TypedCfg.ObserverSemantics.Block.run block state trace =
+        .ok (outcome, trace')) :
+    TypedCfg.ObserverSemantics.Program.step
+        program block.label state trace =
+      .ok (outcome, trace') := by
+  unfold TypedCfg.ObserverSemantics.Program.step
+  rw [hBlocks block hMem]
+  exact hRun
+
 theorem eventually_of_run
     {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
     {block : TypedCfg.Block} {state : EVMState}
@@ -806,19 +822,64 @@ theorem eventually_of_run
         .ok (outcome, trace')) :
     TypedCfg.ObserverSemantics.Program.Eventually
       program block.label state trace outcome trace' := by
-  have hFind := hBlocks block hMem
   refine ⟨1, ?_⟩
-  rw [TypedCfg.EffectSemantics.Program.runN_succ]
-  change
-    TypedCfg.EffectSemantics.Block.run
-        TypedCfg.ObserverSemantics.Instr.handler
-        block state trace =
-      .ok (outcome, trace') at hRun
-  unfold TypedCfg.EffectSemantics.Program.step
-  rw [hFind]
-  simp only
-  rw [hRun]
-  cases outcome <;> rfl
+  exact
+    TypedCfg.ObserverSemantics.Program.runN_one_of_step
+      (step_of_run hBlocks hMem hRun)
+
+theorem step_pop_jump
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {program : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {input output : TypedCfg.Shape}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    {stack : EvmYul.Stack Word} {value : Word}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result program)
+    (hMem :
+      { label := entry
+        input := input
+        body := [.pop]
+        output := output
+        term := .jump regular } ∈ result.blocks)
+    (hType : TypedCfg.Instr.type? .pop input = some output)
+    (hRel : StateRel source tokens target trace)
+    (hPop : source.source.evm.stack.pop = some (stack, value)) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.step
+          program entry target trace =
+        .ok (.jump regular targetFinal, trace) ∧
+      StateRel
+        (source.withSource
+          (source.source.withEVM
+            { source.source.evm with stack := stack }))
+        tokens targetFinal trace := by
+  rcases
+      TypedCfgPreservation.StateRel.pop
+        (shape := input) hRel.1 hPop with
+    ⟨targetFinal, hRunPop, hFinalRel⟩
+  have hPlainRunAt :
+      TypedCfg.Instr.runAt .pop input target =
+        .ok (targetFinal, output) := by
+    unfold TypedCfg.Instr.runAt
+    rw [hType]
+    simp [hRunPop, Bind.bind, Except.bind]
+  have hObserverRunAt :
+      TypedCfg.ObserverSemantics.Instr.runAt
+          .pop input target trace =
+        .ok ((targetFinal, output), trace) := by
+    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
+      (by rfl), hPlainRunAt]
+    rfl
+  refine
+    ⟨targetFinal, ?_,
+      ⟨by simpa using hFinalRel, hRel.2⟩⟩
+  apply step_of_run hBlocks hMem
+  unfold TypedCfg.ObserverSemantics.Block.run
+  rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
+    hObserverRunAt]
+  simp [TypedCfg.ObserverSemantics.Block.runBody_nil,
+    TypedCfg.Block.runTerm, Bind.bind, Except.bind]
 
 theorem eventually_pop_jump
     {transcript : Trace}
@@ -846,32 +907,12 @@ theorem eventually_pop_jump
           (source.source.withEVM
             { source.source.evm with stack := stack }))
         tokens targetFinal trace := by
-  rcases
-      TypedCfgPreservation.StateRel.pop
-        (shape := input) hRel.1 hPop with
-    ⟨targetFinal, hRunPop, hFinalRel⟩
-  have hPlainRunAt :
-      TypedCfg.Instr.runAt .pop input target =
-        .ok (targetFinal, output) := by
-    unfold TypedCfg.Instr.runAt
-    rw [hType]
-    simp [hRunPop, Bind.bind, Except.bind]
-  have hObserverRunAt :
-      TypedCfg.ObserverSemantics.Instr.runAt
-          .pop input target trace =
-        .ok ((targetFinal, output), trace) := by
-    rw [TypedCfg.ObserverSemantics.Instr.runAt_of_observer?_eq_none
-      (by rfl), hPlainRunAt]
-    rfl
-  refine
-    ⟨targetFinal, ?_,
-      ⟨by simpa using hFinalRel, hRel.2⟩⟩
-  apply eventually_of_run hBlocks hMem
-  unfold TypedCfg.ObserverSemantics.Block.run
-  rw [TypedCfg.ObserverSemantics.Block.runBody_cons,
-    hObserverRunAt]
-  simp [TypedCfg.ObserverSemantics.Block.runBody_nil,
-    TypedCfg.Block.runTerm, Bind.bind, Except.bind]
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    step_pop_jump hBlocks hMem hType hRel hPop
+  exact
+    ⟨targetFinal,
+      ⟨1, TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep⟩,
+      hFinalRel⟩
 
 end BlocksInProgram
 
@@ -2040,7 +2081,7 @@ theorem testBody_type
       some (testOutput valueShape) :=
   TypedCfgCompilerFacts.Switch.testBody_type hHead
 
-theorem eventually_test
+theorem step_test
     {transcript : Trace}
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {testLabel caseLabel nextTest : Assembly.Label}
@@ -2060,12 +2101,13 @@ theorem eventually_test
     (hRel : StateRel source tokens target trace)
     (hPop : source.source.evm.stack.pop = some (stack, value)) :
     ∃ targetFinal,
-      TypedCfg.ObserverSemantics.Program.Eventually cfg
-        testLabel target trace
-        (.jump
-          (if caseValue = value then caseLabel else nextTest)
-          targetFinal)
-        trace ∧
+      TypedCfg.ObserverSemantics.Program.step
+          cfg testLabel target trace =
+        .ok
+          (.jump
+            (if caseValue = value then caseLabel else nextTest)
+            targetFinal,
+            trace) ∧
       StateRel source tokens targetFinal trace := by
   let dupShape : TypedCfg.Shape :=
     { valueShape with slots := slot :: valueShape.slots }
@@ -2182,7 +2224,7 @@ theorem eventually_test
       ⟨TypedCfgPreservation.StateRel.targetCongr
           hFinalSame hRel.1,
         hRel.2⟩⟩
-  apply BlocksInProgram.eventually_of_run hBlocks hMem
+  apply BlocksInProgram.step_of_run hBlocks hMem
   simp only [TypedCfg.ObserverSemantics.Block.run, hBodyRun,
     Bind.bind, Except.bind, if_pos rfl]
   have hOneNeZero :
@@ -2199,6 +2241,40 @@ theorem eventually_test
       targetFinal, afterEq,
       EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC]
+
+theorem eventually_test
+    {transcript : Trace}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {testLabel caseLabel nextTest : Assembly.Label}
+    {valueShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {caseValue value : Word}
+    {source : ObserverSemantics.State transcript}
+    {tokens : List Word} {target : EVMState} {trace : Trace}
+    {stack : EvmYul.Stack Word}
+    (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg)
+    (hMem :
+      { label := testLabel
+        input := valueShape
+        body := [.dup 0, .push caseValue, .prim .eq]
+        output := testOutput valueShape
+        term := .jumpi caseLabel nextTest } ∈ result.blocks)
+    (hHead : valueShape.slots.head? = some slot)
+    (hRel : StateRel source tokens target trace)
+    (hPop : source.source.evm.stack.pop = some (stack, value)) :
+    ∃ targetFinal,
+      TypedCfg.ObserverSemantics.Program.Eventually cfg
+        testLabel target trace
+        (.jump
+          (if caseValue = value then caseLabel else nextTest)
+          targetFinal)
+        trace ∧
+      StateRel source tokens targetFinal trace := by
+  obtain ⟨targetFinal, hStep, hFinalRel⟩ :=
+    step_test hBlocks hMem hHead hRel hPop
+  exact
+    ⟨targetFinal,
+      ⟨1, TypedCfg.ObserverSemantics.Program.runN_one_of_step hStep⟩,
+      hFinalRel⟩
 
 theorem outcome_cases_some_of_compileCasesFuel?
     {transcript : Trace} {compilerFuel : Nat}

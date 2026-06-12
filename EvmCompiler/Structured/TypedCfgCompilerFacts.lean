@@ -389,7 +389,226 @@ theorem testBody_type
             Assembly.PrimOp.stackArity?, Assembly.PrimOp.toEVM,
             EvmYul.EVM.δ, EvmYul.EVM.α, testOutput]
 
-theorem fallthrough_of_compileStmtFuel?_switch
+theorem components_of_compileCasesFuel?_cons
+    {compilerFuel : Nat} {caseValue : Word}
+    {body : Structured.Block}
+    {rest : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+          ((caseValue, body) :: rest) ctx base supply idx
+          valueShape bodyShape regular =
+        some result) :
+    ∃ bodyResult tail,
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+          supply (.generated base (2000 + idx)) bodyShape regular =
+        some bodyResult ∧
+      bodyResult.requireFallthrough? bodyShape = some () ∧
+      TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
+          base bodyResult.next (idx + 1) valueShape bodyShape regular =
+        some tail ∧
+      result =
+        { blocks :=
+            { label := TypedCfgCompiler.switchTestLabel base idx
+              input := valueShape
+              body := [.dup 0, .push caseValue, .prim .eq]
+              output := testOutput valueShape
+              term :=
+                .jumpi (LabelSupply.label base (idx + 2))
+                  (nextTestLabel base idx rest) } ::
+              { label := LabelSupply.label base (idx + 2)
+                input := valueShape
+                body := [.pop]
+                output := bodyShape
+                term := .jump (.generated base (2000 + idx)) } ::
+              bodyResult.blocks ++ tail.blocks
+          next := tail.next
+          calls := bodyResult.calls ++ tail.calls
+          fallthrough? := some bodyShape } := by
+  have hPopBodyType :
+      TypedCfg.Block.bodyType? [.pop] valueShape = some bodyShape := by
+    simp [TypedCfg.Block.bodyType?, hPopType]
+  unfold TypedCfgCompiler.compileCasesFuel? at hCompile
+  simp only at hCompile
+  simp only [TypedCfgCompiler.mkBlock?, testBody_type hHead,
+    hPopBodyType, Bind.bind, Option.bind] at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        supply (.generated base (2000 + idx)) bodyShape regular with
+  | none =>
+      simp [hBody] at hCompile
+  | some bodyResult =>
+      simp only [hBody] at hCompile
+      cases hRequire :
+          bodyResult.requireFallthrough? bodyShape with
+      | none =>
+          simp [hRequire] at hCompile
+      | some unit =>
+          cases unit
+          simp only [hRequire] at hCompile
+          cases hTail :
+              TypedCfgCompiler.compileCasesFuel? compilerFuel rest ctx
+                base bodyResult.next (idx + 1)
+                valueShape bodyShape regular with
+          | none =>
+              simp [hTail] at hCompile
+          | some tail =>
+              simp only [hTail] at hCompile
+              cases hCompile
+              exact
+                ⟨bodyResult, tail, rfl, hRequire, hTail, rfl⟩
+
+theorem fallthrough_of_compileCasesFuel?
+    {compilerFuel : Nat}
+    {cases : List (Word × Structured.Block)}
+    {ctx : TypedCfgCompiler.Context}
+    {base supply idx : Nat} {regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape} {slot : TypedCfg.Slot}
+    {result : TypedCfgCompiler.Result}
+    (hHead : valueShape.slots.head? = some slot)
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileCasesFuel? compilerFuel cases ctx
+          base supply idx valueShape bodyShape regular =
+        some result) :
+    result.fallthrough? = some bodyShape := by
+  cases cases with
+  | nil =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+          cases hCompile
+          rfl
+  | cons head rest =>
+      rcases head with ⟨caseValue, body⟩
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileCasesFuel?] at hCompile
+      | succ compilerFuel =>
+          obtain ⟨bodyResult, tail, _hBody, _hRequire, _hTail, rfl⟩ :=
+            components_of_compileCasesFuel?_cons
+              hHead hPopType hCompile
+          rfl
+
+theorem components_of_compileDefaultFuel?_some
+    {compilerFuel : Nat} {body : Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          (some body) ctx supply entry valueShape bodyShape regular =
+        some result) :
+    ∃ bodyResult,
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+          (supply + 1) (.generated supply 2000) bodyShape regular =
+        some bodyResult ∧
+      bodyResult.requireFallthrough? bodyShape = some () ∧
+      result =
+        { blocks :=
+            { label := entry
+              input := valueShape
+              body := [.pop]
+              output := bodyShape
+              term := .jump (.generated supply 2000) } ::
+              bodyResult.blocks
+          next := bodyResult.next
+          calls := bodyResult.calls
+          fallthrough? := some bodyShape } := by
+  have hPopBodyType :
+      TypedCfg.Block.bodyType? [.pop] valueShape = some bodyShape := by
+    simp [TypedCfg.Block.bodyType?, hPopType]
+  unfold TypedCfgCompiler.compileDefaultFuel? at hCompile
+  simp only [TypedCfgCompiler.mkBlock?, hPopBodyType,
+    Bind.bind, Option.bind] at hCompile
+  cases hBody :
+      TypedCfgCompiler.compileBlockFuel? compilerFuel body ctx
+        (supply + 1) (.generated supply 2000) bodyShape regular with
+  | none =>
+      simp [hBody] at hCompile
+  | some bodyResult =>
+      simp only [hBody] at hCompile
+      cases hRequire :
+          bodyResult.requireFallthrough? bodyShape with
+      | none =>
+          simp [hRequire] at hCompile
+      | some unit =>
+          cases unit
+          simp only [hRequire] at hCompile
+          cases hCompile
+          exact ⟨bodyResult, rfl, hRequire, rfl⟩
+
+theorem components_of_compileDefaultFuel?_none
+    {compilerFuel : Nat}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+          none ctx supply entry valueShape bodyShape regular =
+        some result) :
+    result =
+      { blocks :=
+          [{ label := entry
+             input := valueShape
+             body := [.pop]
+             output := bodyShape
+             term := .jump regular }]
+        next := supply + 1
+        calls := []
+        fallthrough? := some bodyShape } := by
+  have hPopBodyType :
+      TypedCfg.Block.bodyType? [.pop] valueShape = some bodyShape := by
+    simp [TypedCfg.Block.bodyType?, hPopType]
+  unfold TypedCfgCompiler.compileDefaultFuel? at hCompile
+  simp [TypedCfgCompiler.mkBlock?, hPopBodyType] at hCompile
+  cases hCompile
+  rfl
+
+theorem fallthrough_of_compileDefaultFuel?
+    {compilerFuel : Nat}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context}
+    {supply : LabelSupply} {entry regular : Assembly.Label}
+    {valueShape bodyShape : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hPopType : TypedCfg.Instr.type? .pop valueShape = some bodyShape)
+    (hCompile :
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel
+          defaultBody ctx supply entry valueShape bodyShape regular =
+        some result) :
+    result.fallthrough? = some bodyShape := by
+  cases defaultBody with
+  | none =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileDefaultFuel?] at hCompile
+      | succ compilerFuel =>
+          rw [
+            components_of_compileDefaultFuel?_none
+              hPopType hCompile]
+  | some body =>
+      cases compilerFuel with
+      | zero =>
+          simp [TypedCfgCompiler.compileDefaultFuel?] at hCompile
+      | succ compilerFuel =>
+          obtain ⟨bodyResult, _hBody, _hRequire, rfl⟩ :=
+            components_of_compileDefaultFuel?_some
+              hPopType hCompile
+          rfl
+
+theorem components_of_compileStmtFuel?_switch
     {compilerFuel : Nat} {scrutinee : Structured.Code}
     {cases : List (Word × Structured.Block)}
     {defaultBody : Option Structured.Block}
@@ -397,11 +616,38 @@ theorem fallthrough_of_compileStmtFuel?_switch
     {entry regular : Assembly.Label} {input : TypedCfg.Shape}
     {result : TypedCfgCompiler.Result}
     (hCompile :
-      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
           (.switch scrutinee cases defaultBody) ctx
           supply entry input regular =
         some result) :
-    ∃ output, result.fallthrough? = some output := by
+    ∃ valueShape valueSlot caseResult defaultResult,
+      TypedCfg.Block.bodyType?
+          (TypedCfgCompiler.Code.toCfg scrutinee) input =
+        some valueShape ∧
+      valueShape.slots.head? = some valueSlot ∧
+      TypedCfgCompiler.compileCasesFuel? compilerFuel
+          cases ctx supply (supply + 1) 0 valueShape
+          { valueShape with slots := valueShape.slots.tail }
+          regular =
+        some caseResult ∧
+      TypedCfgCompiler.compileDefaultFuel? compilerFuel
+          defaultBody ctx caseResult.next
+          (LabelSupply.label supply 1) valueShape
+          { valueShape with slots := valueShape.slots.tail }
+          regular =
+        some defaultResult ∧
+      result =
+        { blocks :=
+            { label := entry
+              input := input
+              body := TypedCfgCompiler.Code.toCfg scrutinee
+              output := valueShape
+              term := .jump (casesEntryLabel supply 0 cases) } ::
+              caseResult.blocks ++ defaultResult.blocks
+          next := defaultResult.next
+          calls := caseResult.calls ++ defaultResult.calls
+          fallthrough? :=
+            some { valueShape with slots := valueShape.slots.tail } } := by
   unfold TypedCfgCompiler.compileStmtFuel? at hCompile
   cases hType :
       TypedCfg.Block.bodyType?
@@ -416,7 +662,7 @@ theorem fallthrough_of_compileStmtFuel?_switch
           simp only [TypedCfgCompiler.mkBlock?, hType, hValue,
             Bind.bind, Option.bind] at hCompile
           cases hCases :
-              TypedCfgCompiler.compileCasesFuel? (compilerFuel + 1)
+              TypedCfgCompiler.compileCasesFuel? compilerFuel
                 cases ctx supply (supply + 1) 0 valueShape
                 { valueShape with slots := valueShape.slots.tail }
                 regular with
@@ -425,7 +671,7 @@ theorem fallthrough_of_compileStmtFuel?_switch
           | some caseResult =>
               simp only [hCases] at hCompile
               cases hDefault :
-                  TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
+                  TypedCfgCompiler.compileDefaultFuel? compilerFuel
                     defaultBody ctx caseResult.next
                     (LabelSupply.label supply 1) valueShape
                     { valueShape with slots := valueShape.slots.tail }
@@ -435,9 +681,30 @@ theorem fallthrough_of_compileStmtFuel?_switch
               | some defaultResult =>
                   simp only [hDefault] at hCompile
                   cases hCompile
-                  exact
-                    ⟨{ valueShape with slots := valueShape.slots.tail },
-                      rfl⟩
+                  refine
+                    ⟨valueShape, valueSlot, caseResult, defaultResult,
+                      rfl, hValue, hCases, hDefault, ?_⟩
+                  cases cases <;> rfl
+
+theorem fallthrough_of_compileStmtFuel?_switch
+    {compilerFuel : Nat} {scrutinee : Structured.Code}
+    {cases : List (Word × Structured.Block)}
+    {defaultBody : Option Structured.Block}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label} {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 2)
+          (.switch scrutinee cases defaultBody) ctx
+          supply entry input regular =
+        some result) :
+    ∃ output, result.fallthrough? = some output := by
+  obtain
+      ⟨valueShape, _valueSlot, _caseResult, _defaultResult,
+        _hType, _hValue, _hCases, _hDefault, rfl⟩ :=
+    components_of_compileStmtFuel?_switch hCompile
+  exact
+    ⟨{ valueShape with slots := valueShape.slots.tail }, rfl⟩
 
 theorem compileStmtFuel?_switch_one_eq_none
     {scrutinee : Structured.Code}
