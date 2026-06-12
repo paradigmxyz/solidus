@@ -86,6 +86,20 @@ theorem overwriteTop_stack_length
           cases hOverwrite
           rfl
 
+theorem overwriteTop_append_stack_of_ne_nil
+    (value : Word) (state : EVMState) (hidden : EvmYul.Stack Word)
+    (hStack : state.stack ≠ []) :
+    overwriteTop value
+        { state with stack := state.stack ++ hidden } =
+      (overwriteTop value state).map fun final =>
+        { final with stack := final.stack ++ hidden } := by
+  cases state with
+  | mk shared pc stack execLength =>
+      cases stack with
+      | nil => contradiction
+      | cons top rest =>
+          simp [overwriteTop, Except.map]
+
 def applyOracleFromPostState (kind : ResourceObserver) (state : EVMState)
     (trace : ResourceTrace) :
     Except EVMException (EVMState × ResourceTrace) := do

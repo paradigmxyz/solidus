@@ -47,7 +47,6 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.EffectSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.runState
 #check EvmCompiler.Structured.ObserverSemantics.Program.ExactReplay
-#check EvmCompiler.Structured.ObserverSemantics.Code.FrameReflecting
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCode
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.runCondition
 #check EvmCompiler.Structured.ObserverPreservation.StateRel.terminal
@@ -60,6 +59,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.ObserverPreservation.outcome_stmt_of_compileFuel?_and_eval_with_calls
 #check EvmCompiler.Structured.ObserverPreservation.Program.path_of_artifactWithProcEntryShapes?_and_eval
 #check EvmCompiler.Structured.ObserverAdequacy.Code.shapeSound
+#check EvmCompiler.Structured.ObserverAdequacy.Code.FrameReflectingAt
+#check EvmCompiler.Structured.ObserverAdequacy.Code.frameReflectingAt
 #check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg
 #check EvmCompiler.Structured.ObserverAdequacy.Code.run_of_runBody_toCfg_noFrames
 #check EvmCompiler.Structured.ObserverAdequacy.Code.runCondition_of_runBody_toCfg

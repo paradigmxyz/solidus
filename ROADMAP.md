@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-11 17:06 PDT.
+Last updated: 2026-06-11 17:38 PDT.
 
 ## Objective
 
@@ -104,17 +104,17 @@ Adjacent boundary status:
   and whole-program artifacts. Terminal stack-suffix preservation is now a
   checked shared semantic theorem rather than a public premise. Backward
   straight-line code, condition evaluation, compiler-facing code, and the
-  false conditional branch are checked across active frames under the temporary
-  source-semantic `Code.FrameReflecting` interface. Checked instruction-family
-  stack deltas and the structural `Code.shapeSound` theorem ensure a typed
-  condition cannot consume compiler-owned return data, without a caller-supplied
-  shape premise. Terminal and false-if leaves also remain checked at the closed
-  no-frame boundary. Halt typing enforces operand arity, so compiler-owned
-  return data cannot satisfy missing source operands. The current unindexed
-  `FrameReflecting` premise is too strong to derive for arbitrary undersized
-  states; replacing it with a typing-indexed compiler-generated invariant,
-  then proving true branches, recursive control, internal calls, and
-  whole-program backward adequacy remain.
+  false conditional branch are checked across active frames without a
+  caller-supplied reflection or shape premise. `Code.FrameReflectingAt` is
+  derived structurally from the actual body typing and source stack lower
+  bound, and relates framed target execution back to source execution through
+  the existing `ReplayStateRel`. The false unindexed reflection hierarchy was
+  deleted. Checked instruction-family stack deltas and `Code.shapeSound`
+  ensure typed code cannot consume compiler-owned return data. Terminal and
+  false-if leaves also remain checked at the closed no-frame boundary. Halt
+  typing enforces operand arity, so compiler-owned return data cannot satisfy
+  missing source operands. True branches, recursive sequence/switch/loop
+  control, internal calls, and whole-program backward adequacy remain.
 - [x] TypedCfg -> Assembly: checked replay safety now lifts through
   instructions, bodies, terminators, blocks, program steps, fuel-indexed CFG
   execution, and whole-run terminal backward adequacy. The checked-artifact

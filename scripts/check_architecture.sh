@@ -205,6 +205,16 @@ report_matches \
   EvmCompiler/Structured/ObserverAdequacy.lean
 
 report_matches \
+  'Structured observer semantics must not restore an unindexed backward frame-reflection contract:' \
+  '(def|inductive)[[:space:]].*FrameReflecting([^A-Za-z]|$)' \
+  EvmCompiler/Structured/ObserverSemantics.lean
+
+report_matches \
+  'Structured observer adequacy must derive frame reflection from typing instead of accepting it as a premise:' \
+  'hFrameReflecting[[:space:]]*:' \
+  EvmCompiler/Structured/ObserverAdequacy.lean
+
+report_matches \
   'Structured terminal frame safety must remain a proved semantic fact, not a public premise:' \
   'Terminal\.RelSafe|hTerminal[[:space:]]*:[[:space:]]*.*RelSafe' \
   EvmCompiler/Structured/TypedCfgPreservation.lean \

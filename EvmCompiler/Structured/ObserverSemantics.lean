@@ -245,22 +245,6 @@ def FrameSafe (code : Structured.Code) : Prop :=
       run code (withHidden state hidden) =
         .ok (withHidden final hidden)
 
-/--
-Semantic converse to `FrameSafe`.
-
-If code succeeds with a compiler-owned hidden stack suffix, the same source
-code succeeds without that suffix and the hidden execution is exactly the
-framed source result. Backward compiler adequacy requires this source-facing
-property at procedure boundaries.
--/
-def FrameReflecting (code : Structured.Code) : Prop :=
-  ∀ (transcript : Trace) (state framedFinal : State transcript)
-      (hidden : EvmYul.Stack Word),
-    run code (withHidden state hidden) = .ok framedFinal →
-      ∃ final,
-        run code state = .ok final ∧
-          framedFinal = withHidden final hidden
-
 @[simp] theorem withHidden_source
     {transcript : Trace} (state : State transcript)
     (hidden : EvmYul.Stack Word) :
@@ -278,6 +262,115 @@ def FrameReflecting (code : Structured.Code) : Prop :=
     {transcript : Trace} (state : State transcript)
     (hidden : EvmYul.Stack Word) :
     (withHidden state hidden).remaining = state.remaining := rfl
+
+theorem consume?_withHidden
+    {transcript : Trace} {kind : Observer}
+    (state : State transcript) (hidden : EvmYul.Stack Word) :
+    Simulation.ResourceReplay.consume? kind (withHidden state hidden) =
+      (Simulation.ResourceReplay.consume? kind state).map
+        fun consumed =>
+          (consumed.1, withHidden consumed.2 hidden) := by
+  unfold Simulation.ResourceReplay.consume?
+  cases hGet : transcript[state.cursor]? with
+  | none =>
+      simp [hGet]
+  | some observation =>
+      by_cases hKind : observation.kind = kind
+      · simp [hGet, hKind, withHidden, RunState.withEVM]
+        rfl
+      · simp [hGet, hKind]
+
+theorem applyObserver_frameReflecting
+    {transcript : Trace} {kind : Observer}
+    {state framedFinal : State transcript}
+    {hidden : EvmYul.Stack Word}
+    (hStack : state.source.evm.stack ≠ [])
+    (hApply :
+      applyObserver kind (withHidden state hidden) =
+        .ok framedFinal) :
+    ∃ final,
+      applyObserver kind state = .ok final ∧
+        framedFinal = withHidden final hidden := by
+  unfold applyObserver at hApply ⊢
+  rw [consume?_withHidden] at hApply
+  cases hConsume :
+      Simulation.ResourceReplay.consume? kind state with
+  | none =>
+      simp [hConsume, Structured.invalid] at hApply
+  | some consumed =>
+      rcases consumed with ⟨value, consumedState⟩
+      simp only [hConsume, Option.map, Option.bind_some,
+        Option.some.injEq] at hApply
+      have hConsumedStack :
+          consumedState.source.evm.stack ≠ [] := by
+        rw [
+          Simulation.ResourceReplay.consume?_source hConsume]
+        exact hStack
+      simp only [withHidden_source, RunState.withEVM_evm] at hApply
+      cases hOverwrite :
+          Assembly.ResourceObserver.overwriteTop
+            value consumedState.source.evm with
+      | error err =>
+          have hAppend :=
+            Assembly.ResourceObserver.overwriteTop_append_stack_of_ne_nil
+              value consumedState.source.evm hidden hConsumedStack
+          simp [hOverwrite, Except.map] at hAppend
+          rw [hAppend] at hApply
+          contradiction
+      | ok evm =>
+          have hAppend :=
+            Assembly.ResourceObserver.overwriteTop_append_stack_of_ne_nil
+              value consumedState.source.evm hidden hConsumedStack
+          simp [hOverwrite, Except.map] at hAppend
+          simp only [hOverwrite]
+          rw [hAppend] at hApply
+          simp at hApply
+          subst framedFinal
+          refine
+            ⟨consumedState.withSource
+                (consumedState.source.withEVM evm), rfl, ?_⟩
+          rfl
+
+theorem handler_frameReflecting
+    {transcript : Trace} {instr : Structured.BasicInstr}
+    {state framedFinal : State transcript}
+    {hidden : EvmYul.Stack Word}
+    (hObserverTop :
+      ∀ op kind,
+        instr = .op op →
+        basicOpObserver? op = some kind →
+        state.source.evm.stack ≠ [])
+    (hAfter :
+      (handler transcript).afterInstr instr
+          (withHidden state hidden) =
+        .ok framedFinal) :
+    ∃ final,
+      (handler transcript).afterInstr instr state = .ok final ∧
+        framedFinal = withHidden final hidden := by
+  cases instr with
+  | push value =>
+      simp [handler] at hAfter ⊢
+      subst framedFinal
+      rfl
+  | bindLocals offset names =>
+      simp [handler] at hAfter ⊢
+      subst framedFinal
+      rfl
+  | bindScratch baseDepth name slot =>
+      simp [handler] at hAfter ⊢
+      subst framedFinal
+      rfl
+  | op op =>
+      cases hObserver : basicOpObserver? op with
+      | none =>
+          simp [handler, hObserver] at hAfter ⊢
+          subst framedFinal
+          rfl
+      | some kind =>
+          simp only [handler, hObserver] at hAfter ⊢
+          exact
+            applyObserver_frameReflecting
+              (hObserverTop op kind rfl hObserver) hAfter
 
 def runCondition {transcript : Trace} (code : Structured.Code)
     (state : State transcript) :
@@ -443,55 +536,6 @@ mutual
     | call {name : Structured.Name} : Stmt.FrameSafe (.call name)
     | terminal {kind : Assembly.HaltKind} :
         Stmt.FrameSafe (.terminal kind)
-
-end
-
-mutual
-
-  /--
-  Structural source contract collecting backward frame reflection for every
-  straight-line fragment nested in a block.
-  -/
-  inductive Block.FrameReflecting : Structured.Block → Prop where
-    | nil : Block.FrameReflecting { stmts := [] }
-    | cons {stmt : Structured.Stmt} {rest : List Structured.Stmt}
-        (hStmt : Stmt.FrameReflecting stmt)
-        (hRest : Block.FrameReflecting { stmts := rest }) :
-        Block.FrameReflecting { stmts := stmt :: rest }
-
-  inductive Stmt.FrameReflecting : Structured.Stmt → Prop where
-    | code {code : Structured.Code}
-        (hCode : Code.FrameReflecting code) :
-        Stmt.FrameReflecting (.code code)
-    | if_ {cond : Structured.Code} {body : Structured.Block}
-        (hCond : Code.FrameReflecting cond)
-        (hBody : Block.FrameReflecting body) :
-        Stmt.FrameReflecting (.if_ cond body)
-    | switch {scrutinee : Structured.Code}
-        {cases : List (Word × Structured.Block)}
-        {defaultBody : Option Structured.Block}
-        (hScrutinee : Code.FrameReflecting scrutinee)
-        (hCases :
-          ∀ value body, (value, body) ∈ cases →
-            Block.FrameReflecting body)
-        (hDefault :
-          ∀ body, defaultBody = some body →
-            Block.FrameReflecting body) :
-        Stmt.FrameReflecting (.switch scrutinee cases defaultBody)
-    | for_ {init post body : Structured.Block}
-        {cond : Structured.Code}
-        (hInit : Block.FrameReflecting init)
-        (hCond : Code.FrameReflecting cond)
-        (hPost : Block.FrameReflecting post)
-        (hBody : Block.FrameReflecting body) :
-        Stmt.FrameReflecting (.for_ init cond post body)
-    | brk : Stmt.FrameReflecting .brk
-    | cont : Stmt.FrameReflecting .cont
-    | leave : Stmt.FrameReflecting .leave
-    | call {name : Structured.Name} :
-        Stmt.FrameReflecting (.call name)
-    | terminal {kind : Assembly.HaltKind} :
-        Stmt.FrameReflecting (.terminal kind)
 
 end
 
@@ -757,9 +801,6 @@ namespace Proc
 def FrameSafe (proc : Structured.Proc) : Prop :=
   ObserverSemantics.Block.FrameSafe proc.body
 
-def FrameReflecting (proc : Structured.Proc) : Prop :=
-  ObserverSemantics.Block.FrameReflecting proc.body
-
 end Proc
 
 namespace ProcList
@@ -787,30 +828,6 @@ theorem FrameSafe_of_lookup?
       · simp [hName] at hLookup
         exact ih hFrameSafe.2 hLookup
 
-def FrameReflecting : List Structured.Proc → Prop
-  | [] => True
-  | proc :: rest =>
-      ObserverSemantics.Proc.FrameReflecting proc ∧
-        FrameReflecting rest
-
-theorem FrameReflecting_of_lookup?
-    {procs : List Structured.Proc} {name : Structured.Name}
-    {proc : Structured.Proc}
-    (hFrameReflecting : FrameReflecting procs)
-    (hLookup : Structured.ProcList.lookup? name procs = some proc) :
-    ObserverSemantics.Proc.FrameReflecting proc := by
-  induction procs with
-  | nil =>
-      simp [Structured.ProcList.lookup?] at hLookup
-  | cons head rest ih =>
-      unfold Structured.ProcList.lookup? at hLookup
-      by_cases hName : head.name = name
-      · simp [hName] at hLookup
-        cases hLookup
-        exact hFrameReflecting.1
-      · simp [hName] at hLookup
-        exact ih hFrameReflecting.2 hLookup
-
 end ProcList
 
 namespace Program
@@ -818,10 +835,6 @@ namespace Program
 def FrameSafe (program : Structured.Program) : Prop :=
   ProcList.FrameSafe program.procs ∧
     ObserverSemantics.Block.FrameSafe program.body
-
-def FrameReflecting (program : Structured.Program) : Prop :=
-  ProcList.FrameReflecting program.procs ∧
-    ObserverSemantics.Block.FrameReflecting program.body
 
 theorem procFrameSafe_of_lookup?
     {program : Structured.Program} {name : Structured.Name}
@@ -831,15 +844,6 @@ theorem procFrameSafe_of_lookup?
       Structured.ProcList.lookup? name program.procs = some proc) :
     ObserverSemantics.Proc.FrameSafe proc :=
   ProcList.FrameSafe_of_lookup? hFrameSafe.1 hLookup
-
-theorem procFrameReflecting_of_lookup?
-    {program : Structured.Program} {name : Structured.Name}
-    {proc : Structured.Proc}
-    (hFrameReflecting : FrameReflecting program)
-    (hLookup :
-      Structured.ProcList.lookup? name program.procs = some proc) :
-    ObserverSemantics.Proc.FrameReflecting proc :=
-  ProcList.FrameReflecting_of_lookup? hFrameReflecting.1 hLookup
 
 def initialState (initial : Structured.RunState) (transcript : Trace) :
     State transcript :=

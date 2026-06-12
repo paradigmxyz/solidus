@@ -28,6 +28,12 @@ def StateRel {transcript : Trace}
 
 namespace ReplayStateRel
 
+theorem refl
+    {transcript : Trace}
+    (state : ObserverSemantics.State transcript) :
+    ReplayStateRel state state :=
+  ⟨rfl, rfl, Assembly.SameRuntimeData.refl state.source.evm⟩
+
 theorem symm
     {transcript : Trace}
     {left right : ObserverSemantics.State transcript}
@@ -36,6 +42,17 @@ theorem symm
   ⟨hRel.cursor.symm,
     hRel.source.1.symm,
     Assembly.SameRuntimeData.symm hRel.source.2⟩
+
+theorem trans
+    {transcript : Trace}
+    {first second third : ObserverSemantics.State transcript}
+    (hFirst : ReplayStateRel first second)
+    (hSecond : ReplayStateRel second third) :
+    ReplayStateRel first third :=
+  ⟨hFirst.cursor.trans hSecond.cursor,
+    hFirst.source.1.trans hSecond.source.1,
+    Assembly.SameRuntimeData.trans
+      hFirst.source.2 hSecond.source.2⟩
 
 theorem remaining_eq
     {transcript : Trace}

@@ -471,6 +471,111 @@ theorem step_stack_bound_of_type
       cases hStep
       omega
 
+/--
+Typed Structured execution cannot become successful only by appending
+compiler-owned stack data below the visible source prefix.
+-/
+theorem exists_step_of_type_bound_append
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state framedFinal : EVMState}
+    {hidden : EvmYul.Stack Word}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hBound : input.length ≤ state.stack.length)
+    (hFramed :
+      instr.step { state with stack := state.stack ++ hidden } =
+        .ok framedFinal) :
+    ∃ final, instr.step state = .ok final := by
+  cases instr with
+  | push value =>
+      simp [Structured.BasicInstr.step,
+        Assembly.Target.stepInstr]
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            hShapeBound, _hOutputLength⟩ :=
+        BasicOp.type_length_toCfg hType
+      have hActualBound :
+          inputArity ≤ state.stack.length :=
+        Nat.le_trans hShapeBound hBound
+      simpa [Structured.BasicInstr.step,
+        Structured.BasicOp.step,
+        Assembly.Target.stepInstr] using
+        Assembly.PrimOp.exists_step_of_stackArity_le_of_append_step
+          hArity hActualBound
+          (by simpa [Structured.BasicInstr.step,
+            Structured.BasicOp.step,
+            Assembly.Target.stepInstr] using hFramed)
+  | bindLocals offset names =>
+      exact ⟨state, rfl⟩
+  | bindScratch baseDepth name slot =>
+      exact ⟨state, rfl⟩
+
+/--
+Typed Structured execution preserves an appended compiler-owned suffix modulo
+the control counters erased by the adjacent state relation.
+-/
+theorem step_append_stack_rel_of_type
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {state final framedFinal : EVMState}
+    {hidden : EvmYul.Stack Word}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hBound : input.length ≤ state.stack.length)
+    (hRun : instr.step state = .ok final)
+    (hFramed :
+      instr.step { state with stack := state.stack ++ hidden } =
+        .ok framedFinal) :
+    SameRuntimeData
+      framedFinal
+      { final with stack := final.stack ++ hidden } := by
+  cases instr with
+  | push value =>
+      simp [Structured.BasicInstr.step,
+        Assembly.Target.stepInstr] at hRun hFramed
+      subst final
+      subst framedFinal
+      simp [SameRuntimeData, eraseRuntimeControl,
+        EvmYul.EVM.State.replaceStackAndIncrPC,
+        EvmYul.EVM.State.incrPC, EvmYul.Stack.push]
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            hShapeBound, _hOutputLength⟩ :=
+        BasicOp.type_length_toCfg hType
+      have hActualBound :
+          inputArity ≤ state.stack.length :=
+        Nat.le_trans hShapeBound hBound
+      exact
+        Assembly.PrimOp.step_append_stack_rel_of_stackArity_le
+          hArity hActualBound
+          (by simpa [Structured.BasicInstr.step,
+            Structured.BasicOp.step,
+            Assembly.Target.stepInstr] using hRun)
+          (by simpa [Structured.BasicInstr.step,
+            Structured.BasicOp.step,
+            Assembly.Target.stepInstr] using hFramed)
+  | bindLocals offset names =>
+      simp [Structured.BasicInstr.step] at hRun hFramed
+      subst final
+      subst framedFinal
+      exact
+        SameRuntimeData.replaceStack
+          (SameRuntimeData.refl state) rfl
+  | bindScratch baseDepth name slot =>
+      simp [Structured.BasicInstr.step] at hRun hFramed
+      subst final
+      subst framedFinal
+      exact
+        SameRuntimeData.replaceStack
+          (SameRuntimeData.refl state) rfl
+
 theorem step_map_eraseRuntimeControl
     {instr : Structured.BasicInstr} {target source : EVMState}
     (hRel : SameRuntimeData target source) :

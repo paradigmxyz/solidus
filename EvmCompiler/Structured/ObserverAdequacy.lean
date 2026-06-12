@@ -14,6 +14,44 @@ It does not reason about Assembly or bytecode execution.
 
 abbrev Trace := Assembly.ResourceTrace
 
+namespace BasicInstr
+
+theorem output_length_pos_of_observer
+    {instr : Structured.BasicInstr}
+    {input output : TypedCfg.Shape}
+    {kind : Assembly.ResourceObserver}
+    (hType :
+      TypedCfg.Instr.type?
+          (TypedCfgCompiler.BasicInstr.toCfg instr) input =
+        some output)
+    (hObserver :
+      (match instr with
+       | .op op => ObserverSemantics.basicOpObserver? op
+       | _ => none) = some kind) :
+    1 ≤ output.length := by
+  cases instr with
+  | push value | bindLocals value names
+  | bindScratch value name slot =>
+      simp at hObserver
+  | op op =>
+      obtain
+          ⟨inputArity, outputArity, hArity,
+            _hInputBound, hOutputLength⟩ :=
+        TypedCfgPreservation.BasicOp.type_length_toCfg hType
+      have hCases : op = .gas ∨ op = .msize := by
+        cases op <;>
+          simp [ObserverSemantics.basicOpObserver?,
+            Assembly.ResourceObserver.ofPrimOp?,
+            Structured.BasicOp.toPrimOp] at hObserver ⊢
+      rcases hCases with rfl | rfl <;>
+        simp [Structured.BasicOp.toPrimOp,
+          Assembly.PrimOp.stackArity?,
+          Assembly.PrimOp.toEVM,
+          EvmYul.EVM.δ, EvmYul.EVM.α] at hArity <;>
+        omega
+
+end BasicInstr
+
 namespace Code
 
 /--
@@ -96,11 +134,201 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
                   exact ih hTailType hMiddleBound hRun
 
 /--
+Backward frame adequacy indexed by the checked input shape.
+
+Unlike the former unindexed source predicate, this interface quantifies only
+over states whose visible stack satisfies the actual compiler typing judgment.
+The conclusion uses the pass's existing replay relation, which intentionally
+forgets compiler-owned control counters.
+-/
+def FrameReflectingAt (code : Structured.Code)
+    (input : TypedCfg.Shape) : Prop :=
+  ∀ {transcript : Trace} {output : TypedCfg.Shape}
+      {state framedFinal : ObserverSemantics.State transcript}
+      {hidden : EvmYul.Stack Word},
+    TypedCfgCompiler.Code.type? code input = some output →
+      input.length ≤ state.source.evm.stack.length →
+      ObserverSemantics.Code.run code
+          (ObserverSemantics.Code.withHidden state hidden) =
+        .ok framedFinal →
+      ∃ final,
+        ObserverSemantics.Code.run code state = .ok final ∧
+          ObserverPreservation.ReplayStateRel
+            framedFinal
+            (ObserverSemantics.Code.withHidden final hidden)
+
+/--
+Every straight-line fragment accepted by the existing pass typer reflects
+execution through compiler-owned frame suffixes at its checked input shape.
+-/
+theorem frameReflectingAt
+    (code : Structured.Code) (input : TypedCfg.Shape) :
+    FrameReflectingAt code input := by
+  intro transcript output state framedFinal hidden
+    hType hBound hFramed
+  induction code generalizing input output state framedFinal with
+  | nil =>
+      simp [TypedCfgCompiler.Code.type?,
+        TypedCfgCompiler.Code.toCfg,
+        TypedCfg.Block.bodyType?,
+        ObserverSemantics.Code.run,
+        EffectSemantics.Code.run] at hType hFramed
+      cases hType
+      cases hFramed
+      exact
+        ⟨state, rfl,
+          ObserverPreservation.ReplayStateRel.refl
+            (ObserverSemantics.Code.withHidden state hidden)⟩
+  | cons instr rest ih =>
+      unfold TypedCfgCompiler.Code.type? at hType
+      simp only [TypedCfgCompiler.Code.toCfg, List.map_cons,
+        TypedCfg.Block.bodyType?] at hType
+      cases hHeadType :
+          TypedCfg.Instr.type?
+            (TypedCfgCompiler.BasicInstr.toCfg instr) input with
+      | none =>
+          simp [hHeadType] at hType
+      | some middle =>
+          simp [hHeadType] at hType
+          have hTailType :
+              TypedCfgCompiler.Code.type? rest middle = some output := by
+            simpa [TypedCfgCompiler.Code.type?,
+              TypedCfgCompiler.Code.toCfg] using hType
+          unfold ObserverSemantics.Code.run
+            EffectSemantics.Code.run at hFramed
+          simp only [ObserverSemantics.stateModel_evm,
+            ObserverSemantics.stateModel_withEVM] at hFramed
+          simp only [ObserverSemantics.Code.withHidden_source,
+            RunState.withEVM_evm] at hFramed
+          cases hFramedStep :
+              instr.step
+                { state.source.evm with
+                  stack := state.source.evm.stack ++ hidden } with
+          | error err =>
+              simp [hFramedStep, Bind.bind, Except.bind] at hFramed
+          | ok framedEVM =>
+              simp only [hFramedStep,
+                Bind.bind, Except.bind] at hFramed
+              obtain ⟨sourceEVM, hSourceStep⟩ :=
+                TypedCfgPreservation.BasicInstr.exists_step_of_type_bound_append
+                  hHeadType hBound hFramedStep
+              have hStepRel :
+                  Assembly.SameRuntimeData
+                    framedEVM
+                    { sourceEVM with
+                      stack := sourceEVM.stack ++ hidden } :=
+                TypedCfgPreservation.BasicInstr.step_append_stack_rel_of_type
+                  hHeadType hBound hSourceStep hFramedStep
+              let sourceMiddle : ObserverSemantics.State transcript :=
+                state.withSource
+                  (state.source.withEVM sourceEVM)
+              let framedMiddle : ObserverSemantics.State transcript :=
+                (ObserverSemantics.Code.withHidden state hidden).withSource
+                  ((ObserverSemantics.Code.withHidden state hidden).source.withEVM
+                    framedEVM)
+              let expectedMiddle : ObserverSemantics.State transcript :=
+                ObserverSemantics.Code.withHidden sourceMiddle hidden
+              have hNormalizeFramedMiddle :
+                  (ObserverSemantics.Code.withHidden state hidden).withSource
+                      ((state.source.withEVM
+                        { state.source.evm with
+                          stack := state.source.evm.stack ++ hidden }).withEVM
+                        framedEVM) =
+                    framedMiddle := by
+                simp [framedMiddle,
+                  ObserverSemantics.Code.withHidden,
+                  RunState.withEVM]
+              rw [hNormalizeFramedMiddle] at hFramed
+              have hMiddleRel :
+                  ObserverPreservation.ReplayStateRel
+                    framedMiddle expectedMiddle := by
+                refine ⟨rfl, ?_, ?_⟩
+                · simp [framedMiddle, expectedMiddle, sourceMiddle,
+                    ObserverSemantics.Code.withHidden, RunState.withEVM]
+                · simpa [framedMiddle, expectedMiddle, sourceMiddle,
+                    ObserverSemantics.Code.withHidden, RunState.withEVM]
+                    using hStepRel
+              cases hFramedAfter :
+                  (ObserverSemantics.handler transcript).afterInstr
+                    instr framedMiddle with
+              | error err =>
+                  rw [hFramedAfter] at hFramed
+                  contradiction
+              | ok framedAfter =>
+                  rw [hFramedAfter] at hFramed
+                  obtain
+                      ⟨expectedAfter, hExpectedAfter, hAfterRel⟩ :=
+                    ObserverPreservation.handler_of_rel
+                      hMiddleRel hFramedAfter
+                  have hSourceStepBound :
+                      middle.length ≤ sourceEVM.stack.length :=
+                    TypedCfgPreservation.BasicInstr.step_stack_bound_of_type
+                      hHeadType hBound hSourceStep
+                  have hObserverTop :
+                      ∀ op kind,
+                        instr = .op op →
+                        ObserverSemantics.basicOpObserver? op = some kind →
+                        sourceMiddle.source.evm.stack ≠ [] := by
+                    intro op kind hInstr hObserver
+                    subst instr
+                    have hOutputPos :
+                        1 ≤ middle.length :=
+                      BasicInstr.output_length_pos_of_observer
+                        hHeadType hObserver
+                    have hStackPos :
+                        1 ≤ sourceEVM.stack.length :=
+                      Nat.le_trans hOutputPos hSourceStepBound
+                    intro hNil
+                    have hSourceNil : sourceEVM.stack = [] := by
+                      simpa [sourceMiddle] using hNil
+                    simp [hSourceNil] at hStackPos
+                  obtain
+                      ⟨sourceAfter, hSourceAfter, hExpectedEq⟩ :=
+                    ObserverSemantics.Code.handler_frameReflecting
+                      hObserverTop
+                      (by simpa [expectedMiddle] using hExpectedAfter)
+                  subst expectedAfter
+                  have hAfterBound :
+                      middle.length ≤
+                        sourceAfter.source.evm.stack.length := by
+                    have hLength :=
+                      ObserverSemantics.handler_stack_length hSourceAfter
+                    have hSourceLength :
+                        sourceMiddle.source.evm.stack.length =
+                          sourceEVM.stack.length := by
+                      simp [sourceMiddle]
+                    omega
+                  obtain
+                      ⟨expectedFinal, hExpectedTail, hTailRel⟩ :=
+                    ObserverPreservation.Code.run_of_rel
+                      hAfterRel hFramed
+                  obtain
+                      ⟨final, hSourceTail, hExpectedFinalRel⟩ :=
+                    ih middle hTailType hAfterBound hExpectedTail
+                  refine ⟨final, ?_, ?_⟩
+                  · unfold ObserverSemantics.Code.run
+                      EffectSemantics.Code.run
+                    simp only [ObserverSemantics.stateModel_evm,
+                      ObserverSemantics.stateModel_withEVM]
+                    rw [hSourceStep]
+                    simp only [Bind.bind, Except.bind]
+                    change
+                      (ObserverSemantics.handler transcript).afterInstr
+                          instr sourceMiddle =
+                        .ok sourceAfter at hSourceAfter
+                    rw [hSourceAfter]
+                    exact hSourceTail
+                  · exact
+                      ObserverPreservation.ReplayStateRel.trans
+                        hTailRel hExpectedFinalRel
+
+/--
 Backward straight-line adequacy across realized procedure frames.
 
 The target run is transported to the source state with its concrete hidden
-suffix, then `FrameReflecting` removes only that compiler-owned suffix. This
-keeps return-frame representation entirely inside the adjacent pass proof.
+suffix, then the checked input shape derives reflection through only that
+compiler-owned suffix. Return-frame representation remains inside the adjacent
+pass proof.
 -/
 theorem run_of_runBody_toCfg
     {transcript : Trace} {code : Structured.Code}
@@ -110,10 +338,9 @@ theorem run_of_runBody_toCfg
     {target targetFinal : EVMState}
     {trace traceFinal : Trace}
     (hType : TypedCfgCompiler.Code.type? code input = some output)
-    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
     (hRel :
-      ObserverPreservation.StateRel
-        source tokens target trace)
+      ObserverPreservation.StateRel.At
+        input source tokens target trace)
     (hRun :
       TypedCfg.ObserverSemantics.Block.runBody
           (TypedCfgCompiler.Code.toCfg code) input target trace =
@@ -122,7 +349,7 @@ theorem run_of_runBody_toCfg
       ObserverSemantics.Code.run code source = .ok final ∧
         ObserverPreservation.StateRel
           final tokens targetFinal traceFinal := by
-  rcases hRel.1 with ⟨realized, hRealize, hSame⟩
+  rcases hRel.rel.1 with ⟨realized, hRealize, hSame⟩
   have hAppend :=
     TypedCfgPreservation.realizeStack_append_prefix
       source.source.evm.stack [] source.source.returns tokens
@@ -153,17 +380,22 @@ theorem run_of_runBody_toCfg
               (TypedCfgCompiler.Code.toCfg code) input
               targetState.source.evm targetState.remaining =
             .ok ((targetFinal, output), traceFinal) := by
-        simpa [targetState, hRel.2] using hRun
+        simpa [targetState, hRel.rel.2] using hRun
       obtain
           ⟨targetFinalState, hTargetCode, hTargetEVM, hTargetTrace⟩ :=
         ObserverPreservation.Code.run_of_runBody_toCfg
           hType hTargetBody
       obtain ⟨framedFinal, hFramedRun, hFinalReplay⟩ :=
         ObserverPreservation.Code.run_of_rel hReplay hTargetCode
-      obtain ⟨final, hSourceRun, hFramedFinal⟩ :=
-        hFrameReflecting transcript source framedFinal hidden
+      obtain ⟨final, hSourceRun, hFrameReplay⟩ :=
+        frameReflectingAt code input hType hRel.sourceStack
           (by simpa [framedSource] using hFramedRun)
-      subst framedFinal
+      have hFinalReplay' :
+          ObserverPreservation.ReplayStateRel
+            targetFinalState
+            (ObserverSemantics.Code.withHidden final hidden) :=
+        ObserverPreservation.ReplayStateRel.trans
+          hFinalReplay hFrameReplay
       have hFinalReturns :
           final.source.returns = source.source.returns :=
         ObserverSemantics.Code.run_returns_eq hSourceRun
@@ -176,11 +408,11 @@ theorem run_of_runBody_toCfg
           simpa [hFinalReturns, hHidden] using hFinalAppend
         · rw [← hTargetEVM]
           simpa [ObserverSemantics.Code.withHidden,
-              RunState.withEVM] using hFinalReplay.source.2
+              RunState.withEVM] using hFinalReplay'.source.2
       · rw [← hTargetTrace]
         exact
           (ObserverPreservation.ReplayStateRel.remaining_eq
-            hFinalReplay).symm
+            hFinalReplay').symm
 
 /--
 Backward adequacy for a compiled condition across active procedure frames.
@@ -198,7 +430,6 @@ theorem runCondition_of_runBody_toCfg
     {condition : TypedCfg.Slot}
     (hType : TypedCfgCompiler.Code.type? code input = some output)
     (hHead : output.slots.head? = some condition)
-    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
     (hRel :
       ObserverPreservation.StateRel.At
         input source tokens target trace)
@@ -216,7 +447,7 @@ theorem runCondition_of_runBody_toCfg
           final tokens targetFinal traceFinal := by
   obtain ⟨after, hSourceCode, hAfterRel⟩ :=
     run_of_runBody_toCfg
-      hType hFrameReflecting hRel.rel hBody
+      hType hRel hBody
   have hOutputBound :
       output.length ≤ after.source.evm.stack.length :=
     shapeSound code hType hRel.sourceStack hSourceCode
@@ -426,7 +657,6 @@ theorem outcome_code_of_compileStmtFuel?_and_step
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
-    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting code)
     (hRel :
       ObserverPreservation.StateRel.At
         input source tokens target trace)
@@ -485,7 +715,7 @@ theorem outcome_code_of_compileStmtFuel?_and_step
             obtain ⟨final, hSourceRun, hFinalRel⟩ :=
               Code.run_of_runBody_toCfg
                 (by simpa [TypedCfgCompiler.Code.type?] using hType)
-                hFrameReflecting hRel.rel hBody
+                hRel hBody
             exact
               ⟨final,
                 Structured.EffectSemantics.Stmt.Eval.code hSourceRun,
@@ -598,7 +828,6 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hDistinct : LabelSupply.label supply 0 ≠ regular)
-    (hFrameReflecting : ObserverSemantics.Code.FrameReflecting cond)
     (hRel :
       ObserverPreservation.StateRel.At
         input source tokens target trace)
@@ -695,7 +924,7 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
                             Code.runCondition_of_runBody_toCfg
                               (by simpa [TypedCfgCompiler.Code.type?]
                                 using hType)
-                              hHead hFrameReflecting hRel
+                              hHead hRel
                               hCondBody hPop
                           exact
                             ⟨final,

@@ -28703,3 +28703,33 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   `#print axioms` reports only `propext`, `Classical.choice`, and `Quot.sound`
   for `Code.shapeSound`, framed `Code.runCondition_of_runBody_toCfg`, and
   framed `Stmt.outcome_if_false_of_compileStmtFuel?_and_step`.
+
+- 2026-06-11 17:38:45 PDT `compaction-resume`: Resumed the
+  Structured-to-TypedCfg observer adequacy boundary after completing the
+  premise-free typing-indexed frame-reflection cutover; next is full-gate
+  verification followed by recursive true-branch adequacy.
+
+- 2026-06-11 17:38:45 PDT `proof`: Added suffix-reflection theorems for
+  Assembly primitive steps and typed Structured basic instructions, then
+  proved `Code.frameReflectingAt` structurally from `Code.Typing`; framed code,
+  condition, statement, and false-if adequacy no longer accept a
+  caller-supplied reflection premise.
+
+- 2026-06-11 17:38:45 PDT `theorem-boundary`: Replaced the false unindexed
+  `Code.FrameReflecting` hierarchy with the typing-indexed
+  `Code.FrameReflectingAt` relation over the existing `ReplayStateRel`.
+  Deleted the obsolete block, statement, procedure, procedure-list, and
+  program reflection interfaces rather than carrying them upward.
+
+- 2026-06-11 17:38:45 PDT `test`: Focused builds for
+  `Assembly.PrimSemantics`, `Structured.TypedCfgPreservation.Core`,
+  `Structured.ObserverSemantics`, and `Structured.ObserverAdequacy` pass; the
+  architecture guard rejects reintroduction of an unindexed reflection
+  hierarchy or a caller-supplied `hFrameReflecting` premise.
+
+- 2026-06-11 17:40:44 PDT `audit`: The typing-indexed frame-reflection
+  checkpoint passes the 1,177-job `EvmCompiler.Verification` build,
+  `scripts/check_architecture.sh`, exact changed-source proof-hole scanning,
+  and `git diff --check`. Focused axiom prints for primitive suffix reflection,
+  `Code.frameReflectingAt`, code/condition adequacy, and false-if adequacy
+  report only `propext`, `Classical.choice`, and `Quot.sound`.
