@@ -547,11 +547,16 @@ theorem allocatorInit_forward {transcript : Trace}
     refine ⟨?_, ?_⟩
     · simpa [targetFinal,
         AllocationObserverRelation.StateRel.mstoreTarget] using hRel.cursor
-    · refine ⟨?_, ?_⟩
+    · refine ⟨?_, ?_, ?_⟩
       · simpa [targetFinal, cellWord,
           AllocationObserverRelation.StateRel.mstoreTarget,
           EvmYul.EVM.State.replaceStackAndIncrPC,
           EvmYul.EVM.State.incrPC] using hMachine
+      · simpa [targetFinal, afterCell, afterFirst,
+          AllocationObserverRelation.StateRel.pushTargetBy,
+          AllocationObserverRelation.StateRel.mstoreTarget,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.core.world
       · intro name location hLive _hLocation
         simp at hLive
   have hAfterCellActive :

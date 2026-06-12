@@ -111,7 +111,11 @@ Adjacent boundary status:
   source/target machine relation, outcome modes, and depth-indexed frame
   budget. Successful scratch configuration constructs its reservation facts
   and rejects empty reservations. Fuel-indexed frame safety derives every
-  smaller active depth. Replay consumption is checked in both directions.
+  smaller active depth. The allocation relation now also preserves the complete
+  shared EVM world state (execution environment, accounts/storage, transaction
+  data, blocks, and substate), rather than relating only machine memory and
+  locals; this is required before ordinary environment and storage primitives
+  can be lifted soundly. Replay consumption is checked in both directions.
   `Functions.AllocationObserverPreservation` proves forward preservation and
   backward classification for compiled `gas()` and `msize()` expression
   leaves, including the temporary result above stack-allocated locals.

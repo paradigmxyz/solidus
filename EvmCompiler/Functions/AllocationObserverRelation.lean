@@ -64,6 +64,8 @@ structure CoreRel
     Compiler.MemoryRelation.MachineRel contract
       source.shared.toMachineState
       target.evm.toMachineState
+  world :
+    source.shared.toState = target.evm.toSharedState.toState
   store : StoreRel plan live stackOffset frameBase source target
 
 structure StateRel {transcript : Trace}
@@ -152,7 +154,8 @@ theorem mono {transcript : Trace}
     (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
     StateRel contract plan smaller stackOffset frameBase source target :=
   ⟨hRel.cursor,
-    ⟨hRel.core.machine, hRel.core.store.mono hSubset⟩⟩
+    ⟨hRel.core.machine, hRel.core.world,
+      hRel.core.store.mono hSubset⟩⟩
 
 theorem push_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
@@ -164,9 +167,11 @@ theorem push_target_by {transcript : Trace}
     StateRel contract plan live (stackOffset + 1) frameBase source
       (pushTargetBy pcDelta value target) := by
   refine ⟨hRel.cursor, ?_⟩
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · simpa [pushTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using hRel.core.machine
+  · simpa [pushTargetBy, EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.core.world
   · intro name location hLive hLocation
     have hValue :=
       hRel.core.store name location hLive hLocation
@@ -207,10 +212,13 @@ theorem contract_target_by {transcript : Trace}
     StateRel contract plan live (stackOffset + 1) frameBase source
       (contractTargetBy pcDelta value rest target) := by
   refine ⟨hRel.cursor, ?_⟩
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · simpa [contractTargetBy,
       EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using hRel.core.machine
+  · simpa [contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.core.world
   · intro name location hLive hLocation
     have hValue :=
       hRel.core.store name location hLive hLocation
@@ -247,10 +255,13 @@ theorem replace_top_by {transcript : Trace}
     StateRel contract plan live (stackOffset + 1) frameBase source
       (contractTargetBy pcDelta value rest target) := by
   refine ⟨hRel.cursor, ?_⟩
-  refine ⟨?_, ?_⟩
+  refine ⟨?_, ?_, ?_⟩
   · simpa [contractTargetBy,
       EvmYul.EVM.State.replaceStackAndIncrPC,
       EvmYul.EVM.State.incrPC] using hRel.core.machine
+  · simpa [contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC] using hRel.core.world
   · intro name location hLive hLocation
     have hValue :=
       hRel.core.store name location hLive hLocation
@@ -773,7 +784,7 @@ theorem assign_scratch_live
   · refine ⟨?_, ?_⟩
     · simpa [Simulation.ResourceReplay.State.withSource,
         StateRel.mstoreTarget] using hRel.base.cursor
-    · refine ⟨?_, ?_⟩
+    · refine ⟨?_, ?_, ?_⟩
       · simpa [Simulation.ResourceReplay.State.withSource,
           Locals.Source.State.insert,
           StateRel.mstoreTarget,
@@ -783,6 +794,11 @@ theorem assign_scratch_live
             (scratchAddress frameBase slot) value
             hRel.base.core.machine hReservation hRegion
             hWriteEndLt hWriteEndHost)
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Locals.Source.State.insert,
+          StateRel.mstoreTarget,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC] using hRel.base.core.world
       · intro other location hOtherAfter hOtherLocation
         by_cases hName : other = name
         · subst other
