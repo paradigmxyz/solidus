@@ -125,7 +125,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime_with_growth
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_growth
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward_runtime
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward_runtime_with_effect
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward_runtime
+#check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverExpression.ExprSeq.backward_of_safeEval
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.eval_eq
@@ -414,6 +416,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect.of_mstore_above
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
@@ -428,6 +433,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.baseAt_le_scratchAddress_of_lt
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.suspendedEffect_of_mstore
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_ownedFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?

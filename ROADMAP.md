@@ -678,28 +678,30 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   expansion, source-owned stores, and byte copies. The checked
   `forwardExprRuntime` / `forwardExprSeqRuntime` interfaces retain the ordinary
   adjacent result relation and thread allocator metadata without duplicating
-  semantics. Allocator-aware preservation is now checked for expression
-  statements, declarations, assignments, both `if` paths, regular block
-  sequencing and scoped cleanup, both switch-selection paths, and the
-  first-condition-false loop path. Spill writes preserve allocator readiness
-  through a shared disjoint-`MSTORE` theorem, while cleanup transports it by
-  exact machine equality. Internal-call argument evaluation and arbitrary
-  multi-return writeback are also allocator-aware; stack targets are
-  machine-neutral and scratch targets use the same owned disjoint-store
-  interface. The selected callee body/return artifact and exact Structured
+  semantics. `Frame.AllocatorEffect` protects the active frame during
+  expressions, while the pass-owned `Frame.SuspendedEffect` preserves every
+  strictly suspended caller frame across statements that may update the
+  current activation. Allocator-aware preservation is now checked and
+  compositional for expression statements, declarations, assignments, both
+  `if` paths, regular block sequencing and scoped cleanup, both
+  switch-selection paths, and the first-condition-false loop path. Spill
+  writes use the shared owned disjoint-`MSTORE` theorem; condition-result pops
+  and lexical cleanup expose machine-neutral effects. Internal-call argument
+  evaluation and arbitrary multi-return writeback are also allocator-aware;
+  stack targets are machine-neutral and scratch targets use the same owned
+  disjoint-store interface. The selected callee body/return artifact and exact Structured
   procedure lookup are now recovered from the real whole-program lowerer.
   Argument evaluation also transports target memory growth, so both stack-only
   and scratch-frame calls construct the compiler-selected callee-entry
   relation after the real call-frame transition. The immediate remaining call
-  work is threading the checked `Frame.ProtectedPrefix` transition through
-  primitive and statement execution. That invariant preserves every suspended
-  caller spill below the callee frame; `Frame.resume_after_call` then
-  reconstructs the caller activation after the Structured return frame is
-  popped and return values are attached. Callee prelude/body execution, frame
-  release, and target assignment can then compose without a caller-memory
-  oracle. Recursive source-fuel induction for the remaining loop outcomes
-  follows; matching whole-function and whole-program backward adequacy comes
-  after that forward recursion closes.
+  work is composing the checked callee prelude, recursive body outcome,
+  Structured return-frame pop, `Frame.resume_after_call`, optional frame
+  release, and target assignment into one pass-owned call theorem.
+  `Frame.SuspendedEffect` now supplies the protected-prefix transition needed
+  by that composition without a caller-memory oracle. Recursive source-fuel
+  induction for the remaining loop outcomes follows; matching whole-function
+  and whole-program backward adequacy comes after that forward recursion
+  closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

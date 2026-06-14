@@ -151,7 +151,9 @@ theorem finish_regular_outer_runtime
           outerPlan outerLive frameBase outerMode
           ((Functions.ObserverSemantics.stateModel transcript).restrictTo
             outerLive sourceLoop)
-          targetFinal := by
+          targetFinal ∧
+        AllocationObserverRelation.Frame.SuspendedEffect
+          config allocatorDepth targetLoop targetFinal := by
   have hExtends :=
     AllocationLowering.lowerBlockOpen_stateExtends
       hInitScoped hLowerInit
@@ -194,7 +196,10 @@ theorem finish_regular_outer_runtime
             state := hFinalRel
             stackLength := hFinalLength }
         allocator := hLoop.allocator.of_machine_eq hFinalMachine
-        frame := hLoop.frame.sameFrame hSameFrame.symm }⟩
+        frame := hLoop.frame.sameFrame hSameFrame.symm },
+      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+          hLoop.allocator hFinalMachine)⟩
 
 /--
 A loop body that exits through `break`, retaining the complete continuing
@@ -3260,9 +3265,10 @@ theorem for_false_of_components
     hInit hLowerInit hCompileInit hInitialLoopInvariant
   rcases hInitForward with
     ⟨initSourceFuel, initTargetFuel,
-      hSourceInit, hTargetInit, hInitInvariant, hInitMode⟩
-  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
-    AllocationObserverExpression.Expr.condition_forward_runtime
+      hSourceInit, hTargetInit, hInitInvariant, hInitMode, hInitEffect⟩
+  obtain
+      ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+    AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hInitInvariant hSafe hCondScoped hLowerCond hCompileCond
@@ -3287,7 +3293,7 @@ theorem for_false_of_components
         targetAfterCond :=
     hCondInvariant.restrict_source_live
   obtain
-      ⟨targetFinal, hCleanupRun, hFinalBaseInvariant⟩ :=
+      ⟨targetFinal, hCleanupRun, hFinalBaseInvariant, hCleanupEffect⟩ :=
     ForLoop.finish_regular_outer_runtime
       hInvariant hLoopInvariant hInitMode hInitScoped hSubset
       hLowerInit hCleanup
@@ -3381,7 +3387,10 @@ theorem for_false_of_components
       hTargetForBlock hCleanupBlock
   refine
     ⟨targetFinal, initSourceFuel + 2, targetFuel, ?_, ?_,
-      hFinalInvariant, SameFrame.refl outerMode⟩
+      hFinalInvariant, SameFrame.refl outerMode,
+      hInitEffect.trans
+        ((AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+          hCondEffect).trans hCleanupEffect)⟩
   · simpa [hSourceScope, hLoopSourceScope] using hSource
   · have hCondCompile :
         Expressions.Expr.compile

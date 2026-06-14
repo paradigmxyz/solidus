@@ -470,8 +470,8 @@ theorem switch_none_of_components
   obtain
       ⟨targetWithValue, targetAfterPop,
         hTargetScrutinee, hTargetPop, hTargetAfterPop,
-        hPopInvariant⟩ :=
-    AllocationObserverExpression.Expr.one_forward_runtime
+        hPopInvariant, hScrutineeEffect⟩ :=
+    AllocationObserverExpression.Expr.one_forward_runtime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hInvariant hSafe hScoped
@@ -533,7 +533,9 @@ theorem switch_none_of_components
       hPopInvariant.transport_state
         (hDefaultShape.1.trans hCasesShape.1)
         (hDefaultShape.2.trans hCasesShape.2),
-      SameFrame.refl mode⟩
+      SameFrame.refl mode,
+      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        hScrutineeEffect⟩
 
 /--
 Allocator-aware preservation for a `switch` that selects a case or default
@@ -655,8 +657,8 @@ theorem switch_some_of_components
   obtain
       ⟨targetWithValue, targetAfterPop,
         hTargetScrutinee, hTargetPop, hTargetAfterPop,
-        hPopInvariant⟩ :=
-    AllocationObserverExpression.Expr.one_forward_runtime
+        hPopInvariant, hScrutineeEffect⟩ :=
+    AllocationObserverExpression.Expr.one_forward_runtime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hInvariant hSafe hScrutineeScoped
@@ -677,7 +679,7 @@ theorem switch_some_of_components
       hLowerBody hCompileSelected hSelectedInvariant
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
-        hSourceBody, hTargetBody, hFinalInvariant⟩ :=
+        hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
     RegularScopedBlockRuntimeInvariantForward.finish_regular
       (targetBlock := selectedCompiled)
       (compiledBody := selectedCode)
@@ -749,7 +751,9 @@ theorem switch_some_of_components
           hSelectedEnv.symm)
         ((hDefaultShape.2.trans hCasesShape.2).trans
           hSelectedLayout.symm),
-      SameFrame.refl outerMode⟩
+      SameFrame.refl outerMode,
+      (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        hScrutineeEffect).trans hBodyEffect⟩
 
 end RegularStmtRuntimeInvariantForward
 end Sequence

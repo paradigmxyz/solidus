@@ -29350,3 +29350,28 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   `git diff --check`, and the expanded observer axiom smoke pass with only
   `propext`, `Classical.choice`, and `Quot.sound`. Existing soft size debt
   remains in the three pass-owned Functions observer modules.
+### 2026-06-14 compaction-resume
+
+- Resumed the active end-to-end observer proof from commit `da258f843`.
+- Current focus: lift `Frame.AllocatorEffect` through statement leaves and control composition, then use it for the pass-owned internal-call theorem.
+2026-06-14 compaction-resume: Resuming the horizontal end-to-end observer proof at the Functions statement boundary. The suspended-frame effect is defined and expression/let/assignment leaves are being threaded through statement, block, scoped-control, and call composition before source-fuel and backward-adequacy work.
+
+### 2026-06-14 suspended-statement-effect checkpoint
+
+- Added the pass-owned `Frame.SuspendedEffect`, distinguishing statement
+  execution that may update the current activation from the stronger
+  expression-only `Frame.AllocatorEffect`.
+- Strengthened expression-result consumption and condition evaluation with
+  compositional allocator effects.
+- Threaded suspended-frame preservation through expression, declaration, and
+  assignment leaves; regular block sequencing; scoped cleanup; both `if`
+  paths; both switch-selection paths; and the first-condition-false loop path.
+  Cleanup effects are derived from exact machine equality, while compiler spill
+  stores use the owned disjoint-`MSTORE` interface.
+- 2026-06-14 00:20:55 PDT - validation - Focused expression, statement,
+  switch, and loop builds plus the full 1,208-job `EvmCompiler.Verification`
+  root pass. Architecture dependency checks, exact touched-file
+  hole/unsafe scans, `git diff --check`, and the expanded observer axiom smoke
+  pass with only `propext`, `Classical.choice`, and `Quot.sound`. Soft size debt
+  remains in the three pass-owned Functions observer modules reported by the
+  architecture script.

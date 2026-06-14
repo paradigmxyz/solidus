@@ -399,13 +399,15 @@ theorem forward_of_runtime_invariant
         target (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
-        plan live frameBase mode sourceFinal targetFinal := by
+        plan live frameBase mode sourceFinal targetFinal ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal := by
   obtain
       ⟨lowered, code, hLowerExpr, hCompileCode,
         rfl, rfl, rfl, rfl⟩ :=
     compiler_shape hLower hCompile
-  obtain ⟨targetFinal, hTargetRun, hResultRel, hReady⟩ :=
-    AllocationObserverExpression.forwardExprRuntime
+  obtain ⟨targetFinal, hTargetRun, hResultRel, hEffect⟩ :=
+    AllocationObserverExpression.forwardExprRuntime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hSafe hInvariant.activation.compiler hScoped hLowerExpr
@@ -414,7 +416,10 @@ theorem forward_of_runtime_invariant
     (AllocationObserverSafety.Stmt.LeafMemorySafeRun.expr
       (program := sourceProgram) (ctx := sourceCtx) (fuel := sourceFuel)
       hSafe).run_eq
-  refine ⟨targetFinal, hSourceRun, ?_, ?_⟩
+  refine
+    ⟨targetFinal, hSourceRun, ?_, ?_,
+      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using
       (Structured.EffectSemantics.Block.Eval.cons_regular
@@ -422,7 +427,7 @@ theorem forward_of_runtime_invariant
         Structured.EffectSemantics.Block.Eval.nil)
   · exact
       AllocationObserverExpression.Expr.runtimeInvariant_zero
-        hInvariant hSafe hResultRel hReady
+        hInvariant hSafe hResultRel hEffect.ready
 
 /--
 Backward adequacy over the real expanded statement block.
@@ -1576,7 +1581,9 @@ theorem forward_of_runtime_invariant
         plan afterLive frameBase afterMode
         ((Functions.ObserverSemantics.stateModel transcript).insert
           sourceAfterValue name value)
-        targetFinal := by
+        targetFinal ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal := by
   obtain
       ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
     forward_of_invariant
@@ -1585,9 +1592,9 @@ theorem forward_of_runtime_invariant
       hInvariant.activation hLower hCompile
   have hNameAfter : name ∈ afterLive := by
     simp [hAfterLive]
-  have hReady :
-      AllocationObserverRelation.Frame.AllocatorReady
-        config allocatorDepth targetFinal := by
+  have hEffect :
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal := by
     cases hMode with
     | @stack beforeMode planDepth hLocation =>
         cases hInvariant.activation.compiler with
@@ -1601,8 +1608,8 @@ theorem forward_of_runtime_invariant
                     hLocation hLower hCompile
                 obtain
                     ⟨targetAfterValue, hValueRun, _hValueRel,
-                      hValueReady⟩ :=
-                  AllocationObserverExpression.forwardExprRuntime
+                      hValueEffect⟩ :=
+                  AllocationObserverExpression.forwardExprRuntime_with_effect
                     (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
                       contract)
                     hConfig hSafe (.stack hBefore) hScoped
@@ -1634,7 +1641,9 @@ theorem forward_of_runtime_invariant
                     Structured.EffectSemantics.Block.Eval.nil
                 have hFinalEq : targetFinal = targetAfterValue :=
                   singleton_code_regular_unique hTargetRun hExpected
-                simpa [hFinalEq] using hValueReady
+                simpa [hFinalEq] using
+                  AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+                    hValueEffect
         | @scratch frameDepth frameWords hBefore =>
             cases hAfter with
             | scratch hAfter =>
@@ -1646,8 +1655,8 @@ theorem forward_of_runtime_invariant
                     hLowerValue hCompileValue _ _ _ _ _ hCompiled _ =>
                     obtain
                         ⟨targetAfterValue, hValueRun, _hValueRel,
-                          hValueReady⟩ :=
-                      AllocationObserverExpression.forwardExprRuntime
+                          hValueEffect⟩ :=
+                      AllocationObserverExpression.forwardExprRuntime_with_effect
                         (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
                           contract)
                         hConfig hSafe (.scratch hBefore) hScoped
@@ -1685,7 +1694,9 @@ theorem forward_of_runtime_invariant
                           simpa [Expressions.StmtList.toStructured,
                             Expressions.Stmt.toStructured] using hTargetRun)
                         hExpected)
-                    simpa [hFinalEq] using hValueReady
+                    simpa [hFinalEq] using
+                      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+                        hValueEffect
                 | scratch slot loweredValue valueCode op
                     _hLowerValue _hCompileValue hScratchLocation _ _ _ _ _ _ =>
                     rw [hLocation] at hScratchLocation
@@ -1707,8 +1718,8 @@ theorem forward_of_runtime_invariant
                     _hStackOrder _hFrameDepth _ _ hCompiled _ =>
                     obtain
                         ⟨targetAfterValue, hValueRun, hValueRel,
-                          hValueReady⟩ :=
-                      AllocationObserverExpression.forwardExprRuntime
+                          hValueEffect⟩ :=
+                      AllocationObserverExpression.forwardExprRuntime_with_effect
                         (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
                           contract)
                         hConfig hSafe (.scratch hBefore) hScoped
@@ -1798,15 +1809,14 @@ theorem forward_of_runtime_invariant
                               frameBase
                       exact hWriteEnd.trans_lt
                         hValueScratch.frameHostAddressable
-                    have hStoreReady :
-                        AllocationObserverRelation.Frame.AllocatorReady
-                          config allocatorDepth targetAfterStore :=
-                      hValueReady.of_mstore_disjoint hStoreMachine
+                    have hStoreEffect :
+                        AllocationObserverRelation.Frame.SuspendedEffect
+                          config allocatorDepth
+                          targetAfterValue targetAfterStore :=
+                      hInvariant.frame.suspendedEffect_of_mstore
+                        hConfig hValueEffect.ready hStoreMachine
                         (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
                         hHost
-                        (Or.inl
-                          (AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
-                            hConfig hInvariant.frame))
                     have hCodeRun :
                         Structured.ObserverSemantics.Code.run
                             (valueCode ++
@@ -1846,12 +1856,15 @@ theorem forward_of_runtime_invariant
                           simpa [Expressions.StmtList.toStructured,
                             Expressions.Stmt.toStructured] using hTargetRun)
                         hExpected
-                    simpa [hFinalEq] using hStoreReady
+                    simpa [hFinalEq] using
+                      (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+                        hValueEffect).trans hStoreEffect
   exact
     ⟨targetFinal, hSourceRun, hTargetRun,
       { activation := hFinalInvariant
-        allocator := hReady
-        frame := hInvariant.frame.sameFrame hMode.sameFrame }⟩
+        allocator := hEffect.ready
+        frame := hInvariant.frame.sameFrame hMode.sameFrame },
+      hEffect⟩
 
 /--
 Backward adequacy for the representation-neutral declaration boundary.
@@ -3037,7 +3050,9 @@ theorem forward_of_runtime_invariant
             ((Functions.ObserverSemantics.stateModel transcript).vars
               sourceAfterValue)
             name value))
-        targetFinal := by
+        targetFinal ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal := by
   obtain
       ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
     forward_of_invariant
@@ -3074,11 +3089,11 @@ theorem forward_of_runtime_invariant
                 (valueCode ++
                   (.op op :: .op .pop ::
                     Locals.bindLocals 0 localsCtx.layout))]) :
-          AllocationObserverRelation.Frame.AllocatorReady
-            config allocatorDepth targetFinal := by
+          AllocationObserverRelation.Frame.SuspendedEffect
+            config allocatorDepth target targetFinal := by
         obtain
-            ⟨targetAfterValue, hValueRun, hValueRel, hValueReady⟩ :=
-          AllocationObserverExpression.forwardExprRuntime
+            ⟨targetAfterValue, hValueRun, hValueRel, hValueEffect⟩ :=
+          AllocationObserverExpression.forwardExprRuntime_with_effect
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hConfig hSafe hInvariant.activation.compiler hScoped
@@ -3157,10 +3172,15 @@ theorem forward_of_runtime_invariant
             EvmYul.EVM.State.replaceStackAndIncrPC,
             EvmYul.EVM.State.incrPC]
         rw [hFinalEq]
-        exact hValueReady.of_machine_eq hExpectedMachine
-      have hReady :
-          AllocationObserverRelation.Frame.AllocatorReady
-            config allocatorDepth targetFinal := by
+        exact
+          (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+            hValueEffect).trans
+            (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+                (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+                  hValueEffect.ready hExpectedMachine))
+      have hEffect :
+          AllocationObserverRelation.Frame.SuspendedEffect
+            config allocatorDepth target targetFinal := by
         cases hInvariant.activation.compiler with
         | stack hStackCtx =>
             obtain
@@ -3187,8 +3207,8 @@ theorem forward_of_runtime_invariant
                 _hLowered hCompiled =>
                 obtain
                     ⟨targetAfterValue, hValueRun, hValueRel,
-                      hValueReady⟩ :=
-                  AllocationObserverExpression.forwardExprRuntime
+                      hValueEffect⟩ :=
+                  AllocationObserverExpression.forwardExprRuntime_with_effect
                     (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
                       contract)
                     hConfig hSafe (.scratch hScratchCtx) hScoped
@@ -3227,16 +3247,14 @@ theorem forward_of_runtime_invariant
                     (Nat.le_of_lt
                       (hValueScratch.scratchAddress_end_lt_size
                         hLive hLocation))
-                have hStoreReady :
-                    AllocationObserverRelation.Frame.AllocatorReady
-                      config allocatorDepth targetAfterStore :=
-                  hValueReady.of_mstore_disjoint hStoreMachine
+                have hStoreEffect :
+                    AllocationObserverRelation.Frame.SuspendedEffect
+                      config allocatorDepth targetAfterValue targetAfterStore :=
+                  hInvariant.frame.suspendedEffect_of_mstore
+                    hConfig hValueEffect.ready hStoreMachine
                     (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
                     (hValueScratch.scratchAddress_end_lt_hostSize
                       hLive hLocation)
-                    (Or.inl
-                      (AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
-                        hConfig hInvariant.frame))
                 have hCodeRun :
                     Structured.ObserverSemantics.Code.run
                         (valueCode ++
@@ -3274,12 +3292,15 @@ theorem forward_of_runtime_invariant
                   LetLeaf.singleton_code_regular_unique
                     hTargetRun' hExpected
                 rw [hFinalEq]
-                exact hStoreReady
+                exact
+                  (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+                    hValueEffect).trans hStoreEffect
       exact
         ⟨targetFinal, hSourceRun, hTargetRun,
           { activation := hFinalInvariant
-            allocator := hReady
-            frame := hInvariant.frame }⟩
+            allocator := hEffect.ready
+            frame := hInvariant.frame },
+          hEffect⟩
 
 /--
 Backward adequacy for the representation-neutral assignment boundary.
@@ -3929,7 +3950,9 @@ def RegularStmtRuntimeInvariantForward
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan afterLive frameBase afterMode sourceFinal targetFinal ∧
-      SameFrame beforeMode afterMode
+      SameFrame beforeMode afterMode ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal
 
 namespace RegularStmtRuntimeInvariantForward
 
@@ -3984,9 +4007,10 @@ theorem expr_of_compilers
     ExprLeaf.forward_of_runtime_invariant
       (sourceFuel := 0) (targetFuel := 0)
       hConfig hSafe hScoped hInvariant hLower hCompile
+  rcases hFinal with ⟨hInvariantFinal, hEffect⟩
   exact
-    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
-      SameFrame.refl mode⟩
+    ⟨targetFinal, 0, 2, hSource, hTarget, hInvariantFinal,
+      SameFrame.refl mode, hEffect⟩
 
 theorem let_of_compilers
     {contract : MemoryContract.Contract}
@@ -4052,14 +4076,14 @@ theorem let_of_compilers
           sourceAfterValue name value)
         targetFinal
         { sourceCtx with scope := name :: sourceCtx.scope } := by
-  obtain ⟨targetFinal, hSource, hTarget, hFinal⟩ :=
+  obtain ⟨targetFinal, hSource, hTarget, hFinal, hEffect⟩ :=
     LetLeaf.forward_of_runtime_invariant
       (sourceFuel := 0) (targetFuel := 0)
       hConfig hSafe hAfter hMode hScoped hAfterLive hNameFrame
       hScratchBound hInvariant hLower hCompile
   exact
     ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
-      hMode.sameFrame⟩
+      hMode.sameFrame, hEffect⟩
 
 theorem assign_of_compilers
     {contract : MemoryContract.Contract}
@@ -4121,13 +4145,13 @@ theorem assign_of_compilers
               sourceAfterValue)
             name value))
         targetFinal sourceCtx := by
-  obtain ⟨targetFinal, hSource, hTarget, hFinal⟩ :=
+  obtain ⟨targetFinal, hSource, hTarget, hFinal, hEffect⟩ :=
     AssignLeaf.forward_of_runtime_invariant
       (sourceFuel := 0) (targetFuel := 0)
       hConfig hContains hSafe hScoped hLive hInvariant hLower hCompile
   exact
     ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
-      SameFrame.refl mode⟩
+      SameFrame.refl mode, hEffect⟩
 
 theorem if_false_of_components
     {contract : MemoryContract.Contract}
@@ -4186,8 +4210,9 @@ theorem if_false_of_components
       ⟨condCode, bodyCode, bodyLocals, compiledBody,
         hCompileCond, _hCompileBody, _hFinish, rfl, rfl⟩ :=
     Locals.Block.compileOpen_single_if_components hCompile
-  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
-    AllocationObserverExpression.Expr.condition_forward_runtime
+  obtain
+      ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+    AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hInvariant hSafe hScoped hLowerCond hCompileCond
@@ -4232,7 +4257,9 @@ theorem if_false_of_components
           Expressions.Stmt.toStructured,
           Expressions.Block.toStructured] using hTarget,
       hCondInvariant.transport_state hShape.1 hShape.2,
-      SameFrame.refl mode⟩
+      SameFrame.refl mode,
+      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        hCondEffect⟩
 
 end RegularStmtRuntimeInvariantForward
 
@@ -4592,7 +4619,9 @@ def RegularBlockRuntimeInvariantForward
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan finalLive frameBase finalMode sourceFinal targetFinal ∧
-      SameFrame initialMode finalMode
+      SameFrame initialMode finalMode ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal
 
 namespace RegularBlockRuntimeInvariantForward
 
@@ -4624,7 +4653,9 @@ theorem nil
     ⟨1, 1,
       by simp [Functions.Source.Effectful.Block.runOpen],
       Structured.EffectSemantics.Block.Eval.nil,
-      hInvariant, SameFrame.refl mode⟩
+      hInvariant, SameFrame.refl mode,
+      AllocationObserverRelation.Frame.SuspendedEffect.refl
+        hInvariant.allocator⟩
 
 theorem cons_regular
     {contract : MemoryContract.Contract}
@@ -4668,10 +4699,12 @@ theorem cons_regular
       sourceFinal targetFinal finalCtx := by
   rcases hHead with
     ⟨headSourceFuel, headTargetFuel,
-      hHeadSource, hHeadTarget, _hHeadInvariant, hHeadMode⟩
+      hHeadSource, hHeadTarget, _hHeadInvariant, hHeadMode,
+      hHeadEffect⟩
   rcases hTail with
     ⟨tailSourceFuel, tailTargetFuel,
-      hTailSource, hTailTarget, hTailInvariant, hTailMode⟩
+      hTailSource, hTailTarget, hTailInvariant, hTailMode,
+      hTailEffect⟩
   obtain ⟨sourceFuel, hSourceRun⟩ :=
     Functions.Source.Effectful.Block.runOpen_cons_regular_exists
       (Functions.ObserverSemantics.stateModel transcript)
@@ -4682,7 +4715,7 @@ theorem cons_regular
       hHeadTarget hTailTarget
   exact
     ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant,
-      hHeadMode.trans hTailMode⟩
+      hHeadMode.trans hTailMode, hHeadEffect.trans hTailEffect⟩
 
 end RegularBlockRuntimeInvariantForward
 
@@ -5713,7 +5746,9 @@ def RegularScopedBlockRuntimeInvariantForward
           (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
-        plan finalLive frameBase finalMode sourceFinal targetFinal
+        plan finalLive frameBase finalMode sourceFinal targetFinal ∧
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal
 
 theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
     {contract : MemoryContract.Contract}
@@ -5773,7 +5808,7 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
         targetFinal := by
   rcases hBody with
     ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant,
-      hBodyMode⟩
+      hBodyMode, hBodyEffect⟩
   have hExtends :=
     AllocationLowering.lowerBlockOpen_stateExtends
       hScoped hLowerBody
@@ -5796,6 +5831,16 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
       hBodyInvariant.activation.planWF hBodyInvariant.activation.defined
       hBodyInvariant.activation.state hBodyInvariant.activation.stackLength
       hCleanup
+  have hCleanupEffect :
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth targetMid targetFinal :=
+    AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+        hBodyEffect.ready hFinalMachine)
+  have hFinalEffect :
+      AllocationObserverRelation.Frame.SuspendedEffect
+        config allocatorDepth target targetFinal :=
+    hBodyEffect.trans hCleanupEffect
   have hFinalRel :
       ActivationStateRel contract outerPlan afterLive 0 frameBase
         afterMode
@@ -5838,7 +5883,8 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
             state := hFinalRel
             stackLength := hFinalLength.trans hTargetDepth }
         allocator := hBodyInvariant.allocator.of_machine_eq hFinalMachine
-        frame := hBodyInvariant.frame.sameFrame hBodyMode.symm }⟩
+        frame := hBodyInvariant.frame.sameFrame hBodyMode.symm },
+      hFinalEffect⟩
   rw [hTargetShape]
   simpa [Expressions.StmtList.toStructured_append,
     Expressions.StmtList.toStructured,
@@ -5910,7 +5956,7 @@ theorem block_of_components
         targetFinal sourceCtx := by
   obtain
       ⟨targetFinal, sourceFuel, targetFuel,
-        hSourceScoped, hTargetScoped, hFinalInvariant⟩ :=
+        hSourceScoped, hTargetScoped, hFinalInvariant, hEffect⟩ :=
     RegularScopedBlockRuntimeInvariantForward.finish_regular
       hBody hSourceScope rfl hOuterInvariant.activation.compiler
       hOuterInvariant.activation.planWF hSubset hScoped hLowerBody hFinish
@@ -5929,7 +5975,7 @@ theorem block_of_components
     rfl
   exact
     ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,
-      hFinalInvariant, SameFrame.refl afterMode⟩
+      hFinalInvariant, SameFrame.refl afterMode, hEffect⟩
 
 theorem if_true_of_components
     {contract : MemoryContract.Contract}
@@ -6025,8 +6071,9 @@ theorem if_true_of_components
       ⟨condCode, compiledOpenBody, compiledBodyLocals, compiledBody,
         hCompileCond, hCompileBody, hFinish, rfl, rfl⟩ :=
     Locals.Block.compileOpen_single_if_components hCompile
-  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
-    AllocationObserverExpression.Expr.condition_forward_runtime
+  obtain
+      ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+    AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
@@ -6034,7 +6081,7 @@ theorem if_true_of_components
     hBody hLowerBody hCompileBody hCondInvariant
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
-        hSourceBody, hTargetBody, hFinalInvariant⟩ :=
+        hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
     RegularScopedBlockRuntimeInvariantForward.finish_regular
       hBodyForward hSourceScope rfl hCondInvariant.activation.compiler
       hCondInvariant.activation.planWF hSubset hBodyScoped hLowerBody
@@ -6106,7 +6153,9 @@ theorem if_true_of_components
         rw [hCondCompile, hBodyCompile]
         exact hTarget,
       hFinalInvariant.transport_state hFinalEnv hFinalLayout,
-      SameFrame.refl outerMode⟩
+      SameFrame.refl outerMode,
+      (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        hCondEffect).trans hBodyEffect⟩
 
 end RegularStmtRuntimeInvariantForward
 

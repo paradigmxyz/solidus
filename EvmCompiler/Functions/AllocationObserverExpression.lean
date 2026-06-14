@@ -1648,6 +1648,103 @@ theorem Expr.one_forward_runtime
         frame := hInvariant.frame }⟩
 
 /--
+Allocator-aware one-result evaluation and result consumption, retaining the
+complete expression resource effect.
+-/
+theorem Expr.one_forward_runtime_with_effect
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal [value])
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code) :
+    ∃ targetWithValue targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetWithValue ∧
+        targetWithValue.source.evm.stack.pop =
+          some (target.source.evm.stack, value) ∧
+        targetFinal =
+          StateRel.popTarget target.source.evm.stack targetWithValue ∧
+        AllocationObserverContext.ActivationRuntimeInvariant
+          contract config allocatorDepth lowerCtx lowerState localsCtx
+          plan live frameBase mode sourceFinal targetFinal ∧
+        AllocationObserverRelation.Frame.AllocatorEffect
+          config allocatorDepth target targetFinal := by
+  obtain ⟨targetWithValue, hRun, hResult, hValueEffect⟩ :=
+    forwardExprRuntime_with_effect hPrimitive hConfig hSafe
+      hInvariant.activation.compiler hScoped hLower hCompile
+      hInvariant.activation.state hInvariant.allocator
+  have hStack :
+      targetWithValue.source.evm.stack =
+        value :: target.source.evm.stack := by
+    simpa using hResult.stack
+  have hPop :
+      targetWithValue.source.evm.stack.pop =
+        some (target.source.evm.stack, value) := by
+    rw [hStack]
+    rfl
+  let targetFinal :=
+    StateRel.popTarget target.source.evm.stack targetWithValue
+  have hMachine :
+      targetFinal.source.evm.toMachineState =
+        targetWithValue.source.evm.toMachineState := by
+    simp [targetFinal, StateRel.popTarget,
+      Simulation.ResourceReplay.State.withSource]
+  have hPopEffect :
+      AllocationObserverRelation.Frame.AllocatorEffect
+        config allocatorDepth targetWithValue targetFinal :=
+    AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+      hValueEffect.ready hMachine
+  refine
+    ⟨targetWithValue, targetFinal, hRun, hPop, rfl, ?_,
+      hValueEffect.trans hPopEffect⟩
+  exact
+    { activation :=
+        { compiler := hInvariant.activation.compiler
+          planWF := hInvariant.activation.planWF
+          defined := by
+            intro name hLive
+            rw [hSafe.vars_eq]
+            exact hInvariant.activation.defined name hLive
+          state := hResult.state.pop_target hStack
+          stackLength := by
+            simpa [targetFinal, StateRel.popTarget] using
+              hInvariant.activation.stackLength }
+      allocator := hPopEffect.ready
+      frame := hInvariant.frame }
+
+/--
 Evaluate one source condition through the real allocation and Locals
 compilers, then consume the target result exactly as Structured control flow
 does. The returned state is again at the statement-boundary activation
@@ -1790,6 +1887,79 @@ theorem Expr.condition_forward_runtime
     simp [Structured.EffectSemantics.Code.popCondition, hPop,
       StateRel.popTarget]
   exact ⟨_, hCondition, hFinalInvariant⟩
+
+/--
+Allocator-aware condition evaluation with the complete compositional
+expression resource effect.
+-/
+theorem Expr.condition_forward_runtime_with_effect
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr 1}
+    {lowered : Locals.Expr 1} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal [value])
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx 0 lowered = some code) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.runCondition code target =
+          .ok (targetFinal, value != EvmYul.UInt256.ofNat 0) ∧
+        AllocationObserverContext.ActivationRuntimeInvariant
+          contract config allocatorDepth lowerCtx lowerState localsCtx
+          plan live frameBase mode sourceFinal targetFinal ∧
+        AllocationObserverRelation.Frame.AllocatorEffect
+          config allocatorDepth target targetFinal := by
+  obtain
+      ⟨targetWithValue, targetFinal, hRun, hPop, rfl,
+        hFinalInvariant, hEffect⟩ :=
+    Expr.one_forward_runtime_with_effect hPrimitive hConfig hInvariant hSafe
+      hScoped hLower hCompile
+  have hCondition :
+      Structured.ObserverSemantics.Code.runCondition code target =
+        .ok
+          (StateRel.popTarget target.source.evm.stack targetWithValue,
+            value != EvmYul.UInt256.ofNat 0) := by
+    unfold Structured.ObserverSemantics.Code.runCondition
+    unfold Structured.EffectSemantics.Code.runCondition
+    change
+      Structured.EffectSemantics.Code.run
+          (Structured.ObserverSemantics.stateModel transcript)
+          (Structured.ObserverSemantics.handler transcript)
+          code target =
+        .ok targetWithValue at hRun
+    rw [hRun]
+    simp [Structured.EffectSemantics.Code.popCondition, hPop,
+      StateRel.popTarget]
+  exact ⟨_, hCondition, hFinalInvariant, hEffect⟩
 
 theorem Expr.backward_of_safeEval
     {contract : MemoryContract.Contract}

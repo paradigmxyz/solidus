@@ -4740,6 +4740,124 @@ theorem of_memory_eq_active_growth {transcript : Trace}
 
 end AllocatorEffect
 
+/--
+Resource effect of statement execution at a fixed allocator depth.
+
+Statements may update compiler spills in the current activation, so they
+preserve only frames suspended strictly below `depth`. Expression execution
+uses the stronger `AllocatorEffect`, which also protects the current frame.
+-/
+structure SuspendedEffect {transcript : Trace}
+    (config : Config) (depth : Nat)
+    (before after : TargetState transcript) : Prop where
+  ready : AllocatorReady config depth after
+  growth : TargetGrowth before after
+  prefixStable :
+    ∀ {protectedDepth : Nat},
+      protectedDepth < depth →
+      Budget config protectedDepth →
+      ProtectedPrefix config protectedDepth before after
+
+namespace SuspendedEffect
+
+theorem of_allocatorEffect {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hEffect : AllocatorEffect config depth before after) :
+    SuspendedEffect config depth before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := fun hDepth hBudget =>
+      hEffect.prefixStable (Nat.le_of_lt hDepth) hBudget }
+
+theorem refl {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {target : TargetState transcript}
+    (hReady : AllocatorReady config depth target) :
+    SuspendedEffect config depth target target :=
+  of_allocatorEffect (AllocatorEffect.refl hReady)
+
+theorem trans {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {first second third : TargetState transcript}
+    (hFirst : SuspendedEffect config depth first second)
+    (hSecond : SuspendedEffect config depth second third) :
+    SuspendedEffect config depth first third :=
+  { ready := hSecond.ready
+    growth := hFirst.growth.trans hSecond.growth
+    prefixStable := fun hDepth hBudget =>
+      (hFirst.prefixStable hDepth hBudget).trans
+        (hSecond.prefixStable hDepth hBudget) }
+
+/--
+One target `MSTORE` above every suspended prefix preserves the complete
+statement resource effect.
+-/
+theorem of_mstore_above
+    {transcript : Trace}
+    {config : Config} {depth address : Nat} {value : Word}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat address) value)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size)
+    (hAllocatorDisjoint :
+      config.allocatorCell + MemoryContract.wordBytes ≤ address ∨
+        address + MemoryContract.wordBytes ≤ config.allocatorCell)
+    (hAbove :
+      ∀ {protectedDepth : Nat},
+        protectedDepth < depth →
+        baseAt config protectedDepth ≤ address) :
+    SuspendedEffect config depth before after := by
+  have hFinalReady :=
+    hReady.of_mstore_disjoint hMachine hAddress hHost hAllocatorDisjoint
+  have hAddressEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    lt_trans hHost Compiler.MemoryRelation.usize_size_lt_uint256_size
+  have hGrowth : TargetGrowth before after := by
+    refine ⟨?_, ?_⟩
+    · rw [hMachine]
+      exact
+        Compiler.MemoryRelation.activeWords_toNat_le_mstore
+          before.source.evm.toMachineState address value hAddressEnd
+    · rw [hMachine]
+      simpa [EvmYul.MachineState.mstore] using
+        (Compiler.MemoryRelation.writeWord_memory_size_ge
+          before.source.evm.toMachineState address value hAddress
+          (by simpa [MemoryContract.wordBytes] using hHost))
+  refine
+    { ready := hFinalReady
+      growth := hGrowth
+      prefixStable := ?_ }
+  intro protectedDepth hDepth _hBudget
+  refine
+    { growth := hGrowth
+      lookup := ?_ }
+  intro query _hStart hEnd hReadMemory hReadActive
+  have hQueryLt : query < EvmYul.UInt256.size := by
+    exact lt_of_le_of_lt
+      (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hReady.activeNoWrap)
+  have hQuery :
+      (EvmYul.UInt256.ofNat query).toNat = query :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+  rw [hMachine]
+  exact
+    Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+      before.source.evm.toMachineState address query value
+      hAddress hQuery
+      (by simpa [MemoryContract.wordBytes] using hHost)
+      (by simpa [MemoryContract.wordBytes] using hReadMemory)
+      (by simpa [MemoryContract.wordBytes] using hReadActive)
+      (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+      (Or.inl (hEnd.trans (hAbove hDepth)))
+
+end SuspendedEffect
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
@@ -4926,6 +5044,26 @@ theorem scratchAddress_end_le_allocatorBase
       exact scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
 
 /--
+A spill in the current scratch activation begins after every strictly
+suspended allocator prefix.
+-/
+theorem baseAt_le_scratchAddress_of_lt
+    {config : Config}
+    {allocatorDepth protectedDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hDepth : protectedDepth < allocatorDepth) :
+    baseAt config protectedDepth ≤ scratchAddress frameBase slot := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      rw [hBase]
+      exact
+        (baseAt_mono config (by omega)).trans
+          (Nat.le_add_right (baseAt config previousDepth)
+            (MemoryContract.wordBytes * slot))
+
+/--
 Every compiler spill address in an owned scratch activation ends inside the
 concrete frame represented by `ScratchStateRel`.
 -/
@@ -4981,6 +5119,40 @@ theorem frameEnd_eq_allocatorBase
   | @scratch previousDepth _ _ _ hBase hWords =>
       rw [hBase, hWords, baseAt_succ]
       rfl
+
+/--
+A concrete spill store in the currently owned scratch activation preserves all
+suspended frames and allocator readiness.
+-/
+theorem suspendedEffect_of_mstore
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    {config : Config}
+    {transcript : Trace} {value : Word}
+    {before after : TargetState transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hReady : AllocatorReady config allocatorDepth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)) value)
+    (hAddress :
+      (EvmYul.UInt256.ofNat (scratchAddress frameBase slot)).toNat =
+        scratchAddress frameBase slot)
+    (hHost :
+      scratchAddress frameBase slot + MemoryContract.wordBytes <
+        USize.size) :
+    SuspendedEffect config allocatorDepth before after :=
+  SuspendedEffect.of_mstore_above
+    hReady hMachine hAddress hHost
+    (Or.inl (hOwned.allocatorCell_disjoint_scratchAddress hConfig))
+    (fun hDepth => hOwned.baseAt_le_scratchAddress_of_lt hDepth)
 
 end ActivationOwned
 
