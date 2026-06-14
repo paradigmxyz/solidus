@@ -45,6 +45,58 @@ theorem reindex_outcomeLive
   | halt kind hState =>
       exact .halt kind hState
 
+namespace BlockRuntimeForward
+
+/--
+Transport an abrupt open-block result back to an enclosing allocation index
+after an activation exit.
+
+Only `leave` retains a live-name index, and callers prove that both indices are
+the same ordered return list. Terminal halts expose neither plan nor locals.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      BlockRuntimeForward contract config allocatorDepth transcript
+        beforePlan beforeLive frameBase initialMode finalMode sourceProgram
+        sourceCtx sourceBlock source targetProgram targetBlock target
+        sourceOutcome targetOutcome finalCtx)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    BlockRuntimeForward contract config allocatorDepth transcript
+      afterPlan afterLive frameBase initialMode finalMode sourceProgram
+      sourceCtx sourceBlock source targetProgram targetBlock target
+      sourceOutcome targetOutcome finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      hRel.transport_of_isExit hExit hLeaveLive, hSame, hEffect⟩
+
+end BlockRuntimeForward
+
 namespace NonregularStmtRuntimeForward
 
 theorem of_runs

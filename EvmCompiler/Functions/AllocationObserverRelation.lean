@@ -4421,6 +4421,53 @@ theorem reframe_of_isExit {transcript : Trace}
   | halt kind hState =>
       exact .halt kind hState
 
+/--
+After an activation exit, the allocation plan and non-return live environment
+are unobservable. `leave` still requires the same ordered return-name list;
+terminal halts erase both indices completely.
+-/
+theorem transport_of_isExit {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {beforePlan afterPlan : Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source :
+      Functions.ObserverSemantics.Outcome (SourceState transcript)}
+    {target :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract beforePlan beforeLive
+        stackOffset frameBase mode source target)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit source)
+    (hLeaveLive :
+      source.mode = .leave → beforeLive = afterLive) :
+    ActivationOutcomeRel contract afterPlan afterLive
+      stackOffset frameBase mode source target := by
+  cases hRel with
+  | regular _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hExit
+  | brk _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.brk,
+        Locals.Source.Effectful.Outcome.brk] at hExit
+  | cont _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.cont,
+        Locals.Source.Effectful.Outcome.cont] at hExit
+  | leave hState =>
+      have hLive := hLeaveLive rfl
+      cases hLive
+      exact .leave hState
+  | halt kind hState =>
+      exact .halt kind
+        { cursor := hState.cursor
+          shared := hState.shared }
+
 end ActivationOutcomeRel
 
 /--

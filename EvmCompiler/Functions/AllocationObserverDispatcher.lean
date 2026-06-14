@@ -1692,6 +1692,175 @@ def rebase
     invariant := hInvariant }
 
 /--
+Dispatch the `for` branch whose initializer exits before condition evaluation.
+
+The recursive call is confined to the exact initializer cursor. Since the
+outcome leaves the activation or halts, the outcome-owned exit transport moves
+the nested allocation index back to the outer statement plan before the
+loop-owned statement theorem packages the unreachable condition, body, post,
+and cleanup.
+-/
+theorem forInitExitHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx initCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := sourceFuel + 1)
+        (transcript := transcript))
+    (hInitSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx.withoutLoopControl sourceFuel init source =
+        .ok (sourceOutcome, initCtx))
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+          { stmts := rest } afterState localsCtx,
+        HeadResult cursor afterState localsCtx headCode tail
+          (config := config) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome := sourceOutcome) := by
+  obtain
+      ⟨afterState, headLower, headCode, tail,
+        loopState, afterPost, afterBody,
+        initLocals, postLocals, bodyLocals,
+        loweredCond, condCode, compiledPost, compiledBody, cleanup,
+        initCursor, postCursor, bodyCursor,
+        hCompiled, hLower, hCompile,
+        hInitFinalState, hInitFinalLocals,
+        hLowerCond, hCompileCond, hLowerPost, hFinishPost,
+        hLowerBody, hFinishBody, hCleanup, hHeadCode, hAfterState,
+        hCondScoped, hPostScoped, hBodyScoped, hStep, hExact⟩ :=
+    cursor.forCursors
+  have hInitBoundary :
+      Boundary initCursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx.withoutLoopControl)
+        (source := source) (target := target) :=
+    forInit cursor initCursor hBoundary
+  obtain ⟨targetOutcome, finalMode, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.for_init_exit_of_components
+      (outerPlan := cursor.plan) (exitPlan := cursor.plan)
+      (outerLive := live)
+      (resultLive :=
+        AllocationObserverOutcome.outcomeLive fn.returns live sourceCtx
+          sourceOutcome.mode)
+      hBoundary.invariant
+      (by
+        intro loweredInit loopState' initCode initLocals'
+          hLowerInit hCompileInit _hInvariant
+        have hLowerPair :
+            (initCursor.lowered, initCursor.finalState) =
+              (loweredInit, loopState') :=
+          Option.some.inj (initCursor.lower.symm.trans hLowerInit)
+        cases hLowerPair
+        have hCompilePair :
+            (initCursor.compiled, initCursor.finalLocals) =
+              (initCode, initLocals') :=
+          Option.some.inj (initCursor.compile.symm.trans hCompileInit)
+        cases hCompilePair
+        obtain
+            ⟨initTargetOutcome, initFinalMode, hInitForward⟩ :=
+          recursiveNonregular initCursor hRecursive
+            (Nat.lt_succ_self sourceFuel) hInitBoundary hInitSource
+            (by
+              intro hRegular
+              rcases sourceOutcome with ⟨sourceFinal, sourceMode⟩
+              cases sourceMode with
+              | regular =>
+                  simp [Functions.Source.Effectful.Outcome.IsExit,
+                    Functions.Source.Effectful.Outcome.regular,
+                    Locals.Source.Effectful.Outcome.regular] at hExit
+              | brk =>
+                  simp [Functions.Source.Effectful.Outcome.IsExit,
+                    Functions.Source.Effectful.Outcome.brk,
+                    Locals.Source.Effectful.Outcome.brk] at hExit
+              | cont =>
+                  simp [Functions.Source.Effectful.Outcome.IsExit,
+                    Functions.Source.Effectful.Outcome.cont,
+                    Locals.Source.Effectful.Outcome.cont] at hExit
+              | leave =>
+                  simp [Functions.Source.Effectful.Outcome.leave,
+                    Locals.Source.Effectful.Outcome.leave] at hRegular
+              | halt kind =>
+                  simp [Functions.Source.Effectful.Outcome.halt,
+                    Locals.Source.Effectful.Outcome.halt] at hRegular)
+        refine
+          ⟨initCtx, initTargetOutcome, initFinalMode,
+            AllocationObserverOutcome.BlockRuntimeForward.transport_of_isExit
+              hInitForward hExit ?_⟩
+        intro hLeave
+        simp [AllocationObserverOutcome.outcomeLive, hLeave])
+      hExit hLower hCompile
+  have hMode : sourceOutcome.mode ≠ .regular := by
+    intro hRegular
+    rcases sourceOutcome with ⟨sourceFinal, sourceMode⟩
+    cases sourceMode with
+    | regular =>
+        simp [Functions.Source.Effectful.Outcome.IsExit,
+          Functions.Source.Effectful.Outcome.regular,
+          Locals.Source.Effectful.Outcome.regular] at hExit
+    | brk =>
+        simp [Functions.Source.Effectful.Outcome.IsExit,
+          Functions.Source.Effectful.Outcome.brk,
+          Locals.Source.Effectful.Outcome.brk] at hExit
+    | cont =>
+        simp [Functions.Source.Effectful.Outcome.IsExit,
+          Functions.Source.Effectful.Outcome.cont,
+          Locals.Source.Effectful.Outcome.cont] at hExit
+    | leave =>
+        simp [Functions.Source.Effectful.Outcome.leave,
+          Locals.Source.Effectful.Outcome.leave] at hRegular
+    | halt kind =>
+        simp [Functions.Source.Effectful.Outcome.halt,
+          Locals.Source.Effectful.Outcome.halt] at hRegular
+  exact
+    ⟨afterState, headCode, tail,
+      HeadResult.ofNonregular cursor tail hCompiled
+        (.nonregular hForward) hExact hMode⟩
+
+/--
 Dispatch an `if` head through the pass-owned conditional theorem. Recursive
 work is limited to the exact lexical body cursor selected by the canonical
 source run.

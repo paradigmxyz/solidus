@@ -1379,7 +1379,9 @@ corridor.
   recursive open-block interface over real synchronized cursors, plus
   statement-owned regular and abrupt scoped adapters for loop initializer,
   body, and post recursion. The immediate remaining loop task is the exact
-  `for` head theorem composing the three canonical source outcomes.
+  `for` head theorem composing the three canonical source outcomes; the
+  initializer-exit outcome is now checked, leaving regular-initializer regular
+  and activation-exit loop outcomes.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
