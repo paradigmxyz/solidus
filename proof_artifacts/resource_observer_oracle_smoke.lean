@@ -212,8 +212,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.leaveRuntimeResult
-#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalRuntimeResultOfSafeRun
-#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalArgsRuntimeResultOfSafeRun
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalArgsRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lexicalOfPlanState
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.forCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.StepTransport
@@ -723,8 +723,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.leaveRuntimeResult
-#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalRuntimeResultOfSafeRun
-#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalArgsRuntimeResultOfSafeRun
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.terminalArgsRuntimeResult
 #print axioms EvmCompiler.Functions.Source.Switch.scoped_of_select_some
 #print axioms EvmCompiler.Functions.AllocationSupport.mem_planCases_scopes_of_mem
 #print axioms EvmCompiler.Functions.AllocationSupport.mem_planDefault_scopes_of_mem
@@ -753,6 +753,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.reindex_regularLive
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.regular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.nonregular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.brkHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.contHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
