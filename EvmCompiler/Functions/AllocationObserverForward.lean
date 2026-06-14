@@ -3188,6 +3188,230 @@ theorem Cursor.letRuntimeResultOfSafeRun
           hInvariant
 
 /--
+Preserve one source `break` directly from a synchronized body cursor.
+
+The destination transition is static pass-owned data. The source-fuel
+dispatcher will derive it from the enclosing loop destination invariant.
+-/
+theorem Cursor.brkRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth targetDepth frameBase : Nat}
+    {transcript : Trace}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .brk :: rest }
+        beforeState beforeLocals)
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : beforeLocals.breakDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase beforeMode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase beforeMode program sourceCtx
+            .brk source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.brk
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                afterLive source))
+            (Structured.EffectSemantics.Outcome.brk targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.brk_of_invariant
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hSourceScope hTargetDepth hTransition hInvariant hLower hCompile
+  refine
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .nonregular (finalMode := afterMode) ?_⟩
+  simpa [AllocationObserverOutcome.outcomeLive, hSourceScope] using hForward
+
+/--
+Preserve one source `continue` directly from a synchronized body cursor.
+-/
+theorem Cursor.contRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth targetDepth frameBase : Nat}
+    {transcript : Trace}
+    {beforeMode afterMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .cont :: rest }
+        beforeState beforeLocals)
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : beforeLocals.continueDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition cursor.plan live afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase beforeMode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase beforeMode program sourceCtx
+            .cont source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.cont
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                afterLive source))
+            (Structured.EffectSemantics.Outcome.cont targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.cont_of_invariant
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hSourceScope hTargetDepth hTransition hInvariant hLower hCompile
+  refine
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .nonregular (finalMode := afterMode) ?_⟩
+  simpa [AllocationObserverOutcome.outcomeLive, hSourceScope] using hForward
+
+/--
+Preserve one source `leave` directly from a synchronized body cursor.
+-/
+theorem Cursor.leaveRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live functionScope : List Functions.Name}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .leave :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSourceScope : sourceCtx.leaveScope? = some functionScope)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        fn.returns live sourceCtx)
+    (hTargetDepth : beforeLocals.leaveDepth? = some 0)
+    (hRetc : beforeLocals.leaveRetc = fn.returns.length)
+    (hReturnFrame : target.source.returns ≠ [])
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            .leave source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.leave
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                functionScope source))
+            (Structured.EffectSemantics.Outcome.leave targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hConfig hSourceScope hControl.returnsLive
+      (hControl.leaveScope functionScope hSourceScope)
+      hTargetDepth hRetc hReturnFrame hInvariant hLower hCompile
+  refine
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .nonregular (finalMode := mode) ?_⟩
+  simpa [AllocationObserverOutcome.outcomeLive] using hForward
+
+/--
 Preserve the false branch of one synchronized `if` cursor.
 
 The nested body cursor is still constructed from the real passes, but the

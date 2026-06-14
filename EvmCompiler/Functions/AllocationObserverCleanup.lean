@@ -50,6 +50,29 @@ structure Transition
       (currentStackOrder plan afterLive).length targetDepth
       beforeMode afterMode
 
+namespace Transition
+
+/--
+Plain cleanup may move the hidden scratch-frame pointer, but it never changes
+the activation's runtime representation or fixed scratch-frame width.
+-/
+theorem sameFrame
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode) :
+    SameFrame beforeMode afterMode := by
+  cases hTransition.mode with
+  | stack =>
+      exact .stack
+  | scratch beforeDepth afterDepth frameWords =>
+      exact .scratch beforeDepth afterDepth frameWords
+
+end Transition
+
 namespace Plain
 
 theorem finishScoped_shape

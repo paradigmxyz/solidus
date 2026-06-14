@@ -720,8 +720,14 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   `ForLoop.RegularRuntimeInvariantForward.of_safe_source_run` now performs the
   guarded source-fuel induction for regular loops, preserving allocator and
   mode-indexed activation effects through condition, body, post, and recursive
-  iterations. The immediate remaining work is the mutual source-fuel
-  statement/block dispatcher: its call case must invert the canonical source
+  iterations. Guarded body cursors now expose checked runtime results for
+  expressions, assignment, declaration, both `if` paths, every selected
+  `switch` path, lexical blocks, `break`, `continue`, and `leave`.
+  Machine-neutral cleanup supplies the allocator effect for abrupt loop
+  control without a second semantics. The immediate remaining work is the
+  mutual source-fuel statement/block dispatcher: define and construct its
+  static control-destination invariant, add the terminal leaf, integrate the
+  existing loop theorem, and make the call case invert the canonical source
   call, derive the checked body-start facts, invoke the selected callee theorem
   recursively, and discharge `Call.regular_of_selected`'s one-activation
   callback. Matching whole-function and whole-program backward adequacy follows

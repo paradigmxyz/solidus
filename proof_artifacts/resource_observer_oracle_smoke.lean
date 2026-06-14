@@ -189,10 +189,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.backward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.forward
 #check EvmCompiler.Functions.AllocationObserverCleanup.Plain.backward
+#check EvmCompiler.Functions.AllocationObserverCleanup.Transition.sameFrame
 #check EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.forward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverCleanup.BreakLeaf.backward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.forward_of_compilers
 #check EvmCompiler.Functions.AllocationObserverCleanup.ContinueLeaf.backward_of_compilers
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.brk_of_invariant
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.cont_of_invariant
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.leaveRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel
@@ -663,6 +669,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_body_brk_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
+#print axioms EvmCompiler.Functions.AllocationObserverCleanup.Transition.sameFrame
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.brk_of_invariant
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.cont_of_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_regular
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular
 #print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
@@ -682,6 +691,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.exprRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.leaveRuntimeResult
 #print axioms EvmCompiler.Functions.Source.Switch.scoped_of_select_some
 #print axioms EvmCompiler.Functions.AllocationSupport.mem_planCases_scopes_of_mem
 #print axioms EvmCompiler.Functions.AllocationSupport.mem_planDefault_scopes_of_mem
