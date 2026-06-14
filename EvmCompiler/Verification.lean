@@ -461,6 +461,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.rebase_prefix_same_source
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel.restore_base
 #check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.regular
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.of_lowering
+#check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack
+#check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release

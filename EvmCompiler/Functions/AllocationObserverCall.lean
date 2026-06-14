@@ -430,6 +430,98 @@ theorem components
 
 end CallCompiler
 
+namespace SelectedCallee
+
+/--
+Compiler-owned artifact for the source function selected by one call.
+
+Every field is reconstructed from the whole-program allocation lowerer; callers
+do not provide generated procedures, layouts, or prelude contexts.
+-/
+structure Artifact
+    (allocation : Locals.Allocation.ProgramPlan)
+    (program : Functions.Program)
+    (expressions : Expressions.Program)
+    (name : Functions.Name)
+    (fn : Functions.FunDef) where
+  recipe : AllocationSupport.AllocationRecipe
+  stackSlots : MixedAllocation.SlotSet
+  frameName : Locals.Name
+  startState : AllocationSupport.CompileState
+  finalState : AllocationSupport.CompileState
+  proc : Locals.Proc
+  lowerProc : Expressions.Proc
+  slots : AllocationSupport.FunSlots
+  validate :
+    AllocationLowering.validatePlan? allocation program =
+      some (recipe, stackSlots)
+  fresh :
+    AllocationLowering.freshFrameName program = some frameName
+  lower :
+    AllocationLowering.lowerFunction? recipe stackSlots frameName
+        (AllocationSupport.scratchFrameConfig?
+          program.memoryContract recipe.frameWords)
+        startState fn =
+      some (proc, finalState)
+  compile : proc.toExpressions? = some lowerProc
+  targetLookup :
+    Structured.ProcList.lookup? name
+        expressions.toStructured.procs =
+      some lowerProc.toStructured
+  slotsLookup :
+    AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+      some slots
+  slotsMatch : slots.Matches fn
+
+/--
+Construct the selected-callee artifact from the real whole-program lowering and
+the canonical source function lookup.
+-/
+theorem of_lowering
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (hLower :
+      AllocationLowering.lowerExpressionsFromAllocation?
+          allocation program =
+        some expressions)
+    (hFind :
+      Functions.Source.FunList.find? name program.functions = some fn) :
+    Nonempty (Artifact allocation program expressions name fn) := by
+  obtain
+      ⟨recipe, stackSlots, frameName, before, after, proc, lowerProc,
+        hValidate, hFresh, hSelected, hCompile, hLookup⟩ :=
+    AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
+      hLower hFind
+  have hMem :
+      fn ∈ program.functions :=
+    Functions.Source.FunList.mem_of_find?_eq_some hFind
+  obtain
+      ⟨slots, _entry, _added, hSlotsLookup, hSlotsMatch,
+        _hEntry, _hScope, _hEnv, _hPlan⟩ :=
+    AllocationLowering.validatePlan?_function_components
+      hValidate hMem
+  exact
+    ⟨{ recipe := recipe
+       stackSlots := stackSlots
+       frameName := frameName
+       startState := before
+       finalState := after
+       proc := proc
+       lowerProc := lowerProc
+       slots := slots
+       validate := hValidate
+       fresh := hFresh
+       lower := hSelected
+       compile := hCompile
+       targetLookup := hLookup
+       slotsLookup := hSlotsLookup
+       slotsMatch := hSlotsMatch }⟩
+
+end SelectedCallee
+
 namespace EntryMarkers
 
 theorem compileOpen
@@ -2842,6 +2934,228 @@ theorem backward_of_safeEval
   exact ⟨hSafe.eval_eq, hExpectedRel⟩
 
 end ArgList
+
+namespace PreparedArguments
+
+/--
+Prepare an all-stack callee call from the real source argument evaluation and
+compiled argument code.
+-/
+theorem stack
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {args : List (Functions.Expr 1)}
+    {lowered : List (Locals.Expr 1)}
+    {code : Structured.Code}
+    {source sourceAfterArgs :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.ArgList.MemorySafeEval
+        contract transcript args source sourceAfterArgs values)
+    (hScoped :
+      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg)
+    (hLower :
+      AllocationLowering.lowerExprList lowerCtx lowerState args =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 0
+          (AllocationLowering.exprSeqOfList lowered) =
+        some code)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    ∃ targetAfterArgs callerBase,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetAfterArgs ∧
+      AllocationObserverRelation.ActivationExprResultRel
+        contract plan live 0 frameBase args.length mode
+        sourceAfterArgs target targetAfterArgs values ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 0 frameBase mode sourceAfterArgs callerBase ∧
+      targetAfterArgs.source.evm.stack =
+        values.reverse ++ target.source.evm.stack ∧
+      callerBase.source.evm.stack = target.source.evm.stack ∧
+      callerBase.source.evm.toMachineState =
+        targetAfterArgs.source.evm.toMachineState ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config allocatorDepth (allocatorDepth + 1)
+        target targetAfterArgs := by
+  obtain ⟨targetAfterArgs, hRun, hResult, hEffect⟩ :=
+    ArgList.forward_runtime
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hSafe hInvariant.activation.compiler hScoped hLower hCompile
+      hInvariant.activation.state hInvariant.allocator
+  let callerBase :=
+    AllocationObserverRelation.StateRel.popTarget
+      target.source.evm.stack targetAfterArgs
+  refine
+    ⟨targetAfterArgs, callerBase, hRun, hResult, hResult.restore_base,
+      hResult.stack, ?_, ?_,
+      AllocationObserverRelation.Frame.BoundedEffect.of_allocatorEffect
+        hEffect⟩
+  · rfl
+  · rfl
+
+/--
+Prepare a scratch callee call by executing the real frame-acquire sequence
+before the ordinary source arguments.
+-/
+theorem scratch
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {args : List (Functions.Expr 1)}
+    {lowered : List (Locals.Expr 1)}
+    {argsCode : Structured.Code}
+    {source sourceAfterArgs :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config allocatorDepth)
+    (hSafe :
+      AllocationObserverSafety.ArgList.MemorySafeEval
+        contract transcript args source sourceAfterArgs values)
+    (hScoped :
+      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg)
+    (hLower :
+      AllocationLowering.lowerExprList lowerCtx lowerState args =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 1
+          (AllocationLowering.exprSeqOfList lowered) =
+        some argsCode)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    ∃ targetAfterAcquire targetAfterArgs callerBase,
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameAcquireCode config) target =
+        .ok targetAfterAcquire ∧
+      Structured.ObserverSemantics.Code.run argsCode targetAfterAcquire =
+        .ok targetAfterArgs ∧
+      AllocationObserverRelation.ActivationExprResultRel
+        contract plan live 1 frameBase args.length mode
+        sourceAfterArgs targetAfterAcquire targetAfterArgs values ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 0 frameBase mode sourceAfterArgs callerBase ∧
+      targetAfterArgs.source.evm.stack =
+        values.reverse ++
+          EvmYul.UInt256.ofNat
+              (AllocationObserverRelation.Frame.baseAt
+                config allocatorDepth) ::
+            target.source.evm.stack ∧
+      callerBase.source.evm.stack = target.source.evm.stack ∧
+      callerBase.source.evm.toMachineState =
+        targetAfterArgs.source.evm.toMachineState ∧
+      AllocationObserverRelation.Frame.baseAt config allocatorDepth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterAcquire.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes ∧
+      AllocationObserverRelation.Frame.baseAt config allocatorDepth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterAcquire.source.evm.toMachineState.memory.size ∧
+      AllocationObserverRelation.Frame.TargetGrowth
+        targetAfterAcquire targetAfterArgs ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config (allocatorDepth + 1) (allocatorDepth + 1)
+        target targetAfterArgs := by
+  obtain
+      ⟨targetAfterAcquire, hAcquireRun, hAcquireRel, hAcquireReady,
+        hAcquireStack, hFrameActive, hFrameAllocated, hAcquireEffect⟩ :=
+    (by
+      simpa using
+        (AllocationObserverPreservation.Frame.scratchFrameAcquire_activation_forward
+          (stackOffset := 0)
+          hConfig hPositive hBudget hInvariant.allocator hInvariant.frame
+          hInvariant.activation.state))
+  obtain ⟨targetAfterArgs, hArgsRun, hResult, hArgsEffect⟩ :=
+    ArgList.forward_runtime
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hSafe hInvariant.activation.compiler hScoped hLower hCompile
+      hAcquireRel hAcquireReady
+  let argsBase :=
+    AllocationObserverRelation.StateRel.popTarget
+      targetAfterAcquire.source.evm.stack targetAfterArgs
+  have hArgsBase :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 1 frameBase mode sourceAfterArgs argsBase :=
+    hResult.restore_base
+  let callerBase :=
+    AllocationObserverRelation.StateRel.popTarget
+      target.source.evm.stack targetAfterArgs
+  have hCallStack :
+      targetAfterArgs.source.evm.stack =
+        values.reverse ++
+          EvmYul.UInt256.ofNat
+              (AllocationObserverRelation.Frame.baseAt
+                config allocatorDepth) ::
+            target.source.evm.stack := by
+    rw [hResult.stack, hAcquireStack]
+  have hCallerBase :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 0 frameBase mode sourceAfterArgs callerBase := by
+    apply hArgsBase.rebase_prefix_same_source
+      (oldPrefix :=
+        [EvmYul.UInt256.ofNat
+          (AllocationObserverRelation.Frame.baseAt config allocatorDepth)])
+      (newPrefix := [])
+      (baseStack := target.source.evm.stack)
+      (targetFinal := callerBase)
+    · rfl
+    · rfl
+    · change
+        targetAfterAcquire.source.evm.stack =
+          [EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt
+              config allocatorDepth)] ++ target.source.evm.stack
+      simpa using hAcquireStack
+    · rfl
+  have hArgsBounded :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config (allocatorDepth + 1) (allocatorDepth + 1)
+        targetAfterAcquire targetAfterArgs :=
+    AllocationObserverRelation.Frame.BoundedEffect.weaken
+      (by omega)
+      (AllocationObserverRelation.Frame.BoundedEffect.of_allocatorEffect
+        hArgsEffect)
+  refine
+    ⟨targetAfterAcquire, targetAfterArgs, callerBase,
+      hAcquireRun, hArgsRun, hResult, hCallerBase, hCallStack,
+      rfl, rfl, hFrameActive, hFrameAllocated, hArgsEffect.growth,
+      hAcquireEffect.trans hArgsBounded⟩
+
+end PreparedArguments
 
 namespace ScratchFrame
 
