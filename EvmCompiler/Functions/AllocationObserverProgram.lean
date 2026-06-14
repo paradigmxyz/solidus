@@ -84,6 +84,21 @@ theorem MainArtifact.ofCompilation
        finalPlan := hFinal
        compile := hCompile }⟩
 
+/--
+The ordinary allocation lowerer determines whether the complete program is
+stack-only or uses the concrete scratch-frame configuration embedded in the
+compiler artifact.
+-/
+theorem MainArtifact.runtimeSelection
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    (artifact : MainArtifact compilation) :
+    artifact.components.RuntimeSelection :=
+  artifact.components.runtimeSelection
+
 def MainArtifact.plan
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}

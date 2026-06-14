@@ -830,6 +830,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.cons
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.finished
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
+#print axioms EvmCompiler.Functions.AllocationLowering.MainComponents.runtimeSelection
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.runtimeSelection
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.boundary
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.recursiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward

@@ -747,9 +747,14 @@ compiler cleanup through the
   `mainRecursiveForward` now constructs the main allocation artifact, Locals
   compilation split, root, and generic recursive theorem internally from the
   real compiler equation and ordinary program scoping. The immediate remaining
-  work is to compose the source prelude and compiler allocator/frame
-  setup/cleanup around that checked main-body theorem, then prove matching
-  whole-function and whole-program backward adequacy.
+  work is to compose the source prelude and compiler-selected runtime setup
+  around that checked main-body theorem. `MainComponents.RuntimeSelection`
+  now proves from successful ordinary lowering that the program is either
+  stack-only, with no frame-using functions and empty allocator/frame preludes,
+  or scratch-backed by the exact concrete configuration consumed by the
+  compiler. The recursive semantic interface must now support that stack-only
+  mode without fabricating allocator state, then compose final cleanup and
+  matching whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

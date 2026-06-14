@@ -4705,6 +4705,153 @@ theorem lowerMain?_components
                        lower := hBody
                        output := rfl }⟩
 
+/--
+When the ordinary main lowerer says that no allocator is needed, every
+activation is stack-only and both compiler-owned setup preludes are empty.
+-/
+theorem MainComponents.stackOnly_of_no_allocator
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final)
+    (hNoAllocator :
+      mainNeedsAllocator recipe stackSlots = false) :
+    mainNeedsFrame recipe stackSlots = false ∧
+      frameFunctions recipe stackSlots = [] ∧
+      components.allocatorPrelude = [] ∧
+      components.framePrelude = [] := by
+  have hNoMainFrame :
+      mainNeedsFrame recipe stackSlots = false := by
+    by_cases hNeeds : mainNeedsFrame recipe stackSlots = true
+    · have :
+          mainNeedsAllocator recipe stackSlots = true := by
+        simp [mainNeedsAllocator, hNeeds]
+      exact False.elim (by simpa [hNoAllocator] using this)
+    · exact Bool.eq_false_of_not_eq_true hNeeds
+  have hNoFrameFunctions :
+      frameFunctions recipe stackSlots = [] := by
+    have hEmpty :
+        (frameFunctions recipe stackSlots).isEmpty = true := by
+      simpa [mainNeedsAllocator, hNoMainFrame] using hNoAllocator
+    exact List.isEmpty_iff.mp hEmpty
+  have hAllocatorPrelude :
+      components.allocatorPrelude = [] := by
+    have hAllocator := components.allocator
+    simpa [mainAllocatorPrelude?, hNoAllocator] using
+      hAllocator.symm
+  have hFramePrelude :
+      components.framePrelude = [] := by
+    have hFrame := components.frame
+    simpa [mainFramePrelude?, hNoMainFrame] using
+      hFrame.symm
+  exact
+    ⟨hNoMainFrame, hNoFrameFunctions,
+      hAllocatorPrelude, hFramePrelude⟩
+
+/--
+Successful main lowering without a scratch-frame configuration can only use
+the stack-only branch of the ordinary compiler.
+
+This inversion is owned by the allocation lowering pass: downstream semantic
+proofs do not need to unfold the compiler or accept a separate no-scratch
+certificate.
+-/
+theorem MainComponents.stackOnly_of_no_frameConfig
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName none
+        state body main final) :
+    mainNeedsAllocator recipe stackSlots = false ∧
+      mainNeedsFrame recipe stackSlots = false ∧
+      frameFunctions recipe stackSlots = [] ∧
+      components.allocatorPrelude = [] ∧
+      components.framePrelude = [] := by
+  have hNoAllocator :
+      mainNeedsAllocator recipe stackSlots = false := by
+    by_cases hNeeds :
+        mainNeedsAllocator recipe stackSlots = true
+    · have hAllocator := components.allocator
+      simp [mainAllocatorPrelude?, hNeeds] at hAllocator
+    · exact Bool.eq_false_of_not_eq_true hNeeds
+  exact
+    ⟨hNoAllocator,
+      components.stackOnly_of_no_allocator hNoAllocator⟩
+
+/--
+Compiler-selected runtime mode for the complete Functions program.
+
+The stack-only constructor proves that allocator/frame setup is absent. The
+scratch constructor carries the concrete configuration already consumed by
+the ordinary lowerer. This is compiler-derived evidence, not a public premise.
+-/
+inductive MainComponents.RuntimeSelection
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final) : Prop where
+  | stackOnly
+      (needsAllocator :
+        mainNeedsAllocator recipe stackSlots = false)
+      (needsFrame :
+        mainNeedsFrame recipe stackSlots = false)
+      (frameFunctions :
+        AllocationLowering.frameFunctions recipe stackSlots = [])
+      (allocatorPrelude : components.allocatorPrelude = [])
+      (framePrelude : components.framePrelude = []) :
+      RuntimeSelection components
+  | scratch
+      (config : AllocationSupport.ScratchFrameConfig)
+      (frameConfig : frameConfig? = some config)
+      (needsAllocator :
+        mainNeedsAllocator recipe stackSlots = true) :
+      RuntimeSelection components
+
+/--
+Every successful ordinary main lowering selects a usable runtime mode.
+-/
+theorem MainComponents.runtimeSelection
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final) :
+    components.RuntimeSelection := by
+  by_cases hNeeds :
+      mainNeedsAllocator recipe stackSlots = true
+  · have hExists :
+        ∃ config, frameConfig? = some config := by
+      cases hConfig : frameConfig? with
+      | none =>
+          have hAllocator := components.allocator
+          simp [mainAllocatorPrelude?, hNeeds, hConfig] at hAllocator
+      | some config =>
+          exact ⟨config, rfl⟩
+    obtain ⟨config, hConfig⟩ := hExists
+    exact .scratch config hConfig hNeeds
+  · have hNoAllocator :
+        mainNeedsAllocator recipe stackSlots = false :=
+      Bool.eq_false_of_not_eq_true hNeeds
+    obtain
+        ⟨hNoMainFrame, hNoFrameFunctions, hAllocator, hFrame⟩ :=
+      components.stackOnly_of_no_allocator hNoAllocator
+    exact
+      .stackOnly hNoAllocator hNoMainFrame hNoFrameFunctions
+        hAllocator hFrame
+
 def lowerToLocals? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (program : Program) : Option Locals.Program := do

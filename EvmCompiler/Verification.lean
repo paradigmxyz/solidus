@@ -340,6 +340,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveProgramForward
 #check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveBlockForward
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.RuntimeSelection
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.runtimeSelection
+#check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.runtimeSelection
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
