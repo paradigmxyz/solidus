@@ -490,6 +490,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
+#check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward
+#check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_regular
+#check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Locals.Source.Effectful.PrimitiveSemantics.SuccessRefines
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_of_successRefines

@@ -29453,3 +29453,12 @@ Resumed the end-to-end observer proof with the Functions allocation boundary in 
 
 - 2026-06-14 - proof - Added `Expr.MemorySafeEval.of_safe_evalCondition` and the pass-owned `ForLoop.RegularRuntimeInvariantForward.of_safe_source_run`. The loop theorem inducts on the canonical guarded Functions source run, reconstructs the ordinary source semantics, and composes exact allocator/frame effects through conditions, regular/break/continue bodies, post blocks, and recursive iterations. It takes adjacent body/post callbacks only and introduces no observer compiler, replay certificate, call oracle, or generated public premise.
 - 2026-06-14 - validation - Focused Safety and Loop checks pass; the full 1,209-job `EvmCompiler.Verification` root, architecture dependency guard, `git diff --check`, and touched-file hole/unsafe scan pass. Explicit axiom inspection reports only `propext`, `Classical.choice`, and `Quot.sound`. The remaining forward blocker is the mutual source-fuel statement/block dispatcher that instantiates the loop callbacks and recursively discharges selected calls.
+## 2026-06-14 compaction-resume
+
+- Resumed the end-to-end Yul observer proof at the Functions allocation boundary.
+- The next blocker is an underpowered `Callee.prepared_leave` interface: the caller knows a Structured return frame exists, but the recursive body callback currently loses that fact.
+- Next: thread the return-frame premise through the pass-owned theorem, validate the focused Lean build, then continue the outcome-indexed statement/block dispatcher and source-facing call theorem.
+
+- 2026-06-14 - theorem-boundary - Strengthened `AllocationObserverForward.Callee.prepared_leave` and the selected-call callback with the Structured return-frame fact constructed by the real call entry. The generated prelude preserves that frame before recursive body preservation; the activation relation remains free of lower control-stack representation.
+- 2026-06-14 - proof - Added pass-owned `AllocationObserverOutcome` contracts for allocator-aware nonregular statements and outcome-indexed blocks. Checked regular-head and abrupt-head sequencing, plus runtime `leave` preservation through compiler-generated return expressions, cleanup, and Structured leave execution.
+- 2026-06-14 - validation - Focused outcome/forward builds and the full 1,210-job `EvmCompiler.Verification` root pass. Architecture dependency checks, diff/hole checks, and the expanded observer axiom smoke pass; new theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.

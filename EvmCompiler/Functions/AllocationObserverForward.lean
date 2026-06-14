@@ -1,5 +1,6 @@
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.AllocationObserverLoop
+import EvmCompiler.Functions.AllocationObserverOutcome
 import EvmCompiler.Functions.AllocationObserverSwitch
 
 namespace EvmCompiler
@@ -587,6 +588,7 @@ theorem prepared_leave
     (hReady : Frame.AllocatorReady config calleeDepth targetEntry)
     (hOwned :
       Frame.ActivationOwned config calleeDepth frameBase prepared.mode)
+    (hReturnFrame : targetEntry.source.returns ≠ [])
     (hBody :
       ∀ {targetBodyStart : Structured.ObserverSemantics.State transcript},
         AllocationObserverContext.ActivationRuntimeInvariant
@@ -596,10 +598,11 @@ theorem prepared_leave
               (artifact.slots.params.map Prod.fst).reverse)
             frameBase
             (prepared.mode.atStackDepth
-              (currentStackOrder prepared.plan
+            (currentStackOrder prepared.plan
                 ((artifact.slots.returns.map Prod.fst).reverse ++
                   (artifact.slots.params.map Prod.fst).reverse)).length)
             sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
         ∃ targetBodyFinal finalMode bodyFuel,
           Structured.ObserverSemantics.Block.Eval
             expressions.toStructured bodyFuel
@@ -686,11 +689,19 @@ theorem prepared_leave
         (Option.some.inj
           (hPreludeCompile.symm.trans hExpectedPreludeCompile))
   subst preludeCode
+  have hBodyReturnFrame : targetBodyStart.source.returns ≠ [] := by
+    have hReturns :=
+      Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+        hPreludeEval
+          (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+    simp only [Structured.ObserverSemantics.Outcome.regular_state] at hReturns
+    rw [hReturns]
+    exact hReturnFrame
   obtain
       ⟨targetBodyFinal, finalMode, bodyFuel, hTargetBody,
         hBodySame, hBodyEffect, hReturnedStack, hCursor, hMachine,
         hWorld⟩ :=
-    hBody hPreludeInvariant
+    hBody hPreludeInvariant hBodyReturnFrame
   have hExpectedMarkers :=
     AllocationObserverCall.EntryMarkers.compileOpen
       (localsCtx := artifact.entryCtx)
@@ -957,6 +968,7 @@ theorem regular_of_selected
             program.memoryContract prepared.plan []
             artifact.slots.params calleeFrameBase prepared.mode
             sourceBodyStart targetEntry →
+        targetEntry.source.returns ≠ [] →
         targetEntry.source.evm.stack.length =
             artifact.entryCtx.layout.length →
         Frame.AllocatorReady config calleeDepth targetEntry →
@@ -1119,6 +1131,12 @@ theorem regular_of_selected
         AllocationObserverCall.SelectedCallee.Artifact.entryLayout,
         hNeedsFrame, hArgsResult.valuesLength, hArgsLength,
         hParamLength]
+    have hEntryReturnFrame : targetEntry.source.returns ≠ [] := by
+      simp [targetEntry,
+        AllocationObserverCall.CalleeEntry.structuredState,
+        Structured.ObserverSemantics.stateModel,
+        Structured.EffectSemantics.StateModel.withEVM,
+        Structured.RunState.withEVM, Structured.RunState.pushReturn]
     have hEntryReady :
         Frame.AllocatorReady config (allocatorDepth + 1) targetEntry := by
       apply hArgsEffect.ready.of_machine_eq
@@ -1141,7 +1159,7 @@ theorem regular_of_selected
     obtain
         ⟨calleeFinal, bodyFuel, hCalleeEval, hReturnedStack,
           hCursor, hMachine, hWorld, hCalleeEffect⟩ :=
-      hCallee hEntry' hEntryStackLength hEntryReady hEntryOwned
+      hCallee hEntry' hEntryReturnFrame hEntryStackLength hEntryReady hEntryOwned
         hProtectedBound
     have hCallerReady :
         Frame.AllocatorReady config (allocatorDepth + 1) callerBase := by
@@ -1334,6 +1352,12 @@ theorem regular_of_selected
         AllocationObserverCall.SelectedCallee.Artifact.entryLayout,
         hNoFrame, hArgsResult.valuesLength, hArgsLength,
         hParamLength]
+    have hEntryReturnFrame : targetEntry.source.returns ≠ [] := by
+      simp [targetEntry,
+        AllocationObserverCall.CalleeEntry.structuredState,
+        Structured.ObserverSemantics.stateModel,
+        Structured.EffectSemantics.StateModel.withEVM,
+        Structured.RunState.withEVM, Structured.RunState.pushReturn]
     have hEntryReady :
         Frame.AllocatorReady config allocatorDepth targetEntry := by
       apply hArgsEffect.ready.of_machine_eq
@@ -1355,7 +1379,7 @@ theorem regular_of_selected
     obtain
         ⟨calleeFinal, bodyFuel, hCalleeEval, hReturnedStack,
           hCursor, hMachine, hWorld, hCalleeEffect⟩ :=
-      hCallee hEntry' hEntryStackLength hEntryReady hEntryOwned
+      hCallee hEntry' hEntryReturnFrame hEntryStackLength hEntryReady hEntryOwned
         hProtectedBound
     have hCallerReady :
         Frame.AllocatorReady config allocatorDepth callerBase := by

@@ -9,6 +9,8 @@ import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.AllocationObserverCall
+import EvmCompiler.Functions.AllocationObserverOutcome
+import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -660,6 +662,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.cons_nonregular
 #print axioms EvmCompiler.Structured.EffectSemantics.Stmt.Eval.for_init_exit
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_body_brk_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_regular
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

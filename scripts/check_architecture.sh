@@ -132,6 +132,8 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverStatement.lean \
   EvmCompiler/Functions/AllocationObserverSwitch.lean \
   EvmCompiler/Functions/AllocationObserverLoop.lean \
+  EvmCompiler/Functions/AllocationObserverOutcome.lean \
+  EvmCompiler/Functions/AllocationObserverForward.lean \
   EvmCompiler/Functions/AllocationObserverCall.lean
 
 report_matches \
@@ -473,6 +475,8 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverStatement.lean \
   EvmCompiler/Functions/AllocationObserverSwitch.lean \
   EvmCompiler/Functions/AllocationObserverLoop.lean \
+  EvmCompiler/Functions/AllocationObserverOutcome.lean \
+  EvmCompiler/Functions/AllocationObserverForward.lean \
   EvmCompiler/Functions/AllocationObserverCall.lean \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
