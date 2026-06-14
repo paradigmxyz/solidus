@@ -1319,6 +1319,19 @@ features through the shared effect, allocation, TypedCfg, certificate, and
 public-artifact interfaces without restoring a parallel backend or proof
 corridor.
 
+## End-to-End Observer Proof
+
+- [x] Derive selected callee preludes and complete procedure-body phases from
+  the real Functions allocation and Locals expression compilers.
+- [x] Recover the compiled procedure selected by a source function name through
+  the real function-list lowerer.
+- [ ] Compose allocator-aware callee entry, recursive body execution, return
+  restoration, frame release, and caller target assignment.
+- [ ] Lift statement, block, loop, and call preservation by source fuel without
+  a public call oracle.
+- [ ] Prove the matching backward-adequacy boundary and compose the short Yul
+  end-to-end theorem.
+
 ## Progress Discipline
 
 - Update this file only when phase status, scope, or gates change.

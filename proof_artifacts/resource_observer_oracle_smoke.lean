@@ -556,7 +556,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerFunction?_toExpressions?_body_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_components
 #print axioms EvmCompiler.Functions.Source.Store.initializedStore_lookupMany
 #print axioms EvmCompiler.Functions.Source.Store.lookupMany_reverse
 #print axioms EvmCompiler.Functions.Source.Store.lookupMany_getElem

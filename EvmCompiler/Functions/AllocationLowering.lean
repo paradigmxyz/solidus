@@ -2555,6 +2555,269 @@ theorem lowerFunction?_toExpressions?_prelude_components
       hReturnLayout
 
 /--
+Successful lowering and adjacent compilation of one function expose the
+complete emitted procedure body as pass-owned phases: entry markers, parameter
+and return preludes, the lowered source body, return-value evaluation, and the
+final preserving cleanup.
+
+Observer proofs consume this theorem instead of accepting generated code as a
+premise or unfolding either compiler.
+-/
+theorem lowerFunction?_toExpressions?_body_components
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state final : AllocationSupport.CompileState}
+    {fn : FunDef} {proc : Locals.Proc}
+    {lowerProc : Expressions.Proc}
+    (hLower :
+      lowerFunction? recipe stackSlots frameName frameConfig? state fn =
+        some (proc, final))
+    (hCompile : proc.toExpressions? = some lowerProc) :
+    ∃ slots body bodyFinal returnValues
+      markerCode paramCode paramCtx returnCode returnCtx
+      bodyCode bodyCtx returnValueCode cleanup,
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some slots ∧
+      let root := ScopeId.function fn.name
+      let scratchBindings :=
+        scratchBindingsForRoot recipe stackSlots root
+      let needsFrame := !scratchBindings.isEmpty
+      let entryLayout :=
+        fn.params.reverse ++ if needsFrame then [frameName] else []
+      let ctx : Ctx :=
+        { functions := recipe.functionSlots
+          frameConfig? := frameConfig?
+          frameName := frameName
+          stackSlots := stackSlots
+          root := root
+          scratchBindings := scratchBindings
+          frameFunctions := frameFunctions recipe stackSlots }
+      let markers :=
+        [bindEntryLayout entryLayout] ++
+          if needsFrame then
+            [bindScratchBindings fn.params.length scratchBindings]
+          else
+            []
+      let paramResult := lowerParams ctx slots.params entryLayout
+      let returnResult := lowerReturns ctx slots.returns paramResult.2
+      let bodyStart : State :=
+        { allocation :=
+            { env := AllocationSupport.functionEnv slots
+              nextSlot := state.nextSlot }
+          layout := returnResult.2 }
+      let entryCtx :=
+        Locals.Ctx.procEntryWithLayoutAndRetc
+          entryLayout fn.returns.length
+      lowerBlockOpen ctx fn.returns bodyStart fn.body =
+          some (body, bodyFinal) ∧
+        lowerReturnExprs ctx bodyFinal fn.returns =
+          some returnValues ∧
+        Locals.Block.compileOpen entryCtx { stmts := markers } =
+          some (markerCode, entryCtx) ∧
+        Locals.Block.compileOpen entryCtx
+            { stmts := paramResult.1 } =
+          some (paramCode, paramCtx) ∧
+        Locals.Block.compileOpen paramCtx
+            { stmts :=
+                (lowerReturns ctx slots.returns paramCtx.layout).1 } =
+          some (returnCode, returnCtx) ∧
+        Locals.Block.compileOpen returnCtx body =
+          some (bodyCode, bodyCtx) ∧
+        Locals.ExprSeq.compileCode bodyCtx 0 returnValues =
+          some returnValueCode ∧
+        bodyCtx.cleanupToPreserving? fn.returns.length 0 =
+          some cleanup ∧
+        lowerProc.name = fn.name ∧
+        lowerProc.argc =
+          fn.params.length + (if needsFrame then 1 else 0) ∧
+        lowerProc.retc = fn.returns.length ∧
+        lowerProc.body.stmts =
+          markerCode ++ paramCode ++ returnCode ++ bodyCode ++
+            Locals.codeStmt returnValueCode ++ Locals.codeStmt cleanup := by
+  obtain
+      ⟨slots, body, bodyFinal, returnValues, hLookup, hComponents⟩ :=
+    lowerFunction?_components hLower
+  dsimp only at hComponents
+  rcases hComponents with
+    ⟨hBody, hReturnValues, hProc, _hFinal⟩
+  let root := ScopeId.function fn.name
+  let scratchBindings :=
+    scratchBindingsForRoot recipe stackSlots root
+  let needsFrame := !scratchBindings.isEmpty
+  let entryLayout :=
+    fn.params.reverse ++ if needsFrame then [frameName] else []
+  let ctx : Ctx :=
+    { functions := recipe.functionSlots
+      frameConfig? := frameConfig?
+      frameName := frameName
+      stackSlots := stackSlots
+      root := root
+      scratchBindings := scratchBindings
+      frameFunctions := frameFunctions recipe stackSlots }
+  let markers :=
+    [bindEntryLayout entryLayout] ++
+      if needsFrame then
+        [bindScratchBindings fn.params.length scratchBindings]
+      else
+        []
+  let paramResult := lowerParams ctx slots.params entryLayout
+  let returnResult := lowerReturns ctx slots.returns paramResult.2
+  let bodyStart : State :=
+    { allocation :=
+        { env := AllocationSupport.functionEnv slots
+          nextSlot := state.nextSlot }
+      layout := returnResult.2 }
+  let entryCtx :=
+    Locals.Ctx.procEntryWithLayoutAndRetc
+      entryLayout fn.returns.length
+  have hProc' :
+      proc =
+        { name := fn.name
+          argc := fn.params.length + if needsFrame then 1 else 0
+          retc := fn.returns.length
+          entryLayout := entryLayout
+          body :=
+            { stmts :=
+                markers ++ paramResult.1 ++ returnResult.1 ++
+                  body.stmts ++ [.exprs returnValues] } } := by
+    simpa [root, scratchBindings, needsFrame, entryLayout, ctx,
+      markers, paramResult, returnResult, bodyStart,
+      List.append_assoc] using hProc
+  obtain ⟨compiledBody, hPreserving, hLowerProc⟩ :=
+    Locals.Proc.toExpressions?_components hCompile
+  obtain ⟨fullCode, fullFinal, hOpen, hFinish⟩ :=
+    Locals.Block.compileToPreserving_components hPreserving
+  have hOpen' :
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              markers ++
+                (paramResult.1 ++
+                  (returnResult.1 ++
+                    (body.stmts ++ [.exprs returnValues]))) } =
+        some (fullCode, fullFinal) := by
+    rw [hProc'] at hOpen
+    simpa [entryCtx, List.append_assoc] using hOpen
+  obtain
+      ⟨markerCode, afterMarkers, afterMarkerCode,
+        hMarkers, hAfterMarkers, hFullShape⟩ :=
+    Locals.Block.compileOpen_append_components hOpen'
+  have hMarkerShape :=
+    entryMarkers_compileOpen
+      (localsCtx := entryCtx) (entryLayout := entryLayout)
+      (baseDepth := fn.params.length)
+      (scratchBindings := scratchBindings)
+      (needsFrame := needsFrame)
+  have hAfterMarkersEq : afterMarkers = entryCtx := by
+    rw [hMarkerShape] at hMarkers
+    exact (congrArg Prod.snd (Option.some.inj hMarkers)).symm
+  subst afterMarkers
+  obtain
+      ⟨paramCode, paramCtx, afterParamCode,
+        hParam, hAfterParam, hMarkerRestShape⟩ :=
+    Locals.Block.compileOpen_append_components hAfterMarkers
+  have hParamLayout :=
+    lowerParams_compileOpen_final_layout
+      (ctx := ctx) (pending := slots.params) hParam
+  have hAfterParam' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              returnResult.1 ++
+                (body.stmts ++ [.exprs returnValues]) } =
+        some (afterParamCode, fullFinal) := by
+    simpa [List.append_assoc] using hAfterParam
+  obtain
+      ⟨returnCode, returnCtx, afterReturnCode,
+        hReturn, hAfterReturn, hParamRestShape⟩ :=
+    Locals.Block.compileOpen_append_components hAfterParam'
+  have hReturn' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              (lowerReturns ctx slots.returns paramCtx.layout).1 } =
+        some (returnCode, returnCtx) := by
+    simpa [returnResult, hParamLayout] using hReturn
+  obtain
+      ⟨bodyCode, bodyCtx, returnStmtCode,
+        hBodyCompile, hReturnCompile, hReturnRestShape⟩ :=
+    Locals.Block.compileOpen_append_components hAfterReturn
+  have hReturnSingle :=
+    Locals.Block.compileOpen_single_components hReturnCompile
+  cases hReturnValueCode :
+      Locals.ExprSeq.compileCode bodyCtx 0 returnValues with
+  | none =>
+      simp [Locals.Stmt.compile, hReturnValueCode] at hReturnSingle
+  | some returnValueCode =>
+      simp [Locals.Stmt.compile, hReturnValueCode] at hReturnSingle
+      rcases hReturnSingle with ⟨hReturnStmtCode, hFullFinal⟩
+      subst returnStmtCode
+      subst fullFinal
+      have hMarkerCode : markerCode =
+          [Expressions.Stmt.code
+            [Structured.BasicInstr.bindLocals 0 entryLayout]] ++
+            if needsFrame then
+              [Expressions.Stmt.code
+                (AllocationSupport.bindScratchBindingsCode
+                  fn.params.length scratchBindings)]
+            else
+              [] := by
+        rw [hMarkerShape] at hMarkers
+        exact (congrArg Prod.fst (Option.some.inj hMarkers)).symm
+      have hCodeShape :
+          fullCode =
+            markerCode ++ paramCode ++ returnCode ++ bodyCode ++
+              Locals.codeStmt returnValueCode := by
+        rw [hFullShape, hMarkerRestShape, hParamRestShape,
+          hReturnRestShape]
+        simp [List.append_assoc]
+      have hProcRetc : proc.retc = fn.returns.length :=
+        congrArg Locals.Proc.retc hProc'
+      rw [hProcRetc] at hFinish
+      cases hCleanup :
+          bodyCtx.cleanupToPreserving? fn.returns.length 0 with
+      | none =>
+          simp [Locals.finishToPreserving, hCleanup] at hFinish
+      | some cleanup =>
+          have hCompiledBody :
+              compiledBody.stmts =
+                fullCode ++ Locals.codeStmt cleanup := by
+            have hBlockEq :
+                ({ stmts :=
+                    fullCode ++ Locals.codeStmt cleanup } :
+                  Expressions.Block) =
+                  compiledBody :=
+              Option.some.inj
+                (by
+                  simpa [Locals.finishToPreserving, hCleanup] using hFinish)
+            exact (congrArg Expressions.Block.stmts hBlockEq).symm
+          have hLowerName : lowerProc.name = proc.name := by
+            simpa [hLowerProc]
+          have hLowerArgc : lowerProc.argc = proc.argc := by
+            simpa [hLowerProc]
+          have hLowerRetc : lowerProc.retc = proc.retc := by
+            simpa [hLowerProc]
+          have hLowerBody : lowerProc.body = compiledBody := by
+            simpa [hLowerProc]
+          refine
+            ⟨slots, body, bodyFinal, returnValues,
+              markerCode, paramCode, paramCtx, returnCode, returnCtx,
+              bodyCode, bodyCtx, returnValueCode, cleanup,
+              hLookup, ?_⟩
+          dsimp only
+          refine
+            ⟨?_, ?_, hMarkers, hParam, hReturn',
+              ?_, hReturnValueCode, hCleanup, ?_, ?_, ?_, ?_⟩
+          · simpa [root, scratchBindings, needsFrame, entryLayout, ctx,
+              paramResult, returnResult, bodyStart] using hBody
+          · simpa [root, scratchBindings, needsFrame, entryLayout, ctx,
+              paramResult, returnResult, bodyStart] using hReturnValues
+          · cases body
+            exact hBodyCompile
+          · exact hLowerName.trans (congrArg Locals.Proc.name hProc')
+          · exact hLowerArgc.trans (congrArg Locals.Proc.argc hProc')
+          · exact hLowerRetc.trans (congrArg Locals.Proc.retc hProc')
+          · rw [hLowerBody, hCompiledBody, hCodeShape]
+
+/--
 State-threaded function-list lowering preserves source function lookup and
 returns the actual `lowerFunction?` equation for the selected function.
 -/
@@ -2611,6 +2874,45 @@ theorem lowerFunctions?_find_components
                 exact
                   ⟨before, after, proc, hSelected, by simp [hMember],
                     hProcName⟩
+
+/--
+Source function lookup through the real function-list lowerer and Locals
+procedure compiler recovers the selected compiled procedure.
+-/
+theorem lowerFunctions?_find_compiled_components
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (name : Name)
+    {state final : AllocationSupport.CompileState}
+    {functions : List FunDef}
+    {procs : List Locals.Proc}
+    {lowerProcs : List Expressions.Proc}
+    {fn : FunDef}
+    (hLower :
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+          state functions =
+        some (procs, final))
+    (hCompile :
+      Locals.ProcList.toExpressions? procs =
+        some lowerProcs)
+    (hFind :
+      Source.FunList.find? name functions = some fn) :
+    ∃ before after proc lowerProc,
+      lowerFunction? recipe stackSlots frameName frameConfig? before fn =
+          some (proc, after) ∧
+        proc.toExpressions? = some lowerProc ∧
+        lowerProc ∈ lowerProcs ∧
+        lowerProc.name = name := by
+  obtain ⟨before, after, proc, hSelected, hMember, hProcName⟩ :=
+    lowerFunctions?_find_components
+      recipe stackSlots frameName frameConfig? name hLower hFind
+  obtain ⟨lowerProc, hProcCompile, hLowerMember⟩ :=
+    Locals.ProcList.toExpressions?_member_components hCompile hMember
+  exact
+    ⟨before, after, proc, lowerProc,
+      hSelected, hProcCompile, hLowerMember,
+      (Locals.Proc.toExpressions?_name hProcCompile).trans hProcName⟩
 
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)

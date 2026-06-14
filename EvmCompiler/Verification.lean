@@ -297,7 +297,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_components
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_toExpressions?_body_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_components
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_components
 #check EvmCompiler.Locals.Proc.toExpressions?_name
 #check EvmCompiler.Locals.Proc.toExpressions?_components
 #check EvmCompiler.Locals.Block.compileToPreserving_components

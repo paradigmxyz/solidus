@@ -29249,3 +29249,24 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
   semantics.
 - Added `LiveDefined.assignMany_preserves` for the source-side invariant after
   successful return assignment.
+## 2026-06-13 compaction-resume
+
+Resumed the end-to-end Yul observer proof after context compaction. The current boundary is the pass-owned Functions allocation artifact bridge: verify `lowerFunctions?_find_compiled_components`, register the new callee body decomposition and lookup theorems in the verification roots, run focused/full gates, checkpoint, then continue the allocator-aware internal-call theorem without exposing generated-code premises.
+
+## 2026-06-13 — compiled callee artifact boundary
+
+- Added `lowerFunction?_toExpressions?_body_components`: successful real
+  function lowering and Locals procedure compilation expose entry markers,
+  parameter and return preludes, lowered body code, return-value evaluation,
+  and preserving cleanup as one pass-owned decomposition.
+- Added `lowerFunctions?_find_compiled_components`: source function lookup
+  through the real function-list lowerer recovers the corresponding compiled
+  Expressions procedure and its lowering equations.
+- These theorems remove generated callee-body premises from the next observer
+  call theorem; recursive execution remains owned by the Functions observer
+  boundary rather than by `Yul.ObserverPreservation` or `Yul.EndToEnd`.
+- Validation: focused `EvmCompiler.Functions.AllocationLowering` passed 1,132
+  jobs; full `EvmCompiler.Verification` passed 1,208 jobs; architecture
+  dependency guard, touched-file hole/unsafe scan, `git diff --check`, and the
+  resource-observer axiom smoke pass. The new declarations use only
+  `propext`, `Classical.choice`, and `Quot.sound`.
