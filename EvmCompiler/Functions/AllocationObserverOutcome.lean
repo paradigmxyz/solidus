@@ -994,6 +994,52 @@ theorem cont_of_invariant
 
 end NonregularStmtRuntimeForward
 
+namespace NonregularStmtResourceForward
+
+/--
+Change the regular continuation environment carried by a resource-indexed
+abrupt statement result.
+-/
+theorem reindex_regularLive
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {returns beforeLive afterLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      NonregularStmtResourceForward contract resource allocatorDepth transcript
+        plan (outcomeLive returns beforeLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+        targetProgram target compiled sourceOutcome targetOutcome stmtCtx) :
+    NonregularStmtResourceForward contract resource allocatorDepth transcript
+      plan (outcomeLive returns afterLive sourceCtx sourceOutcome.mode)
+      frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+      targetProgram target compiled sourceOutcome targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode,
+      AllocationObserverOutcome.reindex_outcomeLive hRel hMode,
+      hSame, hEffect⟩
+
+end NonregularStmtResourceForward
+
 namespace BlockRuntimeForward
 
 theorem nil
@@ -1142,6 +1188,155 @@ theorem cons_nonregular
       hRel, hSame, hEffect⟩
 
 end BlockRuntimeForward
+
+namespace BlockResourceForward
+
+theorem nil
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    BlockResourceForward contract resource allocatorDepth transcript plan live
+      frameBase mode mode sourceProgram sourceCtx { stmts := [] } source
+      targetProgram { stmts := [] } target
+      (Functions.Source.Effectful.Outcome.regular source)
+      (Structured.EffectSemantics.Outcome.regular target) sourceCtx := by
+  exact
+    ⟨1, 1,
+      by simp [Functions.Source.Effectful.Block.runOpen],
+      Structured.EffectSemantics.Block.Eval.nil,
+      ActivationOutcomeRel.regular hInvariant.activation.state,
+      SameFrame.refl mode,
+      Frame.ResourceMode.OutcomeEffect.of_activation
+        (Frame.ResourceMode.ActivationEffect.refl hInvariant.ready)⟩
+
+theorem cons_regular
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {midState : AllocationLowering.State}
+    {midLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {midLive finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode midMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {source sourceMid : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hHead :
+      AllocationObserverStatement.Sequence.RegularStmtResourceInvariantForward
+        contract resource allocatorDepth transcript lowerCtx midState midLocals
+        plan midLive frameBase initialMode midMode sourceProgram sourceCtx stmt
+        source targetProgram target compiledHead sourceMid targetMid midCtx)
+    (hTail :
+      BlockResourceForward contract resource allocatorDepth transcript plan
+        finalLive frameBase midMode finalMode sourceProgram midCtx
+        { stmts := rest } sourceMid targetProgram
+        { stmts := compiledTail } targetMid sourceOutcome targetOutcome
+        finalCtx) :
+    BlockResourceForward contract resource allocatorDepth transcript plan
+      finalLive frameBase initialMode finalMode sourceProgram sourceCtx
+      { stmts := stmt :: rest } source targetProgram
+      { stmts := compiledHead ++ compiledTail } target sourceOutcome
+      targetOutcome finalCtx := by
+  rcases hHead with
+    ⟨_headSourceFuel, _headTargetFuel, hHeadSource, hHeadTarget,
+      _hHeadInvariant, hHeadSame, hHeadEffect⟩
+  rcases hTail with
+    ⟨_tailSourceFuel, _tailTargetFuel, hTailSource, hTailTarget,
+      hTailRel, hTailSame, hTailEffect⟩
+  obtain ⟨sourceFuel, hSourceRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hHeadSource hTailSource
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hHeadTarget hTailTarget
+  exact
+    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailRel,
+      hHeadSame.trans hTailSame,
+      Frame.ResourceMode.OutcomeEffect.prepend_activation
+        hHeadEffect hHeadSame hTailEffect⟩
+
+theorem cons_nonregular
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hHead :
+      NonregularStmtResourceForward contract resource allocatorDepth transcript
+        plan finalLive frameBase initialMode finalMode sourceProgram sourceCtx
+        stmt source targetProgram target compiledHead sourceOutcome
+        targetOutcome stmtCtx) :
+    BlockResourceForward contract resource allocatorDepth transcript plan
+      finalLive frameBase initialMode finalMode sourceProgram sourceCtx
+      { stmts := stmt :: rest } source targetProgram
+      { stmts := compiledHead ++ compiledTail } target sourceOutcome
+      targetOutcome sourceCtx := by
+  rcases hHead with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hSourceMode, hRel,
+      hSame, hEffect⟩
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hRel.target_nonregular hSourceMode
+  exact
+    ⟨sourceFuel + 1, targetFuel,
+      Functions.Source.Effectful.Block.runOpen_cons_nonregular
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        sourceProgram hSource hSourceMode,
+      Structured.EffectSemantics.Block.Eval.append_nonregular
+        hTarget hTargetMode,
+      hRel, hSame, hEffect⟩
+
+end BlockResourceForward
 
 /--
 Every source control destination visible at a recursive statement boundary is
@@ -2182,6 +2377,129 @@ theorem of_transport
 
 end DestinationRuntimeInvariant
 
+namespace DestinationResourceInvariant
+
+theorem available
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    (destination :
+      ControlDestination lowerCtx currentState currentPlan currentLive
+        currentMode)
+    (sourceLive : List Functions.Name)
+    (source :
+      kind.sourceScope? sourceCtx = some sourceLive)
+    (sourceEquivalent :
+      ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
+    (target :
+      kind.targetDepth? currentLocals =
+        some destination.locals.layout.length)
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (invariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx destination.state
+        destination.locals destination.plan destination.live frameBase
+        destination.mode sourceFinal targetFinal) :
+    DestinationResourceInvariant
+      (contract := contract) (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (.available destination sourceLive source sourceEquivalent target)
+      sourceFinal targetFinal :=
+  by
+    exact
+      ⟨destination, sourceLive, source, sourceEquivalent, target, rfl,
+        invariant⟩
+
+/--
+Forget the current recursive statement context after a resource-indexed
+transported binding reaches its unchanged canonical destination.
+-/
+theorem of_transport
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState nextState : AllocationLowering.State}
+    {currentLocals nextLocals : Locals.Ctx}
+    {currentPlan nextPlan : Locals.Allocation.Plan}
+    {currentLive nextLive : List Functions.Name}
+    {currentMode nextMode : ActivationMode}
+    {sourceCtx nextSourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hSourceControl : SameControl sourceCtx nextSourceCtx)
+    (hLocalsControl : Locals.Ctx.SameControl currentLocals nextLocals)
+    (hState :
+      AllocationLowering.StateExtends currentLive currentState nextState)
+    (hLive :
+      ∀ name, name ∈ currentLive → name ∈ nextLive)
+    (hMode : SameFrame currentMode nextMode)
+    (hInvariant :
+      DestinationResourceInvariant
+        (contract := contract) (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (ControlBinding.transport
+          (currentPlan := currentPlan) (nextPlan := nextPlan)
+          binding hSourceControl hLocalsControl hState hLive hMode)
+        sourceFinal targetFinal) :
+    DestinationResourceInvariant
+      (contract := contract) (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      binding sourceFinal targetFinal := by
+  obtain
+    ⟨transportedDestination, transportedSourceLive, transportedSource,
+      transportedEquivalent, transportedTarget, hBinding,
+      hDestinationInvariant⟩ :=
+    hInvariant
+  cases kind with
+  | brk =>
+      cases binding with
+      | unavailable _ _ =>
+          simp [ControlBinding.transport] at hBinding
+      | available destination sourceLive source sourceEquivalent target =>
+          have hDestination :
+              destination.transport hState hLive hMode =
+                transportedDestination := by
+            injection hBinding
+          subst transportedDestination
+          exact
+            available destination sourceLive source sourceEquivalent target
+              (by
+                simpa [ControlDestination.transport] using
+                  hDestinationInvariant)
+  | cont =>
+      cases binding with
+      | unavailable _ _ =>
+          simp [ControlBinding.transport] at hBinding
+      | available destination sourceLive source sourceEquivalent target =>
+          have hDestination :
+              destination.transport hState hLive hMode =
+                transportedDestination := by
+            injection hBinding
+          subst transportedDestination
+          exact
+            available destination sourceLive source sourceEquivalent target
+              (by
+                simpa [ControlDestination.transport] using
+                  hDestinationInvariant)
+
+end DestinationResourceInvariant
+
 end ControlBinding
 
 /--
@@ -2882,6 +3200,147 @@ theorem toResource
       exact .nonregular sourceNonregular forward.toResource
 
 end BlockRuntimeResult
+
+namespace BlockResourceResult
+
+theorem nil
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {returns live : List Functions.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerState localsCtx plan
+        live frameBase mode source target) :
+    BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+      lowerState localsCtx plan returns live frameBase mode sourceProgram
+      sourceCtx { stmts := [] } source targetProgram { stmts := [] } target
+      (Functions.Source.Effectful.Outcome.regular source)
+      (Structured.EffectSemantics.Outcome.regular target) sourceCtx :=
+  .regular
+    (AllocationObserverStatement.Sequence.RegularBlockResourceInvariantForward.nil
+      hInvariant)
+    (SameControl.refl sourceCtx)
+
+theorem cons_regular
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {midState finalState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {returns midLive finalLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode midMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {source sourceMid : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hHead :
+      AllocationObserverStatement.Sequence.RegularStmtResourceInvariantForward
+        contract resource allocatorDepth transcript lowerCtx midState
+        midLocals plan midLive frameBase initialMode midMode sourceProgram
+        sourceCtx stmt source targetProgram target compiledHead sourceMid
+        targetMid midCtx)
+    (hControl : SameControl sourceCtx midCtx)
+    (hTail :
+      BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+        finalState finalLocals plan returns finalLive frameBase midMode
+        sourceProgram midCtx { stmts := rest } sourceMid targetProgram
+        { stmts := compiledTail } targetMid sourceOutcome targetOutcome
+        finalCtx) :
+    BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+      finalState finalLocals plan returns finalLive frameBase initialMode
+      sourceProgram sourceCtx { stmts := stmt :: rest } source targetProgram
+      { stmts := compiledHead ++ compiledTail } target sourceOutcome
+      targetOutcome finalCtx := by
+  cases hTail with
+  | regular hTailForward hTailControl =>
+      exact
+        .regular
+          (AllocationObserverStatement.Sequence.RegularBlockResourceInvariantForward.cons_regular
+            hHead hTailForward)
+          (hControl.trans hTailControl)
+  | nonregular hMode hTailForward =>
+      have hLive :=
+        SameControl.outcomeLive_eq_of_nonregular
+          (returns := returns) (regularLive := finalLive)
+          hControl hMode
+      rw [← hLive] at hTailForward
+      exact
+        .nonregular hMode
+          (BlockResourceForward.cons_regular hHead hTailForward)
+
+theorem cons_nonregular
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {finalState : AllocationLowering.State}
+    {finalLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {returns finalLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hHead :
+      NonregularStmtResourceForward contract resource allocatorDepth transcript
+        plan (outcomeLive returns finalLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+        targetProgram target compiledHead sourceOutcome targetOutcome
+        stmtCtx) :
+    BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+      finalState finalLocals plan returns finalLive frameBase initialMode
+      sourceProgram sourceCtx { stmts := stmt :: rest } source targetProgram
+      { stmts := compiledHead ++ compiledTail } target sourceOutcome
+      targetOutcome sourceCtx := by
+  have hForward := hHead
+  rcases hHead with
+    ⟨_sourceFuel, _targetFuel, _hSource, _hTarget, hMode,
+      _hRel, _hSame, _hEffect⟩
+  exact
+    .nonregular hMode
+      (BlockResourceForward.cons_nonregular hForward)
+
+end BlockResourceResult
 
 namespace BlockRuntimeResult
 

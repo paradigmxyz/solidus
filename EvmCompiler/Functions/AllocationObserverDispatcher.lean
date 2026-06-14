@@ -659,6 +659,130 @@ theorem letOfSafeRun
 end HeadResult
 
 /--
+One fully dispatched statement under the compiler-selected resource mode.
+
+This is the resource-indexed counterpart of `HeadResult`; it retains the same
+exact compiler cursor and source-scope transport and changes only the
+pass-owned semantic result.
+-/
+structure ResourceHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx)
+    (afterState : AllocationLowering.State)
+    (afterLocals : Locals.Ctx)
+    (headCode : List Expressions.Stmt)
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals) : Prop where
+  compiled : cursor.compiled = headCode ++ tail.compiled
+  tailPlan : tail.plan = cursor.plan
+  tailFinalState : tail.finalState = cursor.finalState
+  tailFinalLocals : tail.finalLocals = cursor.finalLocals
+  runtime :
+    ∃ targetOutcome,
+      AllocationObserverOutcome.StmtResourceResult
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx afterState afterLocals cursor.plan root.returns
+        (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
+        sourceCtx stmt source expressions.toStructured target
+        (Expressions.StmtList.toStructured headCode)
+        sourceOutcome targetOutcome finalCtx
+  regularTransport :
+    sourceOutcome.mode = .regular →
+      AllocationObserverForward.BodyCursor.StepTransport
+        lowerState afterState localsCtx afterLocals live stmt
+  regularScope :
+    sourceOutcome.mode = .regular →
+      ∀ name,
+        name ∈ finalCtx.scope ↔
+          name ∈ Functions.Scope.Stmt.outEnv live stmt
+
+namespace HeadResult
+
+/-- Lift an existing scratch-backed head result into the resource API. -/
+theorem toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {headCode : List Expressions.Stmt}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx}
+    {tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals}
+    (hHead :
+      HeadResult cursor afterState afterLocals headCode tail
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome)) :
+    ResourceHeadResult cursor afterState afterLocals headCode tail
+      (resource := .scratch config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome) := by
+  obtain ⟨targetOutcome, hRuntime⟩ := hHead.runtime
+  exact
+    { compiled := hHead.compiled
+      tailPlan := hHead.tailPlan
+      tailFinalState := hHead.tailFinalState
+      tailFinalLocals := hHead.tailFinalLocals
+      runtime := ⟨targetOutcome, hRuntime.toResource⟩
+      regularTransport := hHead.regularTransport
+      regularScope := hHead.regularScope }
+
+end HeadResult
+
+/--
 All semantic and static facts threaded by the canonical source-fuel
 statement/block dispatcher.
 
@@ -1168,6 +1292,207 @@ theorem of_no_control
               exact False.elim (hCont sourceFinal hOutcome) }⟩ }
 
 end ControlledHeadResult
+
+/--
+One resource-indexed dispatched statement whose exact target outcome is
+shared by the statement theorem and canonical control-destination evidence.
+-/
+structure ResourceControlledHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (afterState : AllocationLowering.State)
+    (afterLocals : Locals.Ctx)
+    (headCode : List Expressions.Stmt)
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals) : Prop where
+  head :
+    ResourceHeadResult cursor afterState afterLocals headCode tail
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome)
+  runtime :
+    ∃ targetOutcome,
+      AllocationObserverOutcome.StmtResourceResult
+          program.memoryContract resource allocatorDepth transcript
+          root.lowerCtx afterState afterLocals cursor.plan root.returns
+          (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
+          sourceCtx stmt source expressions.toStructured target
+          (Expressions.StmtList.toStructured headCode)
+          sourceOutcome targetOutcome finalCtx ∧
+        ResourceControlOutcomeForward cursor boundary sourceOutcome
+          targetOutcome
+
+namespace ControlledHeadResult
+
+/-- Lift an existing scratch-backed controlled head into the resource API. -/
+theorem toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {headCode : List Expressions.Stmt}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx}
+    {boundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)}
+    {tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals}
+    (hHead :
+      ControlledHeadResult cursor boundary afterState afterLocals headCode tail
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome)) :
+    ResourceControlledHeadResult cursor boundary.toResource afterState
+      afterLocals headCode tail
+      (resource := .scratch config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome) := by
+  obtain ⟨targetOutcome, hRuntime, hControl⟩ := hHead.runtime
+  exact
+    { head := hHead.head.toResource
+      runtime :=
+        ⟨targetOutcome, hRuntime.toResource, hControl.toResource⟩ }
+
+end ControlledHeadResult
+
+namespace ResourceControlledHeadResult
+
+/--
+Lift a resource-indexed head result when its source outcome cannot be
+`break` or `continue`.
+-/
+theorem of_no_control
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {headCode : List Expressions.Stmt}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals)
+    (head :
+      ResourceHeadResult cursor afterState afterLocals headCode tail
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome))
+    (hBrk :
+      ∀ sourceFinal,
+        sourceOutcome ≠ Functions.Source.Effectful.Outcome.brk sourceFinal)
+    (hCont :
+      ∀ sourceFinal,
+        sourceOutcome ≠ Functions.Source.Effectful.Outcome.cont sourceFinal) :
+    ResourceControlledHeadResult cursor boundary afterState afterLocals
+      headCode tail
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome) := by
+  obtain ⟨targetOutcome, hRuntime⟩ := head.runtime
+  exact
+    { head := head
+      runtime :=
+        ⟨targetOutcome, hRuntime,
+          { brk := by
+              intro sourceFinal hOutcome
+              exact False.elim (hBrk sourceFinal hOutcome)
+            cont := by
+              intro sourceFinal hOutcome
+              exact False.elim (hCont sourceFinal hOutcome) }⟩ }
+
+end ResourceControlledHeadResult
 
 /--
 One recursively dispatched open block.
@@ -6714,6 +7039,430 @@ theorem consBlockResult
             False.elim (hMode hRegular) }
 
 end Boundary
+
+namespace ResourceBoundary
+
+/--
+Transport a resource-indexed dispatcher boundary across one regular
+statement.
+-/
+def afterRegular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {beforeLive afterLive : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase targetFuel : Nat}
+    {transcript : Trace}
+    {beforeMode afterMode : ActivationMode}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    {beforeSource afterSource :
+      Functions.ObserverSemantics.State transcript}
+    {beforeTarget afterTarget :
+      Structured.ObserverSemantics.State transcript}
+    {headCode : List Structured.Stmt}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope beforeLive
+        { stmts := stmt :: rest } beforeState beforeLocals)
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
+        { stmts := rest } afterState afterLocals)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := beforeMode) (sourceCtx := beforeCtx)
+        (source := beforeSource) (target := beforeTarget))
+    (hAfterLive :
+      afterLive = Functions.Scope.Stmt.outEnv beforeLive stmt)
+    (hStep :
+      AllocationObserverForward.BodyCursor.StepTransport
+        beforeState afterState beforeLocals afterLocals beforeLive stmt)
+    (hSourceControl :
+      AllocationObserverOutcome.SameControl beforeCtx afterCtx)
+    (hSameFrame : SameFrame beforeMode afterMode)
+    (hSourceScope :
+      ∀ name, name ∈ afterCtx.scope ↔ name ∈ afterLive)
+    (hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        expressions.toStructured targetFuel { stmts := headCode } beforeTarget
+          (Structured.EffectSemantics.Outcome.regular afterTarget))
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        afterState afterLocals tail.plan afterLive frameBase afterMode
+        afterSource afterTarget) :
+    ResourceBoundary tail (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := afterMode) (sourceCtx := afterCtx)
+      (source := afterSource) (target := afterTarget) :=
+  { sourceScope := hSourceScope
+    control := by
+      rw [hAfterLive]
+      exact
+        hSourceControl.controlScopesWithin_outEnv hBoundary.control
+    destinations :=
+      AllocationObserverOutcome.ControlDestinations.transport
+        hBoundary.destinations hSourceControl hStep.locals hStep.state
+        (by
+          intro name hName
+          rw [hAfterLive]
+          exact hStep.live name hName)
+        hSameFrame
+    returnFrame := by
+      intro functionScope hLeave
+      have hBeforeLeave :
+          beforeCtx.leaveScope? = some functionScope :=
+        hSourceControl.leaveScope.trans hLeave
+      have hReturns :=
+        Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+          hTarget
+          (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+      simp only [Structured.ObserverSemantics.Outcome.regular_state] at hReturns
+      rw [hReturns]
+      exact hBoundary.returnFrame functionScope hBeforeLeave
+    leaveTarget := by
+      intro functionScope hLeave
+      have hBeforeLeave :
+          beforeCtx.leaveScope? = some functionScope :=
+        hSourceControl.leaveScope.trans hLeave
+      obtain ⟨hDepth, hRetc⟩ :=
+        hBoundary.leaveTarget functionScope hBeforeLeave
+      constructor
+      · rw [← hStep.locals.leaveDepth]
+        exact hDepth
+      · rw [← hStep.locals.leaveRetc]
+        exact hRetc
+    budget := hBoundary.budget
+    invariant := hInvariant }
+
+/--
+Transport resource-indexed abrupt-destination evidence through one regular
+statement prefix.
+-/
+theorem ResourceControlOutcomeForward.of_afterRegular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {beforeLive afterLive : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase targetFuel : Nat}
+    {transcript : Trace}
+    {beforeMode afterMode : ActivationMode}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    {beforeSource afterSource :
+      Functions.ObserverSemantics.State transcript}
+    {beforeTarget afterTarget :
+      Structured.ObserverSemantics.State transcript}
+    {headCode : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome (transcript := transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope beforeLive
+        { stmts := stmt :: rest } beforeState beforeLocals)
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
+        { stmts := rest } afterState afterLocals)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := beforeMode) (sourceCtx := beforeCtx)
+        (source := beforeSource) (target := beforeTarget))
+    (hAfterLive :
+      afterLive = Functions.Scope.Stmt.outEnv beforeLive stmt)
+    (hStep :
+      AllocationObserverForward.BodyCursor.StepTransport
+        beforeState afterState beforeLocals afterLocals beforeLive stmt)
+    (hSourceControl :
+      AllocationObserverOutcome.SameControl beforeCtx afterCtx)
+    (hSameFrame : SameFrame beforeMode afterMode)
+    (hSourceScope :
+      ∀ name, name ∈ afterCtx.scope ↔ name ∈ afterLive)
+    (hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        expressions.toStructured targetFuel { stmts := headCode } beforeTarget
+          (Structured.EffectSemantics.Outcome.regular afterTarget))
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        afterState afterLocals tail.plan afterLive frameBase afterMode
+        afterSource afterTarget)
+    (hTail :
+      ResourceControlOutcomeForward tail
+        (hBoundary.afterRegular cursor tail hAfterLive hStep hSourceControl
+          hSameFrame hSourceScope hTarget hInvariant)
+        sourceOutcome targetOutcome) :
+    ResourceControlOutcomeForward cursor hBoundary sourceOutcome
+      targetOutcome := by
+  constructor
+  · intro sourceFinal hOutcome
+    obtain ⟨targetFinal, hTargetOutcome, hDestination⟩ :=
+      hTail.brk sourceFinal hOutcome
+    refine ⟨targetFinal, hTargetOutcome, ?_⟩
+    exact
+      AllocationObserverOutcome.ControlBinding.DestinationResourceInvariant.of_transport
+        hBoundary.destinations.brk hSourceControl hStep.locals hStep.state
+        (by
+          intro name hName
+          rw [hAfterLive]
+          exact hStep.live name hName)
+        hSameFrame hDestination
+  · intro sourceFinal hOutcome
+    obtain ⟨targetFinal, hTargetOutcome, hDestination⟩ :=
+      hTail.cont sourceFinal hOutcome
+    refine ⟨targetFinal, hTargetOutcome, ?_⟩
+    exact
+      AllocationObserverOutcome.ControlBinding.DestinationResourceInvariant.of_transport
+        hBoundary.destinations.cont hSourceControl hStep.locals hStep.state
+        (by
+          intro name hName
+          rw [hAfterLive]
+          exact hStep.live name hName)
+        hSameFrame hDestination
+
+/-- The empty synchronized cursor satisfies the resource recursive result. -/
+theorem nilBlockResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := [] } lowerState localsCtx)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel { stmts := [] } source =
+        .ok (sourceOutcome, finalCtx)) :
+    ResourceBlockResult cursor hBoundary
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome) := by
+  cases sourceFuel with
+  | zero =>
+      simp [Functions.Source.Effectful.Block.runOpen,
+        Functions.Source.invalid, Structured.invalid] at hSource
+  | succ fuel =>
+      have hEq :
+          (Functions.Source.Effectful.Outcome.regular source, sourceCtx) =
+            (sourceOutcome, finalCtx) := by
+        simpa [Functions.Source.Effectful.Block.runOpen] using hSource
+      cases hEq
+      exact
+        { runtime :=
+            ⟨Structured.EffectSemantics.Outcome.regular target,
+              cursor.nilResourceResult hBoundary.invariant,
+              { brk := by
+                  intro sourceFinal hOutcome
+                  cases hOutcome
+                cont := by
+                  intro sourceFinal hOutcome
+                  cases hOutcome }⟩
+          regularScope := by
+            intro _ name
+            simpa [Functions.Scope.Block.outEnv,
+              Functions.Scope.StmtList.outEnv] using
+              hBoundary.sourceScope name }
+
+/--
+Compose one resource-indexed controlled head with recursive preservation of
+its exact tail.
+-/
+theorem consBlockResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx headCtx blockCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {headSourceOutcome blockSourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := stmt :: rest } lowerState localsCtx)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    {afterState : AllocationLowering.State}
+    {afterLocals : Locals.Ctx}
+    {headCode : List Expressions.Stmt}
+    (tail :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals)
+    (hHead :
+      ResourceControlledHeadResult cursor hBoundary afterState afterLocals
+        headCode tail
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := headCtx)
+        (source := source) (target := target)
+        (sourceOutcome := headSourceOutcome))
+    (hTail :
+      ∀ {sourceMid :
+            Functions.ObserverSemantics.State transcript}
+        {targetMid : Structured.ObserverSemantics.State transcript}
+        {midMode : ActivationMode},
+        AllocationObserverStatement.Sequence.RegularStmtResourceInvariantForward
+            program.memoryContract resource allocatorDepth transcript
+            root.lowerCtx afterState afterLocals cursor.plan
+            (Functions.Scope.Stmt.outEnv live stmt) frameBase mode midMode
+            program sourceCtx stmt source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceMid targetMid headCtx →
+        AllocationObserverOutcome.SameControl sourceCtx headCtx →
+        ∀ hTailBoundary :
+            ResourceBoundary tail
+              (resource := resource) (allocatorDepth := allocatorDepth)
+              (frameBase := frameBase) (mode := midMode)
+              (sourceCtx := headCtx) (source := sourceMid)
+              (target := targetMid),
+          ResourceBlockResult tail hTailBoundary
+            (resource := resource) (allocatorDepth := allocatorDepth)
+            (frameBase := frameBase) (mode := midMode)
+            (sourceCtx := headCtx) (finalCtx := blockCtx)
+            (source := sourceMid) (target := targetMid)
+            (sourceOutcome := blockSourceOutcome))
+    (hAbrupt :
+      headSourceOutcome.mode ≠ .regular →
+        blockSourceOutcome = headSourceOutcome ∧ blockCtx = sourceCtx) :
+    ResourceBlockResult cursor hBoundary
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := blockCtx)
+      (source := source) (target := target)
+      (sourceOutcome := blockSourceOutcome) := by
+  obtain ⟨headTargetOutcome, hHeadRuntime, hHeadControl⟩ := hHead.runtime
+  cases hHeadRuntime with
+  | @regular sourceMid targetMid midMode _ hForward hControl =>
+      have hForwardCopy := hForward
+      rcases hForward with
+        ⟨_sourceFuel, targetFuel, _hSource, hTarget,
+          hInvariant, hSameFrame, _hEffect⟩
+      have hTailInvariant :
+          AllocationObserverContext.ActivationResourceInvariant
+            resource program.memoryContract allocatorDepth root.lowerCtx
+            afterState afterLocals tail.plan
+            (Functions.Scope.Stmt.outEnv live stmt)
+            frameBase midMode sourceMid targetMid := by
+        rw [hHead.head.tailPlan]
+        exact hInvariant
+      let hTailBoundary :
+          ResourceBoundary tail
+            (resource := resource) (allocatorDepth := allocatorDepth)
+            (frameBase := frameBase) (mode := midMode)
+            (sourceCtx := headCtx) (source := sourceMid)
+            (target := targetMid) :=
+        hBoundary.afterRegular cursor tail rfl
+          (hHead.head.regularTransport rfl) hControl hSameFrame
+          (hHead.head.regularScope rfl) hTarget hTailInvariant
+      have hTailResult :=
+        hTail hForwardCopy hControl hTailBoundary
+      obtain ⟨tailTargetOutcome, hTailRuntime, hTailControl⟩ :=
+        hTailResult.runtime
+      have hBlockControl :
+          ResourceControlOutcomeForward cursor hBoundary blockSourceOutcome
+            tailTargetOutcome := by
+        exact
+          ResourceControlOutcomeForward.of_afterRegular cursor tail hBoundary
+            rfl (hHead.head.regularTransport rfl) hControl hSameFrame
+            (hHead.head.regularScope rfl) hTarget hTailInvariant hTailControl
+      exact
+        { runtime :=
+            ⟨tailTargetOutcome,
+              cursor.consRegularResourceResult tail hHead.head.tailPlan
+                hHead.head.tailFinalState hHead.head.tailFinalLocals
+                hHead.head.compiled hForwardCopy hControl hTailRuntime,
+              hBlockControl⟩
+          regularScope := by
+            intro hRegular name
+            simpa [Functions.Scope.Block.outEnv,
+              Functions.Scope.StmtList.outEnv] using
+              hTailResult.regularScope hRegular name }
+  | @nonregular sourceAbrupt targetAbrupt finalMode _ hForward =>
+      have hForwardCopy := hForward
+      rcases hForward with
+        ⟨_sourceFuel, _targetFuel, _hSource, _hTarget,
+          hMode, _hRel, _hSame, _hEffect⟩
+      obtain ⟨rfl, rfl⟩ := hAbrupt hMode
+      have hForwardFinal :=
+        AllocationObserverOutcome.NonregularStmtResourceForward.reindex_regularLive
+          (afterLive :=
+            Functions.Scope.Block.outEnv live { stmts := stmt :: rest })
+          hForwardCopy
+      exact
+        { runtime :=
+            ⟨headTargetOutcome,
+              cursor.consNonregularResourceResult hHead.head.compiled
+                hForwardFinal,
+              hHeadControl⟩
+          regularScope := fun hRegular =>
+            False.elim (hMode hRegular) }
+
+end ResourceBoundary
 end BodyCursor
 
 end AllocationObserverDispatcher

@@ -3706,6 +3706,186 @@ theorem CoreCursor.consNonregularRuntimeResult
   exact
     AllocationObserverOutcome.BlockRuntimeResult.cons_nonregular hHead
 
+/--
+Preserve the empty synchronized body cursor under the compiler-selected
+resource mode.
+-/
+theorem CoreCursor.nilResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := [] } lowerState localsCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode source target) :
+    AllocationObserverOutcome.BlockResourceResult
+      program.memoryContract resource allocatorDepth transcript
+      root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+      root.returns live frameBase mode program sourceCtx
+      { stmts := [] } source expressions.toStructured
+      { stmts :=
+          Expressions.StmtList.toStructured cursor.compiled }
+      target
+      (Functions.Source.Effectful.Outcome.regular source)
+      (Structured.EffectSemantics.Outcome.regular target)
+      sourceCtx := by
+  have hLower := cursor.lower
+  simp [AllocationLowering.lowerBlockOpen,
+    AllocationLowering.lowerStmtList] at hLower
+  obtain ⟨hLowered, hFinalState⟩ := hLower
+  have hCompile := cursor.compile
+  rw [← hLowered] at hCompile
+  simp [Locals.Block.compileOpen] at hCompile
+  obtain ⟨hCompiled, hFinalLocals⟩ := hCompile
+  simpa [hFinalState, hFinalLocals, hCompiled,
+    Expressions.StmtList.toStructured] using
+    (AllocationObserverOutcome.BlockResourceResult.nil hInvariant)
+
+/--
+Compose a resource-indexed regular statement result with its exact
+recursively preserved tail cursor.
+-/
+theorem CoreCursor.consRegularResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live afterLive finalLive : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {initialMode midMode : ActivationMode}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {source sourceMid :
+      Functions.ObserverSemantics.State transcript}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {headCode : List Expressions.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (tail :
+      CoreCursor root scope afterLive { stmts := rest }
+        afterState afterLocals)
+    (hTailPlan : tail.plan = cursor.plan)
+    (hTailFinalState : tail.finalState = cursor.finalState)
+    (hTailFinalLocals : tail.finalLocals = cursor.finalLocals)
+    (hCompiled : cursor.compiled = headCode ++ tail.compiled)
+    (hHead :
+      AllocationObserverStatement.Sequence.RegularStmtResourceInvariantForward
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx afterState afterLocals cursor.plan afterLive
+        frameBase initialMode midMode program sourceCtx stmt source
+        expressions.toStructured target
+        (Expressions.StmtList.toStructured headCode)
+        sourceMid targetMid midCtx)
+    (hControl : AllocationObserverOutcome.SameControl sourceCtx midCtx)
+    (hTail :
+      AllocationObserverOutcome.BlockResourceResult
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx tail.finalState tail.finalLocals tail.plan
+        root.returns finalLive frameBase midMode program midCtx
+        { stmts := rest } sourceMid expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured tail.compiled }
+        targetMid sourceOutcome targetOutcome finalCtx) :
+    AllocationObserverOutcome.BlockResourceResult
+      program.memoryContract resource allocatorDepth transcript
+      root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+      root.returns finalLive frameBase initialMode program sourceCtx
+      { stmts := stmt :: rest } source expressions.toStructured
+      { stmts :=
+          Expressions.StmtList.toStructured cursor.compiled }
+      target sourceOutcome targetOutcome finalCtx := by
+  rw [hTailPlan, hTailFinalState, hTailFinalLocals] at hTail
+  rw [hCompiled, Expressions.StmtList.toStructured_append]
+  exact
+    AllocationObserverOutcome.BlockResourceResult.cons_regular
+      hHead hControl hTail
+
+/--
+Compose a resource-indexed abrupt statement result with its statically
+compiled but dynamically unreachable tail.
+-/
+theorem CoreCursor.consNonregularResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live finalLive : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {initialMode finalMode : ActivationMode}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {headCode tailCode : List Expressions.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        beforeState beforeLocals)
+    (hCompiled : cursor.compiled = headCode ++ tailCode)
+    (hHead :
+      AllocationObserverOutcome.NonregularStmtResourceForward
+        program.memoryContract resource allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive
+          root.returns finalLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode program sourceCtx stmt source
+        expressions.toStructured target
+        (Expressions.StmtList.toStructured headCode)
+        sourceOutcome targetOutcome stmtCtx) :
+    AllocationObserverOutcome.BlockResourceResult
+      program.memoryContract resource allocatorDepth transcript
+      root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+      root.returns finalLive frameBase initialMode program sourceCtx
+      { stmts := stmt :: rest } source expressions.toStructured
+      { stmts :=
+          Expressions.StmtList.toStructured cursor.compiled }
+      target sourceOutcome targetOutcome sourceCtx := by
+  rw [hCompiled, Expressions.StmtList.toStructured_append]
+  exact
+    AllocationObserverOutcome.BlockResourceResult.cons_nonregular hHead
+
 /- Preserve one expression statement directly from a synchronized body cursor. -/
 theorem CoreCursor.exprRuntimeResult
     {allocation : Locals.Allocation.ProgramPlan}

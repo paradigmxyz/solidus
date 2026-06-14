@@ -5559,6 +5559,108 @@ def OutcomeEffect {transcript : Trace}
   | .scratch config =>
       Frame.OutcomeEffect config depth mode before after outcomeMode
 
+namespace ActivationEffect
+
+theorem refl {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat} {mode : ActivationMode}
+    {target : TargetState transcript}
+    (hReady : resource.Ready depth target) :
+    resource.ActivationEffect depth mode target target := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.ActivationEffect.refl hReady
+
+theorem trans {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat} {mode : ActivationMode}
+    {first second third : TargetState transcript}
+    (hFirst : resource.ActivationEffect depth mode first second)
+    (hSecond : resource.ActivationEffect depth mode second third) :
+    resource.ActivationEffect depth mode first third := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.ActivationEffect.trans hFirst hSecond
+
+theorem trans_of_sameFrame {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat}
+    {firstMode secondMode : ActivationMode}
+    {first second third : TargetState transcript}
+    (hFirst : resource.ActivationEffect depth firstMode first second)
+    (hSame : SameFrame firstMode secondMode)
+    (hSecond : resource.ActivationEffect depth secondMode second third) :
+    resource.ActivationEffect depth firstMode first third := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.ActivationEffect.trans_of_sameFrame hFirst hSame hSecond
+
+theorem mode_of_sameFrame {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect :
+      resource.ActivationEffect depth beforeMode before after)
+    (hSame : SameFrame beforeMode afterMode) :
+    resource.ActivationEffect depth afterMode before after := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.ActivationEffect.mode_of_sameFrame hEffect hSame
+
+end ActivationEffect
+
+namespace OutcomeEffect
+
+theorem of_activation {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect : resource.ActivationEffect depth mode before after) :
+    resource.OutcomeEffect depth mode before after outcomeMode := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.OutcomeEffect.of_activation hEffect
+
+theorem mode_of_sameFrame {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect :
+      resource.OutcomeEffect depth beforeMode before after outcomeMode)
+    (hSame : SameFrame beforeMode afterMode) :
+    resource.OutcomeEffect depth afterMode before after outcomeMode := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.OutcomeEffect.mode_of_sameFrame hEffect hSame
+
+theorem prepend_activation {transcript : Trace}
+    {resource : ResourceMode} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {first second third : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hFirst : resource.ActivationEffect depth beforeMode first second)
+    (hSame : SameFrame beforeMode afterMode)
+    (hSecond :
+      resource.OutcomeEffect depth afterMode second third outcomeMode) :
+    resource.OutcomeEffect depth beforeMode first third outcomeMode := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.OutcomeEffect.prepend_activation hFirst hSame hSecond
+
+end OutcomeEffect
+
 end ResourceMode
 
 theorem mstore_end_le_activeBytes

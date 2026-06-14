@@ -4419,6 +4419,55 @@ theorem if_false_of_components
 
 end RegularStmtRuntimeInvariantForward
 
+namespace RegularStmtResourceInvariantForward
+
+/--
+Transport a resource-indexed regular statement result across a lowering-state
+change that preserves the live allocation environment and concrete layout.
+-/
+theorem transport_lower_state
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    (hForward :
+      RegularStmtResourceInvariantForward
+        contract resource allocatorDepth transcript lowerCtx before
+        localsFinal plan afterLive frameBase beforeMode afterMode
+        sourceProgram sourceCtx stmt source targetProgram target compiled
+        sourceFinal targetFinal finalCtx)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    RegularStmtResourceInvariantForward
+      contract resource allocatorDepth transcript lowerCtx after localsFinal
+      plan afterLive frameBase beforeMode afterMode sourceProgram sourceCtx
+      stmt source targetProgram target compiled sourceFinal targetFinal
+      finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant,
+      hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      { hInvariant with
+        activation := hInvariant.activation.transport_state hEnv hLayout },
+      hSame, hEffect⟩
+
+end RegularStmtResourceInvariantForward
+
 namespace RegularStmtInvariantForward
 
 /--
@@ -4997,6 +5046,104 @@ theorem cons_regular
       hHeadEffect.trans_of_sameFrame hHeadMode hTailEffect⟩
 
 end RegularBlockRuntimeInvariantForward
+
+namespace RegularBlockResourceInvariantForward
+
+theorem nil
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    RegularBlockResourceInvariantForward
+      contract resource allocatorDepth transcript lowerCtx lowerState
+      localsCtx plan live frameBase mode mode sourceProgram sourceCtx
+      { stmts := [] } source targetProgram { stmts := [] } target
+      source target sourceCtx := by
+  exact
+    ⟨1, 1,
+      by simp [Functions.Source.Effectful.Block.runOpen],
+      Structured.EffectSemantics.Block.Eval.nil,
+      hInvariant, SameFrame.refl mode,
+      AllocationObserverRelation.Frame.ResourceMode.ActivationEffect.refl
+        hInvariant.ready⟩
+
+theorem cons_regular
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {midState finalState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {midLive finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode midMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {source sourceMid sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetMid targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    (hHead :
+      RegularStmtResourceInvariantForward
+        contract resource allocatorDepth transcript lowerCtx midState
+        midLocals plan midLive frameBase initialMode midMode
+        sourceProgram sourceCtx stmt source targetProgram target
+        compiledHead sourceMid targetMid midCtx)
+    (hTail :
+      RegularBlockResourceInvariantForward
+        contract resource allocatorDepth transcript lowerCtx finalState
+        finalLocals plan finalLive frameBase midMode finalMode
+        sourceProgram midCtx { stmts := rest } sourceMid targetProgram
+        { stmts := compiledTail } targetMid sourceFinal targetFinal
+        finalCtx) :
+    RegularBlockResourceInvariantForward
+      contract resource allocatorDepth transcript lowerCtx finalState
+      finalLocals plan finalLive frameBase initialMode finalMode
+      sourceProgram sourceCtx { stmts := stmt :: rest } source
+      targetProgram { stmts := compiledHead ++ compiledTail } target
+      sourceFinal targetFinal finalCtx := by
+  rcases hHead with
+    ⟨_headSourceFuel, _headTargetFuel,
+      hHeadSource, hHeadTarget, _hHeadInvariant, hHeadMode,
+      hHeadEffect⟩
+  rcases hTail with
+    ⟨_tailSourceFuel, _tailTargetFuel,
+      hTailSource, hTailTarget, hTailInvariant, hTailMode,
+      hTailEffect⟩
+  obtain ⟨sourceFuel, hSourceRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hHeadSource hTailSource
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hHeadTarget hTailTarget
+  exact
+    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant,
+      hHeadMode.trans hTailMode,
+      AllocationObserverRelation.Frame.ResourceMode.ActivationEffect.trans_of_sameFrame
+        hHeadEffect hHeadMode hTailEffect⟩
+
+end RegularBlockResourceInvariantForward
 
 namespace RegularBlockInvariantForward
 
