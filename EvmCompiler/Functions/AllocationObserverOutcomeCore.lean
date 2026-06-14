@@ -96,6 +96,51 @@ def BlockRuntimeForward
         target targetOutcome.state
 
 /--
+Outcome-indexed preservation for a lexically scoped source block while
+retaining the recursive allocator effect.
+
+Unlike `BlockRuntimeForward`, this interface records the canonical scoped
+source execution and therefore has no outgoing source context. It is the
+adjacent boundary consumed by loop bodies and posts after the statement pass
+has accounted for lexical cleanup.
+-/
+def ScopedBlockRuntimeForward
+    (contract : MemoryContract.Contract)
+    (config : Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name)
+    (frameBase : Nat)
+    (initialMode finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript))
+    (targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok sourceOutcome ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target targetOutcome ∧
+      ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
+        sourceOutcome targetOutcome ∧
+      SameFrame initialMode finalMode ∧
+      Frame.ActivationEffect config allocatorDepth initialMode
+        target targetOutcome.state
+
+/--
 The source-visible live set associated with a statement outcome.
 -/
 def outcomeLive

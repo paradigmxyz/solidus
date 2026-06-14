@@ -4343,6 +4343,47 @@ theorem target_isExit {transcript : Trace}
       simp [Structured.EffectSemantics.Outcome.IsExit,
         Structured.EffectSemantics.Outcome.halt]
 
+/--
+Activation representation is irrelevant after an activation exit.
+
+`leave` has already materialized exactly the returned values and a terminal
+halt exposes only shared state, so either relation may be re-indexed by any
+activation mode.
+-/
+theorem reframe_of_isExit {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {source :
+      Functions.ObserverSemantics.Outcome (SourceState transcript)}
+    {target :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract plan live stackOffset frameBase
+        beforeMode source target)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit source) :
+    ActivationOutcomeRel contract plan live stackOffset frameBase
+      afterMode source target := by
+  cases hRel with
+  | regular _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hExit
+  | brk _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.brk,
+        Locals.Source.Effectful.Outcome.brk] at hExit
+  | cont _ =>
+      simp [Functions.Source.Effectful.Outcome.IsExit,
+        Functions.Source.Effectful.Outcome.cont,
+        Locals.Source.Effectful.Outcome.cont] at hExit
+  | leave hState =>
+      exact .leave hState
+  | halt kind hState =>
+      exact .halt kind hState
+
 end ActivationOutcomeRel
 
 /--

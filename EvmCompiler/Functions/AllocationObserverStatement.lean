@@ -6759,6 +6759,80 @@ theorem ScopedBlockForward.finish_nonregular
               [Structured.Stmt.code cleanup] }
         target targetOutcome)
 
+/--
+Allocator-aware counterpart of `ScopedBlockForward.finish_nonregular`.
+
+Abrupt source and target outcomes skip the generated lexical cleanup, so the
+open-block frame relation and allocator effect pass through unchanged.
+-/
+theorem ScopedBlockRuntimeForward.finish_nonregular
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {outerLocals finalLocals : Locals.Ctx}
+    (hBody :
+      AllocationObserverOutcome.BlockRuntimeForward
+        contract config allocatorDepth transcript plan finalLive
+        frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceOutcome targetOutcome finalCtx)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hFinish :
+      Locals.finishScoped outerLocals finalLocals compiledBody =
+        some targetBlock) :
+    AllocationObserverOutcome.ScopedBlockRuntimeForward
+      contract config allocatorDepth transcript plan finalLive
+      frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+      source targetProgram
+      { stmts := Expressions.StmtList.toStructured targetBlock.stmts }
+      target sourceOutcome targetOutcome := by
+  rcases hBody with
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hRel,
+      hSame, hEffect⟩
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hRel.target_nonregular hMode
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen hMode
+  refine
+    ⟨sourceFuel, targetFuel, hSourceScoped, ?_, hRel, hSame, hEffect⟩
+  rw [hTargetShape]
+  simpa [Expressions.StmtList.toStructured_append,
+    Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using
+    (Structured.EffectSemantics.Block.Eval.append_nonregular
+      hTargetBody hTargetMode :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel
+        { stmts :=
+            Expressions.StmtList.toStructured compiledBody ++
+              [Structured.Stmt.code cleanup] }
+        target targetOutcome)
+
 end Sequence
 
 end AllocationObserverStatement
