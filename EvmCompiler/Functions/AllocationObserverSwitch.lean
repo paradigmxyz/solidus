@@ -552,12 +552,14 @@ theorem switch_some_of_components
     {targetProgram : Structured.Program}
     {lowerCtx : AllocationLowering.Ctx}
     {returns : List Functions.Name}
+    {current : Locals.Allocation.ScopeId}
+    {planning : AllocationSupport.PlanningState}
     {lowerState lowerFinal : AllocationLowering.State}
     {localsCtx localsFinal : Locals.Ctx}
-    {outerPlan bodyPlan : Locals.Allocation.Plan}
-    {outerLive bodyLive : List Locals.Name}
+    {outerPlan : Locals.Allocation.Plan}
+    {outerLive : List Locals.Name}
     {frameBase : Nat}
-    {outerMode bodyMode : ActivationMode}
+    {outerMode : ActivationMode}
     {scrutinee : Functions.Expr 1}
     {cases : List (Word × Functions.Block)}
     {defaultBody : Option Functions.Block}
@@ -568,6 +570,8 @@ theorem switch_some_of_components
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     {value : Word}
+    (hPlanningAllocation :
+      planning.allocation = lowerState.allocation)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
           contract globalFrameWords =
@@ -584,8 +588,6 @@ theorem switch_some_of_components
       Functions.Scope.Block.Scoped outerLive selectedBody)
     (hSourceScope :
       ∀ name, name ∈ sourceCtx.scope ↔ name ∈ outerLive)
-    (hSubset :
-      ∀ name, name ∈ outerLive → name ∈ bodyLive)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerState localsCtx
@@ -593,10 +595,35 @@ theorem switch_some_of_components
     (hBody :
       ∀ {selectedLowered : Locals.Block}
         {selectedStart bodyLowerState : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
         {bodyCode : List Expressions.Stmt}
         {bodyLocals : Locals.Ctx}
         {targetAfterPop :
           Structured.ObserverSemantics.State transcript},
+        selectedPlanning.allocation = selectedStart.allocation →
+        selectedStart.allocation.env = lowerState.allocation.env →
+        ({ scope := .lexical current selectedPlanning.nextScope
+           state :=
+             (AllocationSupport.planBlockOpen
+               (.lexical current selectedPlanning.nextScope)
+               { selectedPlanning with
+                 nextScope := selectedPlanning.nextScope + 1 }
+               selectedBody).allocation } :
+          AllocationSupport.ScopedAllocation) ∈
+          (AllocationSupport.planDefault current
+            (AllocationSupport.planCases current planning cases)
+            defaultBody).scopes →
+        (∀ entry,
+          entry ∈
+              (AllocationSupport.planBlockOpen
+                (.lexical current selectedPlanning.nextScope)
+                { selectedPlanning with
+                  nextScope := selectedPlanning.nextScope + 1 }
+                selectedBody).scopes →
+            entry ∈
+              (AllocationSupport.planDefault current
+                (AllocationSupport.planCases current planning cases)
+                defaultBody).scopes) →
         AllocationLowering.lowerBlockOpen
             lowerCtx returns selectedStart selectedBody =
           some (selectedLowered, bodyLowerState) →
@@ -606,10 +633,11 @@ theorem switch_some_of_components
             contract config allocatorDepth lowerCtx selectedStart localsCtx
             outerPlan outerLive frameBase outerMode sourceAfterScrutinee
             targetAfterPop →
-        ∃ targetBodyMid,
+        ∃ bodyPlan bodyMode targetBodyMid,
           RegularBlockRuntimeInvariantForward
             contract config allocatorDepth transcript lowerCtx
-            bodyLowerState bodyLocals bodyPlan bodyLive frameBase
+            bodyLowerState bodyLocals bodyPlan
+            (Functions.Scope.Block.outEnv outerLive selectedBody) frameBase
             outerMode bodyMode sourceProgram sourceCtx selectedBody
             sourceAfterScrutinee targetProgram
             { stmts := Expressions.StmtList.toStructured bodyCode }
@@ -641,10 +669,11 @@ theorem switch_some_of_components
     Locals.Block.compileOpen_single_switch_components hCompile
   obtain
       ⟨selectedLowered, selectedStart, selectedScopedFinal,
-        hLoweredSelect, hLowerSelected,
-        hSelectedEnv, hSelectedLayout⟩ :=
-    AllocationLowering.lowerSwitch_select_some
-      hLowerCases hLowerDefault hSelect
+        selectedPlanning, hLoweredSelect, hLowerSelected,
+        hSelectedPlanning, hSelectedEnv, hSelectedLayout,
+        hSelectedEntry, hSelectedInner⟩ :=
+    AllocationLowering.lowerSwitch_select_some_planning
+      hPlanningAllocation hLowerCases hLowerDefault hSelect
   obtain
       ⟨selectedCompiled, selectedCode, selectedLocals,
         hTargetSelect, hCompileSelected, hFinishSelected⟩ :=
@@ -672,11 +701,12 @@ theorem switch_some_of_components
         (AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue) :=
     hPopInvariant.transport_state hSelectedEnv hSelectedLayout
-  obtain ⟨targetBodyMid, hBodyForward⟩ :=
+  obtain ⟨bodyPlan, bodyMode, targetBodyMid, hBodyForward⟩ :=
     hBody
       (targetAfterPop :=
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
+      hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
       hLowerBody hCompileSelected hSelectedInvariant
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
@@ -691,7 +721,10 @@ theorem switch_some_of_components
       hBodyForward
       hSourceScope
       rfl hSelectedInvariant.activation.compiler
-      hSelectedInvariant.activation.planWF hSubset hBodyScoped hLowerBody
+      hSelectedInvariant.activation.planWF
+      (fun name hName =>
+        Functions.Scope.Block.mem_outEnv hName)
+      hBodyScoped hLowerBody
       hFinishSelected
   have hSource :=
     Functions.Source.Effectful.Stmt.run_switch_some_of_eval

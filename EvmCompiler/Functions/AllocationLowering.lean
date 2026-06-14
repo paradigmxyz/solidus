@@ -2251,6 +2251,202 @@ theorem lowerSwitch_select_some
                     hSelectedLayout.trans hBodyShape.2⟩
 
 /--
+Selected switch lowering is synchronized with the exact sequential planner
+state that owns the selected lexical body.
+
+Besides the ordinary selected-body lowering facts, this exposes the selected
+scope entry and every nested entry in the final switch planner scope list.
+Observer preservation can therefore construct the selected body's validated
+cursor without replaying case traversal or accepting generated evidence.
+-/
+theorem lowerSwitch_select_some_planning
+    {ctx : Ctx} {returns : List Name}
+    {current : ScopeId}
+    {planning : AllocationSupport.PlanningState}
+    {state afterCases final : State}
+    {value : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {selected : Block}
+    {loweredCases : List (Word × Locals.Block)}
+    {loweredDefault : Option Locals.Block}
+    (hAllocation : planning.allocation = state.allocation)
+    (hCases :
+      lowerCases ctx returns state cases =
+        some (loweredCases, afterCases))
+    (hDefault :
+      lowerDefault ctx returns afterCases defaultBody =
+        some (loweredDefault, final))
+    (hSelect :
+      Source.Switch.select value cases defaultBody = some selected) :
+    ∃ selectedLowered selectedStart selectedFinal,
+      ∃ selectedPlanning : AllocationSupport.PlanningState,
+      Locals.Source.Switch.select value loweredCases loweredDefault =
+          some selectedLowered ∧
+        lowerBlockScoped ctx returns selectedStart selected =
+          some (selectedLowered, selectedFinal) ∧
+        selectedPlanning.allocation = selectedStart.allocation ∧
+        selectedStart.allocation.env = state.allocation.env ∧
+        selectedStart.layout = state.layout ∧
+        ({ scope := .lexical current selectedPlanning.nextScope
+           state :=
+             (AllocationSupport.planBlockOpen
+               (.lexical current selectedPlanning.nextScope)
+               { selectedPlanning with
+                 nextScope := selectedPlanning.nextScope + 1 }
+               selected).allocation } :
+          AllocationSupport.ScopedAllocation) ∈
+          (AllocationSupport.planDefault current
+            (AllocationSupport.planCases current planning cases)
+            defaultBody).scopes ∧
+        ∀ entry,
+          entry ∈
+              (AllocationSupport.planBlockOpen
+                (.lexical current selectedPlanning.nextScope)
+                { selectedPlanning with
+                  nextScope := selectedPlanning.nextScope + 1 }
+                selected).scopes →
+            entry ∈
+              (AllocationSupport.planDefault current
+                (AllocationSupport.planCases current planning cases)
+                defaultBody).scopes := by
+  induction cases generalizing planning state afterCases loweredCases with
+  | nil =>
+      simp [lowerCases] at hCases
+      rcases hCases with ⟨rfl, rfl⟩
+      cases defaultBody with
+      | none =>
+          simp [Source.Switch.select] at hSelect
+      | some body =>
+          simp [Source.Switch.select] at hSelect
+          subst selected
+          cases hBody :
+              lowerBlockScoped ctx returns state body with
+          | none =>
+              simp [lowerDefault, hBody] at hDefault
+          | some bodyResult =>
+              rcases bodyResult with ⟨loweredBody, bodyFinal⟩
+              simp [lowerDefault, hBody] at hDefault
+              rcases hDefault with ⟨rfl, rfl⟩
+              refine
+                ⟨loweredBody, state, bodyFinal, planning,
+                  rfl, hBody, hAllocation, rfl, rfl, ?_, ?_⟩
+              · simpa [AllocationSupport.planCases,
+                  AllocationSupport.planDefault] using
+                  AllocationSupport.planBlockScoped_entry_mem
+                    body current planning
+              · intro entry hEntry
+                simpa [AllocationSupport.planCases,
+                  AllocationSupport.planDefault] using
+                  AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+                    body current planning hEntry
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerCases, hBody] at hCases
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, afterBody⟩
+          cases hRest :
+              lowerCases ctx returns afterBody rest with
+          | none =>
+              simp [lowerCases, hBody, hRest] at hCases
+          | some restResult =>
+              rcases restResult with ⟨loweredRest, restFinal⟩
+              simp [lowerCases, hBody, hRest] at hCases
+              rcases hCases with ⟨rfl, rfl⟩
+              have hBodyAllocation :=
+                lowerBlockScoped_allocation_eq_planBlockScoped
+                  body current planning ctx returns state afterBody
+                  loweredBody hAllocation hBody
+              by_cases hMatch : caseValue = value
+              · simp [Source.Switch.select, hMatch] at hSelect
+                subst selected
+                have hEntryScoped :=
+                  AllocationSupport.planBlockScoped_entry_mem
+                    body current planning
+                have hEntryCases :=
+                  AllocationSupport.mem_planCases_scopes_of_mem
+                    rest current
+                    (AllocationSupport.planBlockScoped
+                      current planning body)
+                    hEntryScoped
+                have hEntryFinal :=
+                  AllocationSupport.mem_planDefault_scopes_of_mem
+                    defaultBody current
+                    (AllocationSupport.planCases current
+                      (AllocationSupport.planBlockScoped
+                        current planning body)
+                      rest)
+                    hEntryCases
+                refine
+                  ⟨loweredBody, state, afterBody, planning,
+                    ?_, hBody, hAllocation, rfl, rfl, ?_, ?_⟩
+                · simp [Locals.Source.Switch.select, hMatch]
+                · simpa [AllocationSupport.planCases] using hEntryFinal
+                · intro entry hEntry
+                  have hScopedEntry :=
+                    AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+                      body current planning hEntry
+                  have hCasesEntry :=
+                    AllocationSupport.mem_planCases_scopes_of_mem
+                      rest current
+                      (AllocationSupport.planBlockScoped
+                        current planning body)
+                      hScopedEntry
+                  have hFinalEntry :=
+                    AllocationSupport.mem_planDefault_scopes_of_mem
+                      defaultBody current
+                      (AllocationSupport.planCases current
+                        (AllocationSupport.planBlockScoped
+                          current planning body)
+                        rest)
+                      hCasesEntry
+                  simpa [AllocationSupport.planCases] using hFinalEntry
+              · have hTailSelect :
+                    Source.Switch.select value rest defaultBody =
+                      some selected := by
+                  simpa [Source.Switch.select, hMatch] using hSelect
+                obtain
+                    ⟨selectedLowered, selectedStart, selectedFinal,
+                      selectedPlanning, hLoweredSelect, hSelectedBody,
+                      hSelectedPlanning, hSelectedEnv, hSelectedLayout,
+                      hSelectedEntry, hSelectedInner⟩ :=
+                  ih hBodyAllocation hRest hDefault hTailSelect
+                have hBodyShape :
+                    afterBody.allocation.env =
+                        state.allocation.env ∧
+                      afterBody.layout = state.layout := by
+                  unfold lowerBlockScoped at hBody
+                  cases hOpen :
+                      lowerBlockOpen ctx returns state body with
+                  | none =>
+                      simp [hOpen] at hBody
+                  | some openResult =>
+                      rcases openResult with
+                        ⟨loweredOpen, openFinal⟩
+                      simp [hOpen] at hBody
+                      rcases hBody with ⟨rfl, rfl⟩
+                      exact ⟨rfl, rfl⟩
+                exact
+                  ⟨selectedLowered, selectedStart, selectedFinal,
+                    selectedPlanning,
+                    by
+                      simpa [Locals.Source.Switch.select, hMatch] using
+                        hLoweredSelect,
+                    hSelectedBody, hSelectedPlanning,
+                    hSelectedEnv.trans hBodyShape.1,
+                    hSelectedLayout.trans hBodyShape.2,
+                    by
+                      simpa [AllocationSupport.planCases] using
+                        hSelectedEntry,
+                    by
+                      intro entry hEntry
+                      simpa [AllocationSupport.planCases] using
+                        hSelectedInner entry hEntry⟩
+
+/--
 The part of lowering-state evolution visible at an open source-block boundary.
 
 New stack locals form a removable prefix of the incoming Locals layout, while

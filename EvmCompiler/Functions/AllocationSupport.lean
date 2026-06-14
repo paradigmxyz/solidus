@@ -557,6 +557,30 @@ theorem mem_planStmtList_scopes_of_mem
   rw [hScopes]
   exact List.mem_append_right _ hEntry
 
+theorem mem_planCases_scopes_of_mem
+    {entry : ScopedAllocation}
+    (cases : List (Word × Block))
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState)
+    (hEntry : entry ∈ state.scopes) :
+    entry ∈ (planCases current state cases).scopes := by
+  obtain ⟨added, hScopes⟩ :=
+    planCases_scopes_extension cases current state
+  rw [hScopes]
+  exact List.mem_append_right _ hEntry
+
+theorem mem_planDefault_scopes_of_mem
+    {entry : ScopedAllocation}
+    (body : Option Block)
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState)
+    (hEntry : entry ∈ state.scopes) :
+    entry ∈ (planDefault current state body).scopes := by
+  obtain ⟨added, hScopes⟩ :=
+    planDefault_scopes_extension body current state
+  rw [hScopes]
+  exact List.mem_append_right _ hEntry
+
 theorem planBlockScoped_entry_mem
     (block : Block) (parent : Locals.Allocation.ScopeId)
     (state : PlanningState) :

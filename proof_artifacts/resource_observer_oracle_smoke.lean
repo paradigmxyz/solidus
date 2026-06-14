@@ -682,6 +682,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.exprRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResult
+#print axioms EvmCompiler.Functions.Source.Switch.scoped_of_select_some
+#print axioms EvmCompiler.Functions.AllocationSupport.mem_planCases_scopes_of_mem
+#print axioms EvmCompiler.Functions.AllocationSupport.mem_planDefault_scopes_of_mem
+#print axioms EvmCompiler.Functions.AllocationLowering.lowerSwitch_select_some_planning
+#print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.transport_plan
+#print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_plan
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchCursors
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSelectedCursors
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchNoneRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeRegularRuntimeResult
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

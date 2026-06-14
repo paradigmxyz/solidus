@@ -910,6 +910,38 @@ def select (scrutinee : Word) :
       else
         select scrutinee rest defaultBody
 
+theorem scoped_of_select_some
+    {env : List Name}
+    {scrutinee : Word}
+    {cases : List (Word × Block)}
+    {defaultBody : Option Block}
+    {selected : Block}
+    (hCases : Scope.CaseList.Scoped env cases)
+    (hDefault : Scope.Default.Scoped env defaultBody)
+    (hSelect : select scrutinee cases defaultBody = some selected) :
+    Scope.Block.Scoped env selected := by
+  induction cases with
+  | nil =>
+      cases defaultBody with
+      | none =>
+          simp [select] at hSelect
+      | some body =>
+          simp [select] at hSelect
+          subst selected
+          simpa [Scope.Default.Scoped] using hDefault
+  | cons head rest ih =>
+      rcases head with ⟨value, body⟩
+      have hScoped :
+          Scope.Block.Scoped env body ∧
+            Scope.CaseList.Scoped env rest := by
+        simpa [Scope.CaseList.Scoped] using hCases
+      by_cases hMatch : value = scrutinee
+      · simp [select, hMatch] at hSelect
+        subst selected
+        exact hScoped.1
+      · apply ih hScoped.2
+        simpa [select, hMatch] using hSelect
+
 end Switch
 
 namespace FunList
