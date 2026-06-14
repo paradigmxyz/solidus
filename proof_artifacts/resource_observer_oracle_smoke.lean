@@ -612,6 +612,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_state
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.acquire_from_runtime
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.release_to_runtime
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.assignMany_preserves
+#print axioms EvmCompiler.Functions.AllocationObserverCall.ArgList.forward_runtime
+#print axioms EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_mstore_disjoint
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_runtime_invariant

@@ -391,6 +391,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.vars_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.of_wellFormed
 #check EvmCompiler.Functions.AllocationObserverRelation.ScratchStateRel.declare_stack_live
+#check EvmCompiler.Functions.AllocationObserverRelation.LiveDefined.assignMany_preserves
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.mstore_end_le_activeBytes
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.scratchAddress_end_le_limit
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_lookup_growth
@@ -410,6 +411,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_state
 #check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.acquire_from_runtime
 #check EvmCompiler.Functions.AllocationObserverCall.ScratchFrame.release_to_runtime
+#check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward_runtime
+#check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_runtime_invariant

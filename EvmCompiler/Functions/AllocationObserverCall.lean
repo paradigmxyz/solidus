@@ -1797,6 +1797,139 @@ theorem forward
                             hArgRel hRestRel
 
 /--
+Allocator-aware preservation for the actual Functions call-argument list.
+
+This is the call-owner composition of the shared runtime expression theorem;
+it retains the ordinary adjacent result relation and threads only allocator
+readiness.
+-/
+theorem forward_runtime
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        AllocationObserverExpression.ActivationPrimitiveForward contract op)
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {args : List (Functions.Expr 1)}
+    {lowered : List (Locals.Expr 1)}
+    {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.ArgList.MemorySafeEval
+        contract transcript args source sourceFinal values)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hScoped :
+      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg)
+    (hLower :
+      AllocationLowering.lowerExprList lowerCtx lowerState args =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx stackOffset
+          (AllocationLowering.exprSeqOfList lowered) =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel contract plan live
+        stackOffset frameBase mode source target)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationExprResultRel
+          contract plan live stackOffset frameBase args.length mode
+          sourceFinal target targetFinal values ∧
+        AllocationObserverRelation.Frame.AllocatorReady
+          config allocatorDepth targetFinal := by
+  induction hSafe generalizing lowered code stackOffset target with
+  | nil =>
+      have hLowered : lowered = [] := by
+        simpa [AllocationLowering.lowerExprList] using hLower.symm
+      subst lowered
+      have hCode : code = [] := by
+        simpa [AllocationLowering.exprSeqOfList,
+          Locals.ExprSeq.compileCode] using hCompile.symm
+      subst code
+      exact
+        ⟨target, rfl,
+          AllocationObserverRelation.ActivationExprResultRel.nil hRel,
+          hReady⟩
+  | @cons arg rest source afterArg final value values hArg hRest ih =>
+      cases hLowerArg :
+          AllocationLowering.lowerExpr lowerCtx lowerState arg with
+      | none =>
+          simp [AllocationLowering.lowerExprList, hLowerArg] at hLower
+      | some loweredArg =>
+          cases hLowerRest :
+              AllocationLowering.lowerExprList lowerCtx lowerState rest with
+          | none =>
+              simp [AllocationLowering.lowerExprList, hLowerArg,
+                hLowerRest] at hLower
+          | some loweredRest =>
+              have hLowered :
+                  lowered = loweredArg :: loweredRest := by
+                simpa [AllocationLowering.lowerExprList, hLowerArg,
+                  hLowerRest] using hLower.symm
+              subst lowered
+              rw [AllocationLowering.exprSeqOfList_compileCode_cons] at hCompile
+              cases hArgCode :
+                  Locals.Expr.compileCode localsCtx stackOffset loweredArg with
+              | none =>
+                  simp [hArgCode] at hCompile
+              | some argCode =>
+                  cases hRestCode :
+                      Locals.ExprSeq.compileCode localsCtx (stackOffset + 1)
+                        (AllocationLowering.exprSeqOfList loweredRest) with
+                  | none =>
+                      simp [hArgCode, hRestCode] at hCompile
+                  | some restCode =>
+                      have hCode : code = argCode ++ restCode := by
+                        simpa [hArgCode, hRestCode] using hCompile.symm
+                      subst code
+                      have hArgScoped :
+                          Functions.Scope.ExprScoped live arg :=
+                        hScoped arg (by simp)
+                      have hRestScoped :
+                          ∀ candidate, candidate ∈ rest →
+                            Functions.Scope.ExprScoped live candidate := by
+                        intro candidate hMember
+                        exact hScoped candidate (by simp [hMember])
+                      obtain
+                          ⟨targetAfterArg, hArgRun, hArgRel, hArgReady⟩ :=
+                        AllocationObserverExpression.forwardExprRuntime
+                          hPrimitive hConfig hArg hCtx hArgScoped hLowerArg
+                          hArgCode hRel hReady
+                      obtain
+                          ⟨targetFinal, hRestRun, hRestRel, hFinalReady⟩ :=
+                        ih hRestScoped hLowerRest hRestCode hArgRel.state
+                          hArgReady
+                      refine ⟨targetFinal, ?_, ?_, hFinalReady⟩
+                      · rw [
+                          AllocationObserverPreservation.ObserverCode.run_append,
+                          hArgRun]
+                        exact hRestRun
+                      · simpa [Nat.add_comm] using
+                          AllocationObserverRelation.ActivationExprResultRel.append
+                            hArgRel hRestRel
+
+/--
 Deterministic target execution reflects the same canonical safe source
 argument evaluation and result relation computed by `forward`.
 -/
@@ -1973,6 +2106,109 @@ end ScratchFrame
 
 namespace CallTargets
 
+private def PreservesAllocator
+    (contract : MemoryContract.Contract)
+    (frameBase : Nat)
+    (mode : AllocationObserverRelation.ActivationMode)
+    {transcript : Trace}
+    (before after : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∀ {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat},
+    AllocationSupport.scratchFrameConfig?
+        contract globalFrameWords =
+      some config →
+    AllocationObserverRelation.Frame.ActivationOwned
+        config allocatorDepth frameBase mode →
+    AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth before →
+    AllocationObserverRelation.Frame.AllocatorReady
+      config allocatorDepth after
+
+private theorem PreservesAllocator.refl
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {transcript : Trace}
+    {target : Structured.ObserverSemantics.State transcript} :
+    PreservesAllocator contract frameBase mode target target := by
+  intro _globalFrameWords _config _allocatorDepth
+    _hConfig _hOwned hReady
+  exact hReady
+
+private theorem PreservesAllocator.trans
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {transcript : Trace}
+    {before middle after :
+      Structured.ObserverSemantics.State transcript}
+    (hFirst :
+      PreservesAllocator contract frameBase mode before middle)
+    (hSecond :
+      PreservesAllocator contract frameBase mode middle after) :
+    PreservesAllocator contract frameBase mode before after := by
+  intro globalFrameWords config allocatorDepth hConfig hOwned hReady
+  exact
+    hSecond hConfig hOwned
+      (hFirst hConfig hOwned hReady)
+
+private theorem PreservesAllocator.of_machine_eq
+    {contract : MemoryContract.Contract}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {transcript : Trace}
+    {before after :
+      Structured.ObserverSemantics.State transcript}
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState) :
+    PreservesAllocator contract frameBase mode before after := by
+  intro _globalFrameWords _config _allocatorDepth
+    _hConfig _hOwned hReady
+  exact hReady.of_machine_eq hMachine
+
+private theorem PreservesAllocator.of_scratch_store
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase frameDepth frameWords slot : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {before after :
+      Structured.ObserverSemantics.State transcript}
+    {name : Locals.Name} {value : Word}
+    (hRel :
+      AllocationObserverRelation.ScratchStateRel
+        contract plan live stackOffset frameBase frameDepth frameWords
+        source before)
+    (hLive : name ∈ live)
+    (hLocation : plan.location? name = some (.scratch slot))
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.scratchAddress frameBase slot))
+          value) :
+    PreservesAllocator contract frameBase
+      (.scratch frameDepth frameWords) before after := by
+  intro globalFrameWords config allocatorDepth hConfig hOwned hReady
+  have hEndLt :=
+    hRel.scratchAddress_end_lt_size hLive hLocation
+  have hAddressLt :
+      AllocationObserverRelation.scratchAddress frameBase slot <
+        EvmYul.UInt256.size := by
+    exact lt_of_lt_of_le
+      (Nat.lt_add_of_pos_right
+        (by decide : 0 < MemoryContract.wordBytes))
+      (Nat.le_of_lt hEndLt)
+  exact
+    hReady.of_mstore_disjoint hMachine
+      (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+      (hRel.scratchAddress_end_lt_hostSize hLive hLocation)
+      (Or.inl
+        (hOwned.allocatorCell_disjoint_scratchAddress hConfig))
+
 private theorem set_append_offset
     {α : Type} (above suffix : List α) (depth : Nat) (value : α) :
     (above ++ suffix).set (above.length + depth) value =
@@ -2034,7 +2270,9 @@ private theorem stack_step
           (source.withSource (source.source.insert name value))
           targetFinal ∧
         targetFinal.source.evm.stack =
-          remaining ++ rest.set depth value := by
+          remaining ++ rest.set depth value ∧
+        targetFinal.source.evm.toMachineState =
+          target.source.evm.toMachineState := by
   cases hSwap :
       Locals.StackOp.swap? (remaining.length + (depth + 1)) with
   | none =>
@@ -2070,11 +2308,15 @@ private theorem stack_step
         exact
           hRel.assign_stack_live_at hStack hLive hLocation hDepth
             hDepthValid hOld
-      refine ⟨targetFinal, hRun, hFinalRel, ?_⟩
-      simp [targetFinal,
-        AllocationObserverRelation.StateRel.replaceStackBy,
-        EvmYul.EVM.State.replaceStackAndIncrPC,
-        EvmYul.EVM.State.incrPC, set_append_offset]
+      refine ⟨targetFinal, hRun, hFinalRel, ?_, ?_⟩
+      · simp [targetFinal,
+          AllocationObserverRelation.StateRel.replaceStackBy,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, set_append_offset]
+      · simp [targetFinal,
+          AllocationObserverRelation.StateRel.replaceStackBy,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC]
 
 private theorem scratch_step
     {contract : MemoryContract.Contract}
@@ -2112,7 +2354,12 @@ private theorem scratch_step
           (.scratch frameDepth frameWords)
           (source.withSource (source.source.insert name value))
           targetFinal ∧
-        targetFinal.source.evm.stack = remaining ++ rest := by
+        targetFinal.source.evm.stack = remaining ++ rest ∧
+        targetFinal.source.evm.toMachineState =
+          target.source.evm.toMachineState.mstore
+            (EvmYul.UInt256.ofNat
+              (AllocationObserverRelation.scratchAddress frameBase slot))
+            value := by
   have hStoreCode :
       AllocationSupport.storeTopSlotCode?
           (remaining.length + frameDepth + 1) slot =
@@ -2127,12 +2374,13 @@ private theorem scratch_step
     hRel.scratchAddress_reserved_of_bound hSlotBound hReservation
   obtain
       ⟨targetFinal, hRun, hFinalRel, hFinalStack,
-        _hFinalMachine⟩ :=
+        hFinalMachine⟩ :=
     AllocationObserverPreservation.Expr.scratchAssignTop_forward_of_storeTopSlotCode?_live
         hRel hStack hWF
         (fun other hOther => Or.inr hOther)
         rfl hLive hLocation hSlotBound hReservation hRegion hStoreCode
-  exact ⟨targetFinal, hRun, .scratch hFinalRel, hFinalStack⟩
+  exact
+    ⟨targetFinal, hRun, .scratch hFinalRel, hFinalStack, hFinalMachine⟩
 
 /--
 Execute the actual code emitted for assigning returned call values to source
@@ -2143,7 +2391,7 @@ value lists from left to right. Each step consumes exactly one temporary stack
 value, updates either a stack local or its allocated scratch slot, and leaves
 the remaining return prefix intact for the recursive step.
 -/
-theorem forward
+private theorem forward_core
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {lowerCtx : AllocationLowering.Ctx}
@@ -2183,7 +2431,8 @@ theorem forward
           contract plan live 0 frameBase mode
           (source.withSource (source.source.withVars finalStore))
           targetFinal ∧
-        targetFinal.source.evm.stack.length = rest.length := by
+        targetFinal.source.evm.stack.length = rest.length ∧
+        PreservesAllocator contract frameBase mode target targetFinal := by
   induction names generalizing values code source target rest with
   | nil =>
       cases values with
@@ -2197,7 +2446,8 @@ theorem forward
             ⟨target, rfl,
               by
                 simpa [Locals.Source.State.withVars] using hRel,
-              by simpa using congrArg List.length hStack⟩
+              by simpa using congrArg List.length hStack,
+              PreservesAllocator.refl⟩
       | cons value values =>
           simp [Functions.Source.Store.assignMany] at hAssign
   | cons name names ih =>
@@ -2284,17 +2534,17 @@ theorem forward
                                   hSlot hStackSlot
                               obtain
                                   ⟨targetHead, hHeadRun, hHeadFinalRel,
-                                    hHeadFinalStack⟩ :=
+                                    hHeadFinalStack, hHeadMachine⟩ :=
                                 stack_step hHeadCode hHeadRel hHeadStack
                                   hNameLive hLocation hCurrentDepth hLowerDepth
                                   trivial hOld
                               obtain
                                   ⟨targetFinal, hTailRun, hFinalRel,
-                                    hFinalStack⟩ :=
+                                    hFinalStack, hTailPreserves⟩ :=
                                 ih hTailLive hTailAssign hTailCode
                                   hHeadFinalRel hHeadFinalStack
                               refine
-                                ⟨targetFinal, ?_, ?_, ?_⟩
+                                ⟨targetFinal, ?_, ?_, ?_, ?_⟩
                               · rw [
                                   AllocationObserverPreservation.ObserverCode.run_append,
                                   hHeadRun]
@@ -2302,6 +2552,11 @@ theorem forward
                               · simpa [sourceNext,
                                   Locals.Source.State.withVars] using hFinalRel
                               · simpa using hFinalStack
+                              · exact
+                                  PreservesAllocator.trans
+                                    (PreservesAllocator.of_machine_eq
+                                      hHeadMachine)
+                                    hTailPreserves
                           | @scratch frameDepth frameWords scratchContext =>
                               obtain
                                   ⟨planDepth, depth, hLocation, hCurrentDepth,
@@ -2315,17 +2570,17 @@ theorem forward
                                   hCurrentDepth
                               obtain
                                   ⟨targetHead, hHeadRun, hHeadFinalRel,
-                                    hHeadFinalStack⟩ :=
+                                    hHeadFinalStack, hHeadMachine⟩ :=
                                 stack_step hHeadCode hHeadRel hHeadStack
                                   hNameLive hLocation hCurrentDepth hLowerDepth
                                   hDepthValid hOld
                               obtain
                                   ⟨targetFinal, hTailRun, hFinalRel,
-                                    hFinalStack⟩ :=
+                                    hFinalStack, hTailPreserves⟩ :=
                                 ih hTailLive hTailAssign hTailCode
                                   hHeadFinalRel hHeadFinalStack
                               refine
-                                ⟨targetFinal, ?_, ?_, ?_⟩
+                                ⟨targetFinal, ?_, ?_, ?_, ?_⟩
                               · rw [
                                   AllocationObserverPreservation.ObserverCode.run_append,
                                   hHeadRun]
@@ -2333,6 +2588,11 @@ theorem forward
                               · simpa [sourceNext,
                                   Locals.Source.State.withVars] using hFinalRel
                               · simpa using hFinalStack
+                              · exact
+                                  PreservesAllocator.trans
+                                    (PreservesAllocator.of_machine_eq
+                                      hHeadMachine)
+                                    hTailPreserves
                 · have hScratchSlot :
                     AllocationLowering.isStackSlot lowerCtx slot = false :=
                     Bool.eq_false_of_not_eq_true hStackSlot
@@ -2388,16 +2648,16 @@ theorem forward
                                   subst code
                                   obtain
                                       ⟨targetHead, hHeadRun, hHeadFinalRel,
-                                        hHeadFinalStack⟩ :=
+                                        hHeadFinalStack, hHeadMachine⟩ :=
                                     scratch_step hHeadCode scratchRel hHeadStack
                                       hWF hNameLive hLocation hFrameDepth
                                   obtain
                                       ⟨targetFinal, hTailRun, hFinalRel,
-                                        hFinalStack⟩ :=
+                                        hFinalStack, hTailPreserves⟩ :=
                                     ih hTailLive hTailAssign hTailCode
                                       hHeadFinalRel hHeadFinalStack
                                   refine
-                                    ⟨targetFinal, ?_, ?_, hFinalStack⟩
+                                    ⟨targetFinal, ?_, ?_, hFinalStack, ?_⟩
                                   · rw [
                                       AllocationObserverPreservation.ObserverCode.run_append,
                                       hHeadRun]
@@ -2405,7 +2665,129 @@ theorem forward
                                   · simpa [sourceNext,
                                       Locals.Source.State.withVars] using
                                       hFinalRel
+                                  · exact
+                                      PreservesAllocator.trans
+                                        (PreservesAllocator.of_scratch_store
+                                          scratchRel hNameLive hLocation
+                                          hHeadMachine)
+                                        hTailPreserves
           · simp [hContains] at hAssign
+
+/--
+Execute the actual code emitted for assigning returned call values to source
+targets.
+-/
+theorem forward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {names : List Locals.Name} {values : List Word}
+    {finalStore : Locals.Source.Store}
+    {code : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {rest : List Word}
+    (hContext :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hLive :
+      ∀ name, name ∈ names → name ∈ live)
+    (hAssign :
+      Functions.Source.Store.assignMany names values source.source.vars =
+        some finalStore)
+    (hCode :
+      AllocationLowering.lowerCallTargetsCode?
+          lowerCtx lowerState names values.length =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live values.length frameBase mode source target)
+    (hStack :
+      target.source.evm.stack = values ++ rest) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live 0 frameBase mode
+          (source.withSource (source.source.withVars finalStore))
+          targetFinal ∧
+        targetFinal.source.evm.stack.length = rest.length := by
+  obtain
+      ⟨targetFinal, hRun, hFinalRel, hFinalStack, _hAllocator⟩ :=
+    forward_core hContext hWF hLive hAssign hCode hRel hStack
+  exact ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩
+
+/--
+Allocator-aware returned-value assignment through the real call-target code.
+-/
+theorem forward_runtime
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {names : List Locals.Name} {values : List Word}
+    {finalStore : Locals.Source.Store}
+    {code : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hContext :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hLive :
+      ∀ name, name ∈ names → name ∈ live)
+    (hAssign :
+      Functions.Source.Store.assignMany names values source.source.vars =
+        some finalStore)
+    (hCode :
+      AllocationLowering.lowerCallTargetsCode?
+          lowerCtx lowerState names values.length =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live values.length frameBase mode source target)
+    (hStack :
+      target.source.evm.stack = values ++ rest)
+    (hOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config allocatorDepth frameBase mode)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live 0 frameBase mode
+          (source.withSource (source.source.withVars finalStore))
+          targetFinal ∧
+        targetFinal.source.evm.stack.length = rest.length ∧
+        AllocationObserverRelation.Frame.AllocatorReady
+          config allocatorDepth targetFinal := by
+  obtain
+      ⟨targetFinal, hRun, hFinalRel, hFinalStack, hAllocator⟩ :=
+    forward_core hContext hWF hLive hAssign hCode hRel hStack
+  exact
+    ⟨targetFinal, hRun, hFinalRel, hFinalStack,
+      hAllocator hConfig hOwned hReady⟩
 
 end CallTargets
 

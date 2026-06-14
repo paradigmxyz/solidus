@@ -204,6 +204,52 @@ theorem insert_cons
     exact ⟨value, Locals.Source.Store.insert_self _ _ _⟩
   · exact hDefined.insert_preserves other hLive
 
+/--
+Assigning a list of existing source locals cannot make any live local
+undefined.
+-/
+theorem assignMany_preserves
+    {live names : List Locals.Name}
+    {values : List Word}
+    {source : Locals.Source.State}
+    {finalStore : Locals.Source.Store}
+    (hDefined : LiveDefined live source)
+    (hAssign :
+      Functions.Source.Store.assignMany names values source.vars =
+        some finalStore) :
+    LiveDefined live (source.withVars finalStore) := by
+  induction names generalizing values source with
+  | nil =>
+      cases values with
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+          subst finalStore
+          simpa [Locals.Source.State.withVars] using hDefined
+      | cons value values =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+  | cons name names ih =>
+      cases values with
+      | nil =>
+          simp [Functions.Source.Store.assignMany] at hAssign
+      | cons value values =>
+          change
+            (if source.vars.contains name then
+                Functions.Source.Store.assignMany names values
+                  (Locals.Source.Store.insert source.vars name value)
+              else none) =
+              some finalStore at hAssign
+          by_cases hContains : source.vars.contains name = true
+          · simp [hContains] at hAssign
+            have hTail :
+                Functions.Source.Store.assignMany names values
+                    (source.insert name value).vars =
+                  some finalStore := by
+              simpa [Locals.Source.State.insert] using hAssign
+            exact
+              ih (source := source.insert name value) (values := values)
+                hDefined.insert_preserves hTail
+          · simp [hContains] at hAssign
+
 theorem restrictTo
     {beforeLive afterLive : List Locals.Name}
     {source : Locals.Source.State}

@@ -683,10 +683,15 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   sequencing and scoped cleanup, both switch-selection paths, and the
   first-condition-false loop path. Spill writes preserve allocator readiness
   through a shared disjoint-`MSTORE` theorem, while cleanup transports it by
-  exact machine equality. The immediate remaining theorem is the recursive
-  source-fuel induction for the remaining loop outcomes and internal calls;
-  matching whole-function and whole-program backward adequacy follows after
-  that forward recursion closes.
+  exact machine equality. Internal-call argument evaluation and arbitrary
+  multi-return writeback are also allocator-aware; stack targets are
+  machine-neutral and scratch targets use the same owned disjoint-store
+  interface. The immediate remaining call work is recovering the selected
+  callee body/return artifact from the existing lowerer and composing frame
+  acquire, procedure execution, release, and target assignment. Recursive
+  source-fuel induction for the remaining loop outcomes follows; matching
+  whole-function and whole-program backward adequacy comes after that forward
+  recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

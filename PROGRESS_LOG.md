@@ -29234,3 +29234,18 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
 - Registered these interfaces in `EvmCompiler.Verification`; the next proof
   step is allocator-aware internal calls followed by the remaining recursive
   loop/source-fuel cases.
+
+## 2026-06-13 — allocator-aware call arguments and return targets
+
+- Added `ArgList.forward_runtime`, composing the shared runtime expression
+  theorem over the actual Functions call argument list and emitted expression
+  sequence.
+- Strengthened private call-target steps with exact target-machine effects:
+  stack assignments are machine-neutral and scratch assignments are one
+  concrete spill `MSTORE`.
+- Factored call-target execution through one core proof used by both the
+  ordinary and allocator-aware public interfaces; arbitrary multi-return
+  writeback now preserves allocator readiness without duplicating execution
+  semantics.
+- Added `LiveDefined.assignMany_preserves` for the source-side invariant after
+  successful return assignment.
