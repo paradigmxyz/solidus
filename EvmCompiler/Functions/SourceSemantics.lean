@@ -922,6 +922,22 @@ def find? (name : Name) : List FunDef → Option FunDef
       else
         find? name rest
 
+theorem mem_of_find?_eq_some
+    {name : Name} {functions : List FunDef} {fn : FunDef}
+    (hFind : find? name functions = some fn) :
+    fn ∈ functions := by
+  induction functions with
+  | nil =>
+      simp [find?] at hFind
+  | cons head rest ih =>
+      by_cases hName : head.name = name
+      · simp [find?, hName] at hFind
+        subst fn
+        simp
+      · have hTail : find? name rest = some fn := by
+          simpa [find?, hName] using hFind
+        exact List.mem_cons_of_mem head (ih hTail)
+
 end FunList
 
 mutual

@@ -125,7 +125,9 @@ theorem observer_allocatorPrimitiveForward
             EvmYul.EVM.State.replaceStackAndIncrPC,
             EvmYul.EVM.State.incrPC, hTargetSource]
         rw [hFinalEq]
-        exact hReady.of_machine_eq hMachine
+        exact
+          ⟨hReady.of_machine_eq hMachine,
+            ⟨by simpa [hMachine], by simpa [hMachine]⟩⟩
 
 /--
 Proof classifier for canonical primitive families that do not inspect or modify
@@ -604,7 +606,10 @@ theorem allocatorPrimitiveForward
         have hFinalEq : targetFinal = expected := by
           exact Except.ok.inj (hRun.symm.trans hExpectedRun)
         rw [hFinalEq]
-        exact hReady.of_machine_eq hExpectedMachine
+        exact
+          ⟨hReady.of_machine_eq hExpectedMachine,
+            ⟨by simpa [hExpectedMachine],
+              by simpa [hExpectedMachine]⟩⟩
 
 end SharedFamily
 
@@ -2248,8 +2253,9 @@ theorem ReadSpec.allocatorPrimitiveForward
           Except.ok.inj (hRun.symm.trans hExpectedRun)
         rw [hFinalEq]
         exact
-          hReady.of_memory_eq_active_growth
-            hMemoryEq hActiveMono hExpectedNoWrap
+          ⟨hReady.of_memory_eq_active_growth
+              hMemoryEq hActiveMono hExpectedNoWrap,
+            ⟨hActiveMono, by simpa [hMemoryEq]⟩⟩
 
 def ReadSpec.stackSpec
     {contract : MemoryContract.Contract}
@@ -3115,8 +3121,9 @@ theorem mstore_allocatorPrimitiveForward
             Except.ok.inj (hRun.symm.trans hExpectedRun)
           rw [hFinalEq]
           exact
-            hReady.of_lookup_growth hLookup hActiveMono'
-              hMemoryMono' hExpectedNoWrap
+            ⟨hReady.of_lookup_growth hLookup hActiveMono'
+                hMemoryMono' hExpectedNoWrap,
+              ⟨hActiveMono', hMemoryMono'⟩⟩
 
 def mstore8_stackSpec
     (contract : MemoryContract.Contract) :
@@ -3553,8 +3560,9 @@ theorem mstore8_allocatorPrimitiveForward
             Except.ok.inj (hRun.symm.trans hExpectedRun)
           rw [hFinalEq]
           exact
-            hReady.of_lookup_growth hLookup hActiveMono'
-              hMemoryMono' hExpectedNoWrap
+            ⟨hReady.of_lookup_growth hLookup hActiveMono'
+                hMemoryMono' hExpectedNoWrap,
+              ⟨hActiveMono', hMemoryMono'⟩⟩
 
 /--
 One decoded canonical byte-copy invocation.
@@ -3943,8 +3951,9 @@ theorem CopySpec.allocatorPrimitiveForward
         Except.ok.inj (hRun.symm.trans hExpectedRun)
       rw [hFinalEq]
       exact
-        hReady.of_lookup_growth hLookup hActiveMono'
-          hMemoryMono' hExpectedNoWrap
+        ⟨hReady.of_lookup_growth hLookup hActiveMono'
+            hMemoryMono' hExpectedNoWrap,
+          ⟨hActiveMono', hMemoryMono'⟩⟩
 
 def CopySpec.stackSpec
     {contract : MemoryContract.Contract} {op : Structured.BasicOp}

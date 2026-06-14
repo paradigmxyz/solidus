@@ -2914,6 +2914,115 @@ theorem lowerFunctions?_find_compiled_components
       hSelected, hProcCompile, hLowerMember,
       (Locals.Proc.toExpressions?_name hProcCompile).trans hProcName⟩
 
+/--
+Source lookup through function lowering and Locals procedure compilation
+selects the same procedure through the actual Structured lookup order.
+
+This stronger pass-owned interface avoids turning list membership or generated
+name-uniqueness evidence into an observer-proof premise.
+-/
+theorem lowerFunctions?_find_compiled_lookup
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (name : Name) :
+    ∀ {state final : AllocationSupport.CompileState}
+      {functions : List FunDef}
+      {procs : List Locals.Proc}
+      {lowerProcs : List Expressions.Proc}
+      {fn : FunDef},
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+          state functions =
+        some (procs, final) →
+      Locals.ProcList.toExpressions? procs =
+        some lowerProcs →
+      Source.FunList.find? name functions = some fn →
+      ∃ before after proc lowerProc,
+        lowerFunction? recipe stackSlots frameName frameConfig? before fn =
+            some (proc, after) ∧
+          proc.toExpressions? = some lowerProc ∧
+          Structured.ProcList.lookup? name
+              (Expressions.ProcList.toStructured lowerProcs) =
+            some lowerProc.toStructured ∧
+          lowerProc.name = name
+  | _state, _final, [], _procs, _lowerProcs, _fn,
+      hLower, _hCompile, hFind => by
+      simp [lowerFunctions?, Source.FunList.find?] at hLower hFind
+  | state, final, head :: rest, procs, lowerProcs, fn,
+      hLower, hCompile, hFind => by
+      cases hHead :
+          lowerFunction? recipe stackSlots frameName frameConfig?
+            state head with
+      | none =>
+          simp [lowerFunctions?, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨headProc, next⟩
+          cases hTail :
+              lowerFunctions? recipe stackSlots frameName frameConfig?
+                next rest with
+          | none =>
+              simp [lowerFunctions?, hHead, hTail] at hLower
+          | some tailResult =>
+              rcases tailResult with ⟨tail, tailFinal⟩
+              simp [lowerFunctions?, hHead, hTail] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              cases hHeadCompile : headProc.toExpressions? with
+              | none =>
+                  simp [Locals.ProcList.toExpressions?,
+                    hHeadCompile] at hCompile
+              | some headLower =>
+                  cases hTailCompile :
+                      Locals.ProcList.toExpressions? tail with
+                  | none =>
+                      simp [Locals.ProcList.toExpressions?,
+                        hHeadCompile, hTailCompile] at hCompile
+                  | some tailLower =>
+                      simp [Locals.ProcList.toExpressions?,
+                        hHeadCompile, hTailCompile] at hCompile
+                      subst lowerProcs
+                      have hHeadProcName :=
+                        lowerFunction?_name hHead
+                      have hHeadLowerName :=
+                        Locals.Proc.toExpressions?_name hHeadCompile
+                      have hCompiledHeadName :
+                          headLower.name = head.name :=
+                        hHeadLowerName.trans hHeadProcName
+                      by_cases hName : head.name = name
+                      · have hFn : fn = head := by
+                          simpa [Source.FunList.find?, hName] using
+                            hFind.symm
+                        subst fn
+                        exact
+                          ⟨state, next, headProc, headLower,
+                            hHead, hHeadCompile,
+                            by
+                              simp [Expressions.ProcList.toStructured,
+                                Structured.ProcList.lookup?,
+                                hCompiledHeadName, hName],
+                            hCompiledHeadName.trans hName⟩
+                      · have hFindTail :
+                            Source.FunList.find? name rest = some fn := by
+                          simpa [Source.FunList.find?, hName] using hFind
+                        obtain
+                            ⟨before, after, proc, lowerProc,
+                              hSelected, hProcCompile, hLookup,
+                              hProcName⟩ :=
+                          lowerFunctions?_find_compiled_lookup
+                            recipe stackSlots frameName frameConfig?
+                            name hTail hTailCompile hFindTail
+                        have hCompiledHeadNe :
+                            headLower.name ≠ name := by
+                          intro hEq
+                          exact hName (hCompiledHeadName.symm.trans hEq)
+                        exact
+                          ⟨before, after, proc, lowerProc,
+                            hSelected, hProcCompile,
+                            by
+                              simpa [Expressions.ProcList.toStructured,
+                                Structured.ProcList.lookup?,
+                                hCompiledHeadNe] using hLookup,
+                            hProcName⟩
+
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
@@ -3336,6 +3445,124 @@ theorem lowerExpressionsFromAllocation?_memoryAuthorized
       simp [hLocals] at hLower
   | some locals =>
       exact lowerLocalsFromAllocation?_memoryAuthorized hLocals
+
+/--
+The real whole-program allocation lowerer exposes the validated artifacts for
+the source function selected by name and the exact Structured procedure lookup
+produced by Locals and Expressions compilation.
+
+Observer preservation consumes this theorem from the public compiler equation;
+it does not accept a selected generated procedure or procedure-body equation as
+an independent premise.
+-/
+theorem lowerExpressionsFromAllocation?_find_compiled_function
+    {allocation : ProgramPlan} {program : Program}
+    {expressions : Expressions.Program}
+    {name : Name} {fn : FunDef}
+    (hLower :
+      lowerExpressionsFromAllocation? allocation program =
+        some expressions)
+    (hFind :
+      Source.FunList.find? name program.functions = some fn) :
+    ∃ recipe stackSlots frameName before after proc lowerProc,
+      validatePlan? allocation program = some (recipe, stackSlots) ∧
+        freshFrameName program = some frameName ∧
+        lowerFunction? recipe stackSlots frameName
+            (AllocationSupport.scratchFrameConfig?
+              program.memoryContract recipe.frameWords)
+            before fn =
+          some (proc, after) ∧
+        proc.toExpressions? = some lowerProc ∧
+        Structured.ProcList.lookup? name
+            expressions.toStructured.procs =
+          some lowerProc.toStructured := by
+  unfold lowerExpressionsFromAllocation? at hLower
+  cases hLocals :
+      lowerLocalsFromAllocation? allocation program with
+  | none =>
+      simp [hLocals] at hLower
+  | some locals =>
+      have hExpressions :
+          locals.toExpressions? = some expressions := by
+        simpa [hLocals] using hLower
+      unfold lowerLocalsFromAllocation? at hLocals
+      cases hValidate : validatePlan? allocation program with
+      | none =>
+          simp [hValidate] at hLocals
+      | some validated =>
+          rcases validated with ⟨recipe, stackSlots⟩
+          cases hFresh : freshFrameName program with
+          | none =>
+              simp [hValidate, hFresh] at hLocals
+          | some frameName =>
+              have hToLocals :
+                  lowerToLocals? recipe stackSlots frameName program =
+                    some locals := by
+                simpa [hValidate, hFresh] using hLocals
+              let frameConfig? :=
+                AllocationSupport.scratchFrameConfig?
+                  program.memoryContract recipe.frameWords
+              unfold lowerToLocals? at hToLocals
+              cases hFunctions :
+                  lowerFunctions? recipe stackSlots frameName frameConfig?
+                    recipe.stateAfterSignatures program.functions with
+              | none =>
+                  simp [frameConfig?, hFunctions] at hToLocals
+              | some functionResult =>
+                  rcases functionResult with
+                    ⟨procs, stateAfterFunctions⟩
+                  by_cases hState :
+                      stateAfterFunctions = recipe.stateAfterFunctions
+                  · subst stateAfterFunctions
+                    let mainStart : AllocationSupport.CompileState :=
+                      { env := []
+                        nextSlot := recipe.stateAfterFunctions.nextSlot }
+                    cases hMain :
+                        lowerMain? recipe stackSlots frameName frameConfig?
+                          mainStart program.body with
+                    | none =>
+                        simp [frameConfig?, hFunctions,
+                          mainStart, hMain] at hToLocals
+                    | some mainResult =>
+                        rcases mainResult with ⟨main, final⟩
+                        by_cases hFinal :
+                            final.allocation = recipe.main
+                        · simp [frameConfig?, hFunctions,
+                            mainStart, hMain, hFinal] at hToLocals
+                          subst locals
+                          unfold Locals.Program.toExpressions? at hExpressions
+                          cases hProcs :
+                              Locals.ProcList.toExpressions? procs with
+                          | none =>
+                              simp [hProcs] at hExpressions
+                          | some lowerProcs =>
+                              cases hBody :
+                                  Locals.Block.compile Locals.Ctx.initial
+                                    main with
+                              | none =>
+                                  simp [hProcs, hBody] at hExpressions
+                              | some lowerBody =>
+                                  simp [hProcs, hBody] at hExpressions
+                                  subst expressions
+                                  obtain
+                                      ⟨before, after, proc, lowerProc,
+                                        hSelected, hProcCompile,
+                                        hLookup, _hProcName⟩ :=
+                                    lowerFunctions?_find_compiled_lookup
+                                      recipe stackSlots frameName
+                                      frameConfig? name hFunctions
+                                      hProcs hFind
+                                  exact
+                                    ⟨recipe, stackSlots, frameName,
+                                      before, after, proc, lowerProc,
+                                      rfl, rfl,
+                                      by simpa [frameConfig?] using hSelected,
+                                      hProcCompile,
+                                      by simpa [Expressions.Program.toStructured]
+                                        using hLookup⟩
+                        · simp [frameConfig?, hFunctions,
+                            mainStart, hMain, hFinal] at hToLocals
+                  · simp [frameConfig?, hFunctions, hState] at hToLocals
 
 def allocationLowerer :
     Locals.Allocation.Lowerer Program Expressions.Program where

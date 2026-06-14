@@ -91,6 +91,144 @@ theorem stack_of_arguments
       Structured.EffectSemantics.StateModel.withEVM,
       Structured.RunState.withEVM, Structured.RunState.pushReturn]
 
+/--
+Argument evaluation after the real scratch-frame acquire sequence establishes
+the transient entry relation for a frame-backed callee.
+
+The shared target-growth relation transports the acquire-time frame bounds
+through arbitrary checked argument expressions.
+-/
+theorem scratch_of_arguments
+    {contract : MemoryContract.Contract}
+    {globalFrameWords depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {callerPlan calleePlan : Locals.Allocation.Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase : Nat}
+    {callerMode : AllocationObserverRelation.ActivationMode}
+    {pending : List (Locals.Name × Nat)}
+    {sourceAfterArgs : Functions.ObserverSemantics.State transcript}
+    {targetAfterAcquire targetAfterArgs :
+      Structured.ObserverSemantics.State transcript}
+    {args : List Word}
+    {initialStore : Locals.Source.Store}
+    {callerStack : EvmYul.Stack Word}
+    {retc : Nat}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hArgs :
+      AllocationObserverRelation.ActivationExprResultRel
+        contract callerPlan callerLive 1 callerFrameBase args.length
+        callerMode sourceAfterArgs targetAfterAcquire targetAfterArgs args)
+    (hAcquireStack :
+      targetAfterAcquire.source.evm.stack =
+        EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt config depth) ::
+          callerStack)
+    (hFrameActive :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterAcquire.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes)
+    (hFrameAllocated :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterAcquire.source.evm.toMachineState.memory.size)
+    (hGrowth :
+      AllocationObserverRelation.Frame.TargetGrowth
+        targetAfterAcquire targetAfterArgs)
+    (hLookup :
+      Functions.Source.Store.lookupMany
+          (pending.map Prod.fst) initialStore =
+        some args) :
+    AllocationObserverRelation.ActivationCalleeEntryRel
+      contract calleePlan [] pending
+      (AllocationObserverRelation.Frame.baseAt config depth)
+      (.scratch 0 config.frameWords)
+      ((Functions.ObserverSemantics.stateModel transcript).withSource
+        sourceAfterArgs
+        { shared := sourceAfterArgs.source.shared
+          vars := initialStore })
+      (structuredState targetAfterArgs
+        (args.reverse ++
+          [EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt config depth)])
+        callerStack retc) := by
+  have hArgsLength : args.length = pending.length := by
+    simpa using Functions.Source.Store.lookupMany_length hLookup
+  have hFinalActive :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterArgs.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes :=
+    hFrameActive.trans
+      (Nat.mul_le_mul_right MemoryContract.wordBytes hGrowth.active)
+  have hFinalAllocated :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          AllocationObserverRelation.Frame.bytes config ≤
+        targetAfterArgs.source.evm.toMachineState.memory.size :=
+    hFrameAllocated.trans hGrowth.memory
+  have hFrameNoWrap :=
+    AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
+      hConfig hBudget
+  have hFrameHost :=
+    AllocationObserverRelation.Frame.hostAddressable_of_budget_of_scratchFrameConfig?
+      hConfig hBudget
+  obtain ⟨reservation, hReservation, hReserved⟩ :=
+    AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
+      hConfig hBudget
+  have hBase := hArgs.state.base
+  apply
+    AllocationObserverRelation.ActivationCalleeEntryRel.scratch_empty
+      (values := args)
+      (suffix :=
+        [EvmYul.UInt256.ofNat
+          (AllocationObserverRelation.Frame.baseAt config depth)])
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.EffectSemantics.StateModel.withEVM,
+      Structured.RunState.pushReturn] using hBase.cursor
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Simulation.ResourceReplay.State.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hBase.core.machine
+  · simpa [structuredState, Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource,
+      Simulation.ResourceReplay.State.withSource,
+      Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hBase.core.world
+  · rw [← hArgsLength]
+    simp [structuredState, Structured.ObserverSemantics.stateModel,
+      Structured.EffectSemantics.StateModel.withEVM,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn]
+  · exact hFinalActive
+  · exact hFinalAllocated
+  · exact hFrameNoWrap
+  · exact hFrameHost
+  · simpa [structuredState, Structured.ObserverSemantics.stateModel,
+      Structured.RunState.withEVM,
+      Structured.RunState.pushReturn] using hArgs.state.activeNoWrap
+  · exact ⟨reservation, hReservation, hReserved⟩
+  · simpa [Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource] using hLookup
+  · simp [structuredState, Structured.ObserverSemantics.stateModel,
+      Structured.EffectSemantics.StateModel.withEVM,
+      Structured.RunState.withEVM, Structured.RunState.pushReturn]
+
 end CalleeEntry
 
 namespace EntryMarkers
@@ -1857,7 +1995,9 @@ theorem forward_runtime
           contract plan live stackOffset frameBase args.length mode
           sourceFinal target targetFinal values ∧
         AllocationObserverRelation.Frame.AllocatorReady
-          config allocatorDepth targetFinal := by
+          config allocatorDepth targetFinal ∧
+        AllocationObserverRelation.Frame.TargetGrowth
+          target targetFinal := by
   induction hSafe generalizing lowered code stackOffset target with
   | nil =>
       have hLowered : lowered = [] := by
@@ -1870,7 +2010,8 @@ theorem forward_runtime
       exact
         ⟨target, rfl,
           AllocationObserverRelation.ActivationExprResultRel.nil hRel,
-          hReady⟩
+          hReady,
+          AllocationObserverRelation.Frame.TargetGrowth.refl target⟩
   | @cons arg rest source afterArg final value values hArg hRest ih =>
       cases hLowerArg :
           AllocationLowering.lowerExpr lowerCtx lowerState arg with
@@ -1912,15 +2053,19 @@ theorem forward_runtime
                         intro candidate hMember
                         exact hScoped candidate (by simp [hMember])
                       obtain
-                          ⟨targetAfterArg, hArgRun, hArgRel, hArgReady⟩ :=
-                        AllocationObserverExpression.forwardExprRuntime
+                          ⟨targetAfterArg, hArgRun, hArgRel, hArgReady,
+                            hArgGrowth⟩ :=
+                        AllocationObserverExpression.forwardExprRuntime_with_growth
                           hPrimitive hConfig hArg hCtx hArgScoped hLowerArg
                           hArgCode hRel hReady
                       obtain
-                          ⟨targetFinal, hRestRun, hRestRel, hFinalReady⟩ :=
+                          ⟨targetFinal, hRestRun, hRestRel, hFinalReady,
+                            hRestGrowth⟩ :=
                         ih hRestScoped hLowerRest hRestCode hArgRel.state
                           hArgReady
-                      refine ⟨targetFinal, ?_, ?_, hFinalReady⟩
+                      refine
+                        ⟨targetFinal, ?_, ?_, hFinalReady,
+                          hArgGrowth.trans hRestGrowth⟩
                       · rw [
                           AllocationObserverPreservation.ObserverCode.run_append,
                           hArgRun]

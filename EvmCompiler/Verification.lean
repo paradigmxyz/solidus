@@ -121,6 +121,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime_with_growth
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_growth
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward_runtime
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.condition_forward_runtime
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.backward_of_safeEval
@@ -136,6 +138,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.stack_empty
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.scratch_empty
 #check EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.stack_of_arguments
+#check EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.scratch_of_arguments
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
 #check EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
 #check EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
@@ -168,6 +171,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_function_entry
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_eq_some_exact
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_function_components
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_lookup
+#check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
+#check EvmCompiler.Functions.Source.FunList.mem_of_find?_eq_some
 #check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_stack_of_context
@@ -400,6 +406,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_memory_eq_active_growth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_machine_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_mstore_disjoint
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress

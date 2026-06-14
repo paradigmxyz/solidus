@@ -29270,3 +29270,23 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   dependency guard, touched-file hole/unsafe scan, `git diff --check`, and the
   resource-observer axiom smoke pass. The new declarations use only
   `propext`, `Classical.choice`, and `Quot.sound`.
+## 2026-06-13 compaction-resume
+
+- Resumed the active end-to-end Yul observer proof after context compaction.
+- Current focus: complete the pass-owned scratch callee-entry theorem, then compose allocator-aware internal-call preservation without introducing a vertical observer proof corridor.
+
+## 2026-06-13 23:45:27 PDT — nested call-entry checkpoint
+
+- Added exact source-function membership and Structured procedure-lookup
+  recovery through the real allocation and Locals/Expressions compilers,
+  including the whole-program `lowerExpressionsFromAllocation?` boundary.
+- Added shared target-growth transport for active and materialized memory,
+  strengthened allocator-aware expression and call-argument preservation, and
+  proved scratch callee entry after the real acquire plus arbitrary checked
+  argument evaluation.
+- Validation: focused call build and full 1,208-job
+  `EvmCompiler.Verification` passed; architecture dependency guard,
+  touched-Lean hole/unsafe scan, `git diff --check`, and expanded observer
+  axiom smoke passed. New declarations use only `propext`,
+  `Classical.choice`, and `Quot.sound` as applicable. Soft size debt remains in
+  the three pass-owned observer modules reported by the architecture script.

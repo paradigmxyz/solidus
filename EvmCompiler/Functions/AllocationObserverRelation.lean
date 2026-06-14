@@ -4318,6 +4318,39 @@ def AllocatorAt {transcript : Trace} (config : Config) (depth : Nat)
       (EvmYul.UInt256.ofNat config.allocatorCell) =
     EvmYul.UInt256.ofNat (baseAt config depth)
 
+/--
+Target execution may grow active and materialized memory but never shrinks
+either component.
+
+This resource relation is independent of allocator metadata and is shared by
+expression preservation, nested-frame entry, and later call composition.
+-/
+structure TargetGrowth {transcript : Trace}
+    (before after : TargetState transcript) : Prop where
+  active :
+    before.source.evm.activeWords.toNat ≤
+      after.source.evm.activeWords.toNat
+  memory :
+    before.source.evm.toMachineState.memory.size ≤
+      after.source.evm.toMachineState.memory.size
+
+namespace TargetGrowth
+
+theorem refl {transcript : Trace}
+    (target : TargetState transcript) :
+    TargetGrowth target target :=
+  ⟨Nat.le_refl _, Nat.le_refl _⟩
+
+theorem trans {transcript : Trace}
+    {first second third : TargetState transcript}
+    (hLeft : TargetGrowth first second)
+    (hRight : TargetGrowth second third) :
+    TargetGrowth first third :=
+  ⟨hLeft.active.trans hRight.active,
+    hLeft.memory.trans hRight.memory⟩
+
+end TargetGrowth
+
 structure AllocatorReady {transcript : Trace}
     (config : Config) (depth : Nat)
     (target : TargetState transcript) : Prop where
@@ -4942,6 +4975,30 @@ theorem hostAddressable_of_budget_of_scratchFrameConfig?
     AllocationSupport.scratchFrameConfig?_sound hConfig
   exact lt_of_le_of_lt
     (by simpa [Budget, hLimit] using hBudget) hHost
+
+theorem reserved_of_budget_of_scratchFrameConfig?
+    {contract : MemoryContract.Contract} {frameWords depth : Nat}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget : Budget config depth) :
+    ∃ reservation,
+      contract.scratch? = some reservation ∧
+        reservation.containsRegion
+          (baseAt config depth) config.frameWords := by
+  obtain
+      ⟨reservation, hReservation, _hAllocator, hFirst, hLimit,
+        _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  refine ⟨reservation, hReservation, ?_⟩
+  constructor
+  · unfold baseAt
+    rw [hFirst]
+    unfold MemoryContract.ScratchReservation.frameBase
+    omega
+  · rw [← hLimit]
+    simpa [Budget, bytes] using hBudget
 
 end Frame
 

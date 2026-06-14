@@ -686,12 +686,15 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   exact machine equality. Internal-call argument evaluation and arbitrary
   multi-return writeback are also allocator-aware; stack targets are
   machine-neutral and scratch targets use the same owned disjoint-store
-  interface. The immediate remaining call work is recovering the selected
-  callee body/return artifact from the existing lowerer and composing frame
-  acquire, procedure execution, release, and target assignment. Recursive
-  source-fuel induction for the remaining loop outcomes follows; matching
-  whole-function and whole-program backward adequacy comes after that forward
-  recursion closes.
+  interface. The selected callee body/return artifact and exact Structured
+  procedure lookup are now recovered from the real whole-program lowerer.
+  Argument evaluation also transports target memory growth, so both stack-only
+  and scratch-frame calls construct the compiler-selected callee-entry
+  relation after the real call-frame transition. The immediate remaining call
+  work is composing callee prelude/body execution, return attachment, frame
+  release, and target assignment. Recursive source-fuel induction for the
+  remaining loop outcomes follows; matching whole-function and whole-program
+  backward adequacy comes after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
