@@ -471,6 +471,49 @@ theorem runBody_returned_parts {σ : Type}
           | halt kind =>
               simp [hMode] at hRun
 
+theorem runBody_returned_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args : List Word}
+    {fuel : Nat} {state returnedState : σ}
+    {returnValues : List Word}
+    {paramStore : Source.Store}
+    {bodyOutcome : Outcome σ} {bodyCtx' : Source.Ctx}
+    (hParams :
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty =
+        some paramStore)
+    (hBody :
+      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (bodyOutcome, bodyCtx'))
+    (hMode : bodyOutcome.mode = .regular ∨ bodyOutcome.mode = .leave)
+    (hReturns :
+      Source.Store.lookupMany fn.returns (model.vars bodyOutcome.state) =
+        some returnValues)
+    (hState : bodyOutcome.state = returnedState) :
+    FunDef.runBody model prim program fn args (fuel + 1) state =
+      .ok (CallResult.returned returnedState returnValues) := by
+  have hBody' :
+      Block.runOpen model prim program
+          { Source.Ctx.withLeaveScope Source.Ctx.initial
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (bodyOutcome, bodyCtx') := by
+    simpa [bodyCtx] using hBody
+  have hReturns' :
+      Source.Store.lookupMany fn.returns (model.vars returnedState) =
+        some returnValues := by
+    simpa [← hState] using hReturns
+  rcases hMode with hMode | hMode
+  · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
+  · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
+
 theorem runBody_halted_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program)
@@ -653,6 +696,39 @@ theorem call_regular_parts {σ : Type}
                     simp [hBody, Outcome.regular, Outcome.halt] at hRun
                     cases hRun
   · simp [hTargets, Source.invalid, Structured.invalid] at hRun
+
+theorem call_regular_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source stateAfterArgs stateAfterCall sourceAfter : σ}
+    {argValues returnValues : List Word}
+    {fn : Functions.FunDef} {returnStore : Source.Store}
+    (hTargets : targets.Nodup)
+    (hArgs :
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues))
+    (hFind :
+      Source.FunList.find? functionName program.functions = some fn)
+    (hCall :
+      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+        .ok (CallResult.returned stateAfterCall returnValues))
+    (hAssign :
+      Source.Store.assignMany targets returnValues
+          (model.vars stateAfterArgs) =
+        some returnStore)
+    (hFinal :
+      sourceAfter =
+        model.withSource stateAfterCall
+          { shared := (model.source stateAfterCall).shared,
+            vars := returnStore }) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.call targets functionName args) source =
+      .ok (Outcome.regular sourceAfter, ctx) := by
+  subst sourceAfter
+  simp [Stmt.run, hTargets, hArgs, hFind, hCall, hAssign]
 
 /--
 A regular call with two available fuel steps exposes the strictly smaller

@@ -302,10 +302,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
+#check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_of_parts
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_halted_parts
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_args_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_length
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_of_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_body_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
@@ -469,6 +471,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
+#check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.eval_parts
+#check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.terminal_parts
+#check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval
+#check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+#check EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.of_safe_eval
+#check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant

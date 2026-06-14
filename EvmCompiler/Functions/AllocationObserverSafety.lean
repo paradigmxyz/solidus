@@ -216,6 +216,79 @@ theorem primitiveMemorySafe_unrestricted_of_noExternal
     TerminalMemorySafe contract .selfdestruct [recipient] := by
   simp [TerminalMemorySafe]
 
+namespace SafeSemantics
+
+/--
+Source memory safety is enforced by specializing the canonical parameterized
+Functions semantics at the primitive boundary. Control flow, calls, fuel, and
+outcomes remain exactly those of `Functions.Source.Effectful`.
+-/
+noncomputable def primitiveSemantics
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace) :
+    Functions.Source.Effectful.PrimitiveSemantics
+      (Functions.ObserverSemantics.State transcript) := by
+  classical
+  exact
+    { eval := fun op state values =>
+        if PrimitiveMemorySafe contract op
+            state.source.shared.toMachineState values then
+          (Functions.ObserverSemantics.primitiveSemantics transcript).eval
+            op state values
+        else
+          Functions.Source.invalid
+      terminal := fun kind state values =>
+        if TerminalMemorySafe contract kind values then
+          (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+            kind state values
+        else
+          Functions.Source.invalid }
+
+theorem eval_parts
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {op : Structured.BasicOp}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values outputs : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).eval op state values =
+        .ok (final, outputs)) :
+    PrimitiveMemorySafe contract op
+        state.source.shared.toMachineState values ∧
+      (Functions.ObserverSemantics.primitiveSemantics transcript).eval
+          op state values =
+        .ok (final, outputs) := by
+  classical
+  by_cases hSafe :
+      PrimitiveMemorySafe contract op
+        state.source.shared.toMachineState values
+  · exact
+      ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
+  · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
+      Structured.invalid] at hEval
+
+theorem terminal_parts
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {kind : Assembly.HaltKind}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).terminal kind state values =
+        .ok final) :
+    TerminalMemorySafe contract kind values ∧
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind state values =
+        .ok final := by
+  classical
+  by_cases hSafe : TerminalMemorySafe contract kind values
+  · exact
+      ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
+  · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
+      Structured.invalid] at hEval
+
+end SafeSemantics
+
 mutual
   /--
   A successful canonical Functions expression evaluation whose every dynamic
@@ -316,6 +389,207 @@ inductive ArgList.MemorySafeEval
           afterArg final values) :
       ArgList.MemorySafeEval contract transcript (arg :: rest)
         source final (value :: values)
+
+mutual
+  theorem Expr.MemorySafeEval.of_safe_eval
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {expr : Functions.Expr results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hEval :
+        Functions.Source.Effectful.Expr.eval
+            (Functions.ObserverSemantics.stateModel transcript)
+            (SafeSemantics.primitiveSemantics contract transcript)
+            expr source =
+          .ok (final, values)) :
+      Expr.MemorySafeEval contract transcript expr source final values := by
+    cases expr with
+    | lit value =>
+        have hEq : (source, [value]) = (final, values) := by
+          simpa [Functions.Source.Effectful.Expr.eval,
+            Locals.Source.Effectful.Expr.eval] using hEval
+        cases hEq
+        exact .lit
+    | var name =>
+        cases hValue : source.source.vars name with
+        | none =>
+            simp [Functions.Source.Effectful.Expr.eval,
+              Locals.Source.Effectful.Expr.eval,
+              Functions.ObserverSemantics.stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.vars, hValue,
+              Functions.Source.invalid, Structured.invalid] at hEval
+        | some value =>
+            have hEq : (source, [value]) = (final, values) := by
+              simpa [Functions.Source.Effectful.Expr.eval,
+                Locals.Source.Effectful.Expr.eval,
+                Functions.ObserverSemantics.stateModel,
+                Locals.ObserverSemantics.stateModel,
+                Locals.Source.Effectful.StateModel.vars, hValue] using hEval
+            cases hEq
+            exact .var hValue
+    | code code =>
+        simp [Functions.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.eval,
+          Functions.Source.invalid, Structured.invalid] at hEval
+    | prim op args =>
+        simp only [Functions.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.eval] at hEval
+        cases hArgs :
+            Locals.Source.Effectful.Expr.ExprSeq.eval
+              (Functions.ObserverSemantics.stateModel transcript)
+              (SafeSemantics.primitiveSemantics contract transcript)
+              args source with
+        | error err =>
+            simp [hArgs] at hEval
+        | ok result =>
+            rcases result with ⟨afterArgs, argValues⟩
+            simp only [hArgs, Bind.bind, Except.bind] at hEval
+            have hArgsSafe :=
+              ExprSeq.MemorySafeEval.of_safe_eval hArgs
+            obtain ⟨hMemory, hPrim⟩ :=
+              SafeSemantics.eval_parts hEval
+            exact .prim hArgsSafe hMemory hPrim
+
+  theorem ExprSeq.MemorySafeEval.of_safe_eval
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {exprs : Locals.ExprSeq results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word}
+      (hEval :
+        Locals.Source.Effectful.Expr.ExprSeq.eval
+            (Functions.ObserverSemantics.stateModel transcript)
+            (SafeSemantics.primitiveSemantics contract transcript)
+            exprs source =
+          .ok (final, values)) :
+      ExprSeq.MemorySafeEval contract transcript exprs source final values := by
+    cases exprs with
+    | nil =>
+        have hEq : (source, []) = (final, values) := by
+          simpa [Locals.Source.Effectful.Expr.ExprSeq.eval] using hEval
+        cases hEq
+        exact .nil
+    | @cons left right head tail =>
+        simp only [Locals.Source.Effectful.Expr.ExprSeq.eval] at hEval
+        cases hHead :
+            Locals.Source.Effectful.Expr.eval
+              (Functions.ObserverSemantics.stateModel transcript)
+              (SafeSemantics.primitiveSemantics contract transcript)
+              head source with
+        | error err =>
+            simp [hHead] at hEval
+        | ok headResult =>
+            rcases headResult with ⟨afterHead, headValues⟩
+            simp only [hHead, Bind.bind, Except.bind] at hEval
+            cases hTail :
+                Locals.Source.Effectful.Expr.ExprSeq.eval
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (SafeSemantics.primitiveSemantics contract transcript)
+                  tail afterHead with
+            | error err =>
+                simp [hTail] at hEval
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFinal, tailValues⟩
+                simp only [hTail, Bind.bind, Except.bind] at hEval
+                have hEq :
+                    (tailFinal, headValues ++ tailValues) =
+                      (final, values) := by
+                  exact Except.ok.inj hEval
+                cases hEq
+                exact .cons
+                  (Expr.MemorySafeEval.of_safe_eval hHead)
+                  (ExprSeq.MemorySafeEval.of_safe_eval hTail)
+end
+
+theorem Expr.MemorySafeEval.of_safe_evalOne
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {results : Nat} {expr : Functions.Expr results}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {value : Word}
+    (hEval :
+      Functions.Source.Effectful.Expr.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (SafeSemantics.primitiveSemantics contract transcript)
+          expr source =
+        .ok (final, value)) :
+    Expr.MemorySafeEval contract transcript expr source final [value] := by
+  unfold Functions.Source.Effectful.Expr.evalOne at hEval
+  unfold Locals.Source.Effectful.Expr.evalOne at hEval
+  cases hExpr :
+      Locals.Source.Effectful.Expr.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (SafeSemantics.primitiveSemantics contract transcript)
+        expr source with
+  | error err =>
+      simp [hExpr] at hEval
+  | ok result =>
+      rcases result with ⟨exprFinal, values⟩
+      simp only [hExpr, Bind.bind, Except.bind] at hEval
+      cases values with
+      | nil =>
+          simp [Functions.Source.invalid, Structured.invalid] at hEval
+      | cons head tail =>
+          cases tail with
+          | nil =>
+              have hEq : (exprFinal, head) = (final, value) := by
+                exact Except.ok.inj hEval
+              cases hEq
+              exact Expr.MemorySafeEval.of_safe_eval hExpr
+          | cons next rest =>
+              simp [Functions.Source.invalid, Structured.invalid] at hEval
+
+theorem ArgList.MemorySafeEval.of_safe_eval
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {args : List (Functions.Expr 1)}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (SafeSemantics.primitiveSemantics contract transcript)
+          args source =
+        .ok (final, values)) :
+    ArgList.MemorySafeEval contract transcript args source final values := by
+  induction args generalizing source final values with
+  | nil =>
+      have hEq : (source, []) = (final, values) := by
+        simpa [Functions.Source.Effectful.ArgList.eval] using hEval
+      cases hEq
+      exact .nil
+  | cons arg rest ih =>
+      unfold Functions.Source.Effectful.ArgList.eval at hEval
+      cases hArg :
+          Functions.Source.Effectful.Expr.evalOne
+            (Functions.ObserverSemantics.stateModel transcript)
+            (SafeSemantics.primitiveSemantics contract transcript)
+            arg source with
+      | error err =>
+          simp [hArg] at hEval
+      | ok argResult =>
+          rcases argResult with ⟨afterArg, value⟩
+          simp only [hArg, Bind.bind, Except.bind] at hEval
+          cases hRest :
+              Functions.Source.Effectful.ArgList.eval
+                (Functions.ObserverSemantics.stateModel transcript)
+                (SafeSemantics.primitiveSemantics contract transcript)
+                rest afterArg with
+          | error err =>
+              simp [hRest] at hEval
+          | ok restResult =>
+              rcases restResult with ⟨restFinal, restValues⟩
+              simp only [hRest, Bind.bind, Except.bind] at hEval
+              have hEq :
+                  (restFinal, value :: restValues) =
+                    (final, values) := by
+                exact Except.ok.inj hEval
+              cases hEq
+              exact .cons
+                (Expr.MemorySafeEval.of_safe_evalOne hArg)
+                (ih hRest)
 
 mutual
   theorem Expr.MemorySafeEval.eval_eq
