@@ -595,6 +595,104 @@ theorem terminal_of_invariant
   · intro hMode
     cases hMode
 
+theorem brk_of_invariant_exact
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : localsCtx.breakDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx plan
+        beforeLive frameBase beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        plan afterLive frameBase beforeMode afterMode sourceProgram sourceCtx
+        .brk source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.brk targetFinal)
+        sourceCtx ∧
+      ActivationStateRel contract plan afterLive 0 frameBase afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = targetDepth ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    AllocationObserverCleanup.BreakLeaf.compiler_shape
+      hTargetDepth hLower hCompile
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalRel, hFinalStack,
+        hMachine⟩ :=
+    AllocationObserverCleanup.Plain.forward_exact
+      hInvariant.activation.compiler hTransition
+      hInvariant.activation.planWF hInvariant.activation.defined
+      hInvariant.activation.state hInvariant.activation.stackLength
+      hCleanup
+  have hBreakStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .brk targetFinal
+          (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.brk
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.brk] }
+        target
+        (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_brk hBreakStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.brk
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  have hEffect :
+      Frame.ActivationEffect config allocatorDepth beforeMode
+        target targetFinal :=
+    Frame.ActivationEffect.of_allocatorEffect
+      (Frame.AllocatorEffect.of_machine_eq
+        hInvariant.allocator hMachine)
+  refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
+  refine
+    ⟨0, 2, hSource, ?_, ?_, .brk hFinalRel,
+      hTransition.sameFrame, hEffect⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTarget
+  · intro hMode
+    cases hMode
+
 theorem brk_of_invariant
     {contract : MemoryContract.Contract}
     {config : Frame.Config}
@@ -640,34 +738,91 @@ theorem brk_of_invariant
             afterLive source))
         (Structured.EffectSemantics.Outcome.brk targetFinal)
         sourceCtx := by
+  obtain ⟨targetFinal, hForward, _hState, _hStack, _hMachine⟩ :=
+    brk_of_invariant_exact hSourceScope hTargetDepth hTransition hInvariant
+      hLower hCompile
+  exact ⟨targetFinal, hForward⟩
+
+theorem cont_of_invariant_exact
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : localsCtx.continueDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx plan
+        beforeLive frameBase beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        plan afterLive frameBase beforeMode afterMode sourceProgram sourceCtx
+        .cont source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.cont targetFinal)
+        sourceCtx ∧
+      ActivationStateRel contract plan afterLive 0 frameBase afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = targetDepth ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState := by
   obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
-    AllocationObserverCleanup.BreakLeaf.compiler_shape
+    AllocationObserverCleanup.ContinueLeaf.compiler_shape
       hTargetDepth hLower hCompile
   obtain
-      ⟨targetFinal, hCleanupRun, hFinalRel, _hFinalStack,
+      ⟨targetFinal, hCleanupRun, hFinalRel, hFinalStack,
         hMachine⟩ :=
     AllocationObserverCleanup.Plain.forward_exact
       hInvariant.activation.compiler hTransition
       hInvariant.activation.planWF hInvariant.activation.defined
       hInvariant.activation.state hInvariant.activation.stackLength
       hCleanup
-  have hBreakStmt :
+  have hContinueStmt :
       Structured.ObserverSemantics.Stmt.Eval
-        targetProgram 0 .brk targetFinal
-          (Structured.EffectSemantics.Outcome.brk targetFinal) :=
-    Structured.EffectSemantics.Stmt.Eval.brk
+        targetProgram 0 .cont targetFinal
+          (Structured.EffectSemantics.Outcome.cont targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.cont
   have hTarget :
       Structured.ObserverSemantics.Block.Eval
         targetProgram 2
-        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.brk] }
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.cont] }
         target
-        (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+        (Structured.EffectSemantics.Outcome.cont targetFinal) :=
     Structured.EffectSemantics.Block.Eval.cons_regular
       (Structured.EffectSemantics.Stmt.Eval.code
         (fuel := 1) hCleanupRun)
-      (Structured.EffectSemantics.Block.Eval.cons_brk hBreakStmt)
+      (Structured.EffectSemantics.Block.Eval.cons_cont hContinueStmt)
   have hSource :=
-    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.brk
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.cont
       (contract := contract) (transcript := transcript)
       (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
       (source := source) hSourceScope).run_eq
@@ -677,8 +832,9 @@ theorem brk_of_invariant
     Frame.ActivationEffect.of_allocatorEffect
       (Frame.AllocatorEffect.of_machine_eq
         hInvariant.allocator hMachine)
+  refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
   refine
-    ⟨targetFinal, 0, 2, hSource, ?_, ?_, .brk hFinalRel,
+    ⟨0, 2, hSource, ?_, ?_, .cont hFinalRel,
       hTransition.sameFrame, hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
@@ -730,50 +886,10 @@ theorem cont_of_invariant
             afterLive source))
         (Structured.EffectSemantics.Outcome.cont targetFinal)
         sourceCtx := by
-  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
-    AllocationObserverCleanup.ContinueLeaf.compiler_shape
-      hTargetDepth hLower hCompile
-  obtain
-      ⟨targetFinal, hCleanupRun, hFinalRel, _hFinalStack,
-        hMachine⟩ :=
-    AllocationObserverCleanup.Plain.forward_exact
-      hInvariant.activation.compiler hTransition
-      hInvariant.activation.planWF hInvariant.activation.defined
-      hInvariant.activation.state hInvariant.activation.stackLength
-      hCleanup
-  have hContinueStmt :
-      Structured.ObserverSemantics.Stmt.Eval
-        targetProgram 0 .cont targetFinal
-          (Structured.EffectSemantics.Outcome.cont targetFinal) :=
-    Structured.EffectSemantics.Stmt.Eval.cont
-  have hTarget :
-      Structured.ObserverSemantics.Block.Eval
-        targetProgram 2
-        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.cont] }
-        target
-        (Structured.EffectSemantics.Outcome.cont targetFinal) :=
-    Structured.EffectSemantics.Block.Eval.cons_regular
-      (Structured.EffectSemantics.Stmt.Eval.code
-        (fuel := 1) hCleanupRun)
-      (Structured.EffectSemantics.Block.Eval.cons_cont hContinueStmt)
-  have hSource :=
-    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.cont
-      (contract := contract) (transcript := transcript)
-      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
-      (source := source) hSourceScope).run_eq
-  have hEffect :
-      Frame.ActivationEffect config allocatorDepth beforeMode
-        target targetFinal :=
-    Frame.ActivationEffect.of_allocatorEffect
-      (Frame.AllocatorEffect.of_machine_eq
-        hInvariant.allocator hMachine)
-  refine
-    ⟨targetFinal, 0, 2, hSource, ?_, ?_, .cont hFinalRel,
-      hTransition.sameFrame, hEffect⟩
-  · simpa [Expressions.StmtList.toStructured,
-      Expressions.Stmt.toStructured] using hTarget
-  · intro hMode
-    cases hMode
+  obtain ⟨targetFinal, hForward, _hState, _hStack, _hMachine⟩ :=
+    cont_of_invariant_exact hSourceScope hTargetDepth hTransition hInvariant
+      hLower hCompile
+  exact ⟨targetFinal, hForward⟩
 
 end NonregularStmtRuntimeForward
 
@@ -1222,6 +1338,8 @@ structure ControlDestination
   compiler :
     AllocationObserverContext.ActivationExprContext
       lowerCtx state locals plan live mode
+  planWF :
+    plan.WellFormed
   subset :
     ∀ name, name ∈ live → name ∈ currentLive
   sameFrame : SameFrame currentMode mode
@@ -1252,6 +1370,7 @@ def transport
     live := hDestination.live
     mode := hDestination.mode
     compiler := hDestination.compiler
+    planWF := hDestination.planWF
     subset := fun name hName =>
       hLive name (hDestination.subset name hName)
     sameFrame := hMode.symm.trans hDestination.sameFrame
@@ -1285,6 +1404,146 @@ theorem exists_transition
 end ControlDestination
 
 /--
+The exact pass-owned cleanup artifact selected by one available source control
+destination.
+
+The transition stays indexed by the destination's canonical live ordering.
+Source semantics may present an extensionally equal ordering; abrupt statement
+preservation reindexes the transition only at the leaf. `restoredCompiler` and
+`planAgree` retain the facts needed to rebuild the destination runtime
+invariant after that cleanup.
+-/
+structure ControlTransitionArtifact
+    (kind : ControlKind)
+    (lowerCtx : AllocationLowering.Ctx)
+    (currentState : AllocationLowering.State)
+    (currentLocals : Locals.Ctx)
+    (currentPlan : Locals.Allocation.Plan)
+    (currentLive : List Functions.Name)
+    (currentMode : ActivationMode)
+    (sourceCtx : Functions.Source.Ctx)
+    (afterLive : List Functions.Name) where
+  destination :
+    ControlDestination lowerCtx currentState currentPlan currentLive
+      currentMode
+  sourceEquivalent :
+    ∀ name, name ∈ afterLive ↔ name ∈ destination.live
+  target :
+    kind.targetDepth? currentLocals =
+      some destination.locals.layout.length
+  transition :
+    AllocationObserverCleanup.Transition currentPlan currentLive
+      destination.live destination.locals.layout.length currentMode
+      destination.mode
+  restoredCompiler :
+    AllocationObserverContext.ActivationExprContext
+      lowerCtx destination.state destination.locals currentPlan
+      destination.live destination.mode
+  planAgree :
+    PlanAgreesOn currentPlan destination.plan destination.live
+
+namespace ControlTransitionArtifact
+
+/--
+Rebuild the complete runtime invariant at a canonical control destination after
+the compiler-emitted plain cleanup has run.
+
+The target execution facts are exactly those proved by the cleanup owner:
+outcome state relation, exact destination stack depth, and unchanged machine
+state. The allocation artifact supplies the destination compiler context and
+plan agreement.
+-/
+theorem runtimeInvariant
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (artifact :
+      ControlTransitionArtifact kind lowerCtx currentState currentLocals
+        currentPlan currentLive currentMode sourceCtx afterLive)
+    (hInitial :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx currentState currentLocals
+        currentPlan currentLive frameBase currentMode source target)
+    (hState :
+      ActivationStateRel contract currentPlan afterLive 0 frameBase
+        artifact.destination.mode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal)
+    (hStack :
+      targetFinal.source.evm.stack.length =
+        artifact.destination.locals.layout.length)
+    (hMachine :
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState) :
+    AllocationObserverContext.ActivationRuntimeInvariant
+      contract config allocatorDepth lowerCtx artifact.destination.state
+      artifact.destination.locals artifact.destination.plan
+      artifact.destination.live frameBase artifact.destination.mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        afterLive source)
+      targetFinal := by
+  have hRestrict :
+      (Functions.ObserverSemantics.stateModel transcript).restrictTo
+          artifact.destination.live source =
+        (Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source :=
+    Locals.Source.Effectful.StateModel.restrictTo_congr
+      (Functions.ObserverSemantics.stateModel transcript)
+      (fun name => (artifact.sourceEquivalent name).symm)
+  have hDefined :
+      LiveDefined artifact.destination.live
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source).source := by
+    have hRestricted :=
+      hInitial.activation.defined.restrictTo artifact.destination.subset
+    have hRestrictSource :=
+      congrArg
+        (fun state : Functions.ObserverSemantics.State transcript =>
+          state.source)
+        hRestrict
+    change
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          artifact.destination.live source).source =
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source).source at hRestrictSource
+    rw [← hRestrictSource]
+    exact hRestricted
+  have hDestinationState :
+      ActivationStateRel contract artifact.destination.plan
+        artifact.destination.live 0 frameBase artifact.destination.mode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal := by
+    exact
+      (hState.reindex_live
+        (fun name => (artifact.sourceEquivalent name).symm)).transport_plan
+          artifact.planAgree
+  exact
+    { activation :=
+        { compiler :=
+            artifact.restoredCompiler.transport_plan artifact.planAgree
+          planWF := artifact.destination.planWF
+          defined := hDefined
+          state := hDestinationState
+          stackLength := hStack }
+      allocator := hInitial.allocator.of_machine_eq hMachine
+      frame := hInitial.frame.sameFrame artifact.transition.sameFrame }
+
+end ControlTransitionArtifact
+
+/--
 Source/Locals synchronization for one loop-control kind at a recursive
 statement boundary.
 
@@ -1300,7 +1559,7 @@ inductive ControlBinding
     (currentPlan : Locals.Allocation.Plan)
     (currentLive : List Functions.Name)
     (currentMode : ActivationMode)
-    (sourceCtx : Functions.Source.Ctx) : Prop where
+    (sourceCtx : Functions.Source.Ctx) : Type where
   | unavailable
       (source :
         kind.sourceScope? sourceCtx = none)
@@ -1323,7 +1582,209 @@ inductive ControlBinding
       ControlBinding kind lowerCtx currentState currentLocals currentPlan
         currentLive currentMode sourceCtx
 
+namespace ControlTransitionArtifact
+
+def OwnedBy
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    (artifact :
+      ControlTransitionArtifact kind lowerCtx currentState currentLocals
+        currentPlan currentLive currentMode sourceCtx afterLive)
+    (binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx) : Prop :=
+  ∃ hSource : kind.sourceScope? sourceCtx = some afterLive,
+    binding =
+      .available artifact.destination afterLive hSource
+        artifact.sourceEquivalent artifact.target
+
+end ControlTransitionArtifact
+
 namespace ControlBinding
+
+/--
+The complete runtime invariant at the canonical destination selected by one
+available control binding.
+
+Unavailable bindings reduce to `False`. Available bindings expose only the
+destination owned by the adjacent allocation/Locals pass; no cleanup code or
+target execution evidence is stored here.
+-/
+def DestinationRuntimeInvariant
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    (binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ (destination :
+        ControlDestination lowerCtx currentState currentPlan currentLive
+          currentMode)
+      (sourceLive : List Functions.Name)
+      (source : kind.sourceScope? sourceCtx = some sourceLive)
+      (sourceEquivalent :
+        ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
+      (target :
+        kind.targetDepth? currentLocals =
+          some destination.locals.layout.length),
+    binding =
+      .available destination sourceLive source sourceEquivalent target ∧
+    AllocationObserverContext.ActivationRuntimeInvariant
+      contract config allocatorDepth lowerCtx destination.state
+      destination.locals destination.plan destination.live frameBase
+      destination.mode sourceFinal targetFinal
+
+namespace DestinationRuntimeInvariant
+
+theorem available
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    (destination :
+      ControlDestination lowerCtx currentState currentPlan currentLive
+        currentMode)
+    (sourceLive : List Functions.Name)
+    (source :
+      kind.sourceScope? sourceCtx = some sourceLive)
+    (sourceEquivalent :
+      ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
+    (target :
+      kind.targetDepth? currentLocals =
+        some destination.locals.layout.length)
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (invariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx destination.state
+        destination.locals destination.plan destination.live frameBase
+        destination.mode sourceFinal targetFinal) :
+    DestinationRuntimeInvariant
+      (contract := contract) (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (.available destination sourceLive source sourceEquivalent target)
+      sourceFinal targetFinal :=
+  by
+    exact
+      ⟨destination, sourceLive, source, sourceEquivalent, target, rfl,
+        invariant⟩
+
+theorem of_artifact
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    {binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx}
+    (artifact :
+      ControlTransitionArtifact kind lowerCtx currentState currentLocals
+        currentPlan currentLive currentMode sourceCtx afterLive)
+    (hOwned : artifact.OwnedBy binding)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx artifact.destination.state
+        artifact.destination.locals artifact.destination.plan
+        artifact.destination.live frameBase artifact.destination.mode
+        sourceFinal targetFinal) :
+    DestinationRuntimeInvariant
+      (contract := contract) (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      binding sourceFinal targetFinal := by
+  obtain ⟨hSource, rfl⟩ := hOwned
+  exact
+    available artifact.destination afterLive hSource
+      artifact.sourceEquivalent artifact.target hInvariant
+
+end DestinationRuntimeInvariant
+
+/--
+Recover the canonical destination cleanup selected by a successful source
+`break` or `continue`.
+
+All compiler facts come from the adjacent allocation and Locals passes. The
+artifact contains no target run or observer-specific generated code.
+-/
+theorem transitionArtifact_of_source
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    (hBinding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hCurrent :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx currentState currentLocals currentPlan currentLive
+        currentMode)
+    (hSource :
+      kind.sourceScope? sourceCtx = some afterLive) :
+    ∃ artifact :
+        ControlTransitionArtifact kind lowerCtx currentState currentLocals
+          currentPlan currentLive currentMode sourceCtx afterLive,
+      artifact.OwnedBy hBinding := by
+  cases hBinding with
+  | unavailable hNone _hTarget =>
+      rw [hNone] at hSource
+      contradiction
+  | available hDestination sourceLive hDestinationSource hEquivalent hTarget =>
+      have hLive : afterLive = sourceLive :=
+        Option.some.inj (hSource.symm.trans hDestinationSource)
+      subst afterLive
+      obtain ⟨hTransition, hLayout, hSlots⟩ :=
+        AllocationObserverCleanup.Plain.transition_of_stateExtends
+          hCurrent hDestination.compiler hDestination.subset
+          hDestination.sameFrame rfl hDestination.stateExtends
+      obtain ⟨hRestored, hPlanAgree⟩ :=
+        AllocationObserverCleanup.Plain.restore_context
+          hCurrent hDestination.compiler hTransition hLayout hSlots
+      exact
+        ⟨{ destination := hDestination
+           sourceEquivalent := hEquivalent
+           target := hTarget
+           transition := hTransition
+           restoredCompiler := hRestored
+           planAgree := hPlanAgree },
+          hDestinationSource, rfl⟩
 
 theorem transition_of_source
     {kind : ControlKind}
@@ -1365,7 +1826,7 @@ theorem transition_of_source
           hTransition.reindex_after (fun name => (hEquivalent name).symm),
           trivial⟩
 
-theorem transport
+def transport
     {kind : ControlKind}
     {lowerCtx : AllocationLowering.Ctx}
     {currentState nextState : AllocationLowering.State}
@@ -1459,6 +1920,91 @@ theorem transport
               simpa [ControlKind.targetDepth?,
                 ControlDestination.transport] using hNextTarget)
 
+namespace DestinationRuntimeInvariant
+
+/--
+Forget the current recursive statement context after a transported binding has
+reached its unchanged canonical destination.
+
+`ControlDestination.transport` changes only the current context used to derive
+cleanup; the destination state, Locals context, plan, live set, and mode remain
+definitionally the same.
+-/
+theorem of_transport
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState nextState : AllocationLowering.State}
+    {currentLocals nextLocals : Locals.Ctx}
+    {currentPlan nextPlan : Locals.Allocation.Plan}
+    {currentLive nextLive : List Functions.Name}
+    {currentMode nextMode : ActivationMode}
+    {sourceCtx nextSourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hSourceControl : SameControl sourceCtx nextSourceCtx)
+    (hLocalsControl : Locals.Ctx.SameControl currentLocals nextLocals)
+    (hState :
+      AllocationLowering.StateExtends currentLive currentState nextState)
+    (hLive :
+      ∀ name, name ∈ currentLive → name ∈ nextLive)
+    (hMode : SameFrame currentMode nextMode)
+    (hInvariant :
+      DestinationRuntimeInvariant
+        (contract := contract) (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (ControlBinding.transport
+          (currentPlan := currentPlan) (nextPlan := nextPlan)
+          binding hSourceControl hLocalsControl hState hLive hMode)
+        sourceFinal targetFinal) :
+    DestinationRuntimeInvariant
+      (contract := contract) (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      binding sourceFinal targetFinal := by
+  obtain
+    ⟨transportedDestination, transportedSourceLive, transportedSource,
+      transportedEquivalent, transportedTarget, hBinding, hDestinationInvariant⟩ :=
+    hInvariant
+  cases kind with
+  | brk =>
+      cases binding with
+      | unavailable _ _ =>
+          simp [ControlBinding.transport] at hBinding
+      | available destination sourceLive source sourceEquivalent target =>
+          have hDestination :
+              destination.transport hState hLive hMode =
+                transportedDestination := by
+            injection hBinding
+          subst transportedDestination
+          exact
+            available destination sourceLive source sourceEquivalent target
+              (by
+                simpa [ControlDestination.transport] using
+                  hDestinationInvariant)
+  | cont =>
+      cases binding with
+      | unavailable _ _ =>
+          simp [ControlBinding.transport] at hBinding
+      | available destination sourceLive source sourceEquivalent target =>
+          have hDestination :
+              destination.transport hState hLive hMode =
+                transportedDestination := by
+            injection hBinding
+          subst transportedDestination
+          exact
+            available destination sourceLive source sourceEquivalent target
+              (by
+                simpa [ControlDestination.transport] using
+                  hDestinationInvariant)
+
+end DestinationRuntimeInvariant
+
 end ControlBinding
 
 /--
@@ -1471,7 +2017,7 @@ structure ControlDestinations
     (currentPlan : Locals.Allocation.Plan)
     (currentLive : List Functions.Name)
     (currentMode : ActivationMode)
-    (sourceCtx : Functions.Source.Ctx) : Prop where
+    (sourceCtx : Functions.Source.Ctx) where
   brk :
     ControlBinding .brk lowerCtx currentState currentLocals currentPlan
       currentLive currentMode sourceCtx
@@ -1513,6 +2059,7 @@ def loopBody
     (hCompiler :
       AllocationObserverContext.ActivationExprContext
         lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hPlanWF : loopPlan.WellFormed)
     (hState :
       AllocationLowering.StateExtends loopLive loopState currentState)
     (hScope :
@@ -1529,6 +2076,7 @@ def loopBody
       live := loopLive
       mode := loopMode
       compiler := hCompiler
+      planWF := hPlanWF
       subset := fun _ hName => hName
       sameFrame := SameFrame.refl loopMode
       stateExtends := hState }
@@ -1536,7 +2084,7 @@ def loopBody
     { brk := .available destination sourceCtx.scope rfl hScope rfl
       cont := .available destination sourceCtx.scope rfl hScope rfl }
 
-theorem transport
+def transport
     {lowerCtx : AllocationLowering.Ctx}
     {currentState nextState : AllocationLowering.State}
     {currentLocals nextLocals : Locals.Ctx}
