@@ -573,6 +573,17 @@ structure Artifact
           nextScope := 0
           scopes := [] }
         fn.body).allocation
+  bodyScopesMem :
+    ∀ entry,
+      entry ∈
+          (AllocationSupport.planBlockOpen (.function fn.name)
+            { allocation :=
+                { env := AllocationSupport.functionEnv slots
+                  nextSlot := startState.nextSlot }
+              nextScope := 0
+              scopes := [] }
+            fn.body).scopes →
+        entry ∈ recipe.lexicalScopes
   sourceName : fn.name = name
   sourceMem : fn ∈ program.functions
 
@@ -597,7 +608,7 @@ theorem of_lowering
       ⟨recipe, stackSlots, frameName, before, after, proc, lowerProc,
         selectedSlots, planEntry, hValidate, hFresh, hSelected, hCompile,
         hLookup, hSelectedSlots, hPlanEntryMem, hPlanEntryScope,
-        hPlanEntryState⟩ :=
+        hPlanEntryState, hBodyScopesMem⟩ :=
     AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
       hLower hFind
   have hMem :
@@ -632,6 +643,7 @@ theorem of_lowering
        planEntryMem := hPlanEntryMem
        planEntryScope := hPlanEntryScope
        planEntryState := hPlanEntryState
+       bodyScopesMem := hBodyScopesMem
        sourceName :=
          Functions.Source.FunList.name_eq_of_find?_eq_some hFind
        sourceMem := hMem }⟩
@@ -735,6 +747,37 @@ theorem Artifact.frameName_not_mem_planEntry_env
   simp only [AllocationLowering.scopedStates, List.mem_cons,
     List.mem_append]
   exact Or.inl (Or.inr artifact.planEntryMem)
+
+theorem Artifact.frameName_not_mem_lexical_entry_env
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn)
+    {entry : AllocationSupport.ScopedAllocation}
+    (hEntry : entry ∈ artifact.recipe.lexicalScopes) :
+    artifact.frameName ∉ entry.state.env.map Prod.fst := by
+  have hFresh :=
+    AllocationLowering.freshFrameName_not_mem_allSourceNames
+      artifact.fresh
+  have hRecipe :
+      AllocationSupport.planRecipeCore? program =
+        some artifact.recipe :=
+    (AllocationLowering.validatePlan?_eq_some_exact
+      artifact.validate).2.2.1
+  intro hFrame
+  apply hFresh
+  simp only [AllocationLowering.allSourceNames, List.mem_append,
+    List.mem_flatMap]
+  apply Or.inr
+  refine
+    ⟨artifact.recipe,
+      by simp [hRecipe],
+      entry, ?_, hFrame⟩
+  simp only [AllocationLowering.scopedStates, List.mem_cons,
+    List.mem_append]
+  exact Or.inr hEntry
 
 def Artifact.entryLayout
     {allocation : Locals.Allocation.ProgramPlan}

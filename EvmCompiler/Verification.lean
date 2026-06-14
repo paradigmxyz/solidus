@@ -483,6 +483,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.regular
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.of_lowering
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.mem_frameFunctions_iff
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.frameName_not_mem_lexical_entry_env
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.prepare
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
@@ -503,6 +504,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.root
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scoped
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.final_env_extension
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.bodyFinal_lookup_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder_of_active
@@ -513,7 +516,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scratch_bound_of_location
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
+#check EvmCompiler.Functions.AllocationSupport.planBlockScoped_entry_mem
+#check EvmCompiler.Functions.AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+#check EvmCompiler.Functions.AllocationLowering.lowerStmt_block_components
+#check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_lexical_entry_plan
+#check EvmCompiler.Locals.Stmt.compile_block_components
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup

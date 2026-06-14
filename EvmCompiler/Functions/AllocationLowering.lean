@@ -1821,6 +1821,32 @@ decreasing_by
 end
 
 /--
+Successful lowering of a source lexical block exposes the adjacent scoped-block
+lowerer owned by this pass.
+-/
+theorem lowerStmt_block_components
+    {ctx : Ctx} {returns : List Name}
+    {state final : State}
+    {body : Block}
+    {loweredStmts : List Locals.Stmt}
+    (hLower :
+      lowerStmt ctx returns state (.block body) =
+        some (loweredStmts, final)) :
+    ∃ loweredBody,
+      lowerBlockScoped ctx returns state body =
+        some (loweredBody, final) ∧
+      loweredStmts = [.block loweredBody] := by
+  cases hBody :
+      lowerBlockScoped ctx returns state body with
+  | none =>
+      simp [lowerStmt, hBody] at hLower
+  | some result =>
+      rcases result with ⟨loweredBody, bodyFinal⟩
+      simp [lowerStmt, hBody] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨loweredBody, rfl, rfl⟩
+
+/--
 Successful lowering of a source `if` exposes only the adjacent expression and
 scoped-block lowerers owned by this pass.
 -/
@@ -3567,7 +3593,17 @@ theorem lowerFunctions?_find_plan_components
                     nextSlot := before.nextSlot }
                 nextScope := 0
                 scopes := [] }
-              fn.body).allocation
+              fn.body).allocation ∧
+          (∀ lexicalEntry,
+            lexicalEntry ∈
+                (AllocationSupport.planBlockOpen (.function fn.name)
+                  { allocation :=
+                      { env := AllocationSupport.functionEnv slots
+                        nextSlot := before.nextSlot }
+                    nextScope := 0
+                    scopes := [] }
+                  fn.body).scopes →
+              lexicalEntry ∈ functionPlan.lexicalScopes)
   | _state, _final, [], _procs, _functionPlan, _fn,
       hPlan, hLower, hFind => by
       simp [AllocationSupport.planFunctions, lowerFunctions?,
@@ -3638,7 +3674,11 @@ theorem lowerFunctions?_find_plan_components
                                   exact Or.inl (by
                                     simp [bodyPlan, bodyStart]),
                                 rfl, by
-                                  simp [bodyPlan, bodyStart]⟩
+                                  simp [bodyPlan, bodyStart],
+                                by
+                                  intro lexicalEntry hEntry
+                                  exact
+                                    List.mem_append_left _ hEntry⟩
                           · have hFindTail :
                                 Source.FunList.find? name rest = some fn := by
                               simpa [Source.FunList.find?, hName] using hFind
@@ -3656,14 +3696,19 @@ theorem lowerFunctions?_find_plan_components
                             obtain
                                 ⟨before, after, proc, selectedSlots, entry,
                                   hSelected, hSelectedLookup, hEntry,
-                                  hScope, hEntryState⟩ :=
+                                  hScope, hEntryState, hBodyScopes⟩ :=
                               lowerFunctions?_find_plan_components
                                 recipe stackSlots frameName frameConfig?
                                 name hPlanTail hTail hFindTail
                             exact
                               ⟨before, after, proc, selectedSlots, entry,
                                 hSelected, hSelectedLookup,
-                                by simp [hEntry], hScope, hEntryState⟩
+                                by simp [hEntry], hScope, hEntryState,
+                                by
+                                  intro lexicalEntry hLexical
+                                  exact
+                                    List.mem_append_right _
+                                      (hBodyScopes lexicalEntry hLexical)⟩
         · simp [AllocationSupport.planFunctions, hSignature, hReturns]
             at hPlan
       · simp [AllocationSupport.planFunctions, hSignature] at hPlan
@@ -3858,7 +3903,17 @@ theorem lowerFunctions?_find_compiled_plan
                     nextSlot := before.nextSlot }
                 nextScope := 0
                 scopes := [] }
-              fn.body).allocation
+              fn.body).allocation ∧
+          (∀ lexicalEntry,
+            lexicalEntry ∈
+                (AllocationSupport.planBlockOpen (.function fn.name)
+                  { allocation :=
+                      { env := AllocationSupport.functionEnv slots
+                        nextSlot := before.nextSlot }
+                    nextScope := 0
+                    scopes := [] }
+                  fn.body).scopes →
+              lexicalEntry ∈ functionPlan.lexicalScopes)
   | _state, _final, [], _functionPlan, _procs, _lowerProcs, _fn,
       hPlan, hLower, _hCompile, hFind => by
       simp [AllocationSupport.planFunctions, lowerFunctions?,
@@ -3959,7 +4014,11 @@ theorem lowerFunctions?_find_compiled_plan
                                           exact Or.inl (by
                                             simp [bodyPlan, bodyStart]),
                                         rfl, by
-                                          simp [bodyPlan, bodyStart]⟩
+                                          simp [bodyPlan, bodyStart],
+                                        by
+                                          intro lexicalEntry hEntry
+                                          exact
+                                            List.mem_append_left _ hEntry⟩
                                   · have hFindTail :
                                         Source.FunList.find? name rest =
                                           some fn := by
@@ -3983,7 +4042,8 @@ theorem lowerFunctions?_find_compiled_plan
                                           selectedSlots, entry,
                                           hSelected, hProcCompile, hLookup,
                                           hProcName, hSelectedLookup, hEntry,
-                                          hScope, hEntryState⟩ :=
+                                          hScope, hEntryState,
+                                          hBodyScopes⟩ :=
                                       lowerFunctions?_find_compiled_plan
                                         recipe stackSlots frameName
                                         frameConfig? name hPlanTail hTail
@@ -4004,7 +4064,13 @@ theorem lowerFunctions?_find_compiled_plan
                                               hCompiledHeadNe] using hLookup,
                                         hProcName, hSelectedLookup,
                                         by simp [hEntry], hScope,
-                                        hEntryState⟩
+                                        hEntryState,
+                                        by
+                                          intro lexicalEntry hLexical
+                                          exact
+                                            List.mem_append_right _
+                                              (hBodyScopes lexicalEntry
+                                                hLexical)⟩
         · simp [AllocationSupport.planFunctions, hSignature, hReturns]
             at hPlan
       · simp [AllocationSupport.planFunctions, hSignature] at hPlan
@@ -4621,7 +4687,17 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
                   nextSlot := before.nextSlot }
               nextScope := 0
               scopes := [] }
-            fn.body).allocation := by
+            fn.body).allocation ∧
+        (∀ lexicalEntry,
+          lexicalEntry ∈
+              (AllocationSupport.planBlockOpen (.function fn.name)
+                { allocation :=
+                    { env := AllocationSupport.functionEnv slots
+                      nextSlot := before.nextSlot }
+                  nextScope := 0
+                  scopes := [] }
+                fn.body).scopes →
+            lexicalEntry ∈ recipe.lexicalScopes) := by
   unfold lowerExpressionsFromAllocation? at hLower
   cases hLocals :
       lowerLocalsFromAllocation? allocation program with
@@ -4698,14 +4774,15 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
                                   obtain
                                       ⟨functionPlan, hFunctionPlan,
                                         hFunctionEntries,
-                                        _hFunctionFinal⟩ :=
-                                    AllocationSupport.planRecipeCore?_functions
+                                        hFunctionLexical⟩ :=
+                                    AllocationSupport.planRecipeCore?_function_lexicalScopes
                                       hRecipe
                                   obtain
                                       ⟨before, after, proc, lowerProc,
                                         slots, entry, hSelected, hProcCompile,
                                         hLookup, _hProcName, hSlots,
-                                        hEntry, hScope, hEntryState⟩ :=
+                                        hEntry, hScope, hEntryState,
+                                        hBodyScopes⟩ :=
                                     lowerFunctions?_find_compiled_plan
                                       recipe stackSlots frameName
                                       frameConfig? name hFunctionPlan
@@ -4720,7 +4797,13 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
                                       hProcCompile,
                                       by simpa [Expressions.Program.toStructured]
                                         using hLookup,
-                                      hSlots, hEntry, hScope, hEntryState⟩
+                                      hSlots, hEntry, hScope, hEntryState,
+                                      by
+                                        intro lexicalEntry hLexical
+                                        exact
+                                          hFunctionLexical lexicalEntry
+                                            (hBodyScopes lexicalEntry
+                                              hLexical)⟩
                         · simp [frameConfig?, hFunctions,
                             mainStart, hMain, hFinal] at hToLocals
                   · simp [frameConfig?, hFunctions, hState] at hToLocals

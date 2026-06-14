@@ -279,6 +279,34 @@ end
 namespace Stmt
 
 /--
+Successful compilation of a Locals lexical block exposes the adjacent open
+block compiler and scoped cleanup owned by this pass.
+-/
+theorem compile_block_components
+    {ctx final : Ctx}
+    {body : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.block body) = some (code, final)) :
+    ∃ bodyCode bodyCtx lowerBody,
+      Block.compileOpen ctx body = some (bodyCode, bodyCtx) ∧
+      finishScoped ctx bodyCtx bodyCode = some lowerBody ∧
+      code = lowerBody.stmts ∧
+      final = ctx := by
+  cases hBody : Block.compileOpen ctx body with
+  | none =>
+      simp [Stmt.compile, hBody] at hCompile
+  | some result =>
+      rcases result with ⟨bodyCode, bodyCtx⟩
+      cases hFinish : finishScoped ctx bodyCtx bodyCode with
+      | none =>
+          simp [Stmt.compile, hBody, hFinish] at hCompile
+      | some lowerBody =>
+          simp [Stmt.compile, hBody, hFinish] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨bodyCode, bodyCtx, lowerBody, rfl, hFinish, rfl, rfl⟩
+
+/--
 Expression statements never change the Locals compiler context.
 -/
 theorem compile_expr_final

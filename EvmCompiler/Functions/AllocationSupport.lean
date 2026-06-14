@@ -348,6 +348,239 @@ mutual
     | _ => state
 end
 
+mutual
+
+private def planningBlockSize : Block → Nat
+  | ⟨stmts⟩ => planningStmtListSize stmts + 1
+
+private def planningStmtListSize : List Stmt → Nat
+  | [] => 0
+  | stmt :: rest =>
+      planningStmtSize stmt + planningStmtListSize rest + 1
+
+private def planningCasesSize : List (Word × Block) → Nat
+  | [] => 0
+  | (_, body) :: rest =>
+      planningBlockSize body + planningCasesSize rest + 1
+
+private def planningDefaultSize : Option Block → Nat
+  | none => 0
+  | some body => planningBlockSize body + 1
+
+private def planningStmtSize : Stmt → Nat
+  | .block body => planningBlockSize body + 1
+  | .if_ _ body => planningBlockSize body + 1
+  | .switch _ cases defaultBody =>
+      planningCasesSize cases + planningDefaultSize defaultBody + 1
+  | .for_ init _ post body =>
+      planningBlockSize init + planningBlockSize post +
+        planningBlockSize body + 1
+  | _ => 0
+
+end
+
+mutual
+
+theorem planBlockOpen_scopes_extension
+    (block : Block) (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planBlockOpen current state block).scopes =
+        added ++ state.scopes := by
+  rcases block with ⟨stmts⟩
+  simpa [planBlockOpen] using
+    planStmtList_scopes_extension stmts current state
+termination_by (planningBlockSize block, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [planningBlockSize]
+  all_goals omega
+
+theorem planBlockScoped_scopes_extension
+    (block : Block) (parent : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planBlockScoped parent state block).scopes =
+        added ++ state.scopes := by
+  let scope :=
+    Locals.Allocation.ScopeId.lexical parent state.nextScope
+  let entered := { state with nextScope := state.nextScope + 1 }
+  obtain ⟨added, hAdded⟩ :=
+    planBlockOpen_scopes_extension block scope entered
+  refine
+    ⟨{ scope := scope
+       state := (planBlockOpen scope entered block).allocation } :: added,
+      ?_⟩
+  simp only [planBlockScoped]
+  rw [hAdded]
+  rfl
+termination_by (planningBlockSize block, 1)
+decreasing_by
+  exact Prod.Lex.right _ (by omega)
+
+theorem planStmtList_scopes_extension
+    (stmts : List Stmt) (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planStmtList current state stmts).scopes =
+        added ++ state.scopes := by
+  cases stmts with
+  | nil =>
+      exact ⟨[], by simp [planStmtList]⟩
+  | cons stmt rest =>
+      obtain ⟨headAdded, hHead⟩ :=
+        planStmt_scopes_extension stmt current state
+      obtain ⟨tailAdded, hTail⟩ :=
+        planStmtList_scopes_extension rest current
+          (planStmt current state stmt)
+      refine ⟨tailAdded ++ headAdded, ?_⟩
+      simp only [planStmtList]
+      rw [hTail, hHead, List.append_assoc]
+termination_by (planningStmtListSize stmts, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [planningStmtListSize]
+  all_goals omega
+
+theorem planCases_scopes_extension
+    (cases : List (Word × Block))
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planCases current state cases).scopes =
+        added ++ state.scopes := by
+  cases cases with
+  | nil =>
+      exact ⟨[], by simp [planCases]⟩
+  | cons head rest =>
+      rcases head with ⟨value, body⟩
+      obtain ⟨headAdded, hHead⟩ :=
+        planBlockScoped_scopes_extension body current state
+      obtain ⟨tailAdded, hTail⟩ :=
+        planCases_scopes_extension rest current
+          (planBlockScoped current state body)
+      refine ⟨tailAdded ++ headAdded, ?_⟩
+      simp only [planCases]
+      rw [hTail, hHead, List.append_assoc]
+termination_by (planningCasesSize cases, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [planningCasesSize]
+  all_goals omega
+
+theorem planDefault_scopes_extension
+    (body : Option Block) (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planDefault current state body).scopes =
+        added ++ state.scopes := by
+  cases body with
+  | none =>
+      exact ⟨[], by simp [planDefault]⟩
+  | some body =>
+      simpa [planDefault] using
+        planBlockScoped_scopes_extension body current state
+termination_by (planningDefaultSize body, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [planningDefaultSize]
+  all_goals omega
+
+theorem planStmt_scopes_extension
+    (stmt : Stmt) (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    ∃ added,
+      (planStmt current state stmt).scopes =
+        added ++ state.scopes := by
+  cases stmt with
+  | expr _ | let_ _ _ | assign _ _ | brk | cont | leave | call _ _ _
+  | terminal _ | terminalArgs _ _ =>
+      exact ⟨[], by simp [planStmt]⟩
+  | block body =>
+      simpa [planStmt] using
+        planBlockScoped_scopes_extension body current state
+  | if_ _ body =>
+      simpa [planStmt] using
+        planBlockScoped_scopes_extension body current state
+  | switch _ cases defaultBody =>
+      obtain ⟨caseAdded, hCases⟩ :=
+        planCases_scopes_extension cases current state
+      obtain ⟨defaultAdded, hDefault⟩ :=
+        planDefault_scopes_extension defaultBody current
+          (planCases current state cases)
+      refine ⟨defaultAdded ++ caseAdded, ?_⟩
+      simp only [planStmt]
+      rw [hDefault, hCases, List.append_assoc]
+  | for_ init _ post body =>
+      let loopScope :=
+        Locals.Allocation.ScopeId.lexical current state.nextScope
+      let entered := { state with nextScope := state.nextScope + 1 }
+      let initState := planBlockOpen loopScope entered init
+      let postState := planBlockScoped loopScope initState post
+      let bodyState := planBlockScoped loopScope postState body
+      obtain ⟨initAdded, hInit⟩ :=
+        planBlockOpen_scopes_extension init loopScope entered
+      obtain ⟨postAdded, hPost⟩ :=
+        planBlockScoped_scopes_extension post loopScope initState
+      obtain ⟨bodyAdded, hBody⟩ :=
+        planBlockScoped_scopes_extension body loopScope postState
+      refine
+        ⟨{ scope := loopScope, state := bodyState.allocation } ::
+            (bodyAdded ++ postAdded ++ initAdded),
+          ?_⟩
+      simp only [planStmt]
+      rw [hBody, hPost, hInit]
+      simp [loopScope, entered, initState, postState, bodyState,
+        List.append_assoc]
+termination_by (planningStmtSize stmt, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [planningStmtSize, planningBlockSize,
+    planningStmtListSize, planningCasesSize, planningDefaultSize]
+  all_goals omega
+
+end
+
+theorem mem_planStmtList_scopes_of_mem
+    {entry : ScopedAllocation}
+    (stmts : List Stmt) (current : Locals.Allocation.ScopeId)
+    (state : PlanningState)
+    (hEntry : entry ∈ state.scopes) :
+    entry ∈ (planStmtList current state stmts).scopes := by
+  obtain ⟨added, hScopes⟩ :=
+    planStmtList_scopes_extension stmts current state
+  rw [hScopes]
+  exact List.mem_append_right _ hEntry
+
+theorem planBlockScoped_entry_mem
+    (block : Block) (parent : Locals.Allocation.ScopeId)
+    (state : PlanningState) :
+    { scope := .lexical parent state.nextScope
+      state :=
+        (planBlockOpen (.lexical parent state.nextScope)
+          { state with nextScope := state.nextScope + 1 }
+          block).allocation } ∈
+      (planBlockScoped parent state block).scopes := by
+  simp [planBlockScoped]
+
+theorem mem_planBlockScoped_scopes_of_open_mem
+    {entry : ScopedAllocation}
+    (block : Block) (parent : Locals.Allocation.ScopeId)
+    (state : PlanningState)
+    (hEntry :
+      entry ∈
+        (planBlockOpen (.lexical parent state.nextScope)
+          { state with nextScope := state.nextScope + 1 }
+          block).scopes) :
+    entry ∈ (planBlockScoped parent state block).scopes := by
+  simp only [planBlockScoped, List.mem_cons]
+  exact Or.inr hEntry
+
 private theorem planBlockScoped_env
     (parent : Locals.Allocation.ScopeId)
     (state : PlanningState) (block : Block) :
@@ -718,6 +951,40 @@ theorem planRecipeCore?_functions
             simp [hNames, initial, hSignatures, hFunctions] at hPlan
             subst recipe
             exact ⟨functionPlan, hFunctions, rfl, rfl⟩
+  · simp [hNames] at hPlan
+
+/--
+Every lexical scope produced while planning functions is retained in the
+whole-program recipe after the main-program scopes are prepended.
+-/
+theorem planRecipeCore?_function_lexicalScopes
+    {program : Program} {recipe : AllocationRecipe}
+    (hPlan : planRecipeCore? program = some recipe) :
+    ∃ functionPlan,
+      planFunctions recipe.functionSlots recipe.stateAfterSignatures
+          program.functions =
+        some functionPlan ∧
+      functionPlan.functions = recipe.functions ∧
+      (∀ entry,
+        entry ∈ functionPlan.lexicalScopes →
+          entry ∈ recipe.lexicalScopes) := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            refine ⟨functionPlan, hFunctions, rfl, ?_⟩
+            intro entry hEntry
+            exact List.mem_append_right _ hEntry
   · simp [hNames] at hPlan
 
 theorem planRecipeCore?_lookupFun_matches
