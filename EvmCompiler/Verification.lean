@@ -504,6 +504,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.root
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.final_env_extension
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.bodyFinal_lookup_of_lookup
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder_of_active
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.DeclarationPlacement
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.declarationPlacement
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension

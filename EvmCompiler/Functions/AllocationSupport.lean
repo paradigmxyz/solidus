@@ -407,6 +407,30 @@ private theorem planStmt_env_extension
   | for_ init _ post body =>
       exact ⟨[], by simp [planStmt]⟩
 
+theorem planStmt_allocation_env
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState) (stmt : Stmt) :
+    (planStmt current state stmt).allocation.env =
+      match stmt with
+      | .let_ name _ =>
+          (name, state.allocation.nextSlot) :: state.allocation.env
+      | _ => state.allocation.env := by
+  cases stmt with
+  | expr _ | assign _ _ | brk | cont | leave | call _ _ _
+  | terminal _ | terminalArgs _ _ =>
+      simp [planStmt]
+  | let_ name _ =>
+      simp [planStmt, allocateName]
+  | block body =>
+      simpa [planStmt] using planBlockScoped_env current state body
+  | if_ _ body =>
+      simpa [planStmt] using planBlockScoped_env current state body
+  | switch _ cases defaultBody =>
+      simp only [planStmt]
+      rw [planDefault_env, planCases_env]
+  | for_ init _ post body =>
+      simp [planStmt]
+
 private theorem planStmtList_env_extension
     (current : Locals.Allocation.ScopeId) :
     ∀ (state : PlanningState) (stmts : List Stmt),

@@ -667,6 +667,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular
 #print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
 #print axioms EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
+#print axioms EvmCompiler.Functions.AllocationSupport.planStmt_allocation_env
+#print axioms EvmCompiler.Functions.MixedAllocation.allocationOfState_active_stack_filter
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.ActiveEnv.after_planStmt
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.declarationPlacement
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

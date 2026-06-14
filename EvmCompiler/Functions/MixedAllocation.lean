@@ -603,6 +603,127 @@ theorem allocationOfState_return_stack_filter
   rw [hAddedNil, hPendingNil, hProcessedSelf, hParamsSelf]
   simp
 
+/--
+The final function plan, restricted to the locals that have actually entered
+scope, has exactly the stack order produced by those locals followed by the
+function return/parameter prelude.
+
+`future` contains declarations later in the same open function body. They are
+present in the final allocation plan but absent from the current source scope.
+-/
+theorem allocationOfState_active_stack_filter
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {stackSlots : SlotSet}
+    {state : AllocationSupport.CompileState}
+    {future locals returns params : AllocationSupport.SlotEnv}
+    (hEnv :
+      state.env = future ++ locals ++ returns ++ params)
+    (hNodup : (state.env.map Prod.fst).Nodup) :
+    ((allocationOfState contract frameWords
+        (stackEntries stackSlots (future ++ locals) ++
+          stackEntries stackSlots returns.reverse ++
+          stackEntries stackSlots params.reverse)
+        state).stackOrder.filter
+      (fun name =>
+        decide
+          (name ∈
+            locals.map Prod.fst ++
+              (returns.map Prod.fst).reverse ++
+              (params.map Prod.fst).reverse))) =
+      stackOrder stackSlots locals ++
+        stackOrder stackSlots returns.reverse ++
+        stackOrder stackSlots params.reverse := by
+  let futureNames := future.map Prod.fst
+  let localsNames := locals.map Prod.fst
+  let returnNames := returns.map Prod.fst
+  let paramNames := params.map Prod.fst
+  let liveNames :=
+    localsNames ++ returnNames.reverse ++ paramNames.reverse
+  have hFull :
+      (futureNames ++ localsNames ++ returnNames ++ paramNames).Nodup := by
+    simpa [futureNames, localsNames, returnNames, paramNames,
+      hEnv, List.map_append, List.append_assoc] using hNodup
+  have hFutureRest :
+      List.Disjoint futureNames
+        (localsNames ++ returnNames ++ paramNames) := by
+    have hGrouped :
+        (futureNames ++
+          (localsNames ++ returnNames ++ paramNames)).Nodup := by
+      simpa [List.append_assoc] using hFull
+    exact List.disjoint_of_nodup_append hGrouped
+  have hFutureLive :
+      List.Disjoint futureNames liveNames := by
+    apply List.disjoint_left.mpr
+    intro name hFuture hLive
+    have hParts :
+        name ∈ localsNames ∨
+          name ∈ returnNames ∨ name ∈ paramNames := by
+      simpa [liveNames] using hLive
+    have hRest :
+        name ∈ localsNames ++ returnNames ++ paramNames := by
+      rcases hParts with hLocal | hReturn | hParam
+      · simp [hLocal]
+      · simp [hReturn]
+      · simp [hParam]
+    exact (List.disjoint_left.mp hFutureRest) hFuture hRest
+  have hFutureNil :=
+    stackOrder_filter_names_eq_nil_of_disjoint
+      (stackSlots := stackSlots) (env := future)
+      (names := liveNames) hFutureLive
+  have hLocalsSelf :
+      (stackOrder stackSlots locals).filter
+          (fun name => decide (name ∈ liveNames)) =
+        stackOrder stackSlots locals := by
+    apply List.filter_eq_self.mpr
+    intro name hName
+    obtain ⟨slot, hMem, _hSlot⟩ :=
+      mem_stackOrder_iff.mp hName
+    have hLocal : name ∈ localsNames :=
+      List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+    simp [liveNames, hLocal]
+  have hReturnsSelf :
+      (stackOrder stackSlots returns.reverse).filter
+          (fun name => decide (name ∈ liveNames)) =
+        stackOrder stackSlots returns.reverse := by
+    apply List.filter_eq_self.mpr
+    intro name hName
+    obtain ⟨slot, hMem, _hSlot⟩ :=
+      mem_stackOrder_iff.mp hName
+    have hReturn :
+        name ∈ returnNames.reverse := by
+      have hMapped : name ∈ returns.reverse.map Prod.fst :=
+        List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+      simpa [returnNames, List.map_reverse] using hMapped
+    simp [liveNames, hReturn]
+  have hParamsSelf :
+      (stackOrder stackSlots params.reverse).filter
+          (fun name => decide (name ∈ liveNames)) =
+        stackOrder stackSlots params.reverse := by
+    apply List.filter_eq_self.mpr
+    intro name hName
+    obtain ⟨slot, hMem, _hSlot⟩ :=
+      mem_stackOrder_iff.mp hName
+    have hParam :
+        name ∈ paramNames.reverse := by
+      have hMapped : name ∈ params.reverse.map Prod.fst :=
+        List.mem_map.mpr ⟨(name, slot), hMem, rfl⟩
+      simpa [paramNames, List.map_reverse] using hMapped
+    simp [liveNames, hParam]
+  simp only [allocationOfState, List.map_append]
+  change
+    ((stackOrder stackSlots (future ++ locals) ++
+        stackOrder stackSlots returns.reverse ++
+        stackOrder stackSlots params.reverse).filter
+      (fun name => decide (name ∈ liveNames))) =
+      stackOrder stackSlots locals ++
+        stackOrder stackSlots returns.reverse ++
+        stackOrder stackSlots params.reverse
+  rw [stackOrder_append, List.filter_append, List.filter_append,
+    List.filter_append]
+  rw [hFutureNil, hLocalsSelf, hReturnsSelf, hParamsSelf]
+  simp
+
 theorem allocationOfState_location_stack_of_mem
     {contract : MemoryContract.Contract}
     {frameWords : Nat} {stackSlots : SlotSet}

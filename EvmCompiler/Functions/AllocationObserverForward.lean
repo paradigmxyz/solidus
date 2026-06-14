@@ -279,6 +279,91 @@ theorem Compilation.selected_config_frameWords_pos
 namespace BodyCursor
 
 /--
+The allocation environment at a recursive function-body position consists of
+the declarations already executed in the open body followed by the fixed
+function signature. The source scope lists those declarations in the same
+front-to-back order, followed by the runtime return/parameter order.
+-/
+def ActiveEnv
+    (slots : AllocationSupport.FunSlots)
+    (env : AllocationSupport.SlotEnv)
+    (live : List Functions.Name) : Prop :=
+  ∃ locals,
+    env = locals ++ AllocationSupport.functionEnv slots ∧
+      live =
+        locals.map Prod.fst ++
+          (slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse
+
+namespace ActiveEnv
+
+theorem after_planStmt
+    {slots : AllocationSupport.FunSlots}
+    {scope : Locals.Allocation.ScopeId}
+    {planning : AllocationSupport.PlanningState}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    (hActive : ActiveEnv slots planning.allocation.env live) :
+    ActiveEnv slots
+      (AllocationSupport.planStmt scope planning stmt).allocation.env
+      (Functions.Scope.Stmt.outEnv live stmt) := by
+  rcases hActive with ⟨locals, hEnv, hLive⟩
+  cases stmt with
+  | let_ name value =>
+      refine
+        ⟨(name, planning.allocation.nextSlot) :: locals, ?_, ?_⟩
+      · simp [AllocationSupport.planStmt_allocation_env, hEnv]
+      · simp [Functions.Scope.Stmt.outEnv, hLive, List.append_assoc]
+  | expr expr | assign name value | block body | if_ cond body
+  | switch scrutinee cases defaultBody | for_ init cond post body
+  | brk | cont | leave | call targets functionName args
+  | terminal kind | terminalArgs kind args =>
+      refine ⟨locals, ?_, ?_⟩
+      · simpa [AllocationSupport.planStmt_allocation_env] using hEnv
+      · simpa [Functions.Scope.Stmt.outEnv] using hLive
+
+end ActiveEnv
+
+/--
+Static placement change for one declaration in an open function body.
+
+This is derived from the real planner and final allocation plan. It contains
+no emitted-code premise and is the exact information needed to construct the
+post-declaration activation context.
+-/
+inductive DeclarationPlacement
+    (lowerCtx : AllocationLowering.Ctx)
+    (beforeState : AllocationLowering.State)
+    (plan : Locals.Allocation.Plan)
+    (beforeLive : List Functions.Name)
+    (name : Functions.Name) : Prop where
+  | stack
+      (slot planDepth : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack :
+        AllocationLowering.isStackSlot lowerCtx slot = true)
+      (hLocation :
+        plan.location? name = some (.stack planDepth))
+      (hOrder :
+        AllocationObserverRelation.currentStackOrder
+            plan (name :: beforeLive) =
+          name ::
+            AllocationObserverRelation.currentStackOrder plan beforeLive) :
+      DeclarationPlacement lowerCtx beforeState plan beforeLive name
+  | scratch
+      (slot : Nat)
+      (hSlot : slot = beforeState.allocation.nextSlot)
+      (hStack :
+        AllocationLowering.isStackSlot lowerCtx slot = false)
+      (hLocation :
+        plan.location? name = some (.scratch slot))
+      (hOrder :
+        AllocationObserverRelation.currentStackOrder
+            plan (name :: beforeLive) =
+          AllocationObserverRelation.currentStackOrder plan beforeLive) :
+      DeclarationPlacement lowerCtx beforeState plan beforeLive name
+
+/--
 One recursive position inside a compiler-selected function body.
 
 The cursor owns the actual remaining source block, allocation-lowered block,
@@ -316,6 +401,8 @@ structure Cursor
     Locals.Block.compileOpen localsCtx lowered =
       some (compiled, prepared.bodyCtx)
   sourceScoped : Functions.Scope.Block.Scoped live sourceBlock
+  activeEnv :
+    ActiveEnv artifact.slots planning.allocation.env live
 
 def Cursor.root
     {allocation : Locals.Allocation.ProgramPlan}
@@ -327,10 +414,15 @@ def Cursor.root
       AllocationObserverCall.SelectedCallee.Artifact
         allocation program expressions name fn}
     (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
-    {live : List Functions.Name}
-    (hScoped : Functions.Scope.Block.Scoped live fn.body) :
-    Cursor prepared (.function fn.name) live fn.body artifact.bodyStart
-      prepared.returnCtx :=
+    (hScoped :
+      Functions.Scope.Block.Scoped
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        fn.body) :
+    Cursor prepared (.function fn.name)
+      ((artifact.slots.returns.map Prod.fst).reverse ++
+        (artifact.slots.params.map Prod.fst).reverse)
+      fn.body artifact.bodyStart prepared.returnCtx :=
   { planning :=
       { allocation := artifact.bodyStart.allocation
         nextScope := 0
@@ -343,7 +435,11 @@ def Cursor.root
     compiled := prepared.bodyCode
     lower := prepared.lowerBody
     compile := prepared.compileBody
-    sourceScoped := hScoped }
+    sourceScoped := hScoped
+    activeEnv := by
+      refine ⟨[], ?_, ?_⟩
+      · simp [AllocationObserverCall.SelectedCallee.Artifact.bodyStart]
+      · simp }
 
 /--
 Decompose a nonempty recursive cursor through the real statement lowerer and
@@ -371,6 +467,8 @@ theorem Cursor.cons
       ∃ tailCursor :
         Cursor prepared scope (Functions.Scope.Stmt.outEnv live stmt)
           { stmts := rest } afterState afterLocals,
+      tailCursor.planning =
+          AllocationSupport.planStmt scope cursor.planning stmt ∧
       AllocationLowering.lowerStmt artifact.lowerCtx fn.returns
           lowerState stmt =
         some (headLower, afterState) ∧
@@ -426,10 +524,11 @@ theorem Cursor.cons
       lower := hTailLower
       compile := hTailCompile
       sourceScoped := by
-        simpa [Functions.Scope.Block.Scoped] using hScoped.2 }
+        simpa [Functions.Scope.Block.Scoped] using hScoped.2
+      activeEnv := cursor.activeEnv.after_planStmt }
   exact
     ⟨afterState, afterLocals, headLower, headCode, tailCursor,
-      hHeadLower, hHeadCompile, hLowered, hCompiled, hScoped.1⟩
+      rfl, hHeadLower, hHeadCompile, hLowered, hCompiled, hScoped.1⟩
 
 theorem Cursor.final_env_extension
     {allocation : Locals.Allocation.ProgramPlan}
@@ -464,6 +563,378 @@ theorem Cursor.final_env_extension
     _ = added ++ cursor.planning.allocation.env := hEnv
     _ = added ++ lowerState.allocation.env := by
       rw [cursor.planningAllocation]
+
+/--
+Every binding visible at a cursor position has the same slot in the selected
+function's final lowered body state.
+-/
+theorem Cursor.bodyFinal_lookup_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot) :
+    AllocationSupport.lookupSlot?
+        localName prepared.bodyFinal.allocation.env =
+      some slot := by
+  obtain ⟨added, hEnv⟩ := cursor.final_env_extension
+  have hMemCurrent :
+      (localName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (localName, slot) ∈ artifact.planEntry.state.env := by
+    rw [hEnv]
+    exact List.mem_append_right added hMemCurrent
+  have hEntryNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hEntryLookup :
+      AllocationSupport.lookupSlot?
+          localName artifact.planEntry.state.env =
+        some slot :=
+    AllocationSupport.lookupSlot?_eq_some_of_mem
+      hEntryNodup hMemEntry
+  rw [← prepared.bodyPlan]
+  exact hEntryLookup
+
+/--
+Recover the exact runtime stack order at a recursive body position from the
+final function allocation plan. Future declarations are filtered out; only
+already active locals and the fixed function signature remain.
+-/
+theorem Cursor.currentStackOrder_of_active
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    (locals : AllocationSupport.SlotEnv)
+    (hCurrent :
+      cursor.planning.allocation.env =
+        locals ++ AllocationSupport.functionEnv artifact.slots)
+    (hLive :
+      live =
+        locals.map Prod.fst ++
+          (artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse) :
+    AllocationObserverRelation.currentStackOrder prepared.plan live =
+      MixedAllocation.stackOrder artifact.stackSlots locals ++
+        MixedAllocation.stackOrder artifact.stackSlots
+          artifact.slots.returns.reverse ++
+        MixedAllocation.stackOrder artifact.stackSlots
+          artifact.slots.params.reverse := by
+  obtain ⟨future, hFinal⟩ := cursor.final_env_extension
+  have hPlanningLower :
+      cursor.planning.allocation.env =
+        lowerState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      cursor.planningAllocation
+  have hLowerCurrent :
+      lowerState.allocation.env =
+        locals ++ AllocationSupport.functionEnv artifact.slots :=
+    hPlanningLower.symm.trans hCurrent
+  have hFinalExtension :
+      artifact.planEntry.state.env =
+        (future ++ locals) ++
+          AllocationSupport.functionEnv artifact.slots := by
+    rw [hFinal, hLowerCurrent, List.append_assoc]
+  have hFinalEnv :
+      artifact.planEntry.state.env =
+        future ++ locals ++ artifact.slots.returns ++
+          artifact.slots.params := by
+    simpa [AllocationSupport.functionEnv, List.append_assoc] using
+      hFinalExtension
+  have hEntries :
+      MixedAllocation.AllocationRecipe.stackEntriesForScope
+          artifact.recipe artifact.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state =
+        MixedAllocation.stackEntries artifact.stackSlots
+            (future ++ locals) ++
+          MixedAllocation.stackEntries artifact.stackSlots
+            artifact.slots.returns.reverse ++
+          MixedAllocation.stackEntries artifact.stackSlots
+            artifact.slots.params.reverse := by
+    rw [artifact.planEntryScope]
+    exact
+      MixedAllocation.AllocationRecipe.stackEntriesForScope_function_of_env_extension
+        artifact.slotsLookup hFinalExtension
+  have hEntryNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hOrder :=
+    MixedAllocation.allocationOfState_active_stack_filter
+      (contract := program.memoryContract)
+      (frameWords := artifact.recipe.frameWords)
+      (stackSlots := artifact.stackSlots)
+      (state := artifact.planEntry.state)
+      (future := future) (locals := locals)
+      (returns := artifact.slots.returns)
+      (params := artifact.slots.params)
+      hFinalEnv hEntryNodup
+  rw [prepared.planEq, hLive]
+  unfold AllocationObserverRelation.currentStackOrder
+  rw [hEntries]
+  exact hOrder
+
+theorem Cursor.currentStackOrder
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    ∃ locals,
+      cursor.planning.allocation.env =
+          locals ++ AllocationSupport.functionEnv artifact.slots ∧
+        live =
+          locals.map Prod.fst ++
+            (artifact.slots.returns.map Prod.fst).reverse ++
+            (artifact.slots.params.map Prod.fst).reverse ∧
+        AllocationObserverRelation.currentStackOrder prepared.plan live =
+          MixedAllocation.stackOrder artifact.stackSlots locals ++
+            MixedAllocation.stackOrder artifact.stackSlots
+              artifact.slots.returns.reverse ++
+            MixedAllocation.stackOrder artifact.stackSlots
+              artifact.slots.params.reverse := by
+  rcases cursor.activeEnv with ⟨locals, hCurrent, hLive⟩
+  exact
+    ⟨locals, hCurrent, hLive,
+      cursor.currentStackOrder_of_active locals hCurrent hLive⟩
+
+/--
+Classify a declaration from adjacent cursor positions. The selected final plan
+decides stack versus scratch placement, while the active-environment theorem
+proves the corresponding dynamic stack-order change.
+-/
+theorem Cursor.declarationPlacement
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .let_ name value :: rest } lowerState localsCtx)
+    (tail :
+      Cursor prepared scope (name :: live)
+        { stmts := rest } afterState afterLocals)
+    (hPlanning :
+      tail.planning =
+        AllocationSupport.planStmt scope cursor.planning
+          (.let_ name value)) :
+    DeclarationPlacement artifact.lowerCtx lowerState prepared.plan
+      live name := by
+  rcases cursor.currentStackOrder with
+    ⟨locals, hCurrentEnv, hCurrentLive, hCurrentOrder⟩
+  have hNext :
+      cursor.planning.allocation.nextSlot =
+        lowerState.allocation.nextSlot :=
+    congrArg AllocationSupport.CompileState.nextSlot
+      cursor.planningAllocation
+  have hTailEnv :
+      tail.planning.allocation.env =
+      ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+        AllocationSupport.functionEnv artifact.slots := by
+    calc
+      tail.planning.allocation.env =
+          (AllocationSupport.planStmt scope cursor.planning
+            (.let_ name value)).allocation.env := by rw [hPlanning]
+      _ =
+          (name, cursor.planning.allocation.nextSlot) ::
+            cursor.planning.allocation.env := by
+              rw [AllocationSupport.planStmt_allocation_env]
+      _ =
+          ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+            AllocationSupport.functionEnv artifact.slots := by
+              simp [hCurrentEnv]
+  have hTailLive :
+      name :: live =
+        (((name, cursor.planning.allocation.nextSlot) :: locals).map
+            Prod.fst) ++
+          (artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse := by
+    calc
+      name :: live =
+          name ::
+            (locals.map Prod.fst ++
+              (artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse) :=
+        congrArg (List.cons name) hCurrentLive
+      _ =
+          (((name, cursor.planning.allocation.nextSlot) :: locals).map
+              Prod.fst) ++
+            (artifact.slots.returns.map Prod.fst).reverse ++
+            (artifact.slots.params.map Prod.fst).reverse := rfl
+  have hTailOrder :=
+    tail.currentStackOrder_of_active
+      ((name, cursor.planning.allocation.nextSlot) :: locals)
+      hTailEnv hTailLive
+  have hLookupPlanning :
+      AllocationSupport.lookupSlot? name
+          tail.planning.allocation.env =
+        some cursor.planning.allocation.nextSlot := by
+    rw [hPlanning, AllocationSupport.planStmt_allocation_env]
+    simp [AllocationSupport.lookupSlot?]
+  have hLookupAfter :
+      AllocationSupport.lookupSlot? name afterState.allocation.env =
+        some lowerState.allocation.nextSlot := by
+    rw [← tail.planningAllocation, ← hNext]
+    exact hLookupPlanning
+  cases hStack :
+      AllocationLowering.isStackSlot artifact.lowerCtx
+        lowerState.allocation.nextSlot with
+  | true =>
+      have hBodyLookup :=
+        tail.bodyFinal_lookup_of_lookup hLookupAfter
+      obtain ⟨planDepth, hLocation⟩ :=
+        prepared.location_stack_of_lookup hBodyLookup hStack
+      have hSlotMem :
+          lowerState.allocation.nextSlot ∈ artifact.stackSlots := by
+        simpa
+          [AllocationObserverCall.SelectedCallee.Artifact.lowerCtx]
+          using
+            (AllocationLowering.isStackSlot_eq_true_iff
+              artifact.lowerCtx lowerState.allocation.nextSlot).mp hStack
+      have hConsOrder :
+          MixedAllocation.stackOrder artifact.stackSlots
+              ((name, lowerState.allocation.nextSlot) :: locals) =
+            name ::
+              MixedAllocation.stackOrder artifact.stackSlots locals := by
+        simp [MixedAllocation.stackOrder, MixedAllocation.stackEntries,
+          hSlotMem]
+      refine .stack lowerState.allocation.nextSlot planDepth rfl hStack
+        hLocation ?_
+      calc
+        AllocationObserverRelation.currentStackOrder
+            prepared.plan (name :: live) =
+            MixedAllocation.stackOrder artifact.stackSlots
+                ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.returns.reverse ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.params.reverse :=
+          hTailOrder
+        _ =
+            MixedAllocation.stackOrder artifact.stackSlots
+                ((name, lowerState.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.returns.reverse ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.params.reverse := by
+          rw [hNext]
+        _ =
+            name ::
+              (MixedAllocation.stackOrder artifact.stackSlots locals ++
+                MixedAllocation.stackOrder artifact.stackSlots
+                    artifact.slots.returns.reverse ++
+                MixedAllocation.stackOrder artifact.stackSlots
+                    artifact.slots.params.reverse) := by
+          rw [hConsOrder]
+          simp [List.append_assoc]
+        _ =
+            name ::
+              AllocationObserverRelation.currentStackOrder
+                prepared.plan live := by
+          rw [hCurrentOrder]
+  | false =>
+      have hBodyLookup :=
+        tail.bodyFinal_lookup_of_lookup hLookupAfter
+      have hLocation :=
+        prepared.location_scratch_of_lookup hBodyLookup hStack
+      have hSlotNotMem :
+          lowerState.allocation.nextSlot ∉ artifact.stackSlots := by
+        simpa
+          [AllocationObserverCall.SelectedCallee.Artifact.lowerCtx]
+          using
+            (AllocationLowering.isStackSlot_eq_false_iff
+              artifact.lowerCtx lowerState.allocation.nextSlot).mp hStack
+      have hConsOrder :
+          MixedAllocation.stackOrder artifact.stackSlots
+              ((name, lowerState.allocation.nextSlot) :: locals) =
+            MixedAllocation.stackOrder artifact.stackSlots locals := by
+        simp [MixedAllocation.stackOrder, MixedAllocation.stackEntries,
+          hSlotNotMem]
+      refine .scratch lowerState.allocation.nextSlot rfl hStack
+        hLocation ?_
+      calc
+        AllocationObserverRelation.currentStackOrder
+            prepared.plan (name :: live) =
+            MixedAllocation.stackOrder artifact.stackSlots
+                ((name, cursor.planning.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.returns.reverse ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.params.reverse :=
+          hTailOrder
+        _ =
+            MixedAllocation.stackOrder artifact.stackSlots
+                ((name, lowerState.allocation.nextSlot) :: locals) ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.returns.reverse ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.params.reverse := by
+          rw [hNext]
+        _ =
+            MixedAllocation.stackOrder artifact.stackSlots locals ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.returns.reverse ++
+              MixedAllocation.stackOrder artifact.stackSlots
+                  artifact.slots.params.reverse := by
+          rw [hConsOrder]
+        _ =
+            AllocationObserverRelation.currentStackOrder
+              prepared.plan live := hCurrentOrder.symm
 
 theorem Cursor.location_stack_of_lookup
     {allocation : Locals.Allocation.ProgramPlan}
