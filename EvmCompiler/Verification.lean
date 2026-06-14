@@ -315,6 +315,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.runForLoop_exit_cases
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_exit_of_runs
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_cases
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_of_parts
@@ -649,6 +650,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularRuntimeInvariantForward.of_safe_source_run
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.for_regular_of_safe_source_run
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.NonregularRuntimeForward.of_safe_source_run
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.for_exit_of_components
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.for_init_exit_of_components
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_push
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize

@@ -2623,6 +2623,184 @@ theorem run_switch_cases {σ : Type}
               exact
                 ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
 
+/--
+Invert a successful canonical source `for` at the exact smaller initializer
+and loop fuel.
+
+Successful execution has exactly three shapes: a regular initializer followed
+by a regular loop, a regular initializer followed by an activation exit, or an
+initializer that itself exits the activation.
+-/
+theorem run_for_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.for_ init cond post body) source =
+        .ok (outcome, finalCtx)) :
+    (∃ afterInit initCtx loopFinal,
+        Block.runOpen model prim program ctx.withoutLoopControl
+            fuel init source =
+          .ok (Outcome.regular afterInit, initCtx) ∧
+        Stmt.runForLoop model prim program initCtx cond
+            initCtx.withoutLoopControl post
+            (initCtx.withLoopControl initCtx.scope initCtx.scope)
+            body fuel afterInit =
+          .ok (Outcome.regular loopFinal) ∧
+        outcome =
+          Outcome.regular (model.restrictTo ctx.scope loopFinal) ∧
+        finalCtx = ctx) ∨
+      (∃ afterInit initCtx,
+        Block.runOpen model prim program ctx.withoutLoopControl
+            fuel init source =
+          .ok (Outcome.regular afterInit, initCtx) ∧
+        Stmt.runForLoop model prim program initCtx cond
+            initCtx.withoutLoopControl post
+            (initCtx.withLoopControl initCtx.scope initCtx.scope)
+            body fuel afterInit =
+          .ok outcome ∧
+        outcome.IsExit ∧
+        finalCtx = ctx) ∨
+      (∃ initCtx,
+        Block.runOpen model prim program ctx.withoutLoopControl
+            fuel init source =
+          .ok (outcome, initCtx) ∧
+        outcome.IsExit ∧
+        finalCtx = ctx) := by
+  unfold Stmt.run at hRun
+  cases hInit :
+      Block.runOpen model prim program ctx.withoutLoopControl
+        fuel init source with
+  | error err =>
+      simp [hInit] at hRun
+  | ok initResult =>
+      rcases initResult with ⟨⟨afterInit, initMode⟩, initCtx⟩
+      simp only [hInit, Bind.bind, Except.bind] at hRun
+      cases initMode with
+      | regular =>
+          cases hLoop :
+              Stmt.runForLoop model prim program initCtx cond
+                initCtx.withoutLoopControl post
+                (initCtx.withLoopControl initCtx.scope initCtx.scope)
+                body fuel afterInit with
+          | error err =>
+              simp [hLoop] at hRun
+          | ok loopOutcome =>
+              rcases loopOutcome with ⟨loopFinal, loopMode⟩
+              simp only [hLoop, Bind.bind, Except.bind] at hRun
+              cases loopMode with
+              | regular =>
+                  left
+                  refine
+                    ⟨afterInit, initCtx, loopFinal, ?_, ?_, ?_⟩
+                  · simpa [Outcome.regular,
+                      Locals.Source.Effectful.Outcome.regular] using hInit
+                  · simpa [Outcome.regular,
+                      Locals.Source.Effectful.Outcome.regular] using hLoop
+                  · have hEq := (Except.ok.inj hRun).symm
+                    exact
+                      ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
+              | brk =>
+                  simp [Source.invalid, Structured.invalid] at hRun
+              | cont =>
+                  simp [Source.invalid, Structured.invalid] at hRun
+              | leave =>
+                  right
+                  left
+                  refine ⟨afterInit, initCtx, ?_, ?_, ?_, ?_⟩
+                  · simpa [Outcome.regular,
+                      Locals.Source.Effectful.Outcome.regular] using hInit
+                  · have hEq := (Except.ok.inj hRun).symm
+                    have hOutcomeEq : outcome = Outcome.leave loopFinal := by
+                      simpa [Outcome.leave,
+                        Locals.Source.Effectful.Outcome.leave] using
+                        congrArg Prod.fst hEq
+                    rw [hOutcomeEq]
+                    simpa [Outcome.leave,
+                      Locals.Source.Effectful.Outcome.leave] using hLoop
+                  · have hEq := (Except.ok.inj hRun).symm
+                    have hOutcomeEq : outcome = Outcome.leave loopFinal := by
+                      simpa [Outcome.leave,
+                        Locals.Source.Effectful.Outcome.leave] using
+                        congrArg Prod.fst hEq
+                    rw [hOutcomeEq]
+                    simp [Outcome.IsExit, Outcome.leave,
+                      Locals.Source.Effectful.Outcome.leave]
+                  · exact congrArg Prod.snd (Except.ok.inj hRun).symm
+              | halt kind =>
+                  right
+                  left
+                  refine ⟨afterInit, initCtx, ?_, ?_, ?_, ?_⟩
+                  · simpa [Outcome.regular,
+                      Locals.Source.Effectful.Outcome.regular] using hInit
+                  · have hEq := (Except.ok.inj hRun).symm
+                    have hOutcomeEq : outcome = Outcome.halt kind loopFinal := by
+                      simpa [Outcome.halt,
+                        Locals.Source.Effectful.Outcome.halt] using
+                        congrArg Prod.fst hEq
+                    rw [hOutcomeEq]
+                    simpa [Outcome.halt,
+                      Locals.Source.Effectful.Outcome.halt] using hLoop
+                  · have hEq := (Except.ok.inj hRun).symm
+                    have hOutcomeEq : outcome = Outcome.halt kind loopFinal := by
+                      simpa [Outcome.halt,
+                        Locals.Source.Effectful.Outcome.halt] using
+                        congrArg Prod.fst hEq
+                    rw [hOutcomeEq]
+                    simp [Outcome.IsExit, Outcome.halt,
+                      Locals.Source.Effectful.Outcome.halt]
+                  · exact congrArg Prod.snd (Except.ok.inj hRun).symm
+      | brk =>
+          simp [Source.invalid, Structured.invalid] at hRun
+      | cont =>
+          simp [Source.invalid, Structured.invalid] at hRun
+      | leave =>
+          right
+          right
+          refine ⟨initCtx, ?_, ?_, ?_⟩
+          · have hEq := (Except.ok.inj hRun).symm
+            have hOutcomeEq : outcome = Outcome.leave afterInit := by
+              simpa [Outcome.leave,
+                Locals.Source.Effectful.Outcome.leave] using
+                congrArg Prod.fst hEq
+            rw [hOutcomeEq]
+            simpa [Outcome.leave,
+              Locals.Source.Effectful.Outcome.leave] using hInit
+          · have hEq := (Except.ok.inj hRun).symm
+            have hOutcomeEq : outcome = Outcome.leave afterInit := by
+              simpa [Outcome.leave,
+                Locals.Source.Effectful.Outcome.leave] using
+                congrArg Prod.fst hEq
+            rw [hOutcomeEq]
+            simp [Outcome.IsExit, Outcome.leave,
+              Locals.Source.Effectful.Outcome.leave]
+          · exact congrArg Prod.snd (Except.ok.inj hRun).symm
+      | halt kind =>
+          right
+          right
+          refine ⟨initCtx, ?_, ?_, ?_⟩
+          · have hEq := (Except.ok.inj hRun).symm
+            have hOutcomeEq : outcome = Outcome.halt kind afterInit := by
+              simpa [Outcome.halt,
+                Locals.Source.Effectful.Outcome.halt] using
+                congrArg Prod.fst hEq
+            rw [hOutcomeEq]
+            simpa [Outcome.halt,
+              Locals.Source.Effectful.Outcome.halt] using hInit
+          · have hEq := (Except.ok.inj hRun).symm
+            have hOutcomeEq : outcome = Outcome.halt kind afterInit := by
+              simpa [Outcome.halt,
+                Locals.Source.Effectful.Outcome.halt] using
+                congrArg Prod.fst hEq
+            rw [hOutcomeEq]
+            simp [Outcome.IsExit, Outcome.halt,
+              Locals.Source.Effectful.Outcome.halt]
+          · exact congrArg Prod.snd (Except.ok.inj hRun).symm
+
 end Stmt
 
 set_option maxHeartbeats 1000000 in

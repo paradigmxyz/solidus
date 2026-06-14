@@ -5722,5 +5722,431 @@ theorem for_init_exit_of_components
 end NonregularStmtForward
 end Sequence
 end AllocationObserverStatement
+
+namespace AllocationObserverOutcome
+namespace NonregularStmtRuntimeForward
+
+open AllocationObserverRelation
+open AllocationObserverStatement
+open AllocationObserverStatement.Sequence
+
+/--
+Allocator-aware preservation for a `for` whose initializer completes
+regularly and whose loop leaves the activation or halts.
+
+The statement theorem owns the real compiler decomposition and the unreachable
+outer cleanup. The loop callback is instantiated only with those checked
+artifacts; source-fuel induction remains owned by `ForLoop`.
+-/
+theorem for_exit_of_components
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx loopSourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan loopPlan : Locals.Allocation.Plan}
+    {outerLive loopLive resultLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode loopMode : ActivationMode}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterInit :
+      Functions.ObserverSemantics.State transcript}
+    {sourceLoopOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        outerPlan outerLive frameBase outerMode source target)
+    (hInit :
+      ∀ {loweredInit : Locals.Block}
+        {loopState : AllocationLowering.State}
+        {initCode : List Expressions.Stmt}
+        {initLocals : Locals.Ctx},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState
+            localsCtx.withoutLoopControl outerPlan outerLive frameBase
+            outerMode source target →
+        ∃ targetAfterInit,
+          RegularBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx loopState
+            initLocals loopPlan loopLive frameBase outerMode loopMode
+            sourceProgram sourceCtx.withoutLoopControl init source
+            targetProgram
+            { stmts := Expressions.StmtList.toStructured initCode }
+            target sourceAfterInit targetAfterInit loopSourceCtx)
+    (hLoop :
+      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+        {loweredCond : Locals.Expr 1}
+        {loweredPost loweredBody : Locals.Block}
+        {initLocals postLocals bodyLocals : Locals.Ctx}
+        {condCode : Structured.Code}
+        {postCode bodyCode : List Expressions.Stmt}
+        {compiledPost compiledBody : Expressions.Block}
+        {targetAfterInit : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerExpr lowerCtx loopState cond =
+          some loweredCond →
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns loopState post =
+          some (loweredPost, afterPost) →
+        AllocationLowering.lowerBlockScoped
+            lowerCtx returns afterPost body =
+          some (loweredBody, afterBody) →
+        Locals.Expr.compileCode initLocals 0 loweredCond =
+          some condCode →
+        Locals.Block.compileOpen initLocals.withoutLoopControl
+            loweredPost =
+          some (postCode, postLocals) →
+        Locals.finishScoped initLocals.withoutLoopControl
+            postLocals postCode =
+          some compiledPost →
+        Locals.Block.compileOpen
+            (initLocals.withLoopControl initLocals.layout.length)
+            loweredBody =
+          some (bodyCode, bodyLocals) →
+        Locals.finishScoped
+            (initLocals.withLoopControl initLocals.layout.length)
+            bodyLocals bodyCode =
+          some compiledBody →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx loopState initLocals
+            loopPlan loopLive frameBase loopMode sourceAfterInit
+            targetAfterInit →
+        ∃ targetOutcome,
+          AllocationObserverStatement.ForLoop.NonregularRuntimeForward
+            contract config allocatorDepth transcript loopPlan resultLive
+            frameBase loopMode sourceProgram loopSourceCtx cond
+            loopSourceCtx.withoutLoopControl post
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            body targetProgram condCode compiledPost.toStructured
+            compiledBody.toStructured sourceAfterInit targetAfterInit
+            sourceLoopOutcome targetOutcome)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceLoopOutcome)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.for_ init cond post body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetOutcome,
+      NonregularStmtRuntimeForward
+        contract config allocatorDepth transcript loopPlan resultLive
+        frameBase outerMode loopMode sourceProgram sourceCtx
+        (.for_ init cond post body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceLoopOutcome targetOutcome sourceCtx := by
+  obtain
+      ⟨loweredInit, loopState, loweredCond, loweredPost, afterPost,
+        loweredBody, afterBody, hLowerInit, hLowerCond, hLowerPost,
+        hLowerBody, hLoweredShape, _hLowerFinal⟩ :=
+    AllocationLowering.lowerStmt_for_components hLower
+  subst loweredStmts
+  obtain
+      ⟨initCode, initLocals, condCode,
+        postCode, postLocals, compiledPost,
+        bodyCode, bodyLocals, compiledBody, cleanup,
+        hCompileInit, hCompileCond, hCompilePost, hFinishPost,
+        hCompileBody, hFinishBody, _hCleanup,
+        hCompiledShape, _hLocalsFinal⟩ :=
+    Locals.Block.compileOpen_single_for_components hCompile
+  have hInitialLoopInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState
+        localsCtx.withoutLoopControl outerPlan outerLive frameBase
+        outerMode source target :=
+    hInvariant.transport_locals_layout rfl
+  obtain ⟨targetAfterInit, hInitForward⟩ :=
+    hInit hLowerInit hCompileInit hInitialLoopInvariant
+  rcases hInitForward with
+    ⟨initSourceFuel, initTargetFuel,
+      hSourceInit, hTargetInit, hInitInvariant, hInitMode, hInitEffect⟩
+  obtain ⟨targetOutcome, hLoopForward⟩ :=
+    hLoop hLowerCond hLowerPost hLowerBody hCompileCond
+      hCompilePost hFinishPost hCompileBody hFinishBody hInitInvariant
+  rcases hLoopForward with
+    ⟨⟨loopSourceFuel, loopTargetFuel,
+        hSourceLoop, hTargetLoop, hOutcomeRel⟩, hLoopEffect⟩
+  let sourceFuel := Nat.max initSourceFuel loopSourceFuel
+  have hInitSourceLe : initSourceFuel ≤ sourceFuel := by
+    simp [sourceFuel]
+  have hLoopSourceLe : loopSourceFuel ≤ sourceFuel := by
+    simp [sourceFuel]
+  have hSourceInit' :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hInitSourceLe hSourceInit
+  have hSourceLoop' :=
+    Functions.Source.Effectful.Stmt.runForLoop_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hLoopSourceLe hSourceLoop
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_for_exit_of_runs
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (fuel := sourceFuel)
+      hExit hSourceInit' hSourceLoop'
+  let targetFuel := Nat.max initTargetFuel loopTargetFuel
+  have hInitTargetLe : initTargetFuel ≤ targetFuel := by
+    simp [targetFuel]
+  have hLoopTargetLe : loopTargetFuel ≤ targetFuel := by
+    simp [targetFuel]
+  have hTargetInit' :=
+    Structured.EffectSemantics.Block.Eval.mono
+      hTargetInit hInitTargetLe
+  have hTargetLoop' :=
+    Structured.EffectSemantics.For.Eval.mono
+      hTargetLoop hLoopTargetLe
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (targetFuel + 1)
+        (.for_
+          { stmts := Expressions.StmtList.toStructured initCode }
+          condCode compiledPost.toStructured compiledBody.toStructured)
+        target targetOutcome :=
+    Structured.EffectSemantics.Stmt.Eval.for_init_regular
+      hTargetInit' hTargetLoop'
+  have hSourceMode : sourceLoopOutcome.mode ≠ .regular := by
+    rcases sourceLoopOutcome with ⟨final, outcomeMode⟩
+    cases outcomeMode with
+    | regular =>
+        simp [Functions.Source.Effectful.Outcome.IsExit,
+          Functions.Source.Effectful.Outcome.regular,
+          Locals.Source.Effectful.Outcome.regular] at hExit
+    | brk =>
+        simp [Functions.Source.Effectful.Outcome.brk,
+          Locals.Source.Effectful.Outcome.brk]
+    | cont =>
+        simp [Functions.Source.Effectful.Outcome.cont,
+          Locals.Source.Effectful.Outcome.cont]
+    | leave =>
+        simp [Functions.Source.Effectful.Outcome.leave,
+          Locals.Source.Effectful.Outcome.leave]
+    | halt kind =>
+        simp [Functions.Source.Effectful.Outcome.halt,
+          Locals.Source.Effectful.Outcome.halt]
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hOutcomeRel.target_nonregular hSourceMode
+  have hTargetBlock :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts :=
+            [ (.for_
+                { stmts := Expressions.StmtList.toStructured initCode }
+                condCode compiledPost.toStructured
+                compiledBody.toStructured),
+              Structured.Stmt.code cleanup ] }
+        target targetOutcome :=
+    Structured.EffectSemantics.Block.Eval.cons_nonregular
+      hTargetStmt hTargetMode
+  refine
+    ⟨targetOutcome, sourceFuel + 1, targetFuel + 2, hSource, ?_,
+      hSourceMode, hOutcomeRel, hInitMode,
+      hInitEffect.trans_of_sameFrame hInitMode hLoopEffect⟩
+  have hInitCompile :
+      Expressions.Block.toStructured { stmts := initCode } =
+        { stmts := Expressions.StmtList.toStructured initCode } := by
+    rfl
+  have hCondCompile :
+      Expressions.Expr.compile
+          (Expressions.Expr.code (results := 1) condCode) =
+        condCode := by
+    rfl
+  rw [hCompiledShape, Expressions.StmtList.toStructured_append]
+  simp only [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured]
+  rw [hInitCompile, hCondCompile]
+  simpa [Locals.codeStmt, Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using hTargetBlock
+
+/--
+Allocator-aware preservation for a `for` whose initializer exits before the
+condition is evaluated. The loop and outer cleanup are unreachable, so the
+initializer's outcome relation, mode transition, and allocator effect are the
+complete statement result.
+-/
+theorem for_init_exit_of_components
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan exitPlan : Locals.Allocation.Plan}
+    {outerLive resultLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode : ActivationMode}
+    {init : Functions.Block} {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {sourceInitOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        outerPlan outerLive frameBase outerMode source target)
+    (hInit :
+      ∀ {loweredInit : Locals.Block}
+        {loopState : AllocationLowering.State}
+        {initCode : List Expressions.Stmt}
+        {initLocals : Locals.Ctx},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState
+            localsCtx.withoutLoopControl outerPlan outerLive frameBase
+            outerMode source target →
+        ∃ initCtx targetOutcome finalMode,
+          BlockRuntimeForward
+            contract config allocatorDepth transcript exitPlan resultLive
+            frameBase outerMode finalMode sourceProgram
+            sourceCtx.withoutLoopControl init source targetProgram
+            { stmts := Expressions.StmtList.toStructured initCode }
+            target sourceInitOutcome targetOutcome initCtx)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceInitOutcome)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.for_ init cond post body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetOutcome finalMode,
+      NonregularStmtRuntimeForward
+        contract config allocatorDepth transcript exitPlan resultLive
+        frameBase outerMode finalMode sourceProgram sourceCtx
+        (.for_ init cond post body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceInitOutcome targetOutcome sourceCtx := by
+  obtain
+      ⟨loweredInit, _loopState, _loweredCond, _loweredPost, _afterPost,
+        _loweredBody, _afterBody, hLowerInit, _hLowerCond, _hLowerPost,
+        _hLowerBody, hLoweredShape, _hLowerFinal⟩ :=
+    AllocationLowering.lowerStmt_for_components hLower
+  subst loweredStmts
+  obtain
+      ⟨initCode, _initLocals, condCode,
+        _postCode, _postLocals, compiledPost,
+        _bodyCode, _bodyLocals, compiledBody, cleanup,
+        hCompileInit, _hCompileCond, _hCompilePost, _hFinishPost,
+        _hCompileBody, _hFinishBody, _hCleanup,
+        hCompiledShape, _hLocalsFinal⟩ :=
+    Locals.Block.compileOpen_single_for_components hCompile
+  have hInitialInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState
+        localsCtx.withoutLoopControl outerPlan outerLive frameBase
+        outerMode source target :=
+    hInvariant.transport_locals_layout rfl
+  obtain
+      ⟨initCtx, targetOutcome, finalMode, hInitForward⟩ :=
+    hInit hLowerInit hCompileInit hInitialInvariant
+  rcases hInitForward with
+    ⟨initSourceFuel, initTargetFuel, hSourceInit, hTargetInit,
+      hOutcomeRel, hSame, hEffect⟩
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (cond := cond)
+      (post := post) (body := body) hExit hSourceInit
+  have hTargetExit :
+      Structured.EffectSemantics.Outcome.IsExit targetOutcome :=
+    hOutcomeRel.target_isExit hExit
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (initTargetFuel + 1)
+        (.for_
+          { stmts := Expressions.StmtList.toStructured initCode }
+          condCode compiledPost.toStructured compiledBody.toStructured)
+        target targetOutcome :=
+    Structured.EffectSemantics.Stmt.Eval.for_init_exit
+      hTargetInit hTargetExit
+  have hSourceMode : sourceInitOutcome.mode ≠ .regular := by
+    rcases sourceInitOutcome with ⟨final, outcomeMode⟩
+    cases outcomeMode with
+    | regular =>
+        simp [Functions.Source.Effectful.Outcome.IsExit,
+          Functions.Source.Effectful.Outcome.regular,
+          Locals.Source.Effectful.Outcome.regular] at hExit
+    | brk =>
+        simp [Functions.Source.Effectful.Outcome.brk,
+          Locals.Source.Effectful.Outcome.brk]
+    | cont =>
+        simp [Functions.Source.Effectful.Outcome.cont,
+          Locals.Source.Effectful.Outcome.cont]
+    | leave =>
+        simp [Functions.Source.Effectful.Outcome.leave,
+          Locals.Source.Effectful.Outcome.leave]
+    | halt kind =>
+        simp [Functions.Source.Effectful.Outcome.halt,
+          Locals.Source.Effectful.Outcome.halt]
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hOutcomeRel.target_nonregular hSourceMode
+  have hTargetBlock :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (initTargetFuel + 2)
+        { stmts :=
+            [ (.for_
+                { stmts := Expressions.StmtList.toStructured initCode }
+                condCode compiledPost.toStructured
+                compiledBody.toStructured),
+              Structured.Stmt.code cleanup ] }
+        target targetOutcome :=
+    Structured.EffectSemantics.Block.Eval.cons_nonregular
+      hTargetStmt hTargetMode
+  refine
+    ⟨targetOutcome, finalMode, initSourceFuel + 1, initTargetFuel + 2,
+      hSource, ?_, hSourceMode, hOutcomeRel, hSame, hEffect⟩
+  have hInitCompile :
+      Expressions.Block.toStructured { stmts := initCode } =
+        { stmts := Expressions.StmtList.toStructured initCode } := by
+    rfl
+  have hCondCompile :
+      Expressions.Expr.compile
+          (Expressions.Expr.code (results := 1) condCode) =
+        condCode := by
+    rfl
+  rw [hCompiledShape, Expressions.StmtList.toStructured_append]
+  simp only [Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured]
+  rw [hInitCompile, hCondCompile]
+  simpa [Locals.codeStmt, Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using hTargetBlock
+
+end NonregularStmtRuntimeForward
+end AllocationObserverOutcome
 end Functions
 end EvmCompiler
