@@ -1436,6 +1436,162 @@ theorem Cursor.letContext
                       · exact hAfterScratchLocation
 
 /--
+Preserve one expression statement directly from a synchronized body cursor.
+-/
+theorem Cursor.exprRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {expr : Functions.Expr 0}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .expr expr :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript expr source sourceFinal values)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals prepared.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals prepared.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.expr expr) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular sourceFinal)
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.expr_of_compilers
+      hConfig hSafe hScoped hInvariant hLower hCompile
+  exact
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .regular hForward (AllocationObserverOutcome.SameControl.refl _)⟩
+
+/--
+Preserve one assignment directly from a synchronized body cursor.
+-/
+theorem Cursor.assignRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {valueExpr : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .assign name valueExpr :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript valueExpr
+        source sourceAfterValue [value])
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals prepared.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals prepared.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.assign name valueExpr) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).withVars
+                sourceAfterValue
+                (Locals.Source.Store.insert
+                  ((Functions.ObserverSemantics.stateModel transcript).vars
+                    sourceAfterValue)
+                  name value)))
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  have hContains :
+      Locals.Source.Store.contains
+          ((Functions.ObserverSemantics.stateModel transcript).vars source)
+          name =
+        true := by
+    change Locals.Source.Store.contains source.source.vars name = true
+    obtain ⟨old, hOld⟩ :=
+      hInvariant.activation.defined name hScoped.1
+    simp [Locals.Source.Store.contains, hOld]
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.assign_of_compilers
+      hConfig hContains hSafe hScoped.2 hScoped.1 hInvariant hLower hCompile
+  exact
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .regular hForward (AllocationObserverOutcome.SameControl.refl _)⟩
+
+/--
 Preserve one source `let` directly from a synchronized body cursor.
 
 The theorem consumes only the canonical safe expression evaluation, the real

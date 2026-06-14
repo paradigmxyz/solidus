@@ -679,6 +679,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.frameName_not_mem_live
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.frameName_not_mem_currentStackOrder
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letContext
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.exprRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResult
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
