@@ -29420,3 +29420,7 @@ Resumed the end-to-end observer proof at the Functions-to-allocated boundary. St
 ## 2026-06-14 - selected callee preparation checked
 
 Added source-function identity/membership evidence to selected callees, strengthened the pass-owned prelude constructor to expose the exact compiled parameter/return fragments, and proved `SelectedCallee.Artifact.prepare`. The theorem packages the real validated allocation plan, activation mode, lowered body, return expressions, compiled fragments, cleanup, and procedure shape from the existing compiler. Focused build, the 1,208-job verification root, architecture guards, diff/hole checks, and axiom inspection all pass. The remaining Functions boundary work is the recursive source-fuel forward theorem followed by backward adequacy.
+
+## 2026-06-14 - canonical semantics refinement checked
+
+Added the semantics-owned `PrimitiveSemantics.SuccessRefines` interface and lifted it through Locals expressions and the complete canonical Functions evaluator, including blocks, scoped blocks, loops, recursive function calls, and terminal outcomes. `SafeSemantics.successRefines` now proves that every successful guarded no-external-effects execution is the identical ordinary observer execution; `SafeSemantics.program_runState_eq` exposes the whole-program theorem. Focused Locals, Functions, and safety builds pass without holes.

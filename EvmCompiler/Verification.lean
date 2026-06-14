@@ -474,6 +474,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Locals.Source.Effectful.PrimitiveSemantics.SuccessRefines
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_of_successRefines
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_of_successRefines
+#check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.successRefines
+#check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.eval_parts
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.terminal_parts
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval

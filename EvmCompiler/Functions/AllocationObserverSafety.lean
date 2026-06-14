@@ -287,6 +287,157 @@ theorem terminal_parts
   · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
       Structured.invalid] at hEval
 
+theorem successRefines
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace) :
+    (primitiveSemantics contract transcript).SuccessRefines
+      (Functions.ObserverSemantics.primitiveSemantics transcript) := by
+  constructor
+  · intro op state values final outputs hEval
+    exact (eval_parts hEval).2
+  · intro kind state values final hEval
+    exact (terminal_parts hEval).2
+
+theorem block_runOpen_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {block : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome : Functions.ObserverSemantics.Outcome
+      (Functions.ObserverSemantics.State transcript)}
+    {finalCtx : Functions.Source.Ctx}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          program ctx fuel block source =
+        .ok (outcome, finalCtx)) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program ctx fuel block source =
+      .ok (outcome, finalCtx) :=
+  Functions.Source.Effectful.Block.runOpen_of_successRefines
+    (Functions.ObserverSemantics.stateModel transcript)
+    (successRefines contract transcript) program hRun
+
+theorem block_runScoped_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program} {ctx : Functions.Source.Ctx}
+    {fuel : Nat} {block : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome : Functions.ObserverSemantics.Outcome
+      (Functions.ObserverSemantics.State transcript)}
+    (hRun :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          program ctx block fuel source =
+        .ok outcome) :
+    Functions.Source.Effectful.Block.runScoped
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program ctx block fuel source =
+      .ok outcome :=
+  Functions.Source.Effectful.Block.runScoped_of_successRefines
+    (Functions.ObserverSemantics.stateModel transcript)
+    (successRefines contract transcript) program hRun
+
+theorem function_runBody_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program} {fn : Functions.FunDef}
+    {args : List Word} {fuel : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {result : Functions.Source.Effectful.CallResult
+      (Functions.ObserverSemantics.State transcript)}
+    (hRun :
+      Functions.Source.Effectful.FunDef.runBody
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          program fn args fuel source =
+        .ok result) :
+    Functions.Source.Effectful.FunDef.runBody
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program fn args fuel source =
+      .ok result :=
+  Functions.Source.Effectful.FunDef.runBody_of_successRefines
+    (Functions.ObserverSemantics.stateModel transcript)
+    (successRefines contract transcript) program hRun
+
+theorem loop_run_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program}
+    {loopCtx : Functions.Source.Ctx}
+    {cond : Functions.Expr 1}
+    {postBase : Functions.Source.Ctx} {post : Functions.Block}
+    {bodyBase : Functions.Source.Ctx} {body : Functions.Block}
+    {fuel : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome : Functions.ObserverSemantics.Outcome
+      (Functions.ObserverSemantics.State transcript)}
+    (hRun :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          program loopCtx cond postBase post bodyBase body fuel source =
+        .ok outcome) :
+    Functions.Source.Effectful.Stmt.runForLoop
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program loopCtx cond postBase post bodyBase body fuel source =
+      .ok outcome :=
+  Functions.Source.Effectful.Stmt.runForLoop_of_successRefines
+    (Functions.ObserverSemantics.stateModel transcript)
+    (successRefines contract transcript) program hRun
+
+theorem stmt_run_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program} {ctx finalCtx : Functions.Source.Ctx}
+    {fuel : Nat} {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome : Functions.ObserverSemantics.Outcome
+      (Functions.ObserverSemantics.State transcript)}
+    (hRun :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          program ctx fuel stmt source =
+        .ok (outcome, finalCtx)) :
+    Functions.Source.Effectful.Stmt.run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        program ctx fuel stmt source =
+      .ok (outcome, finalCtx) :=
+  Functions.Source.Effectful.Stmt.run_of_successRefines
+    (Functions.ObserverSemantics.stateModel transcript)
+    (successRefines contract transcript) program hRun
+
+theorem program_runState_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {program : Functions.Program} {fuel : Nat}
+    {source : Functions.ObserverSemantics.State transcript}
+    {outcome : Functions.ObserverSemantics.Outcome
+      (Functions.ObserverSemantics.State transcript)}
+    (hRun :
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          fuel program source =
+        .ok outcome) :
+    Functions.Source.Effectful.Program.runState
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSemantics.primitiveSemantics transcript)
+        fuel program source =
+      .ok outcome :=
+  block_runScoped_eq hRun
+
 end SafeSemantics
 
 mutual

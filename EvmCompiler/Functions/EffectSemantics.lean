@@ -106,6 +106,41 @@ theorem eval_length {σ : Type} (model : StateModel σ)
               rw [← hValuesEq]
               simp [hTail]
 
+theorem eval_of_successRefines
+    {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+    (model : StateModel σ)
+    (hRefines : sourcePrim.SuccessRefines targetPrim) :
+    ∀ {args : List (Functions.Expr 1)} {source final : σ}
+      {values : List Word},
+      eval model sourcePrim args source = .ok (final, values) →
+        eval model targetPrim args source = .ok (final, values)
+  | [], _source, _final, _values, hEval => by
+      simpa [eval] using hEval
+  | arg :: rest, source, final, values, hEval => by
+      unfold eval at hEval ⊢
+      cases hArg : Expr.evalOne model sourcePrim arg source with
+      | error err =>
+          simp [hArg] at hEval
+      | ok argResult =>
+          rcases argResult with ⟨afterArg, value⟩
+          simp only [hArg, Bind.bind, Except.bind] at hEval
+          cases hRest : eval model sourcePrim rest afterArg with
+          | error err =>
+              simp [hRest] at hEval
+          | ok restResult =>
+              rcases restResult with ⟨restFinal, restValues⟩
+              simp only [hRest, Bind.bind, Except.bind] at hEval
+              have hArg' :
+                  Expr.evalOne model targetPrim arg source =
+                    .ok (afterArg, value) :=
+                Locals.Source.Effectful.Expr.evalOne_of_successRefines
+                  model hRefines hArg
+              have hRest' :
+                  eval model targetPrim rest afterArg =
+                    .ok (restFinal, restValues) :=
+                eval_of_successRefines model hRefines hRest
+              simpa [hArg', hRest'] using hEval
+
 end ArgList
 
 inductive CallResult (σ : Type) where
@@ -373,6 +408,622 @@ mutual
         let state' ← prim.terminal kind stateAfterArgs values
         .ok (Outcome.halt kind state', ctx)
   termination_by fuel stmt _state => (fuel, 4, sizeOf stmt)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | exact Prod.Lex.right _
+          (Prod.Lex.left _ _ (by omega))
+end
+
+set_option maxHeartbeats 1000000 in
+mutual
+  /--
+  Successful open-block execution is preserved when every successful primitive
+  effect is reproduced by the target primitive semantics.
+  -/
+  theorem Block.runOpen_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      (program : Program) :
+      ∀ {fuel : Nat} {ctx : Source.Ctx} {block : Block}
+        {state : σ} {outcome : Outcome σ} {runCtx : Source.Ctx},
+        Block.runOpen model sourcePrim program ctx fuel block state =
+          .ok (outcome, runCtx) →
+        Block.runOpen model targetPrim program ctx fuel block state =
+          .ok (outcome, runCtx) := by
+    intro fuel ctx block state outcome runCtx hRun
+    cases fuel with
+    | zero =>
+        cases block
+        simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+    | succ fuel =>
+        cases block with
+        | mk stmts =>
+            cases stmts with
+            | nil =>
+                simpa [Block.runOpen] using hRun
+            | cons stmt rest =>
+                cases hStmt :
+                    Stmt.run model sourcePrim program ctx fuel stmt state with
+                | error err =>
+                    simp [Block.runOpen, hStmt] at hRun
+                | ok stmtResult =>
+                    rcases stmtResult with ⟨stmtOutcome, stmtCtx⟩
+                    have hStmt' :
+                        Stmt.run model targetPrim program ctx fuel stmt state =
+                          .ok (stmtOutcome, stmtCtx) :=
+                      Stmt.run_of_successRefines
+                        model hRefines program hStmt
+                    cases hMode : stmtOutcome.mode with
+                    | regular =>
+                        simp [Block.runOpen, hStmt, hStmt', hMode]
+                          at hRun ⊢
+                        exact
+                          Block.runOpen_of_successRefines
+                            model hRefines program hRun
+                    | brk =>
+                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                    | cont =>
+                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                    | leave =>
+                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+                    | halt kind =>
+                        simpa [Block.runOpen, hStmt, hStmt', hMode] using hRun
+  termination_by
+    fuel _ctx block _state _outcome _runCtx _hRun =>
+      (fuel, 0, sizeOf block)
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+
+  theorem Block.runScoped_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      (program : Program) :
+      ∀ {fuel : Nat} {ctx : Source.Ctx} {block : Block}
+        {state : σ} {outcome : Outcome σ},
+        Block.runScoped model sourcePrim program ctx block fuel state =
+          .ok outcome →
+        Block.runScoped model targetPrim program ctx block fuel state =
+          .ok outcome := by
+    intro fuel ctx block state outcome hRun
+    unfold Block.runScoped at hRun ⊢
+    cases hOpen :
+        Block.runOpen model sourcePrim program ctx fuel block state with
+    | error err =>
+        simp [hOpen] at hRun
+    | ok openResult =>
+        rcases openResult with ⟨openOutcome, finalCtx⟩
+        have hOpen' :
+            Block.runOpen model targetPrim program ctx fuel block state =
+              .ok (openOutcome, finalCtx) :=
+          Block.runOpen_of_successRefines model hRefines program hOpen
+        cases hMode : openOutcome.mode with
+        | regular =>
+            simpa [hOpen, hOpen', hMode] using hRun
+        | brk =>
+            simpa [hOpen, hOpen', hMode] using hRun
+        | cont =>
+            simpa [hOpen, hOpen', hMode] using hRun
+        | leave =>
+            simpa [hOpen, hOpen', hMode] using hRun
+        | halt kind =>
+            simpa [hOpen, hOpen', hMode] using hRun
+  termination_by
+    fuel _ctx block _state _outcome _hRun =>
+      (fuel, 1, sizeOf block)
+  decreasing_by
+    all_goals simp_wf
+    all_goals
+      first
+      | omega
+      | exact Prod.Lex.right fuel
+          (Prod.Lex.left (sizeOf block) (sizeOf block) (by omega))
+
+  theorem FunDef.runBody_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      (program : Program) :
+      ∀ {fuel : Nat} {fn : FunDef} {args : List Word}
+        {state : σ} {result : CallResult σ},
+        FunDef.runBody model sourcePrim program fn args fuel state =
+          .ok result →
+        FunDef.runBody model targetPrim program fn args fuel state =
+          .ok result := by
+    intro fuel fn args state result hRun
+    cases fuel with
+    | zero =>
+        simp [FunDef.runBody, Source.invalid, Structured.invalid] at hRun
+    | succ fuel =>
+        cases hParams :
+            Source.Store.insertMany fn.params args
+              Locals.Source.Store.empty with
+        | none =>
+            simp [FunDef.runBody, hParams, Source.invalid,
+              Structured.invalid] at hRun
+        | some paramStore =>
+            let initialStore :=
+              Source.Store.initReturns fn.returns paramStore
+            let callerSource := model.source state
+            let initialSource : Locals.Source.State :=
+              { shared := callerSource.shared, vars := initialStore }
+            let initialState := model.withSource state initialSource
+            let functionScope := fn.returns ++ fn.params
+            let bodyCtx :=
+              { Source.Ctx.initial.withLeaveScope functionScope with
+                scope := functionScope }
+            cases hBody :
+                Block.runOpen model sourcePrim program bodyCtx fuel fn.body
+                  initialState with
+            | error err =>
+                simp [FunDef.runBody, hParams, initialStore,
+                  callerSource, initialSource, initialState,
+                  functionScope, bodyCtx, hBody] at hRun
+            | ok bodyResult =>
+                rcases bodyResult with ⟨bodyOutcome, bodyFinalCtx⟩
+                have hBody' :
+                    Block.runOpen model targetPrim program bodyCtx fuel fn.body
+                        initialState =
+                      .ok (bodyOutcome, bodyFinalCtx) :=
+                  Block.runOpen_of_successRefines
+                    model hRefines program hBody
+                cases hMode : bodyOutcome.mode with
+                | regular =>
+                    simpa [FunDef.runBody, hParams, initialStore,
+                      callerSource, initialSource, initialState,
+                      functionScope, bodyCtx, hBody, hBody', hMode] using hRun
+                | brk =>
+                    simp [FunDef.runBody, hParams, initialStore,
+                      callerSource, initialSource, initialState,
+                      functionScope, bodyCtx, hBody, hBody', hMode,
+                      Source.invalid, Structured.invalid] at hRun
+                | cont =>
+                    simp [FunDef.runBody, hParams, initialStore,
+                      callerSource, initialSource, initialState,
+                      functionScope, bodyCtx, hBody, hBody', hMode,
+                      Source.invalid, Structured.invalid] at hRun
+                | leave =>
+                    simpa [FunDef.runBody, hParams, initialStore,
+                      callerSource, initialSource, initialState,
+                      functionScope, bodyCtx, hBody, hBody', hMode] using hRun
+                | halt kind =>
+                    simpa [FunDef.runBody, hParams, initialStore,
+                      callerSource, initialSource, initialState,
+                      functionScope, bodyCtx, hBody, hBody', hMode] using hRun
+  termination_by
+    fuel fn _args _state _result _hRun =>
+      (fuel, 2, sizeOf fn.body)
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+
+  theorem Stmt.runForLoop_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      (program : Program) :
+      ∀ {fuel : Nat} {loopCtx : Source.Ctx}
+        {cond : Expr 1} {postBase : Source.Ctx} {post : Block}
+        {bodyBase : Source.Ctx} {body : Block} {state : σ}
+        {outcome : Outcome σ},
+        Stmt.runForLoop model sourcePrim program loopCtx cond postBase post
+          bodyBase body fuel state = .ok outcome →
+        Stmt.runForLoop model targetPrim program loopCtx cond postBase post
+          bodyBase body fuel state = .ok outcome := by
+    intro fuel loopCtx cond postBase post bodyBase body state outcome hRun
+    cases fuel with
+    | zero =>
+        simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+    | succ fuel =>
+        unfold Stmt.runForLoop at hRun ⊢
+        cases hCond :
+            Expr.evalCondition model sourcePrim cond state with
+        | error err =>
+            simp [hCond] at hRun
+        | ok condResult =>
+            rcases condResult with ⟨stateAfterCond, condTrue⟩
+            have hCond' :
+                Expr.evalCondition model targetPrim cond state =
+                  .ok (stateAfterCond, condTrue) :=
+              Locals.Source.Effectful.Expr.evalCondition_of_successRefines
+                model hRefines hCond
+            cases condTrue with
+            | false =>
+                simpa [hCond, hCond'] using hRun
+            | true =>
+                simp only [hCond, hCond', Bool.if_true_right]
+                  at hRun ⊢
+                cases hBody :
+                    Block.runScoped model sourcePrim program bodyBase body fuel
+                      stateAfterCond with
+                | error err =>
+                    simp [hBody] at hRun
+                | ok bodyOutcome =>
+                    have hBody' :
+                        Block.runScoped model targetPrim program bodyBase body
+                            fuel stateAfterCond =
+                          .ok bodyOutcome :=
+                      Block.runScoped_of_successRefines
+                        model hRefines program hBody
+                    cases hBodyMode : bodyOutcome.mode with
+                    | brk =>
+                        simpa [hBody, hBody', hBodyMode] using hRun
+                    | regular =>
+                        simp only [hBody, hBody', hBodyMode] at hRun ⊢
+                        cases hPost :
+                            Block.runScoped model sourcePrim program postBase
+                              post fuel bodyOutcome.state with
+                        | error err =>
+                            simp [hPost] at hRun
+                        | ok postOutcome =>
+                            have hPost' :
+                                Block.runScoped model targetPrim program
+                                    postBase post fuel bodyOutcome.state =
+                                  .ok postOutcome :=
+                              Block.runScoped_of_successRefines
+                                model hRefines program hPost
+                            cases hPostMode : postOutcome.mode with
+                            | regular =>
+                                simp only [hPost, hPost', hPostMode]
+                                  at hRun ⊢
+                                exact
+                                  Stmt.runForLoop_of_successRefines
+                                    model hRefines program hRun
+                            | brk =>
+                                simp [hPost, hPost', hPostMode,
+                                  Source.invalid, Structured.invalid] at hRun
+                            | cont =>
+                                simp [hPost, hPost', hPostMode,
+                                  Source.invalid, Structured.invalid] at hRun
+                            | leave =>
+                                simpa [hPost, hPost', hPostMode] using hRun
+                            | halt kind =>
+                                simpa [hPost, hPost', hPostMode] using hRun
+                    | cont =>
+                        simp only [hBody, hBody', hBodyMode] at hRun ⊢
+                        cases hPost :
+                            Block.runScoped model sourcePrim program postBase
+                              post fuel bodyOutcome.state with
+                        | error err =>
+                            simp [hPost] at hRun
+                        | ok postOutcome =>
+                            have hPost' :
+                                Block.runScoped model targetPrim program
+                                    postBase post fuel bodyOutcome.state =
+                                  .ok postOutcome :=
+                              Block.runScoped_of_successRefines
+                                model hRefines program hPost
+                            cases hPostMode : postOutcome.mode with
+                            | regular =>
+                                simp only [hPost, hPost', hPostMode]
+                                  at hRun ⊢
+                                exact
+                                  Stmt.runForLoop_of_successRefines
+                                    model hRefines program hRun
+                            | brk =>
+                                simp [hPost, hPost', hPostMode,
+                                  Source.invalid, Structured.invalid] at hRun
+                            | cont =>
+                                simp [hPost, hPost', hPostMode,
+                                  Source.invalid, Structured.invalid] at hRun
+                            | leave =>
+                                simpa [hPost, hPost', hPostMode] using hRun
+                            | halt kind =>
+                                simpa [hPost, hPost', hPostMode] using hRun
+                    | leave =>
+                        simpa [hBody, hBody', hBodyMode] using hRun
+                    | halt kind =>
+                        simpa [hBody, hBody', hBodyMode] using hRun
+  termination_by
+    fuel _loopCtx _cond _postBase _post _bodyBase _body _state
+      _outcome _hRun => (fuel, 3, 0)
+  decreasing_by
+    all_goals simp_wf
+    all_goals omega
+
+  theorem Stmt.run_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      (program : Program) :
+      ∀ {fuel : Nat} {ctx : Source.Ctx} {stmt : Stmt} {state : σ}
+        {outcome : Outcome σ} {runCtx : Source.Ctx},
+        Stmt.run model sourcePrim program ctx fuel stmt state =
+          .ok (outcome, runCtx) →
+        Stmt.run model targetPrim program ctx fuel stmt state =
+          .ok (outcome, runCtx) := by
+    intro fuel ctx stmt state outcome runCtx hRun
+    cases stmt with
+    | expr expr =>
+        unfold Stmt.run at hRun ⊢
+        cases hExpr : Expr.eval model sourcePrim expr state with
+        | error err =>
+            simp [hExpr] at hRun
+        | ok result =>
+            rcases result with ⟨final, values⟩
+            have hExpr' :
+                Expr.eval model targetPrim expr state = .ok (final, values) :=
+              Locals.Source.Effectful.Expr.eval_of_successRefines
+                model hRefines hExpr
+            simpa [hExpr, hExpr'] using hRun
+    | let_ name value =>
+        unfold Stmt.run at hRun ⊢
+        cases hValue : Expr.evalOne model sourcePrim value state with
+        | error err =>
+            simp [hValue] at hRun
+        | ok result =>
+            rcases result with ⟨afterValue, value'⟩
+            have hValue' :
+                Expr.evalOne model targetPrim value state =
+                  .ok (afterValue, value') :=
+              Locals.Source.Effectful.Expr.evalOne_of_successRefines
+                model hRefines hValue
+            simpa [hValue, hValue'] using hRun
+    | assign name value =>
+        unfold Stmt.run at hRun ⊢
+        by_cases hContains : (model.vars state).contains name
+        · simp only [hContains, Bool.true_eq, ↓reduceIte] at hRun ⊢
+          cases hValue : Expr.evalOne model sourcePrim value state with
+          | error err =>
+              simp [hValue] at hRun
+          | ok result =>
+              rcases result with ⟨afterValue, value'⟩
+              have hValue' :
+                  Expr.evalOne model targetPrim value state =
+                    .ok (afterValue, value') :=
+                Locals.Source.Effectful.Expr.evalOne_of_successRefines
+                  model hRefines hValue
+              simpa [hValue, hValue'] using hRun
+        · simp [hContains, Source.invalid, Structured.invalid] at hRun
+    | block body =>
+        unfold Stmt.run at hRun ⊢
+        cases hBody :
+            Block.runScoped model sourcePrim program ctx body fuel state with
+        | error err =>
+            simp [hBody] at hRun
+        | ok bodyOutcome =>
+            have hBody' :
+                Block.runScoped model targetPrim program ctx body fuel state =
+                  .ok bodyOutcome :=
+              Block.runScoped_of_successRefines model hRefines program hBody
+            simpa [hBody, hBody'] using hRun
+    | if_ cond body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun ⊢
+            cases hCond :
+                Expr.evalCondition model sourcePrim cond state with
+            | error err =>
+                simp [hCond] at hRun
+            | ok condResult =>
+                rcases condResult with ⟨stateAfterCond, condTrue⟩
+                have hCond' :
+                    Expr.evalCondition model targetPrim cond state =
+                      .ok (stateAfterCond, condTrue) :=
+                  Locals.Source.Effectful.Expr.evalCondition_of_successRefines
+                    model hRefines hCond
+                cases condTrue with
+                | false =>
+                    simpa [hCond, hCond'] using hRun
+                | true =>
+                    simp only [hCond, hCond', Bool.if_true_right]
+                      at hRun ⊢
+                    cases hBody :
+                        Block.runScoped model sourcePrim program ctx body fuel
+                          stateAfterCond with
+                    | error err =>
+                        simp [hBody] at hRun
+                    | ok bodyOutcome =>
+                        have hBody' :
+                            Block.runScoped model targetPrim program ctx body
+                                fuel stateAfterCond =
+                              .ok bodyOutcome :=
+                          Block.runScoped_of_successRefines
+                            model hRefines program hBody
+                        simpa [hBody, hBody'] using hRun
+    | switch scrutinee cases defaultBody =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun ⊢
+            cases hScrutinee :
+                Expr.evalOne model sourcePrim scrutinee state with
+            | error err =>
+                simp [hScrutinee] at hRun
+            | ok scrutineeResult =>
+                rcases scrutineeResult with ⟨stateAfterScrutinee, value⟩
+                have hScrutinee' :
+                    Expr.evalOne model targetPrim scrutinee state =
+                      .ok (stateAfterScrutinee, value) :=
+                  Locals.Source.Effectful.Expr.evalOne_of_successRefines
+                    model hRefines hScrutinee
+                cases hSelected :
+                    Source.Switch.select value cases defaultBody with
+                | none =>
+                    simpa [hScrutinee, hScrutinee', hSelected] using hRun
+                | some selected =>
+                    cases hBody :
+                        Block.runScoped model sourcePrim program ctx selected
+                          fuel stateAfterScrutinee with
+                    | error err =>
+                        simp [hScrutinee, hSelected, hBody] at hRun
+                    | ok bodyOutcome =>
+                        have hBody' :
+                            Block.runScoped model targetPrim program ctx
+                                selected fuel stateAfterScrutinee =
+                              .ok bodyOutcome :=
+                          Block.runScoped_of_successRefines
+                            model hRefines program hBody
+                        simpa [hScrutinee, hScrutinee', hSelected,
+                          hBody, hBody'] using hRun
+    | for_ init cond post body =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun ⊢
+            let initBase := ctx.withoutLoopControl
+            cases hInit :
+                Block.runOpen model sourcePrim program initBase fuel init state
+            with
+            | error err =>
+                simp [initBase, hInit] at hRun
+            | ok initResult =>
+                rcases initResult with ⟨initOutcome, initCtx⟩
+                have hInit' :
+                    Block.runOpen model targetPrim program initBase fuel init
+                        state =
+                      .ok (initOutcome, initCtx) :=
+                  Block.runOpen_of_successRefines
+                    model hRefines program hInit
+                cases hInitMode : initOutcome.mode with
+                | regular =>
+                    let loopCtx := initCtx
+                    let postBase := initCtx.withoutLoopControl
+                    let bodyBase :=
+                      initCtx.withLoopControl initCtx.scope initCtx.scope
+                    cases hLoop :
+                        Stmt.runForLoop model sourcePrim program loopCtx cond
+                          postBase post bodyBase body fuel initOutcome.state with
+                    | error err =>
+                        simp [initBase, hInit, hInitMode, loopCtx,
+                          postBase, bodyBase, hLoop] at hRun
+                    | ok loopOutcome =>
+                        have hLoop' :
+                            Stmt.runForLoop model targetPrim program loopCtx cond
+                                postBase post bodyBase body fuel
+                                initOutcome.state =
+                              .ok loopOutcome :=
+                          Stmt.runForLoop_of_successRefines
+                            model hRefines program hLoop
+                        cases hLoopMode : loopOutcome.mode with
+                        | regular =>
+                            simpa [initBase, hInit, hInit', hInitMode,
+                              loopCtx, postBase, bodyBase, hLoop, hLoop',
+                              hLoopMode] using hRun
+                        | brk =>
+                            simp [initBase, hInit, hInitMode, loopCtx,
+                              postBase, bodyBase, hLoop, hLoopMode,
+                              Source.invalid,
+                              Structured.invalid] at hRun
+                        | cont =>
+                            simp [initBase, hInit, hInitMode, loopCtx,
+                              postBase, bodyBase, hLoop, hLoopMode,
+                              Source.invalid,
+                              Structured.invalid] at hRun
+                        | leave =>
+                            simpa [initBase, hInit, hInit', hInitMode,
+                              loopCtx, postBase, bodyBase, hLoop, hLoop',
+                              hLoopMode] using hRun
+                        | halt kind =>
+                            simpa [initBase, hInit, hInit', hInitMode,
+                              loopCtx, postBase, bodyBase, hLoop, hLoop',
+                              hLoopMode] using hRun
+                | brk =>
+                    simp [initBase, hInit, hInit', hInitMode,
+                      Source.invalid, Structured.invalid] at hRun
+                | cont =>
+                    simp [initBase, hInit, hInit', hInitMode,
+                      Source.invalid, Structured.invalid] at hRun
+                | leave =>
+                    simpa [initBase, hInit, hInit', hInitMode] using hRun
+                | halt kind =>
+                    simpa [initBase, hInit, hInit', hInitMode] using hRun
+    | brk =>
+        simpa [Stmt.run] using hRun
+    | cont =>
+        simpa [Stmt.run] using hRun
+    | leave =>
+        simpa [Stmt.run] using hRun
+    | call targets functionName args =>
+        cases fuel with
+        | zero =>
+            simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+        | succ fuel =>
+            unfold Stmt.run at hRun ⊢
+            by_cases hTargets : targets.Nodup
+            · simp only [hTargets, Bool.true_eq, ↓reduceIte] at hRun ⊢
+              cases hArgs :
+                  ArgList.eval model sourcePrim args state with
+              | error err =>
+                  simp [hArgs] at hRun
+              | ok argResult =>
+                  rcases argResult with ⟨stateAfterArgs, argValues⟩
+                  have hArgs' :
+                      ArgList.eval model targetPrim args state =
+                        .ok (stateAfterArgs, argValues) :=
+                    ArgList.eval_of_successRefines model hRefines hArgs
+                  cases hLookup :
+                      Source.FunList.find? functionName program.functions with
+                  | none =>
+                      simp [hArgs, hArgs', hLookup, Source.invalid,
+                        Structured.invalid] at hRun
+                  | some fn =>
+                      cases hBody :
+                          FunDef.runBody model sourcePrim program fn argValues
+                            fuel stateAfterArgs with
+                      | error err =>
+                          simp [hArgs, hArgs', hLookup, hBody] at hRun
+                      | ok callResult =>
+                          have hBody' :
+                              FunDef.runBody model targetPrim program fn
+                                  argValues fuel stateAfterArgs =
+                                .ok callResult :=
+                            FunDef.runBody_of_successRefines
+                              model hRefines program hBody
+                          cases callResult with
+                          | returned stateAfterCall returnValues =>
+                              simpa [hArgs, hArgs', hLookup, hBody, hBody']
+                                using hRun
+                          | halted kind haltedState =>
+                              simpa [hArgs, hArgs', hLookup, hBody, hBody']
+                                using hRun
+            · simp [hTargets, Source.invalid, Structured.invalid] at hRun
+    | terminal kind =>
+        unfold Stmt.run at hRun ⊢
+        cases hTerminal : sourcePrim.terminal kind state [] with
+        | error err =>
+            simp [hTerminal] at hRun
+        | ok final =>
+            have hTerminal' :
+                targetPrim.terminal kind state [] = .ok final :=
+              hRefines.terminal hTerminal
+            simpa [hTerminal, hTerminal'] using hRun
+    | terminalArgs kind args =>
+        unfold Stmt.run at hRun ⊢
+        cases hArgs :
+            Locals.Source.Effectful.Expr.ExprSeq.eval
+              model sourcePrim args state with
+        | error err =>
+            simp [hArgs] at hRun
+        | ok argResult =>
+            rcases argResult with ⟨afterArgs, values⟩
+            have hArgs' :
+                Locals.Source.Effectful.Expr.ExprSeq.eval
+                    model targetPrim args state =
+                  .ok (afterArgs, values) :=
+              Locals.Source.Effectful.Expr.ExprSeq.eval_of_successRefines
+                model hRefines hArgs
+            cases hTerminal :
+                sourcePrim.terminal kind afterArgs values with
+            | error err =>
+                simp [hArgs, hArgs', hTerminal] at hRun
+            | ok final =>
+                have hTerminal' :
+                    targetPrim.terminal kind afterArgs values = .ok final :=
+                  hRefines.terminal hTerminal
+                simpa [hArgs, hArgs', hTerminal, hTerminal'] using hRun
+  termination_by
+    fuel _ctx stmt _state _outcome _runCtx _hRun =>
+      (fuel, 4, sizeOf stmt)
   decreasing_by
     all_goals simp_wf
     all_goals

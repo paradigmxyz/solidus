@@ -55,6 +55,59 @@ structure PrimitiveSemantics (σ : Type) where
   terminal :
     Assembly.HaltKind → σ → List Word → Except EVMException σ
 
+namespace PrimitiveSemantics
+
+/--
+Every successful effect produced by `source` is reproduced exactly by
+`target`. This is the semantic interface used to specialize the canonical
+parameterized interpreter with additional dynamic guards without duplicating
+its control flow.
+-/
+def SuccessRefines {σ : Type}
+    (source target : PrimitiveSemantics σ) : Prop :=
+  (∀ op state values final outputs,
+      source.eval op state values = .ok (final, outputs) →
+        target.eval op state values = .ok (final, outputs)) ∧
+    ∀ kind state values final,
+      source.terminal kind state values = .ok final →
+        target.terminal kind state values = .ok final
+
+theorem SuccessRefines.eval
+    {σ : Type} {source target : PrimitiveSemantics σ}
+    (hRefines : SuccessRefines source target)
+    {op : Structured.BasicOp} {state final : σ}
+    {values outputs : List Word}
+    (hEval : source.eval op state values = .ok (final, outputs)) :
+    target.eval op state values = .ok (final, outputs) :=
+  hRefines.1 op state values final outputs hEval
+
+theorem SuccessRefines.terminal
+    {σ : Type} {source target : PrimitiveSemantics σ}
+    (hRefines : SuccessRefines source target)
+    {kind : Assembly.HaltKind} {state final : σ}
+    {values : List Word}
+    (hEval : source.terminal kind state values = .ok final) :
+    target.terminal kind state values = .ok final :=
+  hRefines.2 kind state values final hEval
+
+theorem SuccessRefines.refl {σ : Type}
+    (prim : PrimitiveSemantics σ) :
+    SuccessRefines prim prim := by
+  exact ⟨fun _ _ _ _ _ h => h, fun _ _ _ _ h => h⟩
+
+theorem SuccessRefines.trans
+    {σ : Type} {first second third : PrimitiveSemantics σ}
+    (hFirst : SuccessRefines first second)
+    (hSecond : SuccessRefines second third) :
+    SuccessRefines first third := by
+  constructor
+  · intro op state values final outputs hEval
+    exact hSecond.eval (hFirst.eval hEval)
+  · intro kind state values final hEval
+    exact hSecond.terminal (hFirst.terminal hEval)
+
+end PrimitiveSemantics
+
 namespace Ordinary
 
 def stateModel : StateModel Source.State where
@@ -133,6 +186,81 @@ mutual
         .ok (stateAfterTail, headValues ++ tailValues)
 end
 
+mutual
+  /--
+  Expression evaluation is monotone under successful primitive refinement.
+  -/
+  theorem eval_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      {results : Nat} {expr : Locals.Expr results}
+      {source final : σ} {values : List Word}
+      (hEval :
+        eval model sourcePrim expr source = .ok (final, values)) :
+      eval model targetPrim expr source = .ok (final, values) := by
+    cases expr with
+    | lit value =>
+        simpa [eval] using hEval
+    | var name =>
+        simpa [eval] using hEval
+    | code code =>
+        simp [eval, Source.invalid, Structured.invalid] at hEval
+    | prim op args =>
+        simp only [eval] at hEval ⊢
+        cases hArgs : ExprSeq.eval model sourcePrim args source with
+        | error err =>
+            simp [hArgs] at hEval
+        | ok result =>
+            rcases result with ⟨afterArgs, argValues⟩
+            simp only [hArgs, Bind.bind, Except.bind] at hEval
+            have hArgs' :
+                ExprSeq.eval model targetPrim args source =
+                  .ok (afterArgs, argValues) :=
+              ExprSeq.eval_of_successRefines model hRefines hArgs
+            rw [hArgs']
+            exact hRefines.eval hEval
+
+  theorem ExprSeq.eval_of_successRefines
+      {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+      (model : StateModel σ)
+      (hRefines : sourcePrim.SuccessRefines targetPrim)
+      {results : Nat} {exprs : Locals.ExprSeq results}
+      {source final : σ} {values : List Word}
+      (hEval :
+        ExprSeq.eval model sourcePrim exprs source =
+          .ok (final, values)) :
+      ExprSeq.eval model targetPrim exprs source =
+        .ok (final, values) := by
+    cases exprs with
+    | nil =>
+        simpa [ExprSeq.eval] using hEval
+    | @cons left right head tail =>
+        simp only [ExprSeq.eval] at hEval ⊢
+        cases hHead : eval model sourcePrim head source with
+        | error err =>
+            simp [hHead] at hEval
+        | ok headResult =>
+            rcases headResult with ⟨afterHead, headValues⟩
+            simp only [hHead, Bind.bind, Except.bind] at hEval
+            cases hTail :
+                ExprSeq.eval model sourcePrim tail afterHead with
+            | error err =>
+                simp [hTail] at hEval
+            | ok tailResult =>
+                rcases tailResult with ⟨tailFinal, tailValues⟩
+                simp only [hTail, Bind.bind, Except.bind] at hEval
+                have hHead' :
+                    eval model targetPrim head source =
+                      .ok (afterHead, headValues) :=
+                  eval_of_successRefines model hRefines hHead
+                have hTail' :
+                    ExprSeq.eval model targetPrim tail afterHead =
+                      .ok (tailFinal, tailValues) :=
+                  ExprSeq.eval_of_successRefines model hRefines hTail
+                simpa [hHead', hTail'] using hEval
+end
+
 def evalOne {σ : Type} {results : Nat} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) (expr : Locals.Expr results)
     (state : σ) : Except EVMException (σ × Word) := do
@@ -146,6 +274,49 @@ def evalCondition {σ : Type} (model : StateModel σ)
     (state : σ) : Except EVMException (σ × Bool) := do
   let (state', value) ← evalOne model prim expr state
   .ok (state', value != EvmYul.UInt256.ofNat 0)
+
+theorem evalOne_of_successRefines
+    {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+    (model : StateModel σ)
+    (hRefines : sourcePrim.SuccessRefines targetPrim)
+    {results : Nat} {expr : Locals.Expr results}
+    {source final : σ} {value : Word}
+    (hEval :
+      evalOne model sourcePrim expr source = .ok (final, value)) :
+    evalOne model targetPrim expr source = .ok (final, value) := by
+  unfold evalOne at hEval ⊢
+  cases hExpr : eval model sourcePrim expr source with
+  | error err =>
+      simp [hExpr] at hEval
+  | ok result =>
+      rcases result with ⟨afterExpr, values⟩
+      have hExpr' :
+          eval model targetPrim expr source = .ok (afterExpr, values) :=
+        eval_of_successRefines model hRefines hExpr
+      simp only [hExpr, hExpr', Bind.bind, Except.bind] at hEval ⊢
+      exact hEval
+
+theorem evalCondition_of_successRefines
+    {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
+    (model : StateModel σ)
+    (hRefines : sourcePrim.SuccessRefines targetPrim)
+    {expr : Locals.Expr 1}
+    {source final : σ} {condition : Bool}
+    (hEval :
+      evalCondition model sourcePrim expr source =
+        .ok (final, condition)) :
+    evalCondition model targetPrim expr source =
+      .ok (final, condition) := by
+  unfold evalCondition at hEval ⊢
+  cases hExpr : evalOne model sourcePrim expr source with
+  | error err =>
+      simp [hExpr] at hEval
+  | ok result =>
+      rcases result with ⟨afterExpr, value⟩
+      have hExpr' :
+          evalOne model targetPrim expr source = .ok (afterExpr, value) :=
+        evalOne_of_successRefines model hRefines hExpr
+      simpa [hExpr, hExpr'] using hEval
 
 end Expr
 
