@@ -713,6 +713,42 @@ theorem stackEntriesForScope_function_of_env_extension
     AllocationSupport.functionEnv, stackEntries,
     List.filter_append, List.take_append]
 
+theorem mem_stackEntriesForScope_function_of_mem_of_slot_mem
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {functionName : Name}
+    {slots : AllocationSupport.FunSlots}
+    {state : AllocationSupport.CompileState}
+    {added : AllocationSupport.SlotEnv}
+    {name : Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupFun? functionName recipe.functionSlots =
+        some slots)
+    (hEnv :
+      state.env = added ++ AllocationSupport.functionEnv slots)
+    (hMem : (name, slot) ∈ state.env)
+    (hSlot : slot ∈ stackSlots) :
+    (name, slot) ∈
+      stackEntriesForScope recipe stackSlots
+        (.function functionName) state := by
+  rw [stackEntriesForScope_function_of_env_extension hLookup hEnv]
+  rw [hEnv] at hMem
+  rcases List.mem_append.mp hMem with hAdded | hSignature
+  · exact
+      List.mem_append_left _
+        (List.mem_append_left _
+          (mem_stackEntries_iff.mpr ⟨hAdded, hSlot⟩))
+  · rcases List.mem_append.mp hSignature with hReturn | hParam
+    · exact
+        List.mem_append_left _
+          (List.mem_append_right _
+            (mem_stackEntries_iff.mpr
+              ⟨by simpa using hReturn, hSlot⟩))
+    · exact
+        List.mem_append_right _
+          (mem_stackEntries_iff.mpr
+            ⟨by simpa using hParam, hSlot⟩)
+
 def scopeRoot : Locals.Allocation.ScopeId → Locals.Allocation.ScopeId
   | .main => .main
   | .function name => .function name

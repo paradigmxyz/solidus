@@ -541,6 +541,7 @@ structure Artifact
   proc : Locals.Proc
   lowerProc : Expressions.Proc
   slots : AllocationSupport.FunSlots
+  planEntry : AllocationSupport.ScopedAllocation
   validate :
     AllocationLowering.validatePlan? allocation program =
       some (recipe, stackSlots)
@@ -561,6 +562,17 @@ structure Artifact
     AllocationSupport.lookupFun? fn.name recipe.functionSlots =
       some slots
   slotsMatch : slots.Matches fn
+  planEntryMem : planEntry ∈ recipe.functions
+  planEntryScope : planEntry.scope = .function fn.name
+  planEntryState :
+    planEntry.state =
+      (AllocationSupport.planBlockOpen (.function fn.name)
+        { allocation :=
+            { env := AllocationSupport.functionEnv slots
+              nextSlot := startState.nextSlot }
+          nextScope := 0
+          scopes := [] }
+        fn.body).allocation
   sourceName : fn.name = name
   sourceMem : fn ∈ program.functions
 
@@ -583,7 +595,9 @@ theorem of_lowering
     Nonempty (Artifact allocation program expressions name fn) := by
   obtain
       ⟨recipe, stackSlots, frameName, before, after, proc, lowerProc,
-        hValidate, hFresh, hSelected, hCompile, hLookup⟩ :=
+        selectedSlots, planEntry, hValidate, hFresh, hSelected, hCompile,
+        hLookup, hSelectedSlots, hPlanEntryMem, hPlanEntryScope,
+        hPlanEntryState⟩ :=
     AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
       hLower hFind
   have hMem :
@@ -594,6 +608,10 @@ theorem of_lowering
         _hEntry, _hScope, _hEnv, _hPlan⟩ :=
     AllocationLowering.validatePlan?_function_components
       hValidate hMem
+  have hSlotsEq : slots = selectedSlots := by
+    rw [hSelectedSlots] at hSlotsLookup
+    exact (Option.some.inj hSlotsLookup).symm
+  subst slots
   exact
     ⟨{ recipe := recipe
        stackSlots := stackSlots
@@ -602,14 +620,18 @@ theorem of_lowering
        finalState := after
        proc := proc
        lowerProc := lowerProc
-       slots := slots
+       slots := selectedSlots
+       planEntry := planEntry
        validate := hValidate
        fresh := hFresh
        lower := hSelected
        compile := hCompile
        targetLookup := hLookup
-       slotsLookup := hSlotsLookup
+       slotsLookup := hSelectedSlots
        slotsMatch := hSlotsMatch
+       planEntryMem := hPlanEntryMem
+       planEntryScope := hPlanEntryScope
+       planEntryState := hPlanEntryState
        sourceName :=
          Functions.Source.FunList.name_eq_of_find?_eq_some hFind
        sourceMem := hMem }⟩
@@ -661,6 +683,29 @@ theorem Artifact.mem_frameFunctions_iff
     AllocationLowering.rootNeedsFrame, hName] using
     (AllocationLowering.mem_frameFunctions_iff_of_lookup
       artifact.slotsLookup)
+
+theorem Artifact.planEntry_env_extension
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    ∃ added,
+      artifact.planEntry.state.env =
+        added ++ AllocationSupport.functionEnv artifact.slots := by
+  obtain ⟨added, hEnv⟩ :=
+    AllocationSupport.planBlockOpen_env_extension
+      (.function fn.name)
+      { allocation :=
+          { env := AllocationSupport.functionEnv artifact.slots
+            nextSlot := artifact.startState.nextSlot }
+        nextScope := 0
+        scopes := [] }
+      fn.body
+  refine ⟨added, ?_⟩
+  rw [artifact.planEntryState]
+  simpa using hEnv
 
 def Artifact.entryLayout
     {allocation : Locals.Allocation.ProgramPlan}
@@ -766,7 +811,17 @@ structure Prepared
   cleanup : Structured.Code
   planLookup :
     allocation.find? (.function fn.name) = some plan
+  planEq :
+    plan =
+      MixedAllocation.allocationOfState
+        program.memoryContract artifact.recipe.frameWords
+        (MixedAllocation.AllocationRecipe.stackEntriesForScope
+          artifact.recipe artifact.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state)
+        artifact.planEntry.state
   planWF : plan.WellFormed
+  bodyPlan :
+    artifact.planEntry.state = bodyFinal.allocation
   prelude :
     AllocationObserverContext.FunctionPreludeContext
       artifact.lowerCtx plan artifact.recipe.frameWords artifact.slots
@@ -902,6 +957,41 @@ theorem Artifact.prepare
         (returnCode, returnCtx) := by
     exact Option.some.inj (hContextReturns'.symm.trans hCompileReturns')
   cases hReturnEq
+  have hEntryPlan :=
+    AllocationLowering.validatePlan?_function_entry_plan
+      artifact.validate artifact.planEntryMem
+  have hEntryPlan' :
+      allocation.find? (.function fn.name) =
+        some
+          (MixedAllocation.allocationOfState
+            program.memoryContract artifact.recipe.frameWords
+            (MixedAllocation.AllocationRecipe.stackEntriesForScope
+              artifact.recipe artifact.stackSlots artifact.planEntry.scope
+              artifact.planEntry.state)
+            artifact.planEntry.state) := by
+    simpa [artifact.planEntryScope] using hEntryPlan
+  have hPlanEq :
+      plan =
+        MixedAllocation.allocationOfState
+          program.memoryContract artifact.recipe.frameWords
+          (MixedAllocation.AllocationRecipe.stackEntriesForScope
+            artifact.recipe artifact.stackSlots artifact.planEntry.scope
+            artifact.planEntry.state)
+          artifact.planEntry.state := by
+    rw [hPlanLookup] at hEntryPlan'
+    exact Option.some.inj hEntryPlan'
+  let planning : AllocationSupport.PlanningState :=
+    { allocation := artifact.bodyStart.allocation
+      nextScope := 0
+      scopes := [] }
+  have hBodyAgreement :=
+    AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
+      fn.body (.function fn.name) planning artifact.lowerCtx fn.returns
+      artifact.bodyStart bodyFinal body rfl hLowerBody
+  have hBodyPlan :
+      artifact.planEntry.state = bodyFinal.allocation := by
+    rw [artifact.planEntryState]
+    simpa [planning, Artifact.bodyStart] using hBodyAgreement
   refine
     ⟨{ plan := plan
        paramCtx := paramCtx
@@ -918,7 +1008,9 @@ theorem Artifact.prepare
        returnValueCode := returnValueCode
        cleanup := cleanup
        planLookup := ?_
+       planEq := hPlanEq
        planWF := hPlanWF
+       bodyPlan := hBodyPlan
        prelude := ?_
        mode_eq := ?_
        lowerBody := ?_
@@ -967,6 +1059,100 @@ theorem Prepared.signatureNodup
         prepared.prelude
   simpa [List.map_append, artifact.slotsMatch.2.1,
     artifact.slotsMatch.2.2] using hSlots
+
+theorem Prepared.location_stack_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions calleeName fn}
+    (prepared : Prepared artifact)
+    {name : Locals.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          name prepared.bodyFinal.allocation.env =
+        some slot)
+    (hStack :
+      AllocationLowering.isStackSlot artifact.lowerCtx slot = true) :
+    ∃ depth,
+      prepared.plan.location? name = some (.stack depth) := by
+  have hMemBody :
+      (name, slot) ∈ prepared.bodyFinal.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (name, slot) ∈ artifact.planEntry.state.env := by
+    rw [prepared.bodyPlan]
+    exact hMemBody
+  obtain ⟨added, hEnv⟩ := artifact.planEntry_env_extension
+  have hSlot : slot ∈ artifact.stackSlots := by
+    exact
+      (AllocationLowering.isStackSlot_eq_true_iff
+        artifact.lowerCtx slot).mp
+        (by simpa [Artifact.lowerCtx] using hStack)
+  have hEntry :
+      (name, slot) ∈
+        MixedAllocation.AllocationRecipe.stackEntriesForScope
+          artifact.recipe artifact.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state := by
+    rw [artifact.planEntryScope]
+    exact
+      MixedAllocation.AllocationRecipe.mem_stackEntriesForScope_function_of_mem_of_slot_mem
+        artifact.slotsLookup hEnv hMemEntry hSlot
+  have hNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  rw [prepared.planEq]
+  exact
+    MixedAllocation.allocationOfState_location_stack_of_entry
+      hNodup hMemEntry hEntry
+
+theorem Prepared.location_scratch_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions calleeName fn}
+    (prepared : Prepared artifact)
+    {name : Locals.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          name prepared.bodyFinal.allocation.env =
+        some slot)
+    (hScratch :
+      AllocationLowering.isStackSlot artifact.lowerCtx slot = false) :
+    prepared.plan.location? name = some (.scratch slot) := by
+  have hMemBody :
+      (name, slot) ∈ prepared.bodyFinal.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (name, slot) ∈ artifact.planEntry.state.env := by
+    rw [prepared.bodyPlan]
+    exact hMemBody
+  have hSlot : slot ∉ artifact.stackSlots := by
+    exact
+      (AllocationLowering.isStackSlot_eq_false_iff
+        artifact.lowerCtx slot).mp
+        (by simpa [Artifact.lowerCtx] using hScratch)
+  have hNotEntry :
+      (name, slot) ∉
+        MixedAllocation.AllocationRecipe.stackEntriesForScope
+          artifact.recipe artifact.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state :=
+    MixedAllocation.AllocationRecipe.not_mem_stackEntriesForScope_of_slot_not_mem
+      hSlot
+  have hNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  rw [prepared.planEq]
+  exact
+    MixedAllocation.allocationOfState_location_scratch_of_not_entry
+      hNodup hMemEntry hNotEntry
 
 theorem Prepared.mode_eq_scratch_of_needsFrame
     {allocation : Locals.Allocation.ProgramPlan}

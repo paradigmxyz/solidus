@@ -102,6 +102,25 @@ def lookupSlot? (name : Name) : SlotEnv → Option Nat
   | (candidate, slot) :: rest =>
       if candidate = name then some slot else lookupSlot? name rest
 
+theorem mem_of_lookupSlot?_eq_some
+    {env : SlotEnv} {name : Name} {slot : Nat}
+    (hLookup : lookupSlot? name env = some slot) :
+    (name, slot) ∈ env := by
+  induction env with
+  | nil =>
+      simp [lookupSlot?] at hLookup
+  | cons binding rest ih =>
+      rcases binding with ⟨candidate, candidateSlot⟩
+      by_cases hName : candidate = name
+      · simp [lookupSlot?, hName] at hLookup
+        subst candidate
+        subst candidateSlot
+        simp
+      · have hTail :
+            lookupSlot? name rest = some slot := by
+          simpa [lookupSlot?, hName] using hLookup
+        exact List.mem_cons_of_mem _ (ih hTail)
+
 theorem lookupSlot?_eq_some_of_mem
     {env : SlotEnv} {name : Name} {slot : Nat}
     (hNodup : (env.map Prod.fst).Nodup)
@@ -646,6 +665,36 @@ def planRecipeCore? (program : Program) :
       lexicalScopes := mainPlan.scopes ++ functionPlan.lexicalScopes
       main := mainPlan.allocation
       frameWords := mainPlan.allocation.nextSlot }
+
+/--
+Successful recipe planning exposes the exact state-threaded function plan used
+to populate the recipe's function entries and final function allocation state.
+-/
+theorem planRecipeCore?_functions
+    {program : Program} {recipe : AllocationRecipe}
+    (hPlan : planRecipeCore? program = some recipe) :
+    ∃ functionPlan,
+      planFunctions recipe.functionSlots recipe.stateAfterSignatures
+          program.functions =
+        some functionPlan ∧
+      functionPlan.functions = recipe.functions ∧
+      functionPlan.state = recipe.stateAfterFunctions := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            exact ⟨functionPlan, hFunctions, rfl, rfl⟩
+  · simp [hNames] at hPlan
 
 theorem planRecipeCore?_lookupFun_matches
     {program : Program} {recipe : AllocationRecipe}

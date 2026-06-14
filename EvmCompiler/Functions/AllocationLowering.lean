@@ -2992,6 +2992,72 @@ theorem lowerFunction?_components
                   rfl⟩
 
 /--
+One successful function lowering advances to the exact allocation state chosen
+by the source planner for that function body.
+-/
+theorem lowerFunction?_final_eq_planned
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state final : AllocationSupport.CompileState}
+    {fn : FunDef} {proc : Locals.Proc}
+    (hLower :
+      lowerFunction? recipe stackSlots frameName frameConfig? state fn =
+        some (proc, final)) :
+    ∃ slots,
+      AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some slots ∧
+      let bodyStart : AllocationSupport.CompileState :=
+        { env := AllocationSupport.functionEnv slots
+          nextSlot := state.nextSlot }
+      let bodyPlan :=
+        AllocationSupport.planBlockOpen (.function fn.name)
+          { allocation := bodyStart, nextScope := 0, scopes := [] }
+          fn.body
+      final =
+        { env := state.env
+          nextSlot := bodyPlan.allocation.nextSlot } := by
+  obtain
+      ⟨slots, body, bodyFinal, returnValues, hLookup, hComponents⟩ :=
+    lowerFunction?_components hLower
+  dsimp only at hComponents
+  rcases hComponents with
+    ⟨hBody, _hReturnValues, _hProc, hFinal⟩
+  let root := ScopeId.function fn.name
+  let scratchBindings :=
+    scratchBindingsForRoot recipe stackSlots root
+  let ctx : Ctx :=
+    { functions := recipe.functionSlots
+      frameConfig? := frameConfig?
+      frameName := frameName
+      stackSlots := stackSlots
+      root := root
+      scratchBindings := scratchBindings
+      frameFunctions := frameFunctions recipe stackSlots }
+  let bodyStart : State :=
+    { allocation :=
+        { env := AllocationSupport.functionEnv slots
+          nextSlot := state.nextSlot }
+      layout :=
+        (lowerReturns ctx slots.returns
+          (lowerParams ctx slots.params
+            (fn.params.reverse ++
+              if !scratchBindings.isEmpty then [frameName] else [])).2).2 }
+  let planning : AllocationSupport.PlanningState :=
+    { allocation := bodyStart.allocation
+      nextScope := 0
+      scopes := [] }
+  have hAgreement :=
+    lowerBlockOpen_allocation_eq_planBlockOpen
+      fn.body root planning ctx fn.returns bodyStart bodyFinal body
+      rfl hBody
+  refine ⟨slots, hLookup, ?_⟩
+  dsimp only
+  rw [hFinal]
+  simpa [root, planning, bodyStart] using
+    congrArg AllocationSupport.CompileState.nextSlot hAgreement.symm
+
+/--
 Successful adjacent compilation of one lowered function exposes the actual
 parameter and return prelude compiler phases. All generated layouts are
 recovered from `lowerFunction?` and `Locals.Proc.toExpressions?`.
@@ -3469,6 +3535,140 @@ theorem lowerFunctions?_find_components
                     hProcName⟩
 
 /--
+Synchronized source planning and function lowering recover the exact planner
+entry used by the selected lowered function.
+-/
+theorem lowerFunctions?_find_plan_components
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (name : Name) :
+    ∀ {state final : AllocationSupport.CompileState}
+      {functions : List FunDef} {procs : List Locals.Proc}
+      {functionPlan : AllocationSupport.FunctionPlanResult}
+      {fn : FunDef},
+      AllocationSupport.planFunctions recipe.functionSlots state functions =
+        some functionPlan →
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+          state functions =
+        some (procs, final) →
+      Source.FunList.find? name functions = some fn →
+      ∃ before after proc slots entry,
+        lowerFunction? recipe stackSlots frameName frameConfig? before fn =
+            some (proc, after) ∧
+          AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+            some slots ∧
+          entry ∈ functionPlan.functions ∧
+          entry.scope = .function fn.name ∧
+          entry.state =
+            (AllocationSupport.planBlockOpen (.function fn.name)
+              { allocation :=
+                  { env := AllocationSupport.functionEnv slots
+                    nextSlot := before.nextSlot }
+                nextScope := 0
+                scopes := [] }
+              fn.body).allocation
+  | _state, _final, [], _procs, _functionPlan, _fn,
+      hPlan, hLower, hFind => by
+      simp [AllocationSupport.planFunctions, lowerFunctions?,
+        Source.FunList.find?] at hPlan hLower hFind
+  | state, final, head :: rest, procs, functionPlan, fn,
+      hPlan, hLower, hFind => by
+      by_cases hSignature : (head.returns ++ head.params).Nodup
+      · by_cases hReturns : head.returns.length < 16
+        · cases hSlots :
+            AllocationSupport.lookupFun?
+              head.name recipe.functionSlots with
+          | none =>
+              simp [AllocationSupport.planFunctions, hSignature,
+                hReturns, hSlots] at hPlan
+          | some slots =>
+              let bodyStart : AllocationSupport.CompileState :=
+                { env := AllocationSupport.functionEnv slots
+                  nextSlot := state.nextSlot }
+              let bodyPlan :=
+                AllocationSupport.planBlockOpen (.function head.name)
+                  { allocation := bodyStart
+                    nextScope := 0
+                    scopes := [] }
+                  head.body
+              let stateAfter : AllocationSupport.CompileState :=
+                { env := state.env
+                  nextSlot := bodyPlan.allocation.nextSlot }
+              cases hPlanTail :
+                  AllocationSupport.planFunctions recipe.functionSlots
+                    stateAfter rest with
+              | none =>
+                  simp [AllocationSupport.planFunctions, hSignature,
+                    hReturns, hSlots, bodyStart, bodyPlan, stateAfter,
+                    hPlanTail] at hPlan
+              | some tailPlan =>
+                  simp [AllocationSupport.planFunctions, hSignature,
+                    hReturns, hSlots, bodyStart, bodyPlan, stateAfter,
+                    hPlanTail] at hPlan
+                  subst functionPlan
+                  cases hHead :
+                      lowerFunction? recipe stackSlots frameName frameConfig?
+                        state head with
+                  | none =>
+                      simp [lowerFunctions?, hHead] at hLower
+                  | some headResult =>
+                      rcases headResult with ⟨headProc, next⟩
+                      cases hTail :
+                          lowerFunctions? recipe stackSlots frameName
+                            frameConfig? next rest with
+                      | none =>
+                          simp [lowerFunctions?, hHead, hTail] at hLower
+                      | some tailResult =>
+                          rcases tailResult with ⟨tail, tailFinal⟩
+                          simp [lowerFunctions?, hHead, hTail] at hLower
+                          rcases hLower with ⟨rfl, rfl⟩
+                          by_cases hName : head.name = name
+                          · have hFn : fn = head := by
+                              simpa [Source.FunList.find?, hName] using
+                                hFind.symm
+                            subst fn
+                            exact
+                              ⟨state, next, headProc, slots,
+                                { scope := .function head.name
+                                  state := bodyPlan.allocation },
+                                hHead, hSlots,
+                                by
+                                  apply List.mem_cons.mpr
+                                  exact Or.inl (by
+                                    simp [bodyPlan, bodyStart]),
+                                rfl, by
+                                  simp [bodyPlan, bodyStart]⟩
+                          · have hFindTail :
+                                Source.FunList.find? name rest = some fn := by
+                              simpa [Source.FunList.find?, hName] using hFind
+                            obtain
+                                ⟨lowerSlots, hLowerLookup, hNext⟩ :=
+                              lowerFunction?_final_eq_planned hHead
+                            have hSlotsEq : lowerSlots = slots := by
+                              rw [hSlots] at hLowerLookup
+                              exact (Option.some.inj hLowerLookup).symm
+                            subst lowerSlots
+                            have hNextEq : next = stateAfter := by
+                              simpa [stateAfter, bodyPlan, bodyStart] using
+                                hNext
+                            subst next
+                            obtain
+                                ⟨before, after, proc, selectedSlots, entry,
+                                  hSelected, hSelectedLookup, hEntry,
+                                  hScope, hEntryState⟩ :=
+                              lowerFunctions?_find_plan_components
+                                recipe stackSlots frameName frameConfig?
+                                name hPlanTail hTail hFindTail
+                            exact
+                              ⟨before, after, proc, selectedSlots, entry,
+                                hSelected, hSelectedLookup,
+                                by simp [hEntry], hScope, hEntryState⟩
+        · simp [AllocationSupport.planFunctions, hSignature, hReturns]
+            at hPlan
+      · simp [AllocationSupport.planFunctions, hSignature] at hPlan
+
+/--
 Source function lookup through the real function-list lowerer and Locals
 procedure compiler recovers the selected compiled procedure.
 -/
@@ -3615,6 +3815,199 @@ theorem lowerFunctions?_find_compiled_lookup
                                 Structured.ProcList.lookup?,
                                 hCompiledHeadNe] using hLookup,
                             hProcName⟩
+
+/--
+The selected compiled procedure and its validated allocation entry are
+recovered together from synchronized planning, lowering, and compilation.
+-/
+theorem lowerFunctions?_find_compiled_plan
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (name : Name) :
+    ∀ {state final : AllocationSupport.CompileState}
+      {functions : List FunDef}
+      {functionPlan : AllocationSupport.FunctionPlanResult}
+      {procs : List Locals.Proc}
+      {lowerProcs : List Expressions.Proc}
+      {fn : FunDef},
+      AllocationSupport.planFunctions recipe.functionSlots state functions =
+        some functionPlan →
+      lowerFunctions? recipe stackSlots frameName frameConfig?
+          state functions =
+        some (procs, final) →
+      Locals.ProcList.toExpressions? procs =
+        some lowerProcs →
+      Source.FunList.find? name functions = some fn →
+      ∃ before after proc lowerProc slots entry,
+        lowerFunction? recipe stackSlots frameName frameConfig? before fn =
+            some (proc, after) ∧
+          proc.toExpressions? = some lowerProc ∧
+          Structured.ProcList.lookup? name
+              (Expressions.ProcList.toStructured lowerProcs) =
+            some lowerProc.toStructured ∧
+          lowerProc.name = name ∧
+          AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+            some slots ∧
+          entry ∈ functionPlan.functions ∧
+          entry.scope = .function fn.name ∧
+          entry.state =
+            (AllocationSupport.planBlockOpen (.function fn.name)
+              { allocation :=
+                  { env := AllocationSupport.functionEnv slots
+                    nextSlot := before.nextSlot }
+                nextScope := 0
+                scopes := [] }
+              fn.body).allocation
+  | _state, _final, [], _functionPlan, _procs, _lowerProcs, _fn,
+      hPlan, hLower, _hCompile, hFind => by
+      simp [AllocationSupport.planFunctions, lowerFunctions?,
+        Source.FunList.find?] at hPlan hLower hFind
+  | state, final, head :: rest, functionPlan, procs, lowerProcs, fn,
+      hPlan, hLower, hCompile, hFind => by
+      by_cases hSignature : (head.returns ++ head.params).Nodup
+      · by_cases hReturns : head.returns.length < 16
+        · cases hSlots :
+            AllocationSupport.lookupFun?
+              head.name recipe.functionSlots with
+          | none =>
+              simp [AllocationSupport.planFunctions, hSignature,
+                hReturns, hSlots] at hPlan
+          | some slots =>
+              let bodyStart : AllocationSupport.CompileState :=
+                { env := AllocationSupport.functionEnv slots
+                  nextSlot := state.nextSlot }
+              let bodyPlan :=
+                AllocationSupport.planBlockOpen (.function head.name)
+                  { allocation := bodyStart
+                    nextScope := 0
+                    scopes := [] }
+                  head.body
+              let stateAfter : AllocationSupport.CompileState :=
+                { env := state.env
+                  nextSlot := bodyPlan.allocation.nextSlot }
+              cases hPlanTail :
+                  AllocationSupport.planFunctions recipe.functionSlots
+                    stateAfter rest with
+              | none =>
+                  simp [AllocationSupport.planFunctions, hSignature,
+                    hReturns, hSlots, bodyStart, bodyPlan, stateAfter,
+                    hPlanTail] at hPlan
+              | some tailPlan =>
+                  simp [AllocationSupport.planFunctions, hSignature,
+                    hReturns, hSlots, bodyStart, bodyPlan, stateAfter,
+                    hPlanTail] at hPlan
+                  subst functionPlan
+                  cases hHead :
+                      lowerFunction? recipe stackSlots frameName frameConfig?
+                        state head with
+                  | none =>
+                      simp [lowerFunctions?, hHead] at hLower
+                  | some headResult =>
+                      rcases headResult with ⟨headProc, next⟩
+                      cases hTail :
+                          lowerFunctions? recipe stackSlots frameName
+                            frameConfig? next rest with
+                      | none =>
+                          simp [lowerFunctions?, hHead, hTail] at hLower
+                      | some tailResult =>
+                          rcases tailResult with ⟨tail, tailFinal⟩
+                          simp [lowerFunctions?, hHead, hTail] at hLower
+                          rcases hLower with ⟨rfl, rfl⟩
+                          cases hHeadCompile : headProc.toExpressions? with
+                          | none =>
+                              simp [Locals.ProcList.toExpressions?,
+                                hHeadCompile] at hCompile
+                          | some headLower =>
+                              cases hTailCompile :
+                                  Locals.ProcList.toExpressions? tail with
+                              | none =>
+                                  simp [Locals.ProcList.toExpressions?,
+                                    hHeadCompile, hTailCompile] at hCompile
+                              | some tailLower =>
+                                  simp [Locals.ProcList.toExpressions?,
+                                    hHeadCompile, hTailCompile] at hCompile
+                                  subst lowerProcs
+                                  have hHeadProcName :=
+                                    lowerFunction?_name hHead
+                                  have hHeadLowerName :=
+                                    Locals.Proc.toExpressions?_name
+                                      hHeadCompile
+                                  have hCompiledHeadName :
+                                      headLower.name = head.name :=
+                                    hHeadLowerName.trans hHeadProcName
+                                  by_cases hName : head.name = name
+                                  · have hFn : fn = head := by
+                                      simpa [Source.FunList.find?, hName]
+                                        using hFind.symm
+                                    subst fn
+                                    exact
+                                      ⟨state, next, headProc, headLower,
+                                        slots,
+                                        { scope := .function head.name
+                                          state := bodyPlan.allocation },
+                                        hHead, hHeadCompile,
+                                        by
+                                          simp
+                                            [Expressions.ProcList.toStructured,
+                                              Structured.ProcList.lookup?,
+                                              hCompiledHeadName, hName],
+                                        hCompiledHeadName.trans hName,
+                                        hSlots,
+                                        by
+                                          apply List.mem_cons.mpr
+                                          exact Or.inl (by
+                                            simp [bodyPlan, bodyStart]),
+                                        rfl, by
+                                          simp [bodyPlan, bodyStart]⟩
+                                  · have hFindTail :
+                                        Source.FunList.find? name rest =
+                                          some fn := by
+                                      simpa [Source.FunList.find?, hName]
+                                        using hFind
+                                    obtain
+                                        ⟨lowerSlots, hLowerLookup, hNext⟩ :=
+                                      lowerFunction?_final_eq_planned hHead
+                                    have hSlotsEq :
+                                        lowerSlots = slots := by
+                                      rw [hSlots] at hLowerLookup
+                                      exact
+                                        (Option.some.inj hLowerLookup).symm
+                                    subst lowerSlots
+                                    have hNextEq : next = stateAfter := by
+                                      simpa [stateAfter, bodyPlan, bodyStart]
+                                        using hNext
+                                    subst next
+                                    obtain
+                                        ⟨before, after, proc, lowerProc,
+                                          selectedSlots, entry,
+                                          hSelected, hProcCompile, hLookup,
+                                          hProcName, hSelectedLookup, hEntry,
+                                          hScope, hEntryState⟩ :=
+                                      lowerFunctions?_find_compiled_plan
+                                        recipe stackSlots frameName
+                                        frameConfig? name hPlanTail hTail
+                                        hTailCompile hFindTail
+                                    have hCompiledHeadNe :
+                                        headLower.name ≠ name := by
+                                      intro hEq
+                                      exact hName
+                                        (hCompiledHeadName.symm.trans hEq)
+                                    exact
+                                      ⟨before, after, proc, lowerProc,
+                                        selectedSlots, entry,
+                                        hSelected, hProcCompile,
+                                        by
+                                          simpa
+                                            [Expressions.ProcList.toStructured,
+                                              Structured.ProcList.lookup?,
+                                              hCompiledHeadNe] using hLookup,
+                                        hProcName, hSelectedLookup,
+                                        by simp [hEntry], hScope,
+                                        hEntryState⟩
+        · simp [AllocationSupport.planFunctions, hSignature, hReturns]
+            at hPlan
+      · simp [AllocationSupport.planFunctions, hSignature] at hPlan
 
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
@@ -4054,6 +4447,39 @@ theorem validatePlan?_function_components
     ⟨fnSlots, entry, added, hLookup, hMatches, hEntry, hScope, hEnv,
       by simpa [hScope] using hFind⟩
 
+/--
+Any retained function-planner entry has the exact mixed-allocation plan exposed
+by successful validation.
+-/
+theorem validatePlan?_function_entry_plan
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {entry : AllocationSupport.ScopedAllocation}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots))
+    (hEntry : entry ∈ recipe.functions) :
+    allocation.find? entry.scope =
+      some
+        (MixedAllocation.allocationOfState
+          program.memoryContract recipe.frameWords
+          (MixedAllocation.AllocationRecipe.stackEntriesForScope
+            recipe stackSlots entry.scope entry.state)
+          entry.state) := by
+  rcases validatePlan?_eq_some_exact hValidate with
+    ⟨hWF, _hAuthorized, _hRecipe, _hInfer, _hNodup,
+      _hExecutable, hExact⟩
+  have hMixedWF :
+      (MixedAllocation.AllocationRecipe.toMixedProgramPlan
+        recipe stackSlots program.memoryContract).WellFormed := by
+    rw [hExact]
+    exact hWF
+  have hFind :=
+    MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_function_entry
+      hMixedWF hEntry
+  rw [hExact] at hFind
+  exact hFind
+
 def lowerLocalsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Locals.Program := do
   let (recipe, stackSlots) ← validatePlan? allocation program
@@ -4139,7 +4565,7 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
         some expressions)
     (hFind :
       Source.FunList.find? name program.functions = some fn) :
-    ∃ recipe stackSlots frameName before after proc lowerProc,
+    ∃ recipe stackSlots frameName before after proc lowerProc slots entry,
       validatePlan? allocation program = some (recipe, stackSlots) ∧
         freshFrameName program = some frameName ∧
         lowerFunction? recipe stackSlots frameName
@@ -4150,7 +4576,19 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
         proc.toExpressions? = some lowerProc ∧
         Structured.ProcList.lookup? name
             expressions.toStructured.procs =
-          some lowerProc.toStructured := by
+          some lowerProc.toStructured ∧
+        AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some slots ∧
+        entry ∈ recipe.functions ∧
+        entry.scope = .function fn.name ∧
+        entry.state =
+          (AllocationSupport.planBlockOpen (.function fn.name)
+            { allocation :=
+                { env := AllocationSupport.functionEnv slots
+                  nextSlot := before.nextSlot }
+              nextScope := 0
+              scopes := [] }
+            fn.body).allocation := by
   unfold lowerExpressionsFromAllocation? at hLower
   cases hLocals :
       lowerLocalsFromAllocation? allocation program with
@@ -4220,21 +4658,36 @@ theorem lowerExpressionsFromAllocation?_find_compiled_function
                                   simp [hProcs, hBody] at hExpressions
                                   subst expressions
                                   obtain
+                                      ⟨_hWF, _hAuthorized, hRecipe,
+                                        _hInfer, _hNodup, _hExecutable,
+                                        _hExact⟩ :=
+                                    validatePlan?_eq_some_exact hValidate
+                                  obtain
+                                      ⟨functionPlan, hFunctionPlan,
+                                        hFunctionEntries,
+                                        _hFunctionFinal⟩ :=
+                                    AllocationSupport.planRecipeCore?_functions
+                                      hRecipe
+                                  obtain
                                       ⟨before, after, proc, lowerProc,
-                                        hSelected, hProcCompile,
-                                        hLookup, _hProcName⟩ :=
-                                    lowerFunctions?_find_compiled_lookup
+                                        slots, entry, hSelected, hProcCompile,
+                                        hLookup, _hProcName, hSlots,
+                                        hEntry, hScope, hEntryState⟩ :=
+                                    lowerFunctions?_find_compiled_plan
                                       recipe stackSlots frameName
-                                      frameConfig? name hFunctions
-                                      hProcs hFind
+                                      frameConfig? name hFunctionPlan
+                                      hFunctions hProcs hFind
+                                  rw [hFunctionEntries] at hEntry
                                   exact
                                     ⟨recipe, stackSlots, frameName,
                                       before, after, proc, lowerProc,
+                                      slots, entry,
                                       rfl, rfl,
                                       by simpa [frameConfig?] using hSelected,
                                       hProcCompile,
                                       by simpa [Expressions.Program.toStructured]
-                                        using hLookup⟩
+                                        using hLookup,
+                                      hSlots, hEntry, hScope, hEntryState⟩
                         · simp [frameConfig?, hFunctions,
                             mainStart, hMain, hFinal] at hToLocals
                   · simp [frameConfig?, hFunctions, hState] at hToLocals

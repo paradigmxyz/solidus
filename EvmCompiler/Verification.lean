@@ -177,7 +177,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_function_entry
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_eq_some_exact
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_function_components
+#check EvmCompiler.Functions.AllocationLowering.validatePlan?_function_entry_plan
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_functions
+#check EvmCompiler.Functions.AllocationSupport.mem_of_lookupSlot?_eq_some
+#check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.mem_stackEntriesForScope_function_of_mem_of_slot_mem
 #check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_lookup
+#check EvmCompiler.Functions.AllocationLowering.lowerFunction?_final_eq_planned
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_plan_components
+#check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_plan
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
 #check EvmCompiler.Functions.AllocationLowering.frameExpr_compileCode
 #check EvmCompiler.Functions.AllocationLowering.frameExpr_cons_compileCode_components
@@ -493,6 +500,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.call_needsFrame_iff
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_frameWords_pos
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_config_frameWords_pos
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_stack_of_lookup
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
