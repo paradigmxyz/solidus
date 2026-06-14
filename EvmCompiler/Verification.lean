@@ -513,6 +513,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.root
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lexical
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scoped
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifCursors

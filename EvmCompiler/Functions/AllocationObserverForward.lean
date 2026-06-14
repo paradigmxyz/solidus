@@ -592,11 +592,127 @@ theorem Cursor.cons
       hScoped.1⟩
 
 /--
-Construct a synchronized cursor for one compiler-scoped source block.
+Construct a synchronized cursor from any checked lexical planner entry owned
+by the selected function artifact.
 
-The scope plan is selected from the validated whole-program allocation using
-the real planner entry.  No generated plan or body cursor is supplied by the
-observer theorem's caller.
+Switch cases and loop components are not necessarily the first lexical child
+of their enclosing statement, so this is the stable constructor beneath all
+control-specific cursor decompositions.
+-/
+theorem Cursor.lexical
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {body : Functions.Block}
+    {lowerState openFinal : AllocationLowering.State}
+    {localsCtx bodyLocals : Locals.Ctx}
+    {lowered : Locals.Block}
+    {bodyCode : List Expressions.Stmt}
+    (_cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    (lexicalScope : Locals.Allocation.ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (hPlanningAllocation :
+      planning.allocation = lowerState.allocation)
+    (hScopeRoot :
+      MixedAllocation.AllocationRecipe.functionRoot? lexicalScope =
+        some fn.name)
+    (hEntryRecipe :
+      ({ scope := lexicalScope
+         state :=
+           (AllocationSupport.planBlockOpen
+             lexicalScope planning body).allocation } :
+        AllocationSupport.ScopedAllocation) ∈
+        artifact.recipe.lexicalScopes)
+    (hInnerScopes :
+      ∀ entry,
+        entry ∈
+            (AllocationSupport.planBlockOpen
+              lexicalScope planning body).scopes →
+          entry ∈ artifact.recipe.lexicalScopes)
+    (hLower :
+      AllocationLowering.lowerBlockOpen artifact.lowerCtx fn.returns
+          lowerState body =
+        some (lowered, openFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx lowered =
+        some (bodyCode, bodyLocals))
+    (hScoped : Functions.Scope.Block.Scoped live body)
+    (hActiveEnv :
+      ActiveEnv artifact.slots planning.allocation.env live) :
+    ∃ nested :
+        Cursor prepared lexicalScope live body lowerState localsCtx,
+      nested.lowered = lowered ∧
+        nested.finalState = openFinal ∧
+        nested.compiled = bodyCode ∧
+        nested.finalLocals = bodyLocals := by
+  let scopeEntry : AllocationSupport.ScopedAllocation :=
+    { scope := lexicalScope
+      state :=
+        (AllocationSupport.planBlockOpen
+          lexicalScope planning body).allocation }
+  have hPlannedOpen :
+      (AllocationSupport.planBlockOpen
+        lexicalScope planning body).allocation =
+        openFinal.allocation := by
+    exact
+      AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
+        body lexicalScope planning artifact.lowerCtx fn.returns
+        lowerState openFinal lowered hPlanningAllocation hLower
+  let plan :=
+    MixedAllocation.allocationOfState
+      program.memoryContract artifact.recipe.frameWords
+      (MixedAllocation.AllocationRecipe.stackEntriesForScope
+        artifact.recipe artifact.stackSlots lexicalScope
+        openFinal.allocation)
+      openFinal.allocation
+  have hFind :
+      allocation.find? lexicalScope = some plan := by
+    have hEntryFind :=
+      AllocationLowering.validatePlan?_lexical_entry_plan
+        artifact.validate hEntryRecipe
+    simpa [scopeEntry, plan, hPlannedOpen] using
+      hEntryFind
+  have hPlanWF : plan.WellFormed :=
+    Locals.Allocation.ProgramPlan.wellFormed_of_find?_eq_some
+      (AllocationLowering.validatePlan?_sound artifact.validate).1
+      hFind
+  let nested :
+      Cursor prepared lexicalScope live body lowerState localsCtx :=
+    { planning := planning
+      planningAllocation := hPlanningAllocation
+      scopeRoot := hScopeRoot
+      plan := plan
+      planWF := hPlanWF
+      finalState := openFinal
+      finalLocals := bodyLocals
+      planEq := rfl
+      finalFrameFresh := by
+        have hFresh :=
+          artifact.frameName_not_mem_lexical_entry_env hEntryRecipe
+        simpa [scopeEntry, hPlannedOpen] using hFresh
+      plannedFinal := hPlannedOpen
+      plannedScopes := hInnerScopes
+      lowered := lowered
+      compiled := bodyCode
+      lower := hLower
+      compile := hCompile
+      sourceScoped := hScoped
+      activeEnv := hActiveEnv }
+  exact ⟨nested, rfl, rfl, rfl, rfl⟩
+
+/--
+Construct a synchronized cursor for one immediate compiler-scoped source
+block.
 -/
 theorem Cursor.scoped
     {allocation : Locals.Allocation.ProgramPlan}
@@ -670,32 +786,6 @@ theorem Cursor.scoped
   have hEntryRecipe :
       scopeEntry ∈ artifact.recipe.lexicalScopes :=
     cursor.plannedScopes scopeEntry hEntryFinal
-  have hPlannedOpen :
-      (AllocationSupport.planBlockOpen
-        lexicalScope entered body).allocation =
-        openFinal.allocation := by
-    exact
-      AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
-        body lexicalScope entered artifact.lowerCtx fn.returns
-        lowerState openFinal lowered cursor.planningAllocation hOpen
-  let plan :=
-    MixedAllocation.allocationOfState
-      program.memoryContract artifact.recipe.frameWords
-      (MixedAllocation.AllocationRecipe.stackEntriesForScope
-        artifact.recipe artifact.stackSlots lexicalScope
-        openFinal.allocation)
-      openFinal.allocation
-  have hFind :
-      allocation.find? lexicalScope = some plan := by
-    have hEntryFind :=
-      AllocationLowering.validatePlan?_lexical_entry_plan
-        artifact.validate hEntryRecipe
-    simpa [scopeEntry, lexicalScope, entered, plan, hPlannedOpen] using
-      hEntryFind
-  have hPlanWF : plan.WellFormed :=
-    Locals.Allocation.ProgramPlan.wellFormed_of_find?_eq_some
-      (AllocationLowering.validatePlan?_sound artifact.validate).1
-      hFind
   have hInnerScopes :
       ∀ entry,
         entry ∈
@@ -706,10 +796,9 @@ theorem Cursor.scoped
     have hScopedEntry :
         entry ∈
           (AllocationSupport.planBlockScoped
-            scope cursor.planning body).scopes := by
-      exact
-        AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
-          body scope cursor.planning hEntry
+            scope cursor.planning body).scopes :=
+      AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
+        body scope cursor.planning hEntry
     have hHeadEntry :
         entry ∈
           (AllocationSupport.planStmt
@@ -724,34 +813,18 @@ theorem Cursor.scoped
         rest scope
         (AllocationSupport.planStmt scope cursor.planning stmt)
         hHeadEntry
-  let nested :
-      Cursor prepared (.lexical scope cursor.planning.nextScope)
-        live body lowerState localsCtx :=
-    { planning := entered
-      planningAllocation := cursor.planningAllocation
-      scopeRoot := by
+  obtain
+      ⟨nested, _hLowered, _hFinalState, hCode, hLocals⟩ :=
+    cursor.lexical lexicalScope entered
+      (by simpa [entered] using cursor.planningAllocation)
+      (by
         simpa [lexicalScope,
           MixedAllocation.AllocationRecipe.functionRoot?] using
-          cursor.scopeRoot
-      plan := plan
-      planWF := hPlanWF
-      finalState := openFinal
-      finalLocals := bodyLocals
-      planEq := rfl
-      finalFrameFresh := by
-        have hFresh :=
-          artifact.frameName_not_mem_lexical_entry_env hEntryRecipe
-        simpa [scopeEntry, hPlannedOpen] using hFresh
-      plannedFinal := hPlannedOpen
-      plannedScopes := hInnerScopes
-      lowered := lowered
-      compiled := bodyCode
-      lower := hOpen
-      compile := hCompile
-      sourceScoped := hScoped
-      activeEnv := by
-        simpa [entered] using cursor.activeEnv }
-  exact ⟨nested, rfl, rfl⟩
+          cursor.scopeRoot)
+      (by simpa [scopeEntry] using hEntryRecipe)
+      hInnerScopes hOpen hCompile hScoped
+      (by simpa [entered] using cursor.activeEnv)
+  exact ⟨nested, hCode, hLocals⟩
 
 /--
 Decompose a lexical block statement into its scope-owned body cursor and the
