@@ -4537,6 +4537,30 @@ def baseAt (config : Config) (depth : Nat) : Nat :=
 def Budget (config : Config) (depth : Nat) : Prop :=
   baseAt config depth + bytes config ≤ config.limit
 
+/--
+Compiler-selected recursive resource mode.
+
+Stack-only programs have no allocator metadata or suspended scratch frames.
+Scratch-backed programs reuse the existing concrete allocator relations. This
+index lets the recursive proof share one control dispatcher without inventing
+allocator state for all-stack compiler outputs.
+-/
+inductive ResourceMode where
+  | stackOnly
+  | scratch (config : Config)
+  deriving Repr
+
+namespace ResourceMode
+
+def Budget : ResourceMode → Nat → Prop
+  | .stackOnly, _depth => True
+  | .scratch config, depth => Frame.Budget config depth
+
+def FuelSafe (mode : ResourceMode) (fuel : Nat) : Prop :=
+  mode.Budget fuel
+
+end ResourceMode
+
 def AllocatorAt {transcript : Trace} (config : Config) (depth : Nat)
     (target : TargetState transcript) : Prop :=
   target.source.evm.toMachineState.lookupMemory
@@ -4878,6 +4902,17 @@ theorem of_mstore_disjoint
   exact hReady.of_lookup_growth hLookup hActive hMemory hNoWrap
 
 end AllocatorReady
+
+namespace ResourceMode
+
+def Ready {transcript : Trace}
+    (mode : ResourceMode) (depth : Nat)
+    (target : TargetState transcript) : Prop :=
+  match mode with
+  | .stackOnly => True
+  | .scratch config => AllocatorReady config depth target
+
+end ResourceMode
 
 /--
 Resource effect of ordinary target execution at a fixed allocator depth.
@@ -5505,6 +5540,27 @@ theorem prepend_activation {transcript : Trace}
 
 end OutcomeEffect
 
+namespace ResourceMode
+
+def ActivationEffect {transcript : Trace}
+    (resource : ResourceMode) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState transcript) : Prop :=
+  match resource with
+  | .stackOnly => True
+  | .scratch config =>
+      Frame.ActivationEffect config depth mode before after
+
+def OutcomeEffect {transcript : Trace}
+    (resource : ResourceMode) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState transcript)
+    (outcomeMode : Locals.Source.Mode) : Prop :=
+  match resource with
+  | .stackOnly => True
+  | .scratch config =>
+      Frame.OutcomeEffect config depth mode before after outcomeMode
+
+end ResourceMode
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
@@ -5803,6 +5859,18 @@ theorem suspendedEffect_of_mstore
 
 end ActivationOwned
 
+namespace ResourceMode
+
+def Owned (resource : ResourceMode)
+    (allocatorDepth frameBase : Nat)
+    (mode : ActivationMode) : Prop :=
+  match resource with
+  | .stackOnly => mode = .stack
+  | .scratch config =>
+      ActivationOwned config allocatorDepth frameBase mode
+
+end ResourceMode
+
 /--
 Reconstruct a suspended caller activation after a callee has returned values
 above the exact caller stack.
@@ -5935,6 +6003,16 @@ theorem FuelSafe.depth_safe {config : Config} {fuel depth : Nat}
     (hSafe : FuelSafe config fuel) (hDepth : depth ≤ fuel) :
     Budget config depth :=
   budget_mono hDepth hSafe
+
+theorem ResourceMode.FuelSafe.depth_safe
+    {resource : ResourceMode} {fuel depth : Nat}
+    (hSafe : resource.FuelSafe fuel) (hDepth : depth ≤ fuel) :
+    resource.Budget depth := by
+  cases resource with
+  | stackOnly =>
+      trivial
+  | scratch config =>
+      exact Frame.FuelSafe.depth_safe hSafe hDepth
 
 theorem budget_zero_of_scratchFrameConfig?
     {contract : MemoryContract.Contract} {frameWords : Nat}

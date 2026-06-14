@@ -3027,6 +3027,212 @@ structure ActivationRuntimeInvariant
     AllocationObserverRelation.Frame.ActivationOwned
       config allocatorDepth frameBase mode
 
+/--
+Recursive activation invariant indexed by the compiler-selected resource mode.
+
+The stack-only case retains exactly the adjacent allocation invariant and the
+fact that no scratch activation is present. The scratch case is definitionally
+the existing allocator-backed invariant. This is the stable interface for the
+shared recursive dispatcher.
+-/
+structure ActivationResourceInvariant
+    {transcript : AllocationObserverRelation.Trace}
+    (resource : AllocationObserverRelation.Frame.ResourceMode)
+    (contract : MemoryContract.Contract)
+    (allocatorDepth : Nat)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Plan) (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : AllocationObserverRelation.ActivationMode)
+    (source : Functions.ObserverSemantics.State transcript)
+    (target : Structured.ObserverSemantics.State transcript) : Prop where
+  activation :
+    ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+      frameBase mode source target
+  ready :
+    resource.Ready allocatorDepth target
+  owned :
+    resource.Owned allocatorDepth frameBase mode
+
+namespace ActivationResourceInvariant
+
+theorem stackOnly
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hActivation :
+      ActivationInvariant contract lowerCtx lowerState localsCtx plan live
+        frameBase mode source target)
+    (hMode : mode = .stack) :
+    ActivationResourceInvariant .stackOnly contract allocatorDepth
+      lowerCtx lowerState localsCtx plan live frameBase mode source target :=
+  { activation := hActivation
+    ready := trivial
+    owned := hMode }
+
+theorem scratch
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationRuntimeInvariant contract config allocatorDepth
+        lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    ActivationResourceInvariant (.scratch config) contract allocatorDepth
+      lowerCtx lowerState localsCtx plan live frameBase mode source target :=
+  { activation := hInvariant.activation
+    ready := hInvariant.allocator
+    owned := hInvariant.frame }
+
+theorem toRuntime
+    {transcript : AllocationObserverRelation.Trace}
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationResourceInvariant (.scratch config) contract allocatorDepth
+        lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    ActivationRuntimeInvariant contract config allocatorDepth
+      lowerCtx lowerState localsCtx plan live frameBase mode source target :=
+  { activation := hInvariant.activation
+    allocator := hInvariant.ready
+    frame := hInvariant.owned }
+
+theorem restrict_source_live
+    {transcript : AllocationObserverRelation.Trace}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationResourceInvariant resource contract allocatorDepth
+        lowerCtx lowerState localsCtx plan live frameBase mode
+        source target) :
+    ActivationResourceInvariant resource contract allocatorDepth
+      lowerCtx lowerState localsCtx plan live frameBase mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        live source)
+      target :=
+  { activation := hInvariant.activation.restrict_source_live
+    ready := hInvariant.ready
+    owned := hInvariant.owned }
+
+theorem transport_locals_layout
+    {transcript : AllocationObserverRelation.Trace}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {before after : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationResourceInvariant resource contract allocatorDepth
+        lowerCtx lowerState before plan live frameBase mode source target)
+    (hLayout : after.layout = before.layout) :
+    ActivationResourceInvariant resource contract allocatorDepth
+      lowerCtx lowerState after plan live frameBase mode source target :=
+  { activation :=
+      hInvariant.activation.transport_locals_layout hLayout
+    ready := hInvariant.ready
+    owned := hInvariant.owned }
+
+theorem transport_state
+    {transcript : AllocationObserverRelation.Trace}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationResourceInvariant resource contract allocatorDepth
+        lowerCtx before localsCtx plan live frameBase mode source target)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    ActivationResourceInvariant resource contract allocatorDepth
+      lowerCtx after localsCtx plan live frameBase mode source target :=
+  { activation :=
+      hInvariant.activation.transport_state hEnv hLayout
+    ready := hInvariant.ready
+    owned := hInvariant.owned }
+
+theorem transport_plan
+    {transcript : AllocationObserverRelation.Trace}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {leftPlan rightPlan : Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      ActivationResourceInvariant resource contract allocatorDepth
+        lowerCtx lowerState localsCtx leftPlan live frameBase mode
+        source target)
+    (hRightWF : rightPlan.WellFormed)
+    (hAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        leftPlan rightPlan live) :
+    ActivationResourceInvariant resource contract allocatorDepth
+      lowerCtx lowerState localsCtx rightPlan live frameBase mode
+      source target :=
+  { activation :=
+      hInvariant.activation.transport_plan hRightWF hAgree
+    ready := hInvariant.ready
+    owned := hInvariant.owned }
+
+end ActivationResourceInvariant
+
 namespace ActivationRuntimeInvariant
 
 theorem restrict_source_live

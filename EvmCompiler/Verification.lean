@@ -343,9 +343,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.MainComponents.RuntimeSelection
 #check EvmCompiler.Functions.AllocationLowering.MainComponents.runtimeSelection
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.runtimeSelection
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ResourceMode
+#check EvmCompiler.Functions.AllocationObserverContext.ActivationResourceInvariant
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary
+#check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode
+#check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
+#check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceBoundary
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.boundary
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.recursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward

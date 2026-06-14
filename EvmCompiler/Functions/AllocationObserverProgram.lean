@@ -99,6 +99,67 @@ theorem MainArtifact.runtimeSelection
     artifact.components.RuntimeSelection :=
   artifact.components.runtimeSelection
 
+def MainArtifact.resourceMode
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    (_artifact : MainArtifact compilation) :
+    AllocationObserverRelation.Frame.ResourceMode :=
+  if AllocationLowering.mainNeedsAllocator
+      compilation.recipe compilation.stackSlots then
+    match compilation.frameConfig? with
+    | none => .stackOnly
+    | some config => .scratch config
+  else
+    .stackOnly
+
+/--
+The semantic resource index is computed from the ordinary compiler artifact,
+and its complete classification follows from successful main lowering.
+-/
+theorem MainArtifact.resourceMode_spec
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    (artifact : MainArtifact compilation) :
+    (artifact.resourceMode = .stackOnly ∧
+        AllocationLowering.mainNeedsAllocator
+            compilation.recipe compilation.stackSlots =
+          false ∧
+        AllocationLowering.mainNeedsFrame
+            compilation.recipe compilation.stackSlots =
+          false ∧
+        AllocationLowering.frameFunctions
+            compilation.recipe compilation.stackSlots =
+          [] ∧
+        artifact.components.allocatorPrelude = [] ∧
+        artifact.components.framePrelude = []) ∨
+      ∃ config,
+        artifact.resourceMode = .scratch config ∧
+          compilation.frameConfig? = some config ∧
+          AllocationLowering.mainNeedsAllocator
+              compilation.recipe compilation.stackSlots =
+            true := by
+  cases artifact.runtimeSelection with
+  | stackOnly hAllocator hFrame hFunctions hAllocatorPrelude
+      hFramePrelude =>
+      exact
+        Or.inl
+          ⟨by simp [MainArtifact.resourceMode, hAllocator],
+            hAllocator, hFrame, hFunctions, hAllocatorPrelude,
+            hFramePrelude⟩
+  | scratch config hConfig hAllocator =>
+      exact
+        Or.inr
+          ⟨config,
+            by
+              simp [MainArtifact.resourceMode, hAllocator, hConfig],
+            hConfig, hAllocator⟩
+
 def MainArtifact.plan
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -532,14 +593,15 @@ theorem MainPrepared.rootArtifact
 namespace MainRoot
 
 /--
-The canonical source/control boundary at the start of the allocation-lowered
+The shared source/control constructor at the start of the allocation-lowered
 main body.
 
-The semantic activation invariant is supplied by the adjacent allocator/frame
-setup theorem. All source scope and target control facts are derived here from
-ordinary initial contexts and the real Locals compilation of the setup prefix.
+Only the resource-indexed budget and activation invariant are supplied by the
+adjacent setup theorem. Source scope and target control facts are derived here
+from ordinary initial contexts and the real Locals compilation of the setup
+prefix.
 -/
-def boundary
+private def boundaryFor
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
@@ -548,23 +610,23 @@ def boundary
     {artifact : MainArtifact compilation}
     {prepared : MainPrepared artifact}
     (mainRoot : MainRoot prepared)
-    {config : Frame.Config}
+    {resource : Frame.ResourceMode}
     {allocatorDepth frameBase : Nat}
     {transcript : Trace}
     {mode : ActivationMode}
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
-    (hBudget : Frame.Budget config allocatorDepth)
+    (hBudget : resource.Budget allocatorDepth)
     (hInvariant :
-      AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth mainRoot.root.lowerCtx
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth mainRoot.root.lowerCtx
         mainRoot.root.startState mainRoot.root.startLocals mainRoot.root.plan
         ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
           (mainRoot.root.slots.params.map Prod.fst).reverse)
         frameBase mode source target) :
-    AllocationObserverDispatcher.BodyCursor.Boundary
+    AllocationObserverDispatcher.BodyCursor.ResourceBoundary
       mainRoot.root.cursor
-      (config := config) (allocatorDepth := allocatorDepth)
+      (resource := resource) (allocatorDepth := allocatorDepth)
       (frameBase := frameBase) (mode := mode)
       (sourceCtx := Functions.Source.Ctx.initial)
       (source := source) (target := target) := by
@@ -605,6 +667,78 @@ def boundary
     simp [Functions.Source.Ctx.initial] at hLeave
   · intro functionScope hLeave
     simp [Functions.Source.Ctx.initial] at hLeave
+
+/--
+The canonical compiler-selected resource boundary for recursive main-body
+preservation.
+-/
+def resourceBoundary
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    (mainRoot : MainRoot prepared)
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hBudget : artifact.resourceMode.Budget allocatorDepth)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        artifact.resourceMode program.memoryContract allocatorDepth
+        mainRoot.root.lowerCtx mainRoot.root.startState
+        mainRoot.root.startLocals mainRoot.root.plan
+        ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
+          (mainRoot.root.slots.params.map Prod.fst).reverse)
+        frameBase mode source target) :
+    AllocationObserverDispatcher.BodyCursor.ResourceBoundary
+      mainRoot.root.cursor
+      (resource := artifact.resourceMode)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := Functions.Source.Ctx.initial)
+      (source := source) (target := target) :=
+  mainRoot.boundaryFor hBudget hInvariant
+
+/--
+The existing scratch-backed boundary is the corresponding specialization of
+the shared resource constructor.
+-/
+def boundary
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    (mainRoot : MainRoot prepared)
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hBudget : Frame.Budget config allocatorDepth)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth mainRoot.root.lowerCtx
+        mainRoot.root.startState mainRoot.root.startLocals mainRoot.root.plan
+        ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
+          (mainRoot.root.slots.params.map Prod.fst).reverse)
+        frameBase mode source target) :
+    AllocationObserverDispatcher.BodyCursor.Boundary
+      mainRoot.root.cursor
+      (config := config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := Functions.Source.Ctx.initial)
+      (source := source) (target := target) :=
+  (mainRoot.boundaryFor (resource := .scratch config) hBudget
+      (AllocationObserverContext.ActivationResourceInvariant.scratch
+        hInvariant)).toScratch
 
 /--
 Instantiate the shared source-fuel theorem at the distinguished main root.

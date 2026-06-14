@@ -711,6 +711,147 @@ structure Boundary
       lowerState localsCtx cursor.plan live frameBase mode source target
 
 /--
+Statement-boundary contract indexed by the compiler-selected resource mode.
+
+All source scope and control obligations are independent of scratch-frame
+allocation. Only the budget and activation invariant vary by resource mode.
+The existing `Boundary` is the `.scratch config` specialization.
+-/
+structure ResourceBoundary
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx) where
+  sourceScope :
+    ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live
+  control :
+    AllocationObserverOutcome.ControlScopesWithin
+      root.returns live sourceCtx
+  destinations :
+    AllocationObserverOutcome.ControlDestinations
+      root.lowerCtx lowerState localsCtx cursor.plan live mode sourceCtx
+  returnFrame :
+    AllocationObserverOutcome.ReturnFrameAvailable sourceCtx target
+  leaveTarget :
+    ∀ functionScope,
+      sourceCtx.leaveScope? = some functionScope →
+        localsCtx.leaveDepth? = some 0 ∧
+          localsCtx.leaveRetc = root.returns.length
+  budget : resource.Budget allocatorDepth
+  invariant :
+    AllocationObserverContext.ActivationResourceInvariant
+      resource program.memoryContract allocatorDepth root.lowerCtx
+      lowerState localsCtx cursor.plan live frameBase mode source target
+
+namespace Boundary
+
+def toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx}
+    (boundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)) :
+    ResourceBoundary cursor (resource := .scratch config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx)
+      (source := source) (target := target) :=
+  { sourceScope := boundary.sourceScope
+    control := boundary.control
+    destinations := boundary.destinations
+    returnFrame := boundary.returnFrame
+    leaveTarget := boundary.leaveTarget
+    budget := boundary.budget
+    invariant :=
+      AllocationObserverContext.ActivationResourceInvariant.scratch
+        boundary.invariant }
+
+end Boundary
+
+namespace ResourceBoundary
+
+def toScratch
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx}
+    (boundary :
+      ResourceBoundary cursor (resource := .scratch config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)) :
+    Boundary cursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx)
+      (source := source) (target := target) :=
+  { sourceScope := boundary.sourceScope
+    control := boundary.control
+    destinations := boundary.destinations
+    returnFrame := boundary.returnFrame
+    leaveTarget := boundary.leaveTarget
+    budget := boundary.budget
+    invariant := boundary.invariant.toRuntime }
+
+end ResourceBoundary
+
+/--
 Outcome-indexed exact loop-control evidence for one recursively dispatched
 block.
 

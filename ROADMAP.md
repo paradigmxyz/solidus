@@ -752,9 +752,12 @@ compiler cleanup through the
   now proves from successful ordinary lowering that the program is either
   stack-only, with no frame-using functions and empty allocator/frame preludes,
   or scratch-backed by the exact concrete configuration consumed by the
-  compiler. The recursive semantic interface must now support that stack-only
-  mode without fabricating allocator state, then compose final cleanup and
-  matching whole-function/whole-program backward adequacy.
+  compiler. `Frame.ResourceMode`, `ActivationResourceInvariant`,
+  `BodyCursor.ResourceBoundary`, and `MainRoot.resourceBoundary` now expose
+  that compiler selection without fabricating allocator state. The recursive
+  result and source-fuel theorem must now be generalized over this resource
+  index, then compose final cleanup and matching whole-function/whole-program
+  backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1408,9 +1411,10 @@ corridor.
   checked strong induction across every selected function artifact. Its
   downward-closed fuel interface handles lexical recursion, loop components,
   regular tails, and recursive calls; `Frame.FuelSafe` plus the call-owned
-  callee-depth bound supplies each nested scratch budget. The remaining
-  Functions work is whole-program forward packaging and matching backward
-  adequacy.
+  callee-depth bound supplies each nested scratch budget. The main-root
+  boundary is now compiler-selected between stack-only and scratch modes. The
+  remaining Functions work is resource-indexing the recursive theorem,
+  whole-program forward packaging, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
