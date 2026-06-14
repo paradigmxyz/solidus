@@ -6,6 +6,45 @@ namespace AllocationObserverOutcome
 
 open AllocationObserverRelation
 
+/--
+For an abrupt statement outcome, the continuation live environment may be
+re-indexed. Break, continue, and leave select their own destination live sets;
+terminal halts erase local realization entirely.
+-/
+theorem reindex_outcomeLive
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {returns beforeLive afterLive : List Functions.Name}
+    {sourceCtx : Functions.Source.Ctx}
+    {stackOffset frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract plan
+        (outcomeLive returns beforeLive sourceCtx sourceOutcome.mode)
+        stackOffset frameBase finalMode sourceOutcome targetOutcome)
+    (hMode : sourceOutcome.mode ≠ .regular) :
+    ActivationOutcomeRel contract plan
+      (outcomeLive returns afterLive sourceCtx sourceOutcome.mode)
+      stackOffset frameBase finalMode sourceOutcome targetOutcome := by
+  cases hRel with
+  | regular _ =>
+      exact False.elim (hMode rfl)
+  | brk hState =>
+      exact .brk (by simpa [outcomeLive] using hState)
+  | cont hState =>
+      exact .cont (by simpa [outcomeLive] using hState)
+  | leave hState =>
+      exact .leave hState
+  | halt kind hState =>
+      exact .halt kind hState
+
 namespace NonregularStmtRuntimeForward
 
 theorem of_runs
@@ -54,6 +93,49 @@ theorem of_runs
       stmt source targetProgram target compiled sourceOutcome targetOutcome
       stmtCtx :=
   ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel, hSame, hEffect⟩
+
+/--
+Change the regular continuation environment carried by an abrupt statement
+result. This is the sequence-facing form of
+`ActivationOutcomeRel.reindex_outcomeLive`.
+-/
+theorem reindex_regularLive
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {returns beforeLive afterLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        plan (outcomeLive returns beforeLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+        targetProgram target compiled sourceOutcome targetOutcome stmtCtx) :
+    NonregularStmtRuntimeForward contract config allocatorDepth transcript
+      plan (outcomeLive returns afterLive sourceCtx sourceOutcome.mode)
+      frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+      targetProgram target compiled sourceOutcome targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode,
+      AllocationObserverOutcome.reindex_outcomeLive hRel hMode,
+      hSame, hEffect⟩
 
 theorem leave_of_invariant
     {contract : MemoryContract.Contract}

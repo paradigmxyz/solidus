@@ -18,6 +18,7 @@ import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.AllocationObserverForward
+import EvmCompiler.Functions.AllocationObserverDispatcher
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -553,6 +554,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lexicalOfPlanState
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.forCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.StepTransport
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.regular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.nonregular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
 #check EvmCompiler.Functions.AllocationSupport.planBlockScoped_entry_mem
@@ -571,6 +579,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_safe_source
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward
+#check EvmCompiler.Functions.AllocationObserverOutcome.reindex_outcomeLive
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.reindex_regularLive
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.block_of_runtime
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin

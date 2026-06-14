@@ -11,6 +11,7 @@ import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.AllocationObserverOutcome
 import EvmCompiler.Functions.AllocationObserverForward
+import EvmCompiler.Functions.AllocationObserverDispatcher
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -748,6 +749,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.NonregularRuntimeForward.of_safe_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.reframe_of_isExit
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.reindex_outcomeLive
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.reindex_regularLive
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.regular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.nonregular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.if_true_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.switch_some_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
