@@ -336,6 +336,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forRegularHeadResult
+#check EvmCompiler.Functions.Source.Effectful.Outcome.IsExit.not_regular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forExitHeadResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.finished
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_break_destination
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_continue_destination

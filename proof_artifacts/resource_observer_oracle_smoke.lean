@@ -770,6 +770,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forRegularHeadResult
+#print axioms EvmCompiler.Functions.Source.Effectful.Outcome.IsExit.not_regular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forExitHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.finished
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_break_destination
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_continue_destination

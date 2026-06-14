@@ -41,6 +41,12 @@ def IsExit {σ : Type} (outcome : Outcome σ) : Prop :=
   | .leave | .halt _ => True
   | .regular | .brk | .cont => False
 
+theorem IsExit.not_regular {σ : Type} {outcome : Outcome σ}
+    (hExit : IsExit outcome) :
+    outcome.mode ≠ .regular := by
+  rcases outcome with ⟨state, mode⟩
+  cases mode <;> simp [IsExit] at hExit ⊢
+
 end Outcome
 
 namespace Expr

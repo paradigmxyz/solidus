@@ -2928,6 +2928,522 @@ theorem forRegularHeadResult
             hBoundary.sourceScope name)⟩
 
 /--
+Dispatch a `for` whose initializer completes regularly and whose loop leaves
+the activation or halts.
+
+The dispatcher supplies the real lexical cursors and compiler artifacts. The
+loop pass owns source-fuel recursion, while outcome-owned transport erases the
+nested allocation index only after a genuine activation exit.
+-/
+theorem forExitHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx initCtx : Functions.Source.Ctx}
+    {source sourceAfterInit :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceLoopOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := sourceFuel + 1)
+        (transcript := transcript))
+    (hInitSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx.withoutLoopControl sourceFuel init source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceAfterInit,
+            initCtx))
+    (hLoopSource :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program initCtx cond initCtx.withoutLoopControl post
+          (initCtx.withLoopControl initCtx.scope initCtx.scope)
+          body sourceFuel sourceAfterInit =
+        .ok sourceLoopOutcome)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceLoopOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+          { stmts := rest } afterState localsCtx,
+        HeadResult cursor afterState localsCtx headCode tail
+          (config := config) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome := sourceLoopOutcome) := by
+  obtain
+      ⟨afterState, headLower, headCode, tail,
+        loopState, afterPost, afterBody,
+        initLocals, postLocals, bodyLocals,
+        loweredCond, condCode, compiledPost, compiledBody, cleanup,
+        initCursor, postCursor, bodyCursor,
+        hCompiled, hLower, hCompile,
+        hInitFinalState, hInitFinalLocals,
+        hLowerCond, hCompileCond, hLowerPost, hFinishPost,
+        hLowerBody, hFinishBody, hCleanup, hHeadCode, hAfterState,
+        hCondScoped, hPostScoped, hBodyScoped, hStep, hExact⟩ :=
+    cursor.forCursors
+  cases hInitFinalState
+  cases hInitFinalLocals
+  let initFinished := initCursor.finished
+  have hInitBoundary :
+      Boundary initCursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx.withoutLoopControl)
+        (source := source) (target := target) :=
+    forInit cursor initCursor hBoundary
+  obtain
+      ⟨targetAfterInit, initMode, hInitForward,
+        hInitControl, hInitScope⟩ :=
+    recursiveRegular initCursor hRecursive
+      (Nat.lt_succ_self sourceFuel) hInitBoundary hInitSource
+  have hOuterSubset :
+      ∀ name, name ∈ live →
+        name ∈ Functions.Scope.Block.outEnv live init :=
+    fun name hName => Functions.Scope.Block.mem_outEnv hName
+  obtain ⟨targetOutcome, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.for_exit_of_components
+      (outerPlan := cursor.plan) (loopPlan := initCursor.plan)
+      (outerLive := live)
+      (loopLive := Functions.Scope.Block.outEnv live init)
+      (resultLive := fn.returns)
+      (outerMode := mode) (loopMode := initMode)
+      hBoundary.invariant hBoundary.returnFrame
+      (by
+        intro loweredInit loopState' initCode initLocals'
+          hLowerInit hCompileInit _hInvariant
+        have hLowerPair :
+            (initCursor.lowered, initCursor.finalState) =
+              (loweredInit, loopState') :=
+          Option.some.inj (initCursor.lower.symm.trans hLowerInit)
+        cases hLowerPair
+        have hCompilePair :
+            (initCursor.compiled, initCursor.finalLocals) =
+              (initCode, initLocals') :=
+          Option.some.inj (initCursor.compile.symm.trans hCompileInit)
+        cases hCompilePair
+        exact
+          ⟨targetAfterInit, hInitForward, hInitControl⟩)
+      (by
+        intro loweredInit' loopState' afterPost' afterBody'
+          loweredCond' loweredPost loweredBody initLocals' postLocals'
+          bodyLocals' initCode' condCode' postCode bodyCode compiledPost'
+          compiledBody' targetAfterInit'
+          hLowerInit' hCompileInit' hLowerCond' hLowerPost' hLowerBody'
+          hCompileCond' hCompilePost' hFinishPost' hCompileBody'
+          hFinishBody' hInvariant hLoopReturnFrame hPostReturnFrame
+          hBodyReturnFrame
+        have hLowerInitPair :
+            (initCursor.lowered, initCursor.finalState) =
+              (loweredInit', loopState') :=
+          Option.some.inj (initCursor.lower.symm.trans hLowerInit')
+        cases hLowerInitPair
+        have hCompileInitPair :
+            (initCursor.compiled, initCursor.finalLocals) =
+              (initCode', initLocals') :=
+          Option.some.inj (initCursor.compile.symm.trans hCompileInit')
+        cases hCompileInitPair
+        have hLowerCondEq : loweredCond = loweredCond' :=
+          Option.some.inj (hLowerCond.symm.trans hLowerCond')
+        cases hLowerCondEq
+        have hLowerPostPair :
+            (postCursor.lowered, afterPost) =
+              (loweredPost, afterPost') :=
+          Option.some.inj (hLowerPost.symm.trans hLowerPost')
+        cases hLowerPostPair
+        have hLowerBodyPair :
+            (bodyCursor.lowered, afterBody) =
+              (loweredBody, afterBody') :=
+          Option.some.inj (hLowerBody.symm.trans hLowerBody')
+        cases hLowerBodyPair
+        have hCompileCondEq : condCode = condCode' :=
+          Option.some.inj (hCompileCond.symm.trans hCompileCond')
+        cases hCompileCondEq
+        have hCompilePostPair :
+            (postCursor.compiled, postCursor.finalLocals) =
+              (postCode, postLocals') :=
+          Option.some.inj (postCursor.compile.symm.trans hCompilePost')
+        cases hCompilePostPair
+        have hCompiledPost : compiledPost = compiledPost' :=
+          Option.some.inj (hFinishPost.symm.trans hFinishPost')
+        cases hCompiledPost
+        have hCompileBodyPair :
+            (bodyCursor.compiled, bodyCursor.finalLocals) =
+              (bodyCode, bodyLocals') :=
+          Option.some.inj (bodyCursor.compile.symm.trans hCompileBody')
+        cases hCompileBodyPair
+        have hCompiledBody : compiledBody = compiledBody' :=
+          Option.some.inj (hFinishBody.symm.trans hFinishBody')
+        cases hCompiledBody
+        cases targetAfterInit'
+        have hPostShape :=
+          AllocationLowering.lowerBlockScoped_state_shape hLowerPost
+        have hLoopStateExtends :
+            AllocationLowering.StateExtends
+              (Functions.Scope.Block.outEnv live init)
+              initCursor.finalState afterPost :=
+          AllocationLowering.StateExtends.of_shape
+            hPostShape.2 hPostShape.1
+        have hBodyPlanAgree :
+            AllocationObserverRelation.PlanAgreesOn
+              initCursor.plan bodyCursor.plan
+                (Functions.Scope.Block.outEnv live init) :=
+          (bodyCursor.planAgreesOn initFinished hPostShape.1).symm
+        have hPostPlanAgree :
+            AllocationObserverRelation.PlanAgreesOn
+              initCursor.plan postCursor.plan
+                (Functions.Scope.Block.outEnv live init) :=
+          (postCursor.planAgreesOn initFinished rfl).symm
+        have hCompiledBodyShape :
+            compiledBody.toStructured =
+              { stmts :=
+                  Expressions.StmtList.toStructured compiledBody.stmts } := by
+          cases compiledBody
+          rfl
+        have hCompiledPostShape :
+            compiledPost.toStructured =
+              { stmts :=
+                  Expressions.StmtList.toStructured compiledPost.stmts } := by
+          cases compiledPost
+          rfl
+        have hFinishPostAtLoop :
+            Locals.finishScoped initCursor.finalLocals
+                postCursor.finalLocals postCursor.compiled =
+              some compiledPost := by
+          simpa [Locals.finishScoped] using hFinishPost
+        exact
+          AllocationObserverStatement.ForLoop.NonregularRuntimeForward.of_safe_source_run
+            hConfig hCondScoped hLowerCond hCompileCond
+            hLoopReturnFrame hPostReturnFrame hBodyReturnFrame
+            (by
+              intro bodyFuel bodySource bodyFinal bodyTarget
+                hBodyInvariant hReturnFrame hFuel hRun
+              have hCursorInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx afterPost
+                    (initCursor.finalLocals.withLoopControl
+                      initCursor.finalLocals.layout.length)
+                    bodyCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode bodySource bodyTarget :=
+                (((hBodyInvariant.transport_state
+                      hPostShape.1 hPostShape.2)
+                    |>.transport_locals_layout
+                      (after :=
+                        initCursor.finalLocals.withLoopControl
+                          initCursor.finalLocals.layout.length) rfl)
+                    |>.transport_plan bodyCursor.planWF hBodyPlanAgree)
+              let hBodyBoundary :
+                  Boundary bodyCursor (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase) (mode := initMode)
+                    (sourceCtx :=
+                      initCtx.withLoopControl initCtx.scope initCtx.scope)
+                    (source := bodySource) (target := bodyTarget) :=
+                forBody cursor bodyCursor hBoundary initCursor.compile
+                  hInitScope hOuterSubset hInitControl
+                  hBodyInvariant.activation.compiler
+                  initCursor.planWF hLoopStateExtends hReturnFrame
+                  hCursorInvariant
+              have hAfterCompiler :
+                  AllocationObserverContext.ActivationExprContext
+                    artifact.lowerCtx afterPost
+                    (initCursor.finalLocals.withLoopControl
+                      initCursor.finalLocals.layout.length)
+                    initCursor.plan
+                    (Functions.Scope.Block.outEnv live init) initMode :=
+                (hBodyInvariant.activation.compiler.transport_state
+                    hPostShape.1 hPostShape.2)
+                  |>.transport_locals_layout
+                    (after :=
+                      initCursor.finalLocals.withLoopControl
+                        initCursor.finalLocals.layout.length) rfl
+              rw [hCompiledBodyShape]
+              exact
+                recursiveScopedRegular bodyCursor hRecursive
+                  (Nat.lt_trans hFuel (Nat.lt_succ_self sourceFuel))
+                  hBodyBoundary hRun hAfterCompiler initCursor.planWF rfl
+                  hFinishBody)
+            (by
+              intro bodyFuel bodySource bodyFinal bodyTarget
+                hBodyInvariant hReturnFrame hFuel hRun
+              have hCursorInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx afterPost
+                    (initCursor.finalLocals.withLoopControl
+                      initCursor.finalLocals.layout.length)
+                    bodyCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode bodySource bodyTarget :=
+                (((hBodyInvariant.transport_state
+                      hPostShape.1 hPostShape.2)
+                    |>.transport_locals_layout
+                      (after :=
+                        initCursor.finalLocals.withLoopControl
+                          initCursor.finalLocals.layout.length) rfl)
+                    |>.transport_plan bodyCursor.planWF hBodyPlanAgree)
+              let hBodyBoundary :
+                  Boundary bodyCursor (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase) (mode := initMode)
+                    (sourceCtx :=
+                      initCtx.withLoopControl initCtx.scope initCtx.scope)
+                    (source := bodySource) (target := bodyTarget) :=
+                forBody cursor bodyCursor hBoundary initCursor.compile
+                  hInitScope hOuterSubset hInitControl
+                  hBodyInvariant.activation.compiler
+                  initCursor.planWF hLoopStateExtends hReturnFrame
+                  hCursorInvariant
+              obtain
+                  ⟨targetBodyOutcome, bodyFinalMode,
+                    hScoped, hControl⟩ :=
+                recursiveScopedNonregularControlled bodyCursor hRecursive
+                  (Nat.lt_trans hFuel (Nat.lt_succ_self sourceFuel))
+                  hBodyBoundary hRun
+                  (by
+                    simp [Functions.Source.Effectful.Outcome.cont,
+                      Locals.Source.Effectful.Outcome.cont])
+                  hFinishBody
+              obtain
+                  ⟨targetBodyFinal, hTargetOutcome, hDestination⟩ :=
+                hControl.cont bodyFinal rfl
+              subst targetBodyOutcome
+              rcases hScoped with
+                ⟨bodySourceFuel, bodyTargetFuel, hBodySource,
+                  hBodyTarget, _hOutcomeRel, _hSameFrame, hBodyEffect⟩
+              have hBaseDestination :
+                  AllocationObserverOutcome.ControlBinding.DestinationRuntimeInvariant
+                    (contract := program.memoryContract)
+                    (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase)
+                    (AllocationObserverOutcome.ControlDestinations.loopBody
+                      hBodyInvariant.activation.compiler
+                      initCursor.planWF hLoopStateExtends
+                      hInitScope).cont bodyFinal targetBodyFinal := by
+                apply
+                  AllocationObserverOutcome.ControlBinding.DestinationRuntimeInvariant.of_transport
+                    (AllocationObserverOutcome.ControlDestinations.loopBody
+                      hBodyInvariant.activation.compiler
+                      initCursor.planWF hLoopStateExtends
+                      hInitScope).cont
+                    (AllocationObserverOutcome.SameControl.refl _)
+                    (Locals.Ctx.SameControl.refl _)
+                    (AllocationLowering.StateExtends.of_shape rfl rfl)
+                    (fun _ hName => hName) (SameFrame.refl initMode)
+                simpa [hBodyBoundary, forBody] using hDestination
+              have hLoopInvariant :=
+                AllocationObserverOutcome.ControlDestinations.loopBody_continue_destination
+                  hBodyInvariant.activation.compiler
+                  initCursor.planWF hLoopStateExtends
+                  hInitScope hBaseDestination
+              have hContinueInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx afterPost
+                    (initCursor.finalLocals.withLoopControl
+                      initCursor.finalLocals.layout.length)
+                    initCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode bodyFinal targetBodyFinal :=
+                (hLoopInvariant.transport_state
+                    hPostShape.1 hPostShape.2)
+                  |>.transport_locals_layout
+                    (after :=
+                      initCursor.finalLocals.withLoopControl
+                        initCursor.finalLocals.layout.length) rfl
+              rw [hCompiledBodyShape]
+              exact
+                ⟨targetBodyFinal, bodySourceFuel, bodyTargetFuel,
+                  hBodySource, hBodyTarget, hContinueInvariant,
+                  hBodyEffect⟩)
+            (by
+              intro bodyFuel bodySource bodyOutcome bodyTarget
+                hBodyExit hBodyInvariant hReturnFrame hFuel hRun
+              have hCursorInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx afterPost
+                    (initCursor.finalLocals.withLoopControl
+                      initCursor.finalLocals.layout.length)
+                    bodyCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode bodySource bodyTarget :=
+                (((hBodyInvariant.transport_state
+                      hPostShape.1 hPostShape.2)
+                    |>.transport_locals_layout
+                      (after :=
+                        initCursor.finalLocals.withLoopControl
+                          initCursor.finalLocals.layout.length) rfl)
+                    |>.transport_plan bodyCursor.planWF hBodyPlanAgree)
+              have hBodyBoundary :
+                  Boundary bodyCursor (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase) (mode := initMode)
+                    (sourceCtx :=
+                      initCtx.withLoopControl initCtx.scope initCtx.scope)
+                    (source := bodySource) (target := bodyTarget) :=
+                forBody cursor bodyCursor hBoundary initCursor.compile
+                  hInitScope hOuterSubset hInitControl
+                  hBodyInvariant.activation.compiler
+                  initCursor.planWF hLoopStateExtends hReturnFrame
+                  hCursorInvariant
+              obtain
+                  ⟨targetBodyOutcome, bodyFinalMode, hScoped⟩ :=
+                recursiveScopedNonregular bodyCursor hRecursive
+                  (Nat.lt_trans hFuel (Nat.lt_succ_self sourceFuel))
+                  hBodyBoundary hRun hBodyExit.not_regular hFinishBody
+              rw [← hCompiledBodyShape] at hScoped
+              refine
+                ⟨targetBodyOutcome, bodyFinalMode,
+                  AllocationObserverOutcome.ScopedBlockRuntimeForward.transport_of_isExit
+                    hScoped hBodyExit ?_⟩
+              intro hLeave
+              simp [AllocationObserverOutcome.outcomeLive, hLeave])
+            (by
+              intro postFuel postSource postFinal postTarget
+                hPostInvariant hReturnFrame hFuel hRun
+              have hCursorInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx initCursor.finalState
+                    initCursor.finalLocals.withoutLoopControl
+                    postCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode postSource postTarget :=
+                (((hPostInvariant.transport_state
+                      hPostShape.1.symm hPostShape.2.symm)
+                    |>.transport_locals_layout
+                      (after :=
+                        initCursor.finalLocals.withoutLoopControl) rfl)
+                    |>.transport_plan postCursor.planWF hPostPlanAgree)
+              have hPostBoundary :
+                  Boundary postCursor (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase) (mode := initMode)
+                    (sourceCtx := initCtx.withoutLoopControl)
+                    (source := postSource) (target := postTarget) :=
+                forPost cursor postCursor hBoundary initCursor.compile
+                  hInitScope hOuterSubset hInitControl hReturnFrame
+                  hCursorInvariant
+              have hAfterCompiler :
+                  AllocationObserverContext.ActivationExprContext
+                    artifact.lowerCtx initCursor.finalState
+                    initCursor.finalLocals initCursor.plan
+                    (Functions.Scope.Block.outEnv live init) initMode :=
+                (hPostInvariant.activation.compiler.transport_state
+                    hPostShape.1.symm hPostShape.2.symm)
+                  |>.transport_locals_layout
+                    (after := initCursor.finalLocals) rfl
+              rw [hCompiledPostShape]
+              exact
+                recursiveScopedRegular postCursor hRecursive
+                  (Nat.lt_trans hFuel (Nat.lt_succ_self sourceFuel))
+                  hPostBoundary hRun hAfterCompiler initCursor.planWF
+                  rfl hFinishPostAtLoop)
+            (by
+              intro postFuel postSource postOutcome postTarget
+                hPostExit hPostInvariant hReturnFrame hFuel hRun
+              have hCursorInvariant :
+                  AllocationObserverContext.ActivationRuntimeInvariant
+                    program.memoryContract config allocatorDepth
+                    artifact.lowerCtx initCursor.finalState
+                    initCursor.finalLocals.withoutLoopControl
+                    postCursor.plan
+                    (Functions.Scope.Block.outEnv live init)
+                    frameBase initMode postSource postTarget :=
+                (((hPostInvariant.transport_state
+                      hPostShape.1.symm hPostShape.2.symm)
+                    |>.transport_locals_layout
+                      (after :=
+                        initCursor.finalLocals.withoutLoopControl) rfl)
+                    |>.transport_plan postCursor.planWF hPostPlanAgree)
+              have hPostBoundary :
+                  Boundary postCursor (config := config)
+                    (allocatorDepth := allocatorDepth)
+                    (frameBase := frameBase) (mode := initMode)
+                    (sourceCtx := initCtx.withoutLoopControl)
+                    (source := postSource) (target := postTarget) :=
+                forPost cursor postCursor hBoundary initCursor.compile
+                  hInitScope hOuterSubset hInitControl hReturnFrame
+                  hCursorInvariant
+              obtain
+                  ⟨targetPostOutcome, postFinalMode, hScoped⟩ :=
+                recursiveScopedNonregular postCursor hRecursive
+                  (Nat.lt_trans hFuel (Nat.lt_succ_self sourceFuel))
+                  hPostBoundary hRun hPostExit.not_regular hFinishPost
+              rw [← hCompiledPostShape] at hScoped
+              refine
+                ⟨targetPostOutcome, postFinalMode,
+                  AllocationObserverOutcome.ScopedBlockRuntimeForward.transport_of_isExit
+                    hScoped hPostExit ?_⟩
+              intro hLeave
+              simp [AllocationObserverOutcome.outcomeLive, hLeave])
+            hExit hLoopSource hInvariant)
+      hExit hLower hCompile
+  have hForwardOuter :
+      AllocationObserverOutcome.NonregularStmtRuntimeForward
+        program.memoryContract config allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive fn.returns live sourceCtx
+          sourceLoopOutcome.mode)
+        frameBase mode initMode program sourceCtx
+        (.for_ init cond post body) source expressions.toStructured target
+        (Expressions.StmtList.toStructured headCode) sourceLoopOutcome
+        targetOutcome sourceCtx :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.transport_of_isExit
+      hForward hExit
+        (by
+          intro hLeave
+          simp [AllocationObserverOutcome.outcomeLive, hLeave])
+  exact
+    ⟨afterState, headCode, tail,
+      HeadResult.ofNonregular cursor tail hCompiled
+        (.nonregular hForwardOuter) hExact hExit.not_regular⟩
+
+/--
 Dispatch an `if` head through the pass-owned conditional theorem. Recursive
 work is limited to the exact lexical body cursor selected by the canonical
 source run.

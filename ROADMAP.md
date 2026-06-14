@@ -1376,12 +1376,11 @@ corridor.
   return restoration, optional frame release, and caller target assignment.
 - [ ] Lift statement, block, loop, and call preservation by source fuel without
   a public call oracle. The checked dispatcher now has one fuel-bounded
-  recursive open-block interface over real synchronized cursors, plus
-  statement-owned regular and abrupt scoped adapters for loop initializer,
-  body, and post recursion. The immediate remaining loop task is the exact
-  `for` head theorem composing the three canonical source outcomes; the
-  initializer-exit outcome is now checked, leaving regular-initializer regular
-  and activation-exit loop outcomes.
+  recursive open-block interface over real synchronized cursors. Every `for`
+  outcome is checked through pass-owned source-fuel theorems, including
+  initializer exit, regular completion, exact break/continue handling, and
+  body/post leave or halt. The remaining Functions work is selected-call
+  recursion followed by assembly of the mutual statement/block dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
