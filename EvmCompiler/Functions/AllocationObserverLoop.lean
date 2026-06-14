@@ -6109,14 +6109,21 @@ theorem for_exit_of_components
           AllocationObserverOutcome.SameControl
             sourceCtx.withoutLoopControl loopSourceCtx)
     (hLoop :
-      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+      ∀ {loweredInit : Locals.Block}
+        {loopState afterPost afterBody : AllocationLowering.State}
         {loweredCond : Locals.Expr 1}
         {loweredPost loweredBody : Locals.Block}
         {initLocals postLocals bodyLocals : Locals.Ctx}
+        {initCode : List Expressions.Stmt}
         {condCode : Structured.Code}
         {postCode bodyCode : List Expressions.Stmt}
         {compiledPost compiledBody : Expressions.Block}
         {targetAfterInit : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerExpr lowerCtx loopState cond =
           some loweredCond →
         AllocationLowering.lowerBlockScoped
@@ -6227,7 +6234,7 @@ theorem for_exit_of_components
         targetAfterInit :=
     hLoopReturnFrame.withLoopControl
   obtain ⟨targetOutcome, hLoopForward⟩ :=
-    hLoop hLowerCond hLowerPost hLowerBody hCompileCond
+    hLoop hLowerInit hCompileInit hLowerCond hLowerPost hLowerBody hCompileCond
       hCompilePost hFinishPost hCompileBody hFinishBody hInitInvariant
       hLoopReturnFrame hPostReturnFrame hBodyReturnFrame
   rcases hLoopForward with

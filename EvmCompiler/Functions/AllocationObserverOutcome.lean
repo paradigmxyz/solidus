@@ -97,7 +97,105 @@ theorem transport_of_isExit
 
 end BlockRuntimeForward
 
+namespace ScopedBlockRuntimeForward
+
+/--
+Re-index a scoped block after an activation exit.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      ScopedBlockRuntimeForward contract config allocatorDepth transcript
+        beforePlan beforeLive frameBase initialMode finalMode sourceProgram
+        sourceCtx sourceBlock source targetProgram targetBlock target
+        sourceOutcome targetOutcome)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    ScopedBlockRuntimeForward contract config allocatorDepth transcript
+      afterPlan afterLive frameBase initialMode finalMode sourceProgram
+      sourceCtx sourceBlock source targetProgram targetBlock target
+      sourceOutcome targetOutcome := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      hRel.transport_of_isExit hExit hLeaveLive, hSame, hEffect⟩
+
+end ScopedBlockRuntimeForward
+
 namespace NonregularStmtRuntimeForward
+
+/--
+Re-index an activation-exit statement result after the surrounding compiler
+returns to its outer allocation plan.
+
+`leave` observes only the ordered return live set and terminal halts observe no
+locals. The source/target runs and allocator effect are unchanged.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        beforePlan beforeLive frameBase initialMode finalMode sourceProgram
+        sourceCtx stmt source targetProgram target compiled sourceOutcome
+        targetOutcome stmtCtx)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    NonregularStmtRuntimeForward contract config allocatorDepth transcript
+      afterPlan afterLive frameBase initialMode finalMode sourceProgram
+      sourceCtx stmt source targetProgram target compiled sourceOutcome
+      targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode,
+      hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode,
+      hRel.transport_of_isExit hExit hLeaveLive, hSame, hEffect⟩
 
 theorem of_runs
     {contract : MemoryContract.Contract}

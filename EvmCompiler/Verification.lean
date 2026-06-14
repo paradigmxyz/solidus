@@ -339,6 +339,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.finished
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_break_destination
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_continue_destination
+#check EvmCompiler.Functions.AllocationObserverOutcome.ScopedBlockRuntimeForward.transport_of_isExit
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.transport_of_isExit
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInitExitHeadResult
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
