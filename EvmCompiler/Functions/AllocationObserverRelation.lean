@@ -4380,6 +4380,80 @@ theorem of_machine_eq
   · simpa [hMachine]
   · simpa [hMachine] using hReady.activeNoWrap
 
+/--
+A target `MSTORE` disjoint from the allocator cell preserves allocator
+readiness. This is the compiler-owned spill-store counterpart of the
+source-primitive allocator theorem.
+-/
+theorem of_mstore_disjoint
+    {transcript : Trace}
+    {config : Config} {depth address : Nat} {value : Word}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat address) value)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size)
+    (hDisjoint :
+      config.allocatorCell + MemoryContract.wordBytes ≤ address ∨
+        address + MemoryContract.wordBytes ≤ config.allocatorCell) :
+    AllocatorReady config depth after := by
+  have hCellLt :
+      config.allocatorCell < EvmYul.UInt256.size := by
+    exact lt_of_le_of_lt
+      (Nat.le_add_right config.allocatorCell MemoryContract.wordBytes)
+      (hReady.cellActive.trans_lt hReady.activeNoWrap)
+  have hCell :
+      (EvmYul.UInt256.ofNat config.allocatorCell).toNat =
+        config.allocatorCell :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hCellLt
+  have hLookup :
+      after.source.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat config.allocatorCell) =
+        before.source.evm.toMachineState.lookupMemory
+            (EvmYul.UInt256.ofNat config.allocatorCell) := by
+    rw [hMachine]
+    exact
+      Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+        before.source.evm.toMachineState address config.allocatorCell value
+        hAddress hCell
+        (by simpa [MemoryContract.wordBytes] using hHost)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellAllocated)
+        (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
+        (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+        (by simpa [MemoryContract.wordBytes] using hDisjoint)
+  have hAddressEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    lt_trans hHost Compiler.MemoryRelation.usize_size_lt_uint256_size
+  have hActive :
+      before.source.evm.activeWords.toNat ≤
+        after.source.evm.activeWords.toNat := by
+    rw [hMachine]
+    exact
+      Compiler.MemoryRelation.activeWords_toNat_le_mstore
+        before.source.evm.toMachineState address value hAddressEnd
+  have hMemory :
+      before.source.evm.toMachineState.memory.size ≤
+        after.source.evm.toMachineState.memory.size := by
+    rw [hMachine]
+    simpa [EvmYul.MachineState.mstore] using
+      (Compiler.MemoryRelation.writeWord_memory_size_ge
+        before.source.evm.toMachineState address value hAddress
+        (by simpa [MemoryContract.wordBytes] using hHost))
+  have hNoWrap :
+      after.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    rw [hMachine]
+    simpa [MemoryContract.wordBytes] using
+      (Compiler.MemoryRelation.mstore_activeBytes_lt_size_of_activeBytes_lt_size
+        before.source.evm.toMachineState address value
+        (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+        (by simpa [MemoryContract.wordBytes] using hHost))
+  exact hReady.of_lookup_growth hLookup hActive hMemory hNoWrap
+
 end AllocatorReady
 
 theorem mstore_end_le_activeBytes

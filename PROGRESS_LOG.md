@@ -29206,3 +29206,31 @@ Resumed with the generic allocation lowerer and plan-derived procedure entry sha
 - 2026-06-12 16:44:18 PDT - theorem-boundary - Added `ActivationAllocatorPrimitiveForward` and canonical pass-owned instances for observer, shared-state, read-only memory, `mstore`, `mstore8`, copy, rejected, invalid, and externally effectful primitive families. Source-approved write ranges are now checked disjoint from the real allocator metadata word derived by `scratchFrameConfig?`.
 - 2026-06-12 16:44:18 PDT - proof - Proved `forwardExprRuntime` and `forwardExprSeqRuntime`: the existing recursive Functions-to-allocated-Expressions simulation now preserves `Frame.AllocatorReady` through literals, stack and scratch reads, every canonical primitive, and left-to-right expression sequences. Added runtime-invariant one-result and condition consumers; no compiler, interpreter, replay certificate, or call oracle was introduced.
 - 2026-06-12 16:44:18 PDT - validation - Focused expression/primitive/preservation builds, full 1,208-job `EvmCompiler.Verification`, resource-observer axiom smoke, architecture dependency guard, exact touched-file hole/unsafe scan, and `git diff --check` pass. New public theorems use only `propext`, `Classical.choice`, and `Quot.sound`; `AllocationObserverPreservation.lean` remains the sole 5K-line soft-limit debt at 5,586 lines.
+## 2026-06-13 — compaction resume
+
+- Resumed the active end-to-end Yul observer proof from the checked expression-preservation milestone.
+- Current focus: complete pass-owned statement allocator invariants, then lift them through recursive source-fuel block and internal-call preservation.
+
+## 2026-06-13 — compaction resume (runtime control checkpoint)
+
+- Resumed the active end-to-end observer proof after context compaction.
+- Current checked runtime-preservation coverage includes expressions, declarations,
+  assignments, conditionals, regular blocks, scoped cleanup, switch branches, and
+  the first-false loop case.
+- Next: register and gate this horizontal checkpoint, then continue with
+  allocator-aware internal calls and the recursive source-fuel theorem.
+
+## 2026-06-13 — allocator-aware statement control checkpoint
+
+- Added `Frame.AllocatorReady.of_mstore_disjoint`, the shared transport lemma
+  used by compiler-owned spill stores outside the private allocator cell.
+- Strengthened scratch assignment and lexical cleanup interfaces with exact
+  target-machine postconditions.
+- Checked runtime-preserving leaves for expressions, declarations, and
+  assignments.
+- Checked runtime-preserving statement composition for false and true
+  conditionals, regular blocks, open-block sequencing, scoped cleanup, switch
+  no-selection and selected-body paths, and the first-false `for` path.
+- Registered these interfaces in `EvmCompiler.Verification`; the next proof
+  step is allocator-aware internal calls followed by the remaining recursive
+  loop/source-fuel cases.

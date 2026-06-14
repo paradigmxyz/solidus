@@ -678,10 +678,15 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   expansion, source-owned stores, and byte copies. The checked
   `forwardExprRuntime` / `forwardExprSeqRuntime` interfaces retain the ordinary
   adjacent result relation and thread allocator metadata without duplicating
-  semantics. The immediate remaining theorem is allocator-aware source-fuel
-  recursion for ordinary statements and the internal-call case; matching
-  whole-function and whole-program backward adequacy follows after that
-  forward recursion closes.
+  semantics. Allocator-aware preservation is now checked for expression
+  statements, declarations, assignments, both `if` paths, regular block
+  sequencing and scoped cleanup, both switch-selection paths, and the
+  first-condition-false loop path. Spill writes preserve allocator readiness
+  through a shared disjoint-`MSTORE` theorem, while cleanup transports it by
+  exact machine equality. The immediate remaining theorem is the recursive
+  source-fuel induction for the remaining loop outcomes and internal calls;
+  matching whole-function and whole-program backward adequacy follows after
+  that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

@@ -668,7 +668,9 @@ theorem forward_exact
           ((Functions.ObserverSemantics.stateModel transcript).restrictTo
             afterLive source)
           targetFinal ∧
-        targetFinal.source.evm.stack.length = targetDepth := by
+        targetFinal.source.evm.stack.length = targetDepth ∧
+        targetFinal.source.evm.toMachineState =
+          target.source.evm.toMachineState := by
   obtain ⟨targetFinal, hRun, hFinalRel⟩ :=
     forward hCtx hTransition hWF hDefined hRel hCleanup
   obtain ⟨hDepth, hCleanupCode⟩ :=
@@ -679,7 +681,7 @@ theorem forward_exact
     omega
   obtain
       ⟨expected, hExpectedRun, _hCursor, hExpectedStack,
-        _hShared, _hReturns⟩ :=
+        hShared, _hReturns⟩ :=
     AllocationObserverPreservation.ObserverCode.run_replicate_pop
       (localsCtx.layout.length - targetDepth) hBound
   have hExpectedRun' :
@@ -688,9 +690,10 @@ theorem forward_exact
     simpa [hCleanupCode] using hExpectedRun
   rw [hRun] at hExpectedRun'
   cases hExpectedRun'
-  refine ⟨targetFinal, hRun, hFinalRel, ?_⟩
-  rw [hExpectedStack, List.length_drop, hStackLength]
-  omega
+  refine ⟨targetFinal, hRun, hFinalRel, ?_, ?_⟩
+  · rw [hExpectedStack, List.length_drop, hStackLength]
+    omega
+  · exact congrArg EvmYul.SharedState.toMachineState hShared
 
 /--
 Backward adequacy for plain cleanup follows from deterministic execution of the

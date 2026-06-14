@@ -321,7 +321,9 @@ theorem scratch_step_code
       reservation.containsRegion
         (AllocationObserverRelation.scratchAddress frameBase slot) 1 :=
     hRel.state.scratchAddress_reserved_of_bound hSlot hReservation
-  obtain ⟨written, hStoreRun, hWrittenRel, hWrittenStack⟩ :=
+  obtain
+      ⟨written, hStoreRun, hWrittenRel, hWrittenStack,
+        _hWrittenMachine⟩ :=
     AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
       (stackOffset := pending.length + 1)
       hAfterValueRel hAfterValueStack hWF
@@ -1069,7 +1071,9 @@ theorem forward_of_context
           reservation.containsRegion
             (AllocationObserverRelation.scratchAddress frameBase slot) 1 :=
         hRel.scratchAddress_reserved_of_bound slotBound hReservation
-      obtain ⟨midTarget, hStoreRun, hStoredRel, hStoredStack⟩ :=
+      obtain
+          ⟨midTarget, hStoreRun, hStoredRel, hStoredStack,
+            _hStoredMachine⟩ :=
         AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
           (stackOffset := 0) hPushedRel hPushedStack hWF
           (fun other hOther => by
@@ -2121,7 +2125,9 @@ private theorem scratch_step
     hRel.frameReserved
   have hRegion :=
     hRel.scratchAddress_reserved_of_bound hSlotBound hReservation
-  obtain ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩ :=
+  obtain
+      ⟨targetFinal, hRun, hFinalRel, hFinalStack,
+        _hFinalMachine⟩ :=
     AllocationObserverPreservation.Expr.scratchAssignTop_forward_of_storeTopSlotCode?_live
         hRel hStack hWF
         (fun other hOther => Or.inr hOther)

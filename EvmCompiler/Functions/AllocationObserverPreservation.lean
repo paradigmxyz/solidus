@@ -4369,7 +4369,12 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
         stackOffset frameBase frameDepth frameWords
         (source.withSource (source.source.insert name value))
         targetFinal ∧
-      targetFinal.source.evm.stack = rest := by
+      targetFinal.source.evm.stack = rest ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.scratchAddress frameBase slot))
+          value := by
   let frameWord := EvmYul.UInt256.ofNat frameBase
   let offsetWord := AllocationSupport.slotOffset slot
   let address := EvmYul.UInt256.add offsetWord frameWord
@@ -4445,44 +4450,51 @@ theorem scratchAssignTop_forward_live {transcript : Trace}
     simpa [frameWord,
       show stackOffset + 1 + frameDepth =
         stackOffset + frameDepth + 1 by omega] using hRel.framePointer
-  refine ⟨targetFinal, ?_, hFinalRel, rfl⟩
-  calc
-    Structured.ObserverSemantics.Code.run
-        [ .op op,
-          .push offsetWord,
-          .op .add,
-          .op .mstore ] target =
-      (Structured.ObserverSemantics.Code.run [.op op] target).bind
-        (Structured.ObserverSemantics.Code.run
-          [ .push offsetWord, .op .add, .op .mstore ]) := by
-            rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
-    _ =
+  refine ⟨targetFinal, ?_, hFinalRel, rfl, ?_⟩
+  · calc
       Structured.ObserverSemantics.Code.run
-        [ .push offsetWord, .op .add, .op .mstore ] afterDup := by
-          rw [ObserverCode.run_dup
-            (by simpa [Nat.add_assoc] using hOp) hFramePointer]
-          rfl
-    _ =
-      (Structured.ObserverSemantics.Code.run
-          [.push offsetWord] afterDup).bind
+          [ .op op,
+            .push offsetWord,
+            .op .add,
+            .op .mstore ] target =
+        (Structured.ObserverSemantics.Code.run [.op op] target).bind
+          (Structured.ObserverSemantics.Code.run
+            [ .push offsetWord, .op .add, .op .mstore ]) := by
+              rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      _ =
+        Structured.ObserverSemantics.Code.run
+          [ .push offsetWord, .op .add, .op .mstore ] afterDup := by
+            rw [ObserverCode.run_dup
+              (by simpa [Nat.add_assoc] using hOp) hFramePointer]
+            rfl
+      _ =
         (Structured.ObserverSemantics.Code.run
-          [.op .add, .op .mstore]) := by
+            [.push offsetWord] afterDup).bind
+          (Structured.ObserverSemantics.Code.run
+            [.op .add, .op .mstore]) := by
+              rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
+      _ =
+        Structured.ObserverSemantics.Code.run
+          [.op .add, .op .mstore] afterPush := by
+            rw [ObserverCode.run_push offsetWord afterDup]
+            rfl
+      _ =
+        (Structured.ObserverSemantics.Code.run [.op .add] afterPush).bind
+          (Structured.ObserverSemantics.Code.run [.op .mstore]) := by
             rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
-    _ =
-      Structured.ObserverSemantics.Code.run
-        [.op .add, .op .mstore] afterPush := by
-          rw [ObserverCode.run_push offsetWord afterDup]
+      _ =
+        Structured.ObserverSemantics.Code.run [.op .mstore] afterAdd := by
+          rw [ObserverCode.run_add hAfterPushStack]
           rfl
-    _ =
-      (Structured.ObserverSemantics.Code.run [.op .add] afterPush).bind
-        (Structured.ObserverSemantics.Code.run [.op .mstore]) := by
-          rw [Structured.ObserverSemantics.Code.run_cons_eq_run_single_bind]
-    _ =
-      Structured.ObserverSemantics.Code.run [.op .mstore] afterAdd := by
-        rw [ObserverCode.run_add hAfterPushStack]
-        rfl
-    _ = .ok targetFinal := by
-      exact ObserverCode.run_mstore hAfterAddStack
+      _ = .ok targetFinal := by
+        exact ObserverCode.run_mstore hAfterAddStack
+  · simp [targetFinal, afterAdd, afterPush, afterDup, hAddress,
+      AllocationObserverRelation.StateRel.mstoreTarget,
+      AllocationObserverRelation.StateRel.pushTarget,
+      AllocationObserverRelation.StateRel.pushTargetBy,
+      AllocationObserverRelation.StateRel.contractTargetBy,
+      EvmYul.EVM.State.replaceStackAndIncrPC,
+      EvmYul.EVM.State.incrPC]
 
 theorem scratchAssignTop_backward_live {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -4528,7 +4540,9 @@ theorem scratchAssignTop_backward_live {transcript : Trace}
       stackOffset frameBase frameDepth frameWords
       (source.withSource (source.source.insert name value))
       targetFinal := by
-  obtain ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack⟩ :=
+  obtain
+      ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack,
+        _hExpectedMachine⟩ :=
     scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
       hNameAfter
       hLocation hAssignedBound hReservation hRegion hOp
@@ -4578,7 +4592,12 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
         stackOffset frameBase frameDepth frameWords
         (source.withSource (source.source.insert name value))
         targetFinal ∧
-      targetFinal.source.evm.stack = rest := by
+      targetFinal.source.evm.stack = rest ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.scratchAddress frameBase slot))
+          value := by
   cases hDup :
       Locals.StackOp.dup?
         ((stackOffset + frameDepth + 1) + 1) with
@@ -4591,11 +4610,12 @@ theorem scratchAssignTop_forward_of_storeTopSlotCode?_live
         AllocationSupport.slotAddressCode?,
         AllocationSupport.dupCode?, hDup] at hCode
       subst code
-      obtain ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩ :=
+      obtain
+          ⟨targetFinal, hRun, hFinalRel, hFinalStack, hFinalMachine⟩ :=
         scratchAssignTop_forward_live hRel hStack hWF hAfter hStackOrder
           hNameAfter hLocation hAssignedBound hReservation hRegion
           (by simpa [Nat.add_assoc] using hDup)
-      exact ⟨targetFinal, hRun, hFinalRel, hFinalStack⟩
+      exact ⟨targetFinal, hRun, hFinalRel, hFinalStack, hFinalMachine⟩
 
 theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
     {transcript : Trace}
@@ -4640,7 +4660,9 @@ theorem scratchAssignTop_backward_of_storeTopSlotCode?_live
       stackOffset frameBase frameDepth frameWords
       (source.withSource (source.source.insert name value))
       targetFinal := by
-  obtain ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack⟩ :=
+  obtain
+      ⟨expected, hExpectedRun, hExpectedRel, _hExpectedStack,
+        _hExpectedMachine⟩ :=
     scratchAssignTop_forward_of_storeTopSlotCode?_live
       hRel hStack hWF hAfter hStackOrder hNameAfter hLocation hAssignedBound
       hReservation hRegion hCode

@@ -341,6 +341,90 @@ theorem forward_of_invariant
         hInvariant hSafe hResultRel
 
 /--
+Forward preservation for a compiled expression statement, retaining the
+recursive allocator and frame-ownership invariant.
+-/
+theorem forward_of_runtime_invariant
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {expr : Functions.Expr 0}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal values)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState (.expr expr) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel (.expr expr) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            sourceCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerFinal localsFinal
+        plan live frameBase mode sourceFinal targetFinal := by
+  obtain
+      ⟨lowered, code, hLowerExpr, hCompileCode,
+        rfl, rfl, rfl, rfl⟩ :=
+    compiler_shape hLower hCompile
+  obtain ⟨targetFinal, hTargetRun, hResultRel, hReady⟩ :=
+    AllocationObserverExpression.forwardExprRuntime
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hSafe hInvariant.activation.compiler hScoped hLowerExpr
+      hCompileCode hInvariant.activation.state hInvariant.allocator
+  have hSourceRun :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.expr
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := sourceFuel)
+      hSafe).run_eq
+  refine ⟨targetFinal, hSourceRun, ?_, ?_⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using
+      (Structured.EffectSemantics.Block.Eval.cons_regular
+        (Structured.EffectSemantics.Stmt.Eval.code hTargetRun)
+        Structured.EffectSemantics.Block.Eval.nil)
+  · exact
+      AllocationObserverExpression.Expr.runtimeInvariant_zero
+        hInvariant hSafe hResultRel hReady
+
+/--
 Backward adequacy over the real expanded statement block.
 -/
 theorem backward_of_compilers
@@ -982,7 +1066,9 @@ theorem forward_of_compilers
       have hRegion :=
         hValueScratch.scratchAddress_reserved_of_bound
           hBound hReservation
-      obtain ⟨targetFinal, hStoreRun, hFinalRel, hFinalStack⟩ :=
+      obtain
+          ⟨targetFinal, hStoreRun, hFinalRel, hFinalStack,
+            _hFinalMachine⟩ :=
         AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
           hValueScratch hValueStack hWF
           (by
@@ -1409,6 +1495,363 @@ theorem forward_of_invariant
           hAfter, hInvariant.planWF, hDefinedFinal, hFinalRel, ?_⟩
       rw [hInvariant.stackLength] at hStackBalance
       omega
+
+/--
+Declaration preservation strengthened with the global recursive-frame
+allocator. The semantic proof remains `forward_of_invariant`; this companion
+checks that the emitted stack update or frame spill leaves allocator metadata
+ready for the following statement.
+-/
+theorem forward_of_runtime_invariant
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat} {beforeMode afterMode : ActivationMode}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript valueExpr source sourceAfterValue [value])
+    (hAfter :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx afterState afterLocals plan afterLive afterMode)
+    (hMode : ModeTransition plan name beforeMode afterMode)
+    (hScoped : Functions.Scope.ExprScoped beforeLive valueExpr)
+    (hAfterLive : afterLive = name :: beforeLive)
+    (hNameFrame : name ≠ lowerCtx.frameName)
+    (hScratchBound :
+      ∀ frameDepth frameWords slot,
+        beforeMode = .scratch frameDepth frameWords →
+        plan.location? name = some (.scratch slot) →
+        slot < frameWords)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx beforeState beforeLocals
+        plan beforeLive frameBase beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState
+          (.let_ name valueExpr) =
+        some (loweredStmts, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := loweredStmts } =
+        some (compiledStmts, afterLocals)) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel
+          (.let_ name valueExpr) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).insert
+              sourceAfterValue name value),
+            { sourceCtx with scope := name :: sourceCtx.scope }) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx afterState afterLocals
+        plan afterLive frameBase afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).insert
+          sourceAfterValue name value)
+        targetFinal := by
+  obtain
+      ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
+    forward_of_invariant
+      (targetFuel := targetFuel)
+      hSafe hAfter hMode hScoped hAfterLive hNameFrame hScratchBound
+      hInvariant.activation hLower hCompile
+  have hNameAfter : name ∈ afterLive := by
+    simp [hAfterLive]
+  have hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth targetFinal := by
+    cases hMode with
+    | @stack beforeMode planDepth hLocation =>
+        cases hInvariant.activation.compiler with
+        | stack hBefore =>
+            cases hAfter with
+            | stack hAfter =>
+                obtain
+                    ⟨_slot, loweredValue, valueCode, hSlot, hLowerValue,
+                      hCompileValue, _hStackOrder, rfl, rfl, rfl, rfl⟩ :=
+                  stack_let_compiler_shape hBefore hAfter hAfterLive
+                    hLocation hLower hCompile
+                obtain
+                    ⟨targetAfterValue, hValueRun, _hValueRel,
+                      hValueReady⟩ :=
+                  AllocationObserverExpression.forwardExprRuntime
+                    (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                      contract)
+                    hConfig hSafe (.stack hBefore) hScoped
+                    hLowerValue hCompileValue hInvariant.activation.state
+                    hInvariant.allocator
+                have hCodeRun :
+                    Structured.ObserverSemantics.Code.run
+                        (valueCode ++
+                          Locals.bindLocals 0
+                            (name :: beforeLocals.layout))
+                        target =
+                      .ok targetAfterValue := by
+                  rw [AllocationObserverPreservation.ObserverCode.run_append,
+                    hValueRun]
+                  rfl
+                have hExpected :
+                    Structured.ObserverSemantics.Block.Eval
+                      targetProgram (targetFuel + 2)
+                      { stmts :=
+                          [Structured.Stmt.code
+                            (valueCode ++
+                              Locals.bindLocals 0
+                                (name :: beforeLocals.layout))] }
+                      target
+                      (Structured.EffectSemantics.Outcome.regular
+                        targetAfterValue) :=
+                  Structured.EffectSemantics.Block.Eval.cons_regular
+                    (Structured.EffectSemantics.Stmt.Eval.code hCodeRun)
+                    Structured.EffectSemantics.Block.Eval.nil
+                have hFinalEq : targetFinal = targetAfterValue :=
+                  singleton_code_regular_unique hTargetRun hExpected
+                simpa [hFinalEq] using hValueReady
+        | @scratch frameDepth frameWords hBefore =>
+            cases hAfter with
+            | scratch hAfter =>
+                have hShape :=
+                  compiler_shape hBefore hAfter hNameAfter hNameFrame
+                    hLower hCompile
+                cases hShape with
+                | stack slot _ loweredValue valueCode
+                    hLowerValue hCompileValue _ _ _ _ _ hCompiled _ =>
+                    obtain
+                        ⟨targetAfterValue, hValueRun, _hValueRel,
+                          hValueReady⟩ :=
+                      AllocationObserverExpression.forwardExprRuntime
+                        (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                          contract)
+                        hConfig hSafe (.scratch hBefore) hScoped
+                        hLowerValue hCompileValue
+                        hInvariant.activation.state hInvariant.allocator
+                    have hCodeRun :
+                        Structured.ObserverSemantics.Code.run
+                            (valueCode ++
+                              Locals.bindLocals 0
+                                (name :: beforeLocals.layout))
+                            target =
+                          .ok targetAfterValue := by
+                      rw [
+                        AllocationObserverPreservation.ObserverCode.run_append,
+                        hValueRun]
+                      rfl
+                    have hExpected :
+                        Structured.ObserverSemantics.Block.Eval
+                          targetProgram (targetFuel + 2)
+                          { stmts :=
+                              [Structured.Stmt.code
+                                (valueCode ++
+                                  Locals.bindLocals 0
+                                    (name :: beforeLocals.layout))] }
+                          target
+                          (Structured.EffectSemantics.Outcome.regular
+                            targetAfterValue) :=
+                      Structured.EffectSemantics.Block.Eval.cons_regular
+                        (Structured.EffectSemantics.Stmt.Eval.code hCodeRun)
+                        Structured.EffectSemantics.Block.Eval.nil
+                    have hFinalEq : targetFinal = targetAfterValue :=
+                      (singleton_code_regular_unique
+                        (by
+                          rw [hCompiled] at hTargetRun
+                          simpa [Expressions.StmtList.toStructured,
+                            Expressions.Stmt.toStructured] using hTargetRun)
+                        hExpected)
+                    simpa [hFinalEq] using hValueReady
+                | scratch slot loweredValue valueCode op
+                    _hLowerValue _hCompileValue hScratchLocation _ _ _ _ _ _ =>
+                    rw [hLocation] at hScratchLocation
+                    simp at hScratchLocation
+    | scratch frameDepth frameWords slot hLocation =>
+        cases hInvariant.activation.compiler with
+        | scratch hBefore =>
+            cases hAfter with
+            | scratch hAfter =>
+                have hShape :=
+                  compiler_shape hBefore hAfter hNameAfter hNameFrame
+                    hLower hCompile
+                cases hShape with
+                | stack _ _ _ _ _ _ hStackLocation _ _ _ _ _ _ =>
+                    rw [hLocation] at hStackLocation
+                    simp at hStackLocation
+                | scratch shapeSlot loweredValue valueCode op
+                    hLowerValue hCompileValue hShapeLocation hDup
+                    _hStackOrder _hFrameDepth _ _ hCompiled _ =>
+                    obtain
+                        ⟨targetAfterValue, hValueRun, hValueRel,
+                          hValueReady⟩ :=
+                      AllocationObserverExpression.forwardExprRuntime
+                        (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                          contract)
+                        hConfig hSafe (.scratch hBefore) hScoped
+                        hLowerValue hCompileValue
+                        hInvariant.activation.state hInvariant.allocator
+                    have hValueScratch :
+                        ScratchStateRel contract plan beforeLive 1 frameBase
+                          frameDepth frameWords sourceAfterValue
+                          targetAfterValue := by
+                      cases hValueRel.state with
+                      | scratch state => simpa using state
+                    have hValueStack :
+                        targetAfterValue.source.evm.stack =
+                          value :: target.source.evm.stack := by
+                      simpa using hValueRel.stack
+                    have hBound :=
+                      hScratchBound frameDepth frameWords shapeSlot (by rfl)
+                        hShapeLocation
+                    obtain ⟨reservation, hReservation, _hFrameRegion⟩ :=
+                      hValueScratch.frameReserved
+                    have hRegion :=
+                      hValueScratch.scratchAddress_reserved_of_bound
+                        hBound hReservation
+                    obtain
+                        ⟨targetAfterStore, hStoreRun, _hStoreRel,
+                          _hStoreStack, hStoreMachine⟩ :=
+                      AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
+                        hValueScratch hValueStack hInvariant.activation.planWF
+                        (by
+                          intro other hOther
+                          simpa [hAfterLive] using hOther)
+                        _hStackOrder
+                        hNameAfter hShapeLocation hBound
+                        hReservation hRegion
+                        (by simpa [Nat.add_assoc] using hDup)
+                    have hAddressLt :
+                        scratchAddress frameBase shapeSlot <
+                          EvmYul.UInt256.size := by
+                      have hWriteEnd :
+                          scratchAddress frameBase shapeSlot +
+                              MemoryContract.wordBytes ≤
+                            frameBase +
+                              MemoryContract.wordBytes * frameWords := by
+                        have hSucc : shapeSlot + 1 ≤ frameWords :=
+                          Nat.succ_le_iff.mpr hBound
+                        calc
+                          scratchAddress frameBase shapeSlot +
+                              MemoryContract.wordBytes =
+                            frameBase +
+                              MemoryContract.wordBytes *
+                                (shapeSlot + 1) := by
+                                  simp [scratchAddress, Nat.mul_add,
+                                    Nat.add_assoc]
+                          _ ≤ frameBase +
+                              MemoryContract.wordBytes * frameWords :=
+                            Nat.add_le_add_left
+                              (Nat.mul_le_mul_left
+                                MemoryContract.wordBytes hSucc)
+                              frameBase
+                      exact lt_of_le_of_lt
+                        (Nat.le_add_right _ _) (hWriteEnd.trans_lt
+                          hValueScratch.frameNoWrap)
+                    have hHost :
+                        scratchAddress frameBase shapeSlot +
+                            MemoryContract.wordBytes <
+                          USize.size := by
+                      have hWriteEnd :
+                          scratchAddress frameBase shapeSlot +
+                              MemoryContract.wordBytes ≤
+                            frameBase +
+                              MemoryContract.wordBytes * frameWords := by
+                        have hSucc : shapeSlot + 1 ≤ frameWords :=
+                          Nat.succ_le_iff.mpr hBound
+                        calc
+                          scratchAddress frameBase shapeSlot +
+                              MemoryContract.wordBytes =
+                            frameBase +
+                              MemoryContract.wordBytes *
+                                (shapeSlot + 1) := by
+                                  simp [scratchAddress, Nat.mul_add,
+                                    Nat.add_assoc]
+                          _ ≤ frameBase +
+                              MemoryContract.wordBytes * frameWords :=
+                            Nat.add_le_add_left
+                              (Nat.mul_le_mul_left
+                                MemoryContract.wordBytes hSucc)
+                              frameBase
+                      exact hWriteEnd.trans_lt
+                        hValueScratch.frameHostAddressable
+                    have hStoreReady :
+                        AllocationObserverRelation.Frame.AllocatorReady
+                          config allocatorDepth targetAfterStore :=
+                      hValueReady.of_mstore_disjoint hStoreMachine
+                        (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+                        hHost
+                        (Or.inl
+                          (AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
+                            hConfig hInvariant.frame))
+                    have hCodeRun :
+                        Structured.ObserverSemantics.Code.run
+                            (valueCode ++
+                              [ .op op,
+                                .push
+                                  (AllocationSupport.slotOffset shapeSlot),
+                                .op .add,
+                                .op .mstore ])
+                            target =
+                          .ok targetAfterStore := by
+                      rw [
+                        AllocationObserverPreservation.ObserverCode.run_append,
+                        hValueRun]
+                      exact hStoreRun
+                    have hExpected :
+                        Structured.ObserverSemantics.Block.Eval
+                          targetProgram (targetFuel + 2)
+                          { stmts :=
+                              [Structured.Stmt.code
+                                (valueCode ++
+                                  [ .op op,
+                                    .push
+                                      (AllocationSupport.slotOffset
+                                        shapeSlot),
+                                    .op .add,
+                                    .op .mstore ])] }
+                          target
+                          (Structured.EffectSemantics.Outcome.regular
+                            targetAfterStore) :=
+                      Structured.EffectSemantics.Block.Eval.cons_regular
+                        (Structured.EffectSemantics.Stmt.Eval.code hCodeRun)
+                        Structured.EffectSemantics.Block.Eval.nil
+                    have hFinalEq : targetFinal = targetAfterStore :=
+                      singleton_code_regular_unique
+                        (by
+                          rw [hCompiled] at hTargetRun
+                          simpa [Expressions.StmtList.toStructured,
+                            Expressions.Stmt.toStructured] using hTargetRun)
+                        hExpected
+                    simpa [hFinalEq] using hStoreReady
+  exact
+    ⟨targetFinal, hSourceRun, hTargetRun,
+      { activation := hFinalInvariant
+        allocator := hReady
+        frame := hInvariant.frame.sameFrame hMode.sameFrame }⟩
 
 /--
 Backward adequacy for the representation-neutral declaration boundary.
@@ -2051,7 +2494,9 @@ theorem forward_of_compilers
           have hRegion :=
             hValueScratch.scratchAddress_reserved_of_bound
               hBound hReservation
-          obtain ⟨targetFinal, hStoreRun, hFinalRel, hFinalStack⟩ :=
+          obtain
+              ⟨targetFinal, hStoreRun, hFinalRel, hFinalStack,
+                _hFinalMachine⟩ :=
             AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
               hValueScratch hValueStack hWF
               (fun other hOther => Or.inr hOther)
@@ -2510,6 +2955,331 @@ theorem forward_of_invariant
         ⟨targetFinal, hSourceRun, hTargetRun,
           hInvariant.compiler, hInvariant.planWF, hDefinedFinal,
           hFinalRel, hStackLength.trans hInvariant.stackLength⟩
+
+/--
+Assignment preservation strengthened with the recursive allocator invariant.
+Stack updates are machine-neutral after expression evaluation; scratch
+assignments use the pass-owned disjoint-spill theorem.
+-/
+theorem forward_of_runtime_invariant
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceFuel targetFuel : Nat}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hContains :
+      Locals.Source.Store.contains
+          ((Functions.ObserverSemantics.stateModel transcript).vars source)
+          name =
+        true)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript valueExpr source sourceAfterValue [value])
+    (hScoped : Functions.Scope.ExprScoped live valueExpr)
+    (hLive : name ∈ live)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.assign name valueExpr) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel
+          (.assign name valueExpr) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).withVars
+              sourceAfterValue
+              (Locals.Source.Store.insert
+                ((Functions.ObserverSemantics.stateModel transcript).vars
+                  sourceAfterValue)
+                name value)),
+            sourceCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (targetFuel + 2)
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerFinal localsFinal
+        plan live frameBase mode
+        ((Functions.ObserverSemantics.stateModel transcript).withVars
+          sourceAfterValue
+          (Locals.Source.Store.insert
+            ((Functions.ObserverSemantics.stateModel transcript).vars
+              sourceAfterValue)
+            name value))
+        targetFinal := by
+  obtain
+      ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
+    forward_of_invariant
+      (targetFuel := targetFuel)
+      hContains hSafe hScoped hLive hInvariant.activation hLower hCompile
+  change Locals.Source.Store.contains source.source.vars name = true
+    at hContains
+  cases hOld : source.source.vars name with
+  | none =>
+      simp [Locals.Source.Store.contains, hOld] at hContains
+  | some old =>
+      have hOldAfter :
+          sourceAfterValue.source.vars name = some old := by
+        rw [hSafe.vars_eq, hOld]
+      have stackReady
+          {planDepth depth : Nat} {loweredValue : Locals.Expr 1}
+          {valueCode : Structured.Code} {op : Structured.BasicOp}
+          (hLowerValue :
+            AllocationLowering.lowerExpr lowerCtx lowerState valueExpr =
+              some loweredValue)
+          (hCompileValue :
+            Locals.Expr.compileCode localsCtx 0 loweredValue =
+              some valueCode)
+          (hLocation :
+            plan.location? name = some (.stack planDepth))
+          (hCurrentDepth :
+            Locals.Layout.lookupDepth? name
+                (currentStackOrder plan live) =
+              some (depth + 1))
+          (hSwap : Locals.StackOp.swap? (depth + 1) = some op)
+          (hCompiled :
+            compiledStmts =
+              [Expressions.Stmt.code
+                (valueCode ++
+                  (.op op :: .op .pop ::
+                    Locals.bindLocals 0 localsCtx.layout))]) :
+          AllocationObserverRelation.Frame.AllocatorReady
+            config allocatorDepth targetFinal := by
+        obtain
+            ⟨targetAfterValue, hValueRun, hValueRel, hValueReady⟩ :=
+          AllocationObserverExpression.forwardExprRuntime
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hConfig hSafe hInvariant.activation.compiler hScoped
+            hLowerValue hCompileValue hInvariant.activation.state
+            hInvariant.allocator
+        have hValueStack :
+            targetAfterValue.source.evm.stack =
+              value :: target.source.evm.stack := by
+          simpa using hValueRel.stack
+        have hOldTarget :=
+          hValueRel.state.base.core.store.stack_at
+            hLive hLocation hCurrentDepth
+        rw [hValueStack, hOldAfter] at hOldTarget
+        have hRestGet :
+            target.source.evm.stack[depth]? = some old := by
+          simpa [show 1 + depth = depth + 1 by omega] using hOldTarget
+        let expected :=
+          StateRel.replaceStackBy 2
+            (target.source.evm.stack.set depth value)
+            targetAfterValue
+        have hAssignRun :
+            Structured.ObserverSemantics.Code.run
+                [.op op, .op .pop] targetAfterValue =
+              .ok expected := by
+          simpa [expected] using
+            (AllocationObserverPreservation.ObserverCode.run_swap_pop
+              hSwap hRestGet hValueStack)
+        have hTailRun :
+            Structured.ObserverSemantics.Code.run
+                (.op op :: .op .pop ::
+                  Locals.bindLocals 0 localsCtx.layout)
+                targetAfterValue =
+              .ok expected := by
+          change
+            Structured.ObserverSemantics.Code.run
+                ([.op op, .op .pop] ++
+                  Locals.bindLocals 0 localsCtx.layout)
+                targetAfterValue =
+              .ok expected
+          rw [AllocationObserverPreservation.ObserverCode.run_append,
+            hAssignRun]
+          rfl
+        have hCodeRun :
+            Structured.ObserverSemantics.Code.run
+                (valueCode ++
+                  (.op op :: .op .pop ::
+                    Locals.bindLocals 0 localsCtx.layout))
+                target =
+              .ok expected := by
+          rw [AllocationObserverPreservation.ObserverCode.run_append,
+            hValueRun]
+          exact hTailRun
+        have hExpected :
+            Structured.ObserverSemantics.Block.Eval
+              targetProgram (targetFuel + 2)
+              { stmts :=
+                  [Structured.Stmt.code
+                    (valueCode ++
+                      (.op op :: .op .pop ::
+                        Locals.bindLocals 0 localsCtx.layout))] }
+              target
+              (Structured.EffectSemantics.Outcome.regular expected) :=
+          Structured.EffectSemantics.Block.Eval.cons_regular
+            (Structured.EffectSemantics.Stmt.Eval.code hCodeRun)
+            Structured.EffectSemantics.Block.Eval.nil
+        have hTargetRun' := hTargetRun
+        rw [hCompiled] at hTargetRun'
+        simp only [Expressions.StmtList.toStructured,
+          Expressions.Stmt.toStructured] at hTargetRun'
+        have hFinalEq : targetFinal = expected :=
+          LetLeaf.singleton_code_regular_unique hTargetRun' hExpected
+        have hExpectedMachine :
+            expected.source.evm.toMachineState =
+              targetAfterValue.source.evm.toMachineState := by
+          simp [expected, StateRel.replaceStackBy,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC]
+        rw [hFinalEq]
+        exact hValueReady.of_machine_eq hExpectedMachine
+      have hReady :
+          AllocationObserverRelation.Frame.AllocatorReady
+            config allocatorDepth targetFinal := by
+        cases hInvariant.activation.compiler with
+        | stack hStackCtx =>
+            obtain
+                ⟨_slot, planDepth, depth, loweredValue, valueCode, op,
+                  hLowerValue, hCompileValue, hLocation, hCurrentDepth,
+                  hSwap, _hLowered, hCompiled, _hLowerFinal,
+                  _hLocalsFinal⟩ :=
+              stack_compiler_shape hStackCtx hLive hLower hCompile
+            exact
+              stackReady hLowerValue hCompileValue hLocation
+                hCurrentDepth hSwap hCompiled
+        | @scratch frameDepth frameWords hScratchCtx =>
+            obtain ⟨hShape, _hLowerFinal, _hLocalsFinal⟩ :=
+              compiler_shape hScratchCtx hLive hLower hCompile
+            cases hShape with
+            | stack _ planDepth depth loweredValue valueCode op
+                hLowerValue hCompileValue hLocation hCurrentDepth
+                _hDepthFrame hSwap _hLowered hCompiled =>
+                exact
+                  stackReady hLowerValue hCompileValue hLocation
+                    hCurrentDepth hSwap hCompiled
+            | scratch slot loweredValue valueCode op
+                hLowerValue hCompileValue hLocation hDup
+                _hLowered hCompiled =>
+                obtain
+                    ⟨targetAfterValue, hValueRun, hValueRel,
+                      hValueReady⟩ :=
+                  AllocationObserverExpression.forwardExprRuntime
+                    (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                      contract)
+                    hConfig hSafe (.scratch hScratchCtx) hScoped
+                    hLowerValue hCompileValue hInvariant.activation.state
+                    hInvariant.allocator
+                have hValueScratch :
+                    ScratchStateRel contract plan live 1 frameBase
+                      frameDepth frameWords sourceAfterValue
+                      targetAfterValue := by
+                  cases hValueRel.state with
+                  | scratch state => simpa using state
+                have hValueStack :
+                    targetAfterValue.source.evm.stack =
+                      value :: target.source.evm.stack := by
+                  simpa using hValueRel.stack
+                have hBound :=
+                  hValueScratch.scratchBound name slot hLive hLocation
+                obtain ⟨reservation, hReservation, _hFrameRegion⟩ :=
+                  hValueScratch.frameReserved
+                have hRegion :=
+                  hValueScratch.scratchAddress_reserved_of_bound
+                    hBound hReservation
+                obtain
+                    ⟨targetAfterStore, hStoreRun, _hStoreRel,
+                      _hStoreStack, hStoreMachine⟩ :=
+                  AllocationObserverPreservation.Expr.scratchAssignTop_forward_live
+                    hValueScratch hValueStack hInvariant.activation.planWF
+                    (fun other hOther => Or.inr hOther)
+                    rfl hLive hLocation hBound hReservation hRegion
+                    (by simpa [Nat.add_assoc] using hDup)
+                have hAddressLt :
+                    scratchAddress frameBase slot < EvmYul.UInt256.size := by
+                  exact lt_of_lt_of_le
+                    (Nat.lt_add_of_pos_right
+                      (by decide : 0 < MemoryContract.wordBytes))
+                    (Nat.le_of_lt
+                      (hValueScratch.scratchAddress_end_lt_size
+                        hLive hLocation))
+                have hStoreReady :
+                    AllocationObserverRelation.Frame.AllocatorReady
+                      config allocatorDepth targetAfterStore :=
+                  hValueReady.of_mstore_disjoint hStoreMachine
+                    (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+                    (hValueScratch.scratchAddress_end_lt_hostSize
+                      hLive hLocation)
+                    (Or.inl
+                      (AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
+                        hConfig hInvariant.frame))
+                have hCodeRun :
+                    Structured.ObserverSemantics.Code.run
+                        (valueCode ++
+                          [ .op op,
+                            .push (AllocationSupport.slotOffset slot),
+                            .op .add,
+                            .op .mstore ])
+                        target =
+                      .ok targetAfterStore := by
+                  rw [AllocationObserverPreservation.ObserverCode.run_append,
+                    hValueRun]
+                  exact hStoreRun
+                have hExpected :
+                    Structured.ObserverSemantics.Block.Eval
+                      targetProgram (targetFuel + 2)
+                      { stmts :=
+                          [Structured.Stmt.code
+                            (valueCode ++
+                              [ .op op,
+                                .push
+                                  (AllocationSupport.slotOffset slot),
+                                .op .add,
+                                .op .mstore ])] }
+                      target
+                      (Structured.EffectSemantics.Outcome.regular
+                        targetAfterStore) :=
+                  Structured.EffectSemantics.Block.Eval.cons_regular
+                    (Structured.EffectSemantics.Stmt.Eval.code hCodeRun)
+                    Structured.EffectSemantics.Block.Eval.nil
+                have hTargetRun' := hTargetRun
+                rw [hCompiled] at hTargetRun'
+                simp only [Expressions.StmtList.toStructured,
+                  Expressions.Stmt.toStructured] at hTargetRun'
+                have hFinalEq : targetFinal = targetAfterStore :=
+                  LetLeaf.singleton_code_regular_unique
+                    hTargetRun' hExpected
+                rw [hFinalEq]
+                exact hStoreReady
+      exact
+        ⟨targetFinal, hSourceRun, hTargetRun,
+          { activation := hFinalInvariant
+            allocator := hReady
+            frame := hInvariant.frame }⟩
 
 /--
 Backward adequacy for the representation-neutral assignment boundary.
@@ -3117,6 +3887,355 @@ def RegularStmtInvariantForward
         frameBase afterMode sourceFinal targetFinal ∧
       SameFrame beforeMode afterMode
 
+/--
+Regular statement preservation with the global recursive-frame allocator.
+
+This is the invariant consumed by source-fuel statement and block recursion.
+The existing local `RegularStmtInvariantForward` remains useful for
+nonrecursive adjacent lemmas.
+-/
+def RegularStmtRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (afterLive : List Locals.Name) (frameBase : Nat)
+    (beforeMode afterMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (stmt : Functions.Stmt)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (target : Structured.ObserverSemantics.State transcript)
+    (compiled : List Structured.Stmt)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript)
+    (finalCtx : Functions.Source.Ctx) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel stmt source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel { stmts := compiled } target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerFinal localsFinal
+        plan afterLive frameBase afterMode sourceFinal targetFinal ∧
+      SameFrame beforeMode afterMode
+
+namespace RegularStmtRuntimeInvariantForward
+
+theorem expr_of_compilers
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {expr : Functions.Expr 0}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal values)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState (.expr expr) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx lowerFinal
+        localsFinal plan live frameBase mode mode sourceProgram sourceCtx
+        (.expr expr) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceFinal targetFinal sourceCtx := by
+  obtain ⟨targetFinal, hSource, hTarget, hFinal⟩ :=
+    ExprLeaf.forward_of_runtime_invariant
+      (sourceFuel := 0) (targetFuel := 0)
+      hConfig hSafe hScoped hInvariant hLower hCompile
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      SameFrame.refl mode⟩
+
+theorem let_of_compilers
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat} {beforeMode afterMode : ActivationMode}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript valueExpr source sourceAfterValue [value])
+    (hAfter :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx afterState afterLocals plan afterLive afterMode)
+    (hMode : LetLeaf.ModeTransition plan name beforeMode afterMode)
+    (hScoped : Functions.Scope.ExprScoped beforeLive valueExpr)
+    (hAfterLive : afterLive = name :: beforeLive)
+    (hNameFrame : name ≠ lowerCtx.frameName)
+    (hScratchBound :
+      ∀ frameDepth frameWords slot,
+        beforeMode = .scratch frameDepth frameWords →
+        plan.location? name = some (.scratch slot) →
+        slot < frameWords)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx beforeState beforeLocals
+        plan beforeLive frameBase beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns beforeState
+          (.let_ name valueExpr) =
+        some (loweredStmts, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := loweredStmts } =
+        some (compiledStmts, afterLocals)) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx afterState
+        afterLocals plan afterLive frameBase beforeMode afterMode
+        sourceProgram sourceCtx (.let_ name valueExpr) source
+        targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        ((Functions.ObserverSemantics.stateModel transcript).insert
+          sourceAfterValue name value)
+        targetFinal
+        { sourceCtx with scope := name :: sourceCtx.scope } := by
+  obtain ⟨targetFinal, hSource, hTarget, hFinal⟩ :=
+    LetLeaf.forward_of_runtime_invariant
+      (sourceFuel := 0) (targetFuel := 0)
+      hConfig hSafe hAfter hMode hScoped hAfterLive hNameFrame
+      hScratchBound hInvariant hLower hCompile
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      hMode.sameFrame⟩
+
+theorem assign_of_compilers
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {name : Locals.Name} {valueExpr : Functions.Expr 1}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hContains :
+      Locals.Source.Store.contains
+          ((Functions.ObserverSemantics.stateModel transcript).vars source)
+          name =
+        true)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript valueExpr source sourceAfterValue [value])
+    (hScoped : Functions.Scope.ExprScoped live valueExpr)
+    (hLive : name ∈ live)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.assign name valueExpr) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx lowerFinal
+        localsFinal plan live frameBase mode mode sourceProgram sourceCtx
+        (.assign name valueExpr) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        ((Functions.ObserverSemantics.stateModel transcript).withVars
+          sourceAfterValue
+          (Locals.Source.Store.insert
+            ((Functions.ObserverSemantics.stateModel transcript).vars
+              sourceAfterValue)
+            name value))
+        targetFinal sourceCtx := by
+  obtain ⟨targetFinal, hSource, hTarget, hFinal⟩ :=
+    AssignLeaf.forward_of_runtime_invariant
+      (sourceFuel := 0) (targetFuel := 0)
+      hConfig hContains hSafe hScoped hLive hInvariant hLower hCompile
+  exact
+    ⟨targetFinal, 0, 2, hSource, hTarget, hFinal,
+      SameFrame.refl mode⟩
+
+theorem if_false_of_components
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterCond :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript cond source sourceAfterCond [value])
+    (hFalse : value = EvmYul.UInt256.ofNat 0)
+    (hScoped : Functions.Scope.ExprScoped live cond)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.if_ cond body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx lowerFinal
+        localsFinal plan live frameBase mode mode sourceProgram sourceCtx
+        (.if_ cond body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceAfterCond targetFinal sourceCtx := by
+  obtain
+      ⟨loweredCond, loweredBody,
+        hLowerCond, hLowerBody, rfl⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  obtain
+      ⟨condCode, bodyCode, bodyLocals, compiledBody,
+        hCompileCond, _hCompileBody, _hFinish, rfl, rfl⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+    AllocationObserverExpression.Expr.condition_forward_runtime
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hInvariant hSafe hScoped hLowerCond hCompileCond
+  have hSourceCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          cond source =
+        .ok (sourceAfterCond, false) := by
+    simpa [hFalse] using hSafe.evalCondition_eq
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_if_false_of_eval
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (fuel := 0)
+      (body := body) hSourceCond
+  have hTargetCondFalse :
+      Structured.ObserverSemantics.Code.runCondition condCode target =
+        .ok (targetAfterCond, false) := by
+    simpa [hFalse] using hTargetCond
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 1
+        (.if_ condCode compiledBody.toStructured)
+        target
+        (Structured.EffectSemantics.Outcome.regular targetAfterCond) :=
+    Structured.EffectSemantics.Stmt.Eval.if_false hTargetCondFalse
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [(.if_ condCode compiledBody.toStructured)] }
+        target
+        (Structured.EffectSemantics.Outcome.regular targetAfterCond) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      hTargetStmt Structured.EffectSemantics.Block.Eval.nil
+  have hShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  exact
+    ⟨targetAfterCond, 1, 2, hSource,
+      by
+        simpa [Expressions.StmtList.toStructured,
+          Expressions.Stmt.toStructured,
+          Expressions.Block.toStructured] using hTarget,
+      hCondInvariant.transport_state hShape.1 hShape.2,
+      SameFrame.refl mode⟩
+
+end RegularStmtRuntimeInvariantForward
+
 namespace RegularStmtInvariantForward
 
 theorem expr_of_compilers
@@ -3432,6 +4551,140 @@ def RegularBlockInvariantForward
         contract lowerCtx lowerFinal localsFinal plan finalLive
         frameBase finalMode sourceFinal targetFinal ∧
       SameFrame initialMode finalMode
+
+/--
+Regular open-block execution retaining the recursive allocator and activation
+ownership invariant. This is the runtime induction target used by nested
+blocks and calls.
+-/
+def RegularBlockRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (initialMode finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript)
+    (finalCtx : Functions.Source.Ctx) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel sourceBlock source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerFinal localsFinal
+        plan finalLive frameBase finalMode sourceFinal targetFinal ∧
+      SameFrame initialMode finalMode
+
+namespace RegularBlockRuntimeInvariantForward
+
+theorem nil
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    RegularBlockRuntimeInvariantForward
+      contract config allocatorDepth transcript lowerCtx lowerState
+      localsCtx plan live frameBase mode mode sourceProgram sourceCtx
+      { stmts := [] } source targetProgram { stmts := [] } target
+      source target sourceCtx := by
+  exact
+    ⟨1, 1,
+      by simp [Functions.Source.Effectful.Block.runOpen],
+      Structured.EffectSemantics.Block.Eval.nil,
+      hInvariant, SameFrame.refl mode⟩
+
+theorem cons_regular
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {midState finalState : AllocationLowering.State}
+    {midLocals finalLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {midLive finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode midMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx midCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {source sourceMid sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetMid targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {compiledHead compiledTail : List Structured.Stmt}
+    (hHead :
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx midState
+        midLocals plan midLive frameBase initialMode midMode
+        sourceProgram sourceCtx stmt source targetProgram target
+        compiledHead sourceMid targetMid midCtx)
+    (hTail :
+      RegularBlockRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx finalState
+        finalLocals plan finalLive frameBase midMode finalMode
+        sourceProgram midCtx { stmts := rest } sourceMid targetProgram
+        { stmts := compiledTail } targetMid sourceFinal targetFinal
+        finalCtx) :
+    RegularBlockRuntimeInvariantForward
+      contract config allocatorDepth transcript lowerCtx finalState
+      finalLocals plan finalLive frameBase initialMode finalMode
+      sourceProgram sourceCtx { stmts := stmt :: rest } source
+      targetProgram { stmts := compiledHead ++ compiledTail } target
+      sourceFinal targetFinal finalCtx := by
+  rcases hHead with
+    ⟨headSourceFuel, headTargetFuel,
+      hHeadSource, hHeadTarget, _hHeadInvariant, hHeadMode⟩
+  rcases hTail with
+    ⟨tailSourceFuel, tailTargetFuel,
+      hTailSource, hTailTarget, hTailInvariant, hTailMode⟩
+  obtain ⟨sourceFuel, hSourceRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hHeadSource hTailSource
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hHeadTarget hTailTarget
+  exact
+    ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant,
+      hHeadMode.trans hTailMode⟩
+
+end RegularBlockRuntimeInvariantForward
 
 namespace RegularBlockInvariantForward
 
@@ -4425,6 +5678,438 @@ def RegularScopedBlockInvariantForward
         contract lowerCtx lowerFinal localsFinal plan finalLive
         frameBase finalMode sourceFinal targetFinal
 
+/--
+Regular scoped execution after compiler cleanup, retaining allocator readiness
+and frame ownership.
+-/
+def RegularScopedBlockRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerFinal localsFinal
+        plan finalLive frameBase finalMode sourceFinal targetFinal
+
+theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {loweredBody : Locals.Block}
+    {bodyLowerState outerLowerState : AllocationLowering.State}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      RegularBlockRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx bodyLowerState
+        bodyLocals bodyPlan beforeLive frameBase afterMode beforeMode
+        sourceProgram sourceCtx sourceBlock source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceFinal targetMid finalCtx)
+    (hSourceScope : sourceCtx.scope = afterLive)
+    (hTargetDepth : targetDepth = outerLocals.layout.length)
+    (hAfterCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx outerLowerState outerLocals outerPlan afterLive afterMode)
+    (hAfterWF : outerPlan.WellFormed)
+    (hSubset :
+      ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hScoped :
+      Functions.Scope.Block.Scoped afterLive sourceBlock)
+    (hLowerBody :
+      AllocationLowering.lowerBlockOpen
+          lowerCtx returns outerLowerState sourceBlock =
+        some (loweredBody, bodyLowerState))
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    ∃ targetFinal,
+      RegularScopedBlockRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx outerLowerState
+        outerLocals outerPlan afterLive frameBase afterMode sourceProgram
+        sourceCtx sourceBlock source targetProgram
+        { stmts := Expressions.StmtList.toStructured targetBlock.stmts }
+        target
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal := by
+  rcases hBody with
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody, hBodyInvariant,
+      hBodyMode⟩
+  have hExtends :=
+    AllocationLowering.lowerBlockOpen_stateExtends
+      hScoped hLowerBody
+  obtain ⟨hTransition, hLayout, hSlots⟩ :=
+    AllocationObserverCleanup.Plain.transition_of_stateExtends
+      hBodyInvariant.activation.compiler hAfterCompiler hSubset
+      hBodyMode.symm hTargetDepth hExtends
+  obtain ⟨_hRestoredCompiler, hPlanAgree⟩ :=
+    AllocationObserverCleanup.Plain.restore_context
+      hBodyInvariant.activation.compiler hAfterCompiler
+      hTransition hLayout hSlots
+  obtain ⟨cleanup, hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
+  rw [← hTargetDepth] at hCleanup
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalBodyRel, hFinalLength,
+        hFinalMachine⟩ :=
+    AllocationObserverCleanup.Plain.forward_exact
+      hBodyInvariant.activation.compiler hTransition
+      hBodyInvariant.activation.planWF hBodyInvariant.activation.defined
+      hBodyInvariant.activation.state hBodyInvariant.activation.stackLength
+      hCleanup
+  have hFinalRel :
+      ActivationStateRel contract outerPlan afterLive 0 frameBase
+        afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal :=
+    hFinalBodyRel.transport_plan hPlanAgree
+  have hCleanupBlock :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup] }
+        targetMid
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code hCleanupRun)
+      Structured.EffectSemantics.Block.Eval.nil
+  obtain ⟨scopedFuel, hTargetScoped⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      hTargetBody hCleanupBlock
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen
+  rw [hSourceScope] at hSourceScoped
+  have hDefinedFinal :
+      LiveDefined afterLive
+        (((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal).source) := by
+    simpa [Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.restrictTo] using
+      hBodyInvariant.activation.defined.restrictTo hTransition.subset
+  refine
+    ⟨targetFinal, sourceFuel, scopedFuel, hSourceScoped, ?_,
+      { activation :=
+          { compiler := hAfterCompiler
+            planWF := hAfterWF
+            defined := hDefinedFinal
+            state := hFinalRel
+            stackLength := hFinalLength.trans hTargetDepth }
+        allocator := hBodyInvariant.allocator.of_machine_eq hFinalMachine
+        frame := hBodyInvariant.frame.sameFrame hBodyMode.symm }⟩
+  rw [hTargetShape]
+  simpa [Expressions.StmtList.toStructured_append,
+    Expressions.StmtList.toStructured,
+    Expressions.Stmt.toStructured] using hTargetScoped
+
+namespace RegularStmtRuntimeInvariantForward
+
+/--
+Regular `.block` preservation from the runtime body theorem and the real
+lowerer/compiler cleanup components.
+-/
+theorem block_of_components
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target targetMid : Structured.ObserverSemantics.State transcript}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {loweredBody : Locals.Block}
+    {bodyLowerState outerLowerState : AllocationLowering.State}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      RegularBlockRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx bodyLowerState
+        bodyLocals bodyPlan beforeLive frameBase afterMode beforeMode
+        sourceProgram sourceCtx sourceBlock source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceFinal targetMid finalCtx)
+    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSubset :
+      ∀ name, name ∈ afterLive → name ∈ beforeLive)
+    (hScoped :
+      Functions.Scope.Block.Scoped afterLive sourceBlock)
+    (hOuterInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx outerLowerState outerLocals
+        outerPlan afterLive frameBase afterMode source target)
+    (hLowerBody :
+      AllocationLowering.lowerBlockOpen
+          lowerCtx returns outerLowerState sourceBlock =
+        some (loweredBody, bodyLowerState))
+    (hCompileBody :
+      Locals.Block.compileOpen outerLocals loweredBody =
+        some (compiledBody, bodyLocals))
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx outerLowerState
+        outerLocals outerPlan afterLive frameBase afterMode afterMode
+        sourceProgram sourceCtx (.block sourceBlock) source targetProgram
+        target
+        (Expressions.StmtList.toStructured targetBlock.stmts)
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive sourceFinal)
+        targetFinal sourceCtx := by
+  obtain
+      ⟨targetFinal, sourceFuel, targetFuel,
+        hSourceScoped, hTargetScoped, hFinalInvariant⟩ :=
+    RegularScopedBlockRuntimeInvariantForward.finish_regular
+      hBody hSourceScope rfl hOuterInvariant.activation.compiler
+      hOuterInvariant.activation.planWF hSubset hScoped hLowerBody hFinish
+  have hSourceStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive sourceFinal),
+            sourceCtx) := by
+    simp only [Functions.Source.Effectful.Stmt.run]
+    rw [hSourceScoped]
+    rfl
+  exact
+    ⟨targetFinal, sourceFuel, targetFuel, hSourceStmt, hTargetScoped,
+      hFinalInvariant, SameFrame.refl afterMode⟩
+
+theorem if_true_of_components
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan bodyPlan : Locals.Allocation.Plan}
+    {outerLive bodyLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode bodyMode : ActivationMode}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterCond sourceBodyFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript cond source sourceAfterCond [value])
+    (hTrue :
+      (value != EvmYul.UInt256.ofNat 0) = true)
+    (hCondScoped : Functions.Scope.ExprScoped outerLive cond)
+    (hBodyScoped :
+      Functions.Scope.Block.Scoped outerLive body)
+    (hSourceScope : sourceCtx.scope = outerLive)
+    (hSubset :
+      ∀ name, name ∈ outerLive → name ∈ bodyLive)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        outerPlan outerLive frameBase outerMode source target)
+    (hBody :
+      ∀ {loweredBody : Locals.Block}
+        {bodyLowerState : AllocationLowering.State}
+        {bodyCode : List Expressions.Stmt}
+        {bodyLocals : Locals.Ctx}
+        {targetAfterCond :
+          Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState body =
+          some (loweredBody, bodyLowerState) →
+        Locals.Block.compileOpen localsCtx loweredBody =
+          some (bodyCode, bodyLocals) →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState localsCtx
+            outerPlan outerLive frameBase outerMode sourceAfterCond
+            targetAfterCond →
+        ∃ targetBodyMid,
+          RegularBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx
+            bodyLowerState bodyLocals bodyPlan bodyLive frameBase
+            outerMode bodyMode sourceProgram sourceCtx body sourceAfterCond
+            targetProgram
+            { stmts := Expressions.StmtList.toStructured bodyCode }
+            targetAfterCond sourceBodyFinal targetBodyMid finalCtx)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.if_ cond body) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx lowerFinal
+        localsFinal outerPlan outerLive frameBase outerMode outerMode
+        sourceProgram sourceCtx (.if_ cond body) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          outerLive sourceBodyFinal)
+        targetFinal sourceCtx := by
+  obtain
+      ⟨loweredCond, loweredBody,
+        hLowerCond, hLowerScoped, rfl⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  obtain
+      ⟨_openFinal, hLowerBody, hFinalEnv, _hFinalSlot, hFinalLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerScoped
+  obtain
+      ⟨condCode, compiledOpenBody, compiledBodyLocals, compiledBody,
+        hCompileCond, hCompileBody, hFinish, rfl, rfl⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  obtain ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
+    AllocationObserverExpression.Expr.condition_forward_runtime
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
+  obtain ⟨targetBodyMid, hBodyForward⟩ :=
+    hBody hLowerBody hCompileBody hCondInvariant
+  obtain
+      ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
+        hSourceBody, hTargetBody, hFinalInvariant⟩ :=
+    RegularScopedBlockRuntimeInvariantForward.finish_regular
+      hBodyForward hSourceScope rfl hCondInvariant.activation.compiler
+      hCondInvariant.activation.planWF hSubset hBodyScoped hLowerBody
+      hFinish
+  have hSourceCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          cond source =
+        .ok (sourceAfterCond, true) := by
+    simpa [hTrue] using hSafe.evalCondition_eq
+  have hSource :=
+    Functions.Source.Effectful.Stmt.run_if_true_of_eval
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram (ctx := sourceCtx) (fuel := bodySourceFuel)
+      hSourceCond hSourceBody
+  have hTargetCondTrue :
+      Structured.ObserverSemantics.Code.runCondition condCode target =
+        .ok (targetAfterCond, true) := by
+    simpa [hTrue] using hTargetCond
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (bodyTargetFuel + 1)
+        (.if_ condCode
+          { stmts :=
+              Expressions.StmtList.toStructured compiledBody.stmts })
+        target
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.if_true
+      hTargetCondTrue hTargetBody
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (bodyTargetFuel + 2)
+        { stmts :=
+            [(.if_ condCode
+              { stmts :=
+                  Expressions.StmtList.toStructured compiledBody.stmts })] }
+        target
+        (Structured.EffectSemantics.Outcome.regular targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      hTargetStmt Structured.EffectSemantics.Block.Eval.nil
+  exact
+    ⟨targetFinal, bodySourceFuel + 1, bodyTargetFuel + 2,
+      hSource,
+      by
+        change
+          Structured.ObserverSemantics.Block.Eval
+            targetProgram (bodyTargetFuel + 2)
+            { stmts :=
+                [Structured.Stmt.if_
+                  (Expressions.Expr.code
+                    (results := 1) condCode).compile
+                  compiledBody.toStructured] }
+            target
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+        have hCondCompile :
+            Expressions.Expr.compile
+                (Expressions.Expr.code (results := 1) condCode) =
+              condCode := by
+          rfl
+        have hBodyCompile :
+            Expressions.Block.toStructured compiledBody =
+              { stmts :=
+                  Expressions.StmtList.toStructured
+                    compiledBody.stmts } := by
+          cases compiledBody
+          rfl
+        rw [hCondCompile, hBodyCompile]
+        exact hTarget,
+      hFinalInvariant.transport_state hFinalEnv hFinalLayout,
+      SameFrame.refl outerMode⟩
+
+end RegularStmtRuntimeInvariantForward
+
 theorem RegularScopedBlockInvariantForward.finish_regular
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -4496,7 +6181,8 @@ theorem RegularScopedBlockInvariantForward.finish_regular
     AllocationObserverCleanup.Plain.finishScoped_shape hFinish
   rw [← hTargetDepth] at hCleanup
   obtain
-      ⟨targetFinal, hCleanupRun, hFinalBodyRel, hFinalLength⟩ :=
+      ⟨targetFinal, hCleanupRun, hFinalBodyRel, hFinalLength,
+        _hFinalMachine⟩ :=
     AllocationObserverCleanup.Plain.forward_exact
       hBodyInvariant.compiler hTransition hBodyInvariant.planWF
       hBodyInvariant.defined hBodyInvariant.state
