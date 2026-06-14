@@ -783,6 +783,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.contHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.brkControlledHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.contControlledHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ControlledHeadResult.of_no_control
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult

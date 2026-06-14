@@ -858,6 +858,84 @@ structure ControlledHeadResult
           sourceOutcome targetOutcome finalCtx ∧
         ControlOutcomeForward cursor boundary sourceOutcome targetOutcome
 
+namespace ControlledHeadResult
+
+/--
+Lift an ordinary head result when its source outcome cannot be `break` or
+`continue`.
+-/
+theorem of_no_control
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt}
+    {rest : List Functions.Stmt}
+    {lowerState afterState : AllocationLowering.State}
+    {localsCtx afterLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {headCode : List Expressions.Stmt}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        { stmts := stmt :: rest } lowerState localsCtx)
+    (boundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (tail :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope
+        (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals)
+    (head :
+      HeadResult cursor afterState afterLocals headCode tail
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome))
+    (hBrk :
+      ∀ sourceFinal,
+        sourceOutcome ≠ Functions.Source.Effectful.Outcome.brk sourceFinal)
+    (hCont :
+      ∀ sourceFinal,
+        sourceOutcome ≠ Functions.Source.Effectful.Outcome.cont sourceFinal) :
+    ControlledHeadResult cursor boundary afterState afterLocals headCode tail
+      (config := config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome) := by
+  obtain ⟨targetOutcome, hRuntime⟩ := head.runtime
+  exact
+    { head := head
+      runtime :=
+        ⟨targetOutcome, hRuntime,
+          { brk := by
+              intro sourceFinal hOutcome
+              exact False.elim (hBrk sourceFinal hOutcome)
+            cont := by
+              intro sourceFinal hOutcome
+              exact False.elim (hCont sourceFinal hOutcome) }⟩ }
+
+end ControlledHeadResult
+
 /--
 One recursively dispatched open block.
 
