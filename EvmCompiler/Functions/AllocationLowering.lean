@@ -1977,6 +1977,87 @@ theorem lowerStmt_for_components
                       rfl, hCond, hPost, hBody, rfl, rfl⟩
 
 /--
+Successful `for` lowering remains synchronized with the exact loop-scope
+planner states used by the validated allocation artifact.
+-/
+theorem lowerStmt_for_planning_components
+    {ctx : Ctx} {returns : List Name}
+    {current : ScopeId}
+    {planning : AllocationSupport.PlanningState}
+    {state final : State}
+    {init : Block} {cond : Expr 1} {post body : Block}
+    {loweredStmts : List Locals.Stmt}
+    (hPlanning : planning.allocation = state.allocation)
+    (hLower :
+      lowerStmt ctx returns state (.for_ init cond post body) =
+        some (loweredStmts, final)) :
+    ∃ loweredInit loopState loweredCond loweredPost afterPost
+        loweredBody afterBody,
+      lowerBlockOpen ctx returns state init =
+        some (loweredInit, loopState) ∧
+      lowerExpr ctx loopState cond = some loweredCond ∧
+      lowerBlockScoped ctx returns loopState post =
+        some (loweredPost, afterPost) ∧
+      lowerBlockScoped ctx returns afterPost body =
+        some (loweredBody, afterBody) ∧
+      loweredStmts =
+        [.for_ loweredInit loweredCond loweredPost loweredBody] ∧
+      final =
+        { allocation :=
+            { env := state.allocation.env
+              nextSlot := afterBody.allocation.nextSlot }
+          layout := state.layout } ∧
+      let loopScope := ScopeId.lexical current planning.nextScope
+      let entered : AllocationSupport.PlanningState :=
+        { planning with nextScope := planning.nextScope + 1 }
+      let initPlanning :=
+        AllocationSupport.planBlockOpen loopScope entered init
+      let postPlanning :=
+        AllocationSupport.planBlockScoped loopScope initPlanning post
+      let bodyPlanning :=
+        AllocationSupport.planBlockScoped loopScope postPlanning body
+      initPlanning.allocation = loopState.allocation ∧
+        postPlanning.allocation = afterPost.allocation ∧
+        bodyPlanning.allocation = afterBody.allocation := by
+  obtain
+      ⟨loweredInit, loopState, loweredCond, loweredPost, afterPost,
+        loweredBody, afterBody, hInit, hCond, hPost, hBody,
+        hLowered, hFinal⟩ :=
+    lowerStmt_for_components hLower
+  let loopScope := ScopeId.lexical current planning.nextScope
+  let entered : AllocationSupport.PlanningState :=
+    { planning with nextScope := planning.nextScope + 1 }
+  let initPlanning :=
+    AllocationSupport.planBlockOpen loopScope entered init
+  let postPlanning :=
+    AllocationSupport.planBlockScoped loopScope initPlanning post
+  let bodyPlanning :=
+    AllocationSupport.planBlockScoped loopScope postPlanning body
+  have hInitPlanning :
+      initPlanning.allocation = loopState.allocation :=
+    lowerBlockOpen_allocation_eq_planBlockOpen
+      init loopScope entered ctx returns state loopState loweredInit
+      (by simpa [entered] using hPlanning) hInit
+  have hPostPlanning :
+      postPlanning.allocation = afterPost.allocation :=
+    lowerBlockScoped_allocation_eq_planBlockScoped
+      post loopScope initPlanning ctx returns loopState afterPost
+      loweredPost hInitPlanning hPost
+  have hBodyPlanning :
+      bodyPlanning.allocation = afterBody.allocation :=
+    lowerBlockScoped_allocation_eq_planBlockScoped
+      body loopScope postPlanning ctx returns afterPost afterBody
+      loweredBody hPostPlanning hBody
+  exact
+    ⟨loweredInit, loopState, loweredCond, loweredPost, afterPost,
+      loweredBody, afterBody, hInit, hCond, hPost, hBody, hLowered,
+      hFinal, by
+        simpa [loopScope, entered, initPlanning, postPlanning,
+          bodyPlanning] using
+          And.intro hInitPlanning
+            (And.intro hPostPlanning hBodyPlanning)⟩
+
+/--
 Successful call lowering exposes the source function lookup, arity checks,
 argument lowering, return stores, and optional scratch-frame protocol.
 -/

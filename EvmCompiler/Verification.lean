@@ -550,6 +550,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeNonregularRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lexicalOfPlanState
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.forCursors
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.StepTransport
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
 #check EvmCompiler.Functions.AllocationSupport.planBlockScoped_entry_mem

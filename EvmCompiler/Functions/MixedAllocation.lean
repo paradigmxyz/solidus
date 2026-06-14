@@ -251,6 +251,22 @@ def allocationOfState (contract : MemoryContract.Contract)
     else
       none
 
+theorem allocationOfState_eq_of_env_eq
+    {contract : MemoryContract.Contract}
+    {frameWords : Nat}
+    {leftEntries rightEntries : AllocationSupport.SlotEnv}
+    {left right : AllocationSupport.CompileState}
+    (hEntries : leftEntries = rightEntries)
+    (hEnv : left.env = right.env) :
+    allocationOfState contract frameWords leftEntries left =
+      allocationOfState contract frameWords rightEntries right := by
+  subst rightEntries
+  cases left
+  cases right
+  simp only at hEnv
+  subst hEnv
+  rfl
+
 theorem allocationOfState_location_of_mem
     {contract : MemoryContract.Contract}
     {frameWords : Nat}
@@ -788,6 +804,17 @@ def stackEntriesForScope (recipe : AllocationSupport.AllocationRecipe)
           stackEntries stackSlots locals ++
             stackEntries stackSlots slots.returns.reverse ++
             stackEntries stackSlots slots.params.reverse
+
+theorem stackEntriesForScope_eq_of_env_eq
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {scope : Locals.Allocation.ScopeId}
+    {left right : AllocationSupport.CompileState}
+    (hEnv : left.env = right.env) :
+    stackEntriesForScope recipe stackSlots scope left =
+      stackEntriesForScope recipe stackSlots scope right := by
+  unfold stackEntriesForScope
+  split <;> simp only [hEnv]
 
 theorem not_mem_stackEntriesForScope_of_slot_not_mem
     {recipe : AllocationSupport.AllocationRecipe}

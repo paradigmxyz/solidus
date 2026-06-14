@@ -1656,6 +1656,7 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
         AllocationObserverContext.ActivationRuntimeInvariant
             contract config allocatorDepth lowerCtx lowerState localsCtx
             plan live frameBase mode bodySource bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
@@ -1676,6 +1677,7 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
         AllocationObserverContext.ActivationRuntimeInvariant
             contract config allocatorDepth lowerCtx lowerState localsCtx
             plan live frameBase mode bodySource bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
@@ -1696,6 +1698,7 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
         AllocationObserverContext.ActivationRuntimeInvariant
             contract config allocatorDepth lowerCtx lowerState localsCtx
             plan live frameBase mode bodySource bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
@@ -1716,6 +1719,7 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
         AllocationObserverContext.ActivationRuntimeInvariant
             contract config allocatorDepth lowerCtx bodyLowerState
             bodyLocals plan live frameBase mode postSource postTarget →
+        postFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
             (AllocationObserverSafety.SafeSemantics.primitiveSemantics
@@ -1797,7 +1801,7 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
               contract)
             hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyBreak hCondInvariant hSourceBody
+          hBodyBreak hCondInvariant (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
@@ -1829,13 +1833,13 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
               contract)
             hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyRegular hCondInvariant hSourceBody
+          hBodyRegular hCondInvariant (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
             hBodyEffect⟩
         obtain ⟨targetAfterPost, hPostForward⟩ :=
-          hPostRegular hBodyInvariant hSourcePost
+          hPostRegular hBodyInvariant (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePostOrdinary, hTargetPost, hPostInvariant,
@@ -1845,6 +1849,14 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
             (source := sourceAfterPost)
             (target := targetAfterPost)
             (final := final)
+            (fun hInv hFuel hRun =>
+              hBodyRegular hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hBodyBreak hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hBodyContinue hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hPostRegular hInv (by omega) hRun)
             hSourceLoop
         obtain ⟨targetFinal, hLoopForward⟩ :=
           hRecursive hPostInvariant
@@ -1916,13 +1928,14 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
               contract)
             hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyContinue hCondInvariant hSourceBody
+          hBodyContinue hCondInvariant (Nat.lt_succ_self stepFuel)
+            hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
             hBodyEffect⟩
         obtain ⟨targetAfterPost, hPostForward⟩ :=
-          hPostRegular hBodyInvariant hSourcePost
+          hPostRegular hBodyInvariant (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePostOrdinary, hTargetPost, hPostInvariant,
@@ -1932,6 +1945,14 @@ theorem RegularRuntimeInvariantForward.of_safe_source_run
             (source := sourceAfterPost)
             (target := targetAfterPost)
             (final := final)
+            (fun hInv hFuel hRun =>
+              hBodyRegular hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hBodyBreak hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hBodyContinue hInv (by omega) hRun)
+            (fun hInv hFuel hRun =>
+              hPostRegular hInv (by omega) hRun)
             hSourceLoop
         obtain ⟨targetFinal, hLoopForward⟩ :=
           hRecursive hPostInvariant
