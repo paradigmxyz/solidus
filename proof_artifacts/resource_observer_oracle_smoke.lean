@@ -753,6 +753,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.reindex_regularLive
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.regular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.nonregular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.rebase
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.blockHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ifHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.switchHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.brkHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.contHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
