@@ -733,6 +733,91 @@ structure Boundary
 namespace Boundary
 
 /--
+Enter a `for` initializer through its real lexical cursor.
+
+The source and Locals contexts both disable loop control. The initializer plan
+may include locations for declarations introduced later in the loop, so the
+runtime invariant is transported only on the currently live outer bindings.
+-/
+def forInit
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {outerScope initScope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {outerBlock init : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.Cursor prepared outerScope live
+        outerBlock lowerState localsCtx)
+    (initCursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared initScope live
+        init lowerState localsCtx.withoutLoopControl)
+    (hBoundary :
+      Boundary outer (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (source := source) (target := target)) :
+    Boundary initCursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx.withoutLoopControl)
+      (source := source) (target := target) := by
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        initCursor.plan outer.plan live :=
+    initCursor.planAgreesOn outer rfl
+  have hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        lowerState localsCtx.withoutLoopControl initCursor.plan live
+        frameBase mode source target :=
+    (hBoundary.invariant.transport_locals_layout
+        (after := localsCtx.withoutLoopControl) rfl).transport_plan
+      initCursor.planWF hPlanAgree.symm
+  refine
+    { sourceScope := ?_
+      control :=
+        AllocationObserverOutcome.ControlScopesWithin.withoutLoopControl
+          hBoundary.control
+      destinations :=
+        AllocationObserverOutcome.ControlDestinations.withoutLoopControl
+      returnFrame := ?_
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  · intro name
+    simpa [Functions.Source.Ctx.withoutLoopControl] using
+      hBoundary.sourceScope name
+  · intro functionScope hLeave
+    exact
+      hBoundary.returnFrame functionScope
+        (by
+          simpa [Functions.Source.Ctx.withoutLoopControl] using hLeave)
+  · intro functionScope hLeave
+    obtain ⟨hDepth, hRetc⟩ :=
+      hBoundary.leaveTarget functionScope
+        (by
+          simpa [Functions.Source.Ctx.withoutLoopControl] using hLeave)
+    exact
+      ⟨by
+        simpa [Locals.Ctx.withoutLoopControl] using hDepth,
+        by
+          simpa [Locals.Ctx.withoutLoopControl] using hRetc⟩
+
+/--
 Rebase a recursive dispatcher boundary onto another pass-owned cursor in the
 same source control context.
 

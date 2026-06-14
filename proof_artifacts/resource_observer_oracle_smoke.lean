@@ -751,6 +751,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.for_exit_of_components
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.for_init_exit_of_components
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_for_cases
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withoutLoopControl
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withLoopControl
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationOutcomeRel.reframe_of_isExit
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.reindex_outcomeLive

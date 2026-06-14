@@ -1007,6 +1007,65 @@ theorem functionBody
     rw [hEq]
     exact List.mem_append_left _ hName
 
+/--
+Disabling loop control preserves every source control-scope obligation.
+
+The break and continue fields become unavailable, while return liveness and
+the function leave scope are unchanged.
+-/
+theorem withoutLoopControl
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx) :
+    ControlScopesWithin returns live ctx.withoutLoopControl := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := hControl.returnsLive
+      leaveScope := ?_ }
+  · intro scope hScope
+    simp [Functions.Source.Ctx.withoutLoopControl] at hScope
+  · intro scope hScope
+    simp [Functions.Source.Ctx.withoutLoopControl] at hScope
+  · intro scope hScope name hName
+    exact
+      hControl.leaveScope scope
+        (by
+          simpa [Functions.Source.Ctx.withoutLoopControl] using hScope)
+        name hName
+
+/--
+Install the canonical loop-entry break and continue scopes.
+
+Both loop-control destinations are the current live environment; function
+return liveness and the enclosing leave scope are preserved.
+-/
+theorem withLoopControl
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx) :
+    ControlScopesWithin returns live
+      (ctx.withLoopControl live live) := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := hControl.returnsLive
+      leaveScope := ?_ }
+  · intro scope hScope name hName
+    have hEq : scope = live := by
+      simpa [Functions.Source.Ctx.withLoopControl] using hScope.symm
+    simpa [hEq] using hName
+  · intro scope hScope name hName
+    have hEq : scope = live := by
+      simpa [Functions.Source.Ctx.withLoopControl] using hScope.symm
+    simpa [hEq] using hName
+  · intro scope hScope name hName
+    exact
+      hControl.leaveScope scope
+        (by
+          simpa [Functions.Source.Ctx.withLoopControl] using hScope)
+        name hName
+
 end ControlScopesWithin
 
 structure SameControl
