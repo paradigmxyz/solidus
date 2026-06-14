@@ -1379,8 +1379,12 @@ corridor.
   recursive open-block interface over real synchronized cursors. Every `for`
   outcome is checked through pass-owned source-fuel theorems, including
   initializer exit, regular completion, exact break/continue handling, and
-  body/post leave or halt. The remaining Functions work is selected-call
-  recursion followed by assembly of the mutual statement/block dispatcher.
+  body/post leave or halt. Compiler-selected regular calls now reconstruct the
+  whole compilation from the selected artifact, derive the callee's scoped root
+  boundary from `Program.Scoped`, and consume a strictly smaller recursive body
+  result through the real call prelude and epilogue. The remaining Functions
+  work is the halting-call path followed by assembly of the mutual
+  statement/block dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

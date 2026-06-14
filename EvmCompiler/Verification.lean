@@ -590,6 +590,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.regular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.HeadResult.nonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.functionBody
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.rebase
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ControlOutcomeForward.of_rebase
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.blockHeadResult
@@ -603,6 +604,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callRegularHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
@@ -617,10 +619,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_lexical_entry_plan
 #check EvmCompiler.Locals.Stmt.compile_block_components
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.bodyScoped
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.ofSelected
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_safe_source
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward

@@ -73,6 +73,28 @@ theorem Compilation.of_lowering
                    fresh := hFresh
                    lower := hWhole }⟩
 
+/--
+Recover the whole compiler invocation from any compiler-selected callee
+artifact. The artifact carries the original lowering equation, so recursive
+call proofs do not accept a second generated compilation witness.
+-/
+def Compilation.ofSelected
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn) :
+    Compilation allocation program expressions :=
+  { recipe := artifact.recipe
+    stackSlots := artifact.stackSlots
+    frameName := artifact.frameName
+    validate := artifact.validate
+    fresh := artifact.fresh
+    lower := artifact.wholeLower }
+
 def Compilation.frameConfig?
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -5530,6 +5552,7 @@ theorem prepared_regular
     (hReady : Frame.AllocatorReady config calleeDepth targetEntry)
     (hOwned :
       Frame.ActivationOwned config calleeDepth frameBase prepared.mode)
+    (hReturnFrame : targetEntry.source.returns ≠ [])
     (hBody :
       ∀ {targetBodyStart : Structured.ObserverSemantics.State transcript},
         AllocationObserverContext.ActivationRuntimeInvariant
@@ -5543,6 +5566,7 @@ theorem prepared_regular
                 ((artifact.slots.returns.map Prod.fst).reverse ++
                   (artifact.slots.params.map Prod.fst).reverse)).length)
             sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
         ∃ targetBodyFinal finalMode,
           AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
             program.memoryContract config calleeDepth transcript
@@ -5626,8 +5650,16 @@ theorem prepared_regular
         (Option.some.inj
           (hPreludeCompile.symm.trans hExpectedPreludeCompile))
   subst preludeCode
+  have hBodyReturnFrame : targetBodyStart.source.returns ≠ [] := by
+    have hReturns :=
+      Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+        hPreludeEval
+          (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+    simp only [Structured.ObserverSemantics.Outcome.regular_state] at hReturns
+    rw [hReturns]
+    exact hReturnFrame
   obtain ⟨targetBodyFinal, finalMode, hBodyForward⟩ :=
-    hBody hPreludeInvariant
+    hBody hPreludeInvariant hBodyReturnFrame
   rcases hBodyForward with
     ⟨_sourceFuel, bodyFuel, _hSourceBody, hTargetBody,
       hBodyInvariant, hBodySame, hBodyEffect⟩
@@ -6797,6 +6829,7 @@ theorem regular_of_safe_source
                 ((artifact.slots.returns.map Prod.fst).reverse ++
                   (artifact.slots.params.map Prod.fst).reverse)).length)
             sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
         ∃ targetOutcome,
           AllocationObserverOutcome.BlockRuntimeResult
             program.memoryContract config calleeDepth transcript
@@ -6959,12 +6992,12 @@ theorem regular_of_safe_source
             Frame.BoundedEffect config calleeDepth (allocatorDepth + 1)
               targetEntry calleeFinal := by
       intro targetEntry calleeDepth calleeFrameBase hEntry
-        _hReturnFrame hEntryStack hReady hOwned hProtected
+        hReturnFrame hEntryStack hReady hOwned hProtected
       apply Callee.prepared_regular prepared hArtifactConfig hEntry hEntryStack
-        hZero hDefined hReady hOwned
-      · intro targetBodyStart hBodyInvariant
+        hZero hDefined hReady hOwned hReturnFrame
+      · intro targetBodyStart hBodyInvariant hBodyReturnFrame
         obtain ⟨targetOutcome, hBodyForward⟩ :=
-          hBody prepared hBodyRun' hBodyInvariant
+          hBody prepared hBodyRun' hBodyInvariant hBodyReturnFrame
         cases hBodyForward with
         | regular hForward =>
             exact ⟨_, _, hForward⟩
@@ -7026,7 +7059,7 @@ theorem regular_of_safe_source
         hZero hDefined hReady hOwned hReturnFrame
       · intro targetBodyStart hBodyInvariant _hBodyReturnFrame
         obtain ⟨targetOutcome, hBodyForward⟩ :=
-          hBody prepared hBodyRun' hBodyInvariant
+          hBody prepared hBodyRun' hBodyInvariant _hBodyReturnFrame
         cases hBodyForward with
         | nonregular _hMode hForward =>
             rcases hForward with

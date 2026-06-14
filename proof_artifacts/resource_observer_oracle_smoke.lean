@@ -769,6 +769,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.functionBody
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forRegularHeadResult
 #print axioms EvmCompiler.Functions.Source.Effectful.Outcome.IsExit.not_regular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forExitHeadResult
@@ -800,6 +801,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callRegularHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ControlOutcomeForward.of_afterRegular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult

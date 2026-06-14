@@ -547,6 +547,10 @@ structure Artifact
       some (recipe, stackSlots)
   fresh :
     AllocationLowering.freshFrameName program = some frameName
+  wholeLower :
+    AllocationLowering.lowerExpressionsFromAllocation?
+        allocation program =
+      some expressions
   lower :
     AllocationLowering.lowerFunction? recipe stackSlots frameName
         (AllocationSupport.scratchFrameConfig?
@@ -635,6 +639,7 @@ theorem of_lowering
        planEntry := planEntry
        validate := hValidate
        fresh := hFresh
+       wholeLower := hLower
        lower := hSelected
        compile := hCompile
        targetLookup := hLookup
@@ -1131,6 +1136,32 @@ theorem Prepared.signatureNodup
         prepared.prelude
   simpa [List.map_append, artifact.slotsMatch.2.1,
     artifact.slotsMatch.2.2] using hSlots
+
+theorem Artifact.bodyScoped
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn)
+    (hProgramScoped : program.Scoped) :
+    Functions.Scope.Block.Scoped
+      ((artifact.slots.returns.map Prod.fst).reverse ++
+        (artifact.slots.params.map Prod.fst).reverse)
+      fn.body := by
+  have hFnScoped : fn.Scoped :=
+    Functions.FunList.scoped_of_mem
+      hProgramScoped.1 artifact.sourceMem
+  exact
+    Functions.Scope.Block.Scoped.of_env_equiv
+      (before := fn.returns ++ fn.params)
+      (after :=
+        (artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+      (by
+        intro localName
+        simp [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2])
+      (Functions.FunDef.bodyScoped hFnScoped)
 
 theorem Prepared.location_stack_of_lookup
     {allocation : Locals.Allocation.ProgramPlan}

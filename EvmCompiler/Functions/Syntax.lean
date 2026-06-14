@@ -263,6 +263,169 @@ mutual
     | some body => Block.Scoped env body
 end
 
+theorem Stmt.outEnv_mem_iff
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    (stmt : Stmt) (name : Name) :
+    name ∈ Stmt.outEnv before stmt ↔
+      name ∈ Stmt.outEnv after stmt := by
+  cases stmt <;> simp [Stmt.outEnv, hEnv]
+
+theorem StmtList.outEnv_mem_iff
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    (stmts : List Stmt) (name : Name) :
+    name ∈ StmtList.outEnv before stmts ↔
+      name ∈ StmtList.outEnv after stmts := by
+  induction stmts generalizing before after with
+  | nil => exact hEnv name
+  | cons stmt rest ih =>
+      exact ih (fun current => Stmt.outEnv_mem_iff hEnv stmt current)
+
+theorem Block.outEnv_mem_iff
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    (block : Block) (name : Name) :
+    name ∈ Block.outEnv before block ↔
+      name ∈ Block.outEnv after block := by
+  cases block with
+  | mk stmts => exact StmtList.outEnv_mem_iff hEnv stmts name
+
+mutual
+
+theorem ExprScoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {results : Nat} {expr : Expr results}
+    (hScoped : ExprScoped before expr) :
+    ExprScoped after expr := by
+  cases expr with
+  | lit value => trivial
+  | var name => exact (hEnv name).mp hScoped
+  | code code => exact False.elim hScoped
+  | prim op args =>
+      exact ExprSeqScoped.of_env_equiv hEnv hScoped
+
+theorem ExprSeqScoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {results : Nat} {exprs : Locals.ExprSeq results}
+    (hScoped : ExprSeqScoped before exprs) :
+    ExprSeqScoped after exprs := by
+  cases exprs with
+  | nil => trivial
+  | cons head tail =>
+      exact
+        ⟨ExprScoped.of_env_equiv hEnv hScoped.1,
+          ExprSeqScoped.of_env_equiv hEnv hScoped.2⟩
+
+end
+
+mutual
+
+theorem Block.Scoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {block : Block}
+    (hScoped : Block.Scoped before block) :
+    Block.Scoped after block := by
+  cases block with
+  | mk stmts =>
+      exact StmtList.Scoped.of_env_equiv hEnv hScoped
+
+theorem Stmt.Scoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {stmt : Stmt}
+    (hScoped : Stmt.Scoped before stmt) :
+    Stmt.Scoped after stmt := by
+  cases stmt with
+  | expr expr =>
+      exact ExprScoped.of_env_equiv hEnv hScoped
+  | let_ name value =>
+      exact
+        ⟨fun hMem => hScoped.1 ((hEnv name).mpr hMem),
+          ExprScoped.of_env_equiv hEnv hScoped.2⟩
+  | assign name value =>
+      exact
+        ⟨(hEnv name).mp hScoped.1,
+          ExprScoped.of_env_equiv hEnv hScoped.2⟩
+  | block body =>
+      exact Block.Scoped.of_env_equiv hEnv hScoped
+  | if_ cond body =>
+      exact
+        ⟨ExprScoped.of_env_equiv hEnv hScoped.1,
+          Block.Scoped.of_env_equiv hEnv hScoped.2⟩
+  | switch scrutinee cases defaultBody =>
+      exact
+        ⟨ExprScoped.of_env_equiv hEnv hScoped.1,
+          CaseList.Scoped.of_env_equiv hEnv hScoped.2.1,
+          Default.Scoped.of_env_equiv hEnv hScoped.2.2⟩
+  | for_ init cond post body =>
+      have hLoopEnv :
+          ∀ name,
+            name ∈ Block.outEnv before init ↔
+              name ∈ Block.outEnv after init :=
+        fun name => Block.outEnv_mem_iff hEnv init name
+      exact
+        ⟨Block.Scoped.of_env_equiv hEnv hScoped.1,
+          ExprScoped.of_env_equiv hLoopEnv hScoped.2.1,
+          Block.Scoped.of_env_equiv hLoopEnv hScoped.2.2.1,
+          Block.Scoped.of_env_equiv hLoopEnv hScoped.2.2.2⟩
+  | brk => trivial
+  | cont => trivial
+  | leave => trivial
+  | call targets functionName args =>
+      exact
+        ⟨hScoped.1,
+          fun name hName => (hEnv name).mp (hScoped.2.1 name hName),
+          fun arg hArg =>
+            ExprScoped.of_env_equiv hEnv (hScoped.2.2 arg hArg)⟩
+  | terminal kind => trivial
+  | terminalArgs kind args =>
+      exact ExprSeqScoped.of_env_equiv hEnv hScoped
+
+theorem StmtList.Scoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {stmts : List Stmt}
+    (hScoped : StmtList.Scoped before stmts) :
+    StmtList.Scoped after stmts := by
+  cases stmts with
+  | nil => trivial
+  | cons stmt rest =>
+      exact
+        ⟨Stmt.Scoped.of_env_equiv hEnv hScoped.1,
+          StmtList.Scoped.of_env_equiv
+            (fun name => Stmt.outEnv_mem_iff hEnv stmt name)
+            hScoped.2⟩
+
+theorem CaseList.Scoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {cases : List (Word × Block)}
+    (hScoped : CaseList.Scoped before cases) :
+    CaseList.Scoped after cases := by
+  cases cases with
+  | nil => trivial
+  | cons entry rest =>
+      exact
+        ⟨Block.Scoped.of_env_equiv hEnv hScoped.1,
+          CaseList.Scoped.of_env_equiv hEnv hScoped.2⟩
+
+theorem Default.Scoped.of_env_equiv
+    {before after : List Name}
+    (hEnv : ∀ name, name ∈ before ↔ name ∈ after)
+    {body : Option Block}
+    (hScoped : Default.Scoped before body) :
+    Default.Scoped after body := by
+  cases body with
+  | none => trivial
+  | some body =>
+      exact Block.Scoped.of_env_equiv hEnv hScoped
+
+end
+
 end Scope
 
 namespace FunDef
@@ -286,6 +449,21 @@ namespace FunList
 def Scoped : List FunDef → Prop
   | [] => True
   | fn :: rest => fn.Scoped ∧ Scoped rest
+
+theorem scoped_of_mem
+    {functions : List FunDef} {fn : FunDef}
+    (hScoped : Scoped functions)
+    (hMem : fn ∈ functions) :
+    fn.Scoped := by
+  induction functions with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      rcases hScoped with ⟨hHead, hRest⟩
+      simp only [List.mem_cons] at hMem
+      rcases hMem with rfl | hMem
+      · exact hHead
+      · exact ih hRest hMem
 
 end FunList
 

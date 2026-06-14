@@ -1171,6 +1171,104 @@ end BlockResult
 namespace Boundary
 
 /--
+Construct the canonical recursive boundary at a compiler-selected function
+body. Selection and compilation remain owned by the call pass; this constructor
+only aligns the source function scope with the allocation slot order and
+records the control facts preserved by the generated parameter/return prelude.
+-/
+def functionBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hProgramScoped : program.Scoped)
+    (hReturnFrame : target.source.returns ≠ [])
+    (hBudget : Frame.Budget config allocatorDepth)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase
+        (prepared.mode.atStackDepth
+          (currentStackOrder prepared.plan
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)).length)
+        source target) :
+    Boundary
+      (AllocationObserverForward.BodyCursor.Cursor.root prepared
+        (artifact.bodyScoped hProgramScoped))
+      (config := config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase)
+      (mode :=
+        prepared.mode.atStackDepth
+          (currentStackOrder prepared.plan
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)).length)
+      (sourceCtx := Functions.Source.Effectful.FunDef.bodyCtx fn)
+      (source := source) (target := target) := by
+  have hParamControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileParams
+  have hReturnControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileReturns
+  have hPreludeControl :
+      Locals.Ctx.SameControl artifact.entryCtx prepared.returnCtx :=
+    hParamControl.trans hReturnControl
+  refine
+    { sourceScope := ?_
+      control := ?_
+      destinations := ?_
+      returnFrame := ?_
+      leaveTarget := ?_
+      budget := hBudget
+      invariant := hInvariant }
+  · intro localName
+    simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial,
+      Functions.Source.Ctx.withLeaveScope,
+      artifact.slotsMatch.2.1, artifact.slotsMatch.2.2]
+  · simpa [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2] using
+      AllocationObserverOutcome.ControlScopesWithin.functionBody fn
+  · refine
+      { brk := .unavailable ?_ ?_
+        cont := .unavailable ?_ ?_ }
+    · simp [AllocationObserverOutcome.ControlKind.sourceScope?,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial,
+        Functions.Source.Ctx.withLeaveScope]
+    · change prepared.returnCtx.breakDepth? = none
+      rw [← hPreludeControl.breakDepth]
+      rfl
+    · simp [AllocationObserverOutcome.ControlKind.sourceScope?,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial,
+        Functions.Source.Ctx.withLeaveScope]
+    · change prepared.returnCtx.continueDepth? = none
+      rw [← hPreludeControl.continueDepth]
+      rfl
+  · intro _functionScope _hLeave
+    exact hReturnFrame
+  · intro _functionScope _hLeave
+    constructor
+    · change prepared.returnCtx.leaveDepth? = some 0
+      rw [← hPreludeControl.leaveDepth]
+      rfl
+    · change prepared.returnCtx.leaveRetc = fn.returns.length
+      rw [← hPreludeControl.leaveRetc]
+      rfl
+
+/--
 Invoke the recursive block interface at a regular open-block result.
 -/
 theorem recursiveRegular
@@ -5262,6 +5360,184 @@ theorem terminalArgsHeadResult
                 (by
                   simp [Functions.Source.Effectful.Outcome.halt,
                     Locals.Source.Effectful.Outcome.halt])⟩
+
+/--
+Dispatch a regular internal function call through the compiler-selected callee.
+
+The body callback is the strictly fuel-smaller recursive use that the mutual
+Functions theorem will discharge. It is consumed immediately by the call pass
+and is not retained in the returned head result.
+-/
+theorem callRegularHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {name : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        { stmts := .call targets name args :: rest }
+        lowerState localsCtx)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 2)
+          (.call targets name args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            sourceCtx))
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hBody :
+      ∀ {selectedFn : Functions.FunDef}
+        {selected :
+          AllocationObserverCall.SelectedCallee.Artifact
+            allocation program expressions name selectedFn}
+        (selectedPrepared :
+          AllocationObserverCall.SelectedCallee.Prepared selected)
+        {sourceBodyStart :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx' : Functions.Source.Ctx}
+        {targetBodyStart : Structured.ObserverSemantics.State transcript}
+        {calleeDepth calleeFrameBase : Nat},
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            sourceFuel selectedFn.body sourceBodyStart =
+          .ok (bodyOutcome, bodyCtx') →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            program.memoryContract config calleeDepth selected.lowerCtx
+            selected.bodyStart selectedPrepared.returnCtx selectedPrepared.plan
+            ((selected.slots.returns.map Prod.fst).reverse ++
+              (selected.slots.params.map Prod.fst).reverse)
+            calleeFrameBase
+            (selectedPrepared.mode.atStackDepth
+              (currentStackOrder selectedPrepared.plan
+                ((selected.slots.returns.map Prod.fst).reverse ++
+                  (selected.slots.params.map Prod.fst).reverse)).length)
+            sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockRuntimeResult
+            program.memoryContract config calleeDepth transcript
+            selected.lowerCtx selectedPrepared.bodyFinal
+            selectedPrepared.bodyCtx selectedPrepared.plan
+            selectedFn.returns
+            (Functions.Scope.Block.outEnv
+              ((selected.slots.returns.map Prod.fst).reverse ++
+                (selected.slots.params.map Prod.fst).reverse)
+              selectedFn.body)
+            calleeFrameBase
+            (selectedPrepared.mode.atStackDepth
+              (currentStackOrder selectedPrepared.plan
+                ((selected.slots.returns.map Prod.fst).reverse ++
+                  (selected.slots.params.map Prod.fst).reverse)).length)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            selectedFn.body sourceBodyStart expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured selectedPrepared.bodyCode }
+            targetBodyStart bodyOutcome targetOutcome bodyCtx') :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+        ControlledHeadResult cursor hBoundary afterState afterLocals
+          headCode tail
+          (config := config) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome :=
+            Functions.Source.Effectful.Outcome.regular sourceFinal) := by
+  obtain
+      ⟨afterState, afterLocals, lowered, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  let compilation :
+      AllocationObserverForward.Compilation allocation program expressions :=
+    AllocationObserverForward.Compilation.ofSelected artifact
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverForward.Call.regular_of_safe_source
+      compilation hConfig
+      (compilation.selected_shared artifact)
+      hSource hScoped hBoundary.invariant hBoundary.budget
+      hLower hCompile hBody
+  have hStep :
+      AllocationObserverForward.BodyCursor.StepTransport
+        lowerState afterState localsCtx afterLocals live
+        (.call targets name args) :=
+    AllocationObserverForward.BodyCursor.StepTransport.of_compilers
+      hScoped hLower hCompile
+  have hHead :
+      HeadResult cursor afterState afterLocals headCode tail
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.regular sourceFinal) :=
+    HeadResult.regular cursor tail rfl hCompiled hPlan hFinalState
+      hFinalLocals hForward
+      (AllocationObserverOutcome.SameControl.refl sourceCtx)
+      hStep
+      (by
+        intro localName
+        simpa [Functions.Scope.Stmt.outEnv] using
+          hBoundary.sourceScope localName)
+  exact
+    ⟨afterState, afterLocals, headCode, tail,
+      ControlledHeadResult.of_no_control cursor hBoundary tail hHead
+        (by
+          intro sourceFinal hEq
+          have hMode :=
+            congrArg Locals.Source.Effectful.Outcome.mode hEq
+          change
+            (Locals.Source.Mode.regular : Locals.Source.Mode) =
+              Locals.Source.Mode.brk at hMode
+          contradiction)
+        (by
+          intro sourceFinal hEq
+          have hMode :=
+            congrArg Locals.Source.Effectful.Outcome.mode hEq
+          change
+            (Locals.Source.Mode.regular : Locals.Source.Mode) =
+              Locals.Source.Mode.cont at hMode
+          contradiction)⟩
 
 /--
 Transport the dispatcher boundary across one regular statement.
