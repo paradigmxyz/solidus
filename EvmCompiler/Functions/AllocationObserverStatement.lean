@@ -6116,6 +6116,7 @@ theorem if_true_of_components
             contract config allocatorDepth lowerCtx lowerState localsCtx
             outerPlan outerLive frameBase outerMode sourceAfterCond
             targetAfterCond →
+        targetAfterCond.source.returns = target.source.returns →
         ∃ targetBodyMid bodyMode,
           RegularBlockRuntimeInvariantForward
             contract config allocatorDepth transcript lowerCtx
@@ -6159,6 +6160,7 @@ theorem if_true_of_components
       hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
   obtain ⟨targetBodyMid, _bodyMode, hBodyForward⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
+      (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
@@ -6495,6 +6497,7 @@ theorem if_true_of_components
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx lowerState localsCtx outerPlan outerLive
             frameBase outerMode sourceAfterCond targetAfterCond →
+        targetAfterCond.source.returns = target.source.returns →
         ∃ targetBodyMid,
           RegularBlockInvariantForward
             contract transcript lowerCtx bodyLowerState bodyLocals bodyPlan
@@ -6536,6 +6539,7 @@ theorem if_true_of_components
       hInvariant hSafe hCondScoped hLowerCond hCompileCond
   obtain ⟨targetBodyMid, hBodyForward⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
+      (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant⟩ :=
@@ -6877,6 +6881,8 @@ theorem if_true_of_components
     {sourceOutcome :
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
     {value : Word}
     (hConfig :
       AllocationSupport.scratchFrameConfig?
@@ -6912,6 +6918,7 @@ theorem if_true_of_components
             contract config allocatorDepth lowerCtx lowerState localsCtx
             outerPlan outerLive frameBase outerMode sourceAfterCond
             targetAfterCond →
+        targetAfterCond.source.returns = target.source.returns →
         ∃ bodyPlan finalMode targetOutcome finalCtx,
           BlockRuntimeForward contract config allocatorDepth transcript
               bodyPlan
@@ -6924,7 +6931,8 @@ theorem if_true_of_components
               targetAfterCond sourceOutcome targetOutcome finalCtx ∧
             ActivationOutcomeRel contract outerPlan
               (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
-              0 frameBase finalMode sourceOutcome targetOutcome)
+              0 frameBase finalMode sourceOutcome targetOutcome ∧
+            P targetOutcome)
     (hLower :
       AllocationLowering.lowerStmt lowerCtx returns lowerState
           (.if_ cond body) =
@@ -6939,7 +6947,8 @@ theorem if_true_of_components
         frameBase outerMode finalMode sourceProgram sourceCtx
         (.if_ cond body) source targetProgram target
         (Expressions.StmtList.toStructured compiledStmts)
-        sourceOutcome targetOutcome sourceCtx := by
+        sourceOutcome targetOutcome sourceCtx ∧
+      P targetOutcome := by
   obtain
       ⟨loweredCond, loweredBody,
         hLowerCond, hLowerScoped, rfl⟩ :=
@@ -6960,8 +6969,9 @@ theorem if_true_of_components
       hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
   obtain
       ⟨bodyPlan, finalMode, targetOutcome, finalCtx,
-        hBodyForward, hOuterOutcomeRel⟩ :=
+        hBodyForward, hOuterOutcomeRel, hP⟩ :=
     hBody hLowerBody hCompileBody hCondInvariant
+      (Structured.ObserverSemantics.Code.runCondition_returns_eq hTargetCond)
   rcases hBodyForward with
     ⟨bodySourceFuel, bodyTargetFuel, hSourceOpen, hTargetBody,
       _hBodyOutcomeRel, hSame, hBodyEffect⟩
@@ -7032,9 +7042,10 @@ theorem if_true_of_components
     Structured.EffectSemantics.Block.Eval.cons_nonregular
       hTargetStmt hTargetMode
   refine
-    ⟨targetOutcome, finalMode, bodySourceFuel + 1,
-      bodyTargetFuel + 2, hSource, ?_, hMode, hOuterOutcomeRel,
-      hSame, ?_⟩
+    ⟨targetOutcome, finalMode,
+      ⟨bodySourceFuel + 1, bodyTargetFuel + 2, hSource, ?_, hMode,
+        hOuterOutcomeRel, hSame, ?_⟩,
+      hP⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   exact

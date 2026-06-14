@@ -633,6 +633,7 @@ theorem switch_some_of_components
             contract config allocatorDepth lowerCtx selectedStart localsCtx
             outerPlan outerLive frameBase outerMode sourceAfterScrutinee
             targetAfterPop →
+        targetAfterPop.source.returns = target.source.returns →
         ∃ bodyPlan bodyMode targetBodyMid,
           RegularBlockRuntimeInvariantForward
             contract config allocatorDepth transcript lowerCtx
@@ -708,6 +709,9 @@ theorem switch_some_of_components
           target.source.evm.stack targetWithValue)
       hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
       hLowerBody hCompileSelected hSelectedInvariant
+      (by
+        simpa [AllocationObserverRelation.StateRel.popTarget] using
+          Structured.ObserverSemantics.Code.run_returns_eq hTargetScrutinee)
   obtain
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
@@ -840,6 +844,8 @@ theorem switch_some_of_components
     {sourceOutcome :
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
     {value : Word}
     (hPlanningAllocation :
       planning.allocation = lowerState.allocation)
@@ -903,6 +909,7 @@ theorem switch_some_of_components
             contract config allocatorDepth lowerCtx selectedStart localsCtx
             outerPlan outerLive frameBase outerMode sourceAfterScrutinee
             targetAfterPop →
+        targetAfterPop.source.returns = target.source.returns →
         ∃ bodyPlan finalMode targetOutcome finalCtx,
           BlockRuntimeForward contract config allocatorDepth transcript
               bodyPlan
@@ -915,7 +922,8 @@ theorem switch_some_of_components
               targetAfterPop sourceOutcome targetOutcome finalCtx ∧
             ActivationOutcomeRel contract outerPlan
               (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
-              0 frameBase finalMode sourceOutcome targetOutcome)
+              0 frameBase finalMode sourceOutcome targetOutcome ∧
+            P targetOutcome)
     (hLower :
       AllocationLowering.lowerStmt lowerCtx returns lowerState
           (.switch scrutinee cases defaultBody) =
@@ -930,7 +938,8 @@ theorem switch_some_of_components
         frameBase outerMode finalMode sourceProgram sourceCtx
         (.switch scrutinee cases defaultBody) source targetProgram target
         (Expressions.StmtList.toStructured compiledStmts)
-        sourceOutcome targetOutcome sourceCtx := by
+        sourceOutcome targetOutcome sourceCtx ∧
+      P targetOutcome := by
   obtain
       ⟨loweredScrutinee, loweredCases, afterCases, loweredDefault,
         hLowerScrutinee, hLowerCases, hLowerDefault, rfl⟩ :=
@@ -975,13 +984,16 @@ theorem switch_some_of_components
     hPopInvariant.transport_state hSelectedEnv hSelectedLayout
   obtain
       ⟨bodyPlan, finalMode, targetOutcome, finalCtx,
-        hBodyForward, hOuterOutcomeRel⟩ :=
+        hBodyForward, hOuterOutcomeRel, hP⟩ :=
     hBody
       (targetAfterPop :=
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
       hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
       hLowerBody hCompileSelected hSelectedInvariant
+      (by
+        simpa [AllocationObserverRelation.StateRel.popTarget] using
+          Structured.ObserverSemantics.Code.run_returns_eq hTargetScrutinee)
   rcases hBodyForward with
     ⟨bodySourceFuel, bodyTargetFuel, hSourceOpen, hTargetBody,
       _hBodyOutcomeRel, hSame, hBodyEffect⟩
@@ -1055,10 +1067,12 @@ theorem switch_some_of_components
     Structured.EffectSemantics.Block.Eval.cons_nonregular
       hTargetStmt hTargetMode
   exact
-    ⟨targetOutcome, finalMode, bodySourceFuel + 1, bodyTargetFuel + 2,
-      hSourceStmt, hTarget, hMode, hOuterOutcomeRel, hSame,
-      (Frame.ActivationEffect.of_allocatorEffect
-        hScrutineeEffect).trans hBodyEffect⟩
+    ⟨targetOutcome, finalMode,
+      ⟨bodySourceFuel + 1, bodyTargetFuel + 2,
+        hSourceStmt, hTarget, hMode, hOuterOutcomeRel, hSame,
+        (Frame.ActivationEffect.of_allocatorEffect
+          hScrutineeEffect).trans hBodyEffect⟩,
+      hP⟩
 
 end NonregularStmtRuntimeForward
 end AllocationObserverOutcome

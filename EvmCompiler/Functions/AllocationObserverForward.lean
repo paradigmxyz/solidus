@@ -4200,6 +4200,7 @@ theorem Cursor.ifTrueRegularRuntimeResult
               program.memoryContract config allocatorDepth artifact.lowerCtx
               lowerState localsCtx bodyCursor.plan live frameBase mode
               sourceAfterCond targetBodyStart →
+          targetBodyStart.source.returns = target.source.returns →
           ∃ targetBodyFinal,
             AllocationObserverOutcome.BlockRuntimeResult
               program.memoryContract config allocatorDepth transcript
@@ -4259,7 +4260,7 @@ theorem Cursor.ifTrueRegularRuntimeResult
       hInvariant
       (by
         intro loweredBody bodyLowerState bodyCode bodyLocals
-          targetAfterCond hLowerBody hCompileBody hCondInvariant
+          targetAfterCond hLowerBody hCompileBody hCondInvariant hReturns
         have hLowerEq :
             (loweredBody, bodyLowerState) =
               (bodyCursor.lowered, bodyCursor.finalState) :=
@@ -4278,7 +4279,7 @@ theorem Cursor.ifTrueRegularRuntimeResult
           hCondInvariant.transport_plan
             bodyCursor.planWF hPlanAgree.symm
         obtain ⟨targetBodyFinal, hBodyResult⟩ :=
-          hBody bodyCursor hBodyInvariant
+          hBody bodyCursor hBodyInvariant hReturns
         cases hBodyResult with
         | @regular _ _ finalMode _ hBodyForward _hControl =>
             exact ⟨targetBodyFinal, finalMode, hBodyForward⟩
@@ -4323,6 +4324,8 @@ theorem Cursor.ifTrueNonregularRuntimeResult
     {sourceOutcome :
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
     {value : Word}
     (cursor :
       Cursor prepared scope live
@@ -4356,6 +4359,7 @@ theorem Cursor.ifTrueNonregularRuntimeResult
               program.memoryContract config allocatorDepth artifact.lowerCtx
               lowerState localsCtx bodyCursor.plan live frameBase mode
               sourceAfterCond targetBodyStart →
+          targetBodyStart.source.returns = target.source.returns →
           ∃ targetBodyOutcome bodyCtx,
             AllocationObserverOutcome.BlockRuntimeResult
               program.memoryContract config allocatorDepth transcript
@@ -4366,7 +4370,8 @@ theorem Cursor.ifTrueNonregularRuntimeResult
               expressions.toStructured
               { stmts :=
                   Expressions.StmtList.toStructured bodyCursor.compiled }
-              targetBodyStart sourceOutcome targetBodyOutcome bodyCtx) :
+              targetBodyStart sourceOutcome targetBodyOutcome bodyCtx ∧
+            P targetBodyOutcome) :
     ∃ afterState headCode,
       ∃ tail :
         Cursor prepared scope live
@@ -4382,7 +4387,8 @@ theorem Cursor.ifTrueNonregularRuntimeResult
             sourceOutcome targetOutcome sourceCtx ∧
           StepTransport lowerState afterState localsCtx localsCtx
             live (.if_ cond body) ∧
-          ExactTail cursor tail := by
+          ExactTail cursor tail ∧
+          P targetOutcome := by
   obtain
       ⟨afterState, headLower, headCode, tail, _loweredCond,
         _condCode, _targetBody, bodyCursor, hCompiled, hLower,
@@ -4393,13 +4399,13 @@ theorem Cursor.ifTrueNonregularRuntimeResult
       AllocationObserverRelation.PlanAgreesOn
         bodyCursor.plan cursor.plan live :=
     bodyCursor.planAgreesOn cursor rfl
-  obtain ⟨targetOutcome, _finalMode, hForward⟩ :=
+  obtain ⟨targetOutcome, _finalMode, hForward, hP⟩ :=
     AllocationObserverOutcome.NonregularStmtRuntimeForward.if_true_of_components
       hConfig hSafe hTrue hMode hCondScoped bodyCursor.sourceScoped
       hInvariant
       (by
         intro loweredBody bodyLowerState bodyCode bodyLocals
-          targetAfterCond hLowerBody hCompileBody hCondInvariant
+          targetAfterCond hLowerBody hCompileBody hCondInvariant hReturns
         have hLowerEq :
             (loweredBody, bodyLowerState) =
               (bodyCursor.lowered, bodyCursor.finalState) :=
@@ -4419,8 +4425,8 @@ theorem Cursor.ifTrueNonregularRuntimeResult
             bodyCursor.planWF hPlanAgree.symm
         obtain
             ⟨recursiveTargetOutcome, recursiveBodyCtx,
-              hBodyResult⟩ :=
-          hBody bodyCursor hBodyInvariant
+              hBodyResult, hBodyP⟩ :=
+          hBody bodyCursor hBodyInvariant hReturns
         cases hBodyResult with
         | regular _hBodyForward _hControl =>
             exact False.elim (hMode rfl)
@@ -4434,13 +4440,14 @@ theorem Cursor.ifTrueNonregularRuntimeResult
                 hBodyOutcomeRel hMode hPlanAgree hControl
             exact
               ⟨bodyCursor.plan, _, recursiveTargetOutcome,
-                recursiveBodyCtx, hBodyForward', hOuterOutcomeRel⟩)
+                recursiveBodyCtx, hBodyForward', hOuterOutcomeRel,
+                hBodyP⟩)
       hLower hCompile
   exact
     ⟨afterState, headCode, tail, targetOutcome, hCompiled,
       .nonregular hForward,
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
-      hExact⟩
+      hExact, hP⟩
 
 /--
 Dispatcher-facing preservation for one synchronized `if`.
@@ -4609,7 +4616,7 @@ theorem Cursor.ifRuntimeResultOfSafeRun
           (finalCtx := bodyCtx)
           hConfig hSafe hValue hSourceScope hInvariant
           (by
-            intro bodyCursor targetBodyStart hBodyInvariant
+            intro bodyCursor targetBodyStart hBodyInvariant _hReturns
             obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
               hBody bodyCursor hBodyRun hBodyInvariant
             cases hBodyResult with
@@ -4624,13 +4631,19 @@ theorem Cursor.ifRuntimeResultOfSafeRun
     · rcases hNonregular with
         ⟨openOutcome, bodyCtx, hBodyRun, hMode, hBodyOutcome⟩
       subst bodyOutcome
-      apply
-        cursor.ifTrueNonregularRuntimeResult hConfig hSafe hValue
-          hMode hControl hInvariant
-      intro bodyCursor targetBodyStart hBodyInvariant
-      obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
-        hBody bodyCursor hBodyRun hBodyInvariant
-      exact ⟨targetBodyOutcome, bodyCtx, hBodyResult⟩
+      obtain
+          ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+            hRuntime, hTransport, hExact, _hDecoration⟩ :=
+        cursor.ifTrueNonregularRuntimeResult (P := fun _ => True)
+          hConfig hSafe hValue hMode hControl hInvariant
+          (by
+            intro bodyCursor targetBodyStart hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            exact ⟨targetBodyOutcome, bodyCtx, hBodyResult, trivial⟩)
+      exact
+        ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+          hRuntime, hTransport, hExact⟩
 
 /--
 Preserve a synchronized `switch` whose canonical source selection finds no
@@ -4787,6 +4800,7 @@ theorem Cursor.switchSomeRegularRuntimeResult
             program.memoryContract config allocatorDepth artifact.lowerCtx
             selectedStart localsCtx bodyCursor.plan live frameBase mode
             sourceAfterScrutinee targetBodyStart →
+        targetBodyStart.source.returns = target.source.returns →
         ∃ targetBodyFinal,
           AllocationObserverOutcome.BlockRuntimeResult
             program.memoryContract config allocatorDepth transcript
@@ -4843,7 +4857,7 @@ theorem Cursor.switchSomeRegularRuntimeResult
         intro selectedLowered selectedBodyStart bodyLowerState
           selectedPlanning bodyCode bodyLocals targetBodyStart
           hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
-          hLowerBody hCompileBody hSelectedInvariant
+          hLowerBody hCompileBody hSelectedInvariant hReturns
         obtain
             ⟨bodyCursor, _hBodyLowered, hBodyFinal, hBodyCode,
               hBodyLocals⟩ :=
@@ -4863,7 +4877,7 @@ theorem Cursor.switchSomeRegularRuntimeResult
           hSelectedInvariant.transport_plan
             bodyCursor.planWF hPlanAgree.symm
         obtain ⟨targetBodyFinal, hBodyResult⟩ :=
-          hBody bodyCursor hBodyInvariant
+          hBody bodyCursor hBodyInvariant hReturns
         cases hBodyResult with
         | @regular _ _ finalMode _ hBodyForward _hControl =>
             refine
@@ -4913,6 +4927,8 @@ theorem Cursor.switchSomeNonregularRuntimeResult
     {sourceOutcome :
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
     {value : Word}
     (cursor :
       Cursor prepared scope live
@@ -4951,6 +4967,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
             program.memoryContract config allocatorDepth artifact.lowerCtx
             selectedStart localsCtx bodyCursor.plan live frameBase mode
             sourceAfterScrutinee targetBodyStart →
+        targetBodyStart.source.returns = target.source.returns →
         ∃ targetOutcome finalCtx,
           AllocationObserverOutcome.BlockRuntimeResult
             program.memoryContract config allocatorDepth transcript
@@ -4961,7 +4978,8 @@ theorem Cursor.switchSomeNonregularRuntimeResult
             sourceAfterScrutinee expressions.toStructured
             { stmts :=
                 Expressions.StmtList.toStructured bodyCursor.compiled }
-            targetBodyStart sourceOutcome targetOutcome finalCtx) :
+            targetBodyStart sourceOutcome targetOutcome finalCtx ∧
+          P targetOutcome) :
     ∃ afterState headCode,
       ∃ tail :
         Cursor prepared scope live
@@ -4978,7 +4996,8 @@ theorem Cursor.switchSomeNonregularRuntimeResult
             sourceOutcome targetOutcome sourceCtx ∧
           StepTransport lowerState afterState localsCtx localsCtx
             live (.switch scrutinee cases defaultBody) ∧
-          ExactTail cursor tail := by
+          ExactTail cursor tail ∧
+          P targetOutcome := by
   obtain
       ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
         hCompile, _hAfterEnv, _hAfterLayout, hScrutineeScoped,
@@ -4988,7 +5007,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
       Functions.Scope.Block.Scoped live selected :=
     Functions.Source.Switch.scoped_of_select_some
       hCasesScoped hDefaultScoped hSelect
-  obtain ⟨targetOutcome, _finalMode, hForward⟩ :=
+  obtain ⟨targetOutcome, _finalMode, hForward, hP⟩ :=
     AllocationObserverOutcome.NonregularStmtRuntimeForward.switch_some_of_components
       (current := scope)
       (planning := cursor.planning)
@@ -4998,7 +5017,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
         intro selectedLowered selectedBodyStart bodyLowerState
           selectedPlanning bodyCode bodyLocals targetBodyStart
           hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
-          hLowerBody hCompileBody hSelectedInvariant
+          hLowerBody hCompileBody hSelectedInvariant hReturns
         obtain
             ⟨bodyCursor, hBodyLowered, hBodyFinal, hBodyCode,
               hBodyLocals⟩ :=
@@ -5019,8 +5038,8 @@ theorem Cursor.switchSomeNonregularRuntimeResult
             bodyCursor.planWF hPlanAgree.symm
         obtain
             ⟨recursiveTargetOutcome, recursiveFinalCtx,
-              hBodyResult⟩ :=
-          hBody bodyCursor hBodyInvariant
+              hBodyResult, hBodyP⟩ :=
+          hBody bodyCursor hBodyInvariant hReturns
         cases hBodyResult with
         | regular _hBodyForward _hControl =>
             exact False.elim (hMode rfl)
@@ -5034,7 +5053,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
                 hBodyOutcomeRel hMode hPlanAgree hControl
             refine
               ⟨bodyCursor.plan, _, recursiveTargetOutcome,
-                recursiveFinalCtx, ?_, hOuterOutcomeRel⟩
+                recursiveFinalCtx, ?_, hOuterOutcomeRel, hBodyP⟩
             simpa [hBodyLowered, hBodyFinal, hBodyCode, hBodyLocals] using
               hBodyForward')
       hLower hCompile
@@ -5042,7 +5061,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
     ⟨afterState, headCode, tail, targetOutcome, hCompiled,
       .nonregular hForward,
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
-      hExact⟩
+      hExact, hP⟩
 
 /--
 Dispatcher-facing preservation for one synchronized `switch`.
@@ -5221,7 +5240,7 @@ theorem Cursor.switchRuntimeResultOfSafeRun
           hConfig hSafe hSelect hSourceScope hInvariant
           (by
             intro selectedStart selectedPlanning bodyCursor
-              targetBodyStart hBodyInvariant
+              targetBodyStart hBodyInvariant _hReturns
             obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
               hBody bodyCursor hBodyRun hBodyInvariant
             cases hBodyResult with
@@ -5236,14 +5255,20 @@ theorem Cursor.switchRuntimeResultOfSafeRun
     · rcases hNonregular with
         ⟨openOutcome, bodyCtx, hBodyRun, hMode, hBodyOutcome⟩
       subst bodyOutcome
-      apply
-        cursor.switchSomeNonregularRuntimeResult hConfig hSafe hSelect
-          hMode hControl hInvariant
-      intro selectedStart selectedPlanning bodyCursor targetBodyStart
-        hBodyInvariant
-      obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
-        hBody bodyCursor hBodyRun hBodyInvariant
-      exact ⟨targetBodyOutcome, bodyCtx, hBodyResult⟩
+      obtain
+          ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+            hRuntime, hTransport, hExact, _hDecoration⟩ :=
+        cursor.switchSomeNonregularRuntimeResult (P := fun _ => True)
+          hConfig hSafe hSelect hMode hControl hInvariant
+          (by
+            intro selectedStart selectedPlanning bodyCursor targetBodyStart
+              hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            exact ⟨targetBodyOutcome, bodyCtx, hBodyResult, trivial⟩)
+      exact
+        ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+          hRuntime, hTransport, hExact⟩
 
 /--
 Preserve one lexical block statement from its synchronized outer cursor and
@@ -5279,6 +5304,8 @@ theorem Cursor.blockRuntimeResult
     {bodyOutcome :
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
     (cursor :
       Cursor prepared scope live
         { stmts := .block body :: rest } lowerState localsCtx)
@@ -5305,9 +5332,10 @@ theorem Cursor.blockRuntimeResult
             (Functions.Scope.Block.outEnv live body)
             frameBase mode program sourceCtx body source
             expressions.toStructured
-            { stmts :=
-                Expressions.StmtList.toStructured bodyCursor.compiled }
-            target bodyOutcome targetOutcome bodyCtx) :
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+            target bodyOutcome targetOutcome bodyCtx ∧
+          P targetOutcome) :
     ∃ afterState headCode,
       ∃ tail :
         Cursor prepared scope live
@@ -5330,14 +5358,16 @@ theorem Cursor.blockRuntimeResult
                 ((Functions.ObserverSemantics.stateModel transcript).restrictTo
                   live bodyOutcome.state)) ∧
           (bodyOutcome.mode ≠ .regular →
-            sourceOutcome = bodyOutcome) := by
+            sourceOutcome = bodyOutcome) ∧
+          (sourceOutcome.mode ≠ .regular →
+            P targetOutcome) := by
   obtain
       ⟨afterState, headCode, tail, targetBlock, bodyCursor,
         hCompiled, hHeadCode, hFinish, hAfterEnv, hAfterLayout,
         hTransport, hExact⟩ :=
     cursor.blockCursors
   subst headCode
-  obtain ⟨targetOutcome, hBodyResult⟩ :=
+  obtain ⟨targetOutcome, hBodyResult, hP⟩ :=
     hBody bodyCursor
   have hPlanAgree :
       AllocationObserverRelation.PlanAgreesOn
@@ -5365,6 +5395,7 @@ theorem Cursor.blockRuntimeResult
           .regular hStmtForward'
             (AllocationObserverOutcome.SameControl.refl sourceCtx),
           hTransport, hExact, (fun _ => rfl),
+          (fun hMode => False.elim (hMode rfl)),
           (fun hMode => False.elim (hMode rfl))⟩
   | nonregular hMode hBodyForward =>
       have hStmtForward :=
@@ -5375,7 +5406,7 @@ theorem Cursor.blockRuntimeResult
           bodyOutcome, targetOutcome, hCompiled,
           .nonregular hStmtForward, hTransport, hExact,
           (fun hRegular => False.elim (hMode hRegular)),
-          (fun _ => rfl)⟩
+          (fun _ => rfl), (fun _ => hP)⟩
 
 end BodyCursor
 
