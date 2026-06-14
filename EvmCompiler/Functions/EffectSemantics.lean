@@ -1505,6 +1505,47 @@ theorem call_halted_parts {σ : Type}
   · simp [hTargets, Source.invalid, Structured.invalid] at hRun
 
 /--
+Expose the exact selected body run behind a halting call statement.
+
+This is the call analogue of `call_regular_body_parts`: the statement-level
+fuel pays for call dispatch and `runBody`, leaving the strictly smaller body
+fuel for recursive preservation.
+-/
+theorem call_halted_body_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source haltedState : σ} {kind : Assembly.HaltKind}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 2)
+          (.call targets functionName args) source =
+        .ok (Outcome.halt kind haltedState, ctx)) :
+    ∃ stateAfterArgs argValues fn paramStore bodyCtx',
+      targets.Nodup ∧
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues) ∧
+      Source.FunList.find? functionName program.functions = some fn ∧
+      Source.Store.insertMany fn.params argValues
+          Locals.Source.Store.empty =
+        some paramStore ∧
+      Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
+          (model.withSource stateAfterArgs
+            { shared := (model.source stateAfterArgs).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (Outcome.halt kind haltedState, bodyCtx') := by
+  obtain
+      ⟨stateAfterArgs, argValues, fn, hTargets, hArgs, hFind, hBody⟩ :=
+    call_halted_parts model prim program
+      (fuel := fuel + 1) (by simpa [Nat.add_assoc] using hRun)
+  obtain ⟨paramStore, bodyCtx', hParams, hBodyRun⟩ :=
+    FunDef.runBody_halted_parts model prim program hBody
+  exact
+    ⟨stateAfterArgs, argValues, fn, paramStore, bodyCtx',
+      hTargets, hArgs, hFind, hParams, hBodyRun⟩
+
+/--
 Canonical loop execution when the current condition is false.
 -/
 theorem runForLoop_false_of_eval {σ : Type}

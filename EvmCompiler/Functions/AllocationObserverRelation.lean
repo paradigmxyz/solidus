@@ -5380,6 +5380,131 @@ theorem mode_of_sameFrame {transcript : Trace}
 
 end ActivationEffect
 
+/--
+Allocator prefix owned by one activation representation.
+
+A stack activation protects through the next frame depth because it owns no
+frame. A scratch activation protects only strictly older frames because its
+current frame may be mutated.
+-/
+def activationProtectedBound (depth : Nat) (mode : ActivationMode) : Nat :=
+  match mode with
+  | .stack => depth + 1
+  | .scratch _ _ => depth
+
+/--
+Outcome-indexed resource effect for abrupt statement and block results.
+
+Break, continue, leave, and ordinary terminal leaves can retain the usual
+activation effect. A nested call that halts may leave its callee allocator
+depth installed because no continuation observes it; that path instead
+retains the exact final depth and protects every caller-owned prefix.
+-/
+inductive OutcomeEffect {transcript : Trace}
+    (config : Config) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState transcript) :
+    Locals.Source.Mode → Prop where
+  | activation {outcomeMode : Locals.Source.Mode}
+      (effect : ActivationEffect config depth mode before after) :
+      OutcomeEffect config depth mode before after outcomeMode
+  | halt (kind : Assembly.HaltKind) {finalDepth : Nat}
+      (effect :
+        BoundedEffect config finalDepth
+          (activationProtectedBound depth mode) before after) :
+      OutcomeEffect config depth mode before after (.halt kind)
+
+namespace OutcomeEffect
+
+theorem of_activation {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect : ActivationEffect config depth mode before after) :
+    OutcomeEffect config depth mode before after outcomeMode :=
+  .activation hEffect
+
+theorem halt_of_bounded {transcript : Trace}
+    {config : Config} {depth finalDepth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    {kind : Assembly.HaltKind}
+    (hEffect :
+      BoundedEffect config finalDepth
+        (activationProtectedBound depth mode) before after) :
+    OutcomeEffect config depth mode before after (.halt kind) :=
+  .halt kind hEffect
+
+theorem activation_of_not_halt {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect : OutcomeEffect config depth mode before after outcomeMode)
+    (hNotHalt : ∀ kind, outcomeMode ≠ .halt kind) :
+    ActivationEffect config depth mode before after := by
+  cases hEffect with
+  | activation effect =>
+      exact effect
+  | halt kind effect =>
+      exact False.elim (hNotHalt kind rfl)
+
+theorem exists_boundedEffect {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect : OutcomeEffect config depth mode before after outcomeMode) :
+    ∃ finalDepth,
+      BoundedEffect config finalDepth
+        (activationProtectedBound depth mode) before after := by
+  cases hEffect with
+  | activation effect =>
+      cases mode with
+      | stack =>
+          exact ⟨depth, BoundedEffect.of_allocatorEffect effect⟩
+      | scratch =>
+          exact ⟨depth, BoundedEffect.of_suspendedEffect effect⟩
+  | halt _ effect =>
+      exact ⟨_, effect⟩
+
+theorem mode_of_sameFrame {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {before after : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hEffect :
+      OutcomeEffect config depth beforeMode before after outcomeMode)
+    (hSame : SameFrame beforeMode afterMode) :
+    OutcomeEffect config depth afterMode before after outcomeMode := by
+  cases hEffect with
+  | activation effect =>
+      exact .activation (effect.mode_of_sameFrame hSame)
+  | halt kind effect =>
+      cases hSame <;> exact .halt kind effect
+
+theorem prepend_activation {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {first second third : TargetState transcript}
+    {outcomeMode : Locals.Source.Mode}
+    (hFirst : ActivationEffect config depth beforeMode first second)
+    (hSame : SameFrame beforeMode afterMode)
+    (hSecond :
+      OutcomeEffect config depth afterMode second third outcomeMode) :
+    OutcomeEffect config depth beforeMode first third outcomeMode := by
+  cases hSame with
+  | stack =>
+      cases hSecond with
+      | activation effect =>
+          exact .activation (AllocatorEffect.trans hFirst effect)
+      | halt kind effect =>
+          exact .halt kind (hFirst.to_boundedEffect.trans effect)
+  | scratch =>
+      cases hSecond with
+      | activation effect =>
+          exact .activation (SuspendedEffect.trans hFirst effect)
+      | halt kind effect =>
+          exact .halt kind (hFirst.to_boundedEffect.trans effect)
+
+end OutcomeEffect
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :

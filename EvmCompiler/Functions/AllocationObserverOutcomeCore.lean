@@ -13,8 +13,9 @@ Allocator-aware preservation for one source statement that exits nonregularly.
 
 This shared interface is independent of statement-specific proof modules. The
 final activation mode describes the related abrupt outcome, while `SameFrame`
-and `ActivationEffect` retain the representation and allocator facts needed by
-enclosing source-fuel recursion.
+and the outcome-indexed resource effect retain the allocator facts needed by
+enclosing source-fuel recursion. Terminal calls may finish at a deeper
+allocator depth because no continuation can observe restoration.
 -/
 def NonregularStmtRuntimeForward
     (contract : MemoryContract.Contract)
@@ -52,8 +53,8 @@ def NonregularStmtRuntimeForward
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome ∧
       SameFrame initialMode finalMode ∧
-      Frame.ActivationEffect config allocatorDepth initialMode
-        target targetOutcome.state
+      Frame.OutcomeEffect config allocatorDepth initialMode
+        target targetOutcome.state sourceOutcome.mode
 
 /--
 Outcome-indexed block preservation with the recursive allocator invariant.
@@ -92,8 +93,8 @@ def BlockRuntimeForward
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome ∧
       SameFrame initialMode finalMode ∧
-      Frame.ActivationEffect config allocatorDepth initialMode
-        target targetOutcome.state
+      Frame.OutcomeEffect config allocatorDepth initialMode
+        target targetOutcome.state sourceOutcome.mode
 
 /--
 Outcome-indexed preservation for a lexically scoped source block while
@@ -137,8 +138,8 @@ def ScopedBlockRuntimeForward
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome ∧
       SameFrame initialMode finalMode ∧
-      Frame.ActivationEffect config allocatorDepth initialMode
-        target targetOutcome.state
+      Frame.OutcomeEffect config allocatorDepth initialMode
+        target targetOutcome.state sourceOutcome.mode
 
 /--
 The source-visible live set associated with a statement outcome.

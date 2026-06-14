@@ -605,6 +605,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callRegularHeadResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callHaltHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
@@ -624,9 +625,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_halt
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.ofSelected
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_safe_source
+#check EvmCompiler.Functions.AllocationObserverForward.Call.halt_of_selected
+#check EvmCompiler.Functions.AllocationObserverForward.Call.halt_of_safe_source
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward
 #check EvmCompiler.Functions.AllocationObserverOutcome.reindex_outcomeLive
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.reindex_regularLive

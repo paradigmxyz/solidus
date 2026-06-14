@@ -399,6 +399,42 @@ theorem leave
   · simp [final, Structured.ObserverSemantics.stateModel, hEVM]
   · simp [final, Structured.ObserverSemantics.stateModel, hReturns]
 
+/--
+A terminal procedure body propagates directly through the Structured call.
+The caller return frame and generated writeback path are unreachable.
+-/
+theorem halt
+    {transcript : Trace}
+    {targetProgram : Structured.Program}
+    {fuel : Nat}
+    {name : Structured.Name}
+    {proc : Structured.Proc}
+    {target bodyFinal :
+      Structured.ObserverSemantics.State transcript}
+    {args callerStack : EvmYul.Stack Word}
+    {kind : Assembly.HaltKind}
+    (hLookup :
+      Structured.ProcList.lookup? name targetProgram.procs = some proc)
+    (hTargetStack :
+      target.source.evm.stack = args ++ callerStack)
+    (hArgsLength : args.length = proc.argc)
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel proc.body
+        (CalleeEntry.structuredState target args callerStack proc.retc)
+        (Structured.EffectSemantics.Outcome.halt kind bodyFinal)) :
+    Structured.ObserverSemantics.Stmt.Eval
+      targetProgram (fuel + 1) (.call name) target
+      (Structured.EffectSemantics.Outcome.halt kind bodyFinal) := by
+  have hSplit :
+      Structured.StackFrame.splitArgs? proc.argc target.source.evm.stack =
+        some (args, callerStack) := by
+    rw [hTargetStack]
+    simpa [hArgsLength] using
+      Structured.StackFrame.splitArgs?_append args callerStack
+  exact
+    Structured.EffectSemantics.Stmt.Eval.call_halt
+      hLookup hSplit hBody
+
 end StructuredCall
 
 namespace CallCompiler
@@ -3552,6 +3588,115 @@ theorem compose_leave
         exact hProtectedBound ▸
           AllocationObserverRelation.Frame.BoundedEffect.of_suspendedEffect
             hEffect
+
+/--
+Compose a callee whose recursively preserved body has any nonregular outcome.
+The generated regular-return epilogue is unreachable. This is the common
+callee assembly theorem used by source `leave` and terminal halt paths.
+-/
+theorem compose_nonregular
+    {transcript : Trace}
+    {config : AllocationObserverRelation.Frame.Config}
+    {callerDepth calleeDepth : Nat}
+    {entryMode bodyMode : AllocationObserverRelation.ActivationMode}
+    {targetProgram : Structured.Program}
+    {proc : Structured.Proc}
+    {markerBlock preludeBlock bodyBlock returnBlock : Structured.Block}
+    {targetEntry targetBodyStart : Structured.ObserverSemantics.State transcript}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome (transcript := transcript)}
+    {outcomeMode : Locals.Source.Mode}
+    {markerFuel preludeFuel bodyFuel : Nat}
+    (hBodyShape :
+      proc.body.stmts =
+        markerBlock.stmts ++ preludeBlock.stmts ++
+          bodyBlock.stmts ++ returnBlock.stmts)
+    (hMarkers :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram markerFuel markerBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetEntry))
+    (hPrelude :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram preludeFuel preludeBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetBodyStart))
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyFuel bodyBlock targetBodyStart targetOutcome)
+    (hNonregular : targetOutcome.mode ≠ .regular)
+    (hSame :
+      AllocationObserverRelation.SameFrame entryMode bodyMode)
+    (hPreludeEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth entryMode targetEntry targetBodyStart)
+    (hBodyEffect :
+      AllocationObserverRelation.Frame.OutcomeEffect
+        config calleeDepth bodyMode targetBodyStart targetOutcome.state
+        outcomeMode)
+    (hProtectedBound :
+      protectedBound calleeDepth entryMode =
+        callerDepth + 1) :
+    ∃ finalDepth fuel,
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram fuel proc.body targetEntry targetOutcome ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config finalDepth (callerDepth + 1)
+        targetEntry targetOutcome.state := by
+  rcases markerBlock with ⟨markerStmts⟩
+  rcases preludeBlock with ⟨preludeStmts⟩
+  rcases bodyBlock with ⟨bodyStmts⟩
+  rcases returnBlock with ⟨returnStmts⟩
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram markerFuel { stmts := markerStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetEntry)
+    at hMarkers
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram preludeFuel { stmts := preludeStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetBodyStart)
+    at hPrelude
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram bodyFuel { stmts := bodyStmts } targetBodyStart
+      targetOutcome
+    at hBody
+  obtain ⟨markerPreludeFuel, hMarkerPrelude⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts) (right := preludeStmts)
+      hMarkers hPrelude
+  obtain ⟨throughBodyFuel, hThroughBody⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts ++ preludeStmts)
+      (right := bodyStmts)
+      hMarkerPrelude hBody
+  have hEval :=
+    Structured.EffectSemantics.Block.Eval.append_nonregular
+      (right := returnStmts) hThroughBody hNonregular
+  have hWholeEffect :
+      AllocationObserverRelation.Frame.OutcomeEffect
+        config calleeDepth entryMode targetEntry targetOutcome.state
+        outcomeMode :=
+    AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+      hPreludeEffect hSame hBodyEffect
+  obtain ⟨finalDepth, hBoundedEffect⟩ :=
+    hWholeEffect.exists_boundedEffect
+  have hProtectedBound' :
+      AllocationObserverRelation.Frame.activationProtectedBound
+          calleeDepth entryMode =
+        callerDepth + 1 := by
+    simpa [protectedBound,
+      AllocationObserverRelation.Frame.activationProtectedBound] using
+      hProtectedBound
+  refine ⟨finalDepth, throughBodyFuel, ?_, ?_⟩
+  · cases hProcBody : proc.body with
+    | mk procStmts =>
+        have hProcStmts :
+            procStmts =
+              markerStmts ++ preludeStmts ++ bodyStmts ++ returnStmts := by
+          simpa [hProcBody] using hBodyShape
+        subst procStmts
+        simpa [List.append_assoc] using hEval
+  · exact hProtectedBound' ▸ hBoundedEffect
 
 end RegularCallee
 

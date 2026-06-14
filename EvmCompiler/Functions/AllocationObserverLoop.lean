@@ -526,8 +526,8 @@ def NonregularRuntimeForward
       sourceProgram loopCtx cond postBase post bodyBase body targetProgram
       condCode postBlock bodyBlock source target sourceOutcome
       targetOutcome ∧
-    AllocationObserverRelation.Frame.ActivationEffect
-      config allocatorDepth mode target targetOutcome.state
+    AllocationObserverRelation.Frame.OutcomeEffect
+      config allocatorDepth mode target targetOutcome.state sourceOutcome.mode
 
 /--
 A leaving loop body propagates the activation-exit outcome directly.
@@ -2412,8 +2412,11 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | leave hLeave =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans hBodyEffect⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  hBodyEffect⟩
             exact
               ⟨bodySourceFuel + 1, bodyTargetFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_body_leave_of_runs
@@ -2429,8 +2432,11 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | halt kind hHalt =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans hBodyEffect⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  hBodyEffect⟩
             exact
               ⟨bodySourceFuel + 1, bodyTargetFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_body_halt_of_runs
@@ -2532,9 +2538,14 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | leave hLeave =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans
-                  (hBodyEffect.trans hPostEffect)⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                    hBodyEffect
+                    (AllocationObserverRelation.SameFrame.refl mode)
+                    hPostEffect)⟩
             exact
               ⟨sourceJoinFuel + 1, targetJoinFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_regular_post_leave_of_runs
@@ -2550,9 +2561,14 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | halt kind hHalt =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans
-                  (hBodyEffect.trans hPostEffect)⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                    hBodyEffect
+                    (AllocationObserverRelation.SameFrame.refl mode)
+                    hPostEffect)⟩
             exact
               ⟨sourceJoinFuel + 1, targetJoinFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_regular_post_halt_of_runs
@@ -2654,9 +2670,14 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | leave hLeave =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans
-                  (hBodyEffect.trans hPostEffect)⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                    hBodyEffect
+                    (AllocationObserverRelation.SameFrame.refl mode)
+                    hPostEffect)⟩
             exact
               ⟨sourceJoinFuel + 1, targetJoinFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_cont_post_leave_of_runs
@@ -2672,9 +2693,14 @@ theorem NonregularRuntimeForward.of_safe_source_run
         | halt kind hHalt =>
             refine
               ⟨_, ?_,
-                (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-                  hCondEffect).trans
-                  (hBodyEffect.trans hPostEffect)⟩
+                AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                    hCondEffect)
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                    hBodyEffect
+                    (AllocationObserverRelation.SameFrame.refl mode)
+                    hPostEffect)⟩
             exact
               ⟨sourceJoinFuel + 1, targetJoinFuel + 1,
                 Functions.Source.Effectful.Stmt.runForLoop_cont_post_halt_of_runs
@@ -2827,12 +2853,19 @@ theorem NonregularRuntimeForward.of_safe_source_run
                 hSourceBody'' hSourcePost'' hSourceLoop'',
               Structured.EffectSemantics.For.Eval.regular_post_regular
                 (by simpa [hValue] using hTargetCond)
-                hTargetBody' hTargetPost' hTargetLoop',
+              hTargetBody' hTargetPost' hTargetLoop',
               hRel⟩,
-            (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-              hCondEffect).trans
-              (hBodyEffect.trans
-                (hPostEffect.trans hLoopEffect))⟩
+            AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+              (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                hCondEffect)
+              (AllocationObserverRelation.SameFrame.refl mode)
+              (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                hBodyEffect
+                (AllocationObserverRelation.SameFrame.refl mode)
+                (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  hPostEffect
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  hLoopEffect))⟩
       · obtain
             ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
               hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
@@ -2973,12 +3006,19 @@ theorem NonregularRuntimeForward.of_safe_source_run
                 hSourceBody'' hSourcePost'' hSourceLoop'',
               Structured.EffectSemantics.For.Eval.cont_post_regular
                 (by simpa [hValue] using hTargetCond)
-                hTargetBody' hTargetPost' hTargetLoop',
+              hTargetBody' hTargetPost' hTargetLoop',
               hRel⟩,
-            (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-              hCondEffect).trans
-              (hBodyEffect.trans
-                (hPostEffect.trans hLoopEffect))⟩
+            AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+              (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+                hCondEffect)
+              (AllocationObserverRelation.SameFrame.refl mode)
+              (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                hBodyEffect
+                (AllocationObserverRelation.SameFrame.refl mode)
+                (AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+                  hPostEffect
+                  (AllocationObserverRelation.SameFrame.refl mode)
+                  hLoopEffect))⟩
 
 /--
 Canonical source-fuel induction for loop exits.
@@ -6317,7 +6357,8 @@ theorem for_exit_of_components
   refine
     ⟨targetOutcome, sourceFuel + 1, targetFuel + 2, hSource, ?_,
       hSourceMode, hOutcomeRel, hInitMode,
-      hInitEffect.trans_of_sameFrame hInitMode hLoopEffect⟩
+      Frame.OutcomeEffect.prepend_activation
+        hInitEffect hInitMode hLoopEffect⟩
   have hInitCompile :
       Expressions.Block.toStructured { stmts := initCode } =
         { stmts := Expressions.StmtList.toStructured initCode } := by

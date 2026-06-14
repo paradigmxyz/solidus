@@ -242,7 +242,8 @@ theorem of_runs
       plan finalLive frameBase initialMode finalMode sourceProgram sourceCtx
       stmt source targetProgram target compiled sourceOutcome targetOutcome
       stmtCtx :=
-  ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel, hSame, hEffect⟩
+  ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel, hSame,
+    Frame.OutcomeEffect.of_activation hEffect⟩
 
 /--
 Change the regular continuation environment carried by an abrupt statement
@@ -426,7 +427,7 @@ theorem leave_of_invariant
           hReturnEffect.ready hCleanupMachine))
   refine
     ⟨targetFinal, 0, 3, hSource, ?_, ?_, .leave hLeaveRel,
-      SameFrame.refl mode, hEffect⟩
+      SameFrame.refl mode, Frame.OutcomeEffect.of_activation hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   · intro hMode
@@ -542,8 +543,9 @@ theorem terminalArgs_of_invariant
   refine
     ⟨targetFinal, 0, 2, hSource, ?_, ?_,
       .halt kind hHaltRel, SameFrame.refl mode,
-      Frame.ActivationEffect.of_allocatorEffect
-        (hArgsEffect.trans hTerminalEffect)⟩
+      Frame.OutcomeEffect.of_activation
+        (Frame.ActivationEffect.of_allocatorEffect
+          (hArgsEffect.trans hTerminalEffect))⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   · intro hMode
@@ -685,8 +687,9 @@ theorem terminal_of_invariant
   refine
     ⟨targetFinal, 0, 2, hSource, ?_, ?_,
       .halt kind hHaltRel, SameFrame.refl mode,
-      Frame.ActivationEffect.of_allocatorEffect
-        (hCleanupEffect.trans hTerminalEffect)⟩
+      Frame.OutcomeEffect.of_activation
+        (Frame.ActivationEffect.of_allocatorEffect
+          (hCleanupEffect.trans hTerminalEffect))⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured, Locals.codeStmt, hCompiled,
       hLowered] using hTarget
@@ -785,7 +788,7 @@ theorem brk_of_invariant_exact
   refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
   refine
     ⟨0, 2, hSource, ?_, ?_, .brk hFinalRel,
-      hTransition.sameFrame, hEffect⟩
+      hTransition.sameFrame, Frame.OutcomeEffect.of_activation hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   · intro hMode
@@ -933,7 +936,7 @@ theorem cont_of_invariant_exact
   refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
   refine
     ⟨0, 2, hSource, ?_, ?_, .cont hFinalRel,
-      hTransition.sameFrame, hEffect⟩
+      hTransition.sameFrame, Frame.OutcomeEffect.of_activation hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   · intro hMode
@@ -1025,7 +1028,8 @@ theorem nil
       Structured.EffectSemantics.Block.Eval.nil,
       ActivationOutcomeRel.regular hInvariant.activation.state,
       SameFrame.refl mode,
-      Frame.ActivationEffect.refl hInvariant.allocator⟩
+      Frame.OutcomeEffect.of_activation
+        (Frame.ActivationEffect.refl hInvariant.allocator)⟩
 
 theorem cons_regular
     {contract : MemoryContract.Contract}
@@ -1086,7 +1090,8 @@ theorem cons_regular
   exact
     ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailRel,
       hHeadSame.trans hTailSame,
-      hHeadEffect.trans_of_sameFrame hHeadSame hTailEffect⟩
+      Frame.OutcomeEffect.prepend_activation
+        hHeadEffect hHeadSame hTailEffect⟩
 
 theorem cons_nonregular
     {contract : MemoryContract.Contract}

@@ -2779,10 +2779,15 @@ theorem forRegularHeadResult
             hInvariant.activation.compiler initCursor.planWF
               hLoopStateExtends
               hInitScope hBaseDestination
+        have hBodyActivationEffect :=
+          Frame.OutcomeEffect.activation_of_not_halt hBodyEffect (by
+            intro kind hMode
+            cases hMode)
         rw [hCompiledBodyShape]
         exact
           ⟨targetBodyFinal, bodySourceFuel, bodyTargetFuel,
-            hBodySource, hBodyTarget, hLoopInvariant, hBodyEffect⟩)
+            hBodySource, hBodyTarget, hLoopInvariant,
+            hBodyActivationEffect⟩)
       (by
         intro loweredInit' loopState' afterPost' afterBody'
           loweredPost loweredBody initLocals' bodyLocals' initCode'
@@ -2915,10 +2920,15 @@ theorem forRegularHeadResult
               (after :=
                 initCursor.finalLocals.withLoopControl
                   initCursor.finalLocals.layout.length) rfl
+        have hBodyActivationEffect :=
+          Frame.OutcomeEffect.activation_of_not_halt hBodyEffect (by
+            intro kind hMode
+            cases hMode)
         rw [hCompiledBodyShape]
         exact
           ⟨targetBodyFinal, bodySourceFuel, bodyTargetFuel,
-            hBodySource, hBodyTarget, hContinueInvariant, hBodyEffect⟩)
+            hBodySource, hBodyTarget, hContinueInvariant,
+            hBodyActivationEffect⟩)
       (by
         intro loweredInit' loopState' afterPost' loweredPost initLocals'
           postLocals' initCode' postCode compiledPost' postFuel postSource
@@ -3393,11 +3403,15 @@ theorem forExitHeadResult
                     (after :=
                       initCursor.finalLocals.withLoopControl
                         initCursor.finalLocals.layout.length) rfl
+              have hBodyActivationEffect :=
+                Frame.OutcomeEffect.activation_of_not_halt hBodyEffect (by
+                  intro kind hMode
+                  cases hMode)
               rw [hCompiledBodyShape]
               exact
                 ⟨targetBodyFinal, bodySourceFuel, bodyTargetFuel,
                   hBodySource, hBodyTarget, hContinueInvariant,
-                  hBodyEffect⟩)
+                  hBodyActivationEffect⟩)
             (by
               intro bodyFuel bodySource bodyOutcome bodyTarget
                 hBodyExit hBodyInvariant hReturnFrame hFuel hRun
@@ -5537,6 +5551,191 @@ theorem callRegularHeadResult
           change
             (Locals.Source.Mode.regular : Locals.Source.Mode) =
               Locals.Source.Mode.cont at hMode
+          contradiction)⟩
+
+/--
+Dispatch a terminal internal function call through the compiler-selected
+callee. The recursive callback is consumed by the call-owned theorem, and the
+generated caller tail is proved unreachable.
+-/
+theorem callHaltHeadResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {name : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {kind : Assembly.HaltKind}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        { stmts := .call targets name args :: rest }
+        lowerState localsCtx)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 2)
+          (.call targets name args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+            sourceCtx))
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hBody :
+      ∀ {selectedFn : Functions.FunDef}
+        {selected :
+          AllocationObserverCall.SelectedCallee.Artifact
+            allocation program expressions name selectedFn}
+        (selectedPrepared :
+          AllocationObserverCall.SelectedCallee.Prepared selected)
+        {sourceBodyStart :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx' : Functions.Source.Ctx}
+        {targetBodyStart : Structured.ObserverSemantics.State transcript}
+        {calleeDepth calleeFrameBase : Nat},
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            sourceFuel selectedFn.body sourceBodyStart =
+          .ok (bodyOutcome, bodyCtx') →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            program.memoryContract config calleeDepth selected.lowerCtx
+            selected.bodyStart selectedPrepared.returnCtx selectedPrepared.plan
+            ((selected.slots.returns.map Prod.fst).reverse ++
+              (selected.slots.params.map Prod.fst).reverse)
+            calleeFrameBase
+            (selectedPrepared.mode.atStackDepth
+              (currentStackOrder selectedPrepared.plan
+                ((selected.slots.returns.map Prod.fst).reverse ++
+                  (selected.slots.params.map Prod.fst).reverse)).length)
+            sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockRuntimeResult
+            program.memoryContract config calleeDepth transcript
+            selected.lowerCtx selectedPrepared.bodyFinal
+            selectedPrepared.bodyCtx selectedPrepared.plan
+            selectedFn.returns
+            (Functions.Scope.Block.outEnv
+              ((selected.slots.returns.map Prod.fst).reverse ++
+                (selected.slots.params.map Prod.fst).reverse)
+              selectedFn.body)
+            calleeFrameBase
+            (selectedPrepared.mode.atStackDepth
+              (currentStackOrder selectedPrepared.plan
+                ((selected.slots.returns.map Prod.fst).reverse ++
+                  (selected.slots.params.map Prod.fst).reverse)).length)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            selectedFn.body sourceBodyStart expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured selectedPrepared.bodyCode }
+            targetBodyStart bodyOutcome targetOutcome bodyCtx') :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+        ControlledHeadResult cursor hBoundary afterState afterLocals
+          headCode tail
+          (config := config) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome :=
+            Functions.Source.Effectful.Outcome.halt kind sourceFinal) := by
+  obtain
+      ⟨afterState, afterLocals, lowered, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  let compilation :
+      AllocationObserverForward.Compilation allocation program expressions :=
+    AllocationObserverForward.Compilation.ofSelected artifact
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverForward.Call.halt_of_safe_source
+      compilation hConfig
+      (compilation.selected_shared artifact)
+      hSource hScoped hBoundary.invariant hBoundary.budget
+      hLower hCompile
+      (fun {fn} {artifact} prepared
+          {sourceBodyStart} {bodyCtx'} {targetBodyStart}
+          {calleeDepth} {calleeFrameBase}
+          hRun hInvariant hReturnFrame =>
+        hBody (selectedFn := fn) (selected := artifact) prepared
+          hRun hInvariant hReturnFrame)
+  have hRuntime :
+      AllocationObserverOutcome.StmtRuntimeResult
+        program.memoryContract config allocatorDepth transcript
+        artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+        live frameBase mode program sourceCtx
+        (.call targets name args) source expressions.toStructured target
+        (Expressions.StmtList.toStructured headCode)
+        (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+        sourceCtx :=
+    .nonregular hForward
+  have hExact :
+      AllocationObserverForward.BodyCursor.ExactTail cursor tail :=
+    ⟨hPlan, hFinalState, hFinalLocals⟩
+  have hHead :
+      HeadResult cursor afterState afterLocals headCode tail
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.halt kind sourceFinal) :=
+    HeadResult.ofNonregular cursor tail hCompiled hRuntime hExact (by
+      intro hMode
+      change Locals.Source.Mode.halt kind = .regular at hMode
+      contradiction)
+  exact
+    ⟨afterState, afterLocals, headCode, tail,
+      ControlledHeadResult.of_no_control cursor hBoundary tail hHead
+        (by
+          intro sourceFinal' hEq
+          have hMode :=
+            congrArg Locals.Source.Effectful.Outcome.mode hEq
+          change
+            Locals.Source.Mode.halt kind = Locals.Source.Mode.brk at hMode
+          contradiction)
+        (by
+          intro sourceFinal' hEq
+          have hMode :=
+            congrArg Locals.Source.Effectful.Outcome.mode hEq
+          change
+            Locals.Source.Mode.halt kind = Locals.Source.Mode.cont at hMode
           contradiction)⟩
 
 /--

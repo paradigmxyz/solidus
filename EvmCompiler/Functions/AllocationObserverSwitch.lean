@@ -1080,8 +1080,9 @@ theorem switch_some_of_components
     ⟨targetOutcome, finalMode,
       ⟨bodySourceFuel + 1, bodyTargetFuel + 2,
         hSourceStmt, hTarget, hMode, hOuterOutcomeRel, hSame,
-        (Frame.ActivationEffect.of_allocatorEffect
-          hScrutineeEffect).trans hBodyEffect⟩,
+        Frame.OutcomeEffect.prepend_activation
+          (Frame.ActivationEffect.of_allocatorEffect hScrutineeEffect)
+          (SameFrame.refl outerMode) hBodyEffect⟩,
       hP⟩
 
 end NonregularStmtRuntimeForward

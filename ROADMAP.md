@@ -1370,7 +1370,7 @@ corridor.
 - [x] Recover the compiled procedure selected by a source function name through
   the real function-list lowerer.
 - [x] Compose the selected callee's real entry/prelude and complete procedure
-  execution for both regular and source-`leave` recursive body outcomes.
+  execution for regular, source-`leave`, and terminal recursive body outcomes.
 - [x] Compose the source-facing call statement from argument evaluation,
   compiler-selected callee entry, recursive body execution, outcome-indexed
   return restoration, optional frame release, and caller target assignment.
@@ -1379,11 +1379,13 @@ corridor.
   recursive open-block interface over real synchronized cursors. Every `for`
   outcome is checked through pass-owned source-fuel theorems, including
   initializer exit, regular completion, exact break/continue handling, and
-  body/post leave or halt. Compiler-selected regular calls now reconstruct the
-  whole compilation from the selected artifact, derive the callee's scoped root
+  body/post leave or halt. Compiler-selected calls now reconstruct the whole
+  compilation from the selected artifact, derive the callee's scoped root
   boundary from `Program.Scoped`, and consume a strictly smaller recursive body
-  result through the real call prelude and epilogue. The remaining Functions
-  work is the halting-call path followed by assembly of the mutual
+  result through the real call prelude. Regular and source-`leave` results run
+  the real epilogue, frame release, and caller assignment; terminal results
+  prove those generated phases unreachable while preserving the caller-owned
+  allocator prefix. The remaining Functions work is assembly of the mutual
   statement/block dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.

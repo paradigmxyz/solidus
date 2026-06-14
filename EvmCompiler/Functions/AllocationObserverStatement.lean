@@ -7049,8 +7049,11 @@ theorem if_true_of_components
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using hTarget
   exact
-    (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-      hCondEffect).trans hBodyEffect
+    AllocationObserverRelation.Frame.OutcomeEffect.prepend_activation
+      (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+        hCondEffect)
+      (AllocationObserverRelation.SameFrame.refl outerMode)
+      hBodyEffect
 
 end NonregularStmtRuntimeForward
 end AllocationObserverOutcome

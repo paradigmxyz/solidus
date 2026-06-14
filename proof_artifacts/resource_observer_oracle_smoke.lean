@@ -802,6 +802,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.terminalArgsHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callRegularHeadResult
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_body_parts
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.OutcomeEffect.exists_boundedEffect
+#print axioms EvmCompiler.Functions.AllocationObserverCall.StructuredCall.halt
+#print axioms EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_nonregular
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_halt
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.halt_of_selected
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.halt_of_safe_source
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.callHaltHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.afterRegular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ControlOutcomeForward.of_afterRegular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilRuntimeResult
