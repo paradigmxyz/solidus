@@ -4993,15 +4993,21 @@ theorem for_regular_of_safe_source_run
           AllocationObserverOutcome.SameControl
             sourceCtx.withoutLoopControl loopSourceCtx)
     (hBodyRegular :
-      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+      ∀ {loweredInit : Locals.Block}
+        {loopState afterPost afterBody : AllocationLowering.State}
         {loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource bodyFinal :
           Functions.ObserverSemantics.State transcript}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -5043,15 +5049,21 @@ theorem for_regular_of_safe_source_run
             body bodySource targetProgram compiledBody.toStructured
             bodyTarget bodyFinal bodyTargetFinal)
     (hBodyBreak :
-      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+      ∀ {loweredInit : Locals.Block}
+        {loopState afterPost afterBody : AllocationLowering.State}
         {loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource bodyFinal :
           Functions.ObserverSemantics.State transcript}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -5092,15 +5104,21 @@ theorem for_regular_of_safe_source_run
             body bodySource targetProgram compiledBody.toStructured
             bodyTarget bodyFinal bodyTargetFinal)
     (hBodyContinue :
-      ∀ {loopState afterPost afterBody : AllocationLowering.State}
+      ∀ {loweredInit : Locals.Block}
+        {loopState afterPost afterBody : AllocationLowering.State}
         {loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource bodyFinal :
           Functions.ObserverSemantics.State transcript}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -5142,15 +5160,21 @@ theorem for_regular_of_safe_source_run
             body bodySource targetProgram compiledBody.toStructured
             bodyTarget bodyFinal bodyTargetFinal)
     (hPostRegular :
-      ∀ {loopState afterPost : AllocationLowering.State}
+      ∀ {loweredInit : Locals.Block}
+        {loopState afterPost : AllocationLowering.State}
         {loweredPost : Locals.Block}
         {initLocals postLocals : Locals.Ctx}
-        {postCode : List Expressions.Stmt}
+        {initCode postCode : List Expressions.Stmt}
         {compiledPost : Expressions.Block}
         {postFuel : Nat}
         {postSource postFinal :
           Functions.ObserverSemantics.State transcript}
         {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -5262,16 +5286,20 @@ theorem for_regular_of_safe_source_run
       hLoopSourceScope hCondScoped hConfig hLowerCond hCompileCond
       hLoopReturnFrame hPostReturnFrame hBodyReturnFrame
       (fun hInv hFrame hFuel hRun =>
-        hBodyRegular hLowerPost hLowerBody hCompileBody hFinishBody
+        hBodyRegular hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
           hInv hFrame hFuel hRun)
       (fun hInv hFrame hFuel hRun =>
-        hBodyBreak hLowerPost hLowerBody hCompileBody hFinishBody
+        hBodyBreak hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
           hInv hFrame hFuel hRun)
       (fun hInv hFrame hFuel hRun =>
-        hBodyContinue hLowerPost hLowerBody hCompileBody hFinishBody
+        hBodyContinue hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
           hInv hFrame hFuel hRun)
       (fun hInv hFrame hFuel hRun =>
-        hPostRegular hLowerPost hCompilePost hFinishPost
+        hPostRegular hLowerInit hCompileInit
+          hLowerPost hCompilePost hFinishPost
           hInv hFrame hFuel hRun)
       hSourceLoop hInitInvariant
   rcases hLoopForward with

@@ -2084,6 +2084,80 @@ def loopBody
     { brk := .available destination sourceCtx.scope rfl hScope rfl
       cont := .available destination sourceCtx.scope rfl hScope rfl }
 
+/--
+Eliminate the canonical `break` destination of a loop body.
+-/
+theorem loopBody_break_destination
+    {lowerCtx : AllocationLowering.Ctx}
+    {loopState currentState : AllocationLowering.State}
+    {loopLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {loopLive : List Functions.Name}
+    {loopMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hPlanWF : loopPlan.WellFormed)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState currentState)
+    (hScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ loopLive)
+    (hDestination :
+      ControlBinding.DestinationRuntimeInvariant
+        (contract := contract) (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (loopBody hCompiler hPlanWF hState hScope).brk
+        sourceFinal targetFinal) :
+    AllocationObserverContext.ActivationRuntimeInvariant
+      contract config allocatorDepth lowerCtx loopState loopLocals
+      loopPlan loopLive frameBase loopMode sourceFinal targetFinal := by
+  simp [loopBody, ControlBinding.DestinationRuntimeInvariant] at hDestination
+  exact hDestination.2.2.2
+
+/--
+Eliminate the canonical `continue` destination of a loop body.
+-/
+theorem loopBody_continue_destination
+    {lowerCtx : AllocationLowering.Ctx}
+    {loopState currentState : AllocationLowering.State}
+    {loopLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {loopLive : List Functions.Name}
+    {loopMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hPlanWF : loopPlan.WellFormed)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState currentState)
+    (hScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ loopLive)
+    (hDestination :
+      ControlBinding.DestinationRuntimeInvariant
+        (contract := contract) (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (loopBody hCompiler hPlanWF hState hScope).cont
+        sourceFinal targetFinal) :
+    AllocationObserverContext.ActivationRuntimeInvariant
+      contract config allocatorDepth lowerCtx loopState loopLocals
+      loopPlan loopLive frameBase loopMode sourceFinal targetFinal := by
+  simp [loopBody, ControlBinding.DestinationRuntimeInvariant] at hDestination
+  exact hDestination.2.2.2
+
 def transport
     {lowerCtx : AllocationLowering.Ctx}
     {currentState nextState : AllocationLowering.State}

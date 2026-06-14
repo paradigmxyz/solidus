@@ -659,6 +659,70 @@ theorem Cursor.cons
       hScoped.1⟩
 
 /--
+Advance a synchronized open-block cursor to its empty final tail.
+
+The final tail retains the original scope-owned allocation plan while exposing
+the exact outgoing source live set, allocation state, and Locals context. This
+is the pass-owned bridge used when a later lexical component starts after an
+entire initializer block.
+-/
+def Cursor.finished
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    Cursor prepared scope
+      (Functions.Scope.Block.outEnv live sourceBlock)
+      { stmts := [] } cursor.finalState cursor.finalLocals := by
+  let finalPlanning :=
+    AllocationSupport.planBlockOpen scope cursor.planning sourceBlock
+  have hFinalActive :
+      ActiveEnv artifact.slots finalPlanning.allocation.env
+        (Functions.Scope.Block.outEnv live sourceBlock) :=
+    cursor.activeEnv.after_planBlockOpen
+  exact
+    { planning := finalPlanning
+      planningAllocation := cursor.plannedFinal
+      scopeRoot := cursor.scopeRoot
+      plan := cursor.plan
+      planWF := cursor.planWF
+      finalState := cursor.finalState
+      finalLocals := cursor.finalLocals
+      planEq := cursor.planEq
+      finalFrameFresh := cursor.finalFrameFresh
+      plannedFinal := by
+        simpa [finalPlanning, AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using cursor.plannedFinal
+      plannedScopes := by
+        intro entry hEntry
+        apply cursor.plannedScopes entry
+        simpa [finalPlanning, AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using hEntry
+      lowered := { stmts := [] }
+      compiled := []
+      lower := by
+        simp [AllocationLowering.lowerBlockOpen,
+          AllocationLowering.lowerStmtList]
+      compile := by
+        simp [Locals.Block.compileOpen]
+      sourceScoped := by
+        simp [Functions.Scope.Block.Scoped,
+          Functions.Scope.StmtList.Scoped]
+      activeEnv := hFinalActive }
+
+/--
 Static compiler transport supplied by one successful source statement.
 
 This is the dispatcher-facing part of `Cursor.cons`: allocation slots for

@@ -330,10 +330,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedNonregularControlled
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forRegularHeadResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.finished
+#check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_break_destination
+#check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody_continue_destination
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInitExitHeadResult
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
