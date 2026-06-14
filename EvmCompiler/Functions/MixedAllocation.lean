@@ -668,6 +668,31 @@ def stackEntriesForScope (recipe : AllocationSupport.AllocationRecipe)
             stackEntries stackSlots slots.returns.reverse ++
             stackEntries stackSlots slots.params.reverse
 
+theorem not_mem_stackEntriesForScope_of_slot_not_mem
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {scope : Locals.Allocation.ScopeId}
+    {state : AllocationSupport.CompileState}
+    {name : Name} {slot : Nat}
+    (hSlot : slot ∉ stackSlots) :
+    (name, slot) ∉
+      stackEntriesForScope recipe stackSlots scope state := by
+  unfold stackEntriesForScope
+  split
+  · exact not_mem_stackEntries_of_slot_not_mem hSlot
+  · split
+    · exact not_mem_stackEntries_of_slot_not_mem hSlot
+    · simp only [List.mem_append]
+      intro hMem
+      rcases hMem with hLocalOrReturn | hParam
+      · rcases hLocalOrReturn with hLocal | hReturn
+        · exact
+            not_mem_stackEntries_of_slot_not_mem hSlot hLocal
+        · exact
+            not_mem_stackEntries_of_slot_not_mem hSlot hReturn
+      · exact
+          not_mem_stackEntries_of_slot_not_mem hSlot hParam
+
 theorem stackEntriesForScope_function_of_env_extension
     {recipe : AllocationSupport.AllocationRecipe}
     {stackSlots : SlotSet}

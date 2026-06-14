@@ -704,14 +704,19 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   procedure's real entry markers and parameter/return prelude, invoke the
   recursive body boundary, and compose the complete procedure body for both
   source outcomes under the compiler-selected stack or scratch activation
-  mode.
+  mode. `Call.regular_of_selected` now composes the canonical source call,
+  real argument lowering, compiler-selected stack-or-scratch entry, one
+  recursively supplied selected callee activation, return-frame restoration,
+  target writeback, and optional real frame release into the adjacent
+  statement runtime invariant. Its body-start premise is ordinary Functions
+  semantic data, not compiler-generated evidence.
   `Frame.SuspendedEffect` supplies the protected-prefix transition without a
   caller-memory oracle. The immediate remaining work is the mutual source-fuel
   statement/block dispatcher: its call case must invert the canonical source
-  call, construct the compiler-selected entry, invoke these callee theorems
-  recursively, then use the checked outcome-indexed writeback and release
-  phases. Matching whole-function and whole-program backward adequacy follows
-  after that forward recursion closes.
+  call, derive the checked body-start facts, invoke the selected callee theorem
+  recursively, and discharge `Call.regular_of_selected`'s one-activation
+  callback. Matching whole-function and whole-program backward adequacy
+  follows after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

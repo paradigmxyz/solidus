@@ -3676,6 +3676,11 @@ theorem scratch
       callerBase.source.evm.stack = target.source.evm.stack ∧
       callerBase.source.evm.toMachineState =
         targetAfterArgs.source.evm.toMachineState ∧
+      targetAfterAcquire.source.evm.stack =
+        EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt
+              config allocatorDepth) ::
+          target.source.evm.stack ∧
       AllocationObserverRelation.Frame.baseAt config allocatorDepth +
           AllocationObserverRelation.Frame.bytes config ≤
         targetAfterAcquire.source.evm.activeWords.toNat *
@@ -3751,7 +3756,8 @@ theorem scratch
   refine
     ⟨targetAfterAcquire, targetAfterArgs, callerBase,
       hAcquireRun, hArgsRun, hResult, hCallerBase, hCallStack,
-      rfl, rfl, hFrameActive, hFrameAllocated, hArgsEffect.growth,
+      rfl, rfl, hAcquireStack, hFrameActive, hFrameAllocated,
+      hArgsEffect.growth,
       hAcquireEffect.trans hArgsBounded⟩
 
 end PreparedArguments

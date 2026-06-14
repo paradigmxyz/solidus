@@ -485,8 +485,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_lowerCtx
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_shared
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.call_needsFrame_iff
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_frameWords_pos
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_config_frameWords_pos
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
 #check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
+#check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_selected
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Locals.Source.Effectful.PrimitiveSemantics.SuccessRefines
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_of_successRefines

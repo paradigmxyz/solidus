@@ -1062,6 +1062,33 @@ theorem mem_scratchBindingsForRoot
         ⟨entry, hEntry, by simp [hRoot]⟩
   · exact List.mem_filter.mpr ⟨hBinding, by simpa using hScratch⟩
 
+theorem mem_scratchBindingsForRoot_facts
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {root : ScopeId}
+    {name : Name} {slot : Nat}
+    (hMem :
+      (name, slot) ∈ scratchBindingsForRoot recipe stackSlots root) :
+    ∃ entry,
+      entry ∈ scopedStates recipe ∧
+        scopeRoot entry.scope = root ∧
+        (name, slot) ∈ entry.state.env ∧
+        slot ∉ stackSlots := by
+  unfold scratchBindingsForRoot at hMem
+  rw [mem_eraseDups_iff] at hMem
+  obtain ⟨bindings, hBindings, hBinding⟩ :=
+    List.mem_flatten.mp hMem
+  obtain ⟨entry, hEntry, hSelected⟩ :=
+    List.mem_filterMap.mp hBindings
+  split at hSelected
+  next hRoot =>
+    cases hSelected
+    exact
+      ⟨entry, hEntry, hRoot,
+        (List.mem_filter.mp hBinding).1,
+        by simpa using (List.mem_filter.mp hBinding).2⟩
+  next hRoot =>
+    simp at hSelected
+
 def rootNeedsFrame (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (root : ScopeId) : Bool :=
   !(scratchBindingsForRoot recipe stackSlots root).isEmpty
@@ -3395,6 +3422,88 @@ theorem validatePlan?_eq_some_exact
   exact
     ⟨hSound.1, hAuthorized,
       compatiblePlan?_eq_some_exact hCompatible⟩
+
+theorem frameWords_pos_of_validate_of_rootNeedsFrame
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {root : ScopeId}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots))
+    (hNeedsFrame :
+      rootNeedsFrame recipe stackSlots root = true) :
+    0 < recipe.frameWords := by
+  cases hBindings :
+      scratchBindingsForRoot recipe stackSlots root with
+  | nil =>
+      simp [rootNeedsFrame, hBindings] at hNeedsFrame
+  | cons binding rest =>
+      rcases binding with ⟨name, slot⟩
+      have hBinding :
+          (name, slot) ∈
+            scratchBindingsForRoot recipe stackSlots root := by
+        rw [hBindings]
+        simp
+      obtain
+          ⟨entry, hEntry, _hRoot, hEntryBinding, hScratch⟩ :=
+        mem_scratchBindingsForRoot_facts hBinding
+      obtain
+          ⟨hAllocationWF, _hAuthorized, _hRecipe, _hInfer,
+            _hSlotsNodup, _hExecutable, hExact⟩ :=
+        validatePlan?_eq_some_exact hValidate
+      have hMixedWF :
+          (MixedAllocation.AllocationRecipe.toMixedProgramPlan
+            recipe stackSlots program.memoryContract).WellFormed := by
+        rw [hExact]
+        exact hAllocationWF
+      let scopePlan : Locals.Allocation.ScopePlan :=
+        { scope := entry.scope
+          allocation :=
+            MixedAllocation.allocationOfState
+              program.memoryContract recipe.frameWords
+              (MixedAllocation.AllocationRecipe.stackEntriesForScope
+                recipe stackSlots entry.scope entry.state)
+              entry.state }
+      have hScopeMem :
+          scopePlan ∈
+            (MixedAllocation.AllocationRecipe.toMixedProgramPlan
+              recipe stackSlots program.memoryContract).scopes := by
+        simp only [
+          MixedAllocation.AllocationRecipe.toMixedProgramPlan,
+          List.mem_append, List.mem_cons, List.mem_map]
+        simp only [scopedStates, List.mem_cons, List.mem_append] at hEntry
+        rcases hEntry with hMainOrFunction | hLexical
+        · rcases hMainOrFunction with hMain | hFunction
+          · subst entry
+            exact Or.inl (Or.inl (Or.inl (by simp [scopePlan])))
+          · exact Or.inl (Or.inr ⟨entry, hFunction, rfl⟩)
+        · exact Or.inr ⟨entry, hLexical, rfl⟩
+      have hPlanWF : scopePlan.allocation.WellFormed :=
+        (List.forall_iff_forall_mem.mp hMixedWF.2)
+          scopePlan hScopeMem
+      have hEnvNodup :
+          (entry.state.env.map Prod.fst).Nodup := by
+        exact hPlanWF.2.1
+      have hNotEntry :
+          (name, slot) ∉
+            MixedAllocation.AllocationRecipe.stackEntriesForScope
+              recipe stackSlots entry.scope entry.state := by
+        exact
+          MixedAllocation.AllocationRecipe.not_mem_stackEntriesForScope_of_slot_not_mem
+            hScratch
+      have hLocation :
+          scopePlan.allocation.location? name =
+            some (.scratch slot) := by
+        exact
+          MixedAllocation.allocationOfState_location_scratch_of_not_entry
+            hEnvNodup hEntryBinding hNotEntry
+      have hSlotBound :
+          slot < recipe.frameWords := by
+        exact
+          Locals.Allocation.Plan.scratch_bound_of_wellFormed
+            hPlanWF hLocation
+            (MixedAllocation.allocationOfState_scratchRegion_of_wellFormed
+              hPlanWF hLocation)
+      omega
 
 theorem validatePlan?_function_components
     {allocation : ProgramPlan} {program : Program}
