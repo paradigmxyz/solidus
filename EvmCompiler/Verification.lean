@@ -17,6 +17,7 @@ import EvmCompiler.Functions.AllocationObserverTerminal
 import EvmCompiler.Functions.AllocationObserverStatement
 import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
+import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -478,6 +479,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.of_lowering
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selectedCallee
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_agrees
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_lowerCtx
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_shared
+#check EvmCompiler.Functions.AllocationObserverForward.Compilation.call_needsFrame_iff
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Locals.Source.Effectful.PrimitiveSemantics.SuccessRefines
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_of_successRefines

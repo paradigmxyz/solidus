@@ -1368,7 +1368,12 @@ theorem of_validated_function
                   paramCtx.layout).1 } =
           some (returnCode, returnCtx) ∧
         FunctionPreludeContext lowerCtx plan recipe.frameWords slots
-          entryCtx paramCtx returnCtx mode := by
+          entryCtx paramCtx returnCtx mode ∧
+        mode =
+          if needsFrame then
+            .scratch 0 recipe.frameWords
+          else
+            .stack := by
   obtain
       ⟨validatedSlots, entry, added, hLookup, hMatches,
         hEntry, hScope, hEnv, hFind⟩ :=
@@ -1570,7 +1575,16 @@ theorem of_validated_function
   by_cases hNeedsFrame : needsFrame = true
   · refine
       ⟨.scratch 0 recipe.frameWords, hFindPlan, hPlanWF,
-        hLookup, hMatchesSlots, hParamCompile', hReturnCompile, ?_⟩
+        hLookup, hMatchesSlots, hParamCompile', hReturnCompile, ?_,
+        by
+          change
+            (.scratch 0 recipe.frameWords :
+                AllocationObserverRelation.ActivationMode) =
+              if needsFrame then
+                .scratch 0 recipe.frameWords
+              else
+                .stack
+          simp [hNeedsFrame]⟩
     have hEntryLayout :
         entryCtx.layout =
           (slots.params.map Prod.fst).reverse ++ [frameName] := by
@@ -1687,7 +1701,15 @@ theorem of_validated_function
         hParamLayout hBodyLayout
   · refine
       ⟨.stack, hFindPlan, hPlanWF, hLookup, hMatchesSlots,
-        hParamCompile', hReturnCompile, ?_⟩
+        hParamCompile', hReturnCompile, ?_,
+        by
+          change
+            (.stack : AllocationObserverRelation.ActivationMode) =
+              if needsFrame then
+                .scratch 0 recipe.frameWords
+              else
+                .stack
+          simp [Bool.eq_false_of_not_eq_true hNeedsFrame]⟩
     have hNeedsFrameFalse : needsFrame = false :=
       Bool.eq_false_of_not_eq_true hNeedsFrame
     have hRootNoFrame :

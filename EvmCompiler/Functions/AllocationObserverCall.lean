@@ -771,6 +771,12 @@ structure Prepared
     AllocationObserverContext.FunctionPreludeContext
       artifact.lowerCtx plan artifact.recipe.frameWords artifact.slots
       artifact.entryCtx paramCtx returnCtx mode
+  mode_eq :
+    mode =
+      if artifact.needsFrame then
+        .scratch 0 artifact.recipe.frameWords
+      else
+        .stack
   lowerBody :
     AllocationLowering.lowerBlockOpen artifact.lowerCtx fn.returns
         artifact.bodyStart fn.body =
@@ -848,7 +854,7 @@ theorem Artifact.prepare
   dsimp only at hContext
   rcases hContext with
     ⟨hPlanLookup, hPlanWF, hContextSlots, _hContextMatch,
-      hContextParams, hContextReturns, hPrelude⟩
+      hContextParams, hContextReturns, hPrelude, hMode⟩
   have hContextSlotsEq : contextSlots = artifact.slots := by
     rw [artifact.slotsLookup] at hContextSlots
     exact (Option.some.inj hContextSlots).symm
@@ -914,6 +920,7 @@ theorem Artifact.prepare
        planLookup := ?_
        planWF := hPlanWF
        prelude := ?_
+       mode_eq := ?_
        lowerBody := ?_
        lowerReturnValues := ?_
        compileMarkers := ?_
@@ -930,6 +937,8 @@ theorem Artifact.prepare
   · simpa [Artifact.lowerCtx, Artifact.entryCtx,
       Artifact.entryLayout, Artifact.root, Artifact.scratchBindings,
       Artifact.needsFrame] using hPrelude
+  · simpa [Artifact.needsFrame, Artifact.scratchBindings,
+      Artifact.root] using hMode
   · simpa [Artifact.lowerCtx, Artifact.bodyStart,
       Artifact.entryLayout, Artifact.root, Artifact.scratchBindings,
       Artifact.needsFrame] using hLowerBody
@@ -941,6 +950,31 @@ theorem Artifact.prepare
       Artifact.scratchBindings] using hCompileMarkers
   · simpa [Artifact.needsFrame, Artifact.scratchBindings,
       Artifact.root] using hProcArgc
+
+theorem Prepared.mode_eq_scratch_of_needsFrame
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions name fn}
+    (prepared : Prepared artifact)
+    (hNeedsFrame : artifact.needsFrame = true) :
+    prepared.mode =
+      .scratch 0 artifact.recipe.frameWords := by
+  simpa [hNeedsFrame] using prepared.mode_eq
+
+theorem Prepared.mode_eq_stack_of_noFrame
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions name fn}
+    (prepared : Prepared artifact)
+    (hNoFrame : artifact.needsFrame = false) :
+    prepared.mode = .stack := by
+  simpa [hNoFrame] using prepared.mode_eq
 
 end SelectedCallee
 
@@ -2416,6 +2450,33 @@ def ScratchAuthorized
       ∃ reservation,
         contract.scratch? = some reservation
 
+theorem SelectedCallee.Prepared.scratchAuthorized
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      SelectedCallee.Artifact allocation program expressions name fn}
+    (prepared : SelectedCallee.Prepared artifact)
+    {config : AllocationObserverRelation.Frame.Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config) :
+    ScratchAuthorized program.memoryContract prepared.mode := by
+  by_cases hNeedsFrame : artifact.needsFrame = true
+  · rw [prepared.mode_eq_scratch_of_needsFrame hNeedsFrame]
+    obtain
+        ⟨reservation, hReservation, _hAllocator, _hFirst, _hLimit,
+          _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+      AllocationSupport.scratchFrameConfig?_sound hConfig
+    exact ⟨reservation, hReservation⟩
+  · have hNoFrame : artifact.needsFrame = false :=
+      Bool.eq_false_of_not_eq_true hNeedsFrame
+    rw [prepared.mode_eq_stack_of_noFrame hNoFrame]
+    trivial
+
 /--
 The canonical Functions function-entry store supplies every source-facing
 premise required by the allocation prelude: parameters retain the argument
@@ -2915,6 +2976,13 @@ end FunctionReturn
 
 namespace RegularCallee
 
+def protectedBound
+    (calleeDepth : Nat)
+    (entryMode : AllocationObserverRelation.ActivationMode) : Nat :=
+  match entryMode with
+  | .stack => calleeDepth + 1
+  | .scratch _ _ => calleeDepth
+
 /--
 Compose the pass-owned phases of one regular callee body: metadata-only entry
 markers, parameter/return prelude, recursively preserved source body, and the
@@ -2963,9 +3031,7 @@ theorem compose
       AllocationObserverRelation.Frame.ActivationEffect
         config calleeDepth bodyMode targetBodyFinal targetFinal)
     (hProtectedBound :
-      (match entryMode with
-      | .stack => calleeDepth + 1
-      | .scratch _ _ => calleeDepth) =
+      protectedBound calleeDepth entryMode =
         callerDepth + 1) :
     ∃ fuel,
       Structured.ObserverSemantics.Block.Eval
@@ -3085,9 +3151,7 @@ theorem compose_leave
       AllocationObserverRelation.Frame.ActivationEffect
         config calleeDepth bodyMode targetBodyStart targetBodyFinal)
     (hProtectedBound :
-      (match entryMode with
-      | .stack => calleeDepth + 1
-      | .scratch _ _ => calleeDepth) =
+      protectedBound calleeDepth entryMode =
         callerDepth + 1) :
     ∃ fuel,
       Structured.ObserverSemantics.Block.Eval

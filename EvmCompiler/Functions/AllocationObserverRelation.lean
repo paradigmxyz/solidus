@@ -5221,6 +5221,17 @@ theorem trans_of_sameFrame {transcript : Trace}
   | stack => exact AllocatorEffect.trans hFirst hSecond
   | scratch => exact SuspendedEffect.trans hFirst hSecond
 
+theorem mode_of_sameFrame {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : ActivationEffect config depth beforeMode before after)
+    (hSame : SameFrame beforeMode afterMode) :
+    ActivationEffect config depth afterMode before after := by
+  cases hSame with
+  | stack => exact hEffect
+  | scratch => exact hEffect
+
 end ActivationEffect
 
 theorem mstore_end_le_activeBytes

@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-12 16:28 PDT.
+Last updated: 2026-06-14 PDT.
 
 ## Objective
 
@@ -698,11 +698,20 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   mode. Regular and source-`leave` callee bodies both compose through the real
   Structured return-frame pop, `Frame.resume_after_call`, target assignment,
   and optional frame release using one outcome-indexed writeback theorem.
+  `AllocationObserverForward.Compilation` now constructs the shared validated
+  allocation/lowering context directly from the real compiler equation.
+  `Callee.prepared_regular` and `Callee.prepared_leave` execute the selected
+  procedure's real entry markers and parameter/return prelude, invoke the
+  recursive body boundary, and compose the complete procedure body for both
+  source outcomes under the compiler-selected stack or scratch activation
+  mode.
   `Frame.SuspendedEffect` supplies the protected-prefix transition without a
   caller-memory oracle. The immediate remaining work is the mutual source-fuel
-  statement/block dispatcher that invokes these pass-owned call phases;
-  matching whole-function and whole-program backward adequacy follows after
-  that forward recursion closes.
+  statement/block dispatcher: its call case must invert the canonical source
+  call, construct the compiler-selected entry, invoke these callee theorems
+  recursively, then use the checked outcome-indexed writeback and release
+  phases. Matching whole-function and whole-program backward adequacy follows
+  after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1336,8 +1345,11 @@ corridor.
   the real Functions allocation and Locals expression compilers.
 - [x] Recover the compiled procedure selected by a source function name through
   the real function-list lowerer.
-- [ ] Compose allocator-aware callee entry, recursive body execution, return
-  restoration, frame release, and caller target assignment.
+- [x] Compose the selected callee's real entry/prelude and complete procedure
+  execution for both regular and source-`leave` recursive body outcomes.
+- [ ] Compose the source-facing call statement from argument evaluation,
+  compiler-selected callee entry, recursive body execution, outcome-indexed
+  return restoration, optional frame release, and caller target assignment.
 - [ ] Lift statement, block, loop, and call preservation by source fuel without
   a public call oracle.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
