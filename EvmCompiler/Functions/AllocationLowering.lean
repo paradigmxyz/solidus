@@ -4480,6 +4480,39 @@ theorem validatePlan?_function_entry_plan
   rw [hExact] at hFind
   exact hFind
 
+/--
+Any retained lexical planner entry has the exact mixed-allocation plan exposed
+by successful validation.
+-/
+theorem validatePlan?_lexical_entry_plan
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {entry : AllocationSupport.ScopedAllocation}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots))
+    (hEntry : entry ∈ recipe.lexicalScopes) :
+    allocation.find? entry.scope =
+      some
+        (MixedAllocation.allocationOfState
+          program.memoryContract recipe.frameWords
+          (MixedAllocation.AllocationRecipe.stackEntriesForScope
+            recipe stackSlots entry.scope entry.state)
+          entry.state) := by
+  rcases validatePlan?_eq_some_exact hValidate with
+    ⟨hWF, _hAuthorized, _hRecipe, _hInfer, _hNodup,
+      _hExecutable, hExact⟩
+  have hMixedWF :
+      (MixedAllocation.AllocationRecipe.toMixedProgramPlan
+        recipe stackSlots program.memoryContract).WellFormed := by
+    rw [hExact]
+    exact hWF
+  have hFind :=
+    MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
+      hMixedWF hEntry
+  rw [hExact] at hFind
+  exact hFind
+
 def lowerLocalsFromAllocation? (allocation : ProgramPlan)
     (program : Program) : Option Locals.Program := do
   let (recipe, stackSlots) ← validatePlan? allocation program

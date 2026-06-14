@@ -511,6 +511,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.declarationPlacement
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_scratch_of_lookup
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scratch_bound_of_location
+#check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
+#check EvmCompiler.Functions.AllocationLowering.validatePlan?_lexical_entry_plan
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup

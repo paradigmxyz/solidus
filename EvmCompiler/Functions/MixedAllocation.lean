@@ -834,6 +834,32 @@ theorem stackEntriesForScope_function_of_env_extension
     AllocationSupport.functionEnv, stackEntries,
     List.filter_append, List.take_append]
 
+/--
+The function-signature ordering used by a function scope is inherited by every
+lexical scope rooted in that function.
+-/
+theorem stackEntriesForScope_of_functionRoot_env_extension
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {scope : Locals.Allocation.ScopeId}
+    {functionName : Name}
+    {slots : AllocationSupport.FunSlots}
+    {state : AllocationSupport.CompileState}
+    {added : AllocationSupport.SlotEnv}
+    (hRoot : functionRoot? scope = some functionName)
+    (hLookup :
+      AllocationSupport.lookupFun? functionName recipe.functionSlots =
+        some slots)
+    (hEnv :
+      state.env = added ++ AllocationSupport.functionEnv slots) :
+    stackEntriesForScope recipe stackSlots scope state =
+      stackEntries stackSlots added ++
+        stackEntries stackSlots slots.returns.reverse ++
+        stackEntries stackSlots slots.params.reverse := by
+  simp [stackEntriesForScope, hRoot, hLookup, hEnv,
+    AllocationSupport.functionEnv, stackEntries,
+    List.filter_append, List.take_append]
+
 theorem mem_stackEntriesForScope_function_of_mem_of_slot_mem
     {recipe : AllocationSupport.AllocationRecipe}
     {stackSlots : SlotSet}
@@ -853,6 +879,44 @@ theorem mem_stackEntriesForScope_function_of_mem_of_slot_mem
       stackEntriesForScope recipe stackSlots
         (.function functionName) state := by
   rw [stackEntriesForScope_function_of_env_extension hLookup hEnv]
+  rw [hEnv] at hMem
+  rcases List.mem_append.mp hMem with hAdded | hSignature
+  · exact
+      List.mem_append_left _
+        (List.mem_append_left _
+          (mem_stackEntries_iff.mpr ⟨hAdded, hSlot⟩))
+  · rcases List.mem_append.mp hSignature with hReturn | hParam
+    · exact
+        List.mem_append_left _
+          (List.mem_append_right _
+            (mem_stackEntries_iff.mpr
+              ⟨by simpa using hReturn, hSlot⟩))
+    · exact
+        List.mem_append_right _
+          (mem_stackEntries_iff.mpr
+            ⟨by simpa using hParam, hSlot⟩)
+
+theorem mem_stackEntriesForScope_of_functionRoot_of_mem_of_slot_mem
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {scope : Locals.Allocation.ScopeId}
+    {functionName : Name}
+    {slots : AllocationSupport.FunSlots}
+    {state : AllocationSupport.CompileState}
+    {added : AllocationSupport.SlotEnv}
+    {name : Name} {slot : Nat}
+    (hRoot : functionRoot? scope = some functionName)
+    (hLookup :
+      AllocationSupport.lookupFun? functionName recipe.functionSlots =
+        some slots)
+    (hEnv :
+      state.env = added ++ AllocationSupport.functionEnv slots)
+    (hMem : (name, slot) ∈ state.env)
+    (hSlot : slot ∈ stackSlots) :
+    (name, slot) ∈
+      stackEntriesForScope recipe stackSlots scope state := by
+  rw [stackEntriesForScope_of_functionRoot_env_extension
+    hRoot hLookup hEnv]
   rw [hEnv] at hMem
   rcases List.mem_append.mp hMem with hAdded | hSignature
   · exact
@@ -961,6 +1025,37 @@ theorem toMixedProgramPlan_find_function_entry
       Or.inl
         (Or.inr
           ⟨entry, hMem, by simp [scopePlan]⟩)
+  exact
+    Locals.Allocation.ProgramPlan.find?_of_mem_of_wellFormed
+      hWF hScopeMem
+
+theorem toMixedProgramPlan_find_lexical_entry
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    {contract : MemoryContract.Contract}
+    {entry : AllocationSupport.ScopedAllocation}
+    (hWF :
+      (toMixedProgramPlan recipe stackSlots contract).WellFormed)
+    (hMem : entry ∈ recipe.lexicalScopes) :
+    (toMixedProgramPlan recipe stackSlots contract).find? entry.scope =
+      some
+        (allocationOfState contract recipe.frameWords
+          (stackEntriesForScope recipe stackSlots entry.scope entry.state)
+          entry.state) := by
+  let scopePlan : Locals.Allocation.ScopePlan :=
+    { scope := entry.scope
+      allocation :=
+        allocationOfState contract recipe.frameWords
+          (stackEntriesForScope recipe stackSlots entry.scope entry.state)
+          entry.state }
+  have hScopeMem :
+      scopePlan ∈
+        (toMixedProgramPlan recipe stackSlots contract).scopes := by
+    simp only [toMixedProgramPlan, List.mem_cons, List.mem_append,
+      List.mem_map]
+    exact
+      Or.inr
+        ⟨entry, hMem, by simp [scopePlan]⟩
   exact
     Locals.Allocation.ProgramPlan.find?_of_mem_of_wellFormed
       hWF hScopeMem
