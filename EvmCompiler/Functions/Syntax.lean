@@ -198,6 +198,28 @@ mutual
     | stmt :: rest => StmtList.outEnv (Stmt.outEnv env stmt) rest
 end
 
+theorem Stmt.mem_outEnv
+    {env : List Name} {stmt : Stmt} {name : Name}
+    (hMem : name ∈ env) :
+    name ∈ Stmt.outEnv env stmt := by
+  cases stmt <;> simp [Stmt.outEnv, hMem]
+
+theorem StmtList.mem_outEnv
+    {env : List Name} {stmts : List Stmt} {name : Name}
+    (hMem : name ∈ env) :
+    name ∈ StmtList.outEnv env stmts := by
+  induction stmts generalizing env with
+  | nil => exact hMem
+  | cons stmt rest ih =>
+      exact ih (Stmt.mem_outEnv hMem)
+
+theorem Block.mem_outEnv
+    {env : List Name} {block : Block} {name : Name}
+    (hMem : name ∈ env) :
+    name ∈ Block.outEnv env block := by
+  cases block with
+  | mk stmts => exact StmtList.mem_outEnv hMem
+
 mutual
   def Block.Scoped (env : List Name) : Block → Prop
     | ⟨stmts⟩ => StmtList.Scoped env stmts

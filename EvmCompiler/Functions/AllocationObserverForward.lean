@@ -303,6 +303,7 @@ theorem prepared_regular
       Functions.ObserverSemantics.State transcript}
     {targetEntry : Structured.ObserverSemantics.State transcript}
     {returnValues : List Word}
+    {bodyLive : List Functions.Name}
     {finalSourceCtx : Functions.Source.Ctx}
     (hConfig :
       AllocationSupport.scratchFrameConfig?
@@ -344,9 +345,7 @@ theorem prepared_regular
           AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
             program.memoryContract config calleeDepth transcript
             artifact.lowerCtx prepared.bodyFinal prepared.bodyCtx
-            prepared.plan
-            ((artifact.slots.returns.map Prod.fst).reverse ++
-              (artifact.slots.params.map Prod.fst).reverse)
+            prepared.plan bodyLive
             frameBase
             (prepared.mode.atStackDepth
               (currentStackOrder prepared.plan
@@ -357,6 +356,9 @@ theorem prepared_regular
             { stmts :=
                 Expressions.StmtList.toStructured prepared.bodyCode }
             targetBodyStart sourceBodyFinal targetBodyFinal finalSourceCtx)
+    (hReturnsLive :
+      ∀ returnName, returnName ∈ fn.returns →
+        returnName ∈ bodyLive)
     (hReturns :
       Functions.Source.Store.lookupMany fn.returns
           sourceBodyFinal.source.vars =
@@ -427,15 +429,6 @@ theorem prepared_regular
   rcases hBodyForward with
     ⟨_sourceFuel, bodyFuel, _hSourceBody, hTargetBody,
       hBodyInvariant, hBodySame, hBodyEffect⟩
-  have hReturnsLive :
-      ∀ returnName, returnName ∈ fn.returns →
-        returnName ∈
-          (artifact.slots.returns.map Prod.fst).reverse ++
-            (artifact.slots.params.map Prod.fst).reverse := by
-    intro returnName hReturn
-    apply List.mem_append_left
-    rw [List.mem_reverse, artifact.slotsMatch.2.2]
-    exact hReturn
   obtain
       ⟨_afterValues, calleeFinal, _hValuesRun, _hCleanupRun,
         hReturnEval, hReturnedStack, hCursor, hMachine, hWorld,
@@ -1507,6 +1500,353 @@ theorem regular_of_selected
       ⟨targetAssigned, sourceFuel, targetFuel, hSourceOrdinary,
         hTargetEval, hFinalInvariant, SameFrame.refl callerMode,
         hFinalEffect⟩
+
+/--
+Lift a successful guarded source call through the real selected-callee
+compiler artifacts.
+
+The body callback is fuel-smaller proof recursion only. It consumes the exact
+guarded body run exposed by the canonical Functions semantics and is not
+retained by the public adjacent-pass theorem.
+-/
+theorem regular_of_safe_source
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation : Compilation allocation program expressions)
+    {config : Frame.Config}
+    {allocatorDepth sourceFuel : Nat}
+    {transcript : Trace}
+    {sourceCtx : Functions.Source.Ctx}
+    {callerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {callerState callerFinalState : AllocationLowering.State}
+    {callerLocals callerFinalLocals : Locals.Ctx}
+    {callerPlan : Locals.Allocation.Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase : Nat}
+    {callerMode : ActivationMode}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targets : List Functions.Name}
+    {name : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract compilation.recipe.frameWords =
+        some config)
+    (hCallerShared : compilation.CtxShared callerCtx)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 2) (.call targets name args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            sourceCtx))
+    (hScoped :
+      Functions.Scope.Stmt.Scoped callerLive (.call targets name args))
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth callerCtx callerState
+        callerLocals callerPlan callerLive callerFrameBase callerMode
+        source target)
+    (hBudget : Frame.Budget config allocatorDepth)
+    (hLower :
+      AllocationLowering.lowerStmt callerCtx returns callerState
+          (.call targets name args) =
+        some (loweredStmts, callerFinalState))
+    (hCompile :
+      Locals.Block.compileOpen callerLocals { stmts := loweredStmts } =
+        some (compiledStmts, callerFinalLocals))
+    (hBody :
+      ∀ {fn : Functions.FunDef}
+        {artifact :
+          AllocationObserverCall.SelectedCallee.Artifact
+            allocation program expressions name fn}
+        (prepared :
+          AllocationObserverCall.SelectedCallee.Prepared artifact)
+        {sourceBodyStart :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx' : Functions.Source.Ctx}
+        {targetBodyStart : Structured.ObserverSemantics.State transcript}
+        {calleeDepth calleeFrameBase : Nat},
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+            sourceFuel fn.body sourceBodyStart =
+          .ok (bodyOutcome, bodyCtx') →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            program.memoryContract config calleeDepth artifact.lowerCtx
+            artifact.bodyStart prepared.returnCtx prepared.plan
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)
+            calleeFrameBase
+            (prepared.mode.atStackDepth
+              (currentStackOrder prepared.plan
+                ((artifact.slots.returns.map Prod.fst).reverse ++
+                  (artifact.slots.params.map Prod.fst).reverse)).length)
+            sourceBodyStart targetBodyStart →
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockRuntimeResult
+            program.memoryContract config calleeDepth transcript
+            artifact.lowerCtx prepared.bodyFinal prepared.bodyCtx
+            prepared.plan fn.returns
+            (Functions.Scope.Block.outEnv
+              ((artifact.slots.returns.map Prod.fst).reverse ++
+                (artifact.slots.params.map Prod.fst).reverse)
+              fn.body)
+            calleeFrameBase
+            (prepared.mode.atStackDepth
+              (currentStackOrder prepared.plan
+                ((artifact.slots.returns.map Prod.fst).reverse ++
+                  (artifact.slots.params.map Prod.fst).reverse)).length)
+            program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+            fn.body sourceBodyStart expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured prepared.bodyCode }
+            targetBodyStart bodyOutcome targetOutcome bodyCtx') :
+    ∃ targetFinal,
+      AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward
+        program.memoryContract config allocatorDepth transcript
+        callerCtx callerFinalState callerFinalLocals callerPlan callerLive
+        callerFrameBase callerMode callerMode program sourceCtx
+        (.call targets name args) source expressions.toStructured target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceFinal targetFinal sourceCtx := by
+  obtain
+      ⟨sourceAfterArgs, argValues, fn, sourceAfterCall,
+        returnValues, returnStore, paramStore, bodyOutcome, bodyCtx',
+        hTargetsNodup, hArgs, hFind, hParams, hBodyRun, hBodyMode,
+        hReturns, hBodyState, hAssign, hFinal⟩ :=
+    Functions.Source.Effectful.Stmt.call_regular_body_parts
+      (Functions.ObserverSemantics.stateModel transcript)
+      (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+        program.memoryContract transcript)
+      program hSource
+  obtain ⟨artifact⟩ := compilation.selectedCallee hFind
+  obtain ⟨prepared⟩ := artifact.prepare
+  have hArtifactConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config := by
+    rw [(compilation.selected_agrees artifact).1]
+    exact hConfig
+  let bodyStore :=
+    Functions.Source.Store.initReturns fn.returns paramStore
+  let sourceBodyStart :=
+    (Functions.ObserverSemantics.stateModel transcript).withSource
+      sourceAfterArgs
+      { shared := sourceAfterArgs.source.shared
+        vars := bodyStore }
+  have hBodyRun' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          sourceFuel fn.body sourceBodyStart =
+        .ok (bodyOutcome, bodyCtx') := by
+    simpa [sourceBodyStart, bodyStore] using hBodyRun
+  have hBodyVars :
+      sourceBodyStart.source.vars = bodyStore := by
+    simp [sourceBodyStart, bodyStore,
+      Functions.ObserverSemantics.stateModel,
+      Locals.ObserverSemantics.stateModel,
+      Locals.Source.Effectful.StateModel.withSource]
+  have hInitialized :
+      Functions.Source.Store.lookupMany fn.params
+            sourceBodyStart.source.vars =
+          some argValues ∧
+        (∀ returnName, returnName ∈ fn.returns →
+          sourceBodyStart.source.vars returnName =
+            some AllocationSupport.zeroWord) ∧
+        LiveDefined (fn.returns.reverse ++ fn.params.reverse)
+          sourceBodyStart.source :=
+    AllocationObserverCall.FunctionPrelude.initialized_source_facts
+      (params := fn.params)
+      (returns := fn.returns)
+      (args := argValues)
+      (paramStore := paramStore)
+      (source := sourceBodyStart)
+      prepared.signatureNodup hParams
+      (by simpa [bodyStore] using hBodyVars)
+  obtain ⟨hParamSource, hZeroSource, hDefinedSource⟩ := hInitialized
+  have hParamLookup :
+      Functions.Source.Store.lookupMany
+          (artifact.slots.params.map Prod.fst) bodyStore =
+        some argValues := by
+    rw [artifact.slotsMatch.2.1]
+    simpa [hBodyVars] using hParamSource
+  have hZero :
+      ∀ returnName, returnName ∈ artifact.slots.returns.map Prod.fst →
+        sourceBodyStart.source.vars returnName =
+          some AllocationSupport.zeroWord := by
+    rw [artifact.slotsMatch.2.2]
+    exact hZeroSource
+  have hDefined :
+      LiveDefined
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        sourceBodyStart.source := by
+    simpa [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2] using
+      hDefinedSource
+  have hSafeArgs :=
+    AllocationObserverSafety.ArgList.MemorySafeEval.of_safe_eval hArgs
+  have hReturnsLive :
+      ∀ returnName, returnName ∈ fn.returns →
+        returnName ∈
+          Functions.Scope.Block.outEnv
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)
+            fn.body := by
+    intro returnName hReturn
+    apply Functions.Scope.Block.mem_outEnv
+    apply List.mem_append_left
+    rw [List.mem_reverse, artifact.slotsMatch.2.2]
+    exact hReturn
+  rcases hBodyMode with hRegular | hLeave
+  · have hBodyOutcome :
+        bodyOutcome =
+          Functions.Source.Effectful.Outcome.regular sourceAfterCall := by
+      rcases bodyOutcome with ⟨bodyState, bodyMode⟩
+      simp only [Functions.Source.Effectful.Outcome.regular] at hRegular ⊢
+      cases hRegular
+      simp only [Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular]
+      cases hBodyState
+      rfl
+    subst bodyOutcome
+    have hCallee :
+        ∀ {targetEntry : Structured.ObserverSemantics.State transcript}
+          {calleeDepth calleeFrameBase : Nat},
+          ActivationCalleeEntryRel
+              program.memoryContract prepared.plan []
+              artifact.slots.params calleeFrameBase prepared.mode
+              sourceBodyStart targetEntry →
+          targetEntry.source.returns ≠ [] →
+          targetEntry.source.evm.stack.length =
+              artifact.entryCtx.layout.length →
+          Frame.AllocatorReady config calleeDepth targetEntry →
+          Frame.ActivationOwned config calleeDepth calleeFrameBase
+              prepared.mode →
+          AllocationObserverCall.RegularCallee.protectedBound
+              calleeDepth prepared.mode =
+            allocatorDepth + 1 →
+          ∃ calleeFinal bodyFuel,
+            Structured.ObserverSemantics.Block.Eval
+              expressions.toStructured bodyFuel
+              artifact.lowerProc.toStructured.body targetEntry
+              (AllocationObserverCall.StructuredCall.ReturnMode.regular.outcome
+                calleeFinal) ∧
+            calleeFinal.source.evm.stack = returnValues.reverse ∧
+            sourceAfterCall.cursor = calleeFinal.cursor ∧
+            Compiler.MemoryRelation.MachineRel program.memoryContract
+              sourceAfterCall.source.shared.toMachineState
+              calleeFinal.source.evm.toMachineState ∧
+            sourceAfterCall.source.shared.toState =
+              calleeFinal.source.evm.toSharedState.toState ∧
+            Frame.BoundedEffect config calleeDepth (allocatorDepth + 1)
+              targetEntry calleeFinal := by
+      intro targetEntry calleeDepth calleeFrameBase hEntry
+        _hReturnFrame hEntryStack hReady hOwned hProtected
+      apply Callee.prepared_regular prepared hArtifactConfig hEntry hEntryStack
+        hZero hDefined hReady hOwned
+      · intro targetBodyStart hBodyInvariant
+        obtain ⟨targetOutcome, hBodyForward⟩ :=
+          hBody prepared hBodyRun' hBodyInvariant
+        cases hBodyForward with
+        | regular hForward =>
+            exact ⟨_, _, hForward⟩
+        | nonregular _hForward =>
+            contradiction
+      · exact hReturnsLive
+      · simpa [hBodyState] using hReturns
+      · exact hProtected
+    exact
+      regular_of_selected compilation prepared hConfig hCallerShared
+        hSource hSafeArgs hParamLookup rfl hAssign
+        (by simpa [hBodyState] using hFinal)
+        hScoped hInvariant hBudget hLower hCompile hCallee
+  · have hBodyOutcome :
+        bodyOutcome =
+          Functions.Source.Effectful.Outcome.leave sourceAfterCall := by
+      rcases bodyOutcome with ⟨bodyState, bodyMode⟩
+      simp only [Functions.Source.Effectful.Outcome.leave] at hLeave ⊢
+      cases hLeave
+      simp only [Functions.Source.Effectful.Outcome.leave,
+        Locals.Source.Effectful.Outcome.leave]
+      cases hBodyState
+      rfl
+    subst bodyOutcome
+    have hCallee :
+        ∀ {targetEntry : Structured.ObserverSemantics.State transcript}
+          {calleeDepth calleeFrameBase : Nat},
+          ActivationCalleeEntryRel
+              program.memoryContract prepared.plan []
+              artifact.slots.params calleeFrameBase prepared.mode
+              sourceBodyStart targetEntry →
+          targetEntry.source.returns ≠ [] →
+          targetEntry.source.evm.stack.length =
+              artifact.entryCtx.layout.length →
+          Frame.AllocatorReady config calleeDepth targetEntry →
+          Frame.ActivationOwned config calleeDepth calleeFrameBase
+              prepared.mode →
+          AllocationObserverCall.RegularCallee.protectedBound
+              calleeDepth prepared.mode =
+            allocatorDepth + 1 →
+          ∃ calleeFinal bodyFuel,
+            Structured.ObserverSemantics.Block.Eval
+              expressions.toStructured bodyFuel
+              artifact.lowerProc.toStructured.body targetEntry
+              (AllocationObserverCall.StructuredCall.ReturnMode.leave.outcome
+                calleeFinal) ∧
+            calleeFinal.source.evm.stack = returnValues.reverse ∧
+            sourceAfterCall.cursor = calleeFinal.cursor ∧
+            Compiler.MemoryRelation.MachineRel program.memoryContract
+              sourceAfterCall.source.shared.toMachineState
+              calleeFinal.source.evm.toMachineState ∧
+            sourceAfterCall.source.shared.toState =
+              calleeFinal.source.evm.toSharedState.toState ∧
+            Frame.BoundedEffect config calleeDepth (allocatorDepth + 1)
+              targetEntry calleeFinal := by
+      intro targetEntry calleeDepth calleeFrameBase hEntry
+        hReturnFrame hEntryStack hReady hOwned hProtected
+      apply Callee.prepared_leave prepared hArtifactConfig hEntry hEntryStack
+        hZero hDefined hReady hOwned hReturnFrame
+      · intro targetBodyStart hBodyInvariant _hBodyReturnFrame
+        obtain ⟨targetOutcome, hBodyForward⟩ :=
+          hBody prepared hBodyRun' hBodyInvariant
+        cases hBodyForward with
+        | nonregular _hMode hForward =>
+            rcases hForward with
+              ⟨_sourceBodyFuel, targetBodyFuel, _hSourceBody,
+                hTargetBody, hOutcomeRel, hSame, hEffect⟩
+            cases hOutcomeRel with
+            | leave hLeaveRel =>
+                obtain ⟨returned, hReturned, hStack⟩ :=
+                  hLeaveRel.values
+                have hReturnedEq : returned = returnValues := by
+                  exact Option.some.inj (hReturned.symm.trans hReturns)
+                subst returned
+                exact
+                  ⟨_, _, targetBodyFuel, hTargetBody, hSame, hEffect,
+                    hStack, hLeaveRel.cursor, hLeaveRel.shared.machine,
+                    hLeaveRel.shared.world⟩
+      · exact hProtected
+    exact
+      regular_of_selected compilation prepared hConfig hCallerShared
+        hSource hSafeArgs hParamLookup rfl hAssign
+        (by simpa [hBodyState] using hFinal)
+        hScoped hInvariant hBudget hLower hCompile hCallee
 
 end Call
 

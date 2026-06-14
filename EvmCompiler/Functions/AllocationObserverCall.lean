@@ -951,6 +951,23 @@ theorem Artifact.prepare
   · simpa [Artifact.needsFrame, Artifact.scratchBindings,
       Artifact.root] using hProcArgc
 
+theorem Prepared.signatureNodup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions name fn}
+    (prepared : Prepared artifact) :
+    (fn.returns ++ fn.params).Nodup := by
+  have hSlots :
+      ((artifact.slots.returns ++ artifact.slots.params).map Prod.fst).Nodup := by
+    exact
+      AllocationObserverContext.FunctionPreludeContext.signatureNodup
+        prepared.prelude
+  simpa [List.map_append, artifact.slotsMatch.2.1,
+    artifact.slotsMatch.2.2] using hSlots
+
 theorem Prepared.mode_eq_scratch_of_needsFrame
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}

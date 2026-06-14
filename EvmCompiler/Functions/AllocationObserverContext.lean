@@ -1312,6 +1312,21 @@ inductive FunctionPreludeContext
 
 namespace FunctionPreludeContext
 
+theorem signatureNodup
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Plan}
+    {frameWords : Nat}
+    {slots : AllocationSupport.FunSlots}
+    {entryCtx paramCtx returnCtx : Locals.Ctx}
+    {mode : AllocationObserverRelation.ActivationMode}
+    (hContext :
+      FunctionPreludeContext lowerCtx plan frameWords slots
+        entryCtx paramCtx returnCtx mode) :
+    ((slots.returns ++ slots.params).map Prod.fst).Nodup := by
+  cases hContext with
+  | stack _ _ hNodup _ _ _ _ _ _ _ => exact hNodup
+  | scratch hNodup _ _ _ _ _ _ _ => exact hNodup
+
 theorem of_validated_function
     {allocation : ProgramPlan} {program : Program}
     {recipe : AllocationSupport.AllocationRecipe}

@@ -485,8 +485,10 @@ Roadmap:
   and generic stack-or-scratch multi-return target assignment are checked.
   Real scratch-frame acquire/release now preserve suspended caller spills,
   observer/world state, allocator readiness, and exact activation ownership.
-  Recursive callee execution, return reattachment, allocator-aware ordinary
-  statements, and the matching backward theorem remain.
+  Source-facing selected calls now compose real argument evaluation, either
+  regular or `leave` callee bodies, return reattachment, target assignment, and
+  optional scratch-frame release. The generic mutual statement/block
+  dispatcher, whole-program lift, and matching backward theorem remain.
 - [x] Lift observer-aware semantics through Structured-to-TypedCfg using the
   existing outcome-indexed path proof.
 - [x] Complete the pass-owned Structured code/terminal typing invariant that
@@ -633,8 +635,11 @@ The remaining observer-proof critical path is explicit:
 2. [x] Complete internal-call/return-dispatch adequacy.
 3. [x] Complete the generated-context mutual Structured theorem and
    whole-program backward adequacy.
-4. Prove the Functions/allocation/Expressions and Yul adjacent backward
-   boundaries, compose `ClosedResourceCorrect`, and run the final gates.
+4. [ ] Complete the mutual source-fuel statement/block dispatcher and lift it
+   through whole Functions programs.
+5. [ ] Prove Functions/allocation/Expressions backward adequacy.
+6. [ ] Complete the adjacent Yul forward/backward boundary.
+7. [ ] Compose `ClosedResourceCorrect` and run the final gates.
 
 The recursive Functions boundary now has checked preservation for leaves,
 lexical blocks, both `if` paths, both switch-selection paths, and every `for`
