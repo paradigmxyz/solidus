@@ -2209,6 +2209,50 @@ theorem framePreallocTarget_lookupMemory
                 (AllocationObserverRelation.Frame.baseAt config frameDepth)
                 (MemoryContract.wordBytes * slot))))
 
+theorem framePreallocTarget_growth
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {frameWords frameDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {target : Structured.ObserverSemantics.State transcript}
+    {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config frameDepth) :
+    AllocationObserverRelation.Frame.TargetGrowth target
+      (framePreallocTarget config frameDepth rest target) := by
+  cases hWords : config.frameWords with
+  | zero =>
+      simp [hWords] at hPositive
+  | succ slot =>
+      obtain
+        ⟨hAddressEnd, hAddressHost, hAddressToNat, hAddress⟩ :=
+        framePrealloc_last_address_facts hConfig hBudget hWords
+      have hMachine :=
+        framePreallocTarget_machine_of_words
+          (target := target) (rest := rest) hWords hAddress
+      refine ⟨?_, ?_⟩
+      · rw [hMachine]
+        exact
+          Compiler.MemoryRelation.activeWords_toNat_le_mstore
+            target.source.evm.toMachineState
+            (AllocationObserverRelation.scratchAddress
+              (AllocationObserverRelation.Frame.baseAt config frameDepth)
+              slot)
+            AllocationSupport.zeroWord hAddressEnd
+      · rw [hMachine]
+        simpa [EvmYul.MachineState.mstore] using
+          (Compiler.MemoryRelation.writeWord_memory_size_ge
+            target.source.evm.toMachineState
+            (AllocationObserverRelation.scratchAddress
+              (AllocationObserverRelation.Frame.baseAt config frameDepth)
+              slot)
+            AllocationSupport.zeroWord hAddressToNat
+            (by simpa [MemoryContract.wordBytes] using hAddressHost))
+
 theorem framePrealloc_forward {transcript : Trace}
     {contract : MemoryContract.Contract}
     {frameWords allocatorDepth frameDepth : Nat}
@@ -2850,6 +2894,117 @@ theorem scratchFrameAcquire_preserves_word {transcript : Trace}
       hPreallocWorld.trans hAdvanceWorld,
       hPreallocLookup.trans hAdvanceLookup⟩
 
+theorem scratchFrameAcquire_boundedEffect {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {frameWords depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {sourceMachine : EvmYul.MachineState}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady config depth target)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract sourceMachine
+        target.source.evm.toMachineState)
+    (hRun :
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameAcquireCode config) target =
+        .ok targetFinal) :
+    AllocationObserverRelation.Frame.BoundedEffect
+      config (depth + 1) (depth + 1) target targetFinal := by
+  let advanced := allocatorAdvanceTarget config depth target
+  have hAdvanceRun :
+      Structured.ObserverSemantics.Code.run
+          [ .push (AllocationSupport.word config.allocatorCell),
+            .op .mload,
+            .op .dup1,
+            .push (AllocationSupport.frameBytes config.frameWords),
+            .op .add,
+            .push (AllocationSupport.word config.allocatorCell),
+            .op .mstore ] target =
+        .ok advanced := by
+    simpa [advanced] using allocatorAdvance_run_exact hReady
+  have hAdvanceStack :
+      advanced.source.evm.stack =
+        EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt config depth) ::
+          target.source.evm.stack := by
+    simp [advanced]
+  let expected :=
+    framePreallocTarget config depth target.source.evm.stack advanced
+  have hPreallocRun :
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.framePreallocCode config.frameWords) advanced =
+        .ok expected := by
+    simpa [expected] using
+      framePrealloc_run_exact hPositive hAdvanceStack
+  have hExpectedRun :
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameAcquireCode config) target =
+        .ok expected := by
+    unfold AllocationSupport.scratchFrameAcquireCode
+    rw [ObserverCode.run_append, hAdvanceRun]
+    exact hPreallocRun
+  rw [hExpectedRun] at hRun
+  have hFinal : targetFinal = expected := Except.ok.inj hRun.symm
+  subst targetFinal
+  obtain
+    ⟨forwardFinal, hForwardRun, _hFinalStack, _hFinalMachine,
+      hFinalReady, _hFrameActive, _hFrameAllocated⟩ :=
+    scratchFrameAcquire_forward
+      hConfig hPositive hBudget hReady hMachine
+  rw [hExpectedRun] at hForwardRun
+  have hForwardFinal : forwardFinal = expected :=
+    Except.ok.inj hForwardRun.symm
+  subst forwardFinal
+  have hAdvanceGrowth :
+      AllocationObserverRelation.Frame.TargetGrowth target advanced := by
+    refine ⟨?_, ?_⟩
+    · simpa [advanced, allocatorAdvanceTarget_activeWords hReady]
+    · simpa [advanced, allocatorAdvanceTarget_memorySize hConfig hReady]
+  have hPreallocGrowth :
+      AllocationObserverRelation.Frame.TargetGrowth advanced expected := by
+    simpa [expected] using
+      (framePreallocTarget_growth
+        (target := advanced) (rest := target.source.evm.stack)
+        hConfig hPositive hBudget)
+  have hGrowth := hAdvanceGrowth.trans hPreallocGrowth
+  obtain
+    ⟨reservation, _hReservation, hAllocator, hFirst, _hLimit,
+      _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellBeforeFirst :
+      config.allocatorCell + MemoryContract.wordBytes ≤ config.firstFrame := by
+    rw [hAllocator, hFirst]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.frameBase
+    omega
+  refine
+    { ready := hFinalReady
+      growth := hGrowth
+      prefixStable := ?_ }
+  intro protectedDepth hProtectedDepth _hProtectedBudget
+  refine
+    { growth := hGrowth
+      lookup := ?_ }
+  intro address hStart hEnd hReadMemory hReadActive
+  have hBeforeFrame :
+      address + MemoryContract.wordBytes ≤
+        AllocationObserverRelation.Frame.baseAt config depth :=
+    hEnd.trans
+      (AllocationObserverRelation.Frame.baseAt_mono config
+        (Nat.le_of_lt_succ hProtectedDepth))
+  exact
+    (scratchFrameAcquire_preserves_word
+      hConfig hPositive hBudget hReady hMachine
+      (hCellBeforeFirst.trans hStart) hBeforeFrame
+      hReadMemory hReadActive hExpectedRun).2.2
+
 /--
 Acquire a nested scratch frame while preserving the suspended caller
 activation. The new frame pointer is added as one target-only stack prefix;
@@ -2897,7 +3052,9 @@ theorem scratchFrameAcquire_activation_forward {transcript : Trace}
           MemoryContract.wordBytes ∧
       AllocationObserverRelation.Frame.baseAt config depth +
           AllocationObserverRelation.Frame.bytes config ≤
-        targetFinal.source.evm.toMachineState.memory.size := by
+        targetFinal.source.evm.toMachineState.memory.size ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config (depth + 1) (depth + 1) target targetFinal := by
   obtain
     ⟨targetFinal, hRun, hFinalStack, hFinalMachine, hFinalReady,
       hNewFrameActive, hNewFrameAllocated⟩ :=
@@ -2905,9 +3062,12 @@ theorem scratchFrameAcquire_activation_forward {transcript : Trace}
       hRel.base.core.machine
   obtain ⟨hCursor, hWorld⟩ :=
     scratchFrameAcquire_cursor_world hPositive hReady hRun
+  have hEffect :=
+    scratchFrameAcquire_boundedEffect
+      hConfig hPositive hBudget hReady hRel.base.core.machine hRun
   refine
     ⟨targetFinal, hRun, ?_, hFinalReady, hFinalStack,
-      hNewFrameActive, hNewFrameAllocated⟩
+      hNewFrameActive, hNewFrameAllocated, hEffect⟩
   cases hRel with
   | stack hOnly _hActive hState =>
       have hStore :
@@ -3685,6 +3845,74 @@ theorem scratchFrameReleaseTarget_lookupMemory
       (by simpa [MemoryContract.wordBytes] using hReady.cellActive)
       (Or.inr (by simpa [MemoryContract.wordBytes] using hAfterCell)))
 
+theorem scratchFrameRelease_boundedEffect {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {frameWords depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {sourceMachine : EvmYul.MachineState}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config (depth + 1) target)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract sourceMachine
+        target.source.evm.toMachineState)
+    (hRun :
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameReleaseCode config) target =
+        .ok targetFinal) :
+    AllocationObserverRelation.Frame.BoundedEffect
+      config depth (depth + 1) target targetFinal := by
+  have hExact := scratchFrameRelease_run_exact hConfig hBudget hReady
+  rw [hExact] at hRun
+  have hFinal :
+      targetFinal = scratchFrameReleaseTarget config depth target :=
+    Except.ok.inj hRun.symm
+  subst targetFinal
+  obtain
+    ⟨forwardFinal, hForwardRun, _hFinalStack, _hFinalMachine,
+      hFinalReady⟩ :=
+    scratchFrameRelease_forward hConfig hBudget hReady hMachine
+  rw [hExact] at hForwardRun
+  have hForwardFinal :
+      forwardFinal = scratchFrameReleaseTarget config depth target :=
+    Except.ok.inj hForwardRun.symm
+  subst forwardFinal
+  have hGrowth :
+      AllocationObserverRelation.Frame.TargetGrowth target
+        (scratchFrameReleaseTarget config depth target) := by
+    refine ⟨?_, ?_⟩
+    · simpa [scratchFrameReleaseTarget_activeWords hReady]
+    · simpa [scratchFrameReleaseTarget_memorySize hConfig hReady]
+  obtain
+    ⟨reservation, _hReservation, hAllocator, hFirst, _hLimit,
+      _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hCellBeforeFirst :
+      config.allocatorCell + MemoryContract.wordBytes ≤ config.firstFrame := by
+    rw [hAllocator, hFirst]
+    unfold MemoryContract.ScratchReservation.allocatorCell
+      MemoryContract.ScratchReservation.frameBase
+    omega
+  refine
+    { ready := hFinalReady
+      growth := hGrowth
+      prefixStable := ?_ }
+  intro protectedDepth _hProtectedDepth _hProtectedBudget
+  refine
+    { growth := hGrowth
+      lookup := ?_ }
+  intro address hStart _hEnd hReadMemory hReadActive
+  exact
+    scratchFrameReleaseTarget_lookupMemory
+      hConfig hReady (hCellBeforeFirst.trans hStart)
+      hReadMemory hReadActive
+
 /--
 Release a nested scratch frame and restore the suspended caller activation at
 its previous allocator depth.
@@ -3721,11 +3949,16 @@ theorem scratchFrameRelease_activation_forward {transcript : Trace}
       AllocationObserverRelation.Frame.AllocatorReady
         config depth targetFinal ∧
       AllocationObserverRelation.Frame.ActivationOwned
-        config depth frameBase mode := by
+        config depth frameBase mode ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config depth (depth + 1) target targetFinal := by
   obtain
     ⟨targetFinal, hRun, hFinalStack, hFinalMachine, hFinalReady⟩ :=
     scratchFrameRelease_forward hConfig hBudget hReady
       hRel.base.core.machine
+  have hEffect :=
+    scratchFrameRelease_boundedEffect
+      hConfig hBudget hReady hRel.base.core.machine hRun
   have hExact := scratchFrameRelease_run_exact hConfig hBudget hReady
   rw [hExact] at hRun
   have hFinal :
@@ -3734,7 +3967,7 @@ theorem scratchFrameRelease_activation_forward {transcript : Trace}
   subst targetFinal
   refine
     ⟨scratchFrameReleaseTarget config depth target, hExact, ?_,
-      hFinalReady, hOwned⟩
+      hFinalReady, hOwned, hEffect⟩
   cases hRel with
   | stack hOnly _hActive hState =>
       have hStore :

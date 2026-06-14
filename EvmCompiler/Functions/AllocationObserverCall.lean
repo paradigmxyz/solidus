@@ -2295,7 +2295,9 @@ theorem acquire_from_runtime
           MemoryContract.wordBytes ∧
       AllocationObserverRelation.Frame.baseAt config depth +
           AllocationObserverRelation.Frame.bytes config ≤
-        targetFinal.source.evm.toMachineState.memory.size := by
+        targetFinal.source.evm.toMachineState.memory.size ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config (depth + 1) (depth + 1) target targetFinal := by
   simpa using
     (AllocationObserverPreservation.Frame.scratchFrameAcquire_activation_forward
       (stackOffset := 0)
@@ -2340,9 +2342,11 @@ theorem release_to_runtime
         .ok targetFinal ∧
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config depth lowerCtx lowerState localsCtx plan live
-        frameBase mode source targetFinal := by
+        frameBase mode source targetFinal ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config depth (depth + 1) target targetFinal := by
   obtain
-      ⟨targetFinal, hRun, hState, hFinalReady, hFinalOwned⟩ :=
+      ⟨targetFinal, hRun, hState, hFinalReady, hFinalOwned, hEffect⟩ :=
     AllocationObserverPreservation.Frame.scratchFrameRelease_activation_forward
       hConfig hBudget hReady hOwned hActivation.state
   have hFinalStack :=
@@ -2357,7 +2361,8 @@ theorem release_to_runtime
             state := hState
             stackLength := ?_ }
         allocator := hFinalReady
-        frame := hFinalOwned }⟩
+        frame := hFinalOwned },
+      hEffect⟩
   exact (congrArg List.length hFinalStack).trans hActivation.stackLength
 
 end ScratchFrame
