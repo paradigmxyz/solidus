@@ -7590,6 +7590,7 @@ theorem regular_of_safe_source
             program (Functions.Source.Effectful.FunDef.bodyCtx fn)
             sourceFuel fn.body sourceBodyStart =
           .ok (bodyOutcome, bodyCtx') →
+        calleeDepth ≤ allocatorDepth + 1 →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config calleeDepth artifact.lowerCtx
             artifact.bodyStart prepared.returnCtx prepared.plan
@@ -7765,11 +7766,17 @@ theorem regular_of_safe_source
               targetEntry calleeFinal := by
       intro targetEntry calleeDepth calleeFrameBase hEntry
         hReturnFrame hEntryStack hReady hOwned hProtected
+      have hCalleeDepth : calleeDepth ≤ allocatorDepth + 1 := by
+        rw [← hProtected]
+        exact
+          AllocationObserverCall.RegularCallee.depth_le_protectedBound
+            calleeDepth prepared.mode
       apply Callee.prepared_regular prepared hArtifactConfig hEntry hEntryStack
         hZero hDefined hReady hOwned hReturnFrame
       · intro targetBodyStart hBodyInvariant hBodyReturnFrame
         obtain ⟨targetOutcome, hBodyForward⟩ :=
-          hBody prepared hBodyRun' hBodyInvariant hBodyReturnFrame
+          hBody prepared hBodyRun' hCalleeDepth hBodyInvariant
+            hBodyReturnFrame
         cases hBodyForward with
         | regular hForward =>
             exact ⟨_, _, hForward⟩
@@ -7827,11 +7834,17 @@ theorem regular_of_safe_source
               targetEntry calleeFinal := by
       intro targetEntry calleeDepth calleeFrameBase hEntry
         hReturnFrame hEntryStack hReady hOwned hProtected
+      have hCalleeDepth : calleeDepth ≤ allocatorDepth + 1 := by
+        rw [← hProtected]
+        exact
+          AllocationObserverCall.RegularCallee.depth_le_protectedBound
+            calleeDepth prepared.mode
       apply Callee.prepared_leave prepared hArtifactConfig hEntry hEntryStack
         hZero hDefined hReady hOwned hReturnFrame
       · intro targetBodyStart hBodyInvariant _hBodyReturnFrame
         obtain ⟨targetOutcome, hBodyForward⟩ :=
-          hBody prepared hBodyRun' hBodyInvariant _hBodyReturnFrame
+          hBody prepared hBodyRun' hCalleeDepth hBodyInvariant
+            _hBodyReturnFrame
         cases hBodyForward with
         | nonregular _hMode hForward =>
             rcases hForward with
@@ -7943,6 +7956,7 @@ theorem halt_of_safe_source
           .ok
             (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
               bodyCtx') →
+        calleeDepth ≤ allocatorDepth + 1 →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config calleeDepth artifact.lowerCtx
             artifact.bodyStart prepared.returnCtx prepared.plan
@@ -8092,11 +8106,17 @@ theorem halt_of_safe_source
             targetEntry calleeFinal := by
     intro targetEntry calleeDepth calleeFrameBase hEntry
       hReturnFrame hEntryStack hReady hOwned hProtected
+    have hCalleeDepth : calleeDepth ≤ allocatorDepth + 1 := by
+      rw [← hProtected]
+      exact
+        AllocationObserverCall.RegularCallee.depth_le_protectedBound
+          calleeDepth prepared.mode
     apply Callee.prepared_halt prepared hArtifactConfig hEntry hEntryStack
       hZero hDefined hReady hOwned hReturnFrame
     · intro targetBodyStart hBodyInvariant hBodyReturnFrame
       obtain ⟨targetOutcome, hBodyForward⟩ :=
-        hBody prepared hBodyRun' hBodyInvariant hBodyReturnFrame
+        hBody prepared hBodyRun' hCalleeDepth hBodyInvariant
+          hBodyReturnFrame
       cases hBodyForward with
       | nonregular _hMode hForward =>
           rcases hForward with

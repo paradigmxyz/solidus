@@ -12,6 +12,7 @@ import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.AllocationObserverOutcome
 import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Functions.AllocationObserverDispatcher
+import EvmCompiler.Functions.AllocationObserverRecursive
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -816,6 +817,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.nilBlockResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consBlockResult
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_success_unique
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_call_cases
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_leave_mode
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_terminal_mode
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_terminalArgs_mode
+#print axioms EvmCompiler.Functions.AllocationObserverCall.RegularCallee.depth_le_protectedBound
+#print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.controlledHeadResult
+#print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveProgramForward
+#print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveBlockForward
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlBinding.DestinationRuntimeInvariant.of_transport
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResultExact
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResultExact

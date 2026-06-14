@@ -19,6 +19,7 @@ import EvmCompiler.Functions.AllocationObserverSwitch
 import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Functions.AllocationObserverDispatcher
+import EvmCompiler.Functions.AllocationObserverRecursive
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -316,6 +317,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_exit_of_runs
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_init_exit_of_runOpen
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_cases
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_success_unique
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_call_cases
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_leave_mode
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_terminal_mode
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_terminalArgs_mode
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.depth_le_protectedBound
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withoutLoopControl
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withLoopControl
 #check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.transport_target
@@ -327,6 +334,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCleanup.Transition.reindex_after
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
+#check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.RecursiveProgramForward
+#check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.controlledHeadResult
+#check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveProgramForward
+#check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveBlockForward
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular

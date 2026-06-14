@@ -635,8 +635,8 @@ The remaining observer-proof critical path is explicit:
 2. [x] Complete internal-call/return-dispatch adequacy.
 3. [x] Complete the generated-context mutual Structured theorem and
    whole-program backward adequacy.
-4. [ ] Complete the mutual source-fuel statement/block dispatcher and lift it
-   through whole Functions programs.
+4. [ ] Lift the checked mutual source-fuel statement/block dispatcher through
+   whole Functions programs.
 5. [ ] Prove Functions/allocation/Expressions backward adequacy.
 6. [ ] Complete the adjacent Yul forward/backward boundary.
 7. [ ] Compose `ClosedResourceCorrect` and run the final gates.
@@ -728,14 +728,13 @@ compiler cleanup through the
   control without a second semantics. Shared return-frame availability is now
   threaded through loop iteration, and source loop destinations use
   extensional scope equivalence rather than representation-specific list
-  equality. Initializer, post, and body recursive boundaries are checked. The
-  immediate remaining work is to package the loop theorem as one exact
-  dispatcher head, complete the mutual source-fuel statement/block recursion,
-  and make the call case invert the canonical source
-  call, derive the checked body-start facts, invoke the selected callee theorem
-  recursively, and discharge `Call.regular_of_selected`'s one-activation
-  callback. Matching whole-function and whole-program backward adequacy follows
-  after that forward recursion closes.
+  equality. Initializer, post, and body recursive boundaries are checked.
+  `Functions.AllocationObserverRecursive` now packages the exact loop heads,
+  canonical call inversion, selected-callee recursion, and regular-tail
+  composition into one checked source-fuel statement/block theorem across
+  every compiler-selected function artifact. The immediate remaining work is
+  to lift that theorem through whole Functions programs, then prove the
+  matching whole-function and whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1374,7 +1373,7 @@ corridor.
 - [x] Compose the source-facing call statement from argument evaluation,
   compiler-selected callee entry, recursive body execution, outcome-indexed
   return restoration, optional frame release, and caller target assignment.
-- [ ] Lift statement, block, loop, and call preservation by source fuel without
+- [x] Lift statement, block, loop, and call preservation by source fuel without
   a public call oracle. The checked dispatcher now has one fuel-bounded
   recursive open-block interface over real synchronized cursors. Every `for`
   outcome is checked through pass-owned source-fuel theorems, including
@@ -1385,8 +1384,13 @@ corridor.
   result through the real call prelude. Regular and source-`leave` results run
   the real epilogue, frame release, and caller assignment; terminal results
   prove those generated phases unreachable while preserving the caller-owned
-  allocator prefix. The remaining Functions work is assembly of the mutual
-  statement/block dispatcher.
+  allocator prefix. `Functions.AllocationObserverRecursive` now owns the
+  checked strong induction across every selected function artifact. Its
+  downward-closed fuel interface handles lexical recursion, loop components,
+  regular tails, and recursive calls; `Frame.FuelSafe` plus the call-owned
+  callee-depth bound supplies each nested scratch budget. The remaining
+  Functions work is whole-program forward packaging and matching backward
+  adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

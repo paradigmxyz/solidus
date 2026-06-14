@@ -47,6 +47,20 @@ theorem IsExit.not_regular {σ : Type} {outcome : Outcome σ}
   rcases outcome with ⟨state, mode⟩
   cases mode <;> simp [IsExit] at hExit ⊢
 
+theorem IsExit.ne_brk {σ : Type} {outcome : Outcome σ}
+    (hExit : IsExit outcome) (state : σ) :
+    outcome ≠ brk state := by
+  intro hOutcome
+  subst outcome
+  simp [IsExit, brk, Locals.Source.Effectful.Outcome.brk] at hExit
+
+theorem IsExit.ne_cont {σ : Type} {outcome : Outcome σ}
+    (hExit : IsExit outcome) (state : σ) :
+    outcome ≠ cont state := by
+  intro hOutcome
+  subst outcome
+  simp [IsExit, cont, Locals.Source.Effectful.Outcome.cont] at hExit
+
 end Outcome
 
 namespace Expr
@@ -1285,6 +1299,144 @@ theorem runBody_returned_length {σ : Type}
 end FunDef
 
 namespace Stmt
+
+/--
+A successful `leave` statement has leave mode.
+-/
+theorem run_leave_mode {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx fuel .leave source =
+        .ok (outcome, finalCtx)) :
+    outcome.mode = .leave := by
+  unfold Stmt.run at hRun
+  cases hScope : ctx.leaveScope? with
+  | none =>
+      simp [hScope, Source.invalid, Structured.invalid] at hRun
+  | some scope =>
+      simp only [hScope] at hRun
+      have hEq := (Except.ok.inj hRun).symm
+      exact congrArg (fun result => result.1.mode) hEq
+
+/--
+A successful plain terminal statement has the requested halt mode.
+-/
+theorem run_terminal_mode {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {kind : Assembly.HaltKind}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx fuel (.terminal kind) source =
+        .ok (outcome, finalCtx)) :
+    outcome.mode = .halt kind := by
+  unfold Stmt.run at hRun
+  cases hTerminal : prim.terminal kind source [] with
+  | error err =>
+      simp [hTerminal] at hRun
+  | ok sourceFinal =>
+      simp only [hTerminal] at hRun
+      have hEq := (Except.ok.inj hRun).symm
+      exact congrArg (fun result => result.1.mode) hEq
+
+/--
+A successful terminal-with-arguments statement has the requested halt mode.
+-/
+theorem run_terminalArgs_mode {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx fuel (.terminalArgs kind args) source =
+        .ok (outcome, finalCtx)) :
+    outcome.mode = .halt kind := by
+  unfold Stmt.run at hRun
+  cases hArgs :
+      Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+  | error err =>
+      simp [hArgs] at hRun
+  | ok result =>
+      rcases result with ⟨afterArgs, values⟩
+      simp only [hArgs, Bind.bind, Except.bind] at hRun
+      cases hTerminal : prim.terminal kind afterArgs values with
+      | error err =>
+          simp [hTerminal] at hRun
+      | ok sourceFinal =>
+          simp only [hTerminal] at hRun
+          have hEq := (Except.ok.inj hRun).symm
+          exact congrArg (fun result => result.1.mode) hEq
+
+/--
+A successful call statement either returns regularly or propagates a terminal
+callee outcome. Its source context is unchanged in both cases.
+-/
+theorem run_call_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.call targets functionName args) source =
+        .ok (outcome, finalCtx)) :
+    (∃ sourceFinal,
+        outcome = Outcome.regular sourceFinal ∧ finalCtx = ctx) ∨
+      (∃ kind sourceFinal,
+        outcome = Outcome.halt kind sourceFinal ∧ finalCtx = ctx) := by
+  unfold Stmt.run at hRun
+  by_cases hTargets : targets.Nodup
+  · simp only [hTargets, ↓reduceIte] at hRun
+    cases hArgs : ArgList.eval model prim args source with
+    | error err =>
+        simp [hArgs] at hRun
+    | ok argResult =>
+        rcases argResult with ⟨stateAfterArgs, argValues⟩
+        simp [hArgs] at hRun
+        cases hFind :
+            Source.FunList.find? functionName program.functions with
+        | none =>
+            simp [hFind, Source.invalid, Structured.invalid] at hRun
+        | some fn =>
+            simp [hFind] at hRun
+            cases hBody :
+                FunDef.runBody model prim program fn argValues fuel
+                  stateAfterArgs with
+            | error err =>
+                simp [hBody] at hRun
+            | ok callResult =>
+                cases callResult with
+                | returned stateAfterCall returnValues =>
+                    simp [hBody] at hRun
+                    cases hAssign :
+                        Source.Store.assignMany targets returnValues
+                          (model.vars stateAfterArgs) with
+                    | none =>
+                        simp [hAssign, Source.invalid, Structured.invalid]
+                          at hRun
+                    | some returnStore =>
+                        simp only [hAssign] at hRun
+                        have hEq := (Except.ok.inj hRun).symm
+                        left
+                        exact
+                          ⟨model.withSource stateAfterCall
+                              { shared := (model.source stateAfterCall).shared
+                                vars := returnStore },
+                            congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
+                | halted kind haltedState =>
+                    simp [hBody] at hRun
+                    right
+                    exact
+                      ⟨kind, haltedState, hRun.1.symm, hRun.2.symm⟩
+  · simp [hTargets, Source.invalid, Structured.invalid] at hRun
 
 theorem call_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -3434,6 +3586,36 @@ mutual
       | exact Prod.Lex.right _
           (Prod.Lex.left _ _ (by omega))
 end
+
+/--
+Successful statement execution has a unique outcome and context, independently
+of which sufficient fuel bound was used.
+-/
+theorem Stmt.run_success_unique {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {leftFuel rightFuel : Nat}
+    {ctx leftCtx rightCtx : Source.Ctx}
+    {stmt : Stmt} {source : σ}
+    {leftOutcome rightOutcome : Outcome σ}
+    (hLeft :
+      Stmt.run model prim program ctx leftFuel stmt source =
+        .ok (leftOutcome, leftCtx))
+    (hRight :
+      Stmt.run model prim program ctx rightFuel stmt source =
+        .ok (rightOutcome, rightCtx)) :
+    (leftOutcome, leftCtx) = (rightOutcome, rightCtx) := by
+  let commonFuel := Nat.max leftFuel rightFuel
+  have hLeft' :
+      Stmt.run model prim program ctx commonFuel stmt source =
+        .ok (leftOutcome, leftCtx) :=
+    Stmt.run_mono model prim program (Nat.le_max_left _ _) hLeft
+  have hRight' :
+      Stmt.run model prim program ctx commonFuel stmt source =
+        .ok (rightOutcome, rightCtx) :=
+    Stmt.run_mono model prim program (Nat.le_max_right _ _) hRight
+  rw [hLeft'] at hRight'
+  exact Except.ok.inj hRight'
 
 namespace Block
 

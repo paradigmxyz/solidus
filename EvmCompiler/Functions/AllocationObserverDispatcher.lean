@@ -5453,6 +5453,7 @@ theorem callRegularHeadResult
             program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
             sourceFuel selectedFn.body sourceBodyStart =
           .ok (bodyOutcome, bodyCtx') →
+        calleeDepth ≤ allocatorDepth + 1 →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config calleeDepth selected.lowerCtx
             selected.bodyStart selectedPrepared.returnCtx selectedPrepared.plan
@@ -5630,6 +5631,7 @@ theorem callHaltHeadResult
             program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
             sourceFuel selectedFn.body sourceBodyStart =
           .ok (bodyOutcome, bodyCtx') →
+        calleeDepth ≤ allocatorDepth + 1 →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config calleeDepth selected.lowerCtx
             selected.bodyStart selectedPrepared.returnCtx selectedPrepared.plan

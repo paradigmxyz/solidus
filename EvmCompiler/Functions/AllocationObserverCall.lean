@@ -3351,6 +3351,12 @@ def protectedBound
   | .stack => calleeDepth + 1
   | .scratch _ _ => calleeDepth
 
+theorem depth_le_protectedBound
+    (calleeDepth : Nat)
+    (entryMode : AllocationObserverRelation.ActivationMode) :
+    calleeDepth ≤ protectedBound calleeDepth entryMode := by
+  cases entryMode <;> simp [protectedBound]
+
 /--
 Compose the pass-owned phases of one regular callee body: metadata-only entry
 markers, parameter/return prelude, recursively preserved source body, and the
