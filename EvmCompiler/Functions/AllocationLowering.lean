@@ -306,6 +306,173 @@ def splitPrelude : List Stmt → List Locals.Stmt × List Stmt
             tail)
       | _ => ([], stmt :: rest)
 
+/--
+The exact source prefix preserved by `splitPrelude`.
+
+Each source statement is accepted by the existing no-variable prelude
+compiler, and the corresponding Locals statement embeds that emitted code.
+-/
+inductive PreludeLowered : List Stmt → List Locals.Stmt → Prop where
+  | nil : PreludeLowered [] []
+  | cons
+      {stmt : Stmt} {rest : List Stmt}
+      {code : Structured.Code} {lowered : List Locals.Stmt}
+      (head :
+        AllocationSupport.compilePreludeStmt? stmt =
+          some (.code code))
+      (tail : PreludeLowered rest lowered) :
+      PreludeLowered (stmt :: rest)
+        (.expr (Locals.Expr.code (results := 0) code) :: lowered)
+
+private theorem splitPrelude_stop_components
+    {stmt : Stmt} {tail rest : List Stmt}
+    {sourcePrelude : List Locals.Stmt}
+    (hCompile :
+      AllocationSupport.compilePreludeStmt? stmt = none)
+    (hSplit :
+      splitPrelude (stmt :: tail) = (sourcePrelude, rest)) :
+    ∃ sourcePrefix,
+      stmt :: tail = sourcePrefix ++ rest ∧
+        PreludeLowered sourcePrefix sourcePrelude := by
+  have hEq : ([], stmt :: tail) = (sourcePrelude, rest) := by
+    simpa [splitPrelude, hCompile] using hSplit
+  have hSource := congrArg Prod.fst hEq
+  have hRest := congrArg Prod.snd hEq
+  simp only [Prod.fst] at hSource
+  simp only [Prod.snd] at hRest
+  subst sourcePrelude
+  subst rest
+  exact ⟨[], rfl, .nil⟩
+
+theorem splitPrelude_components
+    {body sourcePrelude rest}
+    (hSplit : splitPrelude body = (sourcePrelude, rest)) :
+    ∃ sourcePrefix,
+      body = sourcePrefix ++ rest ∧
+        PreludeLowered sourcePrefix sourcePrelude := by
+  induction body generalizing sourcePrelude rest with
+  | nil =>
+      have hEq : ([], []) = (sourcePrelude, rest) := by
+        simpa [splitPrelude] using hSplit
+      have hSource := congrArg Prod.fst hEq
+      have hRest := congrArg Prod.snd hEq
+      simp at hSource hRest
+      subst sourcePrelude
+      subst rest
+      exact ⟨[], rfl, .nil⟩
+  | cons stmt tail ih =>
+      cases stmt with
+      | expr expr =>
+          cases hCode :
+              AllocationSupport.compileNoVarExprCode? expr with
+          | none =>
+              exact
+                splitPrelude_stop_components
+                  (by
+                    simp [AllocationSupport.compilePreludeStmt?, hCode])
+                  hSplit
+          | some code =>
+              cases hTail : splitPrelude tail with
+              | mk lowered rest' =>
+                  have hEq :
+                      (.expr (Locals.Expr.code (results := 0) code) :: lowered,
+                          rest') =
+                        (sourcePrelude, rest) := by
+                    simpa [splitPrelude,
+                      AllocationSupport.compilePreludeStmt?, hCode,
+                      hTail] using hSplit
+                  have hSource := congrArg Prod.fst hEq
+                  have hRest := congrArg Prod.snd hEq
+                  simp only [Prod.fst] at hSource
+                  simp only [Prod.snd] at hRest
+                  subst sourcePrelude
+                  subst rest
+                  obtain ⟨sourcePrefix, hBody, hLowered⟩ := ih hTail
+                  refine ⟨.expr expr :: sourcePrefix, ?_, ?_⟩
+                  · simp [hBody]
+                  · exact
+                      .cons
+                        (by
+                          simp [AllocationSupport.compilePreludeStmt?, hCode])
+                        hLowered
+      | let_ name value | assign name value | block block
+      | if_ cond block | switch scrutinee cases defaultBody
+      | for_ init cond post loopBody | brk | cont | leave
+      | call targets functionName args | terminal kind
+      | terminalArgs kind args =>
+          exact splitPrelude_stop_components rfl hSplit
+
+theorem PreludeLowered.outEnv
+    {sourcePrefix : List Stmt} {lowered : List Locals.Stmt}
+    (hPrelude : PreludeLowered sourcePrefix lowered)
+    (env : List Name) :
+    Functions.Scope.StmtList.outEnv env sourcePrefix = env := by
+  induction hPrelude with
+  | nil => rfl
+  | @cons stmt rest code lowered head tail ih =>
+      cases stmt with
+      | expr expr =>
+          simpa [Functions.Scope.StmtList.outEnv,
+            Functions.Scope.Stmt.outEnv] using ih
+      | let_ name value | assign name value | block block
+      | if_ cond block | switch scrutinee cases defaultBody
+      | for_ init cond post loopBody | brk | cont | leave
+      | call targets functionName args | terminal kind
+      | terminalArgs kind args =>
+          simp [AllocationSupport.compilePreludeStmt?] at head
+
+theorem PreludeLowered.planStmtList
+    {sourcePrefix : List Stmt} {lowered : List Locals.Stmt}
+    (hPrelude : PreludeLowered sourcePrefix lowered)
+    (scope : Locals.Allocation.ScopeId)
+    (planning : AllocationSupport.PlanningState) :
+    AllocationSupport.planStmtList scope planning sourcePrefix = planning := by
+  induction hPrelude with
+  | nil => simp [AllocationSupport.planStmtList]
+  | @cons stmt rest code lowered head tail ih =>
+      cases stmt with
+      | expr expr =>
+          simpa [AllocationSupport.planStmtList,
+            AllocationSupport.planStmt] using ih
+      | let_ name value | assign name value | block block
+      | if_ cond block | switch scrutinee cases defaultBody
+      | for_ init cond post loopBody | brk | cont | leave
+      | call targets functionName args | terminal kind
+      | terminalArgs kind args =>
+          simp [AllocationSupport.compilePreludeStmt?] at head
+
+theorem PreludeLowered.planBlockOpen_append
+    {sourcePrefix rest : List Stmt} {lowered : List Locals.Stmt}
+    (hPrelude : PreludeLowered sourcePrefix lowered)
+    (scope : Locals.Allocation.ScopeId)
+    (planning : AllocationSupport.PlanningState) :
+    AllocationSupport.planBlockOpen scope planning
+        { stmts := sourcePrefix ++ rest } =
+      AllocationSupport.planBlockOpen scope planning { stmts := rest } := by
+  simp only [AllocationSupport.planBlockOpen,
+    AllocationSupport.planStmtList_append,
+    hPrelude.planStmtList]
+
+theorem PreludeLowered.scopedTail
+    {sourcePrefix rest : List Stmt} {lowered : List Locals.Stmt}
+    (hPrelude : PreludeLowered sourcePrefix lowered)
+    {env : List Name}
+    (hScoped : Functions.Scope.StmtList.Scoped env (sourcePrefix ++ rest)) :
+    Functions.Scope.StmtList.Scoped env rest := by
+  induction hPrelude generalizing env with
+  | nil =>
+      simpa using hScoped
+  | @cons stmt sourceRest code lowered head tail ih =>
+      cases stmt with
+      | expr expr =>
+          exact ih hScoped.2
+      | let_ name value | assign name value | block block
+      | if_ cond block | switch scrutinee cases defaultBody
+      | for_ init cond post loopBody | brk | cont | leave
+      | call targets functionName args | terminal kind
+      | terminalArgs kind args =>
+          simp [AllocationSupport.compilePreludeStmt?] at head
+
 def lowerScratchParam (ctx : Ctx) (name : Name) (slot : Nat)
     (layout : Locals.Layout) : List Locals.Stmt × Locals.Layout :=
   let target := eraseName name layout
@@ -4352,52 +4519,191 @@ theorem lowerFunctions?_find_compiled_plan
             at hPlan
       · simp [AllocationSupport.planFunctions, hSignature] at hPlan
 
+def mainScratchBindings
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) : List (Name × Nat) :=
+  scratchBindingsForRoot recipe stackSlots .main
+
+def mainNeedsFrame
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) : Bool :=
+  !(mainScratchBindings recipe stackSlots).isEmpty
+
+def mainCtx (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig) : Ctx :=
+  { functions := recipe.functionSlots
+    frameConfig? := frameConfig?
+    frameName := frameName
+    stackSlots := stackSlots
+    root := .main
+    scratchBindings := mainScratchBindings recipe stackSlots
+    frameFunctions := frameFunctions recipe stackSlots }
+
+def mainNeedsAllocator
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) : Bool :=
+  mainNeedsFrame recipe stackSlots ||
+    !(frameFunctions recipe stackSlots).isEmpty
+
+def mainAllocatorPrelude?
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig) :
+    Option (List Locals.Stmt) :=
+  if mainNeedsAllocator recipe stackSlots then do
+    let frameConfig ← frameConfig?
+    some
+      [ .expr
+          (Locals.Expr.code (results := 0)
+            (AllocationSupport.scratchAllocatorInitCode frameConfig)) ]
+  else
+    some []
+
+def mainFramePrelude?
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig) :
+    Option (List Locals.Stmt) :=
+  if mainNeedsFrame recipe stackSlots then do
+    let frameConfig ← frameConfig?
+    some
+      [ Locals.Stmt.let_ frameName (frameExpr frameConfig),
+        bindScratchBindings 0
+          (mainScratchBindings recipe stackSlots) ]
+  else
+    some []
+
+def mainStartWithFrame
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (state : AllocationSupport.CompileState) : State :=
+  { allocation := state
+    layout := if mainNeedsFrame recipe stackSlots then [frameName] else [] }
+
 def lowerMain? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
     (state : AllocationSupport.CompileState)
     (body : Block) : Option (Locals.Block × State) := do
-  let root := ScopeId.main
-  let scratchBindings :=
-    scratchBindingsForRoot recipe stackSlots root
-  let needsFrame := !scratchBindings.isEmpty
-  let ctx : Ctx :=
-    { functions := recipe.functionSlots
-      frameConfig? := frameConfig?
-      frameName := frameName
-      stackSlots := stackSlots
-      root := root
-      scratchBindings := scratchBindings
-      frameFunctions := frameFunctions recipe stackSlots }
-  let needsAllocator :=
-    needsFrame || !(frameFunctions recipe stackSlots).isEmpty
   let allocatorPrelude ←
-    if needsAllocator then do
-      let frameConfig ← frameConfig?
-      some
-        [ .expr
-            (Locals.Expr.code (results := 0)
-              (AllocationSupport.scratchAllocatorInitCode frameConfig)) ]
-    else
-      some []
+    mainAllocatorPrelude? recipe stackSlots frameConfig?
   let framePrelude ←
-    if needsFrame then do
-      let frameConfig ← frameConfig?
-      some
-        [ Locals.Stmt.let_ frameName (frameExpr frameConfig),
-          bindScratchBindings 0 scratchBindings ]
-    else
-      some []
-  let prelude := allocatorPrelude ++ framePrelude
-  let start : State :=
-    { allocation := state
-      layout := if needsFrame then [frameName] else [] }
+    mainFramePrelude? recipe stackSlots frameName frameConfig?
   let (sourcePrelude, rest) := splitPrelude body.stmts
+  let start := mainStartWithFrame recipe stackSlots frameName state
   let (lowered, final) ←
-    lowerBlockOpen ctx [] start { stmts := rest }
+    lowerBlockOpen
+      (mainCtx recipe stackSlots frameName frameConfig?)
+      [] start { stmts := rest }
   some
-    ({ stmts := sourcePrelude ++ prelude ++ lowered.stmts },
+    ({ stmts :=
+        sourcePrelude ++ allocatorPrelude ++ framePrelude ++ lowered.stmts },
       final)
+
+/--
+Checked decomposition of the real main-body lowerer.
+
+The artifact exposes only deterministic outputs of `lowerMain?`: the preserved
+source prelude, compiler-owned allocator/frame setup, and the ordinary open
+body consumed by the adjacent observer proof.
+-/
+structure MainComponents
+    (recipe : AllocationSupport.AllocationRecipe)
+    (stackSlots : SlotSet) (frameName : Name)
+    (frameConfig? : Option AllocationSupport.ScratchFrameConfig)
+    (state : AllocationSupport.CompileState)
+    (body : Block) (main : Locals.Block) (final : State) where
+  allocatorPrelude : List Locals.Stmt
+  framePrelude : List Locals.Stmt
+  sourcePrelude : List Locals.Stmt
+  rest : List Stmt
+  lowered : Locals.Block
+  allocator :
+    mainAllocatorPrelude? recipe stackSlots frameConfig? =
+      some allocatorPrelude
+  frame :
+    mainFramePrelude? recipe stackSlots frameName frameConfig? =
+      some framePrelude
+  split :
+    splitPrelude body.stmts = (sourcePrelude, rest)
+  lower :
+    lowerBlockOpen
+        (mainCtx recipe stackSlots frameName frameConfig?) []
+        (mainStartWithFrame recipe stackSlots frameName state)
+        { stmts := rest } =
+      some (lowered, final)
+  output :
+    main =
+      { stmts :=
+          sourcePrelude ++ allocatorPrelude ++ framePrelude ++
+            lowered.stmts }
+
+theorem lowerMain?_components
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (hLower :
+      lowerMain? recipe stackSlots frameName frameConfig? state body =
+        some (main, final)) :
+    Nonempty
+      (MainComponents recipe stackSlots frameName frameConfig?
+        state body main final) := by
+  unfold lowerMain? at hLower
+  cases hAllocator :
+      mainAllocatorPrelude? recipe stackSlots frameConfig? with
+  | none =>
+      simp [hAllocator] at hLower
+  | some allocatorPrelude =>
+      cases hFrame :
+          mainFramePrelude? recipe stackSlots frameName frameConfig? with
+      | none =>
+          simp [hAllocator, hFrame] at hLower
+      | some framePrelude =>
+          cases hSplit : splitPrelude body.stmts with
+          | mk sourcePrelude rest =>
+              cases hBody :
+                  lowerBlockOpen
+                    (mainCtx recipe stackSlots frameName frameConfig?) []
+                    (mainStartWithFrame recipe stackSlots frameName state)
+                    { stmts := rest } with
+              | none =>
+                  simp [hAllocator, hFrame, hSplit, hBody] at hLower
+              | some bodyResult =>
+                  rcases bodyResult with ⟨lowered, bodyFinal⟩
+                  have hPair :
+                      ({ stmts :=
+                          sourcePrelude ++ allocatorPrelude ++
+                            framePrelude ++ lowered.stmts },
+                        bodyFinal) =
+                        (main, final) :=
+                    Option.some.inj
+                      (by
+                        simpa [hAllocator, hFrame, hSplit, hBody] using
+                          hLower)
+                  have hMain :
+                      { stmts :=
+                          sourcePrelude ++ allocatorPrelude ++
+                            framePrelude ++ lowered.stmts } =
+                        main :=
+                    congrArg Prod.fst hPair
+                  have hFinal : bodyFinal = final :=
+                    congrArg Prod.snd hPair
+                  subst main
+                  subst final
+                  exact
+                    ⟨{ allocatorPrelude := allocatorPrelude
+                       framePrelude := framePrelude
+                       sourcePrelude := sourcePrelude
+                       rest := rest
+                       lowered := lowered
+                       allocator := hAllocator
+                       frame := hFrame
+                       split := hSplit
+                       lower := hBody
+                       output := rfl }⟩
 
 def lowerToLocals? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
@@ -4791,6 +5097,31 @@ theorem validatePlan?_function_components
       by simpa [hScope] using hFind⟩
 
 /--
+Successful validation exposes the allocation plan for the distinguished main
+root directly from the canonical mixed program plan.
+-/
+theorem validatePlan?_main_plan
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet}
+    (hValidate :
+      validatePlan? allocation program = some (recipe, stackSlots)) :
+    allocation.find? .main =
+      some
+        (MixedAllocation.allocationOfState
+          program.memoryContract recipe.frameWords
+          (MixedAllocation.AllocationRecipe.stackEntriesForScope
+            recipe stackSlots .main recipe.main)
+          recipe.main) := by
+  obtain
+      ⟨_hWF, _hAuthorized, _hRecipe, _hInfer, _hNodup,
+        _hExecutable, hExact⟩ :=
+    validatePlan?_eq_some_exact hValidate
+  rw [← hExact]
+  simp [MixedAllocation.AllocationRecipe.toMixedProgramPlan,
+    Locals.Allocation.ProgramPlan.find?]
+
+/--
 Any retained function-planner entry has the exact mixed-allocation plan exposed
 by successful validation.
 -/
@@ -4922,6 +5253,134 @@ theorem lowerExpressionsFromAllocation?_memoryAuthorized
       simp [hLocals] at hLower
   | some locals =>
       exact lowerLocalsFromAllocation?_memoryAuthorized hLocals
+
+/--
+Successful whole-program allocation lowering exposes the exact main-body
+artifact produced by the existing Functions, Locals, and Expressions passes.
+
+This is the compiler-owned constructor used by the adjacent observer proof; no
+main layout, prelude, or emitted body is supplied independently.
+-/
+theorem lowerExpressionsFromAllocation?_main_components
+    {allocation : ProgramPlan} {program : Program}
+    {expressions : Expressions.Program}
+    (hLower :
+      lowerExpressionsFromAllocation? allocation program =
+        some expressions) :
+    ∃ recipe stackSlots frameName procs stateAfterFunctions main final,
+      validatePlan? allocation program = some (recipe, stackSlots) ∧
+        freshFrameName program = some frameName ∧
+        lowerFunctions? recipe stackSlots frameName
+            (AllocationSupport.scratchFrameConfig?
+              program.memoryContract recipe.frameWords)
+            recipe.stateAfterSignatures program.functions =
+          some (procs, stateAfterFunctions) ∧
+        stateAfterFunctions = recipe.stateAfterFunctions ∧
+        Nonempty
+          (MainComponents recipe stackSlots frameName
+            (AllocationSupport.scratchFrameConfig?
+              program.memoryContract recipe.frameWords)
+            { env := []
+              nextSlot := recipe.stateAfterFunctions.nextSlot }
+            program.body main final) ∧
+        final.allocation = recipe.main ∧
+        Locals.ProcList.toExpressions? procs =
+          some expressions.procs ∧
+        Locals.Block.compile Locals.Ctx.initial main =
+          some expressions.body := by
+  unfold lowerExpressionsFromAllocation? at hLower
+  cases hLocals :
+      lowerLocalsFromAllocation? allocation program with
+  | none =>
+      simp [hLocals] at hLower
+  | some locals =>
+      have hExpressions :
+          locals.toExpressions? = some expressions := by
+        simpa [hLocals] using hLower
+      unfold lowerLocalsFromAllocation? at hLocals
+      cases hValidate : validatePlan? allocation program with
+      | none =>
+          simp [hValidate] at hLocals
+      | some validated =>
+          rcases validated with ⟨recipe, stackSlots⟩
+          cases hFresh : freshFrameName program with
+          | none =>
+              simp [hValidate, hFresh] at hLocals
+          | some frameName =>
+              have hToLocals :
+                  lowerToLocals? recipe stackSlots frameName program =
+                    some locals := by
+                simpa [hValidate, hFresh] using hLocals
+              let frameConfig? :=
+                AllocationSupport.scratchFrameConfig?
+                  program.memoryContract recipe.frameWords
+              unfold lowerToLocals? at hToLocals
+              cases hFunctions :
+                  lowerFunctions? recipe stackSlots frameName frameConfig?
+                    recipe.stateAfterSignatures program.functions with
+              | none =>
+                  simp [frameConfig?, hFunctions] at hToLocals
+              | some functionResult =>
+                  rcases functionResult with
+                    ⟨procs, stateAfterFunctions⟩
+                  by_cases hState :
+                      stateAfterFunctions = recipe.stateAfterFunctions
+                  · subst stateAfterFunctions
+                    let mainStart : AllocationSupport.CompileState :=
+                      { env := []
+                        nextSlot := recipe.stateAfterFunctions.nextSlot }
+                    cases hMain :
+                        lowerMain? recipe stackSlots frameName frameConfig?
+                          mainStart program.body with
+                    | none =>
+                        simp [frameConfig?, hFunctions, mainStart, hMain]
+                          at hToLocals
+                    | some mainResult =>
+                        rcases mainResult with ⟨main, final⟩
+                        by_cases hFinal :
+                            final.allocation = recipe.main
+                        · have hLocalsEq :
+                              ({ procs := procs, body := main } :
+                                  Locals.Program) =
+                                locals := by
+                            apply Option.some.inj
+                            simpa [frameConfig?, hFunctions, mainStart,
+                              hMain, hFinal] using hToLocals
+                          subst locals
+                          unfold Locals.Program.toExpressions? at hExpressions
+                          cases hProcs :
+                              Locals.ProcList.toExpressions? procs with
+                          | none =>
+                              simp [hProcs] at hExpressions
+                          | some lowerProcs =>
+                              cases hBody :
+                                  Locals.Block.compile Locals.Ctx.initial
+                                    main with
+                              | none =>
+                                  simp [hProcs, hBody] at hExpressions
+                              | some lowerBody =>
+                                  have hExpressionsEq :
+                                      ({ procs := lowerProcs
+                                         body := lowerBody } :
+                                          Expressions.Program) =
+                                        expressions := by
+                                    apply Option.some.inj
+                                    simpa [hProcs, hBody] using hExpressions
+                                  subst expressions
+                                  exact
+                                    ⟨recipe, stackSlots, frameName, procs,
+                                      recipe.stateAfterFunctions, main, final,
+                                      by simpa using hValidate,
+                                      by simpa using hFresh,
+                                      by simpa [frameConfig?] using hFunctions,
+                                      rfl,
+                                      by
+                                        simpa [frameConfig?, mainStart] using
+                                          lowerMain?_components hMain,
+                                      hFinal, hProcs, hBody⟩
+                        · simp [frameConfig?, hFunctions, mainStart,
+                            hMain, hFinal] at hToLocals
+                  · simp [frameConfig?, hFunctions, hState] at hToLocals
 
 /--
 The real whole-program allocation lowerer exposes the validated artifacts for

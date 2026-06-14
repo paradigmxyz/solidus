@@ -348,6 +348,18 @@ mutual
     | _ => state
 end
 
+theorem planStmtList_append
+    (current : Locals.Allocation.ScopeId)
+    (state : PlanningState)
+    (left right : List Stmt) :
+    planStmtList current state (left ++ right) =
+      planStmtList current (planStmtList current state left) right := by
+  induction left generalizing state with
+  | nil => simp [planStmtList]
+  | cons stmt rest ih =>
+      simp only [List.cons_append, planStmtList]
+      exact ih (planStmt current state stmt)
+
 mutual
 
 private def planningBlockSize : Block → Nat
@@ -975,6 +987,55 @@ theorem planRecipeCore?_functions
             simp [hNames, initial, hSignatures, hFunctions] at hPlan
             subst recipe
             exact ⟨functionPlan, hFunctions, rfl, rfl⟩
+  · simp [hNames] at hPlan
+
+/--
+Successful recipe planning exposes the exact distinguished-main plan and the
+fact that all main lexical scopes occupy the prefix of the shared recipe.
+-/
+theorem planRecipeCore?_main
+    {program : Program} {recipe : AllocationRecipe}
+    (hPlan : planRecipeCore? program = some recipe) :
+    ∃ mainPlan,
+      planBlockOpen .main
+          {
+            allocation :=
+              { env := []
+                nextSlot := recipe.stateAfterFunctions.nextSlot }
+            nextScope := 0
+            scopes := []
+          }
+          program.body =
+        mainPlan ∧
+      mainPlan.allocation = recipe.main ∧
+      mainPlan.allocation.nextSlot = recipe.frameWords ∧
+      (∀ entry,
+        entry ∈ mainPlan.scopes →
+          entry ∈ recipe.lexicalScopes) := by
+  unfold planRecipeCore? at hPlan
+  by_cases hNames : (program.functions.map FunDef.name).Nodup
+  · let initial : CompileState := { env := [], nextSlot := 0 }
+    cases hSignatures :
+        allocateFunctionSignatures program.functions initial with
+    | mk functionSlots stateAfterSignatures =>
+        cases hFunctions :
+            planFunctions functionSlots stateAfterSignatures
+              program.functions with
+        | none =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+        | some functionPlan =>
+            simp [hNames, initial, hSignatures, hFunctions] at hPlan
+            subst recipe
+            let mainStart : CompileState :=
+              { env := [], nextSlot := functionPlan.state.nextSlot }
+            let mainPlan :=
+              planBlockOpen .main
+                { allocation := mainStart, nextScope := 0, scopes := [] }
+                program.body
+            refine ⟨mainPlan, ?_, rfl, rfl, ?_⟩
+            · rfl
+            · intro entry hEntry
+              exact List.mem_append_left _ hEntry
   · simp [hNames] at hPlan
 
 /--

@@ -13,6 +13,7 @@ import EvmCompiler.Functions.AllocationObserverOutcome
 import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Functions.AllocationObserverDispatcher
 import EvmCompiler.Functions.AllocationObserverRecursive
+import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
@@ -826,6 +827,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.controlledHeadResult
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveProgramForward
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveBlockForward
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.cons
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.finished
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlBinding.DestinationRuntimeInvariant.of_transport
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.brkRuntimeResultExact
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.contRuntimeResultExact

@@ -134,13 +134,17 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverLoop.lean \
   EvmCompiler/Functions/AllocationObserverOutcome.lean \
   EvmCompiler/Functions/AllocationObserverForward.lean \
+  EvmCompiler/Functions/AllocationObserverDispatcher.lean \
   EvmCompiler/Functions/AllocationObserverCall.lean \
-  EvmCompiler/Functions/AllocationObserverRecursive.lean
+  EvmCompiler/Functions/AllocationObserverRecursive.lean \
+  EvmCompiler/Functions/AllocationObserverProgram.lean
 
 report_matches \
   'The recursive Functions observer dispatcher must stay on its adjacent pass boundary:' \
   '^import EvmCompiler\.(TypedCfg|Assembly|Objects|Yul|Public)' \
-  EvmCompiler/Functions/AllocationObserverRecursive.lean
+  EvmCompiler/Functions/AllocationObserverDispatcher.lean \
+  EvmCompiler/Functions/AllocationObserverRecursive.lean \
+  EvmCompiler/Functions/AllocationObserverProgram.lean
 
 report_matches \
   'The allocation loop boundary must not publicly expose a whole-loop proof callback:' \
@@ -483,7 +487,10 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverLoop.lean \
   EvmCompiler/Functions/AllocationObserverOutcome.lean \
   EvmCompiler/Functions/AllocationObserverForward.lean \
+  EvmCompiler/Functions/AllocationObserverDispatcher.lean \
   EvmCompiler/Functions/AllocationObserverCall.lean \
+  EvmCompiler/Functions/AllocationObserverRecursive.lean \
+  EvmCompiler/Functions/AllocationObserverProgram.lean \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/TypedCfg \

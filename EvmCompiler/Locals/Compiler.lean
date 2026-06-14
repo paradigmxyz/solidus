@@ -106,6 +106,22 @@ def finishScoped (outer final : Ctx) (stmts : List Expressions.Stmt) :
   let cleanup ← final.cleanupTo? outer.layout.length
   some { stmts := stmts ++ codeStmt cleanup }
 
+theorem finishScoped_components
+    {outer final : Ctx} {stmts : List Expressions.Stmt}
+    {block : Expressions.Block}
+    (hFinish : finishScoped outer final stmts = some block) :
+    ∃ cleanup,
+      final.cleanupTo? outer.layout.length = some cleanup ∧
+        block = { stmts := stmts ++ codeStmt cleanup } := by
+  unfold finishScoped at hFinish
+  cases hCleanup : final.cleanupTo? outer.layout.length with
+  | none =>
+      simp [hCleanup] at hFinish
+  | some cleanup =>
+      simp [hCleanup] at hFinish
+      subst block
+      exact ⟨cleanup, by simpa using hCleanup, rfl⟩
+
 set_option maxHeartbeats 800000 in
 mutual
   def Expr.compileCode {results : Nat} (ctx : Ctx) (offset : Nat)
@@ -995,6 +1011,31 @@ def compileTo (ctx : Ctx) (targetDepth : Nat)
 def compile (ctx : Ctx) (block : Block) : Option Expressions.Block := do
   let (code, finalCtx) ← Block.compileOpen ctx block
   finishScoped ctx finalCtx code
+
+/--
+Successful closed-block compilation exposes the ordinary open-block compiler
+and its compiler-owned lexical cleanup.
+-/
+theorem compile_components
+    {ctx : Ctx} {block : Block} {compiled : Expressions.Block}
+    (hCompile : compile ctx block = some compiled) :
+    ∃ code finalCtx,
+      Block.compileOpen ctx block = some (code, finalCtx) ∧
+        finishScoped ctx finalCtx code = some compiled := by
+  cases hOpen : Block.compileOpen ctx block with
+  | none =>
+      simp [compile, hOpen] at hCompile
+  | some result =>
+      rcases result with ⟨code, finalCtx⟩
+      cases hFinish : finishScoped ctx finalCtx code with
+      | none =>
+          simp [compile, hOpen, hFinish] at hCompile
+      | some output =>
+          simp [compile, hOpen, hFinish] at hCompile
+          subst compiled
+          exact
+            ⟨code, finalCtx, by simpa using hOpen,
+              by simpa using hFinish⟩
 
 end Block
 

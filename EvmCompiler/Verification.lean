@@ -20,6 +20,7 @@ import EvmCompiler.Functions.AllocationObserverLoop
 import EvmCompiler.Functions.AllocationObserverForward
 import EvmCompiler.Functions.AllocationObserverDispatcher
 import EvmCompiler.Functions.AllocationObserverRecursive
+import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
@@ -338,6 +339,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.controlledHeadResult
 #check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveProgramForward
 #check EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.recursiveBlockForward
+#check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact
+#check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared
+#check EvmCompiler.Functions.AllocationObserverProgram.MainRoot
+#check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular
@@ -559,6 +564,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.root
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.RootArtifact
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.RootArtifact.cursor
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.toCore
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.cons
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.finished
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lexical
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scoped
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockCursors
@@ -622,6 +633,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.consRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
+#check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_main
+#check EvmCompiler.Functions.AllocationLowering.splitPrelude_components
+#check EvmCompiler.Functions.AllocationLowering.PreludeLowered.planBlockOpen_append
 #check EvmCompiler.Functions.AllocationSupport.planBlockScoped_entry_mem
 #check EvmCompiler.Functions.AllocationSupport.mem_planBlockScoped_scopes_of_open_mem
 #check EvmCompiler.Functions.AllocationSupport.mem_planCases_scopes_of_mem

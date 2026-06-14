@@ -381,6 +381,158 @@ theorem after_planBlockOpen
 end ActiveEnv
 
 /--
+Pass-owned description of one recursively lowered source root.
+
+This is the owner-neutral boundary consumed by the recursive observer proof.
+Selected functions and the distinguished main body both provide this artifact
+from their existing allocation-lowering and Locals-compilation results.
+-/
+structure RootArtifact
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation : Compilation allocation program expressions) where
+  functionRoot? : Option Functions.Name
+  rootScope : Locals.Allocation.ScopeId
+  slots : AllocationSupport.FunSlots
+  returns : List Functions.Name
+  sourceBlock : Functions.Block
+  startState : AllocationLowering.State
+  startLocals : Locals.Ctx
+  planning : AllocationSupport.PlanningState
+  planningAllocation :
+    planning.allocation = startState.allocation
+  rootScopeOwner :
+    MixedAllocation.AllocationRecipe.functionRoot? rootScope =
+      functionRoot?
+  plan : Locals.Allocation.Plan
+  planWF : plan.WellFormed
+  finalState : AllocationLowering.State
+  finalLocals : Locals.Ctx
+  planEq :
+    plan =
+      MixedAllocation.allocationOfState
+        program.memoryContract compilation.recipe.frameWords
+        (MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots rootScope
+          finalState.allocation)
+        finalState.allocation
+  finalFrameFresh :
+    compilation.frameName ∉ finalState.allocation.env.map Prod.fst
+  plannedFinal :
+    (AllocationSupport.planBlockOpen rootScope planning sourceBlock).allocation =
+      finalState.allocation
+  plannedScopes :
+    ∀ entry,
+      entry ∈
+          (AllocationSupport.planBlockOpen rootScope planning sourceBlock).scopes →
+        entry ∈ compilation.recipe.lexicalScopes
+  lowered : Locals.Block
+  compiled : List Expressions.Stmt
+  lowerCtx : AllocationLowering.Ctx
+  lowerCtxShared :
+    compilation.CtxShared lowerCtx
+  lower :
+    AllocationLowering.lowerBlockOpen lowerCtx returns
+        startState sourceBlock =
+      some (lowered, finalState)
+  compile :
+    Locals.Block.compileOpen startLocals lowered =
+      some (compiled, finalLocals)
+  sourceScoped :
+    Functions.Scope.Block.Scoped
+      ((slots.returns.map Prod.fst).reverse ++
+        (slots.params.map Prod.fst).reverse)
+      sourceBlock
+  activeEnv :
+    ActiveEnv slots planning.allocation.env
+      ((slots.returns.map Prod.fst).reverse ++
+        (slots.params.map Prod.fst).reverse)
+
+/--
+Owner-neutral recursive cursor. It contains exactly the static planner,
+lowering, and Locals-compilation evidence needed by the statement dispatcher.
+-/
+structure CoreCursor
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    (root : RootArtifact compilation)
+    (scope : Locals.Allocation.ScopeId)
+    (live : List Functions.Name)
+    (sourceBlock : Functions.Block)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx) where
+  planning : AllocationSupport.PlanningState
+  planningAllocation :
+    planning.allocation = lowerState.allocation
+  scopeRoot :
+    MixedAllocation.AllocationRecipe.functionRoot? scope =
+      root.functionRoot?
+  plan : Locals.Allocation.Plan
+  planWF : plan.WellFormed
+  finalState : AllocationLowering.State
+  finalLocals : Locals.Ctx
+  planEq :
+    plan =
+      MixedAllocation.allocationOfState
+        program.memoryContract compilation.recipe.frameWords
+        (MixedAllocation.AllocationRecipe.stackEntriesForScope
+          compilation.recipe compilation.stackSlots scope finalState.allocation)
+        finalState.allocation
+  finalFrameFresh :
+    compilation.frameName ∉ finalState.allocation.env.map Prod.fst
+  plannedFinal :
+    (AllocationSupport.planBlockOpen scope planning sourceBlock).allocation =
+      finalState.allocation
+  plannedScopes :
+    ∀ entry,
+      entry ∈
+          (AllocationSupport.planBlockOpen scope planning sourceBlock).scopes →
+        entry ∈ compilation.recipe.lexicalScopes
+  lowered : Locals.Block
+  compiled : List Expressions.Stmt
+  lower :
+    AllocationLowering.lowerBlockOpen root.lowerCtx root.returns
+        lowerState sourceBlock =
+      some (lowered, finalState)
+  compile :
+    Locals.Block.compileOpen localsCtx lowered =
+      some (compiled, finalLocals)
+  sourceScoped : Functions.Scope.Block.Scoped live sourceBlock
+  activeEnv :
+    ActiveEnv root.slots planning.allocation.env live
+
+def RootArtifact.cursor
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    (root : RootArtifact compilation) :
+    CoreCursor root root.rootScope
+      ((root.slots.returns.map Prod.fst).reverse ++
+        (root.slots.params.map Prod.fst).reverse)
+      root.sourceBlock root.startState root.startLocals :=
+  { planning := root.planning
+    planningAllocation := root.planningAllocation
+    scopeRoot := root.rootScopeOwner
+    plan := root.plan
+    planWF := root.planWF
+    finalState := root.finalState
+    finalLocals := root.finalLocals
+    planEq := root.planEq
+    finalFrameFresh := root.finalFrameFresh
+    plannedFinal := root.plannedFinal
+    plannedScopes := root.plannedScopes
+    lowered := root.lowered
+    compiled := root.compiled
+    lower := root.lower
+    compile := root.compile
+    sourceScoped := root.sourceScoped
+    activeEnv := root.activeEnv }
+
+/--
 Static placement change for one declaration in an open function body.
 
 This is derived from the real planner and final allocation plan. It contains
@@ -574,6 +726,275 @@ def Cursor.root
       refine ⟨[], ?_, ?_⟩
       · simp [AllocationObserverCall.SelectedCallee.Artifact.bodyStart]
       · simp }
+
+/--
+Embed the existing selected-function artifact into the owner-neutral recursive
+root interface. This theorem is the compatibility boundary used while the
+dispatcher migrates from function-specific cursors.
+-/
+def RootArtifact.ofSelected
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn)
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    (hScoped :
+      Functions.Scope.Block.Scoped
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        fn.body) :
+    RootArtifact (Compilation.ofSelected artifact) :=
+  { functionRoot? := some fn.name
+    rootScope := .function fn.name
+    slots := artifact.slots
+    returns := fn.returns
+    sourceBlock := fn.body
+    startState := artifact.bodyStart
+    startLocals := prepared.returnCtx
+    planning :=
+      { allocation := artifact.bodyStart.allocation
+        nextScope := 0
+        scopes := [] }
+    planningAllocation := rfl
+    rootScopeOwner := rfl
+    plan := prepared.plan
+    planWF := prepared.planWF
+    finalState := prepared.bodyFinal
+    finalLocals := prepared.bodyCtx
+    planEq := by
+      rw [prepared.planEq, artifact.planEntryScope, prepared.bodyPlan]
+      simp [Compilation.ofSelected]
+    finalFrameFresh := by
+      rw [← prepared.bodyPlan]
+      exact artifact.frameName_not_mem_planEntry_env
+    plannedFinal := by
+      calc
+        (AllocationSupport.planBlockOpen (.function fn.name)
+            {
+              allocation := artifact.bodyStart.allocation
+              nextScope := 0
+              scopes := []
+            }
+            fn.body).allocation =
+            artifact.planEntry.state := by
+          simpa [AllocationObserverCall.SelectedCallee.Artifact.bodyStart] using
+            artifact.planEntryState.symm
+        _ = prepared.bodyFinal.allocation := prepared.bodyPlan
+    plannedScopes := by
+      simpa [AllocationObserverCall.SelectedCallee.Artifact.bodyStart] using
+        artifact.bodyScopesMem
+    lowered := prepared.body
+    compiled := prepared.bodyCode
+    lowerCtx := artifact.lowerCtx
+    lowerCtxShared :=
+      (Compilation.ofSelected artifact).selected_shared artifact
+    lower := prepared.lowerBody
+    compile := prepared.compileBody
+    sourceScoped := hScoped
+    activeEnv := by
+      refine ⟨[], ?_, ?_⟩
+      · simp [AllocationObserverCall.SelectedCallee.Artifact.bodyStart]
+      · simp }
+
+def Cursor.toCore
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    (hScoped :
+      Functions.Scope.Block.Scoped
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        fn.body)
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    CoreCursor (RootArtifact.ofSelected artifact prepared hScoped)
+      scope live sourceBlock lowerState localsCtx :=
+  { planning := cursor.planning
+    planningAllocation := cursor.planningAllocation
+    scopeRoot := cursor.scopeRoot
+    plan := cursor.plan
+    planWF := cursor.planWF
+    finalState := cursor.finalState
+    finalLocals := cursor.finalLocals
+    planEq := by
+      simpa [Compilation.ofSelected] using cursor.planEq
+    finalFrameFresh := cursor.finalFrameFresh
+    plannedFinal := cursor.plannedFinal
+    plannedScopes := cursor.plannedScopes
+    lowered := cursor.lowered
+    compiled := cursor.compiled
+    lower := cursor.lower
+    compile := cursor.compile
+    sourceScoped := cursor.sourceScoped
+    activeEnv := cursor.activeEnv }
+
+/--
+Decompose one owner-neutral nonempty cursor through the real statement lowerer
+and Locals compiler.
+-/
+theorem CoreCursor.cons
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live { stmts := stmt :: rest }
+        lowerState localsCtx) :
+    ∃ afterState afterLocals headLower headCode,
+      ∃ tailCursor :
+        CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+          { stmts := rest } afterState afterLocals,
+      tailCursor.planning =
+          AllocationSupport.planStmt scope cursor.planning stmt ∧
+      tailCursor.plan = cursor.plan ∧
+      tailCursor.finalState = cursor.finalState ∧
+      tailCursor.finalLocals = cursor.finalLocals ∧
+      AllocationLowering.lowerStmt root.lowerCtx root.returns
+          lowerState stmt =
+        some (headLower, afterState) ∧
+      Locals.Block.compileOpen localsCtx { stmts := headLower } =
+        some (headCode, afterLocals) ∧
+      cursor.lowered.stmts =
+        headLower ++ tailCursor.lowered.stmts ∧
+      cursor.compiled = headCode ++ tailCursor.compiled ∧
+      Functions.Scope.Stmt.Scoped live stmt := by
+  obtain ⟨headLower, afterState, tailLower,
+      hHeadLower, hTailLower, hLowered⟩ :=
+    AllocationLowering.lowerBlockOpen_cons_components cursor.lower
+  have hLoweredBlock :
+      cursor.lowered = { stmts := headLower ++ tailLower } := by
+    cases hCursorLowered : cursor.lowered with
+    | mk stmts =>
+        have hStmts : stmts = headLower ++ tailLower := by
+          simpa [hCursorLowered] using hLowered
+        cases hStmts
+        rfl
+  have hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts := headLower ++ tailLower } =
+        some (cursor.compiled, cursor.finalLocals) := by
+    have hCompile' := cursor.compile
+    rw [hLoweredBlock] at hCompile'
+    exact hCompile'
+  obtain
+      ⟨headCode, afterLocals, tailCode,
+        hHeadCompile, hTailCompile, hCompiled⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hScoped :
+      Functions.Scope.Stmt.Scoped live stmt ∧
+        Functions.Scope.StmtList.Scoped
+          (Functions.Scope.Stmt.outEnv live stmt) rest := by
+    simpa [Functions.Scope.Block.Scoped,
+      Functions.Scope.StmtList.Scoped] using cursor.sourceScoped
+  let tailCursor :
+      CoreCursor root scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals :=
+    { planning :=
+        AllocationSupport.planStmt scope cursor.planning stmt
+      planningAllocation :=
+        AllocationLowering.lowerStmt_allocation_eq_planStmt
+          stmt scope cursor.planning root.lowerCtx root.returns
+          lowerState afterState headLower cursor.planningAllocation
+          hHeadLower
+      scopeRoot := cursor.scopeRoot
+      plan := cursor.plan
+      planWF := cursor.planWF
+      finalState := cursor.finalState
+      finalLocals := cursor.finalLocals
+      planEq := cursor.planEq
+      finalFrameFresh := cursor.finalFrameFresh
+      plannedFinal := by
+        simpa [AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using cursor.plannedFinal
+      plannedScopes := by
+        intro entry hEntry
+        apply cursor.plannedScopes entry
+        simpa [AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using hEntry
+      lowered := { stmts := tailLower }
+      compiled := tailCode
+      lower := hTailLower
+      compile := hTailCompile
+      sourceScoped := by
+        simpa [Functions.Scope.Block.Scoped] using hScoped.2
+      activeEnv := cursor.activeEnv.after_planStmt }
+  exact
+    ⟨afterState, afterLocals, headLower, headCode, tailCursor,
+      rfl, rfl, rfl, rfl, hHeadLower, hHeadCompile, hLowered, hCompiled,
+      hScoped.1⟩
+
+def CoreCursor.finished
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation : Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      CoreCursor root scope live sourceBlock lowerState localsCtx) :
+    CoreCursor root scope
+      (Functions.Scope.Block.outEnv live sourceBlock)
+      { stmts := [] } cursor.finalState cursor.finalLocals := by
+  let finalPlanning :=
+    AllocationSupport.planBlockOpen scope cursor.planning sourceBlock
+  have hFinalActive :
+      ActiveEnv root.slots finalPlanning.allocation.env
+        (Functions.Scope.Block.outEnv live sourceBlock) :=
+    cursor.activeEnv.after_planBlockOpen
+  exact
+    { planning := finalPlanning
+      planningAllocation := cursor.plannedFinal
+      scopeRoot := cursor.scopeRoot
+      plan := cursor.plan
+      planWF := cursor.planWF
+      finalState := cursor.finalState
+      finalLocals := cursor.finalLocals
+      planEq := cursor.planEq
+      finalFrameFresh := cursor.finalFrameFresh
+      plannedFinal := by
+        simpa [finalPlanning, AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using cursor.plannedFinal
+      plannedScopes := by
+        intro entry hEntry
+        apply cursor.plannedScopes entry
+        simpa [finalPlanning, AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using hEntry
+      lowered := { stmts := [] }
+      compiled := []
+      lower := by
+        simp [AllocationLowering.lowerBlockOpen,
+          AllocationLowering.lowerStmtList]
+      compile := by
+        simp [Locals.Block.compileOpen]
+      sourceScoped := by
+        simp [Functions.Scope.Block.Scoped,
+          Functions.Scope.StmtList.Scoped]
+      activeEnv := hFinalActive }
 
 /--
 Decompose a nonempty recursive cursor through the real statement lowerer and
