@@ -1414,9 +1414,12 @@ corridor.
   regular tails, and recursive calls; `Frame.FuelSafe` plus the call-owned
   callee-depth bound supplies each nested scratch budget. The main-root
   boundary is now compiler-selected between stack-only and scratch modes. The
-  resource-indexed recursive theorem and scratch conversion are checked. The
-  remaining Functions work is the stack-only recursive constructor,
-  whole-program forward packaging, and matching backward adequacy.
+  resource-indexed recursive theorem and scratch conversion are checked.
+  Stack-only leaves, lexical blocks, and both regular and abrupt `if` branches
+  now use the same resource-indexed cursor and controlled-dispatch interfaces.
+  The remaining Functions work is stack-only `switch`, loops, selected calls,
+  the recursive constructor, whole-program forward packaging, and matching
+  backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

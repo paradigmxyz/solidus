@@ -5397,6 +5397,78 @@ theorem CoreCursor.ifFalseRuntimeResult
       hExact⟩
 
 /--
+Preserve the false branch of one synchronized `if` in a compiler-selected
+stack-only activation.
+-/
+theorem CoreCursor.ifFalseStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterCond :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript cond source sourceAfterCond [value])
+    (hFalse : value = EvmYul.UInt256.ofNat 0)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.if_ cond body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular sourceAfterCond)
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.if_ cond body) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, _loweredCond, _condCode,
+        _targetBody, _bodyCursor, hCompiled, hLower, hCompile, _hHeadCode,
+        _hLowerCond, _hCompileCond, _hFinish, _hAfterEnv, _hAfterLayout,
+        hCondScoped, hExact⟩ :=
+    cursor.ifCursors
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_false_of_components
+      hSafe hFalse hCondScoped hInvariant.activation hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetFinal, hCompiled,
+      .regular (hForward.toStackResource hInvariant.owned)
+        (AllocationObserverOutcome.SameControl.refl _),
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact⟩
+
+/--
 Preserve the true branch of one synchronized `if` whose lexical body returns
 regularly.
 -/
@@ -5542,6 +5614,154 @@ theorem CoreCursor.ifTrueRegularRuntimeResult
   exact
     ⟨afterState, headCode, tail, targetFinal, hCompiled,
       .regular hForward (AllocationObserverOutcome.SameControl.refl _),
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact⟩
+
+/--
+Preserve the true branch of one synchronized `if` whose lexical body returns
+regularly in a compiler-selected stack-only activation.
+-/
+theorem CoreCursor.ifTrueRegularStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceAfterCond sourceBodyFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript cond source sourceAfterCond [value])
+    (hTrue :
+      (value != EvmYul.UInt256.ofNat 0) = true)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ bodyCursor :
+          CoreCursor root
+            (.lexical scope cursor.planning.nextScope)
+            live body lowerState localsCtx,
+        ∀ {targetBodyStart :
+            Structured.ObserverSemantics.State transcript},
+          AllocationObserverContext.ActivationResourceInvariant
+              .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+              lowerState localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterCond targetBodyStart →
+          targetBodyStart.source.returns = target.source.returns →
+          ∃ targetBodyFinal,
+            AllocationObserverOutcome.BlockResourceResult
+              program.memoryContract .stackOnly allocatorDepth transcript
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
+              (Functions.Scope.Block.outEnv live body)
+              frameBase mode program sourceCtx body sourceAfterCond
+              expressions.toStructured
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+              targetBodyStart
+              (Functions.Source.Effectful.Outcome.regular sourceBodyFinal)
+              (Structured.EffectSemantics.Outcome.regular targetBodyFinal)
+              finalCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.if_ cond body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                live sourceBodyFinal))
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.if_ cond body) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, _loweredCond,
+        _condCode, _targetBody, bodyCursor, hCompiled, hLower,
+        hCompile, _hHeadCode, _hLowerCond, _hCompileCond, _hFinish,
+        _hAfterEnv, _hAfterLayout, hCondScoped, hExact⟩ :=
+    cursor.ifCursors
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor rfl
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtInvariantForward.if_true_of_components
+      (bodyPlan := bodyCursor.plan)
+      (bodyLive := Functions.Scope.Block.outEnv live body)
+      (sourceBodyFinal := sourceBodyFinal)
+      (finalCtx := finalCtx)
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hSafe hTrue hCondScoped bodyCursor.sourceScoped hSourceScope
+      (fun name hName =>
+        Functions.Scope.Block.mem_outEnv hName)
+      hInvariant.activation
+      (by
+        intro loweredBody bodyLowerState bodyCode bodyLocals
+          targetAfterCond hLowerBody hCompileBody hCondInvariant hReturns
+        have hLowerEq :
+            (loweredBody, bodyLowerState) =
+              (bodyCursor.lowered, bodyCursor.finalState) :=
+          Option.some.inj (hLowerBody.symm.trans bodyCursor.lower)
+        cases hLowerEq
+        have hCompileEq :
+            (bodyCode, bodyLocals) =
+              (bodyCursor.compiled, bodyCursor.finalLocals) :=
+          Option.some.inj (hCompileBody.symm.trans bodyCursor.compile)
+        cases hCompileEq
+        have hBodyInvariant :
+            AllocationObserverContext.ActivationInvariant
+              program.memoryContract root.lowerCtx lowerState localsCtx
+              bodyCursor.plan live frameBase mode sourceAfterCond
+              targetAfterCond :=
+          hCondInvariant.transport_plan
+            bodyCursor.planWF hPlanAgree.symm
+        obtain ⟨targetBodyFinal, hBodyResult⟩ :=
+          hBody bodyCursor
+            (AllocationObserverContext.ActivationResourceInvariant.stackOnly
+              (allocatorDepth := allocatorDepth)
+              hBodyInvariant hInvariant.owned)
+            hReturns
+        cases hBodyResult with
+        | @regular _ _ finalMode _ hBodyForward _hControl =>
+            exact ⟨targetBodyFinal, finalMode, hBodyForward.toInvariant⟩
+        | nonregular hMode _hBodyForward =>
+            exact False.elim (hMode rfl))
+      hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetFinal, hCompiled,
+      .regular (hForward.toStackResource hInvariant.owned)
+        (AllocationObserverOutcome.SameControl.refl _),
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
       hExact⟩
 
@@ -5696,6 +5916,166 @@ theorem CoreCursor.ifTrueNonregularRuntimeResult
   exact
     ⟨afterState, headCode, tail, targetOutcome, hCompiled,
       .nonregular hForward,
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact, hP⟩
+
+/--
+Preserve the true branch of one synchronized `if` whose lexical body exits
+nonregularly in a compiler-selected stack-only activation.
+-/
+theorem CoreCursor.ifTrueNonregularStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterCond :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript cond source sourceAfterCond [value])
+    (hTrue :
+      (value != EvmYul.UInt256.ofNat 0) = true)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ bodyCursor :
+          CoreCursor root
+            (.lexical scope cursor.planning.nextScope)
+            live body lowerState localsCtx,
+        ∀ {targetBodyStart :
+            Structured.ObserverSemantics.State transcript},
+          AllocationObserverContext.ActivationResourceInvariant
+              .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+              lowerState localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterCond targetBodyStart →
+          targetBodyStart.source.returns = target.source.returns →
+          ∃ targetBodyOutcome bodyCtx,
+            AllocationObserverOutcome.BlockResourceResult
+              program.memoryContract .stackOnly allocatorDepth transcript
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
+              (Functions.Scope.Block.outEnv live body)
+              frameBase mode program sourceCtx body sourceAfterCond
+              expressions.toStructured
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+              targetBodyStart sourceOutcome targetBodyOutcome bodyCtx ∧
+            P targetBodyOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.if_ cond body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.if_ cond body) ∧
+          ExactTail cursor tail ∧
+          P targetOutcome := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, _loweredCond,
+        _condCode, _targetBody, bodyCursor, hCompiled, hLower,
+        hCompile, _hHeadCode, _hLowerCond, _hCompileCond, _hFinish,
+        _hAfterEnv, _hAfterLayout, hCondScoped, hExact⟩ :=
+    cursor.ifCursors
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor rfl
+  obtain ⟨targetOutcome, finalMode, hForward, hFinalStack, hP⟩ :=
+    AllocationObserverStatement.Sequence.NonregularStmtForward.if_true_of_components
+      (P := fun finalMode targetOutcome =>
+        finalMode = .stack ∧ P targetOutcome)
+      hSafe hTrue hMode hCondScoped hInvariant.activation
+      (by
+        intro loweredBody bodyLowerState bodyCode bodyLocals
+          targetAfterCond hLowerBody hCompileBody hCondInvariant hReturns
+        have hLowerEq :
+            (loweredBody, bodyLowerState) =
+              (bodyCursor.lowered, bodyCursor.finalState) :=
+          Option.some.inj (hLowerBody.symm.trans bodyCursor.lower)
+        cases hLowerEq
+        have hCompileEq :
+            (bodyCode, bodyLocals) =
+              (bodyCursor.compiled, bodyCursor.finalLocals) :=
+          Option.some.inj (hCompileBody.symm.trans bodyCursor.compile)
+        cases hCompileEq
+        have hBodyInvariant :
+            AllocationObserverContext.ActivationInvariant
+              program.memoryContract root.lowerCtx lowerState localsCtx
+              bodyCursor.plan live frameBase mode sourceAfterCond
+              targetAfterCond :=
+          hCondInvariant.transport_plan
+            bodyCursor.planWF hPlanAgree.symm
+        obtain
+            ⟨recursiveTargetOutcome, recursiveBodyCtx,
+              hBodyResult, hBodyP⟩ :=
+          hBody bodyCursor
+            (AllocationObserverContext.ActivationResourceInvariant.stackOnly
+              (allocatorDepth := allocatorDepth)
+              hBodyInvariant hInvariant.owned)
+            hReturns
+        cases hBodyResult with
+        | regular _hBodyForward _hControl =>
+            exact False.elim (hMode rfl)
+        | @nonregular _ _ bodyFinalMode _ _ hBodyForward =>
+            rcases hBodyForward with
+              ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun,
+                hBodyOutcomeRel, hSame, _hEffect⟩
+            have hOuterOutcomeRel :=
+              AllocationObserverOutcome.transport_nonregular_outcome_plan
+                hBodyOutcomeRel hMode hPlanAgree hControl
+            exact
+              ⟨bodyCursor.plan, bodyFinalMode, recursiveTargetOutcome,
+                recursiveBodyCtx,
+                ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun,
+                  hBodyOutcomeRel⟩,
+                hOuterOutcomeRel,
+                hSame.right_eq_stack_of_left_eq_stack hInvariant.owned,
+                hBodyP⟩)
+      hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+      .nonregular
+        (hForward.toStackResource
+          (allocatorDepth := allocatorDepth)
+          hInvariant.owned hFinalStack),
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
       hExact, hP⟩
 
@@ -5883,6 +6263,194 @@ theorem CoreCursor.ifRuntimeResultOfSafeRun
             hRuntime, hTransport, hExact, _hDecoration⟩ :=
         cursor.ifTrueNonregularRuntimeResult (P := fun _ => True)
           hConfig hSafe hValue hMode hControl hInvariant
+          (by
+            intro bodyCursor targetBodyStart hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            exact ⟨targetBodyOutcome, bodyCtx, hBodyResult, trivial⟩)
+      exact
+        ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+          hRuntime, hTransport, hExact⟩
+
+/--
+Dispatcher-facing stack-only preservation for one synchronized `if`.
+-/
+theorem CoreCursor.ifStackResourceResultOfSafeRun
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 1) (.if_ cond body) source =
+        .ok (sourceOutcome, sourceCtx))
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ {sourceAfterCond :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx : Functions.Source.Ctx}
+        (bodyCursor :
+          CoreCursor root
+            (.lexical scope cursor.planning.nextScope)
+            live body lowerState localsCtx),
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program sourceCtx sourceFuel body sourceAfterCond =
+          .ok (bodyOutcome, bodyCtx) →
+        ∀ {targetBodyStart :
+            Structured.ObserverSemantics.State transcript},
+          AllocationObserverContext.ActivationResourceInvariant
+              .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+              lowerState localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterCond targetBodyStart →
+          ∃ targetBodyOutcome,
+            AllocationObserverOutcome.BlockResourceResult
+              program.memoryContract .stackOnly allocatorDepth transcript
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
+              (Functions.Scope.Block.outEnv live body)
+              frameBase mode program sourceCtx body sourceAfterCond
+              expressions.toStructured
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+              targetBodyStart bodyOutcome targetBodyOutcome bodyCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.if_ cond body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.if_ cond body) ∧
+          ExactTail cursor tail := by
+  rcases
+      Functions.Source.Effectful.Stmt.run_if_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hFalse | hTrue
+  · rcases hFalse with
+      ⟨sourceAfterCond, hCond, hOutcome, _hCtx⟩
+    subst sourceOutcome
+    obtain ⟨value, hSafe, hValue⟩ :=
+      AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+        hCond
+    have hZero : value = EvmYul.UInt256.ofNat 0 := by
+      by_contra hNe
+      have hNonzero :
+          (value != EvmYul.UInt256.ofNat 0) = true :=
+        TypedCfg.Preservation.uint256_bne_zero_of_ne value hNe
+      rw [hNonzero] at hValue
+      contradiction
+    obtain
+        ⟨afterState, headCode, tail, targetFinal, hCompiled,
+          hResult, hTransport, hExact⟩ :=
+      cursor.ifFalseStackResourceResult
+        (sourceCtx := sourceCtx) hSafe hZero hInvariant
+    exact
+      ⟨afterState, headCode, tail,
+        Structured.EffectSemantics.Outcome.regular targetFinal,
+        hCompiled, hResult, hTransport, hExact⟩
+  · rcases hTrue with
+      ⟨sourceAfterCond, bodyOutcome, hCond, hScoped,
+        hOutcome, _hCtx⟩
+    subst sourceOutcome
+    obtain ⟨value, hSafe, hValue⟩ :=
+      AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+        hCond
+    rcases
+        Functions.Source.Effectful.Block.runScoped_cases
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program hScoped with
+      hRegular | hNonregular
+    · rcases hRegular with
+        ⟨sourceBodyFinal, bodyCtx, hBodyRun, hBodyOutcome⟩
+      subst bodyOutcome
+      have hRestrict :
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              sourceCtx.scope sourceBodyFinal =
+            (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              live sourceBodyFinal :=
+        Locals.Source.Effectful.StateModel.restrictTo_congr
+          (Functions.ObserverSemantics.stateModel transcript)
+          hSourceScope
+      rw [hRestrict]
+      obtain
+          ⟨afterState, headCode, tail, targetFinal, hCompiled,
+            hResult, hTransport, hExact⟩ :=
+        cursor.ifTrueRegularStackResourceResult
+          (sourceBodyFinal := sourceBodyFinal)
+          (finalCtx := bodyCtx)
+          hSafe hValue hSourceScope hInvariant
+          (by
+            intro bodyCursor targetBodyStart hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            cases hBodyResult with
+            | regular hBodyForward hBodyControl =>
+                exact ⟨_, .regular hBodyForward hBodyControl⟩
+            | nonregular hMode _hBodyForward =>
+                exact False.elim (hMode rfl))
+      exact
+        ⟨afterState, headCode, tail,
+          Structured.EffectSemantics.Outcome.regular targetFinal,
+          hCompiled, hResult, hTransport, hExact⟩
+    · rcases hNonregular with
+        ⟨openOutcome, bodyCtx, hBodyRun, hMode, hBodyOutcome⟩
+      subst bodyOutcome
+      obtain
+          ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+            hRuntime, hTransport, hExact, _hDecoration⟩ :=
+        cursor.ifTrueNonregularStackResourceResult (P := fun _ => True)
+          hSafe hValue hMode hControl hInvariant
           (by
             intro bodyCursor targetBodyStart hBodyInvariant _hReturns
             obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
