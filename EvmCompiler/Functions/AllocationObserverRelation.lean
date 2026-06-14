@@ -3137,6 +3137,17 @@ theorem trans
       | scratch _ rightDepth _ =>
           exact .scratch leftDepth rightDepth frameWords
 
+theorem right_eq_stack_of_left_eq_stack
+    {left right : ActivationMode}
+    (hSame : SameFrame left right)
+    (hLeft : left = .stack) :
+    right = .stack := by
+  cases hSame with
+  | stack =>
+      rfl
+  | scratch =>
+      cases hLeft
+
 theorem afterStackDeclaration (mode : ActivationMode) :
     SameFrame mode mode.afterStackDeclaration := by
   cases mode with

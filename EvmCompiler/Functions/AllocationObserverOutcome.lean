@@ -1839,6 +1839,107 @@ theorem runtimeInvariant
       allocator := hInitial.allocator.of_machine_eq hMachine
       frame := hInitial.frame.sameFrame artifact.transition.sameFrame }
 
+/--
+Rebuild the complete invariant at a canonical control destination under the
+compiler-selected resource mode.
+-/
+theorem resourceInvariant
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    (artifact :
+      ControlTransitionArtifact kind lowerCtx currentState currentLocals
+        currentPlan currentLive currentMode sourceCtx afterLive)
+    (hInitial :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx currentState currentLocals
+        currentPlan currentLive frameBase currentMode source target)
+    (hState :
+      ActivationStateRel contract currentPlan afterLive 0 frameBase
+        artifact.destination.mode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal)
+    (hStack :
+      targetFinal.source.evm.stack.length =
+        artifact.destination.locals.layout.length)
+    (hMachine :
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState) :
+    AllocationObserverContext.ActivationResourceInvariant
+      resource contract allocatorDepth lowerCtx artifact.destination.state
+      artifact.destination.locals artifact.destination.plan
+      artifact.destination.live frameBase artifact.destination.mode
+      ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+        afterLive source)
+      targetFinal := by
+  cases resource with
+  | scratch config =>
+      exact
+        AllocationObserverContext.ActivationResourceInvariant.scratch
+          (artifact.runtimeInvariant hInitial.toRuntime
+            hState hStack hMachine)
+  | stackOnly =>
+      have hRestrict :
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              artifact.destination.live source =
+            (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source :=
+        Locals.Source.Effectful.StateModel.restrictTo_congr
+          (Functions.ObserverSemantics.stateModel transcript)
+          (fun name => (artifact.sourceEquivalent name).symm)
+      have hDefined :
+          LiveDefined artifact.destination.live
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source).source := by
+        have hRestricted :=
+          hInitial.activation.defined.restrictTo artifact.destination.subset
+        have hRestrictSource :=
+          congrArg
+            (fun state : Functions.ObserverSemantics.State transcript =>
+              state.source)
+            hRestrict
+        change
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              artifact.destination.live source).source =
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source).source at hRestrictSource
+        rw [← hRestrictSource]
+        exact hRestricted
+      have hDestinationState :
+          ActivationStateRel contract artifact.destination.plan
+            artifact.destination.live 0 frameBase artifact.destination.mode
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              afterLive source)
+            targetFinal :=
+        (hState.reindex_live
+          (fun name => (artifact.sourceEquivalent name).symm)).transport_plan
+            artifact.planAgree
+      have hDestinationMode : artifact.destination.mode = .stack := by
+        exact
+          artifact.transition.sameFrame.right_eq_stack_of_left_eq_stack
+            hInitial.owned
+      exact
+        AllocationObserverContext.ActivationResourceInvariant.stackOnly
+          { compiler :=
+              artifact.restoredCompiler.transport_plan artifact.planAgree
+            planWF := artifact.destination.planWF
+            defined := hDefined
+            state := hDestinationState
+            stackLength := hStack }
+          hDestinationMode
+
 end ControlTransitionArtifact
 
 /--
@@ -2419,6 +2520,43 @@ theorem available
     exact
       ⟨destination, sourceLive, source, sourceEquivalent, target, rfl,
         invariant⟩
+
+theorem of_artifact
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    {binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx}
+    (artifact :
+      ControlTransitionArtifact kind lowerCtx currentState currentLocals
+        currentPlan currentLive currentMode sourceCtx afterLive)
+    (hOwned : artifact.OwnedBy binding)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx artifact.destination.state
+        artifact.destination.locals artifact.destination.plan
+        artifact.destination.live frameBase artifact.destination.mode
+        sourceFinal targetFinal) :
+    DestinationResourceInvariant
+      (contract := contract) (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      binding sourceFinal targetFinal := by
+  obtain ⟨hSource, rfl⟩ := hOwned
+  exact
+    available artifact.destination afterLive hSource
+      artifact.sourceEquivalent artifact.target hInvariant
 
 /--
 Forget the current recursive statement context after a resource-indexed

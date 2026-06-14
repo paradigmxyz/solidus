@@ -5823,6 +5823,318 @@ theorem terminalArgs_of_compilers
     ⟨targetFinal,
       of_halt_runs hSource hTarget hOutcome⟩
 
+/--
+Resource-neutral preservation for a plain terminal statement.
+
+The Locals-owned cleanup removes every live stack slot before the terminal
+step. No allocator or scratch-frame premise is needed at this adjacent pass
+boundary.
+-/
+theorem terminal_of_invariant
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {kind : Assembly.HaltKind}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hMemory :
+      AllocationObserverSafety.TerminalMemorySafe contract kind [])
+    (hTerminal :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind source [] =
+        .ok sourceFinal)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.terminal kind) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan live frameBase mode
+        sourceProgram sourceCtx (.terminal kind) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+        sourceCtx := by
+  obtain
+      ⟨hLowered, _hLowerFinal, hCompiled, _hLocalsFinal⟩ :=
+    TerminalLeaf.compiler_shape hLower hCompile
+  obtain
+      ⟨targetAfterCleanup, hCleanupRun, hCleanupCursor,
+        hCleanupStack, hCleanupShared, _hCleanupReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_replicate_pop
+      localsCtx.layout.length
+      (by
+        rw [hInvariant.stackLength])
+  have hAfterStack : targetAfterCleanup.source.evm.stack = [] := by
+    rw [hCleanupStack, hInvariant.stackLength.symm]
+    exact List.drop_length
+  have hAfterCursor : source.cursor = targetAfterCleanup.cursor :=
+    hInvariant.state.base.cursor.trans hCleanupCursor.symm
+  have hAfterShared :
+      SharedRel contract source.source.shared
+        targetAfterCleanup.source.evm.toSharedState := by
+    rw [hCleanupShared]
+    exact hInvariant.state.base.core.shared
+  have hAfterNoWrap :
+      targetAfterCleanup.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    rw [show
+      targetAfterCleanup.source.evm.activeWords =
+        target.source.evm.activeWords by
+          exact
+            congrArg
+              (fun shared : EvmYul.SharedState .EVM =>
+                shared.toMachineState.activeWords)
+              hCleanupShared]
+    exact hInvariant.state.activeNoWrap
+  obtain
+      ⟨evmFinal, hStep, hHaltRel,
+        _hMemoryEq, _hActive, _hFinalNoWrap⟩ :=
+    (AllocationObserverTerminal.Invocation.of_memorySafe hMemory)
+      |>.forward_shared_observer
+        (plan := plan) (baseStack := [])
+        hAfterCursor hAfterShared hAfterNoWrap hTerminal
+        (by simpa using hAfterStack)
+  let targetFinal : Structured.ObserverSemantics.State transcript :=
+    targetAfterCleanup.withSource
+      (targetAfterCleanup.source.withEVM evmFinal)
+  have hTerminalStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 (.terminal kind) targetAfterCleanup
+          (Structured.EffectSemantics.Outcome.halt kind targetFinal) := by
+    simpa [targetFinal,
+      Structured.ObserverSemantics.stateModel_withEVM] using
+        (Structured.EffectSemantics.Stmt.Eval.terminal
+          (model := Structured.ObserverSemantics.stateModel transcript)
+          (handler := Structured.ObserverSemantics.handler transcript)
+          (program := targetProgram) (fuel := 0) hStep)
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts :=
+            [Structured.Stmt.code localsCtx.cleanupAll,
+              Structured.Stmt.terminal kind] }
+        target
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_halt hTerminalStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.terminal
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      hMemory hTerminal).run_eq
+  have hTargetCompiled :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := Expressions.StmtList.toStructured compiledStmts }
+        target
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal) := by
+    simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured, Locals.codeStmt, hCompiled,
+      hLowered] using hTarget
+  exact
+    ⟨targetFinal,
+      of_halt_runs hSource hTargetCompiled (.halt kind hHaltRel)⟩
+
+/--
+Resource-neutral exact preservation for `break`.
+
+Besides the ordinary abrupt statement result, expose the exact destination
+stack and unchanged target machine needed to rebuild the canonical recursive
+control boundary.
+-/
+theorem brk_of_invariant_exact
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.breakScope? = some afterLive)
+    (hTargetDepth : localsCtx.breakDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan beforeLive frameBase
+        beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .brk =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan afterLive frameBase
+        afterMode sourceProgram sourceCtx .brk source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.brk
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.brk targetFinal)
+        sourceCtx ∧
+      ActivationStateRel contract plan afterLive 0 frameBase afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = targetDepth ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    AllocationObserverCleanup.BreakLeaf.compiler_shape
+      hTargetDepth hLower hCompile
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalRel, hFinalStack, hMachine⟩ :=
+    AllocationObserverCleanup.Plain.forward_exact
+      hInvariant.compiler hTransition hInvariant.planWF
+      hInvariant.defined hInvariant.state hInvariant.stackLength hCleanup
+  have hBreakStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .brk targetFinal
+          (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.brk
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.brk] }
+        target
+        (Structured.EffectSemantics.Outcome.brk targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_brk hBreakStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.brk
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
+  refine
+    ⟨0, 2, hSource, ?_, ?_, .brk hFinalRel⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTarget
+  · intro hMode
+    cases hMode
+
+/-- Resource-neutral exact preservation for `continue`. -/
+theorem cont_of_invariant_exact
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {targetDepth frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceScope : sourceCtx.continueScope? = some afterLive)
+    (hTargetDepth : localsCtx.continueDepth? = some targetDepth)
+    (hTransition :
+      AllocationObserverCleanup.Transition plan beforeLive afterLive
+        targetDepth beforeMode afterMode)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan beforeLive frameBase
+        beforeMode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState .cont =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtForward contract transcript plan afterLive frameBase
+        afterMode sourceProgram sourceCtx .cont source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.cont
+          ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+            afterLive source))
+        (Structured.EffectSemantics.Outcome.cont targetFinal)
+        sourceCtx ∧
+      ActivationStateRel contract plan afterLive 0 frameBase afterMode
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          afterLive source)
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = targetDepth ∧
+      targetFinal.source.evm.toMachineState =
+        target.source.evm.toMachineState := by
+  obtain ⟨cleanup, hCleanup, rfl, rfl, rfl, rfl⟩ :=
+    AllocationObserverCleanup.ContinueLeaf.compiler_shape
+      hTargetDepth hLower hCompile
+  obtain
+      ⟨targetFinal, hCleanupRun, hFinalRel, hFinalStack, hMachine⟩ :=
+    AllocationObserverCleanup.Plain.forward_exact
+      hInvariant.compiler hTransition hInvariant.planWF
+      hInvariant.defined hInvariant.state hInvariant.stackLength hCleanup
+  have hContinueStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 .cont targetFinal
+          (Structured.EffectSemantics.Outcome.cont targetFinal) :=
+    Structured.EffectSemantics.Stmt.Eval.cont
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts := [Structured.Stmt.code cleanup, Structured.Stmt.cont] }
+        target
+        (Structured.EffectSemantics.Outcome.cont targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_cont hContinueStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.cont
+      (contract := contract) (transcript := transcript)
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      (source := source) hSourceScope).run_eq
+  refine ⟨targetFinal, ?_, hFinalRel, hFinalStack, hMachine⟩
+  refine
+    ⟨0, 2, hSource, ?_, ?_, .cont hFinalRel⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTarget
+  · intro hMode
+    cases hMode
+
 theorem brk_of_compilers
     {contract : MemoryContract.Contract}
     {transcript : Trace}
