@@ -235,6 +235,19 @@ end CalleeEntry
 
 namespace StructuredCall
 
+inductive ReturnMode where
+  | regular
+  | leave
+
+def ReturnMode.outcome {transcript : Trace}
+    (mode : ReturnMode)
+    (state : Structured.ObserverSemantics.State transcript) :
+    Structured.ObserverSemantics.Outcome
+      (transcript := transcript) :=
+  match mode with
+  | .regular => Structured.EffectSemantics.Outcome.regular state
+  | .leave => Structured.EffectSemantics.Outcome.leave state
+
 /--
 A regular procedure-body evaluation determines the real Structured return-frame
 pop and return-vector attachment without an externally supplied frame witness.
@@ -302,6 +315,82 @@ theorem regular
         (Structured.EffectSemantics.Outcome.regular final) := by
     exact
       Structured.EffectSemantics.Stmt.Eval.call_regular
+        hLookup hSplit hBody hPop hAttach
+  refine ⟨returned, final, hPop, hEval, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [final, Structured.ObserverSemantics.stateModel, hCursor]
+  · simp [final, Structured.ObserverSemantics.stateModel]
+  · simp [final, Structured.ObserverSemantics.stateModel, hEVM]
+  · simp [final, Structured.ObserverSemantics.stateModel, hEVM]
+  · simp [final, Structured.ObserverSemantics.stateModel, hReturns]
+
+/--
+A procedure body that exits with `leave` uses the Structured call-leave rule
+but still returns regularly to its caller after popping and attaching the
+return vector.
+-/
+theorem leave
+    {transcript : Trace}
+    {targetProgram : Structured.Program}
+    {fuel : Nat}
+    {name : Structured.Name}
+    {proc : Structured.Proc}
+    {target bodyFinal :
+      Structured.ObserverSemantics.State transcript}
+    {args callerStack returnedValues : EvmYul.Stack Word}
+    (hLookup :
+      Structured.ProcList.lookup? name targetProgram.procs = some proc)
+    (hTargetStack :
+      target.source.evm.stack = args ++ callerStack)
+    (hArgsLength : args.length = proc.argc)
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel proc.body
+        (CalleeEntry.structuredState target args callerStack proc.retc)
+        (Structured.EffectSemantics.Outcome.leave bodyFinal))
+    (hReturnedStack :
+      bodyFinal.source.evm.stack = returnedValues)
+    (hReturnedLength : returnedValues.length = proc.retc) :
+    ∃ returned final,
+      (Structured.ObserverSemantics.stateModel transcript).popReturn?
+          bodyFinal =
+        some
+          ({ callerStack := callerStack, retc := proc.retc }, returned) ∧
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (fuel + 1) (.call name) target
+        (Structured.EffectSemantics.Outcome.regular final) ∧
+      final.cursor = bodyFinal.cursor ∧
+      final.source.evm.stack = returnedValues ++ callerStack ∧
+      final.source.evm.toMachineState =
+        bodyFinal.source.evm.toMachineState ∧
+      final.source.evm.toSharedState.toState =
+        bodyFinal.source.evm.toSharedState.toState ∧
+      final.source.returns = target.source.returns := by
+  obtain ⟨returned, hPop, hCursor, hEVM, hReturns⟩ :=
+    Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
+      hBody (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+  have hSplit :
+      Structured.StackFrame.splitArgs? proc.argc target.source.evm.stack =
+        some (args, callerStack) := by
+    rw [hTargetStack]
+    simpa [hArgsLength] using
+      Structured.StackFrame.splitArgs?_append args callerStack
+  have hAttach :
+      Structured.StackFrame.attachReturns?
+          { callerStack := callerStack, retc := proc.retc }
+          bodyFinal.source.evm.stack =
+        some (returnedValues ++ callerStack) := by
+    rw [hReturnedStack]
+    exact
+      Structured.StackFrame.attachReturns?_eq_some hReturnedLength
+  let final :=
+    (Structured.ObserverSemantics.stateModel transcript).withEVM returned
+      { bodyFinal.source.evm with
+        stack := returnedValues ++ callerStack }
+  have hEval :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (fuel + 1) (.call name) target
+        (Structured.EffectSemantics.Outcome.regular final) := by
+    exact
+      Structured.EffectSemantics.Stmt.Eval.call_leave
         hLookup hSplit hBody hPop hAttach
   refine ⟨returned, final, hPop, hEval, ?_, ?_, ?_, ?_, ?_⟩
   · simp [final, Structured.ObserverSemantics.stateModel, hCursor]
@@ -554,6 +643,24 @@ def Artifact.needsFrame
     {fn : Functions.FunDef}
     (artifact : Artifact allocation program expressions name fn) : Bool :=
   !artifact.scratchBindings.isEmpty
+
+theorem Artifact.mem_frameFunctions_iff
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    name ∈
+        AllocationLowering.frameFunctions
+          artifact.recipe artifact.stackSlots ↔
+      artifact.needsFrame = true := by
+  have hName : fn.name = name := artifact.sourceName
+  simpa [Artifact.needsFrame, Artifact.scratchBindings, Artifact.root,
+    AllocationLowering.functionNeedsFrame,
+    AllocationLowering.rootNeedsFrame, hName] using
+    (AllocationLowering.mem_frameFunctions_iff_of_lookup
+      artifact.slotsLookup)
 
 def Artifact.entryLayout
     {allocation : Locals.Allocation.ProgramPlan}
@@ -2937,6 +3044,119 @@ theorem compose
           AllocationObserverRelation.Frame.BoundedEffect.of_suspendedEffect
             hEffect
 
+/--
+Compose a callee whose source body reaches `leave`. The generated regular
+return epilogue is unreachable, so the complete procedure body is obtained by
+appending it after the checked nonregular body evaluation.
+-/
+theorem compose_leave
+    {transcript : Trace}
+    {config : AllocationObserverRelation.Frame.Config}
+    {callerDepth calleeDepth : Nat}
+    {entryMode bodyMode : AllocationObserverRelation.ActivationMode}
+    {targetProgram : Structured.Program}
+    {proc : Structured.Proc}
+    {markerBlock preludeBlock bodyBlock returnBlock : Structured.Block}
+    {targetEntry targetBodyStart targetBodyFinal :
+      Structured.ObserverSemantics.State transcript}
+    {markerFuel preludeFuel bodyFuel : Nat}
+    (hBodyShape :
+      proc.body.stmts =
+        markerBlock.stmts ++ preludeBlock.stmts ++
+          bodyBlock.stmts ++ returnBlock.stmts)
+    (hMarkers :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram markerFuel markerBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetEntry))
+    (hPrelude :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram preludeFuel preludeBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetBodyStart))
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyFuel bodyBlock targetBodyStart
+        (Structured.EffectSemantics.Outcome.leave targetBodyFinal))
+    (hSame :
+      AllocationObserverRelation.SameFrame entryMode bodyMode)
+    (hPreludeEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth entryMode targetEntry targetBodyStart)
+    (hBodyEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth bodyMode targetBodyStart targetBodyFinal)
+    (hProtectedBound :
+      (match entryMode with
+      | .stack => calleeDepth + 1
+      | .scratch _ _ => calleeDepth) =
+        callerDepth + 1) :
+    ∃ fuel,
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram fuel proc.body targetEntry
+        (Structured.EffectSemantics.Outcome.leave targetBodyFinal) ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config calleeDepth (callerDepth + 1)
+        targetEntry targetBodyFinal := by
+  rcases markerBlock with ⟨markerStmts⟩
+  rcases preludeBlock with ⟨preludeStmts⟩
+  rcases bodyBlock with ⟨bodyStmts⟩
+  rcases returnBlock with ⟨returnStmts⟩
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram markerFuel { stmts := markerStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetEntry)
+    at hMarkers
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram preludeFuel { stmts := preludeStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetBodyStart)
+    at hPrelude
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram bodyFuel { stmts := bodyStmts } targetBodyStart
+      (Structured.EffectSemantics.Outcome.leave targetBodyFinal)
+    at hBody
+  obtain ⟨markerPreludeFuel, hMarkerPrelude⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts) (right := preludeStmts)
+      hMarkers hPrelude
+  obtain ⟨throughBodyFuel, hThroughBody⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts ++ preludeStmts)
+      (right := bodyStmts)
+      hMarkerPrelude hBody
+  have hEval :=
+    Structured.EffectSemantics.Block.Eval.append_nonregular
+      (right := returnStmts) hThroughBody
+      (by
+        intro hMode
+        cases hMode)
+  refine ⟨throughBodyFuel, ?_, ?_⟩
+  · cases hProcBody : proc.body with
+    | mk procStmts =>
+        have hProcStmts :
+            procStmts =
+              markerStmts ++ preludeStmts ++ bodyStmts ++ returnStmts := by
+          simpa [hProcBody] using hBodyShape
+        subst procStmts
+        simpa [List.append_assoc] using hEval
+  · cases hSame with
+    | stack =>
+        change calleeDepth + 1 = callerDepth + 1 at hProtectedBound
+        have hEffect :=
+          AllocationObserverRelation.Frame.AllocatorEffect.trans
+            hPreludeEffect hBodyEffect
+        exact hProtectedBound ▸
+          AllocationObserverRelation.Frame.BoundedEffect.of_allocatorEffect
+            hEffect
+    | scratch =>
+        change calleeDepth = callerDepth + 1 at hProtectedBound
+        have hEffect :=
+          AllocationObserverRelation.Frame.SuspendedEffect.trans
+            hPreludeEffect hBodyEffect
+        exact hProtectedBound ▸
+          AllocationObserverRelation.Frame.BoundedEffect.of_suspendedEffect
+            hEffect
+
 end RegularCallee
 
 namespace ArgList
@@ -4401,6 +4621,7 @@ theorem resume_and_writeback
     {name : Structured.Name}
     {proc : Structured.Proc}
     {bodyFuel : Nat}
+    {bodyMode : StructuredCall.ReturnMode}
     {callArgs callerStack returnValues : List Word}
     {targets : List Locals.Name}
     {returnStore : Locals.Source.Store}
@@ -4430,7 +4651,7 @@ theorem resume_and_writeback
       Structured.ObserverSemantics.Block.Eval targetProgram bodyFuel proc.body
         (CalleeEntry.structuredState
           targetCallInput callArgs callerStack proc.retc)
-        (Structured.EffectSemantics.Outcome.regular calleeFinal))
+        (bodyMode.outcome calleeFinal))
     (hReturnedStack :
       calleeFinal.source.evm.stack = returnValues.reverse)
     (hReturnedLength : returnValues.length = proc.retc)
@@ -4484,9 +4705,16 @@ theorem resume_and_writeback
   obtain
       ⟨returned, callFinal, _hPop, hCallEval, hCallCursor,
         hCallFinalStack, hCallMachine, hCallWorld, _hCallReturns⟩ :=
-    StructuredCall.regular hLookup hCallStack hCallArgsLength hBody
-      hReturnedStack
-      (by simpa using hReturnedLength)
+    (by
+      cases bodyMode with
+      | regular =>
+        exact
+          StructuredCall.regular hLookup hCallStack hCallArgsLength hBody
+            hReturnedStack (by simpa using hReturnedLength)
+      | leave =>
+        exact
+          StructuredCall.leave hLookup hCallStack hCallArgsLength hBody
+            hReturnedStack (by simpa using hReturnedLength))
   have hAttachEffect :
       AllocationObserverRelation.Frame.BoundedEffect
         config readyDepth (callerDepth + 1)

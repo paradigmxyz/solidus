@@ -693,15 +693,16 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   procedure lookup are now recovered from the real whole-program lowerer.
   Argument evaluation also transports target memory growth, so both stack-only
   and scratch-frame calls construct the compiler-selected callee-entry
-  relation after the real call-frame transition. The immediate remaining call
-  work is composing the checked callee prelude, recursive body outcome,
-  Structured return-frame pop, `Frame.resume_after_call`, optional frame
-  release, and target assignment into one pass-owned call theorem.
-  `Frame.SuspendedEffect` now supplies the protected-prefix transition needed
-  by that composition without a caller-memory oracle. Recursive source-fuel
-  induction for the remaining loop outcomes follows; matching whole-function
-  and whole-program backward adequacy comes after that forward recursion
-  closes.
+  relation after the real call-frame transition. Compiler-selected frame
+  membership is now equivalent to the selected callee artifact's activation
+  mode. Regular and source-`leave` callee bodies both compose through the real
+  Structured return-frame pop, `Frame.resume_after_call`, target assignment,
+  and optional frame release using one outcome-indexed writeback theorem.
+  `Frame.SuspendedEffect` supplies the protected-prefix transition without a
+  caller-memory oracle. The immediate remaining work is the mutual source-fuel
+  statement/block dispatcher that invokes these pass-owned call phases;
+  matching whole-function and whole-program backward adequacy follows after
+  that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

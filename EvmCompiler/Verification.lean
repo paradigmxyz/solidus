@@ -158,6 +158,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationSupport.allocateNames_names
 #check EvmCompiler.Functions.AllocationSupport.allocateFunctionSignatures_matches
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_lookupFun_matches
+#check EvmCompiler.Functions.AllocationSupport.lookupFun?_eq_some_facts
 #check EvmCompiler.Functions.AllocationSupport.planFunctions_member_valid
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_signature_valid
 #check EvmCompiler.Functions.AllocationSupport.planBlockOpen_env_extension
@@ -179,6 +180,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
 #check EvmCompiler.Functions.AllocationLowering.frameExpr_compileCode
 #check EvmCompiler.Functions.AllocationLowering.frameExpr_cons_compileCode_components
+#check EvmCompiler.Functions.AllocationLowering.mem_frameFunctions_iff_of_lookup
 #check EvmCompiler.Functions.Source.FunList.mem_of_find?_eq_some
 #check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
@@ -466,10 +468,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel.restore_base
 #check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.regular
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.of_lowering
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.mem_frameFunctions_iff
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.prepare
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_leave
+#check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.leave
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release

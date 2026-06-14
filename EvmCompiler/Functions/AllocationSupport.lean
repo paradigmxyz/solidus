@@ -126,6 +126,24 @@ def lookupFun? (name : Name) : List FunSlots → Option FunSlots
   | [] => none
   | fn :: rest => if fn.name = name then some fn else lookupFun? name rest
 
+theorem lookupFun?_eq_some_facts
+    {name : Name} {functions : List FunSlots} {slots : FunSlots}
+    (hLookup : lookupFun? name functions = some slots) :
+    slots ∈ functions ∧ slots.name = name := by
+  induction functions with
+  | nil =>
+      simp [lookupFun?] at hLookup
+  | cons head tail ih =>
+      by_cases hName : head.name = name
+      · simp [lookupFun?, hName] at hLookup
+        subst slots
+        exact ⟨by simp, hName⟩
+      · have hTail :
+          lookupFun? name tail = some slots := by
+          simpa [lookupFun?, hName] using hLookup
+        obtain ⟨hMem, hSlotsName⟩ := ih hTail
+        exact ⟨by simp [hMem], hSlotsName⟩
+
 def functionEnv (slots : FunSlots) : SlotEnv :=
   slots.returns ++ slots.params
 

@@ -29424,3 +29424,10 @@ Added source-function identity/membership evidence to selected callees, strength
 ## 2026-06-14 - canonical semantics refinement checked
 
 Added the semantics-owned `PrimitiveSemantics.SuccessRefines` interface and lifted it through Locals expressions and the complete canonical Functions evaluator, including blocks, scoped blocks, loops, recursive function calls, and terminal outcomes. `SafeSemantics.successRefines` now proves that every successful guarded no-external-effects execution is the identical ordinary observer execution; `SafeSemantics.program_runState_eq` exposes the whole-program theorem. Focused Locals, Functions, and safety builds pass without holes.
+### compaction-resume — 2026-06-14
+
+Resumed after the successful primitive-semantics refinement checkpoint (`139073b35`). The next proof obligation is the pass-owned regular-call composition needed for recursive Functions-to-allocated forward preservation, followed by backward adequacy and short public end-to-end composition.
+
+- 2026-06-14 - theorem-boundary - Added owner-level successful function-lookup facts and proved `AllocationLowering.mem_frameFunctions_iff_of_lookup` plus `SelectedCallee.Artifact.mem_frameFunctions_iff`. The call-site frame decision and selected callee activation mode now derive from the same validated allocation recipe instead of an implicit cross-module assumption.
+- 2026-06-14 - proof - Added outcome-indexed returning-call composition. `StructuredCall.leave` covers Structured's distinct `call_leave` rule, `RegularCallee.compose_leave` appends the unreachable regular epilogue after a checked leave body, and `RegularCall.resume_and_writeback` now handles regular and leave bodies through one data-indexed return mode while preserving caller spills, allocator readiness, and compiler-order target assignment.
+- 2026-06-14 - validation - Focused call builds and the full 1,208-job `EvmCompiler.Verification` root pass. Architecture dependency checks, touched-file hole/unsafe scan, and `git diff --check` pass; the call module remains below the 5K-line soft limit. Axiom inspection reports only `propext`, `Classical.choice`, and `Quot.sound`.

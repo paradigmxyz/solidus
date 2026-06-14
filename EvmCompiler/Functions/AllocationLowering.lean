@@ -1107,6 +1107,30 @@ def frameFunctions (recipe : AllocationSupport.AllocationRecipe)
     else
       none
 
+theorem mem_frameFunctions_iff_of_lookup
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {name : Name}
+    {slots : AllocationSupport.FunSlots}
+    (hLookup :
+      AllocationSupport.lookupFun? name recipe.functionSlots = some slots) :
+    name ∈ frameFunctions recipe stackSlots ↔
+      functionNeedsFrame recipe stackSlots name = true := by
+  obtain ⟨hSlotsMem, hSlotsName⟩ :=
+    AllocationSupport.lookupFun?_eq_some_facts hLookup
+  constructor
+  · intro hMem
+    obtain ⟨candidate, hCandidateMem, hCandidate⟩ :=
+      List.mem_filterMap.mp hMem
+    by_cases hNeeds :
+        functionNeedsFrame recipe stackSlots candidate.name = true
+    · simp [hNeeds] at hCandidate
+      simpa [hCandidate] using hNeeds
+    · simp [hNeeds] at hCandidate
+  · intro hNeeds
+    apply List.mem_filterMap.mpr
+    refine ⟨slots, hSlotsMem, ?_⟩
+    simpa [hSlotsName, hNeeds]
+
 mutual
   def lowerBlockOpen (ctx : Ctx) (returns : List Name)
       (state : State) (block : Block) :
