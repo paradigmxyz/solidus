@@ -689,9 +689,17 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.transport_plan
 #print axioms EvmCompiler.Functions.AllocationObserverContext.ActivationRuntimeInvariant.transport_plan
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchCursors
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSelectedCursorOfComponents
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSelectedCursors
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifTrueRegularRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifTrueNonregularRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifRuntimeResultOfSafeRun
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchNoneRuntimeResult
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeRegularRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeNonregularRuntimeResult
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchRuntimeResultOfSafeRun
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.if_true_of_components
+#print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.switch_some_of_components
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

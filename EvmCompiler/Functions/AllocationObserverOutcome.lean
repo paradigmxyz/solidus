@@ -6,54 +6,6 @@ namespace AllocationObserverOutcome
 
 open AllocationObserverRelation
 
-abbrev Trace := Assembly.ResourceTrace
-
-/--
-Allocator-aware preservation for one source statement that exits nonregularly.
-
-The final activation mode describes the related abrupt outcome. `SameFrame`
-and `ActivationEffect` retain the representation and allocator facts needed by
-the enclosing source-fuel recursion.
--/
-def NonregularStmtRuntimeForward
-    (contract : MemoryContract.Contract)
-    (config : Frame.Config)
-    (allocatorDepth : Nat)
-    (transcript : Trace)
-    (plan : Locals.Allocation.Plan)
-    (finalLive : List Locals.Name)
-    (frameBase : Nat)
-    (initialMode finalMode : ActivationMode)
-    (sourceProgram : Functions.Program)
-    (sourceCtx : Functions.Source.Ctx)
-    (stmt : Functions.Stmt)
-    (source : Functions.ObserverSemantics.State transcript)
-    (targetProgram : Structured.Program)
-    (target : Structured.ObserverSemantics.State transcript)
-    (compiled : List Structured.Stmt)
-    (sourceOutcome :
-      Functions.ObserverSemantics.Outcome
-        (Functions.ObserverSemantics.State transcript))
-    (targetOutcome :
-      Structured.ObserverSemantics.Outcome
-        (transcript := transcript))
-    (stmtCtx : Functions.Source.Ctx) : Prop :=
-  ∃ sourceFuel targetFuel,
-    Functions.Source.Effectful.Stmt.run
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSemantics.primitiveSemantics transcript)
-          sourceProgram sourceCtx sourceFuel stmt source =
-        .ok (sourceOutcome, stmtCtx) ∧
-      Structured.ObserverSemantics.Block.Eval
-        targetProgram targetFuel { stmts := compiled } target
-          targetOutcome ∧
-      sourceOutcome.mode ≠ .regular ∧
-      ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
-        sourceOutcome targetOutcome ∧
-      SameFrame initialMode finalMode ∧
-      Frame.ActivationEffect config allocatorDepth initialMode
-        target targetOutcome.state
-
 namespace NonregularStmtRuntimeForward
 
 theorem of_runs
@@ -250,50 +202,6 @@ theorem leave_of_invariant
 
 end NonregularStmtRuntimeForward
 
-/--
-Outcome-indexed block preservation with the recursive allocator invariant.
-
-This is the common result type of the mutual statement/block dispatcher. It
-supports regular continuation and every abrupt outcome without duplicating the
-source or target control interpreters.
--/
-def BlockRuntimeForward
-    (contract : MemoryContract.Contract)
-    (config : Frame.Config)
-    (allocatorDepth : Nat)
-    (transcript : Trace)
-    (plan : Locals.Allocation.Plan)
-    (finalLive : List Locals.Name)
-    (frameBase : Nat)
-    (initialMode finalMode : ActivationMode)
-    (sourceProgram : Functions.Program)
-    (sourceCtx : Functions.Source.Ctx)
-    (sourceBlock : Functions.Block)
-    (source : Functions.ObserverSemantics.State transcript)
-    (targetProgram : Structured.Program)
-    (targetBlock : Structured.Block)
-    (target : Structured.ObserverSemantics.State transcript)
-    (sourceOutcome :
-      Functions.ObserverSemantics.Outcome
-        (Functions.ObserverSemantics.State transcript))
-    (targetOutcome :
-      Structured.ObserverSemantics.Outcome
-        (transcript := transcript))
-    (finalCtx : Functions.Source.Ctx) : Prop :=
-  ∃ sourceFuel targetFuel,
-    Functions.Source.Effectful.Block.runOpen
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSemantics.primitiveSemantics transcript)
-          sourceProgram sourceCtx sourceFuel sourceBlock source =
-        .ok (sourceOutcome, finalCtx) ∧
-      Structured.ObserverSemantics.Block.Eval
-        targetProgram targetFuel targetBlock target targetOutcome ∧
-      ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
-        sourceOutcome targetOutcome ∧
-      SameFrame initialMode finalMode ∧
-      Frame.ActivationEffect config allocatorDepth initialMode
-        target targetOutcome.state
-
 namespace BlockRuntimeForward
 
 theorem nil
@@ -440,23 +348,6 @@ theorem cons_nonregular
       hRel, hSame, hEffect⟩
 
 end BlockRuntimeForward
-
-/--
-The source-visible live set associated with a statement outcome.
-
-Regular execution retains the statically computed outgoing scope. Abrupt loop
-control uses the source context's declared destination scope, `leave` exposes
-the function return names, and terminal halts do not inspect locals.
--/
-def outcomeLive
-    (returns regularLive : List Functions.Name)
-    (ctx : Functions.Source.Ctx) :
-    Locals.Source.Mode → List Functions.Name
-  | .regular => regularLive
-  | .brk => ctx.breakScope?.getD []
-  | .cont => ctx.continueScope?.getD []
-  | .leave => returns
-  | .halt _ => regularLive
 
 /--
 Every source control destination visible at a recursive statement boundary is
@@ -671,6 +562,65 @@ theorem controlScopesWithin_outEnv
 end SameControl
 
 /--
+Transport an abrupt activation outcome from a lexical body plan to its outer
+plan.
+
+Only break/continue destinations inspect locals, and `ControlScopesWithin`
+places those destinations inside the outer live set. Leave and halt outcomes
+do not depend on lexical-plan locations.
+-/
+theorem transport_nonregular_outcome_plan
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {returns bodyLive outerLive : List Functions.Name}
+    {sourceCtx : Functions.Source.Ctx}
+    {stackOffset frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hRel :
+      ActivationOutcomeRel contract bodyPlan
+        (outcomeLive returns bodyLive sourceCtx sourceOutcome.mode)
+        stackOffset frameBase finalMode sourceOutcome targetOutcome)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hPlanAgree :
+      PlanAgreesOn bodyPlan outerPlan outerLive)
+    (hControl :
+      ControlScopesWithin returns outerLive sourceCtx) :
+    ActivationOutcomeRel contract outerPlan
+      (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+      stackOffset frameBase finalMode sourceOutcome targetOutcome := by
+  have hOutcomePlanAgree :
+      PlanAgreesOn bodyPlan outerPlan
+        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode) :=
+    hPlanAgree.mono
+      (hControl.outcomeLive_subset sourceOutcome.mode)
+  cases hRel with
+  | regular _ =>
+      exact False.elim (hMode rfl)
+  | brk hState =>
+      exact .brk
+        (by
+          simpa [outcomeLive] using
+            hState.transport_plan hOutcomePlanAgree)
+  | cont hState =>
+      exact .cont
+        (by
+          simpa [outcomeLive] using
+            hState.transport_plan hOutcomePlanAgree)
+  | leave hState =>
+      exact .leave hState
+  | halt kind hState =>
+      exact .halt kind
+        { cursor := hState.cursor
+          shared := hState.shared }
+
+/--
 Lift an abrupt open lexical-body result to the enclosing `.block` statement.
 
 The compiler-emitted cleanup is unreachable on an abrupt target outcome. The
@@ -764,34 +714,13 @@ theorem NonregularStmtRuntimeForward.block_of_runtime
               Expressions.StmtList.toStructured compiledBody ++
                 [Structured.Stmt.code cleanup] }
           target targetOutcome)
-  have hOutcomePlanAgree :
-      PlanAgreesOn bodyPlan outerPlan
-        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode) :=
-    hPlanAgree.mono
-      (hControl.outcomeLive_subset sourceOutcome.mode)
   have hOuterOutcomeRel :
       ActivationOutcomeRel contract outerPlan
         (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
         0 frameBase finalMode sourceOutcome targetOutcome := by
-    cases hOutcomeRel with
-    | regular hState =>
-        exact False.elim (hMode rfl)
-    | brk hState =>
-        exact .brk
-          (by
-            simpa [outcomeLive] using
-              hState.transport_plan hOutcomePlanAgree)
-    | cont hState =>
-        exact .cont
-          (by
-            simpa [outcomeLive] using
-              hState.transport_plan hOutcomePlanAgree)
-    | leave hState =>
-        exact .leave hState
-    | halt kind hState =>
-        exact .halt kind
-          { cursor := hState.cursor
-            shared := hState.shared }
+    exact
+      transport_nonregular_outcome_plan
+        hOutcomeRel hMode hPlanAgree hControl
   exact
     ⟨sourceFuel, targetFuel, hSourceStmt, hTargetStmt, hMode,
       hOuterOutcomeRel, hSame, hEffect⟩

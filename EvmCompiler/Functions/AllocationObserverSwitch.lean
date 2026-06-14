@@ -794,5 +794,273 @@ theorem switch_some_of_components
 end RegularStmtRuntimeInvariantForward
 end Sequence
 end AllocationObserverStatement
+
+namespace AllocationObserverOutcome
+namespace NonregularStmtRuntimeForward
+
+open AllocationObserverRelation
+
+/--
+Allocator-aware preservation for a selected `switch` body that exits
+nonregularly.
+
+The switch pass owns selected planner/lowerer synchronization. The recursive
+callback supplies the exact selected-body execution plus its outcome relation
+transported to the outer plan; compiler-emitted scoped cleanup is unreachable
+for the abrupt target outcome.
+-/
+theorem switch_some_of_components
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {current : Locals.Allocation.ScopeId}
+    {planning : AllocationSupport.PlanningState}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {outerPlan : Locals.Allocation.Plan}
+    {outerLive : List Locals.Name}
+    {frameBase : Nat}
+    {outerMode : ActivationMode}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selectedBody : Functions.Block}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceAfterScrutinee :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {value : Word}
+    (hPlanningAllocation :
+      planning.allocation = lowerState.allocation)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript scrutinee source sourceAfterScrutinee [value])
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody =
+        some selectedBody)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hScrutineeScoped :
+      Functions.Scope.ExprScoped outerLive scrutinee)
+    (hBodyScoped :
+      Functions.Scope.Block.Scoped outerLive selectedBody)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        outerPlan outerLive frameBase outerMode source target)
+    (hBody :
+      ∀ {selectedLowered : Locals.Block}
+        {selectedStart bodyLowerState : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        {bodyCode : List Expressions.Stmt}
+        {bodyLocals : Locals.Ctx}
+        {targetAfterPop :
+          Structured.ObserverSemantics.State transcript},
+        selectedPlanning.allocation = selectedStart.allocation →
+        selectedStart.allocation.env = lowerState.allocation.env →
+        ({ scope := .lexical current selectedPlanning.nextScope
+           state :=
+             (AllocationSupport.planBlockOpen
+               (.lexical current selectedPlanning.nextScope)
+               { selectedPlanning with
+                 nextScope := selectedPlanning.nextScope + 1 }
+               selectedBody).allocation } :
+          AllocationSupport.ScopedAllocation) ∈
+          (AllocationSupport.planDefault current
+            (AllocationSupport.planCases current planning cases)
+            defaultBody).scopes →
+        (∀ entry,
+          entry ∈
+              (AllocationSupport.planBlockOpen
+                (.lexical current selectedPlanning.nextScope)
+                { selectedPlanning with
+                  nextScope := selectedPlanning.nextScope + 1 }
+                selectedBody).scopes →
+            entry ∈
+              (AllocationSupport.planDefault current
+                (AllocationSupport.planCases current planning cases)
+                defaultBody).scopes) →
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns selectedStart selectedBody =
+          some (selectedLowered, bodyLowerState) →
+        Locals.Block.compileOpen localsCtx selectedLowered =
+          some (bodyCode, bodyLocals) →
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx selectedStart localsCtx
+            outerPlan outerLive frameBase outerMode sourceAfterScrutinee
+            targetAfterPop →
+        ∃ bodyPlan finalMode targetOutcome finalCtx,
+          BlockRuntimeForward contract config allocatorDepth transcript
+              bodyPlan
+              (outcomeLive returns
+                (Functions.Scope.Block.outEnv outerLive selectedBody)
+                sourceCtx sourceOutcome.mode)
+              frameBase outerMode finalMode sourceProgram sourceCtx
+              selectedBody sourceAfterScrutinee targetProgram
+              { stmts := Expressions.StmtList.toStructured bodyCode }
+              targetAfterPop sourceOutcome targetOutcome finalCtx ∧
+            ActivationOutcomeRel contract outerPlan
+              (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+              0 frameBase finalMode sourceOutcome targetOutcome)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.switch scrutinee cases defaultBody) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetOutcome finalMode,
+      NonregularStmtRuntimeForward
+        contract config allocatorDepth transcript outerPlan
+        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+        frameBase outerMode finalMode sourceProgram sourceCtx
+        (.switch scrutinee cases defaultBody) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        sourceOutcome targetOutcome sourceCtx := by
+  obtain
+      ⟨loweredScrutinee, loweredCases, afterCases, loweredDefault,
+        hLowerScrutinee, hLowerCases, hLowerDefault, rfl⟩ :=
+    AllocationLowering.lowerStmt_switch_components hLower
+  obtain
+      ⟨scrutineeCode, compiledCases, compiledDefault,
+        hCompileScrutinee, hCompileCases, hCompileDefault, rfl, rfl⟩ :=
+    Locals.Block.compileOpen_single_switch_components hCompile
+  obtain
+      ⟨selectedLowered, selectedStart, selectedScopedFinal,
+        selectedPlanning, hLoweredSelect, hLowerSelected,
+        hSelectedPlanning, hSelectedEnv, hSelectedLayout,
+        hSelectedEntry, hSelectedInner⟩ :=
+    AllocationLowering.lowerSwitch_select_some_planning
+      hPlanningAllocation hLowerCases hLowerDefault hSelect
+  obtain
+      ⟨selectedCompiled, selectedCode, selectedLocals,
+        hTargetSelect, hCompileSelected, hFinishSelected⟩ :=
+    Locals.Switch.select_some_of_compile
+      hCompileCases hCompileDefault hLoweredSelect
+  obtain
+      ⟨bodyLowerState, hLowerBody,
+        _hSelectedFinalEnv, _hSelectedFinalSlot,
+        _hSelectedFinalLayout⟩ :=
+    AllocationLowering.lowerBlockScoped_components hLowerSelected
+  obtain
+      ⟨targetWithValue, targetAfterPop,
+        hTargetScrutinee, hTargetPop, hTargetAfterPop,
+        hPopInvariant, hScrutineeEffect⟩ :=
+    AllocationObserverExpression.Expr.one_forward_runtime_with_effect
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hInvariant hSafe hScrutineeScoped
+      hLowerScrutinee hCompileScrutinee
+  subst targetAfterPop
+  have hSelectedInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx selectedStart localsFinal
+        outerPlan outerLive frameBase outerMode sourceAfterScrutinee
+        (AllocationObserverRelation.StateRel.popTarget
+          target.source.evm.stack targetWithValue) :=
+    hPopInvariant.transport_state hSelectedEnv hSelectedLayout
+  obtain
+      ⟨bodyPlan, finalMode, targetOutcome, finalCtx,
+        hBodyForward, hOuterOutcomeRel⟩ :=
+    hBody
+      (targetAfterPop :=
+        AllocationObserverRelation.StateRel.popTarget
+          target.source.evm.stack targetWithValue)
+      hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+      hLowerBody hCompileSelected hSelectedInvariant
+  rcases hBodyForward with
+    ⟨bodySourceFuel, bodyTargetFuel, hSourceOpen, hTargetBody,
+      _hBodyOutcomeRel, hSame, hBodyEffect⟩
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen hMode
+  have hSourceStmt :=
+    Functions.Source.Effectful.Stmt.run_switch_some_of_eval
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSafe.evalOne_eq hSelect hSourceScoped
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinishSelected
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hOuterOutcomeRel.target_nonregular hMode
+  have hTargetSelected :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyTargetFuel selectedCompiled.toStructured
+        (AllocationObserverRelation.StateRel.popTarget
+          target.source.evm.stack targetWithValue)
+        targetOutcome := by
+    rcases selectedCompiled with ⟨selectedStmts⟩
+    change
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyTargetFuel
+        { stmts :=
+            Expressions.StmtList.toStructured selectedStmts }
+        (AllocationObserverRelation.StateRel.popTarget
+          target.source.evm.stack targetWithValue)
+        targetOutcome
+    have hTargetShape' :
+        selectedStmts =
+          selectedCode ++ [Expressions.Stmt.code cleanup] := by
+      simpa using hTargetShape
+    rw [hTargetShape']
+    simpa [Expressions.StmtList.toStructured_append,
+      Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using
+      (Structured.EffectSemantics.Block.Eval.append_nonregular
+        hTargetBody hTargetMode :
+        Structured.ObserverSemantics.Block.Eval
+          targetProgram bodyTargetFuel
+          { stmts :=
+              Expressions.StmtList.toStructured selectedCode ++
+                [Structured.Stmt.code cleanup] }
+          (AllocationObserverRelation.StateRel.popTarget
+            target.source.evm.stack targetWithValue)
+          targetOutcome)
+  have hTargetStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (bodyTargetFuel + 1)
+        (.switch scrutineeCode
+          (Expressions.CaseList.toStructured compiledCases)
+          (Expressions.Default.toStructured compiledDefault))
+        target targetOutcome :=
+    Structured.EffectSemantics.Stmt.Eval.switch_some
+      hTargetScrutinee hTargetPop
+      (by
+        simp [AllocationObserverRelation.StateRel.popTarget])
+      hTargetSelect hTargetSelected
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram (bodyTargetFuel + 2)
+        { stmts :=
+            [(.switch scrutineeCode
+              (Expressions.CaseList.toStructured compiledCases)
+              (Expressions.Default.toStructured compiledDefault))] }
+        target targetOutcome :=
+    Structured.EffectSemantics.Block.Eval.cons_nonregular
+      hTargetStmt hTargetMode
+  exact
+    ⟨targetOutcome, finalMode, bodySourceFuel + 1, bodyTargetFuel + 2,
+      hSourceStmt, hTarget, hMode, hOuterOutcomeRel, hSame,
+      (Frame.ActivationEffect.of_allocatorEffect
+        hScrutineeEffect).trans hBodyEffect⟩
+
+end NonregularStmtRuntimeForward
+end AllocationObserverOutcome
 end Functions
 end EvmCompiler

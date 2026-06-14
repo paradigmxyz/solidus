@@ -523,6 +523,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchCursors
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSelectedCursorOfComponents
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSelectedCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.final_env_extension
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.bodyFinal_lookup_of_lookup
@@ -541,8 +542,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifFalseRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifTrueRegularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifTrueNonregularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchNoneRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeRegularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchSomeNonregularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.switchRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
@@ -568,6 +574,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.functionBody
 #check EvmCompiler.Functions.AllocationObserverOutcome.SameControl.controlScopesWithin
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward
+#check EvmCompiler.Functions.AllocationObserverOutcome.transport_nonregular_outcome_plan
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.if_true_of_components
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.switch_some_of_components
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_regular
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular
 #check EvmCompiler.Functions.AllocationObserverOutcome.StmtRuntimeResult
