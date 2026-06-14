@@ -711,12 +711,16 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   statement runtime invariant. Its body-start premise is ordinary Functions
   semantic data, not compiler-generated evidence.
   `Frame.SuspendedEffect` supplies the protected-prefix transition without a
-  caller-memory oracle. The immediate remaining work is the mutual source-fuel
+  caller-memory oracle.
+  `ForLoop.RegularRuntimeInvariantForward.of_safe_source_run` now performs the
+  guarded source-fuel induction for regular loops, preserving allocator and
+  mode-indexed activation effects through condition, body, post, and recursive
+  iterations. The immediate remaining work is the mutual source-fuel
   statement/block dispatcher: its call case must invert the canonical source
   call, derive the checked body-start facts, invoke the selected callee theorem
   recursively, and discharge `Call.regular_of_selected`'s one-activation
-  callback. Matching whole-function and whole-program backward adequacy
-  follows after that forward recursion closes.
+  callback. Matching whole-function and whole-program backward adequacy follows
+  after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1352,7 +1356,7 @@ corridor.
   the real function-list lowerer.
 - [x] Compose the selected callee's real entry/prelude and complete procedure
   execution for both regular and source-`leave` recursive body outcomes.
-- [ ] Compose the source-facing call statement from argument evaluation,
+- [x] Compose the source-facing call statement from argument evaluation,
   compiler-selected callee entry, recursive body execution, outcome-indexed
   return restoration, optional frame release, and caller target assignment.
 - [ ] Lift statement, block, loop, and call preservation by source fuel without

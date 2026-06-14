@@ -318,6 +318,132 @@ def RegularInvariantForward
         sourceFinal targetFinal
 
 /--
+Regular loop execution retaining the recursive scratch allocator and the
+mode-indexed effect of the complete iteration sequence.
+-/
+def RegularRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (loopCtx : Functions.Source.Ctx)
+    (cond : Functions.Expr 1)
+    (postBase : Functions.Source.Ctx)
+    (post : Functions.Block)
+    (bodyBase : Functions.Source.Ctx)
+    (body : Functions.Block)
+    (targetProgram : Structured.Program)
+    (condCode : Structured.Code)
+    (postBlock bodyBlock : Structured.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram loopCtx cond postBase post bodyBase body
+          sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal) ∧
+      Structured.ObserverSemantics.For.Eval
+        targetProgram targetFuel condCode postBlock bodyBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode sourceFinal targetFinal ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target targetFinal
+
+/--
+A scoped loop body ending in `break`, with allocator readiness and suspended
+frame protection preserved for the next loop boundary.
+-/
+def BreakScopedBlockRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.brk sourceFinal) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.brk targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode sourceFinal targetFinal ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target targetFinal
+
+/--
+A scoped loop body ending in `continue`, with allocator readiness and
+suspended frame protection preserved for the post block.
+-/
+def ContinueScopedBlockRuntimeInvariantForward
+    (contract : MemoryContract.Contract)
+    (config : AllocationObserverRelation.Frame.Config)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (live : List Locals.Name)
+    (frameBase : Nat)
+    (mode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.cont sourceFinal) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.cont targetFinal) ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode sourceFinal targetFinal ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target targetFinal
+
+/--
 Abrupt loop execution at the adjacent Functions/Structured boundary.
 
 The result live set is interpreted by `ActivationOutcomeRel`: ordered return
@@ -1478,6 +1604,391 @@ theorem RegularInvariantForward.of_source_run
                 hSourcePost', hTargetPost, hPostInvariant⟩
               hLoopForward⟩
         simpa [hValue] using hTargetCond
+
+/--
+Canonical source-fuel induction for regular loop executions under the guarded
+no-external-effects semantics.
+
+The theorem reconstructs the ordinary Functions execution while retaining the
+global allocator invariant and composing the exact mode-indexed effect across
+conditions, body/post blocks, and recursive iterations.
+-/
+theorem RegularRuntimeInvariantForward.of_safe_source_run
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState bodyLowerState : AllocationLowering.State}
+    {localsCtx bodyLocals : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {loopCtx postBase bodyBase : Functions.Source.Ctx}
+    {cond : Functions.Expr 1}
+    {loweredCond : Locals.Expr 1}
+    {post body : Functions.Block}
+    {targetProgram : Structured.Program}
+    {condCode : Structured.Code}
+    {postBlock bodyBlock : Structured.Block}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceFuel : Nat}
+    (hLoopScope : loopCtx.scope = live)
+    (hCondScoped : Functions.Scope.ExprScoped live cond)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hLowerCond :
+      AllocationLowering.lowerExpr lowerCtx lowerState cond =
+        some loweredCond)
+    (hCompileCond :
+      Locals.Expr.compileCode localsCtx 0 loweredCond = some condCode)
+    (hBodyRegular :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState localsCtx
+            plan live frameBase mode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.regular bodyFinal) →
+        ∃ bodyTargetFinal,
+          Sequence.RegularScopedBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx
+            bodyLowerState bodyLocals plan live frameBase mode
+            sourceProgram bodyBase body bodySource targetProgram bodyBlock
+            bodyTarget bodyFinal bodyTargetFinal)
+    (hBodyBreak :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState localsCtx
+            plan live frameBase mode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.brk bodyFinal) →
+        ∃ bodyTargetFinal,
+          BreakScopedBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceProgram bodyBase body
+            bodySource targetProgram bodyBlock bodyTarget bodyFinal
+            bodyTargetFinal)
+    (hBodyContinue :
+      ∀ {bodyFuel : Nat}
+        {bodySource bodyFinal :
+          Functions.ObserverSemantics.State transcript}
+        {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx lowerState localsCtx
+            plan live frameBase mode bodySource bodyTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceProgram bodyBase body bodyFuel bodySource =
+          .ok (Functions.Source.Effectful.Outcome.cont bodyFinal) →
+        ∃ bodyTargetFinal,
+          ContinueScopedBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx
+            bodyLowerState bodyLocals plan live frameBase mode
+            sourceProgram bodyBase body bodySource targetProgram bodyBlock
+            bodyTarget bodyFinal bodyTargetFinal)
+    (hPostRegular :
+      ∀ {postFuel : Nat}
+        {postSource postFinal :
+          Functions.ObserverSemantics.State transcript}
+        {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationObserverContext.ActivationRuntimeInvariant
+            contract config allocatorDepth lowerCtx bodyLowerState
+            bodyLocals plan live frameBase mode postSource postTarget →
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceProgram postBase post postFuel postSource =
+          .ok (Functions.Source.Effectful.Outcome.regular postFinal) →
+        ∃ postTargetFinal,
+          Sequence.RegularScopedBlockRuntimeInvariantForward
+            contract config allocatorDepth transcript lowerCtx lowerState
+            localsCtx plan live frameBase mode sourceProgram postBase post
+            postSource targetProgram postBlock postTarget postFinal
+            postTargetFinal)
+    (hSource :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceProgram loopCtx cond postBase post bodyBase body
+          sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular final))
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target) :
+    ∃ targetFinal,
+      RegularRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx lowerState
+        localsCtx plan live frameBase mode sourceProgram loopCtx cond
+        postBase post bodyBase body targetProgram condCode postBlock
+        bodyBlock source target final targetFinal := by
+  induction sourceFuel using Nat.strong_induction_on generalizing
+      source target final with
+  | h sourceFuel ih =>
+      obtain ⟨stepFuel, rfl, hCases⟩ :=
+        Functions.Source.Effectful.Stmt.runForLoop_regular_cases
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceProgram hSource
+      rcases hCases with
+        hFalse | hBreak | hRegular | hContinue
+      · obtain ⟨sourceAfterCond, hSourceCond, rfl⟩ := hFalse
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+          AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hSourceOrdinary :=
+          Functions.Source.Effectful.Stmt.runForLoop_false_of_eval
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            sourceProgram (loopCtx := loopCtx) (fuel := 0)
+            (postBase := postBase) (post := post)
+            (bodyBase := bodyBase) (body := body)
+            (by simpa [hValue] using hSafe.evalCondition_eq)
+        exact
+          ⟨targetAfterCond, 1, 1,
+            by simpa [hLoopScope] using hSourceOrdinary,
+            Structured.EffectSemantics.For.Eval.false
+              (fuel := 0) (by simpa [hValue] using hTargetCond),
+            by simpa [hLoopScope] using hCondInvariant.restrict_source_live,
+            AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+              hCondEffect⟩
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody,
+              hSourceCond, hSourceBody, rfl⟩ :=
+          hBreak
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+          AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyBreak hCondInvariant hSourceBody
+        rcases hBodyForward with
+          ⟨bodySourceFuel, bodyTargetFuel,
+            hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
+            hBodyEffect⟩
+        exact
+          ⟨targetAfterBody, bodySourceFuel + 1, bodyTargetFuel + 1,
+            Functions.Source.Effectful.Stmt.runForLoop_body_brk_of_runs
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSemantics.primitiveSemantics transcript)
+              sourceProgram
+              (by simpa [hValue] using hSafe.evalCondition_eq)
+              hSourceBodyOrdinary,
+            Structured.EffectSemantics.For.Eval.body_brk
+              (by simpa [hValue] using hTargetCond) hTargetBody,
+            hBodyInvariant,
+            (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+              hCondEffect).trans hBodyEffect⟩
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
+              hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
+          hRegular
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+          AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyRegular hCondInvariant hSourceBody
+        rcases hBodyForward with
+          ⟨bodySourceFuel, bodyTargetFuel,
+            hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
+            hBodyEffect⟩
+        obtain ⟨targetAfterPost, hPostForward⟩ :=
+          hPostRegular hBodyInvariant hSourcePost
+        rcases hPostForward with
+          ⟨postSourceFuel, postTargetFuel,
+            hSourcePostOrdinary, hTargetPost, hPostInvariant,
+            hPostEffect⟩
+        have hRecursive :=
+          ih stepFuel (Nat.lt_succ_self stepFuel)
+            (source := sourceAfterPost)
+            (target := targetAfterPost)
+            (final := final)
+            hSourceLoop
+        obtain ⟨targetFinal, hLoopForward⟩ :=
+          hRecursive hPostInvariant
+        rcases hLoopForward with
+          ⟨loopSourceFuel, loopTargetFuel,
+            hSourceLoopOrdinary, hTargetLoop, hLoopInvariant,
+            hLoopEffect⟩
+        let sourceJoinFuel :=
+          Nat.max bodySourceFuel
+            (Nat.max postSourceFuel loopSourceFuel)
+        have hBodySourceLe : bodySourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        have hPostSourceLe : postSourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        have hLoopSourceLe : loopSourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        let targetJoinFuel :=
+          Nat.max bodyTargetFuel
+            (Nat.max postTargetFuel loopTargetFuel)
+        have hBodyTargetLe : bodyTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        have hPostTargetLe : postTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        have hLoopTargetLe : loopTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        exact
+          ⟨targetFinal, sourceJoinFuel + 1, targetJoinFuel + 1,
+            Functions.Source.Effectful.Stmt.runForLoop_regular_post_regular_of_runs
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSemantics.primitiveSemantics transcript)
+              sourceProgram
+              (by simpa [hValue] using hSafe.evalCondition_eq)
+              (Functions.Source.Effectful.Block.runScoped_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hBodySourceLe hSourceBodyOrdinary)
+              (Functions.Source.Effectful.Block.runScoped_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hPostSourceLe hSourcePostOrdinary)
+              (Functions.Source.Effectful.Stmt.runForLoop_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hLoopSourceLe hSourceLoopOrdinary),
+            Structured.EffectSemantics.For.Eval.regular_post_regular
+              (by simpa [hValue] using hTargetCond)
+              (Structured.EffectSemantics.Block.Eval.mono
+                hTargetBody hBodyTargetLe)
+              (Structured.EffectSemantics.Block.Eval.mono
+                hTargetPost hPostTargetLe)
+              (Structured.EffectSemantics.For.Eval.mono
+                hTargetLoop hLoopTargetLe),
+            hLoopInvariant,
+            (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+              hCondEffect).trans
+              (hBodyEffect.trans
+                (hPostEffect.trans hLoopEffect))⟩
+      · obtain
+            ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
+              hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
+          hContinue
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
+        obtain
+            ⟨targetAfterCond, hTargetCond, hCondInvariant, hCondEffect⟩ :=
+          AllocationObserverExpression.Expr.condition_forward_runtime_with_effect
+            (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+              contract)
+            hConfig hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        obtain ⟨targetAfterBody, hBodyForward⟩ :=
+          hBodyContinue hCondInvariant hSourceBody
+        rcases hBodyForward with
+          ⟨bodySourceFuel, bodyTargetFuel,
+            hSourceBodyOrdinary, hTargetBody, hBodyInvariant,
+            hBodyEffect⟩
+        obtain ⟨targetAfterPost, hPostForward⟩ :=
+          hPostRegular hBodyInvariant hSourcePost
+        rcases hPostForward with
+          ⟨postSourceFuel, postTargetFuel,
+            hSourcePostOrdinary, hTargetPost, hPostInvariant,
+            hPostEffect⟩
+        have hRecursive :=
+          ih stepFuel (Nat.lt_succ_self stepFuel)
+            (source := sourceAfterPost)
+            (target := targetAfterPost)
+            (final := final)
+            hSourceLoop
+        obtain ⟨targetFinal, hLoopForward⟩ :=
+          hRecursive hPostInvariant
+        rcases hLoopForward with
+          ⟨loopSourceFuel, loopTargetFuel,
+            hSourceLoopOrdinary, hTargetLoop, hLoopInvariant,
+            hLoopEffect⟩
+        let sourceJoinFuel :=
+          Nat.max bodySourceFuel
+            (Nat.max postSourceFuel loopSourceFuel)
+        have hBodySourceLe : bodySourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        have hPostSourceLe : postSourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        have hLoopSourceLe : loopSourceFuel ≤ sourceJoinFuel := by
+          simp [sourceJoinFuel]
+        let targetJoinFuel :=
+          Nat.max bodyTargetFuel
+            (Nat.max postTargetFuel loopTargetFuel)
+        have hBodyTargetLe : bodyTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        have hPostTargetLe : postTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        have hLoopTargetLe : loopTargetFuel ≤ targetJoinFuel := by
+          simp [targetJoinFuel]
+        exact
+          ⟨targetFinal, sourceJoinFuel + 1, targetJoinFuel + 1,
+            Functions.Source.Effectful.Stmt.runForLoop_cont_post_regular_of_runs
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSemantics.primitiveSemantics transcript)
+              sourceProgram
+              (by simpa [hValue] using hSafe.evalCondition_eq)
+              (Functions.Source.Effectful.Block.runScoped_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hBodySourceLe hSourceBodyOrdinary)
+              (Functions.Source.Effectful.Block.runScoped_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hPostSourceLe hSourcePostOrdinary)
+              (Functions.Source.Effectful.Stmt.runForLoop_mono
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSemantics.primitiveSemantics transcript)
+                sourceProgram hLoopSourceLe hSourceLoopOrdinary),
+            Structured.EffectSemantics.For.Eval.cont_post_regular
+              (by simpa [hValue] using hTargetCond)
+              (Structured.EffectSemantics.Block.Eval.mono
+                hTargetBody hBodyTargetLe)
+              (Structured.EffectSemantics.Block.Eval.mono
+                hTargetPost hPostTargetLe)
+              (Structured.EffectSemantics.For.Eval.mono
+                hTargetLoop hLoopTargetLe),
+            hLoopInvariant,
+            (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+              hCondEffect).trans
+              (hBodyEffect.trans
+                (hPostEffect.trans hLoopEffect))⟩
 
 /--
 Canonical source-fuel induction for loop exits.

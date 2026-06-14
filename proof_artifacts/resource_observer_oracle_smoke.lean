@@ -351,6 +351,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_forward_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Expr.msize_backward_scratch
 #print axioms EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.eval_eq
+#print axioms EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
 #print axioms EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.eval_eq
 #print axioms EvmCompiler.Functions.AllocationObserverContext.classify_var
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
@@ -536,6 +537,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.regular_post_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.cont_post_regular
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.of_source_run
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularRuntimeInvariantForward.of_safe_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.NonregularForward.of_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.for_exit_of_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.for_init_exit_of_components

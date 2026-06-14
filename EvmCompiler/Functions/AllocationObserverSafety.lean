@@ -692,6 +692,41 @@ theorem Expr.MemorySafeEval.of_safe_evalOne
           | cons next rest =>
               simp [Functions.Source.invalid, Structured.invalid] at hEval
 
+theorem Expr.MemorySafeEval.of_safe_evalCondition
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {expr : Functions.Expr 1}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {conditionTrue : Bool}
+    (hEval :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (SafeSemantics.primitiveSemantics contract transcript)
+          expr source =
+        .ok (final, conditionTrue)) :
+    ∃ value,
+      Expr.MemorySafeEval contract transcript expr source final [value] ∧
+        (value != EvmYul.UInt256.ofNat 0) = conditionTrue := by
+  unfold Functions.Source.Effectful.Expr.evalCondition at hEval
+  unfold Locals.Source.Effectful.Expr.evalCondition at hEval
+  cases hOne :
+      Locals.Source.Effectful.Expr.evalOne
+        (Functions.ObserverSemantics.stateModel transcript)
+        (SafeSemantics.primitiveSemantics contract transcript)
+        expr source with
+  | error err =>
+      simp [hOne] at hEval
+  | ok result =>
+      rcases result with ⟨after, value⟩
+      simp only [hOne, Bind.bind, Except.bind] at hEval
+      have hEq :
+          (after, value != EvmYul.UInt256.ofNat 0) =
+            (final, conditionTrue) :=
+        Except.ok.inj hEval
+      cases hEq
+      exact
+        ⟨value, Expr.MemorySafeEval.of_safe_evalOne hOne, rfl⟩
+
 theorem ArgList.MemorySafeEval.of_safe_eval
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

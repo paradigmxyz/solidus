@@ -500,6 +500,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.terminal_parts
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+#check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
 #check EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
@@ -523,6 +524,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward.finish_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.finish_regular_outer_runtime
+#check EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularRuntimeInvariantForward.of_safe_source_run
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_push
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_gas
 #check EvmCompiler.Functions.AllocationObserverPreservation.ObserverCode.run_msize
