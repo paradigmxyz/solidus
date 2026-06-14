@@ -691,10 +691,15 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   Argument evaluation also transports target memory growth, so both stack-only
   and scratch-frame calls construct the compiler-selected callee-entry
   relation after the real call-frame transition. The immediate remaining call
-  work is composing callee prelude/body execution, return attachment, frame
-  release, and target assignment. Recursive source-fuel induction for the
-  remaining loop outcomes follows; matching whole-function and whole-program
-  backward adequacy comes after that forward recursion closes.
+  work is threading the checked `Frame.ProtectedPrefix` transition through
+  primitive and statement execution. That invariant preserves every suspended
+  caller spill below the callee frame; `Frame.resume_after_call` then
+  reconstructs the caller activation after the Structured return frame is
+  popped and return values are attached. Callee prelude/body execution, frame
+  release, and target assignment can then compose without a caller-memory
+  oracle. Recursive source-fuel induction for the remaining loop outcomes
+  follows; matching whole-function and whole-program backward adequacy comes
+  after that forward recursion closes.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

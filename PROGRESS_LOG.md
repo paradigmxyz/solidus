@@ -29290,3 +29290,26 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   axiom smoke passed. New declarations use only `propext`,
   `Classical.choice`, and `Quot.sound` as applicable. Soft size debt remains in
   the three pass-owned observer modules reported by the architecture script.
+
+- 2026-06-13 - oracle - Requested a theorem-shape critique for allocator-aware
+  recursive calls; request `resp_065b1c5992019190006a2e4e776f38819b8fca047f386ac6ed`
+  failed with API `insufficient_quota`; no oracle claims were used.
+- 2026-06-13 - theorem-boundary - Added `CallCompiler.components` and
+  `frameExpr_cons_compileCode_components`, exposing the exact real call-site
+  phases and scratch acquire split without generated-code premises. Added
+  `Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval`, which
+  constructs the exact caller-frame pop after regular or leave procedure
+  execution.
+- 2026-06-13 - architecture-risk - Allocator readiness and memory growth alone
+  do not preserve a suspended caller's spill contents across an arbitrary
+  callee. Added `Frame.ProtectedPrefix` and `Frame.resume_after_call`; the next
+  checked boundary must thread this transition through canonical primitives,
+  statements, loops, and nested calls rather than assume caller-memory
+  preservation at the call theorem.
+- 2026-06-13 23:55:53 PDT - validation - Focused Structured semantics,
+  allocation relation, and call builds plus the full 1,208-job
+  `EvmCompiler.Verification` root passed. Architecture dependency guard,
+  touched-Lean hole/unsafe scan, `git diff --check`, and expanded observer
+  axiom smoke passed; the new declarations use only `propext`,
+  `Classical.choice`, and `Quot.sound`. Soft size debt remains in the three
+  pass-owned observer modules reported by the architecture script.

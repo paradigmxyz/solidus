@@ -733,6 +733,52 @@ end
 namespace CallStack
 
 /--
+Any nonhalting procedure-body evaluation started under a freshly pushed return
+frame can pop exactly that frame afterward.
+
+This is a semantic fact about Structured calls. Higher compiler passes need not
+reconstruct `RunState.popReturn?` or assume a generated return-frame witness.
+-/
+theorem popReturn_of_nonhalting_eval
+    {transcript : Trace} {program : Structured.Program}
+    {fuel retc : Nat} {body : Structured.Block}
+    {source : State transcript}
+    {args callerStack : EvmYul.Stack Word}
+    {outcome : Outcome (transcript := transcript)}
+    (hBody :
+      Block.Eval program fuel body
+        ((stateModel transcript).pushReturn
+          ((stateModel transcript).withEVM source
+            { source.source.evm with stack := args })
+          callerStack retc)
+        outcome)
+    (hNonhalting : outcome.Nonhalting) :
+    ∃ returned,
+      (stateModel transcript).popReturn? outcome.state =
+        some
+          ({ callerStack := callerStack, retc := retc }, returned) ∧
+      returned.cursor = outcome.state.cursor ∧
+      returned.source.evm = outcome.state.source.evm ∧
+      returned.source.returns = source.source.returns := by
+  have hReturns :=
+    Block.Eval.returns_eq_of_nonhalting hBody hNonhalting
+  have hReturns' :
+      outcome.state.source.returns =
+        { callerStack := callerStack, retc := retc } ::
+          source.source.returns := by
+    simpa [stateModel, Simulation.ResourceReplay.State.withSource,
+      Structured.RunState.pushReturn, Structured.RunState.withEVM] using
+      hReturns
+  let returnedSource : Structured.RunState :=
+    { outcome.state.source with returns := source.source.returns }
+  let returned : State transcript :=
+    outcome.state.withSource returnedSource
+  refine ⟨returned, ?_, by simp [returned], by simp [returned, returnedSource],
+    by simp [returned, returnedSource]⟩
+  simp [stateModel, Structured.RunState.popReturn?, hReturns',
+    returned, returnedSource]
+
+/--
 An observer-replayed procedure body that returns regularly pops exactly the
 source frame introduced at its call boundary.
 -/

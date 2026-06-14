@@ -139,6 +139,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationCalleeEntryRel.scratch_empty
 #check EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.stack_of_arguments
 #check EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.scratch_of_arguments
+#check EvmCompiler.Functions.AllocationObserverCall.CallCompiler.components
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
 #check EvmCompiler.Locals.StackOp.exists_dup?_of_pos_of_le
 #check EvmCompiler.Locals.StackOp.exists_swap?_of_pos_of_le
@@ -173,6 +174,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.validatePlan?_function_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_lookup
 #check EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
+#check EvmCompiler.Functions.AllocationLowering.frameExpr_compileCode
+#check EvmCompiler.Functions.AllocationLowering.frameExpr_cons_compileCode_components
 #check EvmCompiler.Functions.Source.FunList.mem_of_find?_eq_some
 #check EvmCompiler.Functions.AllocationObserverContext.ParameterPreludeContext
 #check EvmCompiler.Functions.AllocationObserverCall.ParameterPrelude.forward_of_context
@@ -409,7 +412,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
+#check EvmCompiler.Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress

@@ -4351,6 +4351,58 @@ theorem trans {transcript : Trace}
 
 end TargetGrowth
 
+/--
+A target transition leaves every compiler-owned word below `depth` unchanged.
+
+This is the compositional memory invariant for suspended callers. A nested
+callee may write its own frame at `baseAt config depth` or above, while source
+memory operations remain outside the compiler reservation.
+-/
+structure ProtectedPrefix {transcript : Trace}
+    (config : Config) (depth : Nat)
+    (before after : TargetState transcript) : Prop where
+  lookup :
+    ∀ {address : Nat},
+      config.firstFrame ≤ address →
+      address + MemoryContract.wordBytes ≤ baseAt config depth →
+      after.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat address) =
+        before.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat address)
+
+namespace ProtectedPrefix
+
+theorem refl {transcript : Trace}
+    (config : Config) (depth : Nat)
+    (target : TargetState transcript) :
+    ProtectedPrefix config depth target target :=
+  ⟨by intros; rfl⟩
+
+theorem trans {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {first second third : TargetState transcript}
+    (hFirst : ProtectedPrefix config depth first second)
+    (hSecond : ProtectedPrefix config depth second third) :
+    ProtectedPrefix config depth first third := by
+  refine ⟨?_⟩
+  intro address hStart hEnd
+  exact
+    (hSecond.lookup hStart hEnd).trans
+      (hFirst.lookup hStart hEnd)
+
+theorem of_machine_eq {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState) :
+    ProtectedPrefix config depth before after := by
+  refine ⟨?_⟩
+  intro address _hStart _hEnd
+  simp [hMachine]
+
+end ProtectedPrefix
+
 structure AllocatorReady {transcript : Trace}
     (config : Config) (depth : Nat)
     (target : TargetState transcript) : Prop where
@@ -4721,6 +4773,26 @@ theorem scratchAddress_end_le_allocatorBase
       exact scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
 
 /--
+Every spill address owned by an active scratch frame begins at or after the
+first compiler frame.
+-/
+theorem firstFrame_le_scratchAddress
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords)) :
+    config.firstFrame ≤ scratchAddress frameBase slot := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ hBase _hWords =>
+      rw [hBase]
+      exact
+        (Nat.le_add_right config.firstFrame
+          (previousDepth * bytes config)).trans
+          (Nat.le_add_right (baseAt config previousDepth)
+            (MemoryContract.wordBytes * slot))
+
+/--
 An owned scratch frame ends exactly where the allocator says the next frame
 will begin.
 -/
@@ -4738,6 +4810,118 @@ theorem frameEnd_eq_allocatorBase
       rfl
 
 end ActivationOwned
+
+/--
+Reconstruct a suspended caller activation after a callee has returned values
+above the exact caller stack.
+
+Stack locals are restored from the return destination. Scratch locals are
+restored from `ProtectedPrefix`, while target growth transports frame bounds.
+The caller source store is unchanged; only its shared state may have advanced
+through the callee.
+-/
+theorem resume_after_call
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {config : Config} {allocatorDepth : Nat}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat} {mode : ActivationMode}
+    {sourceBefore sourceAfter : SourceState transcript}
+    {targetBefore targetAfter : TargetState transcript}
+    {returned : List Word}
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase mode
+        sourceBefore targetBefore)
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase mode)
+    (hVars :
+      sourceAfter.source.vars = sourceBefore.source.vars)
+    (hCursor : sourceAfter.cursor = targetAfter.cursor)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        sourceAfter.source.shared.toMachineState
+        targetAfter.source.evm.toMachineState)
+    (hWorld :
+      sourceAfter.source.shared.toState =
+        targetAfter.source.evm.toSharedState.toState)
+    (hStack :
+      targetAfter.source.evm.stack =
+        returned ++ targetBefore.source.evm.stack)
+    (hGrowth : TargetGrowth targetBefore targetAfter)
+    (hActiveNoWrap :
+      targetAfter.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hProtected :
+      ProtectedPrefix config allocatorDepth
+        targetBefore targetAfter) :
+    ActivationStateRel contract plan live returned.length frameBase mode
+      sourceAfter targetAfter := by
+  cases hRel with
+  | stack hOnly _hBeforeNoWrap hState =>
+      refine .stack hOnly hActiveNoWrap ?_
+      refine
+        { cursor := hCursor
+          core :=
+            { machine := hMachine
+              world := hWorld
+              store := ?_ } }
+      intro name location hLive hLocation
+      have hOld :=
+        hState.core.store name location hLive hLocation
+      cases location with
+      | stack planDepth =>
+          rcases hOld with ⟨depth, hDepth, hValue⟩
+          refine ⟨depth, hDepth, ?_⟩
+          rw [hStack]
+          rw [List.getElem?_append_right
+            (Nat.le_add_right returned.length depth)]
+          simpa [hVars] using hValue
+      | scratch slot =>
+          exact False.elim (hOnly name slot hLive hLocation)
+  | scratch hScratch =>
+      refine .scratch ?_
+      refine
+        { base :=
+            { cursor := hCursor
+              core :=
+                { machine := hMachine
+                  world := hWorld
+                  store := ?_ } }
+          framePointer := ?_
+          frameActive :=
+            hScratch.frameActive.trans
+              (Nat.mul_le_mul_right
+                MemoryContract.wordBytes hGrowth.active)
+          frameAllocated :=
+            hScratch.frameAllocated.trans hGrowth.memory
+          frameNoWrap := hScratch.frameNoWrap
+          frameHostAddressable := hScratch.frameHostAddressable
+          activeNoWrap := hActiveNoWrap
+          frameReserved := hScratch.frameReserved
+          scratchBound := hScratch.scratchBound }
+      · intro name location hLive hLocation
+        have hOld :=
+          hScratch.base.core.store name location hLive hLocation
+        cases location with
+        | stack planDepth =>
+            rcases hOld with ⟨depth, hDepth, hValue⟩
+            refine ⟨depth, hDepth, ?_⟩
+            rw [hStack]
+            rw [List.getElem?_append_right
+              (Nat.le_add_right returned.length depth)]
+            simpa [hVars] using hValue
+        | scratch slot =>
+            exact
+              (hProtected.lookup
+                (hOwned.firstFrame_le_scratchAddress)
+                (hOwned.scratchAddress_end_le_allocatorBase
+                  (hScratch.scratchBound name slot hLive hLocation))).trans
+                (by simpa [hVars] using hOld)
+      · rw [hStack]
+        rw [List.getElem?_append_right
+          (Nat.le_add_right returned.length _)]
+        simpa [Nat.add_assoc] using hScratch.framePointer
 
 /--
 Source-facing resource premise for a run with the given call fuel.

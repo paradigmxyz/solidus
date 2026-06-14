@@ -260,6 +260,41 @@ def frameExpr
     (config : AllocationSupport.ScratchFrameConfig) : Locals.Expr 1 :=
   .code (AllocationSupport.scratchFrameAcquireCode config)
 
+@[simp] theorem frameExpr_compileCode
+    (localsCtx : Locals.Ctx) (offset : Nat)
+    (config : AllocationSupport.ScratchFrameConfig) :
+    Locals.Expr.compileCode localsCtx offset (frameExpr config) =
+      some (AllocationSupport.scratchFrameAcquireCode config) := by
+  rfl
+
+/--
+Compilation of the scratch call's synthetic frame argument splits into the
+real acquire sequence followed by the ordinary source-argument code at offset
+one.
+-/
+theorem frameExpr_cons_compileCode_components
+    {localsCtx : Locals.Ctx}
+    {config : AllocationSupport.ScratchFrameConfig}
+    {args : List (Locals.Expr 1)}
+    {code : Structured.Code}
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 0
+          (exprSeqOfList (frameExpr config :: args)) =
+        some code) :
+    ∃ argsCode,
+      Locals.ExprSeq.compileCode localsCtx 1 (exprSeqOfList args) =
+          some argsCode ∧
+        code =
+          AllocationSupport.scratchFrameAcquireCode config ++ argsCode := by
+  rw [exprSeqOfList_compileCode_cons] at hCompile
+  cases hArgs :
+      Locals.ExprSeq.compileCode localsCtx 1 (exprSeqOfList args) with
+  | none =>
+      simp [hArgs] at hCompile
+  | some argsCode =>
+      simp [hArgs] at hCompile
+      exact ⟨argsCode, rfl, hCompile.symm⟩
+
 def splitPrelude : List Stmt → List Locals.Stmt × List Stmt
   | [] => ([], [])
   | stmt :: rest =>

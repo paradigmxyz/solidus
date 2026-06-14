@@ -561,6 +561,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_components
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerFunctions?_find_compiled_lookup
 #print axioms EvmCompiler.Functions.AllocationLowering.lowerExpressionsFromAllocation?_find_compiled_function
+#print axioms EvmCompiler.Functions.AllocationLowering.frameExpr_compileCode
+#print axioms EvmCompiler.Functions.AllocationLowering.frameExpr_cons_compileCode_components
 #print axioms EvmCompiler.Functions.Source.FunList.mem_of_find?_eq_some
 #print axioms EvmCompiler.Functions.Source.Store.initializedStore_lookupMany
 #print axioms EvmCompiler.Functions.Source.Store.lookupMany_reverse
@@ -610,6 +612,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverCall.ReturnPrelude.forward_stack_of_context
 #print axioms EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.stack_of_arguments
 #print axioms EvmCompiler.Functions.AllocationObserverCall.CalleeEntry.scratch_of_arguments
+#print axioms EvmCompiler.Functions.AllocationObserverCall.CallCompiler.components
 #print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.initialized_source_facts
 #print axioms EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
 #print axioms EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward
@@ -624,7 +627,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_growth
 #print axioms EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.trans
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
+#print axioms EvmCompiler.Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_mstore_disjoint
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_runtime_invariant
