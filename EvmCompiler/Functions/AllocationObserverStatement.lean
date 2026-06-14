@@ -400,8 +400,8 @@ theorem forward_of_runtime_invariant
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan live frameBase mode sourceFinal targetFinal ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal := by
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target targetFinal := by
   obtain
       ⟨lowered, code, hLowerExpr, hCompileCode,
         rfl, rfl, rfl, rfl⟩ :=
@@ -418,7 +418,7 @@ theorem forward_of_runtime_invariant
       hSafe).run_eq
   refine
     ⟨targetFinal, hSourceRun, ?_, ?_,
-      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         hEffect⟩
   · simpa [Expressions.StmtList.toStructured,
       Expressions.Stmt.toStructured] using
@@ -1582,8 +1582,8 @@ theorem forward_of_runtime_invariant
         ((Functions.ObserverSemantics.stateModel transcript).insert
           sourceAfterValue name value)
         targetFinal ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal := by
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth beforeMode target targetFinal := by
   obtain
       ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
     forward_of_invariant
@@ -1593,8 +1593,8 @@ theorem forward_of_runtime_invariant
   have hNameAfter : name ∈ afterLive := by
     simp [hAfterLive]
   have hEffect :
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal := by
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth beforeMode target targetFinal := by
     cases hMode with
     | @stack beforeMode planDepth hLocation =>
         cases hInvariant.activation.compiler with
@@ -1641,9 +1641,7 @@ theorem forward_of_runtime_invariant
                     Structured.EffectSemantics.Block.Eval.nil
                 have hFinalEq : targetFinal = targetAfterValue :=
                   singleton_code_regular_unique hTargetRun hExpected
-                simpa [hFinalEq] using
-                  AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
-                    hValueEffect
+                simpa [hFinalEq] using hValueEffect
         | @scratch frameDepth frameWords hBefore =>
             cases hAfter with
             | scratch hAfter =>
@@ -3051,8 +3049,8 @@ theorem forward_of_runtime_invariant
               sourceAfterValue)
             name value))
         targetFinal ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal := by
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target targetFinal := by
   obtain
       ⟨targetFinal, hSourceRun, hTargetRun, hFinalInvariant⟩ :=
     forward_of_invariant
@@ -3089,8 +3087,8 @@ theorem forward_of_runtime_invariant
                 (valueCode ++
                   (.op op :: .op .pop ::
                     Locals.bindLocals 0 localsCtx.layout))]) :
-          AllocationObserverRelation.Frame.SuspendedEffect
-            config allocatorDepth target targetFinal := by
+          AllocationObserverRelation.Frame.ActivationEffect
+            config allocatorDepth mode target targetFinal := by
         obtain
             ⟨targetAfterValue, hValueRun, hValueRel, hValueEffect⟩ :=
           AllocationObserverExpression.forwardExprRuntime_with_effect
@@ -3173,14 +3171,13 @@ theorem forward_of_runtime_invariant
             EvmYul.EVM.State.incrPC]
         rw [hFinalEq]
         exact
-          (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
-            hValueEffect).trans
-            (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
-                (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
-                  hValueEffect.ready hExpectedMachine))
+          AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+            (hValueEffect.trans
+              (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+                hValueEffect.ready hExpectedMachine))
       have hEffect :
-          AllocationObserverRelation.Frame.SuspendedEffect
-            config allocatorDepth target targetFinal := by
+          AllocationObserverRelation.Frame.ActivationEffect
+            config allocatorDepth mode target targetFinal := by
         cases hInvariant.activation.compiler with
         | stack hStackCtx =>
             obtain
@@ -3951,8 +3948,8 @@ def RegularStmtRuntimeInvariantForward
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan afterLive frameBase afterMode sourceFinal targetFinal ∧
       SameFrame beforeMode afterMode ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth beforeMode target targetFinal
 
 namespace RegularStmtRuntimeInvariantForward
 
@@ -4258,7 +4255,7 @@ theorem if_false_of_components
           Expressions.Block.toStructured] using hTarget,
       hCondInvariant.transport_state hShape.1 hShape.2,
       SameFrame.refl mode,
-      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         hCondEffect⟩
 
 end RegularStmtRuntimeInvariantForward
@@ -4620,8 +4617,8 @@ def RegularBlockRuntimeInvariantForward
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan finalLive frameBase finalMode sourceFinal targetFinal ∧
       SameFrame initialMode finalMode ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth initialMode target targetFinal
 
 namespace RegularBlockRuntimeInvariantForward
 
@@ -4654,7 +4651,7 @@ theorem nil
       by simp [Functions.Source.Effectful.Block.runOpen],
       Structured.EffectSemantics.Block.Eval.nil,
       hInvariant, SameFrame.refl mode,
-      AllocationObserverRelation.Frame.SuspendedEffect.refl
+      AllocationObserverRelation.Frame.ActivationEffect.refl
         hInvariant.allocator⟩
 
 theorem cons_regular
@@ -4715,7 +4712,8 @@ theorem cons_regular
       hHeadTarget hTailTarget
   exact
     ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun, hTailInvariant,
-      hHeadMode.trans hTailMode, hHeadEffect.trans hTailEffect⟩
+      hHeadMode.trans hTailMode,
+      hHeadEffect.trans_of_sameFrame hHeadMode hTailEffect⟩
 
 end RegularBlockRuntimeInvariantForward
 
@@ -5747,8 +5745,8 @@ def RegularScopedBlockRuntimeInvariantForward
       AllocationObserverContext.ActivationRuntimeInvariant
         contract config allocatorDepth lowerCtx lowerFinal localsFinal
         plan finalLive frameBase finalMode sourceFinal targetFinal ∧
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth finalMode target targetFinal
 
 theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
     {contract : MemoryContract.Contract}
@@ -5832,14 +5830,14 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
       hBodyInvariant.activation.state hBodyInvariant.activation.stackLength
       hCleanup
   have hCleanupEffect :
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth targetMid targetFinal :=
-    AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth afterMode targetMid targetFinal :=
+    AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
       (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
         hBodyEffect.ready hFinalMachine)
   have hFinalEffect :
-      AllocationObserverRelation.Frame.SuspendedEffect
-        config allocatorDepth target targetFinal :=
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth afterMode target targetFinal :=
     hBodyEffect.trans hCleanupEffect
   have hFinalRel :
       ActivationStateRel contract outerPlan afterLive 0 frameBase
@@ -6154,7 +6152,7 @@ theorem if_true_of_components
         exact hTarget,
       hFinalInvariant.transport_state hFinalEnv hFinalLayout,
       SameFrame.refl outerMode,
-      (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         hCondEffect).trans hBodyEffect⟩
 
 end RegularStmtRuntimeInvariantForward

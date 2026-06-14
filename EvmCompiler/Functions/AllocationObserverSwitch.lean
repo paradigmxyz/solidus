@@ -534,7 +534,7 @@ theorem switch_none_of_components
         (hDefaultShape.1.trans hCasesShape.1)
         (hDefaultShape.2.trans hCasesShape.2),
       SameFrame.refl mode,
-      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         hScrutineeEffect⟩
 
 /--
@@ -752,7 +752,7 @@ theorem switch_some_of_components
         ((hDefaultShape.2.trans hCasesShape.2).trans
           hSelectedLayout.symm),
       SameFrame.refl outerMode,
-      (AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      (AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         hScrutineeEffect).trans hBodyEffect⟩
 
 end RegularStmtRuntimeInvariantForward

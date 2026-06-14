@@ -152,8 +152,8 @@ theorem finish_regular_outer_runtime
           ((Functions.ObserverSemantics.stateModel transcript).restrictTo
             outerLive sourceLoop)
           targetFinal ∧
-        AllocationObserverRelation.Frame.SuspendedEffect
-          config allocatorDepth targetLoop targetFinal := by
+        AllocationObserverRelation.Frame.ActivationEffect
+          config allocatorDepth outerMode targetLoop targetFinal := by
   have hExtends :=
     AllocationLowering.lowerBlockOpen_stateExtends
       hInitScoped hLowerInit
@@ -197,7 +197,7 @@ theorem finish_regular_outer_runtime
             stackLength := hFinalLength }
         allocator := hLoop.allocator.of_machine_eq hFinalMachine
         frame := hLoop.frame.sameFrame hSameFrame.symm },
-      AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+      AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
         (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
           hLoop.allocator hFinalMachine)⟩
 
@@ -3389,7 +3389,7 @@ theorem for_false_of_components
     ⟨targetFinal, initSourceFuel + 2, targetFuel, ?_, ?_,
       hFinalInvariant, SameFrame.refl outerMode,
       hInitEffect.trans
-        ((AllocationObserverRelation.Frame.SuspendedEffect.of_allocatorEffect
+        ((AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
           hCondEffect).trans hCleanupEffect)⟩
   · simpa [hSourceScope, hLoopSourceScope] using hSource
   · have hCondCompile :
