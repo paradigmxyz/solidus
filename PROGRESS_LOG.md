@@ -29313,3 +29313,20 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   axiom smoke passed; the new declarations use only `propext`,
   `Classical.choice`, and `Quot.sound`. Soft size debt remains in the three
   pass-owned observer modules reported by the architecture script.
+### 2026-06-13 compaction-resume
+
+- Resumed the end-to-end observer proof at the protected-prefix refinement in `Functions/AllocationObserverRelation.lean`.
+- Next: inspect the focused Lean failure, repair the compositional spill-preservation invariant, then rebuild the adjacent Functions boundary.
+
+### 2026-06-13 protected-prefix checkpoint
+
+- Refined `Frame.ProtectedPrefix` to include monotone target growth and to protect only words already active and materialized before a transition.
+- Added the pass-owned `ActivationOwned.scratchAddress_end_le_ownedFrame` interface and used it in `Frame.resume_after_call`, keeping allocator representation reasoning out of the call-resumption proof.
+- Focused builds of `AllocationObserverRelation` and `AllocationObserverCall` pass.
+
+- 2026-06-14 00:01:36 PDT - validation - The full 1,208-job
+  `EvmCompiler.Verification` root, architecture dependency guard, exact
+  touched-file hole/unsafe scan, `git diff --check`, and expanded observer
+  axiom smoke pass. The protected-prefix and caller-resumption declarations
+  use only `propext`, `Classical.choice`, and `Quot.sound`. Existing soft size
+  debt remains in the three pass-owned Functions observer modules.

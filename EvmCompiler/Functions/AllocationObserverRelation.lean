@@ -4352,19 +4352,27 @@ theorem trans {transcript : Trace}
 end TargetGrowth
 
 /--
-A target transition leaves every compiler-owned word below `depth` unchanged.
+A target transition leaves every already-active, materialized compiler-owned
+word below `depth` unchanged.
 
 This is the compositional memory invariant for suspended callers. A nested
 callee may write its own frame at `baseAt config depth` or above, while source
-memory operations remain outside the compiler reservation.
+memory operations remain outside the compiler reservation. Requiring the word
+to exist before the transition avoids treating newly exposed dormant bytes as
+part of the caller's saved state.
 -/
 structure ProtectedPrefix {transcript : Trace}
     (config : Config) (depth : Nat)
     (before after : TargetState transcript) : Prop where
+  growth : TargetGrowth before after
   lookup :
     ∀ {address : Nat},
       config.firstFrame ≤ address →
       address + MemoryContract.wordBytes ≤ baseAt config depth →
+      address + MemoryContract.wordBytes ≤
+        before.source.evm.toMachineState.memory.size →
+      address + MemoryContract.wordBytes ≤
+        before.source.evm.activeWords.toNat * MemoryContract.wordBytes →
       after.source.evm.toMachineState.lookupMemory
           (EvmYul.UInt256.ofNat address) =
         before.source.evm.toMachineState.lookupMemory
@@ -4376,7 +4384,7 @@ theorem refl {transcript : Trace}
     (config : Config) (depth : Nat)
     (target : TargetState transcript) :
     ProtectedPrefix config depth target target :=
-  ⟨by intros; rfl⟩
+  ⟨TargetGrowth.refl target, by intros; rfl⟩
 
 theorem trans {transcript : Trace}
     {config : Config} {depth : Nat}
@@ -4384,11 +4392,22 @@ theorem trans {transcript : Trace}
     (hFirst : ProtectedPrefix config depth first second)
     (hSecond : ProtectedPrefix config depth second third) :
     ProtectedPrefix config depth first third := by
-  refine ⟨?_⟩
-  intro address hStart hEnd
+  refine ⟨hFirst.growth.trans hSecond.growth, ?_⟩
+  intro address hStart hEnd hMemory hActive
+  have hMiddleMemory :
+      address + MemoryContract.wordBytes ≤
+        second.source.evm.toMachineState.memory.size :=
+    hMemory.trans hFirst.growth.memory
+  have hMiddleActive :
+      address + MemoryContract.wordBytes ≤
+        second.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes :=
+    hActive.trans
+      (Nat.mul_le_mul_right
+        MemoryContract.wordBytes hFirst.growth.active)
   exact
-    (hSecond.lookup hStart hEnd).trans
-      (hFirst.lookup hStart hEnd)
+    (hSecond.lookup hStart hEnd hMiddleMemory hMiddleActive).trans
+      (hFirst.lookup hStart hEnd hMemory hActive)
 
 theorem of_machine_eq {transcript : Trace}
     {config : Config} {depth : Nat}
@@ -4397,9 +4416,17 @@ theorem of_machine_eq {transcript : Trace}
       after.source.evm.toMachineState =
         before.source.evm.toMachineState) :
     ProtectedPrefix config depth before after := by
-  refine ⟨?_⟩
-  intro address _hStart _hEnd
-  simp [hMachine]
+  refine ⟨?_, ?_⟩
+  · exact
+      ⟨by simpa [hMachine],
+        by simpa [hMachine]⟩
+  · intro address _hStart _hEnd _hMemory _hActive
+    change
+      after.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat address) =
+        before.source.evm.toMachineState.lookupMemory
+          (EvmYul.UInt256.ofNat address)
+    rw [hMachine]
 
 end ProtectedPrefix
 
@@ -4773,6 +4800,26 @@ theorem scratchAddress_end_le_allocatorBase
       exact scratchAddress_end_le_frameEnd (by simpa [hWords] using hSlot)
 
 /--
+Every compiler spill address in an owned scratch activation ends inside the
+concrete frame represented by `ScratchStateRel`.
+-/
+theorem scratchAddress_end_le_ownedFrame
+    {config : Config}
+    {allocatorDepth frameBase frameDepth frameWords slot : Nat}
+    (hOwned :
+      ActivationOwned config allocatorDepth frameBase
+        (.scratch frameDepth frameWords))
+    (hSlot : slot < frameWords) :
+    scratchAddress frameBase slot + MemoryContract.wordBytes ≤
+      frameBase + MemoryContract.wordBytes * frameWords := by
+  cases hOwned with
+  | @scratch previousDepth _ _ _ _hBase hWords =>
+      simpa [bytes, hWords] using
+        (scratchAddress_end_le_frameEnd
+          (config := config)
+          (by simpa [hWords] using hSlot))
+
+/--
 Every spill address owned by an active scratch frame begins at or after the
 first compiler frame.
 -/
@@ -4847,7 +4894,6 @@ theorem resume_after_call
     (hStack :
       targetAfter.source.evm.stack =
         returned ++ targetBefore.source.evm.stack)
-    (hGrowth : TargetGrowth targetBefore targetAfter)
     (hActiveNoWrap :
       targetAfter.source.evm.activeWords.toNat *
           MemoryContract.wordBytes <
@@ -4892,9 +4938,9 @@ theorem resume_after_call
           frameActive :=
             hScratch.frameActive.trans
               (Nat.mul_le_mul_right
-                MemoryContract.wordBytes hGrowth.active)
+                MemoryContract.wordBytes hProtected.growth.active)
           frameAllocated :=
-            hScratch.frameAllocated.trans hGrowth.memory
+            hScratch.frameAllocated.trans hProtected.growth.memory
           frameNoWrap := hScratch.frameNoWrap
           frameHostAddressable := hScratch.frameHostAddressable
           activeNoWrap := hActiveNoWrap
@@ -4916,7 +4962,13 @@ theorem resume_after_call
               (hProtected.lookup
                 (hOwned.firstFrame_le_scratchAddress)
                 (hOwned.scratchAddress_end_le_allocatorBase
-                  (hScratch.scratchBound name slot hLive hLocation))).trans
+                  (hScratch.scratchBound name slot hLive hLocation))
+                ((hOwned.scratchAddress_end_le_ownedFrame
+                    (hScratch.scratchBound name slot hLive hLocation)).trans
+                  hScratch.frameAllocated)
+                ((hOwned.scratchAddress_end_le_ownedFrame
+                    (hScratch.scratchBound name slot hLive hLocation)).trans
+                  hScratch.frameActive)).trans
                 (by simpa [hVars] using hOld)
       · rw [hStack]
         rw [List.getElem?_append_right

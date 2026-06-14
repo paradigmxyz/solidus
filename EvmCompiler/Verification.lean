@@ -414,6 +414,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.of_machine_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
@@ -421,6 +422,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.allocatorCell_disjoint_scratchAddress
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_allocatorBase
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned.scratchAddress_end_le_ownedFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.hostAddressable_of_budget_of_scratchFrameConfig?
