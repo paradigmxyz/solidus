@@ -3164,6 +3164,71 @@ theorem runScoped_nonregular_of_runOpen {σ : Type}
       simp [Block.runScoped, hOpen, hOutcome]
 
 /--
+Invert successful lexical execution into its exact open-block run.
+
+Regular execution exposes the source restriction performed at scope exit;
+abrupt execution exposes the unchanged open outcome. This keeps recursive
+compiler proofs on the canonical Functions interpreter.
+-/
+theorem runScoped_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {block : Block} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Block.runScoped model prim program ctx block fuel source =
+        .ok outcome) :
+    (∃ final finalCtx,
+        Block.runOpen model prim program ctx fuel block source =
+          .ok (Outcome.regular final, finalCtx) ∧
+        outcome =
+          Outcome.regular (model.restrictTo ctx.scope final)) ∨
+      (∃ openOutcome finalCtx,
+        Block.runOpen model prim program ctx fuel block source =
+          .ok (openOutcome, finalCtx) ∧
+        openOutcome.mode ≠ .regular ∧
+        outcome = openOutcome) := by
+  unfold Block.runScoped at hRun
+  cases hOpen :
+      Block.runOpen model prim program ctx fuel block source with
+  | error err =>
+      simp [hOpen] at hRun
+  | ok openResult =>
+      rcases openResult with ⟨openOutcome, finalCtx⟩
+      cases hMode : openOutcome.mode with
+      | regular =>
+          simp only [hOpen, Bind.bind, Except.bind, hMode] at hRun
+          rcases openOutcome with ⟨final, mode⟩
+          cases hMode
+          left
+          refine ⟨final, finalCtx, rfl, ?_⟩
+          exact (Except.ok.inj hRun).symm
+      | brk =>
+          simp only [hOpen, Bind.bind, Except.bind, hMode] at hRun
+          right
+          refine ⟨openOutcome, finalCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · exact (Except.ok.inj hRun).symm
+      | cont =>
+          simp only [hOpen, Bind.bind, Except.bind, hMode] at hRun
+          right
+          refine ⟨openOutcome, finalCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · exact (Except.ok.inj hRun).symm
+      | leave =>
+          simp only [hOpen, Bind.bind, Except.bind, hMode] at hRun
+          right
+          refine ⟨openOutcome, finalCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · exact (Except.ok.inj hRun).symm
+      | halt kind =>
+          simp only [hOpen, Bind.bind, Except.bind, hMode] at hRun
+          right
+          refine ⟨openOutcome, finalCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · exact (Except.ok.inj hRun).symm
+
+/--
 Compose one successful regular source statement with a reconstructed tail at
 a common canonical Functions fuel.
 -/
@@ -3198,6 +3263,71 @@ theorem runOpen_cons_regular_exists {σ : Type}
     ⟨commonFuel + 1,
       by simp [Block.runOpen, hHead', hTail',
         Outcome.regular, Locals.Source.Effectful.Outcome.regular]⟩
+
+/--
+Invert one successful nonempty open-block execution at its canonical
+one-smaller statement fuel.
+
+The head either finishes regularly and exposes the exact recursive tail run,
+or exits abruptly and fixes the whole block outcome while making the tail
+unreachable. This is the semantic-owner interface used by recursive compiler
+proofs; callers do not need to unfold the block interpreter themselves.
+-/
+theorem runOpen_cons_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {fuel : Nat} {ctx finalCtx : Source.Ctx}
+    {stmt : Stmt} {rest : List Stmt}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Block.runOpen model prim program ctx (fuel + 1)
+          { stmts := stmt :: rest } source =
+        .ok (outcome, finalCtx)) :
+    (∃ mid midCtx,
+        Stmt.run model prim program ctx fuel stmt source =
+          .ok (Outcome.regular mid, midCtx) ∧
+        Block.runOpen model prim program midCtx fuel
+            { stmts := rest } mid =
+          .ok (outcome, finalCtx)) ∨
+      (∃ headOutcome headCtx,
+        Stmt.run model prim program ctx fuel stmt source =
+          .ok (headOutcome, headCtx) ∧
+        headOutcome.mode ≠ .regular ∧
+        outcome = headOutcome ∧
+        finalCtx = ctx) := by
+  cases hHead :
+      Stmt.run model prim program ctx fuel stmt source with
+  | error err =>
+      simp [Block.runOpen, hHead] at hRun
+  | ok headResult =>
+      rcases headResult with ⟨headOutcome, headCtx⟩
+      cases hMode : headOutcome.mode with
+      | regular =>
+          rcases headOutcome with ⟨headState, headMode⟩
+          cases hMode
+          left
+          refine ⟨headState, headCtx, rfl, ?_⟩
+          · simpa [Block.runOpen, hHead] using hRun
+      | brk =>
+          right
+          refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+      | cont =>
+          right
+          refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+      | leave =>
+          right
+          refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+      | halt kind =>
+          right
+          refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
+          · simp [hMode]
+          · simpa [Block.runOpen, hHead, hMode] using hRun.symm
 
 /--
 A nonregular source statement makes the remaining source list unreachable.

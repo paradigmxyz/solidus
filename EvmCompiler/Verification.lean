@@ -391,10 +391,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_regular_of_runOpen_scope
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+#check EvmCompiler.Functions.Source.Effectful.Block.runScoped_cases
 #check EvmCompiler.Locals.Source.Store.restrictTo_congr
 #check EvmCompiler.Locals.Source.State.restrictTo_congr
 #check EvmCompiler.Locals.Source.Effectful.StateModel.restrictTo_congr
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_cases
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_nonregular
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_exists
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_nonregular
@@ -522,6 +524,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.planAgreesOn
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scratch_bound_of_location
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.nilRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.consRegularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.consNonregularRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.exprRuntimeResultOfSafeRun
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResultOfSafeRun
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
