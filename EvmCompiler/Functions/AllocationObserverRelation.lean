@@ -4428,6 +4428,46 @@ theorem of_machine_eq {transcript : Trace}
           (EvmYul.UInt256.ofNat address)
     rw [hMachine]
 
+/--
+Growing active memory without changing materialized bytes preserves every
+already-active word in the protected compiler prefix.
+-/
+theorem of_memory_eq_active_growth {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hMemory :
+      after.source.evm.toMachineState.memory =
+        before.source.evm.toMachineState.memory)
+    (hActive :
+      before.source.evm.activeWords.toNat ≤
+        after.source.evm.activeWords.toNat)
+    (hBeforeNoWrap :
+      before.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hAfterNoWrap :
+      after.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ProtectedPrefix config depth before after := by
+  refine
+    { growth :=
+        { active := hActive
+          memory := by simpa [hMemory] }
+      lookup := ?_ }
+  intro address _hStart _hEnd hReadMemory hReadActive
+  have hAddressLt :
+      address < EvmYul.UInt256.size := by
+    exact lt_of_le_of_lt
+      (Nat.le_add_right address MemoryContract.wordBytes)
+      (hReadActive.trans_lt hBeforeNoWrap)
+  exact
+    Compiler.MemoryRelation.MachineRel.lookupMemory_eq_of_memory_eq_active_growth
+      address
+      (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
+      hMemory hActive hBeforeNoWrap hAfterNoWrap
+      hReadMemory hReadActive
+
 end ProtectedPrefix
 
 structure AllocatorReady {transcript : Trace}
@@ -4613,6 +4653,92 @@ theorem of_mstore_disjoint
   exact hReady.of_lookup_growth hLookup hActive hMemory hNoWrap
 
 end AllocatorReady
+
+/--
+Resource effect of ordinary target execution at a fixed allocator depth.
+
+Growth and allocator readiness are unconditional. Protected-prefix
+preservation is available when the current depth fits inside the checked
+scratch reservation. Keeping all three facts in one transition interface lets
+recursive expression and statement proofs compose effects without replaying
+the underlying semantics.
+-/
+structure AllocatorEffect {transcript : Trace}
+    (config : Config) (depth : Nat)
+    (before after : TargetState transcript) : Prop where
+  ready : AllocatorReady config depth after
+  growth : TargetGrowth before after
+  prefixStable :
+    ∀ {protectedDepth : Nat},
+      protectedDepth ≤ depth →
+      Budget config protectedDepth →
+      ProtectedPrefix config protectedDepth before after
+
+namespace AllocatorEffect
+
+theorem refl {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {target : TargetState transcript}
+    (hReady : AllocatorReady config depth target) :
+    AllocatorEffect config depth target target :=
+  { ready := hReady
+    growth := TargetGrowth.refl target
+    prefixStable :=
+      fun {_protectedDepth} _hDepth _hBudget =>
+        ProtectedPrefix.refl config _protectedDepth target }
+
+theorem trans {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {first second third : TargetState transcript}
+    (hFirst : AllocatorEffect config depth first second)
+    (hSecond : AllocatorEffect config depth second third) :
+    AllocatorEffect config depth first third :=
+  { ready := hSecond.ready
+    growth := hFirst.growth.trans hSecond.growth
+    prefixStable := fun hDepth hBudget =>
+      (hFirst.prefixStable hDepth hBudget).trans
+        (hSecond.prefixStable hDepth hBudget) }
+
+theorem of_machine_eq {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState) :
+    AllocatorEffect config depth before after :=
+  { ready := hReady.of_machine_eq hMachine
+    growth :=
+      { active := by simpa [hMachine]
+        memory := by simpa [hMachine] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_machine_eq hMachine }
+
+theorem of_memory_eq_active_growth {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config depth before)
+    (hMemory :
+      after.source.evm.toMachineState.memory =
+        before.source.evm.toMachineState.memory)
+    (hActive :
+      before.source.evm.activeWords.toNat ≤
+        after.source.evm.activeWords.toNat)
+    (hAfterNoWrap :
+      after.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    AllocatorEffect config depth before after :=
+  { ready :=
+      hReady.of_memory_eq_active_growth hMemory hActive hAfterNoWrap
+    growth :=
+      { active := hActive
+        memory := by simpa [hMemory] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_memory_eq_active_growth
+        hMemory hActive hReady.activeNoWrap hAfterNoWrap }
+
+end AllocatorEffect
 
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}

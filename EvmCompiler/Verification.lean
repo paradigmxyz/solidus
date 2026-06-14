@@ -121,6 +121,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeq
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime_with_effect
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprRuntime_with_growth
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_growth
 #check EvmCompiler.Functions.AllocationObserverExpression.Expr.one_forward_runtime
@@ -199,6 +200,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.ActivationPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalStackPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+#check EvmCompiler.Functions.AllocationObserverPrimitive.protectedWord_disjoint_of_regionAllowed
 #check EvmCompiler.Functions.AllocationObserverPrimitive.canonicalActivationAllocatorPrimitiveForward
 #check EvmCompiler.Functions.AllocationObserverSafety.Stmt.LeafMemorySafeRun.run_eq
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.compiler_shape
@@ -409,12 +411,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_memory_eq_active_growth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_machine_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorReady.of_mstore_disjoint
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect.refl
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.AllocatorEffect.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.of_machine_eq
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.of_memory_eq_active_growth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval

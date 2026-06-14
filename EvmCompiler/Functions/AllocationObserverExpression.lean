@@ -208,10 +208,8 @@ structure ActivationAllocatorPrimitiveForward
           config allocatorDepth targetArgs →
       Structured.ObserverSemantics.Code.run [.op op] targetArgs =
           .ok targetFinal →
-      AllocationObserverRelation.Frame.AllocatorReady
-          config allocatorDepth targetFinal ∧
-        AllocationObserverRelation.Frame.TargetGrowth
-          targetArgs targetFinal
+      AllocationObserverRelation.Frame.AllocatorEffect
+        config allocatorDepth targetArgs targetFinal
 
 /--
 One primitive interface consumed by the recursive expression theorem.
@@ -337,7 +335,7 @@ theorem simulateRuntime
   exact
     ⟨targetFinal, hRun, hFinalRel,
       hPrimitive.allocator.preserve
-        hConfig hArgsRel hMemory hEval hReady hRun |>.1⟩
+        hConfig hArgsRel hMemory hEval hReady hRun |>.ready⟩
 
 end ActivationPrimitiveForward
 
@@ -738,10 +736,8 @@ mutual
       (hRun :
         Structured.ObserverSemantics.Code.run code target =
           .ok targetFinal) :
-      AllocationObserverRelation.Frame.AllocatorReady
-          config allocatorDepth targetFinal ∧
-        AllocationObserverRelation.Frame.TargetGrowth
-          target targetFinal := by
+      AllocationObserverRelation.Frame.AllocatorEffect
+        config allocatorDepth target targetFinal := by
     cases hSafe with
     | @lit value state =>
         subst_vars
@@ -769,8 +765,8 @@ mutual
             EvmYul.EVM.State.incrPC]
         rw [hFinalEq]
         exact
-          ⟨hReady.of_machine_eq hMachine,
-            ⟨by simpa [hMachine], by simpa [hMachine]⟩⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+            hReady hMachine
     | @var name value state hValue =>
         subst_vars
         have hLive : name ∈ live := by
@@ -805,8 +801,8 @@ mutual
                 EvmYul.EVM.State.incrPC]
             rw [hFinalEq]
             exact
-              ⟨hReady.of_machine_eq hMachine,
-                ⟨by simpa [hMachine], by simpa [hMachine]⟩⟩
+              AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+                hReady hMachine
         | scratch frameDepth frameWords slot op hLocation hDup =>
             cases hRel with
             | scratch state =>
@@ -819,8 +815,8 @@ mutual
                   Except.ok.inj (hRun.symm.trans hExpectedRun)
                 rw [hFinalEq]
                 exact
-                  ⟨hReady.of_machine_eq hMachine,
-                    ⟨by simpa [hMachine], by simpa [hMachine]⟩⟩
+                  AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+                    hReady hMachine
     | @prim op args source afterArgs final values outputs
         hArgsSafe hMemory hPrim =>
         subst_vars
@@ -861,13 +857,11 @@ mutual
                     hReady hArgsRun
                 rw [AllocationObserverPreservation.ObserverCode.run_append,
                   hArgsRun] at hRun
-                obtain ⟨hFinalReady, hOpGrowth⟩ :=
+                have hOpEffect :=
                   (hPrimitive op).allocator.preserve
                     hConfig hArgsRel hMemory hPrim
-                    hArgsResources.1 hRun
-                exact
-                  ⟨hFinalReady,
-                    hArgsResources.2.trans hOpGrowth⟩
+                    hArgsResources.ready hRun
+                exact hArgsResources.trans hOpEffect
   termination_by fuel
   decreasing_by
     all_goals
@@ -924,10 +918,8 @@ mutual
       (hRun :
         Structured.ObserverSemantics.Code.run code target =
           .ok targetFinal) :
-      AllocationObserverRelation.Frame.AllocatorReady
-          config allocatorDepth targetFinal ∧
-        AllocationObserverRelation.Frame.TargetGrowth
-          target targetFinal := by
+      AllocationObserverRelation.Frame.AllocatorEffect
+        config allocatorDepth target targetFinal := by
     cases hSafe with
     | @nil state =>
         subst_vars
@@ -942,8 +934,7 @@ mutual
           (Except.ok.inj hRun).symm
         rw [hFinalEq]
         exact
-          ⟨hReady,
-            AllocationObserverRelation.Frame.TargetGrowth.refl target⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.refl hReady
     | @cons left right head tail source afterHead final
         headValues tailValues hHeadSafe hTailSafe =>
         subst_vars
@@ -1006,10 +997,8 @@ mutual
                               simp only [exprSeqHeight] at hFuel
                               omega)
                             hCtx hScopedParts.2 hLowerTail hTailCode
-                            hHeadRel.state hHeadResources.1 hRun
-                        exact
-                          ⟨hTailResources.1,
-                            hHeadResources.2.trans hTailResources.2⟩
+                            hHeadRel.state hHeadResources.ready hRun
+                        exact hHeadResources.trans hTailResources
   termination_by fuel
   decreasing_by
     all_goals
@@ -1163,13 +1152,78 @@ theorem forwardExprRuntime
     ⟨targetFinal, hRun, hResult,
       allocatorReadyExprFuel hPrimitive (exprHeight expr)
         hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
-        hReady hRun |>.1⟩
+        hReady hRun |>.ready⟩
 
 /--
-Allocator-aware expression preservation with monotone target-memory growth.
+Allocator-aware expression preservation with its complete compositional
+resource effect.
 
-The growth fact is a resource side condition of the same canonical expression
-simulation, not a second expression semantics.
+This strengthens the same canonical expression simulation with allocator
+readiness, monotone growth, and budget-indexed protected-prefix preservation.
+-/
+theorem forwardExprRuntime_with_effect
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase results : Nat}
+    {mode : ActivationMode}
+    {expr : Functions.Expr results}
+    {lowered : Locals.Expr results} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        contract transcript expr source sourceFinal values)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hScoped : Functions.Scope.ExprScoped live expr)
+    (hLower :
+      AllocationLowering.lowerExpr lowerCtx lowerState expr =
+        some lowered)
+    (hCompile :
+      Locals.Expr.compileCode localsCtx stackOffset lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live
+        stackOffset frameBase mode source target)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        ActivationExprResultRel contract plan live
+          stackOffset frameBase results mode
+          sourceFinal target targetFinal values ∧
+        AllocationObserverRelation.Frame.AllocatorEffect
+          config allocatorDepth target targetFinal := by
+  obtain ⟨targetFinal, hRun, hResult, _hFinalReady⟩ :=
+    forwardExprRuntime hPrimitive hConfig hSafe hCtx hScoped hLower
+      hCompile hRel hReady
+  have hResources :=
+    allocatorReadyExprFuel hPrimitive (exprHeight expr)
+      hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
+      hReady hRun
+  exact
+    ⟨targetFinal, hRun, hResult, hResources⟩
+
+/--
+Compatibility projection exposing only allocator readiness and target growth.
 -/
 theorem forwardExprRuntime_with_growth
     {contract : MemoryContract.Contract}
@@ -1224,15 +1278,11 @@ theorem forwardExprRuntime_with_growth
           config allocatorDepth targetFinal ∧
         AllocationObserverRelation.Frame.TargetGrowth
           target targetFinal := by
-  obtain ⟨targetFinal, hRun, hResult, _hFinalReady⟩ :=
-    forwardExprRuntime hPrimitive hConfig hSafe hCtx hScoped hLower
-      hCompile hRel hReady
-  have hResources :=
-    allocatorReadyExprFuel hPrimitive (exprHeight expr)
-      hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
-      hReady hRun
+  obtain ⟨targetFinal, hRun, hResult, hEffect⟩ :=
+    forwardExprRuntime_with_effect hPrimitive hConfig hSafe hCtx hScoped
+      hLower hCompile hRel hReady
   exact
-    ⟨targetFinal, hRun, hResult, hResources.1, hResources.2⟩
+    ⟨targetFinal, hRun, hResult, hEffect.ready, hEffect.growth⟩
 
 /--
 Allocator-aware preservation for argument/result sequences.
@@ -1294,7 +1344,7 @@ theorem forwardExprSeqRuntime
     ⟨targetFinal, hRun, hResult,
       allocatorReadyExprSeqFuel hPrimitive (exprSeqHeight exprs)
         hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
-        hReady hRun |>.1⟩
+        hReady hRun |>.ready⟩
 
 /--
 Allocator-aware expression-sequence preservation with monotone target-memory
@@ -1361,7 +1411,8 @@ theorem forwardExprSeqRuntime_with_growth
       hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
       hReady hRun
   exact
-    ⟨targetFinal, hRun, hResult, hResources.1, hResources.2⟩
+    ⟨targetFinal, hRun, hResult,
+      hResources.ready, hResources.growth⟩
 
 /--
 A zero-result expression preserves the complete statement-boundary activation
@@ -1579,7 +1630,7 @@ theorem Expr.one_forward_runtime
     allocatorReadyExprFuel hPrimitive (exprHeight expr)
       hConfig hSafe (by rfl) hInvariant.activation.compiler hScoped
       hLower hCompile hInvariant.activation.state hInvariant.allocator
-      hRun |>.1
+      hRun |>.ready
   have hMachine :
       (StateRel.popTarget
           target.source.evm.stack targetWithValue).source.evm.toMachineState =

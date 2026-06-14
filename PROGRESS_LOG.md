@@ -29330,3 +29330,23 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   axiom smoke pass. The protected-prefix and caller-resumption declarations
   use only `propext`, `Classical.choice`, and `Quot.sound`. Existing soft size
   debt remains in the three pass-owned Functions observer modules.
+
+### 2026-06-14 compositional allocator effects
+
+- Added the pass-owned `Frame.AllocatorEffect` transition interface: final
+  allocator readiness, unconditional target growth, and preservation of every
+  budgeted suspended prefix at or below the current allocator depth.
+- Strengthened the existing recursive expression resource proof rather than
+  adding a second recursion corridor. Literals, local reads, every canonical
+  primitive family, expression sequences, and real Functions call-argument
+  lists now compose `AllocatorEffect`.
+- Proved source-memory write noninterference for `mstore`, `mstore8`, and copy
+  families from the actual `scratchFrameConfig?`, source `RegionAllowed`
+  contract, and frame budget. Read-only and machine-neutral families use the
+  shared memory-equality effect constructors.
+- 2026-06-14 00:11:45 PDT - validation - Focused relation, expression,
+  primitive, and call builds plus the full 1,208-job verification root pass.
+  Architecture dependency checks, exact touched-file hole/unsafe scans,
+  `git diff --check`, and the expanded observer axiom smoke pass with only
+  `propext`, `Classical.choice`, and `Quot.sound`. Existing soft size debt
+  remains in the three pass-owned Functions observer modules.

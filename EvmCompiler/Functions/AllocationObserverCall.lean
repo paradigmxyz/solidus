@@ -2056,8 +2056,8 @@ theorem forward
 Allocator-aware preservation for the actual Functions call-argument list.
 
 This is the call-owner composition of the shared runtime expression theorem;
-it retains the ordinary adjacent result relation and threads only allocator
-readiness.
+it retains the ordinary adjacent result relation and composes the complete
+allocator effect, including suspended-caller prefix preservation.
 -/
 theorem forward_runtime
     {contract : MemoryContract.Contract}
@@ -2112,10 +2112,8 @@ theorem forward_runtime
         AllocationObserverRelation.ActivationExprResultRel
           contract plan live stackOffset frameBase args.length mode
           sourceFinal target targetFinal values ∧
-        AllocationObserverRelation.Frame.AllocatorReady
-          config allocatorDepth targetFinal ∧
-        AllocationObserverRelation.Frame.TargetGrowth
-          target targetFinal := by
+        AllocationObserverRelation.Frame.AllocatorEffect
+          config allocatorDepth target targetFinal := by
   induction hSafe generalizing lowered code stackOffset target with
   | nil =>
       have hLowered : lowered = [] := by
@@ -2128,8 +2126,7 @@ theorem forward_runtime
       exact
         ⟨target, rfl,
           AllocationObserverRelation.ActivationExprResultRel.nil hRel,
-          hReady,
-          AllocationObserverRelation.Frame.TargetGrowth.refl target⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.refl hReady⟩
   | @cons arg rest source afterArg final value values hArg hRest ih =>
       cases hLowerArg :
           AllocationLowering.lowerExpr lowerCtx lowerState arg with
@@ -2171,19 +2168,17 @@ theorem forward_runtime
                         intro candidate hMember
                         exact hScoped candidate (by simp [hMember])
                       obtain
-                          ⟨targetAfterArg, hArgRun, hArgRel, hArgReady,
-                            hArgGrowth⟩ :=
-                        AllocationObserverExpression.forwardExprRuntime_with_growth
+                          ⟨targetAfterArg, hArgRun, hArgRel, hArgEffect⟩ :=
+                        AllocationObserverExpression.forwardExprRuntime_with_effect
                           hPrimitive hConfig hArg hCtx hArgScoped hLowerArg
                           hArgCode hRel hReady
                       obtain
-                          ⟨targetFinal, hRestRun, hRestRel, hFinalReady,
-                            hRestGrowth⟩ :=
+                          ⟨targetFinal, hRestRun, hRestRel, hRestEffect⟩ :=
                         ih hRestScoped hLowerRest hRestCode hArgRel.state
-                          hArgReady
+                          hArgEffect.ready
                       refine
-                        ⟨targetFinal, ?_, ?_, hFinalReady,
-                          hArgGrowth.trans hRestGrowth⟩
+                        ⟨targetFinal, ?_, ?_,
+                          hArgEffect.trans hRestEffect⟩
                       · rw [
                           AllocationObserverPreservation.ObserverCode.run_append,
                           hArgRun]

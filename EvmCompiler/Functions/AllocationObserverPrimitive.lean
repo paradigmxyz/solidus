@@ -52,6 +52,56 @@ theorem allocatorCell_disjoint_of_regionAllowed
   · exact Or.inl (hCellEnd.trans hAfter)
 
 /--
+Every source-approved memory range is disjoint from an already allocated
+compiler word below the current allocator depth.
+
+The budget premise places the complete protected prefix inside the checked
+scratch reservation. `RegionAllowed` then puts the source range entirely
+before or after that reservation.
+-/
+theorem protectedWord_disjoint_of_regionAllowed
+    {contract : MemoryContract.Contract}
+    {globalFrameWords address size query depth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hAllowed :
+      AllocationObserverSafety.RegionAllowed contract address size)
+    (hStart : config.firstFrame ≤ query)
+    (hEnd :
+      query + MemoryContract.wordBytes ≤
+        AllocationObserverRelation.Frame.baseAt config depth) :
+    query + MemoryContract.wordBytes ≤ address ∨
+      address + size ≤ query := by
+  obtain
+      ⟨reservation, hReservation, _hAllocator, hFirst, hLimit,
+        _hWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hAllowed' :
+      reservation.sourceAccessAllowed address size := by
+    simpa [AllocationObserverSafety.RegionAllowed, hReservation] using
+      hAllowed
+  have hReservationStart : reservation.base ≤ query := by
+    rw [hFirst] at hStart
+    exact
+      (Nat.le_add_right reservation.base MemoryContract.wordBytes).trans
+        hStart
+  have hReservationEnd :
+      query + MemoryContract.wordBytes ≤ reservation.endExclusive := by
+    have hLimitBound :
+        query + MemoryContract.wordBytes ≤ config.limit :=
+      hEnd.trans
+        (AllocationObserverRelation.Frame.budget_base_le_limit hBudget)
+    simpa [hLimit] using hLimitBound
+  rcases hAllowed' with hBefore | hAfter
+  · exact Or.inr (hBefore.trans hReservationStart)
+  · exact Or.inl (hReservationEnd.trans hAfter)
+
+/--
 Resource observers advance only the transcript cursor and target stack. They
 therefore leave the allocator machine state unchanged.
 -/
@@ -126,8 +176,8 @@ theorem observer_allocatorPrimitiveForward
             EvmYul.EVM.State.incrPC, hTargetSource]
         rw [hFinalEq]
         exact
-          ⟨hReady.of_machine_eq hMachine,
-            ⟨by simpa [hMachine], by simpa [hMachine]⟩⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+            hReady hMachine
 
 /--
 Proof classifier for canonical primitive families that do not inspect or modify
@@ -607,9 +657,8 @@ theorem allocatorPrimitiveForward
           exact Except.ok.inj (hRun.symm.trans hExpectedRun)
         rw [hFinalEq]
         exact
-          ⟨hReady.of_machine_eq hExpectedMachine,
-            ⟨by simpa [hExpectedMachine],
-              by simpa [hExpectedMachine]⟩⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+            hReady hExpectedMachine
 
 end SharedFamily
 
@@ -2253,9 +2302,8 @@ theorem ReadSpec.allocatorPrimitiveForward
           Except.ok.inj (hRun.symm.trans hExpectedRun)
         rw [hFinalEq]
         exact
-          ⟨hReady.of_memory_eq_active_growth
-              hMemoryEq hActiveMono hExpectedNoWrap,
-            ⟨hActiveMono, by simpa [hMemoryEq]⟩⟩
+          AllocationObserverRelation.Frame.AllocatorEffect.of_memory_eq_active_growth
+            hReady hMemoryEq hActiveMono hExpectedNoWrap
 
 def ReadSpec.stackSpec
     {contract : MemoryContract.Contract}
@@ -3120,10 +3168,40 @@ theorem mstore_allocatorPrimitiveForward
           have hFinalEq : targetFinal = expected :=
             Except.ok.inj (hRun.symm.trans hExpectedRun)
           rw [hFinalEq]
-          exact
-            ⟨hReady.of_lookup_growth hLookup hActiveMono'
-                hMemoryMono' hExpectedNoWrap,
-              ⟨hActiveMono', hMemoryMono'⟩⟩
+          refine
+            { ready :=
+                hReady.of_lookup_growth hLookup hActiveMono'
+                  hMemoryMono' hExpectedNoWrap
+              growth := ⟨hActiveMono', hMemoryMono'⟩
+              prefixStable := ?_ }
+          intro protectedDepth _hDepth hBudget
+          refine
+            { growth := ⟨hActiveMono', hMemoryMono'⟩
+              lookup := ?_ }
+          intro query hStart hEnd hReadMemory hReadActive
+          have hQueryLt : query < EvmYul.UInt256.size := by
+            exact lt_of_le_of_lt
+              (Nat.le_add_right query MemoryContract.wordBytes)
+              (hReadActive.trans_lt hReady.activeNoWrap)
+          have hQueryToNat :
+              (EvmYul.UInt256.ofNat query).toNat = query :=
+            EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+          have hQueryDisjoint :=
+            protectedWord_disjoint_of_regionAllowed
+              (depth := protectedDepth)
+              hConfig hBudget hAllowed hStart hEnd
+          have hStable :=
+            Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+              targetArgs.source.evm.toMachineState address.toNat
+              query value hAddressToNat hQueryToNat
+              (by simpa [MemoryContract.wordBytes] using hHost)
+              (by simpa [MemoryContract.wordBytes] using hReadMemory)
+              (by simpa [MemoryContract.wordBytes] using hReadActive)
+              (by simpa [MemoryContract.wordBytes] using
+                hReady.activeNoWrap)
+              (by simpa [MemoryContract.wordBytes] using hQueryDisjoint)
+          rw [hConcreteMachine, ← hAddressWord]
+          exact hStable
 
 def mstore8_stackSpec
     (contract : MemoryContract.Contract) :
@@ -3559,10 +3637,36 @@ theorem mstore8_allocatorPrimitiveForward
           have hFinalEq : targetFinal = expected :=
             Except.ok.inj (hRun.symm.trans hExpectedRun)
           rw [hFinalEq]
+          refine
+            { ready :=
+                hReady.of_lookup_growth hLookup hActiveMono'
+                  hMemoryMono' hExpectedNoWrap
+              growth := ⟨hActiveMono', hMemoryMono'⟩
+              prefixStable := ?_ }
+          intro protectedDepth _hDepth hBudget
+          refine
+            { growth := ⟨hActiveMono', hMemoryMono'⟩
+              lookup := ?_ }
+          intro query hStart hEnd hReadMemory hReadActive
+          have hQueryLt : query < EvmYul.UInt256.size := by
+            exact lt_of_le_of_lt
+              (Nat.le_add_right query MemoryContract.wordBytes)
+              (hReadActive.trans_lt hReady.activeNoWrap)
+          have hQueryToNat :
+              (EvmYul.UInt256.ofNat query).toNat = query :=
+            EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+          have hQueryDisjoint :=
+            protectedWord_disjoint_of_regionAllowed
+              (depth := protectedDepth)
+              hConfig hBudget hAllowed hStart hEnd
           exact
-            ⟨hReady.of_lookup_growth hLookup hActiveMono'
-                hMemoryMono' hExpectedNoWrap,
-              ⟨hActiveMono', hMemoryMono'⟩⟩
+            Compiler.MemoryRelation.lookupMemory_eq_of_writeBytes_disjoint_growing
+              bytes targetArgs.source.evm.toMachineState
+              expected.source.evm.toMachineState address.toNat 1
+              query hBytes (by decide) hHost hWrittenMemory
+              hQueryToNat hReadMemory hReadActive
+              hReady.activeNoWrap hActiveMono' hExpectedNoWrap
+              hQueryDisjoint
 
 /--
 One decoded canonical byte-copy invocation.
@@ -3950,10 +4054,35 @@ theorem CopySpec.allocatorPrimitiveForward
       have hFinalEq : targetFinal = expected :=
         Except.ok.inj (hRun.symm.trans hExpectedRun)
       rw [hFinalEq]
+      refine
+        { ready :=
+            hReady.of_lookup_growth hLookup hActiveMono'
+              hMemoryMono' hExpectedNoWrap
+          growth := ⟨hActiveMono', hMemoryMono'⟩
+          prefixStable := ?_ }
+      intro protectedDepth _hDepth hBudget
+      refine
+        { growth := ⟨hActiveMono', hMemoryMono'⟩
+          lookup := ?_ }
+      intro query hStart hEnd hReadMemory hReadActive
+      have hQueryLt : query < EvmYul.UInt256.size := by
+        exact lt_of_le_of_lt
+          (Nat.le_add_right query MemoryContract.wordBytes)
+          (hReadActive.trans_lt hReady.activeNoWrap)
+      have hQueryToNat :
+          (EvmYul.UInt256.ofNat query).toNat = query :=
+        EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+      have hQueryDisjoint :=
+        protectedWord_disjoint_of_regionAllowed
+          (depth := protectedDepth)
+          hConfig hBudget hAllowed hStart hEnd
       exact
-        ⟨hReady.of_lookup_growth hLookup hActiveMono'
-            hMemoryMono' hExpectedNoWrap,
-          ⟨hActiveMono', hMemoryMono'⟩⟩
+        Compiler.MemoryRelation.lookupMemory_eq_of_write_disjoint_growing
+          copied targetArgs.source.evm.toMachineState
+          expected.source.evm.toMachineState sourceOffset.toNat
+          destination.toNat size.toNat query hHost hWrittenMemory
+          hQueryToNat hReadMemory hReadActive hReady.activeNoWrap
+          hActiveMono' hExpectedNoWrap hQueryDisjoint
 
 def CopySpec.stackSpec
     {contract : MemoryContract.Contract} {op : Structured.BasicOp}
