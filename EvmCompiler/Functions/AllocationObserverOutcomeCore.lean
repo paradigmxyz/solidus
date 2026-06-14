@@ -153,6 +153,100 @@ def outcomeLive
   | .leave => returns
   | .halt _ => regularLive
 
+/--
+Two source contexts agree on the control destinations visible to abrupt
+statement outcomes.
+-/
+structure SameControl
+    (before after : Functions.Source.Ctx) : Prop where
+  breakScope : before.breakScope? = after.breakScope?
+  continueScope : before.continueScope? = after.continueScope?
+  leaveScope : before.leaveScope? = after.leaveScope?
+
+namespace SameControl
+
+theorem refl (ctx : Functions.Source.Ctx) : SameControl ctx ctx :=
+  ⟨rfl, rfl, rfl⟩
+
+theorem trans
+    {first second third : Functions.Source.Ctx}
+    (hFirst : SameControl first second)
+    (hSecond : SameControl second third) :
+    SameControl first third :=
+  ⟨hFirst.breakScope.trans hSecond.breakScope,
+    hFirst.continueScope.trans hSecond.continueScope,
+    hFirst.leaveScope.trans hSecond.leaveScope⟩
+
+end SameControl
+
+/--
+A source context that may execute `leave` has a concrete target return frame.
+
+This is control-stack availability, not part of the allocation state relation:
+ordinary target execution preserves it extensionally through equality of the
+Structured return stack.
+-/
+def ReturnFrameAvailable
+    {transcript : Trace}
+    (ctx : Functions.Source.Ctx)
+    (target : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∀ functionScope,
+    ctx.leaveScope? = some functionScope →
+      target.source.returns ≠ []
+
+namespace ReturnFrameAvailable
+
+theorem transport_target
+    {transcript : Trace}
+    {ctx : Functions.Source.Ctx}
+    {before after : Structured.ObserverSemantics.State transcript}
+    (hAvailable : ReturnFrameAvailable ctx before)
+    (hReturns : after.source.returns = before.source.returns) :
+    ReturnFrameAvailable ctx after := by
+  intro functionScope hLeave
+  rw [hReturns]
+  exact hAvailable functionScope hLeave
+
+theorem withoutLoopControl
+    {transcript : Trace}
+    {ctx : Functions.Source.Ctx}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hAvailable : ReturnFrameAvailable ctx target) :
+    ReturnFrameAvailable ctx.withoutLoopControl target := by
+  intro functionScope hLeave
+  exact
+    hAvailable functionScope
+      (by
+        simpa [Functions.Source.Ctx.withoutLoopControl] using hLeave)
+
+theorem withLoopControl
+    {transcript : Trace}
+    {ctx : Functions.Source.Ctx}
+    {breakScope continueScope : List Functions.Name}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hAvailable : ReturnFrameAvailable ctx target) :
+    ReturnFrameAvailable
+      (ctx.withLoopControl breakScope continueScope) target := by
+  intro functionScope hLeave
+  exact
+    hAvailable functionScope
+      (by
+        simpa [Functions.Source.Ctx.withLoopControl] using hLeave)
+
+theorem of_sameControl
+    {transcript : Trace}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hAvailable : ReturnFrameAvailable beforeCtx target)
+    (hControl : SameControl beforeCtx afterCtx) :
+    ReturnFrameAvailable afterCtx target := by
+  intro functionScope hLeave
+  exact
+    hAvailable functionScope
+      (hControl.leaveScope.trans hLeave)
+
+end ReturnFrameAvailable
+
 end AllocationObserverOutcome
 end Functions
 end EvmCompiler

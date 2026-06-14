@@ -716,9 +716,7 @@ structure Boundary
     AllocationObserverOutcome.ControlDestinations
       artifact.lowerCtx lowerState localsCtx cursor.plan live mode sourceCtx
   returnFrame :
-    ∀ functionScope,
-      sourceCtx.leaveScope? = some functionScope →
-        target.source.returns ≠ []
+    AllocationObserverOutcome.ReturnFrameAvailable sourceCtx target
   leaveTarget :
     ∀ functionScope,
       sourceCtx.leaveScope? = some functionScope →
@@ -816,6 +814,253 @@ def forInit
         simpa [Locals.Ctx.withoutLoopControl] using hDepth,
         by
           simpa [Locals.Ctx.withoutLoopControl] using hRetc⟩
+
+/--
+Enter a loop post block after a regular body result.
+
+Scoped post lowering starts from the loop-entry state with loop control
+disabled. The recursive boundary is reconstructed from source control
+equivalence, the real initializer compilation context, and the adjacent-pass
+runtime invariant.
+-/
+def forPost
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {outerScope postScope : Locals.Allocation.ScopeId}
+    {outerLive loopLive : List Functions.Name}
+    {outerBlock post : Functions.Block}
+    {initLowered : Locals.Block}
+    {initCode : List Expressions.Stmt}
+    {outerState loopState : AllocationLowering.State}
+    {outerLocals initLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {outerCtx loopCtx : Functions.Source.Ctx}
+    {outerSource postSource :
+      Functions.ObserverSemantics.State transcript}
+    {outerTarget postTarget :
+      Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.Cursor prepared outerScope outerLive
+        outerBlock outerState outerLocals)
+    (postCursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared postScope loopLive
+        post loopState initLocals.withoutLoopControl)
+    (hBoundary :
+      Boundary outer (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := outerCtx) (source := outerSource)
+        (target := outerTarget))
+    (hInitCompile :
+      Locals.Block.compileOpen outerLocals.withoutLoopControl
+          initLowered =
+        some (initCode, initLocals))
+    (hLoopScope :
+      ∀ name, name ∈ loopCtx.scope ↔ name ∈ loopLive)
+    (hOuterSubset :
+      ∀ name, name ∈ outerLive → name ∈ loopLive)
+    (hInitControl :
+      AllocationObserverOutcome.SameControl
+        outerCtx.withoutLoopControl loopCtx)
+    (hReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        loopCtx.withoutLoopControl postTarget)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        loopState initLocals.withoutLoopControl postCursor.plan loopLive
+        frameBase mode postSource postTarget) :
+    Boundary postCursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := loopCtx.withoutLoopControl)
+      (source := postSource) (target := postTarget) := by
+  have hLoopControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        fn.returns loopLive loopCtx :=
+    hInitControl.controlScopesWithin
+      ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
+  have hLocalsControl :=
+    Locals.Block.compileOpen_sameControl hInitCompile
+  refine
+    { sourceScope := by
+        intro name
+        simpa [Functions.Source.Ctx.withoutLoopControl] using
+          hLoopScope name
+      control := hLoopControl.withoutLoopControl
+      destinations :=
+        AllocationObserverOutcome.ControlDestinations.withoutLoopControl
+      returnFrame := hReturnFrame
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  intro functionScope hLeave
+  have hOuterLeave :
+      outerCtx.leaveScope? = some functionScope := by
+    calc
+      outerCtx.leaveScope? =
+          outerCtx.withoutLoopControl.leaveScope? := rfl
+      _ = loopCtx.leaveScope? := hInitControl.leaveScope
+      _ = loopCtx.withoutLoopControl.leaveScope? := rfl
+      _ = some functionScope := hLeave
+  obtain ⟨hDepth, hRetc⟩ :=
+    hBoundary.leaveTarget functionScope hOuterLeave
+  constructor
+  · calc
+      initLocals.withoutLoopControl.leaveDepth? =
+          initLocals.leaveDepth? := rfl
+      _ = outerLocals.withoutLoopControl.leaveDepth? :=
+        hLocalsControl.leaveDepth.symm
+      _ = outerLocals.leaveDepth? := rfl
+      _ = some 0 := hDepth
+  · calc
+      initLocals.withoutLoopControl.leaveRetc =
+          initLocals.leaveRetc := rfl
+      _ = outerLocals.withoutLoopControl.leaveRetc :=
+        hLocalsControl.leaveRetc.symm
+      _ = outerLocals.leaveRetc := rfl
+      _ = fn.returns.length := hRetc
+
+/--
+Enter a loop body at the state reached after scoped post lowering.
+
+The destination cleanup still targets the loop-entry activation. The
+source-side break and continue scopes are related extensionally to the compiler
+live set, matching the shared source semantics.
+-/
+def forBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {outerScope bodyScope : Locals.Allocation.ScopeId}
+    {outerLive loopLive : List Functions.Name}
+    {outerBlock body : Functions.Block}
+    {initLowered : Locals.Block}
+    {initCode : List Expressions.Stmt}
+    {outerState loopState bodyState : AllocationLowering.State}
+    {outerLocals initLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {outerCtx loopCtx : Functions.Source.Ctx}
+    {outerSource bodySource :
+      Functions.ObserverSemantics.State transcript}
+    {outerTarget bodyTarget :
+      Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.Cursor prepared outerScope outerLive
+        outerBlock outerState outerLocals)
+    (bodyCursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared bodyScope loopLive
+        body bodyState
+        (initLocals.withLoopControl initLocals.layout.length))
+    (hBoundary :
+      Boundary outer (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := mode)
+        (sourceCtx := outerCtx) (source := outerSource)
+        (target := outerTarget))
+    (hInitCompile :
+      Locals.Block.compileOpen outerLocals.withoutLoopControl
+          initLowered =
+        some (initCode, initLocals))
+    (hLoopScope :
+      ∀ name, name ∈ loopCtx.scope ↔ name ∈ loopLive)
+    (hOuterSubset :
+      ∀ name, name ∈ outerLive → name ∈ loopLive)
+    (hInitControl :
+      AllocationObserverOutcome.SameControl
+        outerCtx.withoutLoopControl loopCtx)
+    (hLoopCompiler :
+      AllocationObserverContext.ActivationExprContext
+        artifact.lowerCtx loopState initLocals loopPlan loopLive mode)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState bodyState)
+    (hReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        (loopCtx.withLoopControl loopCtx.scope loopCtx.scope) bodyTarget)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        bodyState
+        (initLocals.withLoopControl initLocals.layout.length)
+        bodyCursor.plan loopLive frameBase mode bodySource bodyTarget) :
+    Boundary bodyCursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode)
+      (sourceCtx :=
+        loopCtx.withLoopControl loopCtx.scope loopCtx.scope)
+      (source := bodySource) (target := bodyTarget) := by
+  have hLoopControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        fn.returns loopLive loopCtx :=
+    hInitControl.controlScopesWithin
+      ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
+  have hLocalsControl :=
+    Locals.Block.compileOpen_sameControl hInitCompile
+  have hBaseDestinations :=
+    AllocationObserverOutcome.ControlDestinations.loopBody
+      hLoopCompiler hState hLoopScope
+  refine
+    { sourceScope := by
+        intro name
+        simpa [Functions.Source.Ctx.withLoopControl] using
+          hLoopScope name
+      control := hLoopControl.withLoopControl hLoopScope
+      destinations :=
+        hBaseDestinations.transport
+          (AllocationObserverOutcome.SameControl.refl _)
+          (Locals.Ctx.SameControl.refl _)
+          (AllocationLowering.StateExtends.of_shape rfl rfl)
+          (fun _ hName => hName) (SameFrame.refl mode)
+      returnFrame := hReturnFrame
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  intro functionScope hLeave
+  have hOuterLeave :
+      outerCtx.leaveScope? = some functionScope := by
+    calc
+      outerCtx.leaveScope? =
+          outerCtx.withoutLoopControl.leaveScope? := rfl
+      _ = loopCtx.leaveScope? := hInitControl.leaveScope
+      _ = (loopCtx.withLoopControl
+            loopCtx.scope loopCtx.scope).leaveScope? := rfl
+      _ = some functionScope := hLeave
+  obtain ⟨hDepth, hRetc⟩ :=
+    hBoundary.leaveTarget functionScope hOuterLeave
+  constructor
+  · calc
+      (initLocals.withLoopControl
+          initLocals.layout.length).leaveDepth? =
+          initLocals.leaveDepth? := rfl
+      _ = outerLocals.withoutLoopControl.leaveDepth? :=
+        hLocalsControl.leaveDepth.symm
+      _ = outerLocals.leaveDepth? := rfl
+      _ = some 0 := hDepth
+  · calc
+      (initLocals.withLoopControl
+          initLocals.layout.length).leaveRetc =
+          initLocals.leaveRetc := rfl
+      _ = outerLocals.withoutLoopControl.leaveRetc :=
+        hLocalsControl.leaveRetc.symm
+      _ = outerLocals.leaveRetc := rfl
+      _ = fn.returns.length := hRetc
 
 /--
 Rebase a recursive dispatcher boundary onto another pass-owned cursor in the

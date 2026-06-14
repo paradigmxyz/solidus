@@ -642,10 +642,11 @@ The remaining observer-proof critical path is explicit:
 7. [ ] Compose `ClosedResourceCorrect` and run the final gates.
 
 The recursive Functions boundary now has checked preservation for leaves,
-lexical blocks, both `if` paths, both switch-selection paths, and every `for`
-  outcome. Condition evaluation consumes its single target result through a
-  reusable activation relation theorem; recursive loop preservation descends on
-  canonical source fuel and abrupt outcomes skip compiler cleanup through the
+lexical blocks, both `if` paths, both switch-selection paths, and pass-owned
+statement theorems for every `for` outcome. Condition evaluation consumes its
+single target result through a reusable activation relation theorem; recursive
+loop preservation descends on canonical source fuel and abrupt outcomes skip
+compiler cleanup through the
   shared outcome relation. Calls now have canonical effect-semantic
   returned/halted decomposition and a checked allocation-lowering decomposition
   for the argument/frame/call/store/release sequence. Source-facing argument
@@ -724,10 +725,13 @@ lexical blocks, both `if` paths, both switch-selection paths, and every `for`
   expressions, assignment, declaration, both `if` paths, every selected
   `switch` path, lexical blocks, `break`, `continue`, and `leave`.
   Machine-neutral cleanup supplies the allocator effect for abrupt loop
-  control without a second semantics. The immediate remaining work is the
-  mutual source-fuel statement/block dispatcher: define and construct its
-  static control-destination invariant, add the terminal leaf, integrate the
-  existing loop theorem, and make the call case invert the canonical source
+  control without a second semantics. Shared return-frame availability is now
+  threaded through loop iteration, and source loop destinations use
+  extensional scope equivalence rather than representation-specific list
+  equality. Initializer, post, and body recursive boundaries are checked. The
+  immediate remaining work is to package the loop theorem as one exact
+  dispatcher head, complete the mutual source-fuel statement/block recursion,
+  and make the call case invert the canonical source
   call, derive the checked body-start facts, invoke the selected callee theorem
   recursively, and discharge `Call.regular_of_selected`'s one-activation
   callback. Matching whole-function and whole-program backward adequacy follows

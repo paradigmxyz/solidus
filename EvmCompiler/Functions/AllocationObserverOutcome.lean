@@ -1043,22 +1043,23 @@ return liveness and the enclosing leave scope are preserved.
 theorem withLoopControl
     {returns live : List Functions.Name}
     {ctx : Functions.Source.Ctx}
-    (hControl : ControlScopesWithin returns live ctx) :
+    (hControl : ControlScopesWithin returns live ctx)
+    (hSourceScope : ∀ name, name ∈ ctx.scope ↔ name ∈ live) :
     ControlScopesWithin returns live
-      (ctx.withLoopControl live live) := by
+      (ctx.withLoopControl ctx.scope ctx.scope) := by
   refine
     { breakScope := ?_
       continueScope := ?_
       returnsLive := hControl.returnsLive
       leaveScope := ?_ }
   · intro scope hScope name hName
-    have hEq : scope = live := by
+    have hEq : scope = ctx.scope := by
       simpa [Functions.Source.Ctx.withLoopControl] using hScope.symm
-    simpa [hEq] using hName
+    exact (hSourceScope name).mp (by simpa [hEq] using hName)
   · intro scope hScope name hName
-    have hEq : scope = live := by
+    have hEq : scope = ctx.scope := by
       simpa [Functions.Source.Ctx.withLoopControl] using hScope.symm
-    simpa [hEq] using hName
+    exact (hSourceScope name).mp (by simpa [hEq] using hName)
   · intro scope hScope name hName
     exact
       hControl.leaveScope scope
@@ -1068,25 +1069,7 @@ theorem withLoopControl
 
 end ControlScopesWithin
 
-structure SameControl
-    (before after : Functions.Source.Ctx) : Prop where
-  breakScope : before.breakScope? = after.breakScope?
-  continueScope : before.continueScope? = after.continueScope?
-  leaveScope : before.leaveScope? = after.leaveScope?
-
 namespace SameControl
-
-theorem refl (ctx : Functions.Source.Ctx) : SameControl ctx ctx :=
-  ⟨rfl, rfl, rfl⟩
-
-theorem trans
-    {first second third : Functions.Source.Ctx}
-    (hFirst : SameControl first second)
-    (hSecond : SameControl second third) :
-    SameControl first third :=
-  ⟨hFirst.breakScope.trans hSecond.breakScope,
-    hFirst.continueScope.trans hSecond.continueScope,
-    hFirst.leaveScope.trans hSecond.leaveScope⟩
 
 theorem outcomeLive_eq_of_nonregular
     {returns regularLive : List Functions.Name}
@@ -1277,8 +1260,11 @@ inductive ControlBinding
       (destination :
         ControlDestination lowerCtx currentState currentPlan currentLive
           currentMode)
+      (sourceLive : List Functions.Name)
       (source :
-        kind.sourceScope? sourceCtx = some destination.live)
+        kind.sourceScope? sourceCtx = some sourceLive)
+      (sourceEquivalent :
+        ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
       (target :
         kind.targetDepth? currentLocals =
           some destination.locals.layout.length) :
@@ -1315,15 +1301,17 @@ theorem transition_of_source
   | unavailable hNone _hTarget =>
       rw [hNone] at hSource
       contradiction
-  | available hDestination hDestinationSource hTarget =>
-      have hLive : afterLive = hDestination.live :=
+  | available hDestination sourceLive hDestinationSource hEquivalent hTarget =>
+      have hLive : afterLive = sourceLive :=
         Option.some.inj (hSource.symm.trans hDestinationSource)
       subst afterLive
       obtain ⟨hTransition, _hTrue⟩ :=
         hDestination.exists_transition hCurrent
       exact
         ⟨hDestination.locals.layout.length, hDestination.mode,
-          hTarget, hTransition, trivial⟩
+          hTarget,
+          hTransition.reindex_after (fun name => (hEquivalent name).symm),
+          trivial⟩
 
 theorem transport
     {kind : ControlKind}
@@ -1361,26 +1349,28 @@ theorem transport
                 change nextLocals.breakDepth? = none
                 rw [← hLocalsControl.breakDepth]
                 exact hTarget)
-      | available hDestination hSource hTarget =>
-          have hNextSource :
-              nextSourceCtx.breakScope? =
-                some hDestination.live := by
-            rw [← hSourceControl.breakScope]
-            exact hSource
-          have hNextTarget :
-              nextLocals.breakDepth? =
-                some hDestination.locals.layout.length := by
-            rw [← hLocalsControl.breakDepth]
-            exact hTarget
-          exact
-            .available
-              (hDestination.transport hState hLive hMode)
-              (by
-                simpa [ControlKind.sourceScope?,
-                  ControlDestination.transport] using hNextSource)
-              (by
-                simpa [ControlKind.targetDepth?,
-                  ControlDestination.transport] using hNextTarget)
+      | available hDestination sourceLive hSource hEquivalent hTarget =>
+        have hNextSource :
+            nextSourceCtx.breakScope? =
+                some sourceLive := by
+          rw [← hSourceControl.breakScope]
+          exact hSource
+        have hNextTarget :
+            nextLocals.breakDepth? =
+              some hDestination.locals.layout.length := by
+          rw [← hLocalsControl.breakDepth]
+          exact hTarget
+        exact
+          .available
+            (hDestination.transport hState hLive hMode)
+            sourceLive
+            (by
+              simpa [ControlKind.sourceScope?,
+                ControlDestination.transport] using hNextSource)
+            hEquivalent
+            (by
+              simpa [ControlKind.targetDepth?,
+                ControlDestination.transport] using hNextTarget)
   | cont =>
       cases hBinding with
       | unavailable hSource hTarget =>
@@ -1394,26 +1384,28 @@ theorem transport
                 change nextLocals.continueDepth? = none
                 rw [← hLocalsControl.continueDepth]
                 exact hTarget)
-      | available hDestination hSource hTarget =>
-          have hNextSource :
-              nextSourceCtx.continueScope? =
-                some hDestination.live := by
-            rw [← hSourceControl.continueScope]
-            exact hSource
-          have hNextTarget :
-              nextLocals.continueDepth? =
-                some hDestination.locals.layout.length := by
-            rw [← hLocalsControl.continueDepth]
-            exact hTarget
-          exact
-            .available
-              (hDestination.transport hState hLive hMode)
-              (by
-                simpa [ControlKind.sourceScope?,
-                  ControlDestination.transport] using hNextSource)
-              (by
-                simpa [ControlKind.targetDepth?,
-                  ControlDestination.transport] using hNextTarget)
+      | available hDestination sourceLive hSource hEquivalent hTarget =>
+        have hNextSource :
+            nextSourceCtx.continueScope? =
+                some sourceLive := by
+          rw [← hSourceControl.continueScope]
+          exact hSource
+        have hNextTarget :
+            nextLocals.continueDepth? =
+              some hDestination.locals.layout.length := by
+          rw [← hLocalsControl.continueDepth]
+          exact hTarget
+        exact
+          .available
+            (hDestination.transport hState hLive hMode)
+            sourceLive
+            (by
+              simpa [ControlKind.sourceScope?,
+                ControlDestination.transport] using hNextSource)
+            hEquivalent
+            (by
+              simpa [ControlKind.targetDepth?,
+                ControlDestination.transport] using hNextTarget)
 
 end ControlBinding
 
@@ -1470,11 +1462,13 @@ def loopBody
       AllocationObserverContext.ActivationExprContext
         lowerCtx loopState loopLocals loopPlan loopLive loopMode)
     (hState :
-      AllocationLowering.StateExtends loopLive loopState currentState) :
+      AllocationLowering.StateExtends loopLive loopState currentState)
+    (hScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ loopLive) :
     ControlDestinations lowerCtx currentState
       (loopLocals.withLoopControl loopLocals.layout.length)
       loopPlan loopLive loopMode
-      (sourceCtx.withLoopControl loopLive loopLive) := by
+      (sourceCtx.withLoopControl sourceCtx.scope sourceCtx.scope) := by
   let destination :
       ControlDestination lowerCtx currentState loopPlan loopLive loopMode :=
     { state := loopState
@@ -1487,8 +1481,8 @@ def loopBody
       sameFrame := SameFrame.refl loopMode
       stateExtends := hState }
   exact
-    { brk := .available destination rfl rfl
-      cont := .available destination rfl rfl }
+    { brk := .available destination sourceCtx.scope rfl hScope rfl
+      cont := .available destination sourceCtx.scope rfl hScope rfl }
 
 theorem transport
     {lowerCtx : AllocationLowering.Ctx}

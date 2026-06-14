@@ -318,7 +318,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_for_cases
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withoutLoopControl
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.withLoopControl
+#check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.transport_target
+#check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.withoutLoopControl
+#check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.withLoopControl
+#check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.of_sameControl
+#check EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_congr
+#check EvmCompiler.Functions.AllocationObserverCleanup.Transition.reindex_after
+#check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_parts
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_of_parts

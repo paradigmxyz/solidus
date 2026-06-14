@@ -34,6 +34,21 @@ def currentStackOrder (plan : Plan) (live : List Locals.Name) :
     List Locals.Name :=
   plan.stackOrder.filter fun name => decide (name ∈ live)
 
+theorem currentStackOrder_congr
+    {plan : Plan} {left right : List Locals.Name}
+    (hLive : ∀ name, name ∈ left ↔ name ∈ right) :
+    currentStackOrder plan left = currentStackOrder plan right := by
+  unfold currentStackOrder
+  apply congrArg (fun predicate => plan.stackOrder.filter predicate)
+  funext name
+  by_cases hLeft : name ∈ left
+  · have hRight : name ∈ right := (hLive name).mp hLeft
+    simp [hLeft, hRight]
+  · have hRight : name ∉ right := by
+      intro hName
+      exact hLeft ((hLive name).mpr hName)
+    simp [hLeft, hRight]
+
 theorem currentStackOrder_restrict
     {plan : Plan} {beforeLive afterLive : List Locals.Name}
     (hSubset : ∀ name, name ∈ afterLive → name ∈ beforeLive) :

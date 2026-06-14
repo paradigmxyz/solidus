@@ -53,6 +53,38 @@ structure Transition
 namespace Transition
 
 /--
+Source lexical scopes are set-like. Reindex a cleanup transition across an
+extensionally equal destination scope without changing its generated cleanup
+depth or activation-mode transition.
+-/
+def reindex_after
+    {plan : Locals.Allocation.Plan}
+    {beforeLive afterLive nextLive : List Locals.Name}
+    {targetDepth : Nat}
+    {beforeMode afterMode : ActivationMode}
+    (hTransition :
+      Transition plan beforeLive afterLive targetDepth
+        beforeMode afterMode)
+    (hLive : ∀ name, name ∈ afterLive ↔ name ∈ nextLive) :
+    Transition plan beforeLive nextLive targetDepth
+      beforeMode afterMode := by
+  have hOrder :
+      currentStackOrder plan afterLive =
+        currentStackOrder plan nextLive :=
+    AllocationObserverRelation.currentStackOrder_congr hLive
+  exact
+    { dropped := hTransition.dropped
+      subset := by
+        intro name hName
+        exact hTransition.subset name ((hLive name).mpr hName)
+      stackOrder :=
+        hTransition.stackOrder.trans
+          (congrArg (fun order => hTransition.dropped ++ order) hOrder)
+      mode := by
+        rw [← hOrder]
+        exact hTransition.mode }
+
+/--
 Plain cleanup may move the hidden scratch-frame pointer, but it never changes
 the activation's runtime representation or fixed scratch-frame width.
 -/
