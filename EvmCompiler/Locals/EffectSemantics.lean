@@ -42,6 +42,14 @@ def restrictTo {σ : Type} (model : StateModel σ) (scope : List Name)
     (state : σ) : σ :=
   model.withSource state ((model.source state).restrictTo scope)
 
+theorem restrictTo_congr
+    {σ : Type} (model : StateModel σ)
+    {left right : List Name} {state : σ}
+    (hScope : ∀ name, name ∈ left ↔ name ∈ right) :
+    model.restrictTo left state = model.restrictTo right state := by
+  unfold restrictTo
+  rw [Source.State.restrictTo_congr hScope]
+
 def insert {σ : Type} (model : StateModel σ) (state : σ) (name : Name)
     (value : Word) : σ :=
   model.withSource state ((model.source state).insert name value)

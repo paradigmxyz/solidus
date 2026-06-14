@@ -66,6 +66,19 @@ theorem restrictTo_not_mem {scope : List Name} {store : Store} {name : Name}
     restrictTo scope store name = none := by
   simp [restrictTo, hMem]
 
+theorem restrictTo_congr
+    {left right : List Name} {store : Store}
+    (hScope : ∀ name, name ∈ left ↔ name ∈ right) :
+    restrictTo left store = restrictTo right store := by
+  funext name
+  by_cases hLeft : name ∈ left
+  · have hRight : name ∈ right := (hScope name).mp hLeft
+    simp [restrictTo, hLeft, hRight]
+  · have hRight : name ∉ right := by
+      intro hMem
+      exact hLeft ((hScope name).mpr hMem)
+    simp [restrictTo, hLeft, hRight]
+
 end Store
 
 structure State where
@@ -83,6 +96,13 @@ def withVars (state : State) (vars : Store) : State :=
 
 def restrictTo (scope : List Name) (state : State) : State :=
   { state with vars := Store.restrictTo scope state.vars }
+
+theorem restrictTo_congr
+    {left right : List Name} {state : State}
+    (hScope : ∀ name, name ∈ left ↔ name ∈ right) :
+    state.restrictTo left = state.restrictTo right := by
+  cases state
+  simp [State.restrictTo, Store.restrictTo_congr hScope]
 
 def insert (state : State) (name : Name) (value : Word) : State :=
   { state with vars := Store.insert state.vars name value }

@@ -94,6 +94,27 @@ theorem symm
   | scratch slot =>
       exact .scratch slot
 
+theorem mono
+    {left right : Plan}
+    {larger smaller : List Locals.Name}
+    (hAgree : PlanAgreesOn left right larger)
+    (hSubset : ∀ name, name ∈ smaller → name ∈ larger) :
+    PlanAgreesOn left right smaller := by
+  refine ⟨?_, ?_⟩
+  · calc
+      currentStackOrder left smaller =
+          (currentStackOrder left larger).filter
+            (fun name => decide (name ∈ smaller)) :=
+        (currentStackOrder_restrict hSubset).symm
+      _ =
+          (currentStackOrder right larger).filter
+            (fun name => decide (name ∈ smaller)) := by
+        rw [hAgree.stackOrder]
+      _ = currentStackOrder right smaller :=
+        currentStackOrder_restrict hSubset
+  · intro name hLive
+    exact hAgree.location name (hSubset name hLive)
+
 end PlanAgreesOn
 
 /--

@@ -241,6 +241,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.LocationAgrees
 #check EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn
 #check EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.symm
+#check EvmCompiler.Functions.AllocationObserverRelation.PlanAgreesOn.mono
 #check EvmCompiler.Functions.AllocationObserverRelation.SameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.SameFrame.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.SameFrame.symm
@@ -388,7 +389,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
 #check EvmCompiler.Functions.AllocationObserverTerminal.Invocation.forward_observer
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+#check EvmCompiler.Functions.Source.Effectful.Block.runScoped_regular_of_runOpen_scope
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+#check EvmCompiler.Locals.Source.Store.restrictTo_congr
+#check EvmCompiler.Locals.Source.State.restrictTo_congr
+#check EvmCompiler.Locals.Source.Effectful.StateModel.restrictTo_congr
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_exists
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_nonregular
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_exists
@@ -514,7 +519,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.declarationPlacement
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_scratch_of_lookup
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.planAgreesOn
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scratch_bound_of_location
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.nilRuntimeResult
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes
 #check EvmCompiler.Functions.AllocationSupport.planBlockScoped_entry_mem
@@ -532,6 +540,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Call.regular_of_safe_source
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward
 #check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.leave_of_invariant
+#check EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.block_of_runtime
+#check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin
+#check EvmCompiler.Functions.AllocationObserverOutcome.ControlScopesWithin.functionBody
+#check EvmCompiler.Functions.AllocationObserverOutcome.SameControl.controlScopesWithin
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_regular
 #check EvmCompiler.Functions.AllocationObserverOutcome.BlockRuntimeForward.cons_nonregular

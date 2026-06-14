@@ -3953,6 +3953,52 @@ def RegularStmtRuntimeInvariantForward
 
 namespace RegularStmtRuntimeInvariantForward
 
+/--
+Transport a regular runtime statement result across a lowering-state change
+that preserves the live allocation environment and concrete layout.
+
+Scoped lowering uses this after it restores the outer lexical environment
+while retaining a later fresh-slot cursor.
+-/
+theorem transport_lower_state
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {before after : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetFinal : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    (hForward :
+      RegularStmtRuntimeInvariantForward
+        contract config allocatorDepth transcript lowerCtx before
+        localsFinal plan afterLive frameBase beforeMode afterMode
+        sourceProgram sourceCtx stmt source targetProgram target compiled
+        sourceFinal targetFinal finalCtx)
+    (hEnv : after.allocation.env = before.allocation.env)
+    (hLayout : after.layout = before.layout) :
+    RegularStmtRuntimeInvariantForward
+      contract config allocatorDepth transcript lowerCtx after localsFinal
+      plan afterLive frameBase beforeMode afterMode sourceProgram sourceCtx
+      stmt source targetProgram target compiled sourceFinal targetFinal
+      finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant,
+      hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      hInvariant.transport_state hEnv hLayout, hSame, hEffect⟩
+
 theorem expr_of_compilers
     {contract : MemoryContract.Contract}
     {globalFrameWords : Nat}
@@ -5777,7 +5823,8 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
         sourceProgram sourceCtx sourceBlock source targetProgram
         { stmts := Expressions.StmtList.toStructured compiledBody }
         target sourceFinal targetMid finalCtx)
-    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ afterLive)
     (hTargetDepth : targetDepth = outerLocals.layout.length)
     (hAfterCompiler :
       AllocationObserverContext.ActivationExprContext
@@ -5859,11 +5906,10 @@ theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
     Structured.EffectSemantics.Block.Eval.append_regular_exists
       hTargetBody hCleanupBlock
   have hSourceScoped :=
-    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen_scope
       (Functions.ObserverSemantics.stateModel transcript)
       (Functions.ObserverSemantics.primitiveSemantics transcript)
-      sourceProgram hSourceOpen
-  rw [hSourceScope] at hSourceScoped
+      sourceProgram hSourceOpen hSourceScope
   have hDefinedFinal :
       LiveDefined afterLive
         (((Functions.ObserverSemantics.stateModel transcript).restrictTo
@@ -5923,7 +5969,8 @@ theorem block_of_components
         sourceProgram sourceCtx sourceBlock source targetProgram
         { stmts := Expressions.StmtList.toStructured compiledBody }
         target sourceFinal targetMid finalCtx)
-    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ afterLive)
     (hSubset :
       ∀ name, name ∈ afterLive → name ∈ beforeLive)
     (hScoped :
@@ -6081,7 +6128,11 @@ theorem if_true_of_components
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
     RegularScopedBlockRuntimeInvariantForward.finish_regular
-      hBodyForward hSourceScope rfl hCondInvariant.activation.compiler
+      hBodyForward
+      (by
+        intro name
+        simp [hSourceScope])
+      rfl hCondInvariant.activation.compiler
       hCondInvariant.activation.planWF hSubset hBodyScoped hLowerBody
       hFinish
   have hSourceCond :

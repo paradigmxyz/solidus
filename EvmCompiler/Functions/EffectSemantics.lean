@@ -3115,6 +3115,29 @@ theorem runScoped_regular_of_runOpen {σ : Type}
     Locals.Source.Effectful.Outcome.regular]
 
 /--
+A regular open-block result may be exposed through any extensionally equal
+scope list. Source lexical scope is set-like even when compiler live lists use
+a representation-specific order.
+-/
+theorem runScoped_regular_of_runOpen_scope {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {block : Block} {source final : σ}
+    {scope : List Name}
+    (hOpen :
+      Block.runOpen model prim program ctx fuel block source =
+        .ok (Outcome.regular final, finalCtx))
+    (hScope : ∀ name, name ∈ ctx.scope ↔ name ∈ scope) :
+    Block.runScoped model prim program ctx block fuel source =
+      .ok (Outcome.regular (model.restrictTo scope final)) := by
+  have hScoped :=
+    runScoped_regular_of_runOpen model prim program hOpen
+  rw [Locals.Source.Effectful.StateModel.restrictTo_congr
+    model hScope] at hScoped
+  exact hScoped
+
+/--
 Abrupt open-block outcomes pass through scoped execution unchanged.
 -/
 theorem runScoped_nonregular_of_runOpen {σ : Type}

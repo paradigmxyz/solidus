@@ -785,7 +785,10 @@ theorem Cursor.blockCursors
           headCode = targetBlock.stmts ∧
           Locals.finishScoped
               localsCtx bodyCursor.finalLocals bodyCursor.compiled =
-            some targetBlock := by
+            some targetBlock ∧
+          afterState.allocation.env =
+            lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout := by
   obtain
       ⟨afterState, afterLocals, headLower, headCode, tail,
         _hPlanning, _hPlan, hLower, hCompile, _hLowered, hCompiled,
@@ -811,10 +814,12 @@ theorem Cursor.blockCursors
       hLowerBody hBodyCompile hBodyScoped
   rcases hBodyCursor with
     ⟨bodyCursor, hBodyCode, hBodyLocals⟩
+  have hAfterShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
   cases hAfterLocals
   refine
     ⟨afterState, headCode, tail, targetBlock, bodyCursor,
-      hCompiled, hHeadCode, ?_⟩
+      hCompiled, hHeadCode, ?_, hAfterShape⟩
   rw [hBodyCode, hBodyLocals]
   exact hFinish
 
@@ -1503,6 +1508,85 @@ theorem Cursor.location_scratch_of_lookup
     cursor.plan.location? localName = some (.scratch slot) := by
   exact cursor.location_scratch_of_lookup_aux hLookup hScratch
 
+/--
+Two synchronized cursors beginning at the same source environment agree on
+the realization of every currently live binding.
+
+The cursors may own different lexical scope plans and different remaining
+blocks. Stack depths are therefore allowed to differ, while the runtime stack
+order and every scratch slot agree exactly.
+-/
+theorem Cursor.planAgreesOn
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {leftScope rightScope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {leftBlock rightBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {leftLocals rightLocals : Locals.Ctx}
+    (left :
+      Cursor prepared leftScope live leftBlock lowerState leftLocals)
+    (right :
+      Cursor prepared rightScope live rightBlock lowerState rightLocals) :
+    AllocationObserverRelation.PlanAgreesOn
+      left.plan right.plan live := by
+  rcases left.activeEnv with ⟨locals, hLeftEnv, hLive⟩
+  have hLeftPlanning :
+      left.planning.allocation.env =
+        lowerState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      left.planningAllocation
+  have hRightPlanning :
+      right.planning.allocation.env =
+        lowerState.allocation.env :=
+    congrArg AllocationSupport.CompileState.env
+      right.planningAllocation
+  have hRightEnv :
+      right.planning.allocation.env =
+        locals ++ AllocationSupport.functionEnv artifact.slots := by
+    calc
+      right.planning.allocation.env =
+          lowerState.allocation.env := hRightPlanning
+      _ = left.planning.allocation.env := hLeftPlanning.symm
+      _ =
+          locals ++ AllocationSupport.functionEnv artifact.slots :=
+        hLeftEnv
+  refine ⟨?_, ?_⟩
+  · exact
+      (left.currentStackOrder_of_active locals hLeftEnv hLive).trans
+        (right.currentStackOrder_of_active
+          locals hRightEnv hLive).symm
+  · intro localName hLocalLive
+    obtain ⟨slot, hLookup⟩ :=
+      left.lookupSlot_of_live hLocalLive
+    by_cases hStack :
+        AllocationLowering.isStackSlot artifact.lowerCtx slot = true
+    · obtain ⟨leftDepth, hLeftLocation⟩ :=
+        left.location_stack_of_lookup hLookup hStack
+      obtain ⟨rightDepth, hRightLocation⟩ :=
+        right.location_stack_of_lookup hLookup hStack
+      exact
+        ⟨.stack leftDepth, .stack rightDepth,
+          hLeftLocation, hRightLocation,
+          .stack leftDepth rightDepth⟩
+    · have hScratch :
+          AllocationLowering.isStackSlot artifact.lowerCtx slot = false :=
+        Bool.eq_false_of_not_eq_true hStack
+      have hLeftLocation :=
+        left.location_scratch_of_lookup hLookup hScratch
+      have hRightLocation :=
+        right.location_scratch_of_lookup hLookup hScratch
+      exact
+        ⟨.scratch slot, .scratch slot,
+          hLeftLocation, hRightLocation, .scratch slot⟩
+
 theorem Cursor.scratch_bound_of_location
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -1825,9 +1909,60 @@ theorem Cursor.letContext
                       · exact hAfterStackLocation
                       · exact hAfterScratchLocation
 
-/--
-Preserve one expression statement directly from a synchronized body cursor.
--/
+/-- Preserve the empty synchronized body cursor. -/
+theorem Cursor.nilRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := [] } lowerState localsCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target) :
+    AllocationObserverOutcome.BlockRuntimeResult
+      program.memoryContract config allocatorDepth transcript
+      artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+      fn.returns live frameBase mode program sourceCtx
+      { stmts := [] } source expressions.toStructured
+      { stmts :=
+          Expressions.StmtList.toStructured cursor.compiled }
+      target
+      (Functions.Source.Effectful.Outcome.regular source)
+      (Structured.EffectSemantics.Outcome.regular target)
+      sourceCtx := by
+  have hLower := cursor.lower
+  simp [AllocationLowering.lowerBlockOpen,
+    AllocationLowering.lowerStmtList] at hLower
+  obtain ⟨hLowered, hFinalState⟩ := hLower
+  have hCompile := cursor.compile
+  rw [← hLowered] at hCompile
+  simp [Locals.Block.compileOpen] at hCompile
+  obtain ⟨hCompiled, hFinalLocals⟩ := hCompile
+  simpa [hFinalState, hFinalLocals, hCompiled,
+    Expressions.StmtList.toStructured] using
+    (AllocationObserverOutcome.BlockRuntimeResult.nil hInvariant)
+
+/- Preserve one expression statement directly from a synchronized body cursor. -/
 theorem Cursor.exprRuntimeResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -2091,6 +2226,123 @@ theorem Cursor.letRuntimeResult
     ⟨afterState, afterLocals, headCode, tail, targetFinal,
       hCompiled, .regular hForward ?_⟩
   exact ⟨rfl, rfl, rfl⟩
+
+/--
+Preserve one lexical block statement from its synchronized outer cursor and
+one recursive result for the generated scope-owned body cursor.
+
+Regular bodies execute the compiler-emitted lexical cleanup and return to the
+outer plan. Abrupt bodies skip that unreachable cleanup and use checked cursor
+plan agreement on the source control destination.
+-/
+theorem Cursor.blockRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {bodyOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .block body :: rest } lowerState localsCtx)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        fn.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ bodyCursor :
+          Cursor prepared
+            (.lexical scope cursor.planning.nextScope)
+            live body lowerState localsCtx,
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx bodyCursor.finalState
+            bodyCursor.finalLocals bodyCursor.plan fn.returns
+            (Functions.Scope.Block.outEnv live body)
+            frameBase mode program sourceCtx body source
+            expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured bodyCursor.compiled }
+            target bodyOutcome targetOutcome bodyCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ sourceOutcome targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState localsCtx cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.block body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx := by
+  obtain
+      ⟨afterState, headCode, tail, targetBlock, bodyCursor,
+        hCompiled, hHeadCode, hFinish, hAfterEnv, hAfterLayout⟩ :=
+    cursor.blockCursors
+  subst headCode
+  obtain ⟨targetOutcome, hBodyResult⟩ :=
+    hBody bodyCursor
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor
+  cases hBodyResult with
+  | @regular sourceFinal targetBodyFinal finalMode finalCtx
+      hBodyForward hBodyControl =>
+      obtain ⟨targetFinal, hStmtForward⟩ :=
+        AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.block_of_components
+          hBodyForward hSourceScope
+          (fun name hName =>
+            Functions.Scope.Block.mem_outEnv hName)
+          bodyCursor.sourceScoped hInvariant bodyCursor.lower
+          bodyCursor.compile hFinish
+      have hStmtForward' :=
+        hStmtForward.transport_lower_state hAfterEnv hAfterLayout
+      exact
+        ⟨afterState, targetBlock.stmts, tail,
+          Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              live sourceFinal),
+          Structured.EffectSemantics.Outcome.regular targetFinal,
+          hCompiled,
+          .regular hStmtForward'
+            (AllocationObserverOutcome.SameControl.refl sourceCtx)⟩
+  | nonregular hMode hBodyForward =>
+      have hStmtForward :=
+        AllocationObserverOutcome.NonregularStmtRuntimeForward.block_of_runtime
+          hBodyForward hMode hPlanAgree hControl hFinish
+      exact
+        ⟨afterState, targetBlock.stmts, tail,
+          bodyOutcome, targetOutcome, hCompiled,
+          .nonregular hStmtForward⟩
 
 end BodyCursor
 

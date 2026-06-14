@@ -458,6 +458,143 @@ def outcomeLive
   | .leave => returns
   | .halt _ => regularLive
 
+/--
+Every source control destination visible at a recursive statement boundary is
+contained in the currently live lexical environment.
+
+The return fields also retain the two facts needed by source `leave`: return
+names are live now, and the declared leave scope contains them. This is source
+context data, not compiler-generated evidence.
+-/
+structure ControlScopesWithin
+    (returns live : List Functions.Name)
+    (ctx : Functions.Source.Ctx) : Prop where
+  breakScope :
+    ∀ scope,
+      ctx.breakScope? = some scope →
+        ∀ name, name ∈ scope → name ∈ live
+  continueScope :
+    ∀ scope,
+      ctx.continueScope? = some scope →
+        ∀ name, name ∈ scope → name ∈ live
+  returnsLive :
+    ∀ name, name ∈ returns → name ∈ live
+  leaveScope :
+    ∀ scope,
+      ctx.leaveScope? = some scope →
+        ∀ name, name ∈ returns → name ∈ scope
+
+namespace ControlScopesWithin
+
+theorem mono
+    {returns beforeLive afterLive : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns beforeLive ctx)
+    (hSubset :
+      ∀ name, name ∈ beforeLive → name ∈ afterLive) :
+    ControlScopesWithin returns afterLive ctx := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := ?_
+      leaveScope := hControl.leaveScope }
+  · intro scope hScope name hName
+    exact hSubset name
+      (hControl.breakScope scope hScope name hName)
+  · intro scope hScope name hName
+    exact hSubset name
+      (hControl.continueScope scope hScope name hName)
+  · intro name hName
+    exact hSubset name (hControl.returnsLive name hName)
+
+theorem outcomeLive_subset
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx)
+    (mode : Locals.Source.Mode) :
+    ∀ name,
+      name ∈ outcomeLive returns live ctx mode →
+        name ∈ live := by
+  intro name hName
+  cases mode with
+  | regular =>
+      exact hName
+  | brk =>
+      cases hBreak : ctx.breakScope? with
+      | none =>
+          simp [outcomeLive, hBreak] at hName
+      | some scope =>
+          exact
+            hControl.breakScope scope hBreak name
+              (by simpa [outcomeLive, hBreak] using hName)
+  | cont =>
+      cases hContinue : ctx.continueScope? with
+      | none =>
+          simp [outcomeLive, hContinue] at hName
+      | some scope =>
+          exact
+            hControl.continueScope scope hContinue name
+              (by simpa [outcomeLive, hContinue] using hName)
+  | leave =>
+      exact hControl.returnsLive name hName
+  | halt kind =>
+      exact hName
+
+theorem push
+    {returns live : List Functions.Name}
+    {ctx : Functions.Source.Ctx}
+    (hControl : ControlScopesWithin returns live ctx)
+    (name : Functions.Name) :
+    ControlScopesWithin returns (name :: live)
+      { ctx with scope := name :: ctx.scope } := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := ?_
+      leaveScope := ?_ }
+  · intro scope hScope localName hLocal
+    exact List.mem_cons_of_mem name
+      (hControl.breakScope scope hScope localName hLocal)
+  · intro scope hScope localName hLocal
+    exact List.mem_cons_of_mem name
+      (hControl.continueScope scope hScope localName hLocal)
+  · intro returnName hReturn
+    exact List.mem_cons_of_mem name
+      (hControl.returnsLive returnName hReturn)
+  · exact hControl.leaveScope
+
+theorem functionBody
+    (fn : Functions.FunDef) :
+    ControlScopesWithin fn.returns
+      (fn.returns.reverse ++ fn.params.reverse)
+      (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := ?_
+      leaveScope := ?_ }
+  · intro scope hScope
+    simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial,
+      Functions.Source.Ctx.withLeaveScope] at hScope
+  · intro scope hScope
+    simp [Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial,
+      Functions.Source.Ctx.withLeaveScope] at hScope
+  · intro name hName
+    apply List.mem_append_left
+    simpa using hName
+  · intro scope hScope name hName
+    have hEq :
+        scope = fn.returns ++ fn.params := by
+      simpa [Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial,
+        Functions.Source.Ctx.withLeaveScope] using hScope.symm
+    rw [hEq]
+    exact List.mem_append_left _ hName
+
+end ControlScopesWithin
+
 structure SameControl
     (before after : Functions.Source.Ctx) : Prop where
   breakScope : before.breakScope? = after.breakScope?
@@ -493,7 +630,171 @@ theorem outcomeLive_eq_of_nonregular
   | leave => rfl
   | halt => rfl
 
+theorem controlScopesWithin
+    {returns live : List Functions.Name}
+    {before after : Functions.Source.Ctx}
+    (hControl : SameControl before after)
+    (hWithin : ControlScopesWithin returns live before) :
+    ControlScopesWithin returns live after := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      returnsLive := hWithin.returnsLive
+      leaveScope := ?_ }
+  · intro scope hScope name hName
+    exact
+      hWithin.breakScope scope
+        (hControl.breakScope.trans hScope) name hName
+  · intro scope hScope name hName
+    exact
+      hWithin.continueScope scope
+        (hControl.continueScope.trans hScope) name hName
+  · intro scope hScope name hName
+    exact
+      hWithin.leaveScope scope
+        (hControl.leaveScope.trans hScope) name hName
+
+theorem controlScopesWithin_outEnv
+    {returns live : List Functions.Name}
+    {before after : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    (hControl : SameControl before after)
+    (hWithin : ControlScopesWithin returns live before) :
+    ControlScopesWithin returns
+      (Functions.Scope.Stmt.outEnv live stmt) after := by
+  apply hControl.controlScopesWithin
+  exact
+    hWithin.mono
+      (fun name hName =>
+        Functions.Scope.Stmt.mem_outEnv hName)
+
 end SameControl
+
+/--
+Lift an abrupt open lexical-body result to the enclosing `.block` statement.
+
+The compiler-emitted cleanup is unreachable on an abrupt target outcome. The
+only nontrivial boundary change is from the lexical body plan back to the
+outer plan; synchronized-cursor plan agreement transports exactly the live
+control destination.
+-/
+theorem NonregularStmtRuntimeForward.block_of_runtime
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {returns bodyLive outerLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      BlockRuntimeForward contract config allocatorDepth transcript
+        bodyPlan
+        (outcomeLive returns bodyLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceOutcome targetOutcome finalCtx)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hPlanAgree :
+      PlanAgreesOn bodyPlan outerPlan outerLive)
+    (hControl :
+      ControlScopesWithin returns outerLive sourceCtx)
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    NonregularStmtRuntimeForward contract config allocatorDepth transcript
+      outerPlan
+      (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+      frameBase initialMode finalMode sourceProgram sourceCtx
+      (.block sourceBlock) source targetProgram target
+      (Expressions.StmtList.toStructured targetBlock.stmts)
+      sourceOutcome targetOutcome sourceCtx := by
+  rcases hBody with
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody,
+      hOutcomeRel, hSame, hEffect⟩
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen hMode
+  have hSourceStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
+        .ok (sourceOutcome, sourceCtx) := by
+    simp only [Functions.Source.Effectful.Stmt.run]
+    rw [hSourceScoped]
+    rfl
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hOutcomeRel.target_nonregular hMode
+  have hTargetStmt :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target targetOutcome := by
+    rw [hTargetShape]
+    simpa [Expressions.StmtList.toStructured_append,
+      Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using
+      (Structured.EffectSemantics.Block.Eval.append_nonregular
+        hTargetBody hTargetMode :
+        Structured.ObserverSemantics.Block.Eval
+          targetProgram targetFuel
+          { stmts :=
+              Expressions.StmtList.toStructured compiledBody ++
+                [Structured.Stmt.code cleanup] }
+          target targetOutcome)
+  have hOutcomePlanAgree :
+      PlanAgreesOn bodyPlan outerPlan
+        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode) :=
+    hPlanAgree.mono
+      (hControl.outcomeLive_subset sourceOutcome.mode)
+  have hOuterOutcomeRel :
+      ActivationOutcomeRel contract outerPlan
+        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+        0 frameBase finalMode sourceOutcome targetOutcome := by
+    cases hOutcomeRel with
+    | regular hState =>
+        exact False.elim (hMode rfl)
+    | brk hState =>
+        exact .brk
+          (by
+            simpa [outcomeLive] using
+              hState.transport_plan hOutcomePlanAgree)
+    | cont hState =>
+        exact .cont
+          (by
+            simpa [outcomeLive] using
+              hState.transport_plan hOutcomePlanAgree)
+    | leave hState =>
+        exact .leave hState
+    | halt kind hState =>
+        exact .halt kind
+          { cursor := hState.cursor
+            shared := hState.shared }
+  exact
+    ⟨sourceFuel, targetFuel, hSourceStmt, hTargetStmt, hMode,
+      hOuterOutcomeRel, hSame, hEffect⟩
 
 /--
 One statement's complete runtime-forward result.

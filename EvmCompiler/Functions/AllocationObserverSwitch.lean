@@ -687,7 +687,11 @@ theorem switch_some_of_components
       (target :=
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
-      hBodyForward hSourceScope rfl hSelectedInvariant.activation.compiler
+      hBodyForward
+      (by
+        intro name
+        simp [hSourceScope])
+      rfl hSelectedInvariant.activation.compiler
       hSelectedInvariant.activation.planWF hSubset hBodyScoped hLowerBody
       hFinishSelected
   have hSource :=
