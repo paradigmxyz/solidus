@@ -306,6 +306,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_args_length
 #check EvmCompiler.Functions.Source.Effectful.FunDef.runBody_returned_length
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_body_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_name

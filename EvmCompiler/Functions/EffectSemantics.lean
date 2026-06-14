@@ -654,6 +654,63 @@ theorem call_regular_parts {σ : Type}
                     cases hRun
   · simp [hTargets, Source.invalid, Structured.invalid] at hRun
 
+/--
+A regular call with two available fuel steps exposes the strictly smaller
+callee-body execution used by recursive preservation proofs.
+-/
+theorem call_regular_body_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source sourceAfter : σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 2)
+          (.call targets functionName args) source =
+        .ok (Outcome.regular sourceAfter, ctx)) :
+    ∃ stateAfterArgs argValues fn stateAfterCall returnValues returnStore
+        paramStore bodyOutcome bodyCtx',
+      targets.Nodup ∧
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues) ∧
+      Source.FunList.find? functionName program.functions = some fn ∧
+      Source.Store.insertMany fn.params argValues
+          Locals.Source.Store.empty =
+        some paramStore ∧
+      Block.runOpen model prim program (FunDef.bodyCtx fn) fuel fn.body
+          (model.withSource stateAfterArgs
+            { shared := (model.source stateAfterArgs).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (bodyOutcome, bodyCtx') ∧
+      (bodyOutcome.mode = .regular ∨ bodyOutcome.mode = .leave) ∧
+      Source.Store.lookupMany fn.returns
+          (model.vars bodyOutcome.state) =
+        some returnValues ∧
+      bodyOutcome.state = stateAfterCall ∧
+      Source.Store.assignMany targets returnValues
+          (model.vars stateAfterArgs) =
+        some returnStore ∧
+      sourceAfter =
+        model.withSource stateAfterCall
+          { shared := (model.source stateAfterCall).shared,
+            vars := returnStore } := by
+  obtain
+      ⟨stateAfterArgs, argValues, fn, stateAfterCall,
+        returnValues, returnStore, hTargets, hArgs, hFind,
+        hCall, hAssign, hFinal⟩ :=
+    call_regular_parts model prim program
+      (fuel := fuel + 1) (by simpa [Nat.add_assoc] using hRun)
+  obtain
+      ⟨paramStore, bodyOutcome, bodyCtx',
+        hParams, hBody, hMode, hReturns, hState⟩ :=
+    FunDef.runBody_returned_parts model prim program hCall
+  exact
+    ⟨stateAfterArgs, argValues, fn, stateAfterCall,
+      returnValues, returnStore, paramStore, bodyOutcome, bodyCtx',
+      hTargets, hArgs, hFind, hParams, hBody, hMode, hReturns,
+      hState, hAssign, hFinal⟩
+
 theorem call_halted_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program)
