@@ -672,6 +672,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.ActiveEnv.after_planStmt
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.declarationPlacement
+#print axioms EvmCompiler.Functions.AllocationObserverContext.ExprContext.bodyLayout
+#print axioms EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.frameName_not_mem_planEntry_env
+#print axioms EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.scratch_bound_of_location
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.lookupSlot_of_live
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.frameName_not_mem_live
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.frameName_not_mem_currentStackOrder
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letContext
+#print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResult
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

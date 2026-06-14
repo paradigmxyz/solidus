@@ -616,6 +616,123 @@ theorem Cursor.bodyFinal_lookup_of_lookup
   exact hEntryLookup
 
 /--
+Every source-live name at a cursor position has a checked slot in the current
+lowering environment.
+-/
+theorem Cursor.lookupSlot_of_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name}
+    (hLive : localName ∈ live) :
+    ∃ slot,
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot := by
+  rcases cursor.activeEnv with ⟨locals, hCurrent, hLiveEq⟩
+  have hNamePlanning :
+      localName ∈ cursor.planning.allocation.env.map Prod.fst := by
+    rw [hCurrent]
+    rw [hLiveEq] at hLive
+    simpa [AllocationSupport.functionEnv, List.map_append] using hLive
+  obtain ⟨binding, hBinding, hName⟩ :=
+    List.mem_map.mp hNamePlanning
+  rcases binding with ⟨candidate, slot⟩
+  simp only at hName
+  subst candidate
+  have hBindingLower :
+      (localName, slot) ∈ lowerState.allocation.env := by
+    have hEnv :
+        cursor.planning.allocation.env =
+          lowerState.allocation.env :=
+      congrArg AllocationSupport.CompileState.env
+        cursor.planningAllocation
+    rw [← hEnv]
+    exact hBinding
+  obtain ⟨added, hFinal⟩ := cursor.final_env_extension
+  have hFinalNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hLowerNodup :
+      (lowerState.allocation.env.map Prod.fst).Nodup := by
+    rw [hFinal, List.map_append] at hFinalNodup
+    exact (List.nodup_append.mp hFinalNodup).2.1
+  exact
+    ⟨slot,
+      AllocationSupport.lookupSlot?_eq_some_of_mem
+        hLowerNodup hBindingLower⟩
+
+theorem Cursor.frameName_not_mem_live
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    artifact.frameName ∉ live := by
+  intro hFrame
+  obtain ⟨slot, hLookup⟩ := cursor.lookupSlot_of_live hFrame
+  have hMemCurrent :
+      (artifact.frameName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  obtain ⟨added, hFinal⟩ := cursor.final_env_extension
+  apply artifact.frameName_not_mem_planEntry_env
+  rw [hFinal, List.map_append]
+  exact
+    List.mem_append_right _
+      (List.mem_map.mpr
+        ⟨(artifact.frameName, slot), hMemCurrent, rfl⟩)
+
+theorem Cursor.frameName_not_mem_currentStackOrder
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    artifact.frameName ∉
+      AllocationObserverRelation.currentStackOrder prepared.plan live := by
+  intro hFrame
+  exact
+    cursor.frameName_not_mem_live
+      (AllocationObserverRelation.mem_live_of_mem_currentStackOrder hFrame)
+
+/--
 Recover the exact runtime stack order at a recursive body position from the
 final function allocation plan. Future declarations are filtered out; only
 already active locals and the fixed function signature remain.
@@ -1040,6 +1157,391 @@ theorem Cursor.location_scratch_of_lookup
     rw [← prepared.bodyPlan]
     exact hEntryLookup
   exact prepared.location_scratch_of_lookup hBodyLookup hScratch
+
+/--
+Construct the exact post-declaration compiler context from adjacent body
+cursors and the real allocation/Locals compiler equations.
+
+The theorem is representation-neutral: stack declarations advance the scratch
+frame depth when present, while scratch declarations require and preserve the
+existing frame-backed mode.
+-/
+theorem Cursor.letContext
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {value : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState afterState : AllocationLowering.State}
+    {beforeLocals afterLocals : Locals.Ctx}
+    {beforeMode : ActivationMode}
+    {lowered : List Locals.Stmt}
+    {compiled : List Expressions.Stmt}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .let_ name value :: rest }
+        beforeState beforeLocals)
+    (tail :
+      Cursor prepared scope (name :: live)
+        { stmts := rest } afterState afterLocals)
+    (hPlanning :
+      tail.planning =
+        AllocationSupport.planStmt scope cursor.planning
+          (.let_ name value))
+    (hBefore :
+      AllocationObserverContext.ActivationExprContext
+        artifact.lowerCtx beforeState beforeLocals prepared.plan
+        live beforeMode)
+    (hLower :
+      AllocationLowering.lowerStmt artifact.lowerCtx fn.returns
+          beforeState (.let_ name value) =
+        some (lowered, afterState))
+    (hCompile :
+      Locals.Block.compileOpen beforeLocals { stmts := lowered } =
+        some (compiled, afterLocals)) :
+    ∃ afterMode,
+      AllocationObserverContext.ActivationExprContext
+          artifact.lowerCtx afterState afterLocals prepared.plan
+          (name :: live) afterMode ∧
+        AllocationObserverStatement.LetLeaf.ModeTransition
+          prepared.plan name beforeMode afterMode := by
+  have hPlacement := cursor.declarationPlacement tail hPlanning
+  have hNameFrame : name ≠ artifact.lowerCtx.frameName := by
+    intro hEq
+    apply tail.frameName_not_mem_live
+    simp [hEq, AllocationObserverCall.SelectedCallee.Artifact.lowerCtx]
+  have hAfterSlot :
+      ∀ localName, localName ∈ name :: live →
+        ∃ slot,
+          AllocationSupport.lookupSlot?
+              localName afterState.allocation.env =
+            some slot :=
+    fun localName hLive => tail.lookupSlot_of_live hLive
+  have hAfterStackLocation :
+      ∀ localName slot,
+        localName ∈ name :: live →
+        AllocationSupport.lookupSlot?
+            localName afterState.allocation.env =
+          some slot →
+        AllocationLowering.isStackSlot artifact.lowerCtx slot = true →
+        ∃ planDepth,
+          prepared.plan.location? localName =
+            some (.stack planDepth) := by
+    intro localName slot _hLive hLookup hStack
+    exact tail.location_stack_of_lookup hLookup hStack
+  have hAfterScratchLocation :
+      ∀ localName slot,
+        localName ∈ name :: live →
+        AllocationSupport.lookupSlot?
+            localName afterState.allocation.env =
+          some slot →
+        AllocationLowering.isStackSlot artifact.lowerCtx slot = false →
+        prepared.plan.location? localName = some (.scratch slot) := by
+    intro localName slot _hLive hLookup hScratch
+    exact tail.location_scratch_of_lookup hLookup hScratch
+  cases hPlacement with
+  | stack slot planDepth hSlot hStack hLocation hOrder =>
+      subst slot
+      cases hLowerValue :
+          AllocationLowering.lowerExpr artifact.lowerCtx beforeState value with
+      | none =>
+          simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+      | some loweredValue =>
+          simp [AllocationLowering.lowerStmt, hLowerValue,
+            AllocationSupport.allocateName, hStack] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          cases hValueCode :
+              Locals.Expr.compileCode beforeLocals 0 loweredValue with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                hValueCode] at hCompile
+          | some valueCode =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                Locals.codeStmt, hValueCode] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              cases hBefore with
+              | stack hBeforeStack =>
+                  have hAfterOnly :
+                      LiveStackOnly prepared.plan (name :: live) := by
+                    intro localName scratchSlot hLive hScratchLocation
+                    rcases List.mem_cons.mp hLive with hHead | hTail
+                    · subst localName
+                      rw [hLocation] at hScratchLocation
+                      simp at hScratchLocation
+                    · exact
+                        hBeforeStack.liveStackOnly
+                          localName scratchSlot hTail hScratchLocation
+                  have hAfterLocation :
+                      ∀ localName, localName ∈ name :: live →
+                        ∃ planDepth,
+                          prepared.plan.location? localName =
+                            some (.stack planDepth) := by
+                    intro localName hLive
+                    obtain ⟨localSlot, hLookup⟩ :=
+                      hAfterSlot localName hLive
+                    by_cases hLocalStack :
+                        AllocationLowering.isStackSlot
+                          artifact.lowerCtx localSlot = true
+                    · exact
+                        hAfterStackLocation localName localSlot hLive
+                          hLookup hLocalStack
+                    · have hLocalScratch :
+                          AllocationLowering.isStackSlot
+                              artifact.lowerCtx localSlot =
+                            false :=
+                        Bool.eq_false_of_not_eq_true hLocalStack
+                      have hScratchLocation :=
+                        hAfterScratchLocation localName localSlot hLive
+                          hLookup hLocalScratch
+                      exact
+                        False.elim
+                          (hAfterOnly localName localSlot hLive
+                            hScratchLocation)
+                  refine ⟨.stack, ?_, .stack planDepth hLocation⟩
+                  apply
+                    AllocationObserverContext.ActivationExprContext.stack_of_layout
+                      prepared.planWF
+                  · simp [Locals.Ctx.withLayout, hBeforeStack.layout]
+                  · simpa [hBeforeStack.stackOrder] using hOrder
+                  · simp [Ne.symm hNameFrame, hBeforeStack.frameAbsent]
+                  · exact hAfterOnly
+                  · exact hAfterLocation
+                  · exact hAfterSlot
+              | @scratch frameDepth frameWords hBeforeScratch =>
+                  refine
+                    ⟨.scratch (frameDepth + 1) frameWords, ?_,
+                      .stack planDepth hLocation⟩
+                  apply
+                    AllocationObserverContext.ActivationExprContext.scratch_of_layout
+                      prepared.planWF
+                  · simp [Locals.Ctx.withLayout,
+                      hBeforeScratch.layout]
+                  · rw [hBeforeScratch.bodyLayout]
+                    simp [hOrder]
+                  · rw [hOrder]
+                    simp [hBeforeScratch.currentStackOrder_length]
+                  · exact tail.frameName_not_mem_currentStackOrder
+                  · exact hAfterSlot
+                  · exact hAfterStackLocation
+                  · exact hAfterScratchLocation
+  | scratch slot hSlot hStack hLocation hOrder =>
+      subst slot
+      cases hBefore with
+      | stack hBeforeStack =>
+          cases hLowerValue :
+              AllocationLowering.lowerExpr
+                artifact.lowerCtx beforeState value with
+          | none =>
+              simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+          | some loweredValue =>
+              simp [AllocationLowering.lowerStmt, hLowerValue,
+                AllocationSupport.allocateName, hStack,
+                hBeforeStack.frameAbsent] at hLower
+      | @scratch frameDepth frameWords hBeforeScratch =>
+          cases hLowerValue :
+              AllocationLowering.lowerExpr
+                artifact.lowerCtx beforeState value with
+          | none =>
+              simp [AllocationLowering.lowerStmt, hLowerValue] at hLower
+          | some loweredValue =>
+              have hFrameMember :
+                  artifact.lowerCtx.frameName ∈ beforeState.layout :=
+                Locals.Layout.mem_of_lookupDepth?_eq_some
+                  hBeforeScratch.frame
+              simp [AllocationLowering.lowerStmt, hLowerValue,
+                AllocationSupport.allocateName, hStack,
+                hFrameMember] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              cases hValueCode :
+                  Locals.Expr.compileCode beforeLocals 0 loweredValue with
+              | none =>
+                  have hFrameLocals :
+                      Locals.Layout.lookupDepth?
+                          artifact.lowerCtx.frameName beforeLocals.layout =
+                        some (frameDepth + 1) := by
+                    rw [hBeforeScratch.layout]
+                    exact hBeforeScratch.frame
+                  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                    AllocationLowering.scratchStoreExpr,
+                    AllocationLowering.scratchAddressExpr,
+                    AllocationLowering.exprSeqTwo,
+                    Locals.Expr.compileCode, Locals.ExprSeq.compileCode,
+                    hValueCode, hFrameLocals] at hCompile
+              | some valueCode =>
+                  have hFrameLocals :
+                      Locals.Layout.lookupDepth?
+                          artifact.lowerCtx.frameName beforeLocals.layout =
+                        some (frameDepth + 1) := by
+                    rw [hBeforeScratch.layout]
+                    exact hBeforeScratch.frame
+                  cases hDup :
+                      Locals.StackOp.dup? (frameDepth + 2) with
+                  | none =>
+                      have hDup' :
+                          Locals.StackOp.dup?
+                              (1 + (frameDepth + 1)) =
+                            none := by
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hDup
+                      simp [Locals.Block.compileOpen,
+                        Locals.Stmt.compile,
+                        AllocationLowering.scratchStoreExpr,
+                        AllocationLowering.scratchAddressExpr,
+                        AllocationLowering.exprSeqTwo,
+                        Locals.Expr.compileCode,
+                        Locals.ExprSeq.compileCode,
+                        hValueCode, hFrameLocals, hDup'] at hCompile
+                  | some op =>
+                      have hDup' :
+                          Locals.StackOp.dup?
+                              (1 + (frameDepth + 1)) =
+                            some op := by
+                        simpa [Nat.add_assoc, Nat.add_comm,
+                          Nat.add_left_comm] using hDup
+                      have hStoreCode :=
+                        AllocationLowering.scratchStoreExpr_compileCode
+                          (frameName := artifact.lowerCtx.frameName)
+                          (slot := beforeState.allocation.nextSlot)
+                          (offset := 0) hValueCode hFrameLocals hDup'
+                      simp only [Locals.Block.compileOpen,
+                        Locals.Stmt.compile] at hCompile
+                      rw [hStoreCode] at hCompile
+                      simp [Locals.codeStmt] at hCompile
+                      rcases hCompile with ⟨rfl, rfl⟩
+                      refine
+                        ⟨.scratch frameDepth frameWords, ?_,
+                          .scratch frameDepth frameWords
+                            beforeState.allocation.nextSlot hLocation⟩
+                      apply
+                        AllocationObserverContext.ActivationExprContext.scratch_of_layout
+                          prepared.planWF
+                      · exact hBeforeScratch.layout
+                      · rw [hOrder]
+                        exact hBeforeScratch.bodyLayout
+                      · rw [hOrder]
+                        exact
+                          hBeforeScratch.currentStackOrder_length.symm
+                      · exact
+                          tail.frameName_not_mem_currentStackOrder
+                      · exact hAfterSlot
+                      · exact hAfterStackLocation
+                      · exact hAfterScratchLocation
+
+/--
+Preserve one source `let` directly from a synchronized body cursor.
+
+The theorem consumes only the canonical safe expression evaluation, the real
+allocation/Locals compiler artifacts owned by the cursor, and the activation
+runtime invariant.  It returns the exact tail cursor needed by block
+recursion, without exposing generated declaration evidence.
+-/
+theorem Cursor.letRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {name : Functions.Name} {valueExpr : Functions.Expr 1}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {beforeMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterValue :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .let_ name valueExpr :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript valueExpr
+        source sourceAfterValue [value])
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals prepared.plan live frameBase beforeMode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope (name :: live)
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals prepared.plan
+            fn.returns (name :: live) frameBase beforeMode program
+            sourceCtx (.let_ name valueExpr) source
+            expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).insert
+                sourceAfterValue name value))
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            { sourceCtx with scope := name :: sourceCtx.scope } := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        hPlanning, hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨afterMode, hAfter, hMode⟩ :=
+    cursor.letContext tail hPlanning hInvariant.activation.compiler
+      hLower hCompile
+  have hNameFrame : name ≠ artifact.lowerCtx.frameName := by
+    intro hEq
+    apply tail.frameName_not_mem_live
+    simp [Functions.Scope.Stmt.outEnv, hEq,
+      AllocationObserverCall.SelectedCallee.Artifact.lowerCtx]
+  have hScratchBound :
+      ∀ frameDepth frameWords slot,
+        beforeMode = .scratch frameDepth frameWords →
+        prepared.plan.location? name = some (.scratch slot) →
+        slot < frameWords := by
+    intro frameDepth frameWords slot hBeforeMode hLocation
+    have hOwned := hInvariant.frame
+    rw [hBeforeMode] at hOwned
+    cases hOwned with
+    | scratch _ hWords =>
+        obtain
+            ⟨_reservation, _hReservation, _hAllocator, _hFirst, _hLimit,
+              hConfigWords, _hWF, _hHost, _hPositive, _hFits⟩ :=
+          AllocationSupport.scratchFrameConfig?_sound hConfig
+        calc
+          slot < artifact.recipe.frameWords :=
+            prepared.scratch_bound_of_location hLocation
+          _ = config.frameWords := hConfigWords.symm
+          _ = frameWords := hWords.symm
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.let_of_compilers
+      hConfig hSafe hAfter hMode hScoped.2 rfl
+        hNameFrame hScratchBound hInvariant hLower hCompile
+  refine
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .regular hForward ?_⟩
+  exact ⟨rfl, rfl, rfl⟩
 
 end BodyCursor
 

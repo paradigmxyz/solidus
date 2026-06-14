@@ -1938,6 +1938,48 @@ theorem stack_depth_lt_frame
     List.getElem?_eq_some_iff.mp hAt |>.1
   simpa [hCtx.currentStackOrder_length] using hBound
 
+/--
+A frame-backed expression context has exactly the active stack-local order
+followed by the hidden frame pointer.
+-/
+theorem bodyLayout
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Plan} {live : List Locals.Name}
+    {frameDepth : Nat}
+    (hCtx :
+      ExprContext lowerCtx lowerState localsCtx plan live frameDepth) :
+    lowerState.layout =
+      AllocationObserverRelation.currentStackOrder plan live ++
+        [lowerCtx.frameName] := by
+  have hFrameAt :
+      lowerState.layout[frameDepth]? = some lowerCtx.frameName :=
+    Locals.Layout.getElem?_eq_some_of_lookupDepth?_eq_some hCtx.frame
+  have hFrameBound : frameDepth < lowerState.layout.length :=
+    List.getElem?_eq_some_iff.mp hFrameAt |>.1
+  have hTakeAll :
+      lowerState.layout.take (frameDepth + 1) =
+        lowerState.layout := by
+    rw [← hCtx.frameBottom]
+    simp
+  have hFrameElem :
+      lowerState.layout[frameDepth] = lowerCtx.frameName :=
+    (List.getElem?_eq_some_iff.mp hFrameAt).2
+  calc
+    lowerState.layout =
+        lowerState.layout.take (frameDepth + 1) := hTakeAll.symm
+    _ =
+        lowerState.layout.take frameDepth ++
+          [lowerState.layout[frameDepth]] :=
+      List.take_succ_eq_append_getElem hFrameBound
+    _ =
+        AllocationObserverRelation.currentStackOrder plan live ++
+          [lowerCtx.frameName] := by
+      rw [hFrameElem]
+      exact congrArg (fun xs => xs ++ [lowerCtx.frameName])
+        hCtx.stackPrefix.symm
+
 end ExprContext
 
 /--

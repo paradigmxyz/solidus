@@ -707,6 +707,35 @@ theorem Artifact.planEntry_env_extension
   rw [artifact.planEntryState]
   simpa using hEnv
 
+theorem Artifact.frameName_not_mem_planEntry_env
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    artifact.frameName ∉ artifact.planEntry.state.env.map Prod.fst := by
+  have hFresh :=
+    AllocationLowering.freshFrameName_not_mem_allSourceNames
+      artifact.fresh
+  have hRecipe :
+      AllocationSupport.planRecipeCore? program =
+        some artifact.recipe :=
+    (AllocationLowering.validatePlan?_eq_some_exact
+      artifact.validate).2.2.1
+  intro hFrame
+  apply hFresh
+  simp only [AllocationLowering.allSourceNames, List.mem_append,
+    List.mem_flatMap]
+  apply Or.inr
+  refine
+    ⟨artifact.recipe,
+      by simp [hRecipe],
+      artifact.planEntry, ?_, hFrame⟩
+  simp only [AllocationLowering.scopedStates, List.mem_cons,
+    List.mem_append]
+  exact Or.inl (Or.inr artifact.planEntryMem)
+
 def Artifact.entryLayout
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -1153,6 +1182,32 @@ theorem Prepared.location_scratch_of_lookup
   exact
     MixedAllocation.allocationOfState_location_scratch_of_not_entry
       hNodup hMemEntry hNotEntry
+
+theorem Prepared.scratch_bound_of_location
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact : Artifact allocation program expressions calleeName fn}
+    (prepared : Prepared artifact)
+    {name : Locals.Name} {slot : Nat}
+    (hLocation :
+      prepared.plan.location? name = some (.scratch slot)) :
+    slot < artifact.recipe.frameWords := by
+  rw [prepared.planEq] at hLocation
+  have hWF :
+      (MixedAllocation.allocationOfState
+        program.memoryContract artifact.recipe.frameWords
+        (MixedAllocation.AllocationRecipe.stackEntriesForScope
+          artifact.recipe artifact.stackSlots artifact.planEntry.scope
+          artifact.planEntry.state)
+        artifact.planEntry.state).WellFormed := by
+    rw [← prepared.planEq]
+    exact prepared.planWF
+  exact
+    MixedAllocation.allocationOfState_scratch_bound_of_wellFormed
+      hWF hLocation
 
 theorem Prepared.mode_eq_scratch_of_needsFrame
     {allocation : Locals.Allocation.ProgramPlan}
