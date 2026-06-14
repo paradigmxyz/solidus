@@ -330,6 +330,39 @@ def withoutLoopControl (ctx : Ctx) : Ctx :=
 def withLoopControl (ctx : Ctx) (depth : Nat) : Ctx :=
   { ctx with breakDepth? := some depth, continueDepth? := some depth }
 
+/--
+Two Locals compiler contexts share every non-layout control destination.
+
+Open compilation may extend or restore the stack layout, but ordinary
+statement sequencing never changes the surrounding loop/leave destinations.
+-/
+structure SameControl (before after : Ctx) : Prop where
+  breakDepth : before.breakDepth? = after.breakDepth?
+  continueDepth : before.continueDepth? = after.continueDepth?
+  leaveDepth : before.leaveDepth? = after.leaveDepth?
+  leaveRetc : before.leaveRetc = after.leaveRetc
+
+namespace SameControl
+
+theorem refl (ctx : Ctx) : SameControl ctx ctx :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+theorem trans
+    {first second third : Ctx}
+    (hFirst : SameControl first second)
+    (hSecond : SameControl second third) :
+    SameControl first third :=
+  ⟨hFirst.breakDepth.trans hSecond.breakDepth,
+    hFirst.continueDepth.trans hSecond.continueDepth,
+    hFirst.leaveDepth.trans hSecond.leaveDepth,
+    hFirst.leaveRetc.trans hSecond.leaveRetc⟩
+
+theorem withLayout (ctx : Ctx) (layout : Layout) :
+    SameControl ctx (ctx.withLayout layout) :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+end SameControl
+
 def cleanupTo? (ctx : Ctx) (targetDepth : Nat) : Option Structured.Code :=
   if targetDepth ≤ ctx.layout.length then
     some

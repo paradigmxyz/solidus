@@ -200,6 +200,267 @@ theorem leave_of_invariant
   · intro hMode
     cases hMode
 
+theorem terminalArgs_of_invariant
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source afterArgs sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hArgs :
+      AllocationObserverSafety.ExprSeq.MemorySafeEval
+        contract transcript args source afterArgs values)
+    (hMemory :
+      AllocationObserverSafety.TerminalMemorySafe contract kind values)
+    (hTerminal :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind afterArgs values =
+        .ok sourceFinal)
+    (hScoped : Functions.Scope.ExprSeqScoped live args)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx plan
+        live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.terminalArgs kind args) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        plan live frameBase mode mode sourceProgram sourceCtx
+        (.terminalArgs kind args) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+        sourceCtx := by
+  obtain
+      ⟨lowered, code, hLowerArgs, hCompileCode,
+        rfl, rfl, rfl, rfl⟩ :=
+    AllocationObserverStatement.TerminalLeaf.args_compiler_shape
+      hLower hCompile
+  obtain ⟨targetAfterArgs, hArgsRun, hArgsRel, hArgsEffect⟩ :=
+    AllocationObserverExpression.forwardExprSeqRuntime_with_effect
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hArgs hInvariant.activation.compiler hScoped
+      hLowerArgs hCompileCode hInvariant.activation.state
+      hInvariant.allocator
+  obtain
+      ⟨evmFinal, hStep, hHaltRel,
+        hMemoryEq, hActive, hFinalNoWrap⟩ :=
+    (AllocationObserverTerminal.Invocation.of_memorySafe hMemory).forward_observer
+      hArgsRel.state hTerminal hArgsRel.stack
+  let targetFinal : Structured.ObserverSemantics.State transcript :=
+    targetAfterArgs.withSource
+      (targetAfterArgs.source.withEVM evmFinal)
+  have hTerminalStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 (.terminal kind) targetAfterArgs
+          (Structured.EffectSemantics.Outcome.halt kind targetFinal) := by
+    simpa [targetFinal,
+      Structured.ObserverSemantics.stateModel_withEVM] using
+        (Structured.EffectSemantics.Stmt.Eval.terminal
+          (model := Structured.ObserverSemantics.stateModel transcript)
+          (handler := Structured.ObserverSemantics.handler transcript)
+          (program := targetProgram) (fuel := 0) hStep)
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts :=
+            [Structured.Stmt.code code, Structured.Stmt.terminal kind] }
+        target
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hArgsRun)
+      (Structured.EffectSemantics.Block.Eval.cons_halt hTerminalStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.terminalArgs
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      hArgs hMemory hTerminal).run_eq
+  have hTerminalEffect :
+      Frame.AllocatorEffect config allocatorDepth
+        targetAfterArgs targetFinal :=
+    Frame.AllocatorEffect.of_memory_eq_active_growth
+      hArgsEffect.ready hMemoryEq hActive hFinalNoWrap
+  refine
+    ⟨targetFinal, 0, 2, hSource, ?_, ?_,
+      .halt kind hHaltRel, SameFrame.refl mode,
+      Frame.ActivationEffect.of_allocatorEffect
+        (hArgsEffect.trans hTerminalEffect)⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using hTarget
+  · intro hMode
+    cases hMode
+
+theorem terminal_of_invariant
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {targetProgram : Structured.Program}
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : ActivationMode}
+    {kind : Assembly.HaltKind}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hMemory :
+      AllocationObserverSafety.TerminalMemorySafe contract kind [])
+    (hTerminal :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind source [] =
+        .ok sourceFinal)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx plan
+        live frameBase mode source target)
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.terminal kind) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    ∃ targetFinal,
+      NonregularStmtRuntimeForward contract config allocatorDepth transcript
+        plan live frameBase mode mode sourceProgram sourceCtx
+        (.terminal kind) source targetProgram target
+        (Expressions.StmtList.toStructured compiledStmts)
+        (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+        sourceCtx := by
+  obtain
+      ⟨hLowered, _hLowerFinal, hCompiled, _hLocalsFinal⟩ :=
+    AllocationObserverStatement.TerminalLeaf.compiler_shape
+      hLower hCompile
+  obtain
+      ⟨targetAfterCleanup, hCleanupRun, hCleanupCursor,
+        hCleanupStack, hCleanupShared, _hCleanupReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_replicate_pop
+      localsCtx.layout.length
+      (by
+        rw [hInvariant.activation.stackLength])
+  have hAfterStack : targetAfterCleanup.source.evm.stack = [] := by
+    rw [hCleanupStack,
+      hInvariant.activation.stackLength.symm]
+    exact List.drop_length
+  have hAfterCursor : source.cursor = targetAfterCleanup.cursor :=
+    hInvariant.activation.state.base.cursor.trans hCleanupCursor.symm
+  have hAfterShared :
+      SharedRel contract source.source.shared
+        targetAfterCleanup.source.evm.toSharedState := by
+    rw [hCleanupShared]
+    exact hInvariant.activation.state.base.core.shared
+  have hAfterNoWrap :
+      targetAfterCleanup.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+    rw [show
+      targetAfterCleanup.source.evm.activeWords =
+        target.source.evm.activeWords by
+          exact
+            congrArg
+              (fun shared : EvmYul.SharedState .EVM =>
+                shared.toMachineState.activeWords)
+              hCleanupShared]
+    exact hInvariant.activation.state.activeNoWrap
+  obtain
+      ⟨evmFinal, hStep, hHaltRel,
+        hMemoryEq, hActive, hFinalNoWrap⟩ :=
+    (AllocationObserverTerminal.Invocation.of_memorySafe hMemory)
+      |>.forward_shared_observer
+        (plan := plan) (baseStack := [])
+        hAfterCursor hAfterShared hAfterNoWrap hTerminal
+        (by simpa using hAfterStack)
+  let targetFinal : Structured.ObserverSemantics.State transcript :=
+    targetAfterCleanup.withSource
+      (targetAfterCleanup.source.withEVM evmFinal)
+  have hTerminalStmt :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram 0 (.terminal kind) targetAfterCleanup
+          (Structured.EffectSemantics.Outcome.halt kind targetFinal) := by
+    simpa [targetFinal,
+      Structured.ObserverSemantics.stateModel_withEVM] using
+        (Structured.EffectSemantics.Stmt.Eval.terminal
+          (model := Structured.ObserverSemantics.stateModel transcript)
+          (handler := Structured.ObserverSemantics.handler transcript)
+          (program := targetProgram) (fuel := 0) hStep)
+  have hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram 2
+        { stmts :=
+            [Structured.Stmt.code localsCtx.cleanupAll,
+              Structured.Stmt.terminal kind] }
+        target
+        (Structured.EffectSemantics.Outcome.halt kind targetFinal) :=
+    Structured.EffectSemantics.Block.Eval.cons_regular
+      (Structured.EffectSemantics.Stmt.Eval.code
+        (fuel := 1) hCleanupRun)
+      (Structured.EffectSemantics.Block.Eval.cons_halt hTerminalStmt)
+  have hSource :=
+    (AllocationObserverSafety.Stmt.LeafMemorySafeRun.terminal
+      (program := sourceProgram) (ctx := sourceCtx) (fuel := 0)
+      hMemory hTerminal).run_eq
+  have hCleanupMachine :
+      targetAfterCleanup.source.evm.toMachineState =
+        target.source.evm.toMachineState :=
+    congrArg EvmYul.SharedState.toMachineState hCleanupShared
+  have hCleanupEffect :
+      Frame.AllocatorEffect config allocatorDepth
+        target targetAfterCleanup :=
+    Frame.AllocatorEffect.of_machine_eq
+      hInvariant.allocator hCleanupMachine
+  have hTerminalEffect :
+      Frame.AllocatorEffect config allocatorDepth
+        targetAfterCleanup targetFinal :=
+    Frame.AllocatorEffect.of_memory_eq_active_growth
+      hCleanupEffect.ready hMemoryEq hActive hFinalNoWrap
+  refine
+    ⟨targetFinal, 0, 2, hSource, ?_, ?_,
+      .halt kind hHaltRel, SameFrame.refl mode,
+      Frame.ActivationEffect.of_allocatorEffect
+        (hCleanupEffect.trans hTerminalEffect)⟩
+  · simpa [Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured, Locals.codeStmt, hCompiled,
+      hLowered] using hTarget
+  · intro hMode
+    cases hMode
+
 theorem brk_of_invariant
     {contract : MemoryContract.Contract}
     {config : Frame.Config}
@@ -740,6 +1001,330 @@ theorem controlScopesWithin_outEnv
         Functions.Scope.Stmt.mem_outEnv hName)
 
 end SameControl
+
+/--
+The two loop-control destinations tracked by the recursive Functions
+dispatcher.
+-/
+inductive ControlKind where
+  | brk
+  | cont
+
+namespace ControlKind
+
+def sourceScope? :
+    ControlKind → Functions.Source.Ctx → Option (List Functions.Name)
+  | .brk, ctx => ctx.breakScope?
+  | .cont, ctx => ctx.continueScope?
+
+def targetDepth? :
+    ControlKind → Locals.Ctx → Option Nat
+  | .brk, ctx => ctx.breakDepth?
+  | .cont, ctx => ctx.continueDepth?
+
+end ControlKind
+
+/--
+Static allocation destination underlying one available `break` or `continue`.
+
+The destination retains the adjacent compiler context rather than a cleanup
+transition. Declarations and lexical scopes can therefore extend the current
+state, and the exact transition is constructed only at the abrupt leaf through
+`AllocationObserverCleanup.Plain.transition_of_stateExtends`.
+-/
+structure ControlDestination
+    (lowerCtx : AllocationLowering.Ctx)
+    (currentState : AllocationLowering.State)
+    (currentPlan : Locals.Allocation.Plan)
+    (currentLive : List Functions.Name)
+    (currentMode : ActivationMode) where
+  state : AllocationLowering.State
+  locals : Locals.Ctx
+  plan : Locals.Allocation.Plan
+  live : List Functions.Name
+  mode : ActivationMode
+  compiler :
+    AllocationObserverContext.ActivationExprContext
+      lowerCtx state locals plan live mode
+  subset :
+    ∀ name, name ∈ live → name ∈ currentLive
+  sameFrame : SameFrame currentMode mode
+  stateExtends :
+    AllocationLowering.StateExtends live state currentState
+
+namespace ControlDestination
+
+def transport
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState nextState : AllocationLowering.State}
+    {currentPlan nextPlan : Locals.Allocation.Plan}
+    {currentLive nextLive : List Functions.Name}
+    {currentMode nextMode : ActivationMode}
+    (hDestination :
+      ControlDestination lowerCtx currentState currentPlan currentLive
+        currentMode)
+    (hState :
+      AllocationLowering.StateExtends
+        currentLive currentState nextState)
+    (hLive :
+      ∀ name, name ∈ currentLive → name ∈ nextLive)
+    (hMode : SameFrame currentMode nextMode) :
+    ControlDestination lowerCtx nextState nextPlan nextLive nextMode :=
+  { state := hDestination.state
+    locals := hDestination.locals
+    plan := hDestination.plan
+    live := hDestination.live
+    mode := hDestination.mode
+    compiler := hDestination.compiler
+    subset := fun name hName =>
+      hLive name (hDestination.subset name hName)
+    sameFrame := hMode.symm.trans hDestination.sameFrame
+    stateExtends :=
+      hDestination.stateExtends.trans hState hDestination.subset }
+
+theorem exists_transition
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    (hDestination :
+      ControlDestination lowerCtx currentState currentPlan currentLive
+        currentMode)
+    (hCurrent :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx currentState currentLocals currentPlan currentLive currentMode) :
+    ∃ hTransition :
+        AllocationObserverCleanup.Transition currentPlan currentLive
+          hDestination.live hDestination.locals.layout.length
+          currentMode hDestination.mode,
+      True := by
+  obtain ⟨hTransition, _hLayout, _hSlots⟩ :=
+    AllocationObserverCleanup.Plain.transition_of_stateExtends
+      hCurrent hDestination.compiler hDestination.subset
+      hDestination.sameFrame rfl hDestination.stateExtends
+  exact ⟨hTransition, trivial⟩
+
+end ControlDestination
+
+/--
+Source/Locals synchronization for one loop-control kind at a recursive
+statement boundary.
+
+Unavailable bindings prove that both semantics reject the abrupt statement.
+Available bindings point to the pass-owned destination context from which the
+exact cleanup transition is derived.
+-/
+inductive ControlBinding
+    (kind : ControlKind)
+    (lowerCtx : AllocationLowering.Ctx)
+    (currentState : AllocationLowering.State)
+    (currentLocals : Locals.Ctx)
+    (currentPlan : Locals.Allocation.Plan)
+    (currentLive : List Functions.Name)
+    (currentMode : ActivationMode)
+    (sourceCtx : Functions.Source.Ctx) : Prop where
+  | unavailable
+      (source :
+        kind.sourceScope? sourceCtx = none)
+      (target :
+        kind.targetDepth? currentLocals = none) :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx
+  | available
+      (destination :
+        ControlDestination lowerCtx currentState currentPlan currentLive
+          currentMode)
+      (source :
+        kind.sourceScope? sourceCtx = some destination.live)
+      (target :
+        kind.targetDepth? currentLocals =
+          some destination.locals.layout.length) :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx
+
+namespace ControlBinding
+
+theorem transition_of_source
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive afterLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    (hBinding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hCurrent :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx currentState currentLocals currentPlan currentLive
+        currentMode)
+    (hSource :
+      kind.sourceScope? sourceCtx = some afterLive) :
+    ∃ targetDepth afterMode,
+      kind.targetDepth? currentLocals = some targetDepth ∧
+      ∃ hTransition :
+          AllocationObserverCleanup.Transition currentPlan currentLive
+            afterLive targetDepth currentMode afterMode,
+        True := by
+  cases hBinding with
+  | unavailable hNone _hTarget =>
+      rw [hNone] at hSource
+      contradiction
+  | available hDestination hDestinationSource hTarget =>
+      have hLive : afterLive = hDestination.live :=
+        Option.some.inj (hSource.symm.trans hDestinationSource)
+      subst afterLive
+      obtain ⟨hTransition, _hTrue⟩ :=
+        hDestination.exists_transition hCurrent
+      exact
+        ⟨hDestination.locals.layout.length, hDestination.mode,
+          hTarget, hTransition, trivial⟩
+
+theorem transport
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState nextState : AllocationLowering.State}
+    {currentLocals nextLocals : Locals.Ctx}
+    {currentPlan nextPlan : Locals.Allocation.Plan}
+    {currentLive nextLive : List Functions.Name}
+    {currentMode nextMode : ActivationMode}
+    {sourceCtx nextSourceCtx : Functions.Source.Ctx}
+    (hBinding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hSourceControl : SameControl sourceCtx nextSourceCtx)
+    (hLocalsControl : Locals.Ctx.SameControl currentLocals nextLocals)
+    (hState :
+      AllocationLowering.StateExtends
+        currentLive currentState nextState)
+    (hLive :
+      ∀ name, name ∈ currentLive → name ∈ nextLive)
+    (hMode : SameFrame currentMode nextMode) :
+    ControlBinding kind lowerCtx nextState nextLocals nextPlan
+      nextLive nextMode nextSourceCtx := by
+  cases kind with
+  | brk =>
+      cases hBinding with
+      | unavailable hSource hTarget =>
+          exact
+            .unavailable
+              (by
+                change nextSourceCtx.breakScope? = none
+                rw [← hSourceControl.breakScope]
+                exact hSource)
+              (by
+                change nextLocals.breakDepth? = none
+                rw [← hLocalsControl.breakDepth]
+                exact hTarget)
+      | available hDestination hSource hTarget =>
+          have hNextSource :
+              nextSourceCtx.breakScope? =
+                some hDestination.live := by
+            rw [← hSourceControl.breakScope]
+            exact hSource
+          have hNextTarget :
+              nextLocals.breakDepth? =
+                some hDestination.locals.layout.length := by
+            rw [← hLocalsControl.breakDepth]
+            exact hTarget
+          exact
+            .available
+              (hDestination.transport hState hLive hMode)
+              (by
+                simpa [ControlKind.sourceScope?,
+                  ControlDestination.transport] using hNextSource)
+              (by
+                simpa [ControlKind.targetDepth?,
+                  ControlDestination.transport] using hNextTarget)
+  | cont =>
+      cases hBinding with
+      | unavailable hSource hTarget =>
+          exact
+            .unavailable
+              (by
+                change nextSourceCtx.continueScope? = none
+                rw [← hSourceControl.continueScope]
+                exact hSource)
+              (by
+                change nextLocals.continueDepth? = none
+                rw [← hLocalsControl.continueDepth]
+                exact hTarget)
+      | available hDestination hSource hTarget =>
+          have hNextSource :
+              nextSourceCtx.continueScope? =
+                some hDestination.live := by
+            rw [← hSourceControl.continueScope]
+            exact hSource
+          have hNextTarget :
+              nextLocals.continueDepth? =
+                some hDestination.locals.layout.length := by
+            rw [← hLocalsControl.continueDepth]
+            exact hTarget
+          exact
+            .available
+              (hDestination.transport hState hLive hMode)
+              (by
+                simpa [ControlKind.sourceScope?,
+                  ControlDestination.transport] using hNextSource)
+              (by
+                simpa [ControlKind.targetDepth?,
+                  ControlDestination.transport] using hNextTarget)
+
+end ControlBinding
+
+/--
+Both loop-control bindings threaded by source-fuel statement/block recursion.
+-/
+structure ControlDestinations
+    (lowerCtx : AllocationLowering.Ctx)
+    (currentState : AllocationLowering.State)
+    (currentLocals : Locals.Ctx)
+    (currentPlan : Locals.Allocation.Plan)
+    (currentLive : List Functions.Name)
+    (currentMode : ActivationMode)
+    (sourceCtx : Functions.Source.Ctx) : Prop where
+  brk :
+    ControlBinding .brk lowerCtx currentState currentLocals currentPlan
+      currentLive currentMode sourceCtx
+  cont :
+    ControlBinding .cont lowerCtx currentState currentLocals currentPlan
+      currentLive currentMode sourceCtx
+
+namespace ControlDestinations
+
+theorem transport
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState nextState : AllocationLowering.State}
+    {currentLocals nextLocals : Locals.Ctx}
+    {currentPlan nextPlan : Locals.Allocation.Plan}
+    {currentLive nextLive : List Functions.Name}
+    {currentMode nextMode : ActivationMode}
+    {sourceCtx nextSourceCtx : Functions.Source.Ctx}
+    (hDestinations :
+      ControlDestinations lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (hSourceControl : SameControl sourceCtx nextSourceCtx)
+    (hLocalsControl : Locals.Ctx.SameControl currentLocals nextLocals)
+    (hState :
+      AllocationLowering.StateExtends
+        currentLive currentState nextState)
+    (hLive :
+      ∀ name, name ∈ currentLive → name ∈ nextLive)
+    (hMode : SameFrame currentMode nextMode) :
+    ControlDestinations lowerCtx nextState nextLocals nextPlan
+      nextLive nextMode nextSourceCtx :=
+  { brk :=
+      hDestinations.brk.transport hSourceControl hLocalsControl
+        hState hLive hMode
+    cont :=
+      hDestinations.cont.transport hSourceControl hLocalsControl
+        hState hLive hMode }
+
+end ControlDestinations
 
 /--
 Transport an abrupt activation outcome from a lexical body plan to its outer

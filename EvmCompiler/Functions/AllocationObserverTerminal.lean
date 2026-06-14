@@ -350,7 +350,14 @@ theorem Invocation.simulate
       Locals.Source.PrimitiveSemantics.structured.terminal
           kind targetShared values =
         .ok targetFinal ∧
-      SharedRel contract sourceFinal targetFinal := by
+      SharedRel contract sourceFinal targetFinal ∧
+      targetFinal.toMachineState.memory =
+        targetShared.toMachineState.memory ∧
+      targetShared.toMachineState.activeWords.toNat ≤
+        targetFinal.toMachineState.activeWords.toNat ∧
+      targetFinal.toMachineState.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
   cases invocation with
   | stop =>
       rw [structured_terminal_stop] at hEval
@@ -359,7 +366,8 @@ theorem Invocation.simulate
         ⟨{ targetShared with
             returnData := ByteArray.empty
             H_return := ByteArray.empty },
-          structured_terminal_stop targetShared, ?_⟩
+          structured_terminal_stop targetShared, ?_, rfl,
+          Nat.le_refl _, hTargetNoWrap⟩
       refine ⟨?_, hRel.world⟩
       refine ⟨?_, ?_, rfl, rfl⟩
       · simpa using hRel.machine.memory
@@ -367,7 +375,7 @@ theorem Invocation.simulate
   | «return» address size hAllowed hExpansion hHost =>
       rw [structured_terminal_return] at hEval
       cases hEval
-      obtain ⟨hMachine, _hActiveMono, _hFinalNoWrap⟩ :=
+      obtain ⟨hMachine, hActiveMono, hFinalNoWrap⟩ :=
         Machine.evmReturn_both hRel.machine hTargetNoWrap
           address size hAllowed hExpansion hHost
       refine
@@ -375,11 +383,12 @@ theorem Invocation.simulate
             toMachineState :=
               targetShared.toMachineState.evmReturn address size },
           structured_terminal_return targetShared address size,
-          hMachine, hRel.world⟩
+          ⟨hMachine, hRel.world⟩, ?_, hActiveMono, hFinalNoWrap⟩
+      rfl
   | revert address size hAllowed hExpansion hHost =>
       rw [structured_terminal_revert] at hEval
       cases hEval
-      obtain ⟨hMachine, _hActiveMono, _hFinalNoWrap⟩ :=
+      obtain ⟨hMachine, hActiveMono, hFinalNoWrap⟩ :=
         Machine.evmRevert_both hRel.machine hTargetNoWrap
           address size hAllowed hExpansion hHost
       refine
@@ -387,7 +396,8 @@ theorem Invocation.simulate
             toMachineState :=
               targetShared.toMachineState.evmRevert address size },
           structured_terminal_revert targetShared address size,
-          hMachine, hRel.world⟩
+          ⟨hMachine, hRel.world⟩, ?_, hActiveMono, hFinalNoWrap⟩
+      rfl
   | selfdestruct recipient =>
       rw [structured_terminal_selfdestruct] at hEval
       cases hEval
@@ -405,7 +415,8 @@ theorem Invocation.simulate
         (EvmYul.EVM.selfdestructState sourceState recipient []).toSharedState
       let targetFinal :=
         (EvmYul.EVM.selfdestructState targetState recipient []).toSharedState
-      refine ⟨targetFinal, ?_, ?_⟩
+      refine
+        ⟨targetFinal, ?_, ?_, ?_, Nat.le_refl _, ?_⟩
       · simpa [targetFinal, targetState] using
           structured_terminal_selfdestruct targetShared recipient
       · refine ⟨?_, ?_⟩
@@ -426,6 +437,96 @@ theorem Invocation.simulate
             EvmYul.EVM.State.replaceStackAndIncrPC,
             EvmYul.EVM.State.incrPC,
             EvmYul.MachineState.setHReturn, hRel.world]
+      · simp [targetFinal, targetState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC,
+          EvmYul.MachineState.setHReturn]
+      · simpa [targetFinal, targetState,
+          EvmYul.EVM.selfdestructState,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC,
+          EvmYul.MachineState.setHReturn] using hTargetNoWrap
+
+/--
+Observer-state terminal preservation from the shared observable relation over
+an arbitrary target stack suffix.
+
+This core form intentionally does not require live-local realization. Plain
+terminal statements discard the complete compiler-local stack before halting,
+so only cursor/shared-state agreement and the target no-wrap fact survive to
+the terminal boundary.
+-/
+theorem Invocation.forward_shared_observer
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {plan : Locals.Allocation.Plan}
+    {kind : Assembly.HaltKind} {values : List Word}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {baseStack : EvmYul.Stack Word}
+    (invocation : Invocation contract kind values)
+    (hCursor : source.cursor = target.cursor)
+    (hShared :
+      SharedRel contract source.source.shared
+        target.source.evm.toSharedState)
+    (hTargetNoWrap :
+      target.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hEval :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind source values =
+        .ok sourceFinal)
+    (hStack :
+      target.source.evm.stack = values.reverse ++ baseStack) :
+    ∃ evmFinal,
+      Structured.Terminal.step kind target.source.evm =
+          .ok evmFinal ∧
+        HaltStateRel contract plan sourceFinal
+          (target.withSource (target.source.withEVM evmFinal)) ∧
+        (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.toMachineState.memory =
+          target.source.evm.toMachineState.memory ∧
+        target.source.evm.activeWords.toNat ≤
+          (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.activeWords.toNat ∧
+        (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.activeWords.toNat *
+              MemoryContract.wordBytes <
+          EvmYul.UInt256.size := by
+  unfold Functions.ObserverSemantics.primitiveSemantics at hEval
+  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
+  cases hSourceEval :
+      Locals.Source.PrimitiveSemantics.structured.terminal
+        kind source.source.shared values with
+  | error err =>
+      simp [hSourceEval] at hEval
+  | ok sourceSharedFinal =>
+      simp [hSourceEval] at hEval
+      subst sourceFinal
+      obtain
+          ⟨targetSharedFinal, hTargetEval, hSharedRel,
+            hMemory, hActive, hFinalNoWrap⟩ :=
+        invocation.simulate hShared hTargetNoWrap hSourceEval
+      obtain
+          ⟨evmFinal, hStep, hFinalShared, _isolated, _hIsolated,
+            _hFinalStack⟩ :=
+        Locals.Source.PrimitiveSemantics.structured_terminal_step_exists
+          hTargetEval rfl hStack
+      refine
+        ⟨evmFinal, hStep, ?_, ?_, ?_, ?_⟩
+      · refine ⟨hCursor, ?_⟩
+        simpa [Simulation.ResourceReplay.State.withSource,
+          Structured.RunState.withEVM, Locals.Source.State.withShared,
+          hFinalShared] using hSharedRel
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Structured.RunState.withEVM, hFinalShared] using hMemory
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Structured.RunState.withEVM, hFinalShared] using hActive
+      · simpa [Simulation.ResourceReplay.State.withSource,
+          Structured.RunState.withEVM, hFinalShared] using hFinalNoWrap
 
 /--
 Observer-state terminal preservation over an arbitrary target stack suffix.
@@ -459,30 +560,20 @@ theorem Invocation.forward_observer
       Structured.Terminal.step kind target.source.evm =
           .ok evmFinal ∧
         HaltStateRel contract plan sourceFinal
-          (target.withSource (target.source.withEVM evmFinal)) := by
-  unfold Functions.ObserverSemantics.primitiveSemantics at hEval
-  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
-  cases hSourceEval :
-      Locals.Source.PrimitiveSemantics.structured.terminal
-        kind source.source.shared values with
-  | error err =>
-      simp [hSourceEval] at hEval
-  | ok sourceSharedFinal =>
-      simp [hSourceEval] at hEval
-      subst sourceFinal
-      obtain ⟨targetSharedFinal, hTargetEval, hSharedRel⟩ :=
-        invocation.simulate hRel.base.core.shared hRel.activeNoWrap
-          hSourceEval
-      obtain
-          ⟨evmFinal, hStep, hFinalShared, _isolated, _hIsolated,
-            _hFinalStack⟩ :=
-        Locals.Source.PrimitiveSemantics.structured_terminal_step_exists
-          hTargetEval rfl hStack
-      refine ⟨evmFinal, hStep, ?_⟩
-      refine ⟨hRel.base.cursor, ?_⟩
-      simpa [Simulation.ResourceReplay.State.withSource,
-        Structured.RunState.withEVM, Locals.Source.State.withShared,
-        hFinalShared] using hSharedRel
+          (target.withSource (target.source.withEVM evmFinal)) ∧
+        (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.toMachineState.memory =
+          target.source.evm.toMachineState.memory ∧
+        target.source.evm.activeWords.toNat ≤
+          (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.activeWords.toNat ∧
+        (target.withSource
+            (target.source.withEVM evmFinal)).source.evm.activeWords.toNat *
+              MemoryContract.wordBytes <
+          EvmYul.UInt256.size := by
+  exact
+    invocation.forward_shared_observer
+      hRel.base.cursor hRel.base.core.shared hRel.activeNoWrap hEval hStack
 
 end AllocationObserverTerminal
 end Functions

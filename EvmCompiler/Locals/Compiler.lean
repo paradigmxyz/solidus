@@ -548,9 +548,203 @@ theorem compile_for_components
                                   by simpa [bodyBase] using hFinishBody,
                                   hCleanup, rfl, rfl⟩
 
+/--
+Successful compilation of one Locals statement preserves every enclosing
+control destination. Only the stack layout may change.
+-/
+theorem compile_sameControl
+    {ctx final : Ctx}
+    {stmt : Stmt}
+    {code : List Expressions.Stmt}
+    (hCompile : Stmt.compile ctx stmt = some (code, final)) :
+    Ctx.SameControl ctx final := by
+  cases stmt with
+  | expr expr =>
+      rw [compile_expr_final hCompile]
+      exact Ctx.SameControl.refl ctx
+  | exprs exprs =>
+      cases hCode : ExprSeq.compileCode ctx 0 exprs with
+      | none =>
+          simp [Stmt.compile, hCode] at hCompile
+      | some result =>
+          simp [Stmt.compile, hCode] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact Ctx.SameControl.refl ctx
+  | let_ name value =>
+      cases hCode : Expr.compileCode ctx 0 value with
+      | none =>
+          simp [Stmt.compile, hCode] at hCompile
+      | some result =>
+          simp [Stmt.compile, hCode] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact Ctx.SameControl.withLayout ctx (name :: ctx.layout)
+  | assign name value =>
+      cases hDepth : Layout.lookupDepth? name ctx.layout with
+      | none =>
+          simp [Stmt.compile, hDepth] at hCompile
+      | some depth =>
+          cases hCode : Expr.compileCode ctx 0 value with
+          | none =>
+              simp [Stmt.compile, hDepth, hCode] at hCompile
+          | some valueCode =>
+              cases hSwap : StackOp.swap? depth with
+              | none =>
+                  simp [Stmt.compile, hDepth, hCode, hSwap] at hCompile
+              | some op =>
+                  simp [Stmt.compile, hDepth, hCode, hSwap] at hCompile
+                  rcases hCompile with ⟨rfl, rfl⟩
+                  exact Ctx.SameControl.refl ctx
+  | assignTop name =>
+      cases hDepth : Layout.lookupDepth? name ctx.layout with
+      | none =>
+          simp [Stmt.compile, hDepth] at hCompile
+      | some depth =>
+          cases hSwap : StackOp.swap? depth with
+          | none =>
+              simp [Stmt.compile, hDepth, hSwap] at hCompile
+          | some op =>
+              simp [Stmt.compile, hDepth, hSwap] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact Ctx.SameControl.refl ctx
+  | assignTopWithOffset offset name =>
+      cases hDepth : Layout.lookupDepth? name ctx.layout with
+      | none =>
+          simp [Stmt.compile, hDepth] at hCompile
+      | some depth =>
+          cases hSwap : StackOp.swap? (offset + depth) with
+          | none =>
+              simp [Stmt.compile, hDepth, hSwap] at hCompile
+          | some op =>
+              simp [Stmt.compile, hDepth, hSwap] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact Ctx.SameControl.refl ctx
+  | promoteName name =>
+      obtain ⟨layout, rfl⟩ :=
+        compile_promoteName_final hCompile
+      exact Ctx.SameControl.withLayout ctx layout
+  | cleanupTo target =>
+      obtain ⟨_cleanup, _hTarget, _hCleanup, _hCode, rfl⟩ :=
+        compile_cleanupTo_components hCompile
+      exact Ctx.SameControl.withLayout ctx target
+  | block body =>
+      obtain ⟨_bodyCode, _bodyCtx, _lowerBody,
+        _hBody, _hFinish, _hCode, hFinal⟩ :=
+        compile_block_components hCompile
+      rw [hFinal]
+      exact Ctx.SameControl.refl ctx
+  | if_ cond body =>
+      obtain ⟨_condCode, _bodyCode, _bodyCtx, _lowerBody,
+        _hCond, _hBody, _hFinish, _hCode, hFinal⟩ :=
+        compile_if_components hCompile
+      rw [hFinal]
+      exact Ctx.SameControl.refl ctx
+  | switch scrutinee cases defaultBody =>
+      obtain ⟨_scrutineeCode, _compiledCases, _compiledDefault,
+        _hScrutinee, _hCases, _hDefault, _hCode, hFinal⟩ :=
+        compile_switch_components hCompile
+      rw [hFinal]
+      exact Ctx.SameControl.refl ctx
+  | for_ init cond post body =>
+      obtain ⟨_initCode, _initCtx, _condCode,
+        _postCode, _postCtx, _compiledPost,
+        _bodyCode, _bodyCtx, _compiledBody, _cleanup,
+        _hInit, _hCond, _hPost, _hFinishPost,
+        _hBody, _hFinishBody, _hCleanup, _hCode, hFinal⟩ :=
+        compile_for_components hCompile
+      rw [hFinal]
+      exact Ctx.SameControl.refl ctx
+  | brk =>
+      cases hTarget : ctx.breakDepth? with
+      | none =>
+          simp [Stmt.compile, hTarget] at hCompile
+      | some target =>
+          cases hCleanup : ctx.cleanupTo? target with
+          | none =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          | some cleanup =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact Ctx.SameControl.refl ctx
+  | cont =>
+      cases hTarget : ctx.continueDepth? with
+      | none =>
+          simp [Stmt.compile, hTarget] at hCompile
+      | some target =>
+          cases hCleanup : ctx.cleanupTo? target with
+          | none =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          | some cleanup =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact Ctx.SameControl.refl ctx
+  | leave =>
+      cases hTarget : ctx.leaveDepth? with
+      | none =>
+          simp [Stmt.compile, hTarget] at hCompile
+      | some target =>
+          cases hCleanup :
+              ctx.cleanupToPreserving? ctx.leaveRetc target with
+          | none =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          | some cleanup =>
+              simp [Stmt.compile, hTarget, hCleanup] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact Ctx.SameControl.refl ctx
+  | call name =>
+      simp [Stmt.compile] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Ctx.SameControl.refl ctx
+  | terminal kind =>
+      simp [Stmt.compile] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Ctx.SameControl.refl ctx
+  | terminalArgs kind args =>
+      cases hCode : ExprSeq.compileCode ctx 0 args with
+      | none =>
+          simp [Stmt.compile, hCode] at hCompile
+      | some result =>
+          simp [Stmt.compile, hCode] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact Ctx.SameControl.refl ctx
+
 end Stmt
 
 namespace Block
+
+/--
+Open-block compilation preserves the enclosing loop and leave destinations
+through every statement in the sequence.
+-/
+theorem compileOpen_sameControl
+    {ctx final : Ctx}
+    {block : Block}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Block.compileOpen ctx block = some (code, final)) :
+    Ctx.SameControl ctx final := by
+  rcases block with ⟨stmts⟩
+  induction stmts generalizing ctx code final with
+  | nil =>
+      simp [Block.compileOpen] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact Ctx.SameControl.refl ctx
+  | cons stmt rest ih =>
+      cases hStmt : Stmt.compile ctx stmt with
+      | none =>
+          simp [Block.compileOpen, hStmt] at hCompile
+      | some stmtResult =>
+          rcases stmtResult with ⟨stmtCode, middle⟩
+          cases hRest :
+              Block.compileOpen middle { stmts := rest } with
+          | none =>
+              simp [Block.compileOpen, hStmt, hRest] at hCompile
+          | some restResult =>
+              rcases restResult with ⟨restCode, restFinal⟩
+              simp [Block.compileOpen, hStmt, hRest] at hCompile
+              rcases hCompile with ⟨rfl, rfl⟩
+              exact
+                (Stmt.compile_sameControl hStmt).trans
+                  (ih hRest)
 
 /--
 The singleton open-block form used by the allocation boundary for `if`.

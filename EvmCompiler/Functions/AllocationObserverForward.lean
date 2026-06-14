@@ -3412,6 +3412,344 @@ theorem Cursor.leaveRuntimeResult
   simpa [AllocationObserverOutcome.outcomeLive] using hForward
 
 /--
+Preserve one terminal-with-arguments statement directly from a synchronized
+body cursor.
+-/
+theorem Cursor.terminalArgsRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source afterArgs sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .terminalArgs kind args :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hArgs :
+      AllocationObserverSafety.ExprSeq.MemorySafeEval
+        program.memoryContract transcript args source afterArgs values)
+    (hMemory :
+      AllocationObserverSafety.TerminalMemorySafe
+        program.memoryContract kind values)
+    (hTerminal :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind afterArgs values =
+        .ok sourceFinal)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.terminalArgs kind args) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+            (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.terminalArgs_of_invariant
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hConfig hArgs hMemory hTerminal hScoped hInvariant hLower hCompile
+  exact
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .nonregular (finalMode := mode) hForward⟩
+
+/--
+Dispatcher-facing terminal leaf derived from a successful guarded canonical
+statement run.
+-/
+theorem Cursor.terminalArgsRuntimeResultOfSafeRun
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .terminalArgs kind args :: rest }
+        beforeState beforeLocals)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel (.terminalArgs kind args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+            sourceCtx))
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.terminalArgs kind args) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+            (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+            sourceCtx := by
+  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  cases hArgsEval :
+      Locals.Source.Effectful.Expr.ExprSeq.eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        args source with
+  | error err =>
+      simp [hArgsEval] at hSource
+  | ok result =>
+      rcases result with ⟨afterArgs, values⟩
+      simp only [hArgsEval, Bind.bind, Except.bind] at hSource
+      cases hTerminalEval :
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript).terminal
+            kind afterArgs values with
+      | error err =>
+          simp [hTerminalEval] at hSource
+      | ok final =>
+          simp only [hTerminalEval] at hSource
+          have hEq :
+              (Functions.Source.Effectful.Outcome.halt kind final,
+                sourceCtx) =
+              (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+                sourceCtx) :=
+            Except.ok.inj hSource
+          cases hEq
+          obtain ⟨hMemory, hTerminal⟩ :=
+            AllocationObserverSafety.SafeSemantics.terminal_parts
+              hTerminalEval
+          exact
+            cursor.terminalArgsRuntimeResult hConfig
+              (AllocationObserverSafety.ExprSeq.MemorySafeEval.of_safe_eval
+                hArgsEval)
+              hMemory hTerminal hInvariant
+
+/--
+Preserve one plain terminal statement, including the compiler-emitted cleanup
+of every dead local stack slot.
+-/
+theorem Cursor.terminalRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .terminal kind :: rest }
+        beforeState beforeLocals)
+    (hMemory :
+      AllocationObserverSafety.TerminalMemorySafe
+        program.memoryContract kind [])
+    (hTerminal :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind source [] =
+        .ok sourceFinal)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.terminal kind) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+            (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, _hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverOutcome.NonregularStmtRuntimeForward.terminal_of_invariant
+      (sourceProgram := program)
+      (targetProgram := expressions.toStructured)
+      hMemory hTerminal hInvariant hLower hCompile
+  exact
+    ⟨afterState, afterLocals, headCode, tail, targetFinal,
+      hCompiled, .nonregular (finalMode := mode) hForward⟩
+
+/--
+Dispatcher-facing plain terminal leaf derived from a successful guarded
+canonical statement run.
+-/
+theorem Cursor.terminalRuntimeResultOfSafeRun
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {kind : Assembly.HaltKind}
+    {rest : List Functions.Stmt}
+    {beforeState : AllocationLowering.State}
+    {beforeLocals : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .terminal kind :: rest }
+        beforeState beforeLocals)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel (.terminal kind) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+            sourceCtx))
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        beforeState beforeLocals cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState afterLocals,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState afterLocals cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.terminal kind) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+            (Structured.EffectSemantics.Outcome.halt kind targetFinal)
+            sourceCtx := by
+  simp only [Functions.Source.Effectful.Stmt.run] at hSource
+  cases hTerminalEval :
+      (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+        program.memoryContract transcript).terminal kind source [] with
+  | error err =>
+      simp [hTerminalEval] at hSource
+  | ok final =>
+      simp only [hTerminalEval] at hSource
+      have hEq :
+          (Functions.Source.Effectful.Outcome.halt kind final, sourceCtx) =
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+              sourceCtx) :=
+        Except.ok.inj hSource
+      cases hEq
+      obtain ⟨hMemory, hTerminal⟩ :=
+        AllocationObserverSafety.SafeSemantics.terminal_parts
+          hTerminalEval
+      exact
+        cursor.terminalRuntimeResult hMemory hTerminal hInvariant
+
+/--
 Preserve the false branch of one synchronized `if` cursor.
 
 The nested body cursor is still constructed from the real passes, but the

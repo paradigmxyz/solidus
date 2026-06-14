@@ -3412,6 +3412,37 @@ end AssignLeaf
 namespace TerminalLeaf
 
 /--
+Successful lowering and Locals compilation of a plain terminal statement emits
+the complete dead-local cleanup followed by the terminal instruction.
+-/
+theorem compiler_shape
+    {lowerCtx : AllocationLowering.Ctx}
+    {returns : List Functions.Name}
+    {lowerState lowerFinal : AllocationLowering.State}
+    {localsCtx localsFinal : Locals.Ctx}
+    {kind : Assembly.HaltKind}
+    {loweredStmts : List Locals.Stmt}
+    {compiledStmts : List Expressions.Stmt}
+    (hLower :
+      AllocationLowering.lowerStmt lowerCtx returns lowerState
+          (.terminal kind) =
+        some (loweredStmts, lowerFinal))
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredStmts } =
+        some (compiledStmts, localsFinal)) :
+    loweredStmts = [.terminal kind] ∧
+      lowerFinal = lowerState ∧
+      compiledStmts =
+        Locals.codeStmt localsCtx.cleanupAll ++
+          [Expressions.Stmt.terminal kind] ∧
+      localsFinal = localsCtx := by
+  simp [AllocationLowering.lowerStmt] at hLower
+  rcases hLower with ⟨rfl, rfl⟩
+  simp [Locals.Block.compileOpen, Locals.Stmt.compile] at hCompile
+  rcases hCompile with ⟨rfl, rfl⟩
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+/--
 Successful lowering and Locals compilation of a terminal-with-arguments
 statement emits exactly the argument code followed by the terminal statement.
 -/
@@ -3533,7 +3564,9 @@ theorem forward_args_of_compilers
       (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
         contract)
       hArgs hCtx hScoped hLowerArgs hCompileCode hRel
-  obtain ⟨evmFinal, hStep, hHaltRel⟩ :=
+  obtain
+      ⟨evmFinal, hStep, hHaltRel,
+        _hMemory, _hActive, _hFinalNoWrap⟩ :=
     (AllocationObserverTerminal.Invocation.of_memorySafe hMemory).forward_observer
       hArgsRel.state hTerminal hArgsRel.stack
   let targetFinal : Structured.ObserverSemantics.State transcript :=
