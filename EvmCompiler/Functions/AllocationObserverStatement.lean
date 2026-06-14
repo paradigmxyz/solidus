@@ -6058,7 +6058,8 @@ theorem if_true_of_components
     (hCondScoped : Functions.Scope.ExprScoped outerLive cond)
     (hBodyScoped :
       Functions.Scope.Block.Scoped outerLive body)
-    (hSourceScope : sourceCtx.scope = outerLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ outerLive)
     (hSubset :
       ∀ name, name ∈ outerLive → name ∈ bodyLive)
     (hInvariant :
@@ -6129,9 +6130,7 @@ theorem if_true_of_components
         hSourceBody, hTargetBody, hFinalInvariant, hBodyEffect⟩ :=
     RegularScopedBlockRuntimeInvariantForward.finish_regular
       hBodyForward
-      (by
-        intro name
-        simp [hSourceScope])
+      hSourceScope
       rfl hCondInvariant.activation.compiler
       hCondInvariant.activation.planWF hSubset hBodyScoped hLowerBody
       hFinish

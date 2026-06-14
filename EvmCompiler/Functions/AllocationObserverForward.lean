@@ -826,6 +826,98 @@ theorem Cursor.blockCursors
   rw [hBodyCode, hBodyLocals]
   exact hFinish
 
+/--
+Decompose an `if` statement into its condition compiler artifacts, exact
+scope-owned body cursor, and outer tail cursor.
+
+Both runtime branches share this compiler decomposition; only the canonical
+source condition result determines whether the nested cursor is executed.
+-/
+theorem Cursor.ifCursors
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx) :
+    ∃ afterState headLower headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ loweredCond condCode targetBody,
+      ∃ bodyCursor :
+        Cursor prepared (.lexical scope cursor.planning.nextScope)
+          live body lowerState localsCtx,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationLowering.lowerStmt artifact.lowerCtx fn.returns
+              lowerState (.if_ cond body) =
+            some (headLower, afterState) ∧
+          Locals.Block.compileOpen localsCtx { stmts := headLower } =
+            some (headCode, localsCtx) ∧
+          headCode =
+            [Expressions.Stmt.if_
+              (Expressions.Expr.code condCode) targetBody] ∧
+          AllocationLowering.lowerExpr
+              artifact.lowerCtx lowerState cond =
+            some loweredCond ∧
+          Locals.Expr.compileCode localsCtx 0 loweredCond =
+            some condCode ∧
+          Locals.finishScoped
+              localsCtx bodyCursor.finalLocals bodyCursor.compiled =
+            some targetBody ∧
+          afterState.allocation.env =
+            lowerState.allocation.env ∧
+          afterState.layout = lowerState.layout ∧
+          Functions.Scope.ExprScoped live cond := by
+  obtain
+      ⟨afterState, afterLocals, headLower, headCode, tail,
+        _hPlanning, _hPlan, _hFinalState, _hFinalLocals, hLower, hCompile,
+        _hLowered, hCompiled, hScopedStmt⟩ :=
+    cursor.cons
+  obtain
+      ⟨loweredCond, loweredBody, hLowerCond, hLowerBody, hHeadLower⟩ :=
+    AllocationLowering.lowerStmt_if_components hLower
+  have hHeadCompile := hCompile
+  rw [hHeadLower] at hCompile
+  obtain
+      ⟨condCode, bodyCode, bodyLocals, targetBody,
+        hCompileCond, hCompileBody, hFinish, hHeadCode,
+        hAfterLocals⟩ :=
+    Locals.Block.compileOpen_single_if_components hCompile
+  have hScoped :
+      Functions.Scope.ExprScoped live cond ∧
+        Functions.Scope.Block.Scoped live body := by
+    simpa [Functions.Scope.Stmt.Scoped] using hScopedStmt
+  obtain ⟨bodyCursor, hBodyCode, hBodyLocals⟩ :=
+    cursor.scoped
+      (stmt := .if_ cond body)
+      (body := body)
+      (by simp [AllocationSupport.planStmt])
+      hLowerBody hCompileBody hScoped.2
+  have hAfterShape :=
+    AllocationLowering.lowerBlockScoped_state_shape hLowerBody
+  cases hAfterLocals
+  refine
+    ⟨afterState, headLower, headCode, tail, loweredCond, condCode,
+      targetBody, bodyCursor, hCompiled, hLower, ?_, hHeadCode, hLowerCond,
+      hCompileCond, ?_, hAfterShape.1, hAfterShape.2, hScoped.1⟩
+  · simpa using hHeadCompile
+  rw [hBodyCode, hBodyLocals]
+  exact hFinish
+
 theorem Cursor.final_env_extension
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -2651,6 +2743,82 @@ theorem Cursor.letRuntimeResultOfSafeRun
         cursor.letRuntimeResult hConfig
           (AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne hEval)
           hInvariant
+
+/--
+Preserve the false branch of one synchronized `if` cursor.
+
+The nested body cursor is still constructed from the real passes, but the
+canonical source condition proves it unreachable.
+-/
+theorem Cursor.ifFalseRuntimeResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {cond : Functions.Expr 1}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterCond :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      Cursor prepared scope live
+        { stmts := .if_ cond body :: rest } lowerState localsCtx)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract artifact.recipe.frameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript cond source sourceAfterCond [value])
+    (hFalse : value = EvmYul.UInt256.ofNat 0)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth artifact.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState headCode,
+      ∃ tail :
+        Cursor prepared scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtRuntimeResult
+            program.memoryContract config allocatorDepth transcript
+            artifact.lowerCtx afterState localsCtx cursor.plan
+            fn.returns live frameBase mode program sourceCtx
+            (.if_ cond body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular sourceAfterCond)
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, _loweredCond, _condCode,
+        _targetBody, _bodyCursor, hCompiled, hLower, hCompile, _hHeadCode,
+        _hLowerCond, _hCompileCond, _hFinish, _hAfterEnv, _hAfterLayout,
+        hCondScoped⟩ :=
+    cursor.ifCursors
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward.if_false_of_components
+      hConfig hSafe hFalse hCondScoped hInvariant hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetFinal, hCompiled,
+      .regular hForward (AllocationObserverOutcome.SameControl.refl _)⟩
 
 /--
 Preserve one lexical block statement from its synchronized outer cursor and

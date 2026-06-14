@@ -398,6 +398,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_exists
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_cases
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_nonregular
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_cases
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_cases
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_exists
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_nonregular
 #check EvmCompiler.Expressions.StmtList.toStructured_append
@@ -513,6 +515,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.scoped
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockCursors
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifCursors
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.final_env_extension
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.bodyFinal_lookup_of_lookup
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.currentStackOrder_of_active
@@ -529,6 +532,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.exprRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.assignRuntimeResultOfSafeRun
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.letRuntimeResultOfSafeRun
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.ifFalseRuntimeResult
 #check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.blockRuntimeResult
 #check EvmCompiler.Functions.MixedAllocation.AllocationRecipe.toMixedProgramPlan_find_lexical_entry
 #check EvmCompiler.Functions.AllocationSupport.planRecipeCore?_function_lexicalScopes

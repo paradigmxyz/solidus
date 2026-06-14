@@ -582,7 +582,8 @@ theorem switch_some_of_components
       Functions.Scope.ExprScoped outerLive scrutinee)
     (hBodyScoped :
       Functions.Scope.Block.Scoped outerLive selectedBody)
-    (hSourceScope : sourceCtx.scope = outerLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ outerLive)
     (hSubset :
       ∀ name, name ∈ outerLive → name ∈ bodyLive)
     (hInvariant :
@@ -688,9 +689,7 @@ theorem switch_some_of_components
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
       hBodyForward
-      (by
-        intro name
-        simp [hSourceScope])
+      hSourceScope
       rfl hSelectedInvariant.activation.compiler
       hSelectedInvariant.activation.planWF hSubset hBodyScoped hLowerBody
       hFinishSelected

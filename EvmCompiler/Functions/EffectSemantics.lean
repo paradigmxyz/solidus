@@ -2461,6 +2461,59 @@ theorem run_if_true_of_eval {σ : Type}
   simp [Stmt.run, hCond, hBody]
 
 /--
+Invert a successful canonical source `if` at its exact smaller body fuel.
+-/
+theorem run_if_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.if_ cond body) source =
+        .ok (outcome, finalCtx)) :
+    (∃ afterCond,
+        Expr.evalCondition model prim cond source =
+          .ok (afterCond, false) ∧
+        outcome = Outcome.regular afterCond ∧
+        finalCtx = ctx) ∨
+      (∃ afterCond bodyOutcome,
+        Expr.evalCondition model prim cond source =
+          .ok (afterCond, true) ∧
+        Block.runScoped model prim program ctx body fuel afterCond =
+          .ok bodyOutcome ∧
+        outcome = bodyOutcome ∧
+        finalCtx = ctx) := by
+  unfold Stmt.run at hRun
+  cases hCond : Expr.evalCondition model prim cond source with
+  | error err =>
+      simp [hCond] at hRun
+  | ok result =>
+      rcases result with ⟨afterCond, condTrue⟩
+      cases condTrue with
+      | false =>
+          simp only [hCond, Bool.false_eq_true, ↓reduceIte] at hRun
+          left
+          refine ⟨afterCond, rfl, ?_⟩
+          have hEq := (Except.ok.inj hRun).symm
+          exact
+            ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
+      | true =>
+          simp only [hCond, ↓reduceIte] at hRun
+          cases hBody :
+              Block.runScoped model prim program ctx body fuel afterCond with
+          | error err =>
+              simp [hBody] at hRun
+          | ok bodyOutcome =>
+              simp only [hBody, Bind.bind, Except.bind] at hRun
+              right
+              refine ⟨afterCond, bodyOutcome, rfl, hBody, ?_⟩
+              have hEq := (Except.ok.inj hRun).symm
+              exact
+                ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
+
+/--
 Canonical source `switch` execution when no case or default is selected.
 -/
 theorem run_switch_none_of_eval {σ : Type}
@@ -2507,6 +2560,68 @@ theorem run_switch_some_of_eval {σ : Type}
         (.switch scrutinee cases defaultBody) source =
       .ok (outcome, ctx) := by
   simp [Stmt.run, hScrutinee, hSelect, hBody]
+
+/--
+Invert a successful canonical source `switch` at the exact selected-body fuel.
+-/
+theorem run_switch_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx (fuel + 1)
+          (.switch scrutinee cases defaultBody) source =
+        .ok (outcome, finalCtx)) :
+    (∃ afterScrutinee value,
+        Expr.evalOne model prim scrutinee source =
+          .ok (afterScrutinee, value) ∧
+        Source.Switch.select value cases defaultBody = none ∧
+        outcome = Outcome.regular afterScrutinee ∧
+        finalCtx = ctx) ∨
+      (∃ afterScrutinee value selected bodyOutcome,
+        Expr.evalOne model prim scrutinee source =
+          .ok (afterScrutinee, value) ∧
+        Source.Switch.select value cases defaultBody = some selected ∧
+        Block.runScoped model prim program ctx selected fuel
+            afterScrutinee =
+          .ok bodyOutcome ∧
+        outcome = bodyOutcome ∧
+        finalCtx = ctx) := by
+  unfold Stmt.run at hRun
+  cases hScrutinee : Expr.evalOne model prim scrutinee source with
+  | error err =>
+      simp [hScrutinee] at hRun
+  | ok result =>
+      rcases result with ⟨afterScrutinee, value⟩
+      simp only [hScrutinee, Bind.bind, Except.bind] at hRun
+      cases hSelect : Source.Switch.select value cases defaultBody with
+      | none =>
+          simp only [hSelect] at hRun
+          left
+          refine ⟨afterScrutinee, value, rfl, hSelect, ?_⟩
+          have hEq := (Except.ok.inj hRun).symm
+          exact
+            ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
+      | some selected =>
+          simp only [hSelect] at hRun
+          cases hBody :
+              Block.runScoped model prim program ctx selected fuel
+                afterScrutinee with
+          | error err =>
+              simp [hBody] at hRun
+          | ok bodyOutcome =>
+              simp only [hBody, Bind.bind, Except.bind] at hRun
+              right
+              refine
+                ⟨afterScrutinee, value, selected, bodyOutcome, rfl,
+                  hSelect, hBody, ?_⟩
+              have hEq := (Except.ok.inj hRun).symm
+              exact
+                ⟨congrArg Prod.fst hEq, congrArg Prod.snd hEq⟩
 
 end Stmt
 
