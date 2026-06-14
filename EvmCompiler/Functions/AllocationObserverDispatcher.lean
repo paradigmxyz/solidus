@@ -2323,6 +2323,121 @@ theorem nonregular
 
 end BlockResult
 
+namespace ResourceBlockResult
+
+theorem regular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (result :
+      ResourceBlockResult cursor boundary (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.regular sourceFinal)) :
+    ∃ targetFinal finalMode,
+      AllocationObserverStatement.Sequence.RegularBlockResourceInvariantForward
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceFinal targetFinal finalCtx ∧
+      AllocationObserverOutcome.SameControl sourceCtx finalCtx := by
+  obtain ⟨targetOutcome, hRuntime, _hControlOutcome⟩ := result.runtime
+  cases hRuntime with
+  | regular hForward hControl =>
+      exact ⟨_, _, hForward, hControl⟩
+  | nonregular hMode _ =>
+      exact False.elim (hMode rfl)
+
+theorem nonregular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (result :
+      ResourceBlockResult cursor boundary (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome))
+    (hMode : sourceOutcome.mode ≠ .regular) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverOutcome.BlockResourceForward
+        program.memoryContract resource allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive root.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx := by
+  obtain ⟨targetOutcome, hRuntime, _hControlOutcome⟩ := result.runtime
+  cases hRuntime with
+  | regular _ _ =>
+      exact False.elim (hMode rfl)
+  | nonregular _ hForward =>
+      exact ⟨targetOutcome, _, hForward⟩
+
+end ResourceBlockResult
+
 namespace Boundary
 
 /--
