@@ -29375,3 +29375,12 @@ Resumed the end-to-end Yul observer proof after context compaction. The current 
   pass with only `propext`, `Classical.choice`, and `Quot.sound`. Soft size debt
   remains in the three pass-owned Functions observer modules reported by the
   architecture script.
+2026-06-14 compaction-resume: Resuming after the suspended-statement-effect checkpoint at commit `1722f42e0`. The immediate proof task is the Functions-owned internal-call composition: real call artifact decomposition, callee entry/prelude/body, return-frame restoration, optional scratch release, and caller target assignment, all composed through `SuspendedEffect`.
+### 2026-06-14 — compaction-resume
+
+- Resumed the end-to-end Yul observer proof after context compaction.
+- Immediate checkpoint: build the newly introduced mode-aware `BoundedEffect` / `ActivationEffect` algebra, then continue the Functions-owned internal-call boundary.
+
+- 2026-06-14 - oracle - request `resp_058ae80f01319740006a2e56e517a081999aa02764ff448e44` for a mode-aware recursive-call effect boundary failed before producing advice because the configured API account had insufficient quota; disposition: continue from the locally checked theorem-truth analysis.
+- 2026-06-14 - theorem-boundary - added pass-owned `Frame.BoundedEffect`, separating final allocator readiness from the protected caller-prefix bound, and `Frame.ActivationEffect`, selecting the truthful stack-versus-scratch statement guarantee. This fixes the false assumption that a stack-only callee may update the caller's current scratch frame while retaining one compositional interface for acquire/body/writeback/release.
+- 2026-06-14 - validation - `lake build EvmCompiler.Functions.AllocationObserverRelation` and the full 1,208-job `lake build EvmCompiler.Verification` pass; `scripts/check_architecture.sh`, `git diff --check`, and the touched-diff hole scan pass. Remaining architecture debt is only the existing 5K-line soft-limit report for the three pass-owned Functions observer modules.

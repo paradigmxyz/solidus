@@ -419,6 +419,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.SuspendedEffect.of_mstore_above
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.trans
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.weaken
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect.trans_of_sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.trans

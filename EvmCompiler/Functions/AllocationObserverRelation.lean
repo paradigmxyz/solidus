@@ -4858,6 +4858,183 @@ theorem of_mstore_above
 
 end SuspendedEffect
 
+/--
+Resource transition with independent final allocator depth and protected-prefix
+bound.
+
+Call phases may change allocator depth while preserving the same suspended
+caller prefix. Keeping these indices separate makes acquire, callee execution,
+writeback, and release compose without encoding a second call semantics.
+-/
+structure BoundedEffect {transcript : Trace}
+    (config : Config) (finalDepth protectedBound : Nat)
+    (before after : TargetState transcript) : Prop where
+  ready : AllocatorReady config finalDepth after
+  growth : TargetGrowth before after
+  prefixStable :
+    ∀ {protectedDepth : Nat},
+      protectedDepth < protectedBound →
+      Budget config protectedDepth →
+      ProtectedPrefix config protectedDepth before after
+
+namespace BoundedEffect
+
+theorem of_allocatorEffect {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hEffect : AllocatorEffect config depth before after) :
+    BoundedEffect config depth (depth + 1) before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := fun hDepth hBudget =>
+      hEffect.prefixStable (by omega) hBudget }
+
+theorem of_suspendedEffect {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {before after : TargetState transcript}
+    (hEffect : SuspendedEffect config depth before after) :
+    BoundedEffect config depth depth before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := hEffect.prefixStable }
+
+theorem refl {transcript : Trace}
+    {config : Config} {finalDepth protectedBound : Nat}
+    {target : TargetState transcript}
+    (hReady : AllocatorReady config finalDepth target) :
+    BoundedEffect config finalDepth protectedBound target target :=
+  { ready := hReady
+    growth := TargetGrowth.refl target
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.refl config _ target }
+
+theorem trans {transcript : Trace}
+    {config : Config}
+    {firstDepth finalDepth protectedBound : Nat}
+    {first second third : TargetState transcript}
+    (hFirst :
+      BoundedEffect config firstDepth protectedBound first second)
+    (hSecond :
+      BoundedEffect config finalDepth protectedBound second third) :
+    BoundedEffect config finalDepth protectedBound first third :=
+  { ready := hSecond.ready
+    growth := hFirst.growth.trans hSecond.growth
+    prefixStable := fun hDepth hBudget =>
+      (hFirst.prefixStable hDepth hBudget).trans
+        (hSecond.prefixStable hDepth hBudget) }
+
+theorem weaken {transcript : Trace}
+    {config : Config} {finalDepth smallerBound largerBound : Nat}
+    {before after : TargetState transcript}
+    (hBound : smallerBound ≤ largerBound)
+    (hEffect :
+      BoundedEffect config finalDepth largerBound before after) :
+    BoundedEffect config finalDepth smallerBound before after :=
+  { ready := hEffect.ready
+    growth := hEffect.growth
+    prefixStable := fun hDepth hBudget =>
+      hEffect.prefixStable (hDepth.trans_le hBound) hBudget }
+
+end BoundedEffect
+
+/--
+Statement resource effect selected by the activation representation.
+
+A stack activation owns no allocator frame, so every allocated frame remains
+suspended and the stronger `AllocatorEffect` applies. A scratch activation may
+update its newest frame, so only the weaker `SuspendedEffect` is required.
+-/
+def ActivationEffect {transcript : Trace}
+    (config : Config) (depth : Nat) (mode : ActivationMode)
+    (before after : TargetState transcript) : Prop :=
+  match mode with
+  | .stack => AllocatorEffect config depth before after
+  | .scratch _ _ => SuspendedEffect config depth before after
+
+namespace ActivationEffect
+
+theorem of_allocatorEffect {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : AllocatorEffect config depth before after) :
+    ActivationEffect config depth mode before after := by
+  cases mode with
+  | stack => exact hEffect
+  | scratch => exact SuspendedEffect.of_allocatorEffect hEffect
+
+theorem ready {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : ActivationEffect config depth mode before after) :
+    AllocatorReady config depth after := by
+  cases mode with
+  | stack => exact AllocatorEffect.ready hEffect
+  | scratch => exact SuspendedEffect.ready hEffect
+
+theorem growth {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : ActivationEffect config depth mode before after) :
+    TargetGrowth before after := by
+  cases mode with
+  | stack => exact AllocatorEffect.growth hEffect
+  | scratch => exact SuspendedEffect.growth hEffect
+
+theorem to_suspendedEffect {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : ActivationEffect config depth mode before after) :
+    SuspendedEffect config depth before after := by
+  cases mode with
+  | stack => exact SuspendedEffect.of_allocatorEffect hEffect
+  | scratch => exact hEffect
+
+theorem to_boundedEffect {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect : ActivationEffect config depth mode before after) :
+    BoundedEffect config depth
+        (match mode with
+        | .stack => depth + 1
+        | .scratch _ _ => depth)
+        before after := by
+  cases mode with
+  | stack => exact BoundedEffect.of_allocatorEffect hEffect
+  | scratch => exact BoundedEffect.of_suspendedEffect hEffect
+
+theorem refl {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {target : TargetState transcript}
+    (hReady : AllocatorReady config depth target) :
+    ActivationEffect config depth mode target target := by
+  cases mode with
+  | stack => exact AllocatorEffect.refl hReady
+  | scratch => exact SuspendedEffect.refl hReady
+
+theorem trans {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {first second third : TargetState transcript}
+    (hFirst : ActivationEffect config depth mode first second)
+    (hSecond : ActivationEffect config depth mode second third) :
+    ActivationEffect config depth mode first third := by
+  cases mode with
+  | stack => exact AllocatorEffect.trans hFirst hSecond
+  | scratch => exact SuspendedEffect.trans hFirst hSecond
+
+theorem trans_of_sameFrame {transcript : Trace}
+    {config : Config} {depth : Nat}
+    {firstMode secondMode : ActivationMode}
+    {first second third : TargetState transcript}
+    (hFirst : ActivationEffect config depth firstMode first second)
+    (hSame : SameFrame firstMode secondMode)
+    (hSecond : ActivationEffect config depth secondMode second third) :
+    ActivationEffect config depth firstMode first third := by
+  cases hSame with
+  | stack => exact AllocatorEffect.trans hFirst hSecond
+  | scratch => exact SuspendedEffect.trans hFirst hSecond
+
+end ActivationEffect
+
 theorem mstore_end_le_activeBytes
     {machine : EvmYul.MachineState} {address : Nat} {value : Word}
     (hEnd : address + MemoryContract.wordBytes < EvmYul.UInt256.size) :
