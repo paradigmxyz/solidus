@@ -500,6 +500,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.call_needsFrame_iff
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_frameWords_pos
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_config_frameWords_pos
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.root
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.cons
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.final_env_extension
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_stack_of_lookup
+#check EvmCompiler.Functions.AllocationObserverForward.BodyCursor.Cursor.location_scratch_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.planEntry_env_extension
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_stack_of_lookup
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Prepared.location_scratch_of_lookup

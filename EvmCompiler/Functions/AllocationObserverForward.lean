@@ -276,6 +276,302 @@ theorem Compilation.selected_config_frameWords_pos
   rw [hWords]
   exact compilation.selected_frameWords_pos artifact hNeedsFrame
 
+namespace BodyCursor
+
+/--
+One recursive position inside a compiler-selected function body.
+
+The cursor owns the actual remaining source block, allocation-lowered block,
+and Locals compilation equation. Recursive preservation consumes this object
+instead of replaying either compiler or accepting generated fragments.
+-/
+structure Cursor
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    (scope : Locals.Allocation.ScopeId)
+    (live : List Functions.Name)
+    (sourceBlock : Functions.Block)
+    (lowerState : AllocationLowering.State)
+    (localsCtx : Locals.Ctx) where
+  planning : AllocationSupport.PlanningState
+  planningAllocation :
+    planning.allocation = lowerState.allocation
+  plannedFinal :
+    (AllocationSupport.planBlockOpen scope planning sourceBlock).allocation =
+      artifact.planEntry.state
+  lowered : Locals.Block
+  compiled : List Expressions.Stmt
+  lower :
+    AllocationLowering.lowerBlockOpen artifact.lowerCtx fn.returns
+        lowerState sourceBlock =
+      some (lowered, prepared.bodyFinal)
+  compile :
+    Locals.Block.compileOpen localsCtx lowered =
+      some (compiled, prepared.bodyCtx)
+  sourceScoped : Functions.Scope.Block.Scoped live sourceBlock
+
+def Cursor.root
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    {live : List Functions.Name}
+    (hScoped : Functions.Scope.Block.Scoped live fn.body) :
+    Cursor prepared (.function fn.name) live fn.body artifact.bodyStart
+      prepared.returnCtx :=
+  { planning :=
+      { allocation := artifact.bodyStart.allocation
+        nextScope := 0
+        scopes := [] }
+    planningAllocation := rfl
+    plannedFinal := by
+      simpa [AllocationObserverCall.SelectedCallee.Artifact.bodyStart] using
+        artifact.planEntryState.symm
+    lowered := prepared.body
+    compiled := prepared.bodyCode
+    lower := prepared.lowerBody
+    compile := prepared.compileBody
+    sourceScoped := hScoped }
+
+/--
+Decompose a nonempty recursive cursor through the real statement lowerer and
+Locals compiler, retaining a cursor for the exact remaining tail.
+-/
+theorem Cursor.cons
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {stmt : Functions.Stmt} {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live { stmts := stmt :: rest }
+        lowerState localsCtx) :
+    ∃ afterState afterLocals headLower headCode,
+      ∃ tailCursor :
+        Cursor prepared scope (Functions.Scope.Stmt.outEnv live stmt)
+          { stmts := rest } afterState afterLocals,
+      AllocationLowering.lowerStmt artifact.lowerCtx fn.returns
+          lowerState stmt =
+        some (headLower, afterState) ∧
+      Locals.Block.compileOpen localsCtx { stmts := headLower } =
+        some (headCode, afterLocals) ∧
+      cursor.lowered.stmts =
+        headLower ++ tailCursor.lowered.stmts ∧
+      cursor.compiled = headCode ++ tailCursor.compiled ∧
+      Functions.Scope.Stmt.Scoped live stmt := by
+  obtain ⟨headLower, afterState, tailLower,
+      hHeadLower, hTailLower, hLowered⟩ :=
+    AllocationLowering.lowerBlockOpen_cons_components cursor.lower
+  have hLoweredBlock :
+      cursor.lowered = { stmts := headLower ++ tailLower } := by
+    cases hCursorLowered : cursor.lowered with
+    | mk stmts =>
+        have hStmts : stmts = headLower ++ tailLower := by
+          simpa [hCursorLowered] using hLowered
+        cases hStmts
+        rfl
+  have hCompile :
+      Locals.Block.compileOpen localsCtx
+          { stmts := headLower ++ tailLower } =
+        some (cursor.compiled, prepared.bodyCtx) := by
+    have hCompile' := cursor.compile
+    rw [hLoweredBlock] at hCompile'
+    exact hCompile'
+  obtain
+      ⟨headCode, afterLocals, tailCode,
+        hHeadCompile, hTailCompile, hCompiled⟩ :=
+    Locals.Block.compileOpen_append_components hCompile
+  have hScoped :
+      Functions.Scope.Stmt.Scoped live stmt ∧
+        Functions.Scope.StmtList.Scoped
+          (Functions.Scope.Stmt.outEnv live stmt) rest := by
+    simpa [Functions.Scope.Block.Scoped,
+      Functions.Scope.StmtList.Scoped] using cursor.sourceScoped
+  let tailCursor :
+      Cursor prepared scope (Functions.Scope.Stmt.outEnv live stmt)
+        { stmts := rest } afterState afterLocals :=
+    { planning :=
+        AllocationSupport.planStmt scope cursor.planning stmt
+      planningAllocation :=
+        AllocationLowering.lowerStmt_allocation_eq_planStmt
+          stmt scope cursor.planning artifact.lowerCtx fn.returns
+          lowerState afterState headLower cursor.planningAllocation
+          hHeadLower
+      plannedFinal := by
+        simpa [AllocationSupport.planBlockOpen,
+          AllocationSupport.planStmtList] using cursor.plannedFinal
+      lowered := { stmts := tailLower }
+      compiled := tailCode
+      lower := hTailLower
+      compile := hTailCompile
+      sourceScoped := by
+        simpa [Functions.Scope.Block.Scoped] using hScoped.2 }
+  exact
+    ⟨afterState, afterLocals, headLower, headCode, tailCursor,
+      hHeadLower, hHeadCompile, hLowered, hCompiled, hScoped.1⟩
+
+theorem Cursor.final_env_extension
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx) :
+    ∃ added,
+      artifact.planEntry.state.env =
+        added ++ lowerState.allocation.env := by
+  obtain ⟨added, hEnv⟩ :=
+    AllocationSupport.planBlockOpen_env_extension
+      scope cursor.planning sourceBlock
+  refine ⟨added, ?_⟩
+  calc
+    artifact.planEntry.state.env =
+        (AllocationSupport.planBlockOpen
+          scope cursor.planning sourceBlock).allocation.env :=
+      congrArg AllocationSupport.CompileState.env
+        cursor.plannedFinal.symm
+    _ = added ++ cursor.planning.allocation.env := hEnv
+    _ = added ++ lowerState.allocation.env := by
+      rw [cursor.planningAllocation]
+
+theorem Cursor.location_stack_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hStack :
+      AllocationLowering.isStackSlot artifact.lowerCtx slot = true) :
+    ∃ depth,
+      prepared.plan.location? localName = some (.stack depth) := by
+  obtain ⟨added, hEnv⟩ := cursor.final_env_extension
+  have hMemCurrent :
+      (localName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (localName, slot) ∈ artifact.planEntry.state.env := by
+    rw [hEnv]
+    exact List.mem_append_right added hMemCurrent
+  have hEntryNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hEntryLookup :
+      AllocationSupport.lookupSlot?
+          localName artifact.planEntry.state.env =
+        some slot :=
+    AllocationSupport.lookupSlot?_eq_some_of_mem
+      hEntryNodup hMemEntry
+  have hBodyLookup :
+      AllocationSupport.lookupSlot?
+          localName prepared.bodyFinal.allocation.env =
+        some slot := by
+    rw [← prepared.bodyPlan]
+    exact hEntryLookup
+  exact prepared.location_stack_of_lookup hBodyLookup hStack
+
+theorem Cursor.location_scratch_of_lookup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions name fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    (cursor :
+      Cursor prepared scope live sourceBlock lowerState localsCtx)
+    {localName : Functions.Name} {slot : Nat}
+    (hLookup :
+      AllocationSupport.lookupSlot?
+          localName lowerState.allocation.env =
+        some slot)
+    (hScratch :
+      AllocationLowering.isStackSlot artifact.lowerCtx slot = false) :
+    prepared.plan.location? localName = some (.scratch slot) := by
+  obtain ⟨added, hEnv⟩ := cursor.final_env_extension
+  have hMemCurrent :
+      (localName, slot) ∈ lowerState.allocation.env :=
+    AllocationSupport.mem_of_lookupSlot?_eq_some hLookup
+  have hMemEntry :
+      (localName, slot) ∈ artifact.planEntry.state.env := by
+    rw [hEnv]
+    exact List.mem_append_right added hMemCurrent
+  have hEntryNodup :
+      (artifact.planEntry.state.env.map Prod.fst).Nodup := by
+    have hScopeNodup := prepared.planWF.2.1
+    simpa [prepared.planEq, MixedAllocation.allocationOfState] using
+      hScopeNodup
+  have hEntryLookup :
+      AllocationSupport.lookupSlot?
+          localName artifact.planEntry.state.env =
+        some slot :=
+    AllocationSupport.lookupSlot?_eq_some_of_mem
+      hEntryNodup hMemEntry
+  have hBodyLookup :
+      AllocationSupport.lookupSlot?
+          localName prepared.bodyFinal.allocation.env =
+        some slot := by
+    rw [← prepared.bodyPlan]
+    exact hEntryLookup
+  exact prepared.location_scratch_of_lookup hBodyLookup hScratch
+
+end BodyCursor
+
 namespace Callee
 
 /--
