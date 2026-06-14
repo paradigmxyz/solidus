@@ -8128,6 +8128,280 @@ theorem ifControlledHeadResultStack
             runtime := ⟨targetOutcome, hResource, hControlOutcome⟩ }⟩
 
 /--
+Dispatch a `switch` in a compiler-selected stack-only activation while
+retaining exact `break` and `continue` destinations from its selected body.
+-/
+theorem switchControlledHeadResultStack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 1)
+          (.switch scrutinee cases defaultBody) source =
+        .ok (sourceOutcome, sourceCtx))
+    (hBoundary :
+      ResourceBoundary cursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hBody :
+      ∀ {selected : Functions.Block}
+        {sourceAfterScrutinee :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx : Functions.Source.Ctx}
+        {selectedStart : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (bodyCursor :
+          AllocationObserverForward.BodyCursor.CoreCursor root
+            (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart localsCtx)
+        (hState :
+          AllocationLowering.StateExtends
+            live lowerState selectedStart)
+        (hOpen :
+          Functions.Source.Effectful.Block.runOpen
+              (Functions.ObserverSemantics.stateModel transcript)
+              (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+                program.memoryContract transcript)
+              program sourceCtx sourceFuel selected sourceAfterScrutinee =
+            .ok (bodyOutcome, bodyCtx))
+        {targetBodyStart :
+          Structured.ObserverSemantics.State transcript}
+        (bodyBoundary :
+          ResourceBoundary bodyCursor (resource := .stackOnly)
+            (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+            (mode := mode) (sourceCtx := sourceCtx)
+            (source := sourceAfterScrutinee) (target := targetBodyStart)),
+        ResourceBlockResult bodyCursor bodyBoundary
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := bodyCtx)
+          (source := sourceAfterScrutinee) (target := targetBodyStart)
+          (sourceOutcome := bodyOutcome)) :
+    ∃ afterState headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+        ResourceControlledHeadResult cursor hBoundary afterState localsCtx
+          headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome := sourceOutcome) := by
+  rcases
+      Functions.Source.Effectful.Stmt.run_switch_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hNone | hSome
+  · rcases hNone with
+      ⟨sourceAfterScrutinee, value, hScrutinee, hSelect,
+        hOutcome, _hCtx⟩
+    subst sourceOutcome
+    obtain
+        ⟨afterState, headCode, tail, targetFinal, hCompiled,
+          hResource, hStep, hExact⟩ :=
+      cursor.switchNoneStackResourceResult
+        (sourceCtx := sourceCtx)
+        (AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+          hScrutinee)
+        hSelect hBoundary.invariant
+    have hHead :
+        ResourceHeadResult cursor afterState localsCtx headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome :=
+            Functions.Source.Effectful.Outcome.regular
+              sourceAfterScrutinee) :=
+      ResourceHeadResult.ofResource cursor tail hCompiled hResource hStep
+        hExact
+        (by
+          intro _ name
+          simpa [Functions.Scope.Stmt.outEnv] using
+            hBoundary.sourceScope name)
+    exact
+      ⟨afterState, headCode, tail,
+        ResourceControlledHeadResult.of_no_control
+          cursor hBoundary tail hHead
+          (by
+            intro sourceFinal hEq
+            cases hEq)
+          (by
+            intro sourceFinal hEq
+            cases hEq)⟩
+  · rcases hSome with
+      ⟨sourceAfterScrutinee, value, selected, bodyOutcome,
+        hScrutinee, hSelect, hScoped, hOutcome, _hCtx⟩
+    subst sourceOutcome
+    have hSafe :
+        AllocationObserverSafety.Expr.MemorySafeEval
+          program.memoryContract transcript scrutinee source
+          sourceAfterScrutinee [value] :=
+      AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+        hScrutinee
+    rcases
+        Functions.Source.Effectful.Block.runScoped_cases
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program hScoped with
+      hRegular | hNonregular
+    · rcases hRegular with
+        ⟨sourceBodyFinal, bodyCtx, hBodyRun, hBodyOutcome⟩
+      subst bodyOutcome
+      have hRestrict :
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              sourceCtx.scope sourceBodyFinal =
+            (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              live sourceBodyFinal :=
+        Locals.Source.Effectful.StateModel.restrictTo_congr
+          (Functions.ObserverSemantics.stateModel transcript)
+          hBoundary.sourceScope
+      rw [hRestrict]
+      obtain
+          ⟨afterState, headCode, tail, targetFinal, hCompiled,
+            hResource, hStep, hExact⟩ :=
+        cursor.switchSomeRegularStackResourceResult
+          (sourceBodyFinal := sourceBodyFinal)
+          (finalCtx := bodyCtx)
+          hSafe hSelect hBoundary.sourceScope hBoundary.invariant
+          (by
+            intro selectedStart selectedPlanning bodyCursor
+              targetBodyStart hSelectedExtends hBodyInvariant hReturns
+            let bodyBoundary :
+                ResourceBoundary bodyCursor (resource := .stackOnly)
+                  (allocatorDepth := allocatorDepth)
+                  (frameBase := frameBase) (mode := mode)
+                  (sourceCtx := sourceCtx)
+                  (source := sourceAfterScrutinee)
+                  (target := targetBodyStart) :=
+              hBoundary.rebase cursor bodyCursor hSelectedExtends
+                (Locals.Ctx.SameControl.refl localsCtx)
+                (AllocationObserverOutcome.ReturnFrameAvailable.transport_target
+                  hBoundary.returnFrame hReturns)
+                hBodyInvariant
+            obtain ⟨bodyTargetOutcome, hBodyResource, _hBodyControl⟩ :=
+              (hBody bodyCursor hSelectedExtends hBodyRun
+                bodyBoundary).runtime
+            cases hBodyResource with
+            | @regular _ _ finalMode _ hBodyForward hBodyControl =>
+                exact ⟨_, .regular hBodyForward hBodyControl⟩
+            | nonregular hMode _hBodyForward =>
+                exact False.elim (hMode rfl))
+      have hHead :
+          ResourceHeadResult cursor afterState localsCtx headCode tail
+            (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+            (frameBase := frameBase) (mode := mode)
+            (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+            (source := source) (target := target)
+            (sourceOutcome :=
+              Functions.Source.Effectful.Outcome.regular
+                ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                  live sourceBodyFinal)) :=
+        ResourceHeadResult.ofResource cursor tail hCompiled hResource hStep
+          hExact
+          (by
+            intro _ name
+            simpa [Functions.Scope.Stmt.outEnv] using
+              hBoundary.sourceScope name)
+      exact
+        ⟨afterState, headCode, tail,
+          ResourceControlledHeadResult.of_no_control
+            cursor hBoundary tail hHead
+            (by
+              intro sourceFinal hEq
+              cases hEq)
+            (by
+              intro sourceFinal hEq
+              cases hEq)⟩
+    · rcases hNonregular with
+        ⟨openOutcome, bodyCtx, hBodyRun, hMode, hBodyOutcome⟩
+      subst bodyOutcome
+      obtain
+          ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+            hResource, _hStep, hExact, hControlOutcome⟩ :=
+        cursor.switchSomeNonregularStackResourceResult
+          (P := fun targetOutcome =>
+            ResourceControlOutcomeForward cursor hBoundary openOutcome
+              targetOutcome)
+          hSafe hSelect hMode hBoundary.control hBoundary.invariant
+          (by
+            intro selectedStart selectedPlanning bodyCursor targetBodyStart
+              hSelectedExtends hBodyInvariant hReturns
+            let bodyBoundary :
+                ResourceBoundary bodyCursor (resource := .stackOnly)
+                  (allocatorDepth := allocatorDepth)
+                  (frameBase := frameBase) (mode := mode)
+                  (sourceCtx := sourceCtx)
+                  (source := sourceAfterScrutinee)
+                  (target := targetBodyStart) :=
+              hBoundary.rebase cursor bodyCursor hSelectedExtends
+                (Locals.Ctx.SameControl.refl localsCtx)
+                (AllocationObserverOutcome.ReturnFrameAvailable.transport_target
+                  hBoundary.returnFrame hReturns)
+                hBodyInvariant
+            obtain ⟨bodyTargetOutcome, hBodyResource, hBodyControl⟩ :=
+              (hBody bodyCursor hSelectedExtends hBodyRun
+                bodyBoundary).runtime
+            exact
+              ⟨bodyTargetOutcome, bodyCtx, hBodyResource,
+                ResourceControlOutcomeForward.of_rebase
+                  cursor bodyCursor hBoundary hSelectedExtends
+                  (Locals.Ctx.SameControl.refl localsCtx)
+                  (AllocationObserverOutcome.ReturnFrameAvailable.transport_target
+                    hBoundary.returnFrame hReturns)
+                  hBodyInvariant hBodyControl⟩)
+      have hHead :
+          ResourceHeadResult cursor afterState localsCtx headCode tail
+            (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+            (frameBase := frameBase) (mode := mode)
+            (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+            (source := source) (target := target)
+            (sourceOutcome := openOutcome) :=
+        ResourceHeadResult.ofNonregular cursor tail hCompiled hResource
+          hExact hMode
+      exact
+        ⟨afterState, headCode, tail,
+          { head := hHead
+            runtime := ⟨targetOutcome, hResource, hControlOutcome⟩ }⟩
+
+/--
 Dispatch `break` in a compiler-selected stack-only activation using the
 canonical loop destination already carried by the shared boundary.
 -/

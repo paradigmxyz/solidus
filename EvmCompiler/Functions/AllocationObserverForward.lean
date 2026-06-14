@@ -6542,6 +6542,83 @@ theorem CoreCursor.switchNoneRuntimeResult
       hExact⟩
 
 /--
+Preserve a synchronized stack-only `switch` whose source selection finds no
+case or default body.
+-/
+theorem CoreCursor.switchNoneStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterScrutinee :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript scrutinee source
+        sourceAfterScrutinee [value])
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody = none)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.switch scrutinee cases defaultBody) source
+            expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular
+              sourceAfterScrutinee)
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.switch scrutinee cases defaultBody) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
+        hCompile, _hAfterEnv, _hAfterLayout, hScrutineeScoped,
+        _hCasesScoped, _hDefaultScoped, hExact⟩ :=
+    cursor.switchCursors
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_none_of_components
+      hSafe hSelect hScrutineeScoped hInvariant.activation hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetFinal, hCompiled,
+      .regular (hForward.toStackResource hInvariant.owned)
+        (AllocationObserverOutcome.SameControl.refl _),
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact⟩
+
+/--
 Preserve a synchronized `switch` whose selected lexical body returns
 regularly.
 
@@ -6701,6 +6778,163 @@ theorem CoreCursor.switchSomeRegularRuntimeResult
   exact
     ⟨afterState, headCode, tail, targetFinal, hCompiled,
       .regular hForward (AllocationObserverOutcome.SameControl.refl _),
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact⟩
+
+/--
+Preserve a synchronized stack-only `switch` whose selected lexical body
+returns regularly.
+-/
+theorem CoreCursor.switchSomeRegularStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selected : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceAfterScrutinee sourceBodyFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript scrutinee source
+        sourceAfterScrutinee [value])
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody =
+        some selected)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ {selectedStart}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (bodyCursor :
+          CoreCursor root
+            (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart localsCtx)
+        {targetBodyStart :
+          Structured.ObserverSemantics.State transcript},
+        AllocationLowering.StateExtends live lowerState selectedStart →
+        AllocationObserverContext.ActivationResourceInvariant
+            .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+            selectedStart localsCtx bodyCursor.plan live frameBase mode
+            sourceAfterScrutinee targetBodyStart →
+        targetBodyStart.source.returns = target.source.returns →
+        ∃ targetBodyFinal,
+          AllocationObserverOutcome.BlockResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx bodyCursor.finalState
+            bodyCursor.finalLocals bodyCursor.plan root.returns
+            (Functions.Scope.Block.outEnv live selected)
+            frameBase mode program sourceCtx selected
+            sourceAfterScrutinee expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured bodyCursor.compiled }
+            targetBodyStart
+            (Functions.Source.Effectful.Outcome.regular sourceBodyFinal)
+            (Structured.EffectSemantics.Outcome.regular targetBodyFinal)
+            finalCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetFinal,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.switch scrutinee cases defaultBody) source
+            expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            (Functions.Source.Effectful.Outcome.regular
+              ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                live sourceBodyFinal))
+            (Structured.EffectSemantics.Outcome.regular targetFinal)
+            sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.switch scrutinee cases defaultBody) ∧
+          ExactTail cursor tail := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
+        hCompile, _hAfterEnv, _hAfterLayout, hScrutineeScoped,
+        hCasesScoped, hDefaultScoped, hExact⟩ :=
+    cursor.switchCursors
+  have hSelectedScoped :
+      Functions.Scope.Block.Scoped live selected :=
+    Functions.Source.Switch.scoped_of_select_some
+      hCasesScoped hDefaultScoped hSelect
+  obtain ⟨targetFinal, hForward⟩ :=
+    AllocationObserverStatement.Sequence.RegularStmtInvariantForward.switch_some_of_components
+      (current := scope)
+      (planning := cursor.planning)
+      cursor.planningAllocation hSafe hSelect
+      hScrutineeScoped hSelectedScoped hSourceScope
+      hInvariant.activation
+      (by
+        intro selectedLowered selectedBodyStart bodyLowerState
+          selectedPlanning bodyCode bodyLocals targetBodyStart
+          hSelectedPlanning hSelectedEnv hSelectedExtends
+          hSelectedEntry hSelectedInner
+          hLowerBody hCompileBody hSelectedInvariant hReturns
+        obtain
+            ⟨bodyCursor, _hBodyLowered, hBodyFinal, hBodyCode,
+              hBodyLocals⟩ :=
+          cursor.switchSelectedCursorOfComponents
+            hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+            hLowerBody hCompileBody hSelectedScoped
+        have hPlanAgree :
+            AllocationObserverRelation.PlanAgreesOn
+              bodyCursor.plan cursor.plan live :=
+          bodyCursor.planAgreesOn cursor hSelectedEnv
+        have hBodyInvariant :
+            AllocationObserverContext.ActivationInvariant
+              program.memoryContract root.lowerCtx selectedBodyStart
+              localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterScrutinee targetBodyStart :=
+          hSelectedInvariant.transport_plan
+            bodyCursor.planWF hPlanAgree.symm
+        obtain ⟨targetBodyFinal, hBodyResult⟩ :=
+          hBody bodyCursor hSelectedExtends
+            (AllocationObserverContext.ActivationResourceInvariant.stackOnly
+              (allocatorDepth := allocatorDepth)
+              hBodyInvariant hInvariant.owned)
+            hReturns
+        cases hBodyResult with
+        | @regular _ _ finalMode _ hBodyForward _hControl =>
+            refine
+              ⟨bodyCursor.plan, finalMode, targetBodyFinal, ?_⟩
+            simpa [hBodyFinal, hBodyCode, hBodyLocals] using
+              hBodyForward.toInvariant
+        | nonregular hMode _hBodyForward =>
+            exact False.elim (hMode rfl))
+      hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetFinal, hCompiled,
+      .regular (hForward.toStackResource hInvariant.owned)
+        (AllocationObserverOutcome.SameControl.refl _),
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
       hExact⟩
 
@@ -6870,6 +7104,195 @@ theorem CoreCursor.switchSomeNonregularRuntimeResult
   exact
     ⟨afterState, headCode, tail, targetOutcome, hCompiled,
       .nonregular hForward,
+      StepTransport.of_compilers cursor.headScoped hLower hCompile,
+      hExact, hP⟩
+
+/--
+Preserve a synchronized stack-only `switch` whose selected lexical body exits
+nonregularly.
+-/
+theorem CoreCursor.switchSomeNonregularStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {selected : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceAfterScrutinee :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
+    {value : Word}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSafe :
+      AllocationObserverSafety.Expr.MemorySafeEval
+        program.memoryContract transcript scrutinee source
+        sourceAfterScrutinee [value])
+    (hSelect :
+      Functions.Source.Switch.select value cases defaultBody =
+        some selected)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ {selectedStart}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (bodyCursor :
+          CoreCursor root
+            (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart localsCtx)
+        {targetBodyStart :
+          Structured.ObserverSemantics.State transcript},
+        AllocationLowering.StateExtends live lowerState selectedStart →
+        AllocationObserverContext.ActivationResourceInvariant
+            .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+            selectedStart localsCtx bodyCursor.plan live frameBase mode
+            sourceAfterScrutinee targetBodyStart →
+        targetBodyStart.source.returns = target.source.returns →
+        ∃ targetOutcome finalCtx,
+          AllocationObserverOutcome.BlockResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx bodyCursor.finalState
+            bodyCursor.finalLocals bodyCursor.plan root.returns
+            (Functions.Scope.Block.outEnv live selected)
+            frameBase mode program sourceCtx selected
+            sourceAfterScrutinee expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured bodyCursor.compiled }
+            targetBodyStart sourceOutcome targetOutcome finalCtx ∧
+          P targetOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.switch scrutinee cases defaultBody) source
+            expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.switch scrutinee cases defaultBody) ∧
+          ExactTail cursor tail ∧
+          P targetOutcome := by
+  obtain
+      ⟨afterState, headLower, headCode, tail, hCompiled, hLower,
+        hCompile, _hAfterEnv, _hAfterLayout, hScrutineeScoped,
+        hCasesScoped, hDefaultScoped, hExact⟩ :=
+    cursor.switchCursors
+  have hSelectedScoped :
+      Functions.Scope.Block.Scoped live selected :=
+    Functions.Source.Switch.scoped_of_select_some
+      hCasesScoped hDefaultScoped hSelect
+  obtain
+      ⟨targetOutcome, finalMode, hForward, hFinalStack, hP⟩ :=
+    AllocationObserverStatement.Sequence.NonregularStmtForward.switch_some_of_components
+      (current := scope)
+      (planning := cursor.planning)
+      (P := fun finalMode targetOutcome =>
+        finalMode = .stack ∧ P targetOutcome)
+      cursor.planningAllocation hSafe hSelect hMode
+      hScrutineeScoped hInvariant.activation
+      (by
+        intro selectedLowered selectedBodyStart bodyLowerState
+          selectedPlanning bodyCode bodyLocals targetBodyStart
+          hSelectedPlanning hSelectedEnv hSelectedExtends
+          hSelectedEntry hSelectedInner
+          hLowerBody hCompileBody hSelectedInvariant hReturns
+        obtain
+            ⟨bodyCursor, hBodyLowered, hBodyFinal, hBodyCode,
+              hBodyLocals⟩ :=
+          cursor.switchSelectedCursorOfComponents
+            hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+            hLowerBody hCompileBody hSelectedScoped
+        have hPlanAgree :
+            AllocationObserverRelation.PlanAgreesOn
+              bodyCursor.plan cursor.plan live :=
+          bodyCursor.planAgreesOn cursor hSelectedEnv
+        have hBodyInvariant :
+            AllocationObserverContext.ActivationInvariant
+              program.memoryContract root.lowerCtx selectedBodyStart
+              localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterScrutinee targetBodyStart :=
+          hSelectedInvariant.transport_plan
+            bodyCursor.planWF hPlanAgree.symm
+        obtain
+            ⟨recursiveTargetOutcome, recursiveFinalCtx,
+              hBodyResult, hBodyP⟩ :=
+          hBody bodyCursor hSelectedExtends
+            (AllocationObserverContext.ActivationResourceInvariant.stackOnly
+              (allocatorDepth := allocatorDepth)
+              hBodyInvariant hInvariant.owned)
+            hReturns
+        cases hBodyResult with
+        | regular _hBodyForward _hControl =>
+            exact False.elim (hMode rfl)
+        | @nonregular _ _ bodyFinalMode _ _ hBodyForward =>
+            rcases hBodyForward with
+              ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun,
+                hBodyOutcomeRel, hSame, _hEffect⟩
+            have hOuterOutcomeRel :=
+              AllocationObserverOutcome.transport_nonregular_outcome_plan
+                hBodyOutcomeRel hMode hPlanAgree hControl
+            refine
+              ⟨bodyCursor.plan, bodyFinalMode, recursiveTargetOutcome,
+                recursiveFinalCtx, ?_, hOuterOutcomeRel,
+                hSame.right_eq_stack_of_left_eq_stack hInvariant.owned,
+                hBodyP⟩
+            simpa [hBodyLowered, hBodyFinal, hBodyCode, hBodyLocals] using
+              (show
+                AllocationObserverStatement.Sequence.BlockForward
+                  program.memoryContract transcript bodyCursor.plan
+                  (AllocationObserverOutcome.outcomeLive root.returns
+                    (Functions.Scope.Block.outEnv live selected)
+                    sourceCtx sourceOutcome.mode)
+                  frameBase bodyFinalMode program sourceCtx selected
+                  sourceAfterScrutinee expressions.toStructured
+                  { stmts :=
+                      Expressions.StmtList.toStructured
+                        bodyCursor.compiled }
+                  targetBodyStart sourceOutcome recursiveTargetOutcome
+                  recursiveFinalCtx
+                from
+                  ⟨sourceFuel, targetFuel, hSourceRun, hTargetRun,
+                    hBodyOutcomeRel⟩))
+      hLower hCompile
+  exact
+    ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+      .nonregular
+        (hForward.toStackResource
+          (allocatorDepth := allocatorDepth)
+          hInvariant.owned hFinalStack),
       StepTransport.of_compilers cursor.headScoped hLower hCompile,
       hExact, hP⟩
 
@@ -7076,6 +7499,201 @@ theorem CoreCursor.switchRuntimeResultOfSafeRun
       exact
         ⟨afterState, headCode, tail, targetOutcome, hCompiled,
           hRuntime, hTransport, hExact⟩
+
+/--
+Dispatcher-facing stack-only preservation for one synchronized `switch`.
+-/
+theorem CoreCursor.switchStackResourceResultOfSafeRun
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .switch scrutinee cases defaultBody :: rest }
+        lowerState localsCtx)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 1)
+          (.switch scrutinee cases defaultBody) source =
+        .ok (sourceOutcome, sourceCtx))
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ {selected : Functions.Block}
+        {sourceAfterScrutinee :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx : Functions.Source.Ctx}
+        {selectedStart : AllocationLowering.State}
+        {selectedPlanning : AllocationSupport.PlanningState}
+        (bodyCursor :
+          CoreCursor root
+            (.lexical scope selectedPlanning.nextScope)
+            live selected selectedStart localsCtx),
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program sourceCtx sourceFuel selected sourceAfterScrutinee =
+          .ok (bodyOutcome, bodyCtx) →
+        ∀ {targetBodyStart :
+            Structured.ObserverSemantics.State transcript},
+          AllocationObserverContext.ActivationResourceInvariant
+              .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+              selectedStart localsCtx bodyCursor.plan live frameBase mode
+              sourceAfterScrutinee targetBodyStart →
+          ∃ targetBodyOutcome,
+            AllocationObserverOutcome.BlockResourceResult
+              program.memoryContract .stackOnly allocatorDepth transcript
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
+              (Functions.Scope.Block.outEnv live selected)
+              frameBase mode program sourceCtx selected
+              sourceAfterScrutinee expressions.toStructured
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+              targetBodyStart bodyOutcome targetBodyOutcome bodyCtx) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.switch scrutinee cases defaultBody) source
+            expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.switch scrutinee cases defaultBody) ∧
+          ExactTail cursor tail := by
+  rcases
+      Functions.Source.Effectful.Stmt.run_switch_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hNone | hSome
+  · rcases hNone with
+      ⟨sourceAfterScrutinee, value, hScrutinee, hSelect,
+        hOutcome, _hCtx⟩
+    subst sourceOutcome
+    obtain
+        ⟨afterState, headCode, tail, targetFinal, hCompiled,
+          hResult, hTransport, hExact⟩ :=
+      cursor.switchNoneStackResourceResult
+        (sourceCtx := sourceCtx)
+        (AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+          hScrutinee)
+        hSelect hInvariant
+    exact
+      ⟨afterState, headCode, tail,
+        Structured.EffectSemantics.Outcome.regular targetFinal,
+        hCompiled, hResult, hTransport, hExact⟩
+  · rcases hSome with
+      ⟨sourceAfterScrutinee, value, selected, bodyOutcome,
+        hScrutinee, hSelect, hScoped, hOutcome, _hCtx⟩
+    subst sourceOutcome
+    have hSafe :
+        AllocationObserverSafety.Expr.MemorySafeEval
+          program.memoryContract transcript scrutinee source
+          sourceAfterScrutinee [value] :=
+      AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
+        hScrutinee
+    rcases
+        Functions.Source.Effectful.Block.runScoped_cases
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program hScoped with
+      hRegular | hNonregular
+    · rcases hRegular with
+        ⟨sourceBodyFinal, bodyCtx, hBodyRun, hBodyOutcome⟩
+      subst bodyOutcome
+      have hRestrict :
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              sourceCtx.scope sourceBodyFinal =
+            (Functions.ObserverSemantics.stateModel transcript).restrictTo
+              live sourceBodyFinal :=
+        Locals.Source.Effectful.StateModel.restrictTo_congr
+          (Functions.ObserverSemantics.stateModel transcript)
+          hSourceScope
+      rw [hRestrict]
+      obtain
+          ⟨afterState, headCode, tail, targetFinal, hCompiled,
+            hResult, hTransport, hExact⟩ :=
+        cursor.switchSomeRegularStackResourceResult
+          (sourceBodyFinal := sourceBodyFinal)
+          (finalCtx := bodyCtx)
+          hSafe hSelect hSourceScope hInvariant
+          (by
+            intro selectedStart selectedPlanning bodyCursor
+              targetBodyStart _hSelectedExtends hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            cases hBodyResult with
+            | regular hBodyForward hBodyControl =>
+                exact ⟨_, .regular hBodyForward hBodyControl⟩
+            | nonregular hMode _hBodyForward =>
+                exact False.elim (hMode rfl))
+      exact
+        ⟨afterState, headCode, tail,
+          Structured.EffectSemantics.Outcome.regular targetFinal,
+          hCompiled, hResult, hTransport, hExact⟩
+    · rcases hNonregular with
+        ⟨openOutcome, bodyCtx, hBodyRun, hMode, hBodyOutcome⟩
+      subst bodyOutcome
+      obtain
+          ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+            hResource, hTransport, hExact, _hDecoration⟩ :=
+        cursor.switchSomeNonregularStackResourceResult
+          (P := fun _ => True)
+          hSafe hSelect hMode hControl hInvariant
+          (by
+            intro selectedStart selectedPlanning bodyCursor targetBodyStart
+              _hSelectedExtends hBodyInvariant _hReturns
+            obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
+              hBody bodyCursor hBodyRun hBodyInvariant
+            exact ⟨targetBodyOutcome, bodyCtx, hBodyResult, trivial⟩)
+      exact
+        ⟨afterState, headCode, tail, targetOutcome, hCompiled,
+          hResource, hTransport, hExact⟩
 
 /--
 Preserve one lexical block statement from its synchronized outer cursor and
