@@ -97,6 +97,55 @@ theorem transport_of_isExit
 
 end BlockRuntimeForward
 
+namespace BlockResourceForward
+
+/--
+Transport an abrupt resource-indexed open-block result back to an enclosing
+allocation index after an activation exit.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      BlockResourceForward contract resource allocatorDepth transcript
+        beforePlan beforeLive frameBase initialMode finalMode sourceProgram
+        sourceCtx sourceBlock source targetProgram targetBlock target
+        sourceOutcome targetOutcome finalCtx)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    BlockResourceForward contract resource allocatorDepth transcript
+      afterPlan afterLive frameBase initialMode finalMode sourceProgram
+      sourceCtx sourceBlock source targetProgram targetBlock target
+      sourceOutcome targetOutcome finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRel, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      hRel.transport_of_isExit hExit hLeaveLive, hSame, hEffect⟩
+
+end BlockResourceForward
+
 namespace ScopedBlockRuntimeForward
 
 /--

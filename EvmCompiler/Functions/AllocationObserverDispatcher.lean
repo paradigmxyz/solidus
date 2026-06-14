@@ -3473,6 +3473,87 @@ def rebase
     invariant := hInvariant }
 
 /--
+Enter a `for` initializer through its real lexical cursor under the
+compiler-selected resource mode.
+-/
+def forInit
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {outerScope initScope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {outerBlock init : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope live
+        outerBlock lowerState localsCtx)
+    (initCursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root initScope live
+        init lowerState localsCtx.withoutLoopControl)
+    (hBoundary :
+      ResourceBoundary outer (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)) :
+    ResourceBoundary initCursor (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx.withoutLoopControl)
+      (source := source) (target := target) := by
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        initCursor.plan outer.plan live :=
+    initCursor.planAgreesOn outer rfl
+  have hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx.withoutLoopControl initCursor.plan live
+        frameBase mode source target :=
+    (hBoundary.invariant.transport_locals_layout
+        (after := localsCtx.withoutLoopControl) rfl).transport_plan
+      initCursor.planWF hPlanAgree.symm
+  refine
+    { sourceScope := ?_
+      control :=
+        AllocationObserverOutcome.ControlScopesWithin.withoutLoopControl
+          hBoundary.control
+      destinations :=
+        AllocationObserverOutcome.ControlDestinations.withoutLoopControl
+      returnFrame := ?_
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  · intro name
+    simpa [Functions.Source.Ctx.withoutLoopControl] using
+      hBoundary.sourceScope name
+  · intro functionScope hLeave
+    exact
+      hBoundary.returnFrame functionScope
+        (by
+          simpa [Functions.Source.Ctx.withoutLoopControl] using hLeave)
+  · intro functionScope hLeave
+    obtain ⟨hDepth, hRetc⟩ :=
+      hBoundary.leaveTarget functionScope
+        (by
+          simpa [Functions.Source.Ctx.withoutLoopControl] using hLeave)
+    exact
+      ⟨by
+          simpa [Locals.Ctx.withoutLoopControl] using hDepth,
+        by
+          simpa [Locals.Ctx.withoutLoopControl] using hRetc⟩
+
+/--
 Transport resource-indexed abrupt-destination evidence from a nested cursor
 back to the enclosing cursor boundary.
 -/
@@ -7628,6 +7709,149 @@ theorem consBlockResult
 end Boundary
 
 namespace ResourceBoundary
+
+/--
+Dispatch the stack-only `for` branch whose initializer exits before condition
+evaluation.
+-/
+theorem forInitExitHeadResultStack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx initCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx)
+    (hBoundary :
+      ResourceBoundary cursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := sourceFuel + 1)
+        (transcript := transcript))
+    (hInitSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx.withoutLoopControl sourceFuel init source =
+        .ok (sourceOutcome, initCtx))
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+        ResourceHeadResult cursor afterState localsCtx headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome := sourceOutcome) := by
+  obtain
+      ⟨afterState, headLower, headCode, tail,
+        loopState, afterPost, afterBody,
+        initLocals, postLocals, bodyLocals,
+        loweredCond, condCode, compiledPost, compiledBody, cleanup,
+        initCursor, postCursor, bodyCursor,
+        hCompiled, hLower, hCompile,
+        hInitFinalState, hInitFinalLocals,
+        hLowerCond, hCompileCond, hLowerPost, hFinishPost,
+        hLowerBody, hFinishBody, hCleanup, hHeadCode, hAfterState,
+        hCondScoped, hPostScoped, hBodyScoped, hStep, hExact⟩ :=
+    cursor.forCursors
+  have hInitBoundary :
+      ResourceBoundary initCursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx.withoutLoopControl)
+        (source := source) (target := target) :=
+    ResourceBoundary.forInit cursor initCursor hBoundary
+  have hInitResult :=
+    hRecursive initCursor (Nat.lt_succ_self sourceFuel)
+      hInitBoundary hInitSource
+  obtain ⟨initTargetOutcome, hInitResource, _hInitControl⟩ :=
+    hInitResult.runtime
+  have hMode : sourceOutcome.mode ≠ .regular :=
+    hExit.not_regular
+  cases hInitResource with
+  | regular _hInitForward _hControl =>
+      exact False.elim (hMode rfl)
+  | @nonregular _ _ finalMode _ _ hInitForward =>
+      have hInitForwardCopy := hInitForward
+      rcases hInitForward with
+        ⟨_sourceFuel, _targetFuel, _hSourceRun, _hTargetRun,
+          _hOutcomeRel, hSame, _hEffect⟩
+      have hFinalStack : finalMode = .stack :=
+        hSame.right_eq_stack_of_left_eq_stack hBoundary.invariant.owned
+      have hInitForwardOuter :=
+        AllocationObserverOutcome.BlockResourceForward.transport_of_isExit
+          (afterPlan := cursor.plan)
+          (afterLive :=
+            AllocationObserverOutcome.outcomeLive
+              root.returns live sourceCtx sourceOutcome.mode)
+          hInitForwardCopy hExit
+          (by
+            intro hLeave
+            simp [AllocationObserverOutcome.outcomeLive, hLeave])
+      obtain ⟨targetOutcome, hForward⟩ :=
+        AllocationObserverStatement.Sequence.NonregularStmtForward.for_init_exit_of_components
+          (outerPlan := cursor.plan) (exitPlan := cursor.plan)
+          (outerLive := live)
+          (resultLive :=
+            AllocationObserverOutcome.outcomeLive root.returns live
+              sourceCtx sourceOutcome.mode)
+          (exitMode := finalMode)
+          hBoundary.invariant.activation
+          (by
+            intro loweredInit loopState' initCode initLocals'
+              hLowerInit hCompileInit _hInvariant
+            have hLowerPair :
+                (initCursor.lowered, initCursor.finalState) =
+                  (loweredInit, loopState') :=
+              Option.some.inj (initCursor.lower.symm.trans hLowerInit)
+            cases hLowerPair
+            have hCompilePair :
+                (initCursor.compiled, initCursor.finalLocals) =
+                  (initCode, initLocals') :=
+              Option.some.inj (initCursor.compile.symm.trans hCompileInit)
+            cases hCompilePair
+            exact
+              ⟨initCtx, initTargetOutcome,
+                AllocationObserverStatement.Sequence.BlockForward.ofResource
+                  hInitForwardOuter⟩)
+          hExit hLower hCompile
+      have hResource :=
+        hForward.toStackResource
+          (allocatorDepth := allocatorDepth)
+          hBoundary.invariant.owned hFinalStack
+      exact
+        ⟨afterState, headCode, tail,
+          ResourceHeadResult.ofNonregular cursor tail hCompiled
+            (.nonregular hResource) hExact hMode⟩
 
 /--
 Dispatch a lexical block in a compiler-selected stack-only activation while

@@ -1417,7 +1417,9 @@ corridor.
   resource-indexed recursive theorem and scratch conversion are checked.
   Stack-only leaves, lexical blocks, and all `if` and `switch` outcomes now
   use the same resource-indexed cursor and controlled-dispatch interfaces.
-  The remaining Functions work is stack-only loops, selected calls, the
+  Stack-only loop initializer exits now compose through the same recursive
+  resource interface and activation-exit transport. The remaining Functions
+  work is regular and post-initializer loop outcomes, selected calls, the
   recursive constructor, whole-program forward packaging, and matching
   backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
