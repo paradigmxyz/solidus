@@ -1682,10 +1682,13 @@ theorem Cursor.forCursors
               layout := lowerState.layout } ∧
           Functions.Scope.ExprScoped loopLive cond ∧
           Functions.Scope.Block.Scoped loopLive post ∧
-          Functions.Scope.Block.Scoped loopLive body := by
+          Functions.Scope.Block.Scoped loopLive body ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.for_ init cond post body) ∧
+          ExactTail cursor tail := by
   obtain
       ⟨afterState, afterLocals, headLower, headCode, tail,
-        _hTailPlanning, _hTailPlan, _hTailFinalState, _hTailFinalLocals,
+        _hTailPlanning, hTailPlan, hTailFinalState, hTailFinalLocals,
         hLower, hCompile, _hLowered, hCompiled, hScopedStmt⟩ :=
     cursor.cons
   obtain
@@ -1715,6 +1718,7 @@ theorem Cursor.forCursors
   have hInitPlanning := hPlanningComponents'.1
   have hPostPlanning := hPlanningComponents'.2.1
   have hBodyPlanning := hPlanningComponents'.2.2
+  have hHeadCompile := hCompile
   rw [hHeadLower] at hCompile
   obtain
       ⟨initCode, initLocals, condCode,
@@ -1935,7 +1939,9 @@ theorem Cursor.forCursors
       postCursor, bodyCursor, hCompiled, hLower, ?_, hInitFinal,
       hInitLocals, hLowerCond, hCompileCond, ?_, ?_, ?_, ?_,
       hCleanup, ?_, hAfterState, hScoped.2.1, hScoped.2.2.1,
-      hScoped.2.2.2⟩
+      hScoped.2.2.2,
+      StepTransport.of_compilers hScopedStmt hLower hHeadCompile,
+      ⟨hTailPlan, hTailFinalState, hTailFinalLocals⟩⟩
   · rw [hHeadLower]
     exact hCompile
   · rw [hPostCursorLowered]
