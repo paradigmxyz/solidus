@@ -1754,7 +1754,81 @@ def DestinationRuntimeInvariant
       destination.locals destination.plan destination.live frameBase
       destination.mode sourceFinal targetFinal
 
+/--
+The canonical control destination under the compiler-selected resource mode.
+-/
+def DestinationResourceInvariant
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    (binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ (destination :
+        ControlDestination lowerCtx currentState currentPlan currentLive
+          currentMode)
+      (sourceLive : List Functions.Name)
+      (source : kind.sourceScope? sourceCtx = some sourceLive)
+      (sourceEquivalent :
+        ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
+      (target :
+        kind.targetDepth? currentLocals =
+          some destination.locals.layout.length),
+    binding =
+      .available destination sourceLive source sourceEquivalent target ∧
+    AllocationObserverContext.ActivationResourceInvariant
+      resource contract allocatorDepth lowerCtx destination.state
+      destination.locals destination.plan destination.live frameBase
+      destination.mode sourceFinal targetFinal
+
 namespace DestinationRuntimeInvariant
+
+/-- Lift the existing scratch-backed destination invariant. -/
+theorem toResource
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      DestinationRuntimeInvariant
+        (contract := contract) (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        binding sourceFinal targetFinal) :
+    DestinationResourceInvariant
+      (contract := contract) (resource := .scratch config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      binding sourceFinal targetFinal := by
+  rcases hInvariant with
+    ⟨destination, sourceLive, source, sourceEquivalent, target,
+      hBinding, hRuntime⟩
+  exact
+    ⟨destination, sourceLive, source, sourceEquivalent, target, hBinding,
+      AllocationObserverContext.ActivationResourceInvariant.scratch
+        hRuntime⟩
 
 theorem available
     {kind : ControlKind}
@@ -2524,6 +2598,116 @@ inductive StmtRuntimeResult
         sourceOutcome targetOutcome stmtCtx
 
 /--
+One statement's complete forward result under the compiler-selected resource
+mode.
+-/
+inductive StmtResourceResult
+    (contract : MemoryContract.Contract)
+    (resource : Frame.ResourceMode)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (returns regularLive : List Functions.Name)
+    (frameBase : Nat)
+    (initialMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (stmt : Functions.Stmt)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (target : Structured.ObserverSemantics.State transcript)
+    (compiled : List Structured.Stmt) :
+    Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript) →
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript) →
+      Functions.Source.Ctx → Prop where
+  | regular
+      {sourceFinal : Functions.ObserverSemantics.State transcript}
+      {targetFinal : Structured.ObserverSemantics.State transcript}
+      {finalMode : ActivationMode}
+      {finalCtx : Functions.Source.Ctx}
+      (forward :
+        AllocationObserverStatement.Sequence.RegularStmtResourceInvariantForward
+          contract resource allocatorDepth transcript lowerCtx lowerFinal
+          localsFinal plan regularLive frameBase initialMode finalMode
+          sourceProgram sourceCtx stmt source targetProgram target compiled
+          sourceFinal targetFinal finalCtx)
+      (control : SameControl sourceCtx finalCtx) :
+      StmtResourceResult contract resource allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx stmt source targetProgram target compiled
+        (Functions.Source.Effectful.Outcome.regular sourceFinal)
+        (Structured.EffectSemantics.Outcome.regular targetFinal) finalCtx
+  | nonregular
+      {sourceOutcome :
+        Functions.ObserverSemantics.Outcome
+          (Functions.ObserverSemantics.State transcript)}
+      {targetOutcome :
+        Structured.ObserverSemantics.Outcome
+          (transcript := transcript)}
+      {finalMode : ActivationMode}
+      {stmtCtx : Functions.Source.Ctx}
+      (forward :
+        NonregularStmtResourceForward contract resource allocatorDepth
+          transcript plan
+          (outcomeLive returns regularLive sourceCtx sourceOutcome.mode)
+          frameBase initialMode finalMode sourceProgram sourceCtx stmt source
+          targetProgram target compiled sourceOutcome targetOutcome stmtCtx) :
+      StmtResourceResult contract resource allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx stmt source targetProgram target compiled
+        sourceOutcome targetOutcome stmtCtx
+
+namespace StmtRuntimeResult
+
+/-- Lift the existing scratch-backed statement result. -/
+theorem toResource
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {returns regularLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hResult :
+      StmtRuntimeResult contract config allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx stmt source targetProgram target compiled
+        sourceOutcome targetOutcome finalCtx) :
+    StmtResourceResult contract (.scratch config) allocatorDepth transcript
+      lowerCtx lowerFinal localsFinal plan returns regularLive frameBase
+      initialMode sourceProgram sourceCtx stmt source targetProgram target
+      compiled sourceOutcome targetOutcome finalCtx := by
+  cases hResult with
+  | regular forward control =>
+      exact .regular forward.toResource control
+  | nonregular forward =>
+      exact .nonregular forward.toResource
+
+end StmtRuntimeResult
+
+/--
 Open-block counterpart of `StmtRuntimeResult`, used as the sole recursive
 result of the source-fuel block dispatcher.
 -/
@@ -2588,6 +2772,116 @@ inductive BlockRuntimeResult
         lowerFinal localsFinal plan returns regularLive frameBase initialMode
         sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
         target sourceOutcome targetOutcome finalCtx
+
+/--
+Open-block counterpart of `StmtResourceResult`.
+-/
+inductive BlockResourceResult
+    (contract : MemoryContract.Contract)
+    (resource : Frame.ResourceMode)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (returns regularLive : List Functions.Name)
+    (frameBase : Nat)
+    (initialMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript) :
+    Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript) →
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript) →
+      Functions.Source.Ctx → Prop where
+  | regular
+      {sourceFinal : Functions.ObserverSemantics.State transcript}
+      {targetFinal : Structured.ObserverSemantics.State transcript}
+      {finalMode : ActivationMode}
+      {finalCtx : Functions.Source.Ctx}
+      (forward :
+        AllocationObserverStatement.Sequence.RegularBlockResourceInvariantForward
+          contract resource allocatorDepth transcript lowerCtx lowerFinal
+          localsFinal plan regularLive frameBase initialMode finalMode
+          sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+          target sourceFinal targetFinal finalCtx)
+      (control : SameControl sourceCtx finalCtx) :
+      BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+        target (Functions.Source.Effectful.Outcome.regular sourceFinal)
+        (Structured.EffectSemantics.Outcome.regular targetFinal) finalCtx
+  | nonregular
+      {sourceOutcome :
+        Functions.ObserverSemantics.Outcome
+          (Functions.ObserverSemantics.State transcript)}
+      {targetOutcome :
+        Structured.ObserverSemantics.Outcome
+          (transcript := transcript)}
+      {finalMode : ActivationMode}
+      {finalCtx : Functions.Source.Ctx}
+      (sourceNonregular : sourceOutcome.mode ≠ .regular)
+      (forward :
+        BlockResourceForward contract resource allocatorDepth transcript plan
+          (outcomeLive returns regularLive sourceCtx sourceOutcome.mode)
+          frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+          source targetProgram targetBlock target sourceOutcome targetOutcome
+          finalCtx) :
+      BlockResourceResult contract resource allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+        target sourceOutcome targetOutcome finalCtx
+
+namespace BlockRuntimeResult
+
+/-- Lift the existing scratch-backed block result. -/
+theorem toResource
+    {contract : MemoryContract.Contract}
+    {config : Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {returns regularLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hResult :
+      BlockRuntimeResult contract config allocatorDepth transcript lowerCtx
+        lowerFinal localsFinal plan returns regularLive frameBase initialMode
+        sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+        target sourceOutcome targetOutcome finalCtx) :
+    BlockResourceResult contract (.scratch config) allocatorDepth transcript
+      lowerCtx lowerFinal localsFinal plan returns regularLive frameBase
+      initialMode sourceProgram sourceCtx sourceBlock source targetProgram
+      targetBlock target sourceOutcome targetOutcome finalCtx := by
+  cases hResult with
+  | regular forward control =>
+      exact .regular forward.toResource control
+  | nonregular sourceNonregular forward =>
+      exact .nonregular sourceNonregular forward.toResource
+
+end BlockRuntimeResult
 
 namespace BlockRuntimeResult
 

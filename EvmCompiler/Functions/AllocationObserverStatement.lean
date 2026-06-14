@@ -3985,7 +3985,86 @@ def RegularStmtRuntimeInvariantForward
       AllocationObserverRelation.Frame.ActivationEffect
         config allocatorDepth beforeMode target targetFinal
 
+/--
+Regular statement preservation under the compiler-selected resource mode.
+-/
+def RegularStmtResourceInvariantForward
+    (contract : MemoryContract.Contract)
+    (resource : AllocationObserverRelation.Frame.ResourceMode)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (afterLive : List Locals.Name) (frameBase : Nat)
+    (beforeMode afterMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (stmt : Functions.Stmt)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (target : Structured.ObserverSemantics.State transcript)
+    (compiled : List Structured.Stmt)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript)
+    (finalCtx : Functions.Source.Ctx) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel stmt source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel { stmts := compiled } target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerFinal localsFinal
+        plan afterLive frameBase afterMode sourceFinal targetFinal ∧
+      SameFrame beforeMode afterMode ∧
+      resource.ActivationEffect allocatorDepth beforeMode target targetFinal
+
 namespace RegularStmtRuntimeInvariantForward
+
+/-- Lift the existing scratch-backed result into the resource-indexed API. -/
+theorem toResource
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {afterLive : List Locals.Name} {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiled : List Structured.Stmt}
+    (hForward :
+      RegularStmtRuntimeInvariantForward contract config allocatorDepth
+        transcript lowerCtx lowerFinal localsFinal plan afterLive frameBase
+        beforeMode afterMode sourceProgram sourceCtx stmt source targetProgram
+        target compiled sourceFinal targetFinal finalCtx) :
+    RegularStmtResourceInvariantForward contract (.scratch config)
+      allocatorDepth transcript lowerCtx lowerFinal localsFinal plan afterLive
+      frameBase beforeMode afterMode sourceProgram sourceCtx stmt source
+      targetProgram target compiled sourceFinal targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.scratch
+        hInvariant,
+      hSame, hEffect⟩
 
 /--
 Transport a regular runtime statement result across a lowering-state change
@@ -4341,6 +4420,49 @@ theorem if_false_of_components
 end RegularStmtRuntimeInvariantForward
 
 namespace RegularStmtInvariantForward
+
+/--
+Lift a resource-neutral regular statement result into the stack-only resource
+interface.
+-/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {afterLive : List Locals.Name} {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiled : List Structured.Stmt}
+    (hForward :
+      RegularStmtInvariantForward contract transcript lowerCtx lowerFinal
+        localsFinal plan afterLive frameBase beforeMode afterMode sourceProgram
+        sourceCtx stmt source targetProgram target compiled sourceFinal
+        targetFinal finalCtx)
+    (hStack : beforeMode = .stack) :
+    RegularStmtResourceInvariantForward contract .stackOnly allocatorDepth
+      transcript lowerCtx lowerFinal localsFinal plan afterLive frameBase
+      beforeMode afterMode sourceProgram sourceCtx stmt source targetProgram
+      target compiled sourceFinal targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame⟩
+  subst beforeMode
+  cases hSame
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.stackOnly
+        hInvariant rfl,
+      .stack, trivial⟩
 
 theorem expr_of_compilers
     {contract : MemoryContract.Contract}
@@ -4700,7 +4822,86 @@ def RegularBlockRuntimeInvariantForward
       AllocationObserverRelation.Frame.ActivationEffect
         config allocatorDepth initialMode target targetFinal
 
+/--
+Regular open-block preservation under the compiler-selected resource mode.
+-/
+def RegularBlockResourceInvariantForward
+    (contract : MemoryContract.Contract)
+    (resource : AllocationObserverRelation.Frame.ResourceMode)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (initialMode finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript)
+    (finalCtx : Functions.Source.Ctx) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel sourceBlock source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerFinal localsFinal plan
+        finalLive frameBase finalMode sourceFinal targetFinal ∧
+      SameFrame initialMode finalMode ∧
+      resource.ActivationEffect allocatorDepth initialMode target targetFinal
+
 namespace RegularBlockRuntimeInvariantForward
+
+/-- Lift the existing scratch-backed block result. -/
+theorem toResource
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name} {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    (hForward :
+      RegularBlockRuntimeInvariantForward contract config allocatorDepth
+        transcript lowerCtx lowerFinal localsFinal plan finalLive frameBase
+        initialMode finalMode sourceProgram sourceCtx sourceBlock source
+        targetProgram targetBlock target sourceFinal targetFinal finalCtx) :
+    RegularBlockResourceInvariantForward contract (.scratch config)
+      allocatorDepth transcript lowerCtx lowerFinal localsFinal plan finalLive
+      frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock source
+      targetProgram targetBlock target sourceFinal targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.scratch
+        hInvariant,
+      hSame, hEffect⟩
 
 theorem nil
     {contract : MemoryContract.Contract}
@@ -4798,6 +4999,46 @@ theorem cons_regular
 end RegularBlockRuntimeInvariantForward
 
 namespace RegularBlockInvariantForward
+
+/-- Lift a resource-neutral regular block result into stack-only recursion. -/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name} {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    (hForward :
+      RegularBlockInvariantForward contract transcript lowerCtx lowerFinal
+        localsFinal plan finalLive frameBase initialMode finalMode sourceProgram
+        sourceCtx sourceBlock source targetProgram targetBlock target sourceFinal
+        targetFinal finalCtx)
+    (hStack : initialMode = .stack) :
+    RegularBlockResourceInvariantForward contract .stackOnly allocatorDepth
+      transcript lowerCtx lowerFinal localsFinal plan finalLive frameBase
+      initialMode finalMode sourceProgram sourceCtx sourceBlock source
+      targetProgram targetBlock target sourceFinal targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame⟩
+  subst initialMode
+  cases hSame
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.stackOnly
+        hInvariant rfl,
+      .stack, trivial⟩
 
 theorem nil
     {contract : MemoryContract.Contract}
@@ -5553,6 +5794,50 @@ theorem cont_of_compilers
 
 end NonregularStmtForward
 
+namespace NonregularStmtForward
+
+/-- Lift a resource-neutral abrupt statement into stack-only recursion. -/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      NonregularStmtForward contract transcript plan finalLive frameBase
+        finalMode sourceProgram sourceCtx stmt source targetProgram target
+        compiled sourceOutcome targetOutcome stmtCtx)
+    (hInitial : initialMode = .stack)
+    (hFinal : finalMode = .stack) :
+    AllocationObserverOutcome.NonregularStmtResourceForward contract
+      .stackOnly allocatorDepth transcript plan finalLive frameBase initialMode
+      finalMode sourceProgram sourceCtx stmt source targetProgram target
+      compiled sourceOutcome targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hNonregular, hOutcome⟩
+  subst initialMode
+  subst finalMode
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hNonregular, hOutcome,
+      .stack, trivial⟩
+
+end NonregularStmtForward
+
 /--
 Forward simulation package for one open source block and its lowered
 Structured block.
@@ -5587,6 +5872,49 @@ def BlockForward
         targetProgram targetFuel targetBlock target targetOutcome ∧
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome
+
+namespace BlockForward
+
+/-- Lift a resource-neutral open block into stack-only recursion. -/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      BlockForward contract transcript plan finalLive frameBase finalMode
+        sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+        target sourceOutcome targetOutcome finalCtx)
+    (hInitial : initialMode = .stack)
+    (hFinal : finalMode = .stack) :
+    AllocationObserverOutcome.BlockResourceForward contract .stackOnly
+      allocatorDepth transcript plan finalLive frameBase initialMode finalMode
+      sourceProgram sourceCtx sourceBlock source targetProgram targetBlock target
+      sourceOutcome targetOutcome finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome⟩
+  subst initialMode
+  subst finalMode
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome, .stack, trivial⟩
+
+end BlockForward
 
 /--
 Empty source and target blocks preserve the incoming activation relation.
@@ -5754,6 +6082,49 @@ def ScopedBlockForward
       ActivationOutcomeRel contract plan finalLive 0 frameBase finalMode
         sourceOutcome targetOutcome
 
+namespace ScopedBlockForward
+
+/-- Lift a resource-neutral scoped block into stack-only recursion. -/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      ScopedBlockForward contract transcript plan finalLive frameBase
+        finalMode sourceProgram sourceCtx sourceBlock source targetProgram
+        targetBlock target sourceOutcome targetOutcome)
+    (hInitial : initialMode = .stack)
+    (hFinal : finalMode = .stack) :
+    AllocationObserverOutcome.ScopedBlockResourceForward contract .stackOnly
+      allocatorDepth transcript plan finalLive frameBase initialMode finalMode
+      sourceProgram sourceCtx sourceBlock source targetProgram targetBlock target
+      sourceOutcome targetOutcome := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome⟩
+  subst initialMode
+  subst finalMode
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome, .stack, trivial⟩
+
+end ScopedBlockForward
+
 /--
 Regular lexically scoped execution retaining the complete outer activation
 invariant after compiler-emitted cleanup.
@@ -5827,6 +6198,128 @@ def RegularScopedBlockRuntimeInvariantForward
         plan finalLive frameBase finalMode sourceFinal targetFinal ∧
       AllocationObserverRelation.Frame.ActivationEffect
         config allocatorDepth finalMode target targetFinal
+
+/--
+Regular scoped-block preservation under the compiler-selected resource mode.
+-/
+def RegularScopedBlockResourceInvariantForward
+    (contract : MemoryContract.Contract)
+    (resource : AllocationObserverRelation.Frame.ResourceMode)
+    (allocatorDepth : Nat)
+    (transcript : Trace)
+    (lowerCtx : AllocationLowering.Ctx)
+    (lowerFinal : AllocationLowering.State)
+    (localsFinal : Locals.Ctx)
+    (plan : Locals.Allocation.Plan)
+    (finalLive : List Locals.Name) (frameBase : Nat)
+    (finalMode : ActivationMode)
+    (sourceProgram : Functions.Program)
+    (sourceCtx : Functions.Source.Ctx)
+    (sourceBlock : Functions.Block)
+    (source : Functions.ObserverSemantics.State transcript)
+    (targetProgram : Structured.Program)
+    (targetBlock : Structured.Block)
+    (target : Structured.ObserverSemantics.State transcript)
+    (sourceFinal : Functions.ObserverSemantics.State transcript)
+    (targetFinal : Structured.ObserverSemantics.State transcript) : Prop :=
+  ∃ sourceFuel targetFuel,
+    Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal) ∧
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel targetBlock target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationResourceInvariant
+        resource contract allocatorDepth lowerCtx lowerFinal localsFinal plan
+        finalLive frameBase finalMode sourceFinal targetFinal ∧
+      resource.ActivationEffect allocatorDepth finalMode target targetFinal
+
+namespace RegularScopedBlockRuntimeInvariantForward
+
+/-- Lift the existing scratch-backed scoped-block result. -/
+theorem toResource
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name} {frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    (hForward :
+      RegularScopedBlockRuntimeInvariantForward contract config allocatorDepth
+        transcript lowerCtx lowerFinal localsFinal plan finalLive frameBase
+        finalMode sourceProgram sourceCtx sourceBlock source targetProgram
+        targetBlock target sourceFinal targetFinal) :
+    RegularScopedBlockResourceInvariantForward contract (.scratch config)
+      allocatorDepth transcript lowerCtx lowerFinal localsFinal plan finalLive
+      frameBase finalMode sourceProgram sourceCtx sourceBlock source
+      targetProgram targetBlock target sourceFinal targetFinal := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.scratch
+        hInvariant,
+      hEffect⟩
+
+end RegularScopedBlockRuntimeInvariantForward
+
+namespace RegularScopedBlockInvariantForward
+
+/-- Lift a resource-neutral regular scoped block into stack-only recursion. -/
+theorem toStackResource
+    {contract : MemoryContract.Contract}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name} {frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    (hForward :
+      RegularScopedBlockInvariantForward contract transcript lowerCtx
+        lowerFinal localsFinal plan finalLive frameBase finalMode sourceProgram
+        sourceCtx sourceBlock source targetProgram targetBlock target sourceFinal
+        targetFinal)
+    (hStack : finalMode = .stack) :
+    RegularScopedBlockResourceInvariantForward contract .stackOnly
+      allocatorDepth transcript lowerCtx lowerFinal localsFinal plan finalLive
+      frameBase finalMode sourceProgram sourceCtx sourceBlock source
+      targetProgram targetBlock target sourceFinal targetFinal := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant⟩
+  subst finalMode
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      AllocationObserverContext.ActivationResourceInvariant.stackOnly
+        hInvariant rfl,
+      trivial⟩
+
+end RegularScopedBlockInvariantForward
 
 theorem RegularScopedBlockRuntimeInvariantForward.finish_regular
     {contract : MemoryContract.Contract}

@@ -755,9 +755,10 @@ compiler cleanup through the
   compiler. `Frame.ResourceMode`, `ActivationResourceInvariant`,
   `BodyCursor.ResourceBoundary`, and `MainRoot.resourceBoundary` now expose
   that compiler selection without fabricating allocator state. The recursive
-  result and source-fuel theorem must now be generalized over this resource
-  index, then compose final cleanup and matching whole-function/whole-program
-  backward adequacy.
+  result tower and `ResourceRecursiveBlockForward` are now generalized over
+  this resource index, and the complete scratch recursion lifts into that API.
+  The remaining recursive proof is the stack-only constructor, followed by
+  final cleanup and matching whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1413,7 +1414,8 @@ corridor.
   regular tails, and recursive calls; `Frame.FuelSafe` plus the call-owned
   callee-depth bound supplies each nested scratch budget. The main-root
   boundary is now compiler-selected between stack-only and scratch modes. The
-  remaining Functions work is resource-indexing the recursive theorem,
+  resource-indexed recursive theorem and scratch conversion are checked. The
+  remaining Functions work is the stack-only recursive constructor,
   whole-program forward packaging, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.

@@ -917,6 +917,122 @@ structure ControlOutcomeForward
               boundary.destinations.cont sourceFinal targetFinal
 
 /--
+Resource-indexed exact loop-control evidence for one recursively dispatched
+block.
+-/
+structure ResourceControlOutcomeForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript))
+    (targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)) : Prop where
+  brk :
+    ∀ sourceFinal,
+      sourceOutcome =
+          Functions.Source.Effectful.Outcome.brk sourceFinal →
+        ∃ targetFinal,
+          targetOutcome =
+              Structured.EffectSemantics.Outcome.brk targetFinal ∧
+            AllocationObserverOutcome.ControlBinding.DestinationResourceInvariant
+              (contract := program.memoryContract) (resource := resource)
+              (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+              boundary.destinations.brk sourceFinal targetFinal
+  cont :
+    ∀ sourceFinal,
+      sourceOutcome =
+          Functions.Source.Effectful.Outcome.cont sourceFinal →
+        ∃ targetFinal,
+          targetOutcome =
+              Structured.EffectSemantics.Outcome.cont targetFinal ∧
+            AllocationObserverOutcome.ControlBinding.DestinationResourceInvariant
+              (contract := program.memoryContract) (resource := resource)
+              (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+              boundary.destinations.cont sourceFinal targetFinal
+
+namespace ControlOutcomeForward
+
+/-- Lift the existing scratch-backed control result. -/
+theorem toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx}
+    {boundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)}
+    (hControl :
+      ControlOutcomeForward cursor boundary sourceOutcome targetOutcome) :
+    ResourceControlOutcomeForward cursor boundary.toResource sourceOutcome
+      targetOutcome := by
+  refine
+    { brk := ?_
+      cont := ?_ }
+  · intro sourceFinal hOutcome
+    obtain ⟨targetFinal, hTarget, hInvariant⟩ :=
+      hControl.brk sourceFinal hOutcome
+    exact ⟨targetFinal, hTarget, hInvariant.toResource⟩
+  · intro sourceFinal hOutcome
+    obtain ⟨targetFinal, hTarget, hInvariant⟩ :=
+      hControl.cont sourceFinal hOutcome
+    exact ⟨targetFinal, hTarget, hInvariant.toResource⟩
+
+end ControlOutcomeForward
+
+/--
 One dispatched statement whose exact target outcome is shared by the ordinary
 statement theorem and the dispatcher-only control-destination evidence.
 -/
@@ -1110,12 +1226,163 @@ structure BlockResult
           name ∈ Functions.Scope.Block.outEnv live sourceBlock
 
 /--
-The sole recursive interface used by structured statement adapters.
+One recursively dispatched open block under the compiler-selected resource
+mode.
+-/
+structure ResourceBlockResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (boundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)) : Prop where
+  runtime :
+    ∃ targetOutcome,
+      AllocationObserverOutcome.BlockResourceResult
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.returns (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx ∧
+      ResourceControlOutcomeForward cursor boundary sourceOutcome
+        targetOutcome
+  regularScope :
+    sourceOutcome.mode = .regular →
+      ∀ name,
+        name ∈ finalCtx.scope ↔
+          name ∈ Functions.Scope.Block.outEnv live sourceBlock
+
+namespace BlockResult
+
+/-- Lift the existing scratch-backed recursive block result. -/
+theorem toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx}
+    {boundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)}
+    (hResult :
+      BlockResult cursor boundary
+        (sourceOutcome := sourceOutcome) (finalCtx := finalCtx)) :
+    ResourceBlockResult cursor boundary.toResource
+      (sourceOutcome := sourceOutcome) (finalCtx := finalCtx) := by
+  obtain ⟨targetOutcome, hRuntime, hControl⟩ := hResult.runtime
+  exact
+    { runtime :=
+        ⟨targetOutcome, hRuntime.toResource, hControl.toResource⟩
+      regularScope := hResult.regularScope }
+
+end BlockResult
+
+/--
+The compiler-selected recursive interface used by structured statement
+adapters.
 
 Every recursive call targets a real synchronized cursor, consumes a strictly
 smaller source fuel, and receives only the shared source/control/allocation
 boundary. Generated code and recursive proof evidence stay out of the public
 boundary.
+-/
+def ResourceRecursiveBlockForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase fuelBound : Nat}
+    {transcript : Trace} : Prop :=
+  ∀ {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceFuel : Nat}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx),
+    sourceFuel < fuelBound →
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target)) →
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program sourceCtx sourceFuel sourceBlock source =
+      .ok (sourceOutcome, finalCtx) →
+    ResourceBlockResult cursor hBoundary
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome)
+
+/--
+The existing scratch-backed recursive interface.
 -/
 def RecursiveBlockForward
     {allocation : Locals.Allocation.ProgramPlan}
@@ -1161,6 +1428,35 @@ def RecursiveBlockForward
       (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
       (source := source) (target := target)
       (sourceOutcome := sourceOutcome)
+
+namespace RecursiveBlockForward
+
+/-- Lift the complete existing scratch recursion into the resource API. -/
+theorem toResource
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound : Nat}
+    {transcript : Trace}
+    (hRecursive :
+      RecursiveBlockForward (root := root) (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (fuelBound := fuelBound) (transcript := transcript)) :
+    ResourceRecursiveBlockForward (root := root)
+      (resource := .scratch config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (fuelBound := fuelBound) (transcript := transcript) := by
+  intro scope live sourceBlock lowerState localsCtx mode sourceCtx finalCtx
+    source target sourceFuel sourceOutcome cursor hFuel hBoundary hSource
+  exact
+    (hRecursive cursor hFuel hBoundary.toScratch hSource).toResource
+
+end RecursiveBlockForward
 
 namespace BlockResult
 
