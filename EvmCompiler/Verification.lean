@@ -454,6 +454,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameRelease_boundedEffect
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward_runtime
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
+#check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_runtime_invariant

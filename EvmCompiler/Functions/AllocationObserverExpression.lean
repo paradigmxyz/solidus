@@ -1415,6 +1415,70 @@ theorem forwardExprSeqRuntime_with_growth
       hResources.ready, hResources.growth⟩
 
 /--
+Allocator-aware expression-sequence preservation with the complete protected
+allocator effect.
+-/
+theorem forwardExprSeqRuntime_with_effect
+    {contract : MemoryContract.Contract}
+    (hPrimitive :
+      ∀ op : Structured.BasicOp,
+        ActivationPrimitiveForward contract op)
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {stackOffset frameBase results : Nat}
+    {mode : ActivationMode}
+    {exprs : Locals.ExprSeq results}
+    {lowered : Locals.ExprSeq results} {code : Structured.Code}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hSafe :
+      AllocationObserverSafety.ExprSeq.MemorySafeEval
+        contract transcript exprs source sourceFinal values)
+    (hCtx :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hScoped : Functions.Scope.ExprSeqScoped live exprs)
+    (hLower :
+      AllocationLowering.lowerExprSeq lowerCtx lowerState exprs =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx stackOffset lowered = some code)
+    (hRel :
+      ActivationStateRel contract plan live
+        stackOffset frameBase mode source target)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config allocatorDepth target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        ActivationExprResultRel contract plan live
+          stackOffset frameBase results mode
+          sourceFinal target targetFinal values ∧
+        AllocationObserverRelation.Frame.AllocatorEffect
+          config allocatorDepth target targetFinal := by
+  obtain ⟨targetFinal, hRun, hResult, _hFinalReady⟩ :=
+    forwardExprSeqRuntime hPrimitive hConfig hSafe hCtx hScoped hLower
+      hCompile hRel hReady
+  have hResources :=
+    allocatorReadyExprSeqFuel hPrimitive (exprSeqHeight exprs)
+      hConfig hSafe (by rfl) hCtx hScoped hLower hCompile hRel
+      hReady hRun
+  exact ⟨targetFinal, hRun, hResult, hResources⟩
+
+/--
 A zero-result expression preserves the complete statement-boundary activation
 invariant. Expression safety keeps named variables unchanged, while the result
 relation says that no value was added to the exact active stack.

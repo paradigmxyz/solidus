@@ -1,4 +1,6 @@
+import EvmCompiler.Functions.AllocationObserverCleanup
 import EvmCompiler.Functions.AllocationObserverExpression
+import EvmCompiler.Functions.AllocationObserverPrimitive
 
 namespace EvmCompiler
 namespace Functions
@@ -2180,6 +2182,143 @@ theorem forward_invariant
       frame := hOwned.sameFrame hSameFrame }
 
 end FunctionPrelude
+
+namespace FunctionReturn
+
+/--
+Execute the compiler-owned regular-return epilogue from a completed function
+body: evaluate the named return values and discard the complete callee layout
+beneath them.
+-/
+theorem forward_regular
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live returns : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {lowered : Locals.ExprSeq returns.length}
+    {returnCode cleanup : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {values : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source target)
+    (hReturnsLive :
+      ∀ name, name ∈ returns → name ∈ live)
+    (hLookup :
+      Functions.Source.Store.lookupMany returns source.source.vars =
+        some values)
+    (hLower :
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 0 lowered =
+        some returnCode)
+    (hCleanup :
+      localsCtx.cleanupToPreserving? returns.length 0 =
+        some cleanup) :
+    ∃ afterValues final,
+      Structured.ObserverSemantics.Code.run returnCode target =
+          .ok afterValues ∧
+      Structured.ObserverSemantics.Code.run cleanup afterValues =
+          .ok final ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+          { stmts :=
+              Expressions.StmtList.toStructured
+                (Locals.codeStmt returnCode ++ Locals.codeStmt cleanup) }
+          target
+          (Structured.EffectSemantics.Outcome.regular final) ∧
+      final.source.evm.stack = values.reverse ∧
+      source.cursor = final.cursor ∧
+      Compiler.MemoryRelation.MachineRel contract
+        source.source.shared.toMachineState
+        final.source.evm.toMachineState ∧
+      source.source.shared.toState =
+        final.source.evm.toSharedState.toState ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target final := by
+  have hSafe :=
+    AllocationObserverCleanup.ReturnValues.memorySafeEval
+      (contract := contract) (transcript := transcript) hLookup
+  have hScoped :=
+    AllocationObserverCleanup.ReturnValues.returnExprsScoped hReturnsLive
+  have hLowerSeq :=
+    AllocationObserverCleanup.ReturnValues.lowerExprSeq hLower
+  obtain ⟨afterValues, hValuesRun, hValuesRel, hValuesEffect⟩ :=
+    AllocationObserverExpression.forwardExprSeqRuntime_with_effect
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hConfig hSafe hInvariant.activation.compiler hScoped hLowerSeq
+      hCompile hInvariant.activation.state hInvariant.allocator
+  have hValuesLength : values.length = returns.length :=
+    Functions.Source.Store.lookupMany_length hLookup
+  obtain
+      ⟨final, hCleanupRun, hCleanupCursor, hFinalStack,
+        hCleanupShared, _hCleanupReturns⟩ :=
+    AllocationObserverCleanup.Preserving.forward_zero
+      (values := values.reverse)
+      (baseStack := target.source.evm.stack)
+      hCleanup (by simpa [hValuesLength])
+      hInvariant.activation.stackLength
+      hValuesRel.stack
+  have hCleanupMachine :
+      final.source.evm.toMachineState =
+        afterValues.source.evm.toMachineState :=
+    congrArg (fun state => state.toMachineState) hCleanupShared
+  have hCleanupWorld :
+      final.source.evm.toSharedState.toState =
+        afterValues.source.evm.toSharedState.toState :=
+    congrArg EvmYul.SharedState.toState hCleanupShared
+  have hCleanupEffect :
+      AllocationObserverRelation.Frame.AllocatorEffect
+        config allocatorDepth afterValues final :=
+    AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+      hValuesEffect.ready hCleanupMachine
+  have hEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode target final :=
+    AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
+      (hValuesEffect.trans hCleanupEffect)
+  have hEval :
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+          { stmts :=
+              Expressions.StmtList.toStructured
+                (Locals.codeStmt returnCode ++ Locals.codeStmt cleanup) }
+          target
+          (Structured.EffectSemantics.Outcome.regular final) := by
+    change
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+        { stmts :=
+            [Structured.Stmt.code returnCode,
+              Structured.Stmt.code cleanup] }
+        target
+        (Structured.EffectSemantics.Outcome.regular final)
+    exact
+      Structured.EffectSemantics.Block.Eval.cons_regular
+        (Structured.EffectSemantics.Stmt.Eval.code hValuesRun)
+        (Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hCleanupRun)
+          Structured.EffectSemantics.Block.Eval.nil)
+  exact
+    ⟨afterValues, final, hValuesRun, hCleanupRun, hEval, hFinalStack,
+      hValuesRel.state.base.cursor.trans hCleanupCursor.symm,
+      by simpa [hCleanupMachine] using hValuesRel.state.base.core.machine,
+      hValuesRel.state.base.core.world.trans hCleanupWorld.symm,
+      hEffect⟩
+
+end FunctionReturn
 
 namespace ArgList
 
