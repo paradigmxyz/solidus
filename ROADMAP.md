@@ -743,10 +743,13 @@ compiler cleanup through the
   runtime dispatch, selected-call recursion, and final-tail construction are
   checked on that interface. `RecursiveProgramForward` now quantifies over any
   `RootArtifact`, so the same source-fuel induction applies directly to `.main`
-  without a synthetic function or vertical observer proof corridor. The
-  immediate remaining work is to compose the source prelude and compiler
-  allocator/frame setup/cleanup around the checked main-body theorem, then
-  prove matching whole-function and whole-program backward adequacy.
+  without a synthetic function or vertical observer proof corridor.
+  `mainRecursiveForward` now constructs the main allocation artifact, Locals
+  compilation split, root, and generic recursive theorem internally from the
+  real compiler equation and ordinary program scoping. The immediate remaining
+  work is to compose the source prelude and compiler allocator/frame
+  setup/cleanup around that checked main-body theorem, then prove matching
+  whole-function and whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

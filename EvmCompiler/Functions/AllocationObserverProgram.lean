@@ -350,6 +350,12 @@ structure MainRoot
     {artifact : MainArtifact compilation}
     (prepared : MainPrepared artifact) where
   root : AllocationObserverForward.BodyCursor.RootArtifact compilation
+  rootScope : root.rootScope = .main
+  live :
+    (root.slots.returns.map Prod.fst).reverse ++
+        (root.slots.params.map Prod.fst).reverse =
+      []
+  returns : root.returns = []
   sourceBlock :
     root.sourceBlock = { stmts := artifact.components.rest }
   startState : root.startState = artifact.start
@@ -494,6 +500,9 @@ theorem MainPrepared.rootArtifact
           · rfl
           · simp [emptySlots]
       }
+      rootScope := rfl
+      live := by simp [emptySlots]
+      returns := rfl
       sourceBlock := rfl
       startState := rfl
       startLocals := rfl
@@ -504,6 +513,153 @@ theorem MainPrepared.rootArtifact
       lowerCtx := rfl
       plan := rfl
     }⟩
+
+namespace MainRoot
+
+/--
+The canonical source/control boundary at the start of the allocation-lowered
+main body.
+
+The semantic activation invariant is supplied by the adjacent allocator/frame
+setup theorem. All source scope and target control facts are derived here from
+ordinary initial contexts and the real Locals compilation of the setup prefix.
+-/
+def boundary
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    (mainRoot : MainRoot prepared)
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hBudget : Frame.Budget config allocatorDepth)
+    (hInvariant :
+      AllocationObserverContext.ActivationRuntimeInvariant
+        program.memoryContract config allocatorDepth mainRoot.root.lowerCtx
+        mainRoot.root.startState mainRoot.root.startLocals mainRoot.root.plan
+        ((mainRoot.root.slots.returns.map Prod.fst).reverse ++
+          (mainRoot.root.slots.params.map Prod.fst).reverse)
+        frameBase mode source target) :
+    AllocationObserverDispatcher.BodyCursor.Boundary
+      mainRoot.root.cursor
+      (config := config) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase) (mode := mode)
+      (sourceCtx := Functions.Source.Ctx.initial)
+      (source := source) (target := target) := by
+  have hSourceControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileSource
+  have hAllocatorControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileAllocator
+  have hFrameControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileFrame
+  have hSetupControl :
+      Locals.Ctx.SameControl Locals.Ctx.initial prepared.bodyCtx :=
+    (hSourceControl.trans hAllocatorControl).trans hFrameControl
+  refine
+    { sourceScope := ?_
+      control := ?_
+      destinations := ?_
+      returnFrame := ?_
+      leaveTarget := ?_
+      budget := hBudget
+      invariant := hInvariant }
+  · intro name
+    rw [mainRoot.live]
+    simp [Functions.Source.Ctx.initial]
+  · constructor <;>
+      simp [Functions.Source.Ctx.initial, mainRoot.returns, mainRoot.live]
+  · refine
+      { brk := .unavailable ?_ ?_
+        cont := .unavailable ?_ ?_ }
+    · rfl
+    · change mainRoot.root.startLocals.breakDepth? = none
+      rw [mainRoot.startLocals, ← hSetupControl.breakDepth]
+      rfl
+    · rfl
+    · change mainRoot.root.startLocals.continueDepth? = none
+      rw [mainRoot.startLocals, ← hSetupControl.continueDepth]
+      rfl
+  · intro functionScope hLeave
+    simp [Functions.Source.Ctx.initial] at hLeave
+  · intro functionScope hLeave
+    simp [Functions.Source.Ctx.initial] at hLeave
+
+/--
+Instantiate the shared source-fuel theorem at the distinguished main root.
+-/
+theorem recursiveForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    (mainRoot : MainRoot prepared)
+    {config : Frame.Config}
+    {allocatorDepth frameBase maxDepth : Nat}
+    {transcript : Trace}
+    (fuelBound : Nat)
+    (hProgramScoped : program.Scoped)
+    (hFuelSafe : Frame.FuelSafe config maxDepth)
+    (hDepthBound : allocatorDepth + fuelBound ≤ maxDepth)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract compilation.recipe.frameWords =
+        some config) :
+    AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
+      (root := mainRoot.root) (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (fuelBound := fuelBound) (transcript := transcript) :=
+  AllocationObserverRecursive.BodyCursor.recursiveProgramForward
+    (allocation := allocation) (program := program)
+    (expressions := expressions) (transcript := transcript)
+    maxDepth fuelBound hProgramScoped hFuelSafe hDepthBound hConfig
+
+end MainRoot
+
+/--
+Construct the checked recursive main-body theorem without accepting any
+compiler-generated evidence at the theorem boundary.
+-/
+theorem mainRecursiveForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation :
+      AllocationObserverForward.Compilation allocation program expressions)
+    {config : Frame.Config}
+    {allocatorDepth frameBase maxDepth : Nat}
+    {transcript : Trace}
+    (fuelBound : Nat)
+    (hProgramScoped : program.Scoped)
+    (hFuelSafe : Frame.FuelSafe config maxDepth)
+    (hDepthBound : allocatorDepth + fuelBound ≤ maxDepth)
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          program.memoryContract compilation.recipe.frameWords =
+        some config) :
+    ∃ artifact : MainArtifact compilation,
+      ∃ prepared : MainPrepared artifact,
+        ∃ mainRoot : MainRoot prepared,
+          AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
+            (root := mainRoot.root) (config := config)
+            (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+            (fuelBound := fuelBound) (transcript := transcript) := by
+  obtain ⟨artifact⟩ := MainArtifact.ofCompilation compilation
+  obtain ⟨prepared⟩ := MainPrepared.ofArtifact artifact
+  obtain ⟨mainRoot⟩ := prepared.rootArtifact hProgramScoped
+  exact
+    ⟨artifact, prepared, mainRoot,
+      mainRoot.recursiveForward fuelBound hProgramScoped hFuelSafe
+        hDepthBound hConfig⟩
 
 end AllocationObserverProgram
 end Functions
