@@ -732,19 +732,21 @@ compiler cleanup through the
   `Functions.AllocationObserverRecursive` now packages the exact loop heads,
   canonical call inversion, selected-callee recursion, and regular-tail
   composition into one checked source-fuel statement/block theorem across
-  every compiler-selected function artifact. The whole-program lift now has a
+  every compiler-owned root. The whole-program lift now has a
   compiler-owned decomposition of the distinguished main body, including the
   preserved no-variable source prelude, allocator/frame setup, allocation-
   lowered body, final cleanup, exact main plan, and lexical-scope ownership.
   `BodyCursor.RootArtifact` and `BodyCursor.CoreCursor` provide the shared
   owner-neutral recursive interface for selected functions and `.main`;
   selected functions have a checked compatibility adapter and main constructs
-  the same interface directly from the real compiler. Generic head/tail
-  decomposition and final-tail construction are checked on that interface.
-  The immediate remaining work is to migrate the runtime dispatcher from the
-  compatibility function cursor to `CoreCursor`, compose the source prelude
-  and compiler setup/cleanup around the main body, then prove matching
-  whole-function and whole-program backward adequacy.
+  the same interface directly from the real compiler. Generic head/tail,
+  runtime dispatch, selected-call recursion, and final-tail construction are
+  checked on that interface. `RecursiveProgramForward` now quantifies over any
+  `RootArtifact`, so the same source-fuel induction applies directly to `.main`
+  without a synthetic function or vertical observer proof corridor. The
+  immediate remaining work is to compose the source prelude and compiler
+  allocator/frame setup/cleanup around the checked main-body theorem, then
+  prove matching whole-function and whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and

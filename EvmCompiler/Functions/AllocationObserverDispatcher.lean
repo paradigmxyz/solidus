@@ -22,12 +22,10 @@ structure HeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -45,13 +43,13 @@ structure HeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (afterState : AllocationLowering.State)
     (afterLocals : Locals.Ctx)
     (headCode : List Expressions.Stmt)
     (tail :
-    AllocationObserverForward.BodyCursor.Cursor prepared scope
+    AllocationObserverForward.BodyCursor.CoreCursor root scope
       (Functions.Scope.Stmt.outEnv live stmt)
       { stmts := rest } afterState afterLocals) : Prop where
   compiled : cursor.compiled = headCode ++ tail.compiled
@@ -62,7 +60,7 @@ structure HeadResult
     ∃ targetOutcome,
       AllocationObserverOutcome.StmtRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+        root.lowerCtx afterState afterLocals cursor.plan root.returns
         (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
         sourceCtx stmt source expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -87,12 +85,10 @@ def ofRuntime
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -114,17 +110,17 @@ def ofRuntime
         (transcript := transcript)}
     {headCode : List Expressions.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals)
     (hCompiled : cursor.compiled = headCode ++ tail.compiled)
     (hRuntime :
       AllocationObserverOutcome.StmtRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+        root.lowerCtx afterState afterLocals cursor.plan root.returns
         (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
         sourceCtx stmt source expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -161,12 +157,10 @@ def ofNonregular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -188,17 +182,17 @@ def ofNonregular
         (transcript := transcript)}
     {headCode : List Expressions.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals)
     (hCompiled : cursor.compiled = headCode ++ tail.compiled)
     (hRuntime :
       AllocationObserverOutcome.StmtRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+        root.lowerCtx afterState afterLocals cursor.plan root.returns
         (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
         sourceCtx stmt source expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -224,12 +218,10 @@ def regular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live afterLive : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -247,10 +239,10 @@ def regular
       Structured.ObserverSemantics.State transcript}
     {headCode : List Expressions.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope afterLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
         { stmts := rest } afterState afterLocals)
     (hAfterLive :
       afterLive = Functions.Scope.Stmt.outEnv live stmt)
@@ -261,7 +253,7 @@ def regular
     (hForward :
       AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx afterState afterLocals cursor.plan afterLive
+        root.lowerCtx afterState afterLocals cursor.plan afterLive
         frameBase beforeMode afterMode program sourceCtx stmt source
         expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -298,12 +290,10 @@ def nonregular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live afterLive : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -325,10 +315,10 @@ def nonregular
         (transcript := transcript)}
     {headCode : List Expressions.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope afterLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
         { stmts := rest } afterState afterLocals)
     (hAfterLive :
       afterLive = Functions.Scope.Stmt.outEnv live stmt)
@@ -340,7 +330,7 @@ def nonregular
       AllocationObserverOutcome.NonregularStmtRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
         (AllocationObserverOutcome.outcomeLive
-          fn.returns afterLive sourceCtx sourceOutcome.mode)
+          root.returns afterLive sourceCtx sourceOutcome.mode)
         frameBase beforeMode finalMode program sourceCtx stmt source
         expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -376,12 +366,10 @@ theorem exprOfSafeRun
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {expr : Functions.Expr 0}
@@ -397,11 +385,11 @@ theorem exprOfSafeRun
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .expr expr :: rest } beforeState beforeLocals)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -416,12 +404,12 @@ theorem exprOfSafeRun
       ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         beforeState beforeLocals cursor.plan live frameBase mode
         source target) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -469,12 +457,10 @@ theorem assignOfSafeRun
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {name : Functions.Name}
@@ -491,12 +477,12 @@ theorem assignOfSafeRun
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .assign name valueExpr :: rest }
         beforeState beforeLocals)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -511,12 +497,12 @@ theorem assignOfSafeRun
       ∀ localName, localName ∈ sourceCtx.scope ↔ localName ∈ live)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         beforeState beforeLocals cursor.plan live frameBase mode
         source target) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -580,12 +566,10 @@ theorem letOfSafeRun
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {name : Functions.Name}
@@ -602,12 +586,12 @@ theorem letOfSafeRun
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .let_ name valueExpr :: rest }
         beforeState beforeLocals)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -622,12 +606,12 @@ theorem letOfSafeRun
       ∀ localName, localName ∈ sourceCtx.scope ↔ localName ∈ live)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         beforeState beforeLocals cursor.plan live frameBase mode
         source target) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope
+        AllocationObserverForward.BodyCursor.CoreCursor root scope
           (name :: live) { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -686,12 +670,10 @@ structure Boundary
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -705,27 +687,27 @@ structure Boundary
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx) where
   sourceScope :
     ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live
   control :
     AllocationObserverOutcome.ControlScopesWithin
-      fn.returns live sourceCtx
+      root.returns live sourceCtx
   destinations :
     AllocationObserverOutcome.ControlDestinations
-      artifact.lowerCtx lowerState localsCtx cursor.plan live mode sourceCtx
+      root.lowerCtx lowerState localsCtx cursor.plan live mode sourceCtx
   returnFrame :
     AllocationObserverOutcome.ReturnFrameAvailable sourceCtx target
   leaveTarget :
     ∀ functionScope,
       sourceCtx.leaveScope? = some functionScope →
         localsCtx.leaveDepth? = some 0 ∧
-          localsCtx.leaveRetc = fn.returns.length
+          localsCtx.leaveRetc = root.returns.length
   budget : Frame.Budget config allocatorDepth
   invariant :
     AllocationObserverContext.ActivationRuntimeInvariant
-      program.memoryContract config allocatorDepth artifact.lowerCtx
+      program.memoryContract config allocatorDepth root.lowerCtx
       lowerState localsCtx cursor.plan live frameBase mode source target
 
 /--
@@ -740,12 +722,10 @@ structure ControlOutcomeForward
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -759,7 +739,7 @@ structure ControlOutcomeForward
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -803,12 +783,10 @@ structure ControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -826,7 +804,7 @@ structure ControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -837,7 +815,7 @@ structure ControlledHeadResult
     (afterLocals : Locals.Ctx)
     (headCode : List Expressions.Stmt)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals) : Prop where
   head :
@@ -851,7 +829,7 @@ structure ControlledHeadResult
     ∃ targetOutcome,
       AllocationObserverOutcome.StmtRuntimeResult
           program.memoryContract config allocatorDepth transcript
-          artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+          root.lowerCtx afterState afterLocals cursor.plan root.returns
           (Functions.Scope.Stmt.outEnv live stmt) frameBase mode program
           sourceCtx stmt source expressions.toStructured target
           (Expressions.StmtList.toStructured headCode)
@@ -868,12 +846,10 @@ theorem of_no_control
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -892,7 +868,7 @@ theorem of_no_control
         (Functions.ObserverSemantics.State transcript)}
     {headCode : List Expressions.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -900,7 +876,7 @@ theorem of_no_control
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals)
     (head :
@@ -947,12 +923,10 @@ structure BlockResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -969,7 +943,7 @@ structure BlockResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -980,8 +954,8 @@ structure BlockResult
     ∃ targetOutcome,
       AllocationObserverOutcome.BlockRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
-        fn.returns (Functions.Scope.Block.outEnv live sourceBlock)
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.returns (Functions.Scope.Block.outEnv live sourceBlock)
         frameBase mode program sourceCtx sourceBlock source
         expressions.toStructured
         { stmts :=
@@ -1006,12 +980,10 @@ def RecursiveBlockForward
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {config : Frame.Config}
     {allocatorDepth frameBase fuelBound : Nat}
     {transcript : Trace} : Prop :=
@@ -1029,7 +1001,7 @@ def RecursiveBlockForward
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx),
     sourceFuel < fuelBound →
     (hBoundary :
@@ -1055,12 +1027,10 @@ theorem regular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1075,7 +1045,7 @@ theorem regular
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -1092,7 +1062,7 @@ theorem regular
     ∃ targetFinal finalMode,
       AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
         (Functions.Scope.Block.outEnv live sourceBlock)
         frameBase mode finalMode program sourceCtx sourceBlock source
         expressions.toStructured
@@ -1111,12 +1081,10 @@ theorem nonregular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1134,7 +1102,7 @@ theorem nonregular
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (boundary :
       Boundary cursor (config := config)
@@ -1151,7 +1119,7 @@ theorem nonregular
     ∃ targetOutcome finalMode,
       AllocationObserverOutcome.BlockRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
-        (AllocationObserverOutcome.outcomeLive fn.returns
+        (AllocationObserverOutcome.outcomeLive root.returns
           (Functions.Scope.Block.outEnv live sourceBlock)
           sourceCtx sourceOutcome.mode)
         frameBase mode finalMode program sourceCtx sourceBlock source
@@ -1207,8 +1175,9 @@ def functionBody
               (artifact.slots.params.map Prod.fst).reverse)).length)
         source target) :
     Boundary
-      (AllocationObserverForward.BodyCursor.Cursor.root prepared
-        (artifact.bodyScoped hProgramScoped))
+      (AllocationObserverForward.BodyCursor.RootArtifact.cursor
+        (AllocationObserverForward.BodyCursor.RootArtifact.ofSelected
+          artifact prepared (artifact.bodyScoped hProgramScoped)))
       (config := config) (allocatorDepth := allocatorDepth)
       (frameBase := frameBase)
       (mode :=
@@ -1234,11 +1203,14 @@ def functionBody
       budget := hBudget
       invariant := hInvariant }
   · intro localName
-    simp [Functions.Source.Effectful.FunDef.bodyCtx,
+    simp [AllocationObserverForward.BodyCursor.RootArtifact.ofSelected,
+      Functions.Source.Effectful.FunDef.bodyCtx,
       Functions.Source.Ctx.initial,
       Functions.Source.Ctx.withLeaveScope,
       artifact.slotsMatch.2.1, artifact.slotsMatch.2.2]
-  · simpa [artifact.slotsMatch.2.1, artifact.slotsMatch.2.2] using
+  · simpa
+      [AllocationObserverForward.BodyCursor.RootArtifact.ofSelected,
+        artifact.slotsMatch.2.1, artifact.slotsMatch.2.2] using
       AllocationObserverOutcome.ControlScopesWithin.functionBody fn
   · refine
       { brk := .unavailable ?_ ?_
@@ -1275,12 +1247,10 @@ theorem recursiveRegular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1295,10 +1265,10 @@ theorem recursiveRegular
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1320,7 +1290,7 @@ theorem recursiveRegular
     ∃ targetFinal finalMode,
       AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
         (Functions.Scope.Block.outEnv live sourceBlock)
         frameBase mode finalMode program sourceCtx sourceBlock source
         expressions.toStructured
@@ -1346,12 +1316,10 @@ theorem recursiveNonregular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1369,10 +1337,10 @@ theorem recursiveNonregular
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1393,7 +1361,7 @@ theorem recursiveNonregular
     ∃ targetOutcome finalMode,
       AllocationObserverOutcome.BlockRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
-        (AllocationObserverOutcome.outcomeLive fn.returns
+        (AllocationObserverOutcome.outcomeLive root.returns
           (Functions.Scope.Block.outEnv live sourceBlock)
           sourceCtx sourceOutcome.mode)
         frameBase mode finalMode program sourceCtx sourceBlock source
@@ -1412,12 +1380,10 @@ theorem recursiveScopedRegular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1435,10 +1401,10 @@ theorem recursiveScopedRegular
     {afterLocals : Locals.Ctx}
     {afterPlan : Locals.Allocation.Plan}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1457,7 +1423,7 @@ theorem recursiveScopedRegular
         .ok (Functions.Source.Effectful.Outcome.regular sourceFinal))
     (hAfterCompiler :
       AllocationObserverContext.ActivationExprContext
-        artifact.lowerCtx lowerState afterLocals afterPlan live mode)
+        root.lowerCtx lowerState afterLocals afterPlan live mode)
     (hAfterWF : afterPlan.WellFormed)
     (hAfterLayout : afterLocals.layout = localsCtx.layout)
     (hFinish :
@@ -1466,7 +1432,7 @@ theorem recursiveScopedRegular
     ∃ targetFinal,
       AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx lowerState afterLocals afterPlan live frameBase mode
+        root.lowerCtx lowerState afterLocals afterPlan live frameBase mode
         program sourceCtx sourceBlock source expressions.toStructured
         { stmts :=
             Expressions.StmtList.toStructured targetBlock.stmts }
@@ -1528,12 +1494,10 @@ theorem recursiveScopedNonregularControlled
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1552,10 +1516,10 @@ theorem recursiveScopedNonregularControlled
         (Functions.ObserverSemantics.State transcript)}
     {targetBlock : Expressions.Block}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1579,7 +1543,7 @@ theorem recursiveScopedNonregularControlled
     ∃ targetOutcome finalMode,
       AllocationObserverOutcome.ScopedBlockRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
-        (AllocationObserverOutcome.outcomeLive fn.returns
+        (AllocationObserverOutcome.outcomeLive root.returns
           (Functions.Scope.Block.outEnv live sourceBlock)
           sourceCtx sourceOutcome.mode)
         frameBase mode finalMode program sourceCtx sourceBlock source
@@ -1627,12 +1591,10 @@ theorem recursiveScopedNonregular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {sourceBlock : Functions.Block}
@@ -1651,10 +1613,10 @@ theorem recursiveScopedNonregular
         (Functions.ObserverSemantics.State transcript)}
     {targetBlock : Expressions.Block}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         sourceBlock lowerState localsCtx)
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1678,7 +1640,7 @@ theorem recursiveScopedNonregular
     ∃ targetOutcome finalMode,
       AllocationObserverOutcome.ScopedBlockRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
-        (AllocationObserverOutcome.outcomeLive fn.returns
+        (AllocationObserverOutcome.outcomeLive root.returns
           (Functions.Scope.Block.outEnv live sourceBlock)
           sourceCtx sourceOutcome.mode)
         frameBase mode finalMode program sourceCtx sourceBlock source
@@ -1703,12 +1665,10 @@ def forInit
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope initScope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {outerBlock init : Functions.Block}
@@ -1722,10 +1682,10 @@ def forInit
     {source : Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope live
         outerBlock lowerState localsCtx)
     (initCursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared initScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root initScope live
         init lowerState localsCtx.withoutLoopControl)
     (hBoundary :
       Boundary outer (config := config) (allocatorDepth := allocatorDepth)
@@ -1741,7 +1701,7 @@ def forInit
     initCursor.planAgreesOn outer rfl
   have hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         lowerState localsCtx.withoutLoopControl initCursor.plan live
         frameBase mode source target :=
     (hBoundary.invariant.transport_locals_layout
@@ -1786,12 +1746,10 @@ theorem recursiveForInitRegular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope initScope : Locals.Allocation.ScopeId}
     {outerLive : List Functions.Name}
     {outerBlock init : Functions.Block}
@@ -1806,10 +1764,10 @@ theorem recursiveForInitRegular
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope outerLive
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope outerLive
         outerBlock lowerState localsCtx)
     (initCursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared initScope outerLive
+      AllocationObserverForward.BodyCursor.CoreCursor root initScope outerLive
         init lowerState localsCtx.withoutLoopControl)
     (hBoundary :
       Boundary outer (config := config)
@@ -1817,7 +1775,7 @@ theorem recursiveForInitRegular
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := fuelBound)
         (transcript := transcript))
@@ -1834,7 +1792,7 @@ theorem recursiveForInitRegular
     ∃ targetAfterInit initMode,
       AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx initCursor.finalState initCursor.finalLocals
+        root.lowerCtx initCursor.finalState initCursor.finalLocals
         initCursor.plan (Functions.Scope.Block.outEnv outerLive init)
         frameBase mode initMode program sourceCtx.withoutLoopControl init source
         expressions.toStructured
@@ -1862,12 +1820,10 @@ def forPost
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope postScope : Locals.Allocation.ScopeId}
     {outerLive loopLive : List Functions.Name}
     {outerBlock post : Functions.Block}
@@ -1885,10 +1841,10 @@ def forPost
     {outerTarget postTarget :
       Structured.ObserverSemantics.State transcript}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope outerLive
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope outerLive
         outerBlock outerState outerLocals)
     (postCursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared postScope loopLive
+      AllocationObserverForward.BodyCursor.CoreCursor root postScope loopLive
         post loopState initLocals.withoutLoopControl)
     (hBoundary :
       Boundary outer (config := config) (allocatorDepth := allocatorDepth)
@@ -1911,7 +1867,7 @@ def forPost
         loopCtx.withoutLoopControl postTarget)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         loopState initLocals.withoutLoopControl postCursor.plan loopLive
         frameBase loopMode postSource postTarget) :
     Boundary postCursor (config := config)
@@ -1920,7 +1876,7 @@ def forPost
       (source := postSource) (target := postTarget) := by
   have hLoopControl :
       AllocationObserverOutcome.ControlScopesWithin
-        fn.returns loopLive loopCtx :=
+        root.returns loopLive loopCtx :=
     hInitControl.controlScopesWithin
       ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
   have hLocalsControl :=
@@ -1962,7 +1918,7 @@ def forPost
       _ = outerLocals.withoutLoopControl.leaveRetc :=
         hLocalsControl.leaveRetc.symm
       _ = outerLocals.leaveRetc := rfl
-      _ = fn.returns.length := hRetc
+      _ = root.returns.length := hRetc
 
 /--
 Enter a loop body at the state reached after scoped post lowering.
@@ -1975,12 +1931,10 @@ def forBody
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope bodyScope : Locals.Allocation.ScopeId}
     {outerLive loopLive : List Functions.Name}
     {outerBlock body : Functions.Block}
@@ -1999,10 +1953,10 @@ def forBody
     {outerTarget bodyTarget :
       Structured.ObserverSemantics.State transcript}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope outerLive
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope outerLive
         outerBlock outerState outerLocals)
     (bodyCursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared bodyScope loopLive
+      AllocationObserverForward.BodyCursor.CoreCursor root bodyScope loopLive
         body bodyState
         (initLocals.withLoopControl initLocals.layout.length))
     (hBoundary :
@@ -2023,7 +1977,7 @@ def forBody
         outerCtx.withoutLoopControl loopCtx)
     (hLoopCompiler :
       AllocationObserverContext.ActivationExprContext
-        artifact.lowerCtx loopState initLocals loopPlan loopLive loopMode)
+        root.lowerCtx loopState initLocals loopPlan loopLive loopMode)
     (hLoopPlanWF : loopPlan.WellFormed)
     (hState :
       AllocationLowering.StateExtends loopLive loopState bodyState)
@@ -2032,7 +1986,7 @@ def forBody
         (loopCtx.withLoopControl loopCtx.scope loopCtx.scope) bodyTarget)
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         bodyState
         (initLocals.withLoopControl initLocals.layout.length)
         bodyCursor.plan loopLive frameBase loopMode bodySource bodyTarget) :
@@ -2044,7 +1998,7 @@ def forBody
       (source := bodySource) (target := bodyTarget) := by
   have hLoopControl :
       AllocationObserverOutcome.ControlScopesWithin
-        fn.returns loopLive loopCtx :=
+        root.returns loopLive loopCtx :=
     hInitControl.controlScopesWithin
       ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
   have hLocalsControl :=
@@ -2096,7 +2050,7 @@ def forBody
       _ = outerLocals.withoutLoopControl.leaveRetc :=
         hLocalsControl.leaveRetc.symm
       _ = outerLocals.leaveRetc := rfl
-      _ = fn.returns.length := hRetc
+      _ = root.returns.length := hRetc
 
 /--
 Rebase a recursive dispatcher boundary onto another pass-owned cursor in the
@@ -2110,12 +2064,10 @@ def rebase
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope nestedScope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {outerBlock nestedBlock : Functions.Block}
@@ -2131,10 +2083,10 @@ def rebase
     {outerTarget nestedTarget :
       Structured.ObserverSemantics.State transcript}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope live
         outerBlock outerState outerLocals)
     (nested :
-      AllocationObserverForward.BodyCursor.Cursor prepared nestedScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root nestedScope live
         nestedBlock nestedState nestedLocals)
     (hBoundary :
       Boundary outer (config := config) (allocatorDepth := allocatorDepth)
@@ -2150,7 +2102,7 @@ def rebase
           nestedTarget.source.returns ≠ [])
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         nestedState nestedLocals nested.plan live frameBase mode
         nestedSource nestedTarget) :
     Boundary nested (config := config) (allocatorDepth := allocatorDepth)
@@ -2184,12 +2136,10 @@ theorem ControlOutcomeForward.of_rebase
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {outerScope nestedScope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {outerBlock nestedBlock : Functions.Block}
@@ -2210,10 +2160,10 @@ theorem ControlOutcomeForward.of_rebase
     {targetOutcome :
       Structured.ObserverSemantics.Outcome (transcript := transcript)}
     (outer :
-      AllocationObserverForward.BodyCursor.Cursor prepared outerScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope live
         outerBlock outerState outerLocals)
     (nested :
-      AllocationObserverForward.BodyCursor.Cursor prepared nestedScope live
+      AllocationObserverForward.BodyCursor.CoreCursor root nestedScope live
         nestedBlock nestedState nestedLocals)
     (hBoundary :
       Boundary outer (config := config) (allocatorDepth := allocatorDepth)
@@ -2229,7 +2179,7 @@ theorem ControlOutcomeForward.of_rebase
           nestedTarget.source.returns ≠ [])
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         nestedState nestedLocals nested.plan live frameBase mode
         nestedSource nestedTarget)
     (hNested :
@@ -2272,12 +2222,10 @@ theorem forInitExitHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {init : Functions.Block}
@@ -2297,7 +2245,7 @@ theorem forInitExitHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .for_ init cond post body :: rest }
         lowerState localsCtx)
     (hBoundary :
@@ -2306,7 +2254,7 @@ theorem forInitExitHeadResult
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
@@ -2321,7 +2269,7 @@ theorem forInitExitHeadResult
       Functions.Source.Effectful.Outcome.IsExit sourceOutcome) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -2352,7 +2300,7 @@ theorem forInitExitHeadResult
       (outerPlan := cursor.plan) (exitPlan := cursor.plan)
       (outerLive := live)
       (resultLive :=
-        AllocationObserverOutcome.outcomeLive fn.returns live sourceCtx
+        AllocationObserverOutcome.outcomeLive root.returns live sourceCtx
           sourceOutcome.mode)
       hBoundary.invariant
       (by
@@ -2439,12 +2387,10 @@ theorem forRegularHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {init : Functions.Block}
@@ -2462,12 +2408,12 @@ theorem forRegularHeadResult
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .for_ init cond post body :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hBoundary :
       Boundary cursor (config := config)
@@ -2475,7 +2421,7 @@ theorem forRegularHeadResult
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
@@ -2500,7 +2446,7 @@ theorem forRegularHeadResult
           (Functions.Source.Effectful.Outcome.regular sourceLoopFinal)) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -2611,7 +2557,7 @@ theorem forRegularHeadResult
         have hBodyInvariant :
             AllocationObserverContext.ActivationRuntimeInvariant
               program.memoryContract config allocatorDepth
-              artifact.lowerCtx afterPost
+              root.lowerCtx afterPost
               (initCursor.finalLocals.withLoopControl
                 initCursor.finalLocals.layout.length)
               bodyCursor.plan (Functions.Scope.Block.outEnv live init)
@@ -2641,7 +2587,7 @@ theorem forRegularHeadResult
             initCursor.planWF hLoopStateExtends hReturnFrame hBodyInvariant
         have hAfterCompiler :
             AllocationObserverContext.ActivationExprContext
-              artifact.lowerCtx afterPost
+              root.lowerCtx afterPost
               (initCursor.finalLocals.withLoopControl
                 initCursor.finalLocals.layout.length)
               initCursor.plan (Functions.Scope.Block.outEnv live init)
@@ -2711,7 +2657,7 @@ theorem forRegularHeadResult
         have hBodyInvariant :
             AllocationObserverContext.ActivationRuntimeInvariant
               program.memoryContract config allocatorDepth
-              artifact.lowerCtx afterPost
+              root.lowerCtx afterPost
               (initCursor.finalLocals.withLoopControl
                 initCursor.finalLocals.layout.length)
               bodyCursor.plan (Functions.Scope.Block.outEnv live init)
@@ -2839,7 +2785,7 @@ theorem forRegularHeadResult
         have hBodyInvariant :
             AllocationObserverContext.ActivationRuntimeInvariant
               program.memoryContract config allocatorDepth
-              artifact.lowerCtx afterPost
+              root.lowerCtx afterPost
               (initCursor.finalLocals.withLoopControl
                 initCursor.finalLocals.layout.length)
               bodyCursor.plan (Functions.Scope.Block.outEnv live init)
@@ -2910,7 +2856,7 @@ theorem forRegularHeadResult
         have hContinueInvariant :
             AllocationObserverContext.ActivationRuntimeInvariant
               program.memoryContract config allocatorDepth
-              artifact.lowerCtx afterPost
+              root.lowerCtx afterPost
               (initCursor.finalLocals.withLoopControl
                 initCursor.finalLocals.layout.length)
               initCursor.plan (Functions.Scope.Block.outEnv live init)
@@ -2974,7 +2920,7 @@ theorem forRegularHeadResult
         have hPostInvariant :
             AllocationObserverContext.ActivationRuntimeInvariant
               program.memoryContract config allocatorDepth
-              artifact.lowerCtx initCursor.finalState
+              root.lowerCtx initCursor.finalState
               initCursor.finalLocals.withoutLoopControl postCursor.plan
               (Functions.Scope.Block.outEnv live init)
               frameBase initMode postSource postTarget :=
@@ -2992,7 +2938,7 @@ theorem forRegularHeadResult
             hInitScope hOuterSubset hInitControl hReturnFrame hPostInvariant
         have hAfterCompiler :
             AllocationObserverContext.ActivationExprContext
-              artifact.lowerCtx initCursor.finalState
+              root.lowerCtx initCursor.finalState
               initCursor.finalLocals initCursor.plan
               (Functions.Scope.Block.outEnv live init) initMode :=
           (hInvariant.activation.compiler.transport_state hPostShape.1.symm
@@ -3047,12 +2993,10 @@ theorem forExitHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {init : Functions.Block}
@@ -3073,12 +3017,12 @@ theorem forExitHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .for_ init cond post body :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hBoundary :
       Boundary cursor (config := config)
@@ -3086,7 +3030,7 @@ theorem forExitHeadResult
         (mode := mode) (sourceCtx := sourceCtx)
         (source := source) (target := target))
     (hRecursive :
-      RecursiveBlockForward (prepared := prepared)
+      RecursiveBlockForward (root := root)
         (config := config) (allocatorDepth := allocatorDepth)
         (frameBase := frameBase) (fuelBound := sourceFuel + 1)
         (transcript := transcript))
@@ -3112,7 +3056,7 @@ theorem forExitHeadResult
       Functions.Source.Effectful.Outcome.IsExit sourceLoopOutcome) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -3155,7 +3099,7 @@ theorem forExitHeadResult
       (outerPlan := cursor.plan) (loopPlan := initCursor.plan)
       (outerLive := live)
       (loopLive := Functions.Scope.Block.outEnv live init)
-      (resultLive := fn.returns)
+      (resultLive := root.returns)
       (outerMode := mode) (loopMode := initMode)
       hBoundary.invariant hBoundary.returnFrame
       (by
@@ -3270,7 +3214,7 @@ theorem forExitHeadResult
               have hCursorInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx afterPost
+                    root.lowerCtx afterPost
                     (initCursor.finalLocals.withLoopControl
                       initCursor.finalLocals.layout.length)
                     bodyCursor.plan
@@ -3297,7 +3241,7 @@ theorem forExitHeadResult
                   hCursorInvariant
               have hAfterCompiler :
                   AllocationObserverContext.ActivationExprContext
-                    artifact.lowerCtx afterPost
+                    root.lowerCtx afterPost
                     (initCursor.finalLocals.withLoopControl
                       initCursor.finalLocals.layout.length)
                     initCursor.plan
@@ -3320,7 +3264,7 @@ theorem forExitHeadResult
               have hCursorInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx afterPost
+                    root.lowerCtx afterPost
                     (initCursor.finalLocals.withLoopControl
                       initCursor.finalLocals.layout.length)
                     bodyCursor.plan
@@ -3391,7 +3335,7 @@ theorem forExitHeadResult
               have hContinueInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx afterPost
+                    root.lowerCtx afterPost
                     (initCursor.finalLocals.withLoopControl
                       initCursor.finalLocals.layout.length)
                     initCursor.plan
@@ -3418,7 +3362,7 @@ theorem forExitHeadResult
               have hCursorInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx afterPost
+                    root.lowerCtx afterPost
                     (initCursor.finalLocals.withLoopControl
                       initCursor.finalLocals.layout.length)
                     bodyCursor.plan
@@ -3461,7 +3405,7 @@ theorem forExitHeadResult
               have hCursorInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx initCursor.finalState
+                    root.lowerCtx initCursor.finalState
                     initCursor.finalLocals.withoutLoopControl
                     postCursor.plan
                     (Functions.Scope.Block.outEnv live init)
@@ -3483,7 +3427,7 @@ theorem forExitHeadResult
                   hCursorInvariant
               have hAfterCompiler :
                   AllocationObserverContext.ActivationExprContext
-                    artifact.lowerCtx initCursor.finalState
+                    root.lowerCtx initCursor.finalState
                     initCursor.finalLocals initCursor.plan
                     (Functions.Scope.Block.outEnv live init) initMode :=
                 (hPostInvariant.activation.compiler.transport_state
@@ -3502,7 +3446,7 @@ theorem forExitHeadResult
               have hCursorInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx initCursor.finalState
+                    root.lowerCtx initCursor.finalState
                     initCursor.finalLocals.withoutLoopControl
                     postCursor.plan
                     (Functions.Scope.Block.outEnv live init)
@@ -3539,7 +3483,7 @@ theorem forExitHeadResult
   have hForwardOuter :
       AllocationObserverOutcome.NonregularStmtRuntimeForward
         program.memoryContract config allocatorDepth transcript cursor.plan
-        (AllocationObserverOutcome.outcomeLive fn.returns live sourceCtx
+        (AllocationObserverOutcome.outcomeLive root.returns live sourceCtx
           sourceLoopOutcome.mode)
         frameBase mode initMode program sourceCtx
         (.for_ init cond post body) source expressions.toStructured target
@@ -3564,12 +3508,10 @@ theorem ifHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {cond : Functions.Expr 1}
@@ -3588,11 +3530,11 @@ theorem ifHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .if_ cond body :: rest } lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -3613,7 +3555,7 @@ theorem ifHeadResult
             (Functions.ObserverSemantics.State transcript)}
         {bodyCtx : Functions.Source.Ctx}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx),
         Functions.Source.Effectful.Block.runOpen
@@ -3625,14 +3567,14 @@ theorem ifHeadResult
         ∀ {targetBodyStart :
             Structured.ObserverSemantics.State transcript},
           AllocationObserverContext.ActivationRuntimeInvariant
-              program.memoryContract config allocatorDepth artifact.lowerCtx
+              program.memoryContract config allocatorDepth root.lowerCtx
               lowerState localsCtx bodyCursor.plan live frameBase mode
               sourceAfterCond targetBodyStart →
           ∃ targetBodyOutcome,
             AllocationObserverOutcome.BlockRuntimeResult
               program.memoryContract config allocatorDepth transcript
-              artifact.lowerCtx bodyCursor.finalState
-              bodyCursor.finalLocals bodyCursor.plan fn.returns
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
               (Functions.Scope.Block.outEnv live body)
               frameBase mode program sourceCtx body sourceAfterCond
               expressions.toStructured
@@ -3641,7 +3583,7 @@ theorem ifHeadResult
               targetBodyStart bodyOutcome targetBodyOutcome bodyCtx) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -3670,12 +3612,10 @@ theorem ifControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {cond : Functions.Expr 1}
@@ -3694,11 +3634,11 @@ theorem ifControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .if_ cond body :: rest } lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -3719,7 +3659,7 @@ theorem ifControlledHeadResult
             (Functions.ObserverSemantics.State transcript)}
         {bodyCtx : Functions.Source.Ctx}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
@@ -3744,7 +3684,7 @@ theorem ifControlledHeadResult
           (sourceOutcome := bodyOutcome)) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         ControlledHeadResult cursor hBoundary afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -3947,12 +3887,10 @@ theorem switchHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {scrutinee : Functions.Expr 1}
@@ -3972,12 +3910,12 @@ theorem switchHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .switch scrutinee cases defaultBody :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4002,7 +3940,7 @@ theorem switchHeadResult
         {selectedStart : AllocationLowering.State}
         {selectedPlanning : AllocationSupport.PlanningState}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope selectedPlanning.nextScope)
             live selected selectedStart localsCtx),
         Functions.Source.Effectful.Block.runOpen
@@ -4014,14 +3952,14 @@ theorem switchHeadResult
         ∀ {targetBodyStart :
             Structured.ObserverSemantics.State transcript},
           AllocationObserverContext.ActivationRuntimeInvariant
-              program.memoryContract config allocatorDepth artifact.lowerCtx
+              program.memoryContract config allocatorDepth root.lowerCtx
               selectedStart localsCtx bodyCursor.plan live frameBase mode
               sourceAfterScrutinee targetBodyStart →
           ∃ targetBodyOutcome,
             AllocationObserverOutcome.BlockRuntimeResult
               program.memoryContract config allocatorDepth transcript
-              artifact.lowerCtx bodyCursor.finalState
-              bodyCursor.finalLocals bodyCursor.plan fn.returns
+              root.lowerCtx bodyCursor.finalState
+              bodyCursor.finalLocals bodyCursor.plan root.returns
               (Functions.Scope.Block.outEnv live selected)
               frameBase mode program sourceCtx selected
               sourceAfterScrutinee expressions.toStructured
@@ -4030,7 +3968,7 @@ theorem switchHeadResult
               targetBodyStart bodyOutcome targetBodyOutcome bodyCtx) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -4059,12 +3997,10 @@ theorem switchControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {scrutinee : Functions.Expr 1}
@@ -4084,12 +4020,12 @@ theorem switchControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .switch scrutinee cases defaultBody :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4114,7 +4050,7 @@ theorem switchControlledHeadResult
         {selectedStart : AllocationLowering.State}
         {selectedPlanning : AllocationSupport.PlanningState}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope selectedPlanning.nextScope)
             live selected selectedStart localsCtx)
         (hState :
@@ -4142,7 +4078,7 @@ theorem switchControlledHeadResult
           (sourceOutcome := bodyOutcome)) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         ControlledHeadResult cursor hBoundary afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -4338,12 +4274,10 @@ theorem blockHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {body : Functions.Block}
@@ -4361,7 +4295,7 @@ theorem blockHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .block body :: rest } lowerState localsCtx)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4380,7 +4314,7 @@ theorem blockHeadResult
               (Functions.ObserverSemantics.State transcript)}
         {bodyCtx : Functions.Source.Ctx}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx),
         Functions.Source.Effectful.Block.runOpen
@@ -4392,8 +4326,8 @@ theorem blockHeadResult
         ∃ targetOutcome,
           AllocationObserverOutcome.BlockRuntimeResult
             program.memoryContract config allocatorDepth transcript
-            artifact.lowerCtx bodyCursor.finalState
-            bodyCursor.finalLocals bodyCursor.plan fn.returns
+            root.lowerCtx bodyCursor.finalState
+            bodyCursor.finalLocals bodyCursor.plan root.returns
             (Functions.Scope.Block.outEnv live body)
             frameBase mode program sourceCtx body source
             expressions.toStructured
@@ -4402,7 +4336,7 @@ theorem blockHeadResult
             target bodyOutcome targetOutcome bodyCtx) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         HeadResult cursor afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -4490,12 +4424,10 @@ theorem blockControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {body : Functions.Block}
@@ -4513,7 +4445,7 @@ theorem blockControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .block body :: rest } lowerState localsCtx)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4532,7 +4464,7 @@ theorem blockControlledHeadResult
               (Functions.ObserverSemantics.State transcript)}
         {bodyCtx : Functions.Source.Ctx}
         (bodyCursor :
-          AllocationObserverForward.BodyCursor.Cursor prepared
+          AllocationObserverForward.BodyCursor.CoreCursor root
             (.lexical scope cursor.planning.nextScope)
             live body lowerState localsCtx)
         (hOpen :
@@ -4555,7 +4487,7 @@ theorem blockControlledHeadResult
           (sourceOutcome := bodyOutcome)) :
     ∃ afterState headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState localsCtx,
         ControlledHeadResult cursor hBoundary afterState localsCtx headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -4603,7 +4535,7 @@ theorem blockControlledHeadResult
               have hBodyInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx lowerState localsCtx bodyCursor.plan live
+                    root.lowerCtx lowerState localsCtx bodyCursor.plan live
                     frameBase mode source target :=
                 hBoundary.invariant.transport_plan
                   bodyCursor.planWF hPlanAgree.symm
@@ -4674,7 +4606,7 @@ theorem blockControlledHeadResult
               have hBodyInvariant :
                   AllocationObserverContext.ActivationRuntimeInvariant
                     program.memoryContract config allocatorDepth
-                    artifact.lowerCtx lowerState localsCtx bodyCursor.plan live
+                    root.lowerCtx lowerState localsCtx bodyCursor.plan live
                     frameBase mode source target :=
                 hBoundary.invariant.transport_plan
                   bodyCursor.planWF hPlanAgree.symm
@@ -4723,12 +4655,10 @@ theorem brkControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {rest : List Functions.Stmt}
@@ -4745,7 +4675,7 @@ theorem brkControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .brk :: rest } beforeState beforeLocals)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4760,7 +4690,7 @@ theorem brkControlledHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         ControlledHeadResult cursor hBoundary afterState afterLocals
           headCode tail
@@ -4862,12 +4792,10 @@ theorem brkHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {rest : List Functions.Stmt}
@@ -4884,7 +4812,7 @@ theorem brkHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .brk :: rest } beforeState beforeLocals)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4899,7 +4827,7 @@ theorem brkHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -4918,12 +4846,10 @@ theorem contControlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {rest : List Functions.Stmt}
@@ -4940,7 +4866,7 @@ theorem contControlledHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .cont :: rest } beforeState beforeLocals)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -4955,7 +4881,7 @@ theorem contControlledHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         ControlledHeadResult cursor hBoundary afterState afterLocals
           headCode tail
@@ -5057,12 +4983,10 @@ theorem contHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {rest : List Functions.Stmt}
@@ -5079,7 +5003,7 @@ theorem contHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .cont :: rest } beforeState beforeLocals)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5094,7 +5018,7 @@ theorem contHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -5114,12 +5038,10 @@ theorem leaveHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {rest : List Functions.Stmt}
@@ -5136,11 +5058,11 @@ theorem leaveHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .leave :: rest } beforeState beforeLocals)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5155,7 +5077,7 @@ theorem leaveHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -5200,12 +5122,10 @@ theorem terminalHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {kind : Assembly.HaltKind}
@@ -5223,7 +5143,7 @@ theorem terminalHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .terminal kind :: rest } beforeState beforeLocals)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5238,7 +5158,7 @@ theorem terminalHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -5281,12 +5201,10 @@ theorem terminalArgsHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {kind : Assembly.HaltKind}
@@ -5305,11 +5223,11 @@ theorem terminalArgsHeadResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .terminalArgs kind args :: rest } beforeState beforeLocals)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5324,7 +5242,7 @@ theorem terminalArgsHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         HeadResult cursor afterState afterLocals headCode tail
           (config := config) (allocatorDepth := allocatorDepth)
@@ -5386,12 +5304,10 @@ theorem callRegularHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {targets : List Functions.Name}
@@ -5409,12 +5325,12 @@ theorem callRegularHeadResult
       Functions.ObserverSemantics.State transcript}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .call targets name args :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5488,7 +5404,7 @@ theorem callRegularHeadResult
             targetBodyStart bodyOutcome targetOutcome bodyCtx') :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         ControlledHeadResult cursor hBoundary afterState afterLocals
           headCode tail
@@ -5503,13 +5419,10 @@ theorem callRegularHeadResult
         _hPlanning, hPlan, hFinalState, hFinalLocals,
         hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
     cursor.cons
-  let compilation :
-      AllocationObserverForward.Compilation allocation program expressions :=
-    AllocationObserverForward.Compilation.ofSelected artifact
   obtain ⟨targetFinal, hForward⟩ :=
     AllocationObserverForward.Call.regular_of_safe_source
       compilation hConfig
-      (compilation.selected_shared artifact)
+      root.lowerCtxShared
       hSource hScoped hBoundary.invariant hBoundary.budget
       hLower hCompile hBody
   have hStep :
@@ -5563,12 +5476,10 @@ theorem callHaltHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {targets : List Functions.Name}
@@ -5587,12 +5498,12 @@ theorem callHaltHeadResult
     {target : Structured.ObserverSemantics.State transcript}
     {kind : Assembly.HaltKind}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := .call targets name args :: rest }
         lowerState localsCtx)
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -5666,7 +5577,7 @@ theorem callHaltHeadResult
             targetBodyStart bodyOutcome targetOutcome bodyCtx') :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
           { stmts := rest } afterState afterLocals,
         ControlledHeadResult cursor hBoundary afterState afterLocals
           headCode tail
@@ -5681,13 +5592,10 @@ theorem callHaltHeadResult
         _hPlanning, hPlan, hFinalState, hFinalLocals,
         hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
     cursor.cons
-  let compilation :
-      AllocationObserverForward.Compilation allocation program expressions :=
-    AllocationObserverForward.Compilation.ofSelected artifact
   obtain ⟨targetFinal, hForward⟩ :=
     AllocationObserverForward.Call.halt_of_safe_source
       compilation hConfig
-      (compilation.selected_shared artifact)
+      root.lowerCtxShared
       hSource hScoped hBoundary.invariant hBoundary.budget
       hLower hCompile
       (fun {fn} {artifact} prepared
@@ -5699,7 +5607,7 @@ theorem callHaltHeadResult
   have hRuntime :
       AllocationObserverOutcome.StmtRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx afterState afterLocals cursor.plan fn.returns
+        root.lowerCtx afterState afterLocals cursor.plan root.returns
         live frameBase mode program sourceCtx
         (.call targets name args) source expressions.toStructured target
         (Expressions.StmtList.toStructured headCode)
@@ -5751,12 +5659,10 @@ def afterRegular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {beforeLive afterLive : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -5774,10 +5680,10 @@ def afterRegular
       Structured.ObserverSemantics.State transcript}
     {headCode : List Structured.Stmt}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope beforeLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope beforeLive
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope afterLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
         { stmts := rest } afterState afterLocals)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -5800,7 +5706,7 @@ def afterRegular
           (Structured.EffectSemantics.Outcome.regular afterTarget))
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         afterState afterLocals tail.plan afterLive frameBase afterMode
         afterSource afterTarget) :
     Boundary tail (config := config) (allocatorDepth := allocatorDepth)
@@ -5856,12 +5762,10 @@ theorem ControlOutcomeForward.of_afterRegular
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {beforeLive afterLive : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -5884,10 +5788,10 @@ theorem ControlOutcomeForward.of_afterRegular
     {targetOutcome :
       Structured.ObserverSemantics.Outcome (transcript := transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope beforeLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope beforeLive
         { stmts := stmt :: rest } beforeState beforeLocals)
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope afterLive
+      AllocationObserverForward.BodyCursor.CoreCursor root scope afterLive
         { stmts := rest } afterState afterLocals)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -5910,7 +5814,7 @@ theorem ControlOutcomeForward.of_afterRegular
           (Structured.EffectSemantics.Outcome.regular afterTarget))
     (hInvariant :
       AllocationObserverContext.ActivationRuntimeInvariant
-        program.memoryContract config allocatorDepth artifact.lowerCtx
+        program.memoryContract config allocatorDepth root.lowerCtx
         afterState afterLocals tail.plan afterLive frameBase afterMode
         afterSource afterTarget)
     (hTail :
@@ -5952,12 +5856,10 @@ theorem nilRuntimeResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {lowerState : AllocationLowering.State}
@@ -5973,7 +5875,7 @@ theorem nilRuntimeResult
         (Functions.ObserverSemantics.State transcript)}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := [] } lowerState localsCtx)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -5989,8 +5891,8 @@ theorem nilRuntimeResult
     ∃ targetOutcome,
       AllocationObserverOutcome.BlockRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
-        fn.returns live frameBase mode program sourceCtx
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.returns live frameBase mode program sourceCtx
         { stmts := [] } source expressions.toStructured
         { stmts :=
             Expressions.StmtList.toStructured cursor.compiled }
@@ -6016,12 +5918,10 @@ theorem nilBlockResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {lowerState : AllocationLowering.State}
@@ -6037,7 +5937,7 @@ theorem nilBlockResult
         (Functions.ObserverSemantics.State transcript)}
     {target : Structured.ObserverSemantics.State transcript}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := [] } lowerState localsCtx)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -6093,12 +5993,10 @@ theorem consRuntimeResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -6116,7 +6014,7 @@ theorem consRuntimeResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -6126,7 +6024,7 @@ theorem consRuntimeResult
     {afterLocals : Locals.Ctx}
     {headCode : List Expressions.Stmt}
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals)
     (hHead :
@@ -6143,7 +6041,7 @@ theorem consRuntimeResult
         {midMode : ActivationMode},
         AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward
             program.memoryContract config allocatorDepth transcript
-            artifact.lowerCtx afterState afterLocals cursor.plan
+            root.lowerCtx afterState afterLocals cursor.plan
             (Functions.Scope.Stmt.outEnv live stmt) frameBase mode midMode
             program sourceCtx stmt source expressions.toStructured target
             (Expressions.StmtList.toStructured headCode)
@@ -6157,8 +6055,8 @@ theorem consRuntimeResult
         ∃ targetOutcome,
           AllocationObserverOutcome.BlockRuntimeResult
             program.memoryContract config allocatorDepth transcript
-            artifact.lowerCtx tail.finalState tail.finalLocals
-            tail.plan fn.returns
+            root.lowerCtx tail.finalState tail.finalLocals
+            tail.plan root.returns
             (Functions.Scope.Block.outEnv
               (Functions.Scope.Stmt.outEnv live stmt)
               { stmts := rest })
@@ -6173,8 +6071,8 @@ theorem consRuntimeResult
     ∃ targetOutcome,
       AllocationObserverOutcome.BlockRuntimeResult
         program.memoryContract config allocatorDepth transcript
-        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
-        fn.returns
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        root.returns
         (Functions.Scope.Block.outEnv live { stmts := stmt :: rest })
         frameBase mode program sourceCtx { stmts := stmt :: rest } source
         expressions.toStructured
@@ -6190,7 +6088,7 @@ theorem consRuntimeResult
           hInvariant, hSameFrame, _hEffect⟩
       have hTailInvariant :
           AllocationObserverContext.ActivationRuntimeInvariant
-            program.memoryContract config allocatorDepth artifact.lowerCtx
+            program.memoryContract config allocatorDepth root.lowerCtx
             afterState afterLocals tail.plan
             (Functions.Scope.Stmt.outEnv live stmt)
             frameBase midMode sourceMid targetMid := by
@@ -6236,12 +6134,10 @@ theorem consBlockResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -6259,7 +6155,7 @@ theorem consBlockResult
       Functions.ObserverSemantics.Outcome
         (Functions.ObserverSemantics.State transcript)}
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (hBoundary :
       Boundary cursor (config := config) (allocatorDepth := allocatorDepth)
@@ -6269,7 +6165,7 @@ theorem consBlockResult
     {afterLocals : Locals.Ctx}
     {headCode : List Expressions.Stmt}
     (tail :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope
+      AllocationObserverForward.BodyCursor.CoreCursor root scope
         (Functions.Scope.Stmt.outEnv live stmt)
         { stmts := rest } afterState afterLocals)
     (hHead :
@@ -6286,7 +6182,7 @@ theorem consBlockResult
         {midMode : ActivationMode},
         AllocationObserverStatement.Sequence.RegularStmtRuntimeInvariantForward
             program.memoryContract config allocatorDepth transcript
-            artifact.lowerCtx afterState afterLocals cursor.plan
+            root.lowerCtx afterState afterLocals cursor.plan
             (Functions.Scope.Stmt.outEnv live stmt) frameBase mode midMode
             program sourceCtx stmt source expressions.toStructured target
             (Expressions.StmtList.toStructured headCode)
@@ -6322,7 +6218,7 @@ theorem consBlockResult
           hInvariant, hSameFrame, _hEffect⟩
       have hTailInvariant :
           AllocationObserverContext.ActivationRuntimeInvariant
-            program.memoryContract config allocatorDepth artifact.lowerCtx
+            program.memoryContract config allocatorDepth root.lowerCtx
             afterState afterLocals tail.plan
             (Functions.Scope.Stmt.outEnv live stmt)
             frameBase midMode sourceMid targetMid := by

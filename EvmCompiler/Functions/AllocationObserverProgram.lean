@@ -447,6 +447,30 @@ theorem MainPrepared.rootArtifact
         planEq := by
           simp [MainArtifact.plan, artifact.finalPlan]
         finalFrameFresh := artifact.frameName_not_mem_final_env
+        lexicalFrameFresh := by
+          intro entry hEntry
+          have hFresh :=
+            AllocationLowering.freshFrameName_not_mem_allSourceNames
+              compilation.fresh
+          have hRecipe :
+              AllocationSupport.planRecipeCore? program =
+                some compilation.recipe :=
+            (AllocationLowering.validatePlan?_eq_some_exact
+              compilation.validate).2.2.1
+          intro hFrame
+          apply hFresh
+          simp only [AllocationLowering.allSourceNames, List.mem_append,
+            List.mem_flatMap]
+          apply Or.inr
+          refine
+            ⟨compilation.recipe, by simp [hRecipe], entry, ?_, hFrame⟩
+          simp [AllocationLowering.scopedStates, hEntry]
+        scopeStackEntries := by
+          intro scope state added hRoot hEnv
+          simp [MixedAllocation.AllocationRecipe.stackEntriesForScope,
+            hRoot, hEnv, AllocationSupport.functionEnv, emptySlots,
+            MixedAllocation.stackEntries, List.filter_append,
+            List.take_append]
         plannedFinal := by
           rw [hMainPlan', hMainAllocation, artifact.finalPlan]
         plannedScopes := by

@@ -13,12 +13,11 @@ abbrev Trace := Assembly.ResourceTrace
 namespace BodyCursor
 
 /--
-Fuel-bounded recursive preservation for every compiler-selected function in
+Fuel-bounded recursive preservation for every compiler-owned source root in
 one lowered program.
 
-Calls may change the selected function, allocator depth, and frame base. The
-program and whole-program lowering stay fixed, and every callee still enters
-through its own compiler-owned artifact.
+Calls may change the root, allocator depth, and frame base. Every main or
+selected-function root enters through the same pass-owned artifact.
 -/
 def RecursiveProgramForward
     {allocation : Locals.Allocation.ProgramPlan}
@@ -27,22 +26,19 @@ def RecursiveProgramForward
     {transcript : Trace}
     (maxDepth : Nat)
     (fuelBound : Nat) : Prop :=
-  ∀ {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+  ∀ {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {config : Frame.Config}
     {allocatorDepth frameBase : Nat},
     program.Scoped →
     Frame.FuelSafe config maxDepth →
     allocatorDepth + fuelBound ≤ maxDepth →
     AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config →
     AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
-      (prepared := prepared) (config := config)
+      (root := root) (config := config)
       (allocatorDepth := allocatorDepth) (frameBase := frameBase)
       (fuelBound := fuelBound) (transcript := transcript)
 
@@ -58,12 +54,9 @@ theorem controlledHeadResult
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {calleeName : Functions.Name}
-    {fn : Functions.FunDef}
-    {artifact :
-      AllocationObserverCall.SelectedCallee.Artifact
-        allocation program expressions calleeName fn}
-    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : AllocationObserverForward.BodyCursor.RootArtifact compilation}
     {scope : Locals.Allocation.ScopeId}
     {live : List Functions.Name}
     {stmt : Functions.Stmt}
@@ -82,7 +75,7 @@ theorem controlledHeadResult
         (Functions.ObserverSemantics.State transcript)}
     (hConfig :
       AllocationSupport.scratchFrameConfig?
-          program.memoryContract artifact.recipe.frameWords =
+          program.memoryContract compilation.recipe.frameWords =
         some config)
     (hProgramScoped : program.Scoped)
     (hFuelSafe : Frame.FuelSafe config maxDepth)
@@ -94,7 +87,7 @@ theorem controlledHeadResult
             (program := program) (expressions := expressions)
             (transcript := transcript) maxDepth smallerBound)
     (cursor :
-      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
         { stmts := stmt :: rest } lowerState localsCtx)
     (hSource :
       Functions.Source.Effectful.Stmt.run
@@ -110,7 +103,7 @@ theorem controlledHeadResult
         (sourceCtx := sourceCtx) (source := source) (target := target)) :
     ∃ afterState afterLocals headCode,
       ∃ tail :
-        AllocationObserverForward.BodyCursor.Cursor prepared scope
+        AllocationObserverForward.BodyCursor.CoreCursor root scope
           (Functions.Scope.Stmt.outEnv live stmt)
           { stmts := rest } afterState afterLocals,
         AllocationObserverDispatcher.BodyCursor.ControlledHeadResult
@@ -334,7 +327,7 @@ theorem controlledHeadResult
       | succ fuel =>
           let hLoopRecursive :
               AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
-                (prepared := prepared) (config := config)
+                (root := root) (config := config)
                 (allocatorDepth := allocatorDepth)
                 (frameBase := frameBase) (fuelBound := fuel + 1)
                 (transcript := transcript) :=
@@ -476,13 +469,8 @@ theorem controlledHeadResult
                         calleeDepth calleeFrameBase hOpen hCalleeDepth
                         hInvariant hReturnFrame
                       have hRecipe :
-                          selected.recipe = artifact.recipe := by
-                        have hValidated :
-                            (selected.recipe, selected.stackSlots) =
-                              (artifact.recipe, artifact.stackSlots) :=
-                          Option.some.inj
-                            (selected.validate.symm.trans artifact.validate)
-                        exact congrArg Prod.fst hValidated
+                          selected.recipe = compilation.recipe :=
+                        (compilation.selected_agrees selected).1
                       have hSelectedConfig :
                           AllocationSupport.scratchFrameConfig?
                               program.memoryContract
@@ -493,10 +481,11 @@ theorem controlledHeadResult
                       have hSelectedBudget :
                           Frame.Budget config calleeDepth :=
                         hFuelSafe.depth_safe (by omega)
-                      let selectedCursor :=
-                        AllocationObserverForward.BodyCursor.Cursor.root
-                          selectedPrepared
+                      let selectedRoot :=
+                        AllocationObserverForward.BodyCursor.RootArtifact.ofSelected
+                          selected selectedPrepared
                           (selected.bodyScoped hProgramScoped)
+                      let selectedCursor := selectedRoot.cursor
                       let selectedBoundary :
                           AllocationObserverDispatcher.BodyCursor.Boundary
                             selectedCursor (config := config)
@@ -518,7 +507,7 @@ theorem controlledHeadResult
                           hSelectedBudget hInvariant
                       have hSelectedRecursive :
                           AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
-                            (prepared := selectedPrepared)
+                            (root := selectedRoot)
                             (config := config)
                             (allocatorDepth := calleeDepth)
                             (frameBase := calleeFrameBase)
@@ -559,13 +548,8 @@ theorem controlledHeadResult
                         calleeDepth calleeFrameBase hOpen hCalleeDepth
                         hInvariant hReturnFrame
                       have hRecipe :
-                          selected.recipe = artifact.recipe := by
-                        have hValidated :
-                            (selected.recipe, selected.stackSlots) =
-                              (artifact.recipe, artifact.stackSlots) :=
-                          Option.some.inj
-                            (selected.validate.symm.trans artifact.validate)
-                        exact congrArg Prod.fst hValidated
+                          selected.recipe = compilation.recipe :=
+                        (compilation.selected_agrees selected).1
                       have hSelectedConfig :
                           AllocationSupport.scratchFrameConfig?
                               program.memoryContract
@@ -576,10 +560,11 @@ theorem controlledHeadResult
                       have hSelectedBudget :
                           Frame.Budget config calleeDepth :=
                         hFuelSafe.depth_safe (by omega)
-                      let selectedCursor :=
-                        AllocationObserverForward.BodyCursor.Cursor.root
-                          selectedPrepared
+                      let selectedRoot :=
+                        AllocationObserverForward.BodyCursor.RootArtifact.ofSelected
+                          selected selectedPrepared
                           (selected.bodyScoped hProgramScoped)
+                      let selectedCursor := selectedRoot.cursor
                       let selectedBoundary :
                           AllocationObserverDispatcher.BodyCursor.Boundary
                             selectedCursor (config := config)
@@ -601,7 +586,7 @@ theorem controlledHeadResult
                           hSelectedBudget hInvariant
                       have hSelectedRecursive :
                           AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
-                            (prepared := selectedPrepared)
+                            (root := selectedRoot)
                             (config := config)
                             (allocatorDepth := calleeDepth)
                             (frameBase := calleeFrameBase)
@@ -699,7 +684,7 @@ theorem recursiveProgramForward
       (transcript := transcript) maxDepth fuelBound := by
   induction fuelBound using Nat.strong_induction_on with
   | h fuelBound ih =>
-      intro calleeName fn artifact prepared config allocatorDepth frameBase
+      intro compilation root config allocatorDepth frameBase
         hProgramScoped hFuelSafe hDepthBound hConfig
       intro scope live sourceBlock lowerState localsCtx mode sourceCtx
         finalCtx source target sourceFuel sourceOutcome cursor hFuel
@@ -841,7 +826,10 @@ theorem recursiveBlockForward
           program.memoryContract artifact.recipe.frameWords =
         some config) :
     AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
-      (prepared := prepared) (config := config)
+      (root :=
+        AllocationObserverForward.BodyCursor.RootArtifact.ofSelected
+          artifact prepared (artifact.bodyScoped hProgramScoped))
+      (config := config)
       (allocatorDepth := allocatorDepth) (frameBase := frameBase)
       (fuelBound := fuelBound) (transcript := transcript) :=
   recursiveProgramForward (allocation := allocation)
