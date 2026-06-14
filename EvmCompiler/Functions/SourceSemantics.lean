@@ -938,6 +938,21 @@ theorem mem_of_find?_eq_some
           simpa [find?, hName] using hFind
         exact List.mem_cons_of_mem head (ih hTail)
 
+theorem name_eq_of_find?_eq_some
+    {name : Name} {functions : List FunDef} {fn : FunDef}
+    (hFind : find? name functions = some fn) :
+    fn.name = name := by
+  induction functions with
+  | nil =>
+      simp [find?] at hFind
+  | cons head rest ih =>
+      by_cases hName : head.name = name
+      · simp [find?, hName] at hFind
+        subst fn
+        exact hName
+      · apply ih
+        simpa [find?, hName] using hFind
+
 end FunList
 
 mutual

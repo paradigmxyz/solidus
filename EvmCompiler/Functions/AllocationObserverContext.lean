@@ -1332,7 +1332,7 @@ theorem of_validated_function
           frameConfig? state fn =
         some (proc, final))
     (hCompile : proc.toExpressions? = some lowerProc) :
-    ∃ slots plan paramCtx returnCtx mode,
+    ∃ slots plan paramCode paramCtx returnCode returnCtx mode,
       let root := ScopeId.function fn.name
       let scratchBindings :=
         AllocationLowering.scratchBindingsForRoot
@@ -1354,6 +1354,19 @@ theorem of_validated_function
           entryLayout fn.returns.length
       allocation.find? (.function fn.name) = some plan ∧
         plan.WellFormed ∧
+        AllocationSupport.lookupFun? fn.name recipe.functionSlots =
+          some slots ∧
+        slots.Matches fn ∧
+        Locals.Block.compileOpen entryCtx
+            { stmts :=
+                (AllocationLowering.lowerParams lowerCtx slots.params
+                  entryCtx.layout).1 } =
+          some (paramCode, paramCtx) ∧
+        Locals.Block.compileOpen paramCtx
+            { stmts :=
+                (AllocationLowering.lowerReturns lowerCtx slots.returns
+                  paramCtx.layout).1 } =
+          some (returnCode, returnCtx) ∧
         FunctionPreludeContext lowerCtx plan recipe.frameWords slots
           entryCtx paramCtx returnCtx mode := by
   obtain
@@ -1552,10 +1565,12 @@ theorem of_validated_function
     AllocationLowering.lowerReturns_compileOpen_final_layout
       hReturnCompile
   refine
-    ⟨slots, plan, paramCtx, returnCtx, ?_⟩
+    ⟨slots, plan, paramCode, paramCtx, returnCode, returnCtx, ?_⟩
   dsimp only
   by_cases hNeedsFrame : needsFrame = true
-  · refine ⟨.scratch 0 recipe.frameWords, hFindPlan, hPlanWF, ?_⟩
+  · refine
+      ⟨.scratch 0 recipe.frameWords, hFindPlan, hPlanWF,
+        hLookup, hMatchesSlots, hParamCompile', hReturnCompile, ?_⟩
     have hEntryLayout :
         entryCtx.layout =
           (slots.params.map Prod.fst).reverse ++ [frameName] := by
@@ -1670,7 +1685,9 @@ theorem of_validated_function
         hParamContext hReturnContext
         ⟨paramCode, hParamCompile'⟩ ⟨returnCode, hReturnCompile⟩ hEntryLayout
         hParamLayout hBodyLayout
-  · refine ⟨.stack, hFindPlan, hPlanWF, ?_⟩
+  · refine
+      ⟨.stack, hFindPlan, hPlanWF, hLookup, hMatchesSlots,
+        hParamCompile', hReturnCompile, ?_⟩
     have hNeedsFrameFalse : needsFrame = false :=
       Bool.eq_false_of_not_eq_true hNeedsFrame
     have hRootNoFrame :

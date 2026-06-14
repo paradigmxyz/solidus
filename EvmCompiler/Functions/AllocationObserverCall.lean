@@ -472,6 +472,8 @@ structure Artifact
     AllocationSupport.lookupFun? fn.name recipe.functionSlots =
       some slots
   slotsMatch : slots.Matches fn
+  sourceName : fn.name = name
+  sourceMem : fn ∈ program.functions
 
 /--
 Construct the selected-callee artifact from the real whole-program lowering and
@@ -518,7 +520,320 @@ theorem of_lowering
        compile := hCompile
        targetLookup := hLookup
        slotsLookup := hSlotsLookup
-       slotsMatch := hSlotsMatch }⟩
+       slotsMatch := hSlotsMatch
+       sourceName :=
+         Functions.Source.FunList.name_eq_of_find?_eq_some hFind
+       sourceMem := hMem }⟩
+
+def Artifact.root
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (_artifact : Artifact allocation program expressions name fn) :
+    Locals.Allocation.ScopeId :=
+  .function fn.name
+
+def Artifact.scratchBindings
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    List (Locals.Name × Nat) :=
+  AllocationLowering.scratchBindingsForRoot
+    artifact.recipe artifact.stackSlots artifact.root
+
+def Artifact.needsFrame
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) : Bool :=
+  !artifact.scratchBindings.isEmpty
+
+def Artifact.entryLayout
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    Locals.Layout :=
+  fn.params.reverse ++
+    if artifact.needsFrame then [artifact.frameName] else []
+
+def Artifact.lowerCtx
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    AllocationLowering.Ctx :=
+  { functions := artifact.recipe.functionSlots
+    frameConfig? :=
+      AllocationSupport.scratchFrameConfig?
+        program.memoryContract artifact.recipe.frameWords
+    frameName := artifact.frameName
+    stackSlots := artifact.stackSlots
+    root := artifact.root
+    scratchBindings := artifact.scratchBindings
+    frameFunctions :=
+      AllocationLowering.frameFunctions
+        artifact.recipe artifact.stackSlots }
+
+def Artifact.entryCtx
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    Locals.Ctx :=
+  Locals.Ctx.procEntryWithLayoutAndRetc
+    artifact.entryLayout fn.returns.length
+
+def Artifact.bodyStart
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    AllocationLowering.State :=
+  let paramResult :=
+    AllocationLowering.lowerParams artifact.lowerCtx
+      artifact.slots.params artifact.entryLayout
+  let returnResult :=
+    AllocationLowering.lowerReturns artifact.lowerCtx
+      artifact.slots.returns paramResult.2
+  { allocation :=
+      { env := AllocationSupport.functionEnv artifact.slots
+        nextSlot := artifact.startState.nextSlot }
+    layout := returnResult.2 }
+
+def Artifact.markers
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    List Locals.Stmt :=
+  [AllocationLowering.bindEntryLayout artifact.entryLayout] ++
+    if artifact.needsFrame then
+      [AllocationLowering.bindScratchBindings
+        fn.params.length artifact.scratchBindings]
+    else
+      []
+
+/--
+Complete compiler-owned view of one selected function. The recursive observer
+proof consumes this package instead of reopening allocation lowering and Locals
+procedure compilation.
+-/
+structure Prepared
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) where
+  plan : Locals.Allocation.Plan
+  paramCtx : Locals.Ctx
+  returnCtx : Locals.Ctx
+  mode : AllocationObserverRelation.ActivationMode
+  body : Locals.Block
+  bodyFinal : AllocationLowering.State
+  returnValues : Locals.ExprSeq fn.returns.length
+  markerCode : List Expressions.Stmt
+  paramCode : List Expressions.Stmt
+  returnCode : List Expressions.Stmt
+  bodyCode : List Expressions.Stmt
+  bodyCtx : Locals.Ctx
+  returnValueCode : Structured.Code
+  cleanup : Structured.Code
+  planLookup :
+    allocation.find? (.function fn.name) = some plan
+  planWF : plan.WellFormed
+  prelude :
+    AllocationObserverContext.FunctionPreludeContext
+      artifact.lowerCtx plan artifact.recipe.frameWords artifact.slots
+      artifact.entryCtx paramCtx returnCtx mode
+  lowerBody :
+    AllocationLowering.lowerBlockOpen artifact.lowerCtx fn.returns
+        artifact.bodyStart fn.body =
+      some (body, bodyFinal)
+  lowerReturnValues :
+    AllocationLowering.lowerReturnExprs artifact.lowerCtx bodyFinal
+        fn.returns =
+      some returnValues
+  compileMarkers :
+    Locals.Block.compileOpen artifact.entryCtx
+        { stmts := artifact.markers } =
+      some (markerCode, artifact.entryCtx)
+  compileParams :
+    Locals.Block.compileOpen artifact.entryCtx
+        { stmts :=
+            (AllocationLowering.lowerParams artifact.lowerCtx
+              artifact.slots.params artifact.entryCtx.layout).1 } =
+      some (paramCode, paramCtx)
+  compileReturns :
+    Locals.Block.compileOpen paramCtx
+        { stmts :=
+            (AllocationLowering.lowerReturns artifact.lowerCtx
+              artifact.slots.returns paramCtx.layout).1 } =
+      some (returnCode, returnCtx)
+  compileBody :
+    Locals.Block.compileOpen returnCtx body =
+      some (bodyCode, bodyCtx)
+  compileReturnValues :
+    Locals.ExprSeq.compileCode bodyCtx 0 returnValues =
+      some returnValueCode
+  compileCleanup :
+    bodyCtx.cleanupToPreserving? fn.returns.length 0 =
+      some cleanup
+  procName : artifact.lowerProc.name = fn.name
+  procArgc :
+    artifact.lowerProc.argc =
+      fn.params.length + (if artifact.needsFrame then 1 else 0)
+  procRetc : artifact.lowerProc.retc = fn.returns.length
+  procBody :
+    artifact.lowerProc.body.stmts =
+      markerCode ++ paramCode ++ returnCode ++ bodyCode ++
+        Locals.codeStmt returnValueCode ++ Locals.codeStmt cleanup
+
+theorem Artifact.prepare
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {name : Functions.Name}
+    {fn : Functions.FunDef}
+    (artifact : Artifact allocation program expressions name fn) :
+    Nonempty (Prepared artifact) := by
+  obtain
+      ⟨slots, body, bodyFinal, returnValues,
+        markerCode, paramCode, paramCtx, returnCode, returnCtx,
+        bodyCode, bodyCtx, returnValueCode, cleanup,
+        hSlots, hComponents⟩ :=
+    AllocationLowering.lowerFunction?_toExpressions?_body_components
+      artifact.lower artifact.compile
+  have hSlotsEq : slots = artifact.slots := by
+    rw [artifact.slotsLookup] at hSlots
+    exact (Option.some.inj hSlots).symm
+  subst slots
+  dsimp only at hComponents
+  rcases hComponents with
+    ⟨hLowerBody, hLowerReturnValues, hCompileMarkers,
+      hCompileParams, hCompileReturns, hCompileBody,
+      hCompileReturnValues, hCompileCleanup, hProcName,
+      hProcArgc, hProcRetc, hProcBody⟩
+  obtain
+      ⟨contextSlots, plan, contextParamCode, contextParamCtx,
+        contextReturnCode, contextReturnCtx, mode, hContext⟩ :=
+    AllocationObserverContext.FunctionPreludeContext.of_validated_function
+      artifact.validate artifact.sourceMem artifact.fresh
+      artifact.lower artifact.compile
+  dsimp only at hContext
+  rcases hContext with
+    ⟨hPlanLookup, hPlanWF, hContextSlots, _hContextMatch,
+      hContextParams, hContextReturns, hPrelude⟩
+  have hContextSlotsEq : contextSlots = artifact.slots := by
+    rw [artifact.slotsLookup] at hContextSlots
+    exact (Option.some.inj hContextSlots).symm
+  subst contextSlots
+  have hContextParams' :
+      Locals.Block.compileOpen artifact.entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams artifact.lowerCtx
+                artifact.slots.params artifact.entryCtx.layout).1 } =
+        some (contextParamCode, contextParamCtx) := by
+    simpa [Artifact.lowerCtx, Artifact.entryCtx, Artifact.entryLayout,
+      Artifact.root, Artifact.scratchBindings,
+      Artifact.needsFrame] using hContextParams
+  have hCompileParams' :
+      Locals.Block.compileOpen artifact.entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams artifact.lowerCtx
+                artifact.slots.params artifact.entryCtx.layout).1 } =
+        some (paramCode, paramCtx) := by
+    simpa [Artifact.lowerCtx, Artifact.entryCtx, Artifact.entryLayout,
+      Artifact.root, Artifact.scratchBindings,
+      Artifact.needsFrame] using hCompileParams
+  have hParamEq :
+      (contextParamCode, contextParamCtx) = (paramCode, paramCtx) := by
+    exact Option.some.inj (hContextParams'.symm.trans hCompileParams')
+  cases hParamEq
+  have hContextReturns' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              (AllocationLowering.lowerReturns artifact.lowerCtx
+                artifact.slots.returns paramCtx.layout).1 } =
+        some (contextReturnCode, contextReturnCtx) := by
+    simpa [Artifact.lowerCtx, Artifact.root,
+      Artifact.scratchBindings, Artifact.needsFrame] using hContextReturns
+  have hCompileReturns' :
+      Locals.Block.compileOpen paramCtx
+          { stmts :=
+              (AllocationLowering.lowerReturns artifact.lowerCtx
+                artifact.slots.returns paramCtx.layout).1 } =
+        some (returnCode, returnCtx) := by
+    simpa [Artifact.lowerCtx, Artifact.root,
+      Artifact.scratchBindings, Artifact.needsFrame] using hCompileReturns
+  have hReturnEq :
+      (contextReturnCode, contextReturnCtx) =
+        (returnCode, returnCtx) := by
+    exact Option.some.inj (hContextReturns'.symm.trans hCompileReturns')
+  cases hReturnEq
+  refine
+    ⟨{ plan := plan
+       paramCtx := paramCtx
+       returnCtx := returnCtx
+       mode := mode
+       body := body
+       bodyFinal := bodyFinal
+       returnValues := returnValues
+       markerCode := markerCode
+       paramCode := paramCode
+       returnCode := returnCode
+       bodyCode := bodyCode
+       bodyCtx := bodyCtx
+       returnValueCode := returnValueCode
+       cleanup := cleanup
+       planLookup := ?_
+       planWF := hPlanWF
+       prelude := ?_
+       lowerBody := ?_
+       lowerReturnValues := ?_
+       compileMarkers := ?_
+       compileParams := hCompileParams'
+       compileReturns := hCompileReturns'
+       compileBody := hCompileBody
+       compileReturnValues := hCompileReturnValues
+       compileCleanup := hCompileCleanup
+       procName := hProcName
+       procArgc := ?_
+       procRetc := hProcRetc
+       procBody := hProcBody }⟩
+  · simpa using hPlanLookup
+  · simpa [Artifact.lowerCtx, Artifact.entryCtx,
+      Artifact.entryLayout, Artifact.root, Artifact.scratchBindings,
+      Artifact.needsFrame] using hPrelude
+  · simpa [Artifact.lowerCtx, Artifact.bodyStart,
+      Artifact.entryLayout, Artifact.root, Artifact.scratchBindings,
+      Artifact.needsFrame] using hLowerBody
+  · simpa [Artifact.lowerCtx, Artifact.root,
+      Artifact.scratchBindings, Artifact.needsFrame] using
+      hLowerReturnValues
+  · simpa [Artifact.markers, Artifact.entryCtx,
+      Artifact.entryLayout, Artifact.needsFrame,
+      Artifact.scratchBindings] using hCompileMarkers
+  · simpa [Artifact.needsFrame, Artifact.scratchBindings,
+      Artifact.root] using hProcArgc
 
 end SelectedCallee
 

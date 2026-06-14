@@ -396,6 +396,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext
 #check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext.of_validated_function
+#check EvmCompiler.Functions.Source.FunList.name_eq_of_find?_eq_some
 #check EvmCompiler.Functions.AllocationObserverContext.classify_activation_var
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext.stack_depth_lt_frame
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_toExpressions?_prelude_components
@@ -465,6 +466,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel.restore_base
 #check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.regular
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.of_lowering
+#check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.prepare
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
