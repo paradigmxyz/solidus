@@ -4935,6 +4935,75 @@ theorem weaken {transcript : Trace}
     prefixStable := fun hDepth hBudget =>
       hEffect.prefixStable (hDepth.trans_le hBound) hBudget }
 
+/--
+One target `MSTORE` above an independently chosen protected prefix preserves a
+bounded allocator effect, even when the allocator remains ready at a deeper
+callee depth.
+-/
+theorem of_mstore_above
+    {transcript : Trace}
+    {config : Config} {finalDepth protectedBound address : Nat}
+    {value : Word}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config finalDepth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState.mstore
+          (EvmYul.UInt256.ofNat address) value)
+    (hAddress :
+      (EvmYul.UInt256.ofNat address).toNat = address)
+    (hHost : address + MemoryContract.wordBytes < USize.size)
+    (hAllocatorDisjoint :
+      config.allocatorCell + MemoryContract.wordBytes ≤ address ∨
+        address + MemoryContract.wordBytes ≤ config.allocatorCell)
+    (hAbove :
+      ∀ {protectedDepth : Nat},
+        protectedDepth < protectedBound →
+        baseAt config protectedDepth ≤ address) :
+    BoundedEffect config finalDepth protectedBound before after := by
+  have hFinalReady :=
+    hReady.of_mstore_disjoint hMachine hAddress hHost hAllocatorDisjoint
+  have hAddressEnd :
+      address + MemoryContract.wordBytes < EvmYul.UInt256.size :=
+    lt_trans hHost Compiler.MemoryRelation.usize_size_lt_uint256_size
+  have hGrowth : TargetGrowth before after := by
+    refine ⟨?_, ?_⟩
+    · rw [hMachine]
+      exact
+        Compiler.MemoryRelation.activeWords_toNat_le_mstore
+          before.source.evm.toMachineState address value hAddressEnd
+    · rw [hMachine]
+      simpa [EvmYul.MachineState.mstore] using
+        (Compiler.MemoryRelation.writeWord_memory_size_ge
+          before.source.evm.toMachineState address value hAddress
+          (by simpa [MemoryContract.wordBytes] using hHost))
+  refine
+    { ready := hFinalReady
+      growth := hGrowth
+      prefixStable := ?_ }
+  intro protectedDepth hDepth _hBudget
+  refine
+    { growth := hGrowth
+      lookup := ?_ }
+  intro query _hStart hEnd hReadMemory hReadActive
+  have hQueryLt : query < EvmYul.UInt256.size := by
+    exact lt_of_le_of_lt
+      (Nat.le_add_right query MemoryContract.wordBytes)
+      (hReadActive.trans_lt hReady.activeNoWrap)
+  have hQuery :
+      (EvmYul.UInt256.ofNat query).toNat = query :=
+    EvmYul.UInt256.toNat_ofNat_of_lt hQueryLt
+  rw [hMachine]
+  exact
+    Compiler.MemoryRelation.lookupMemory_mstore_disjoint_growing
+      before.source.evm.toMachineState address query value
+      hAddress hQuery
+      (by simpa [MemoryContract.wordBytes] using hHost)
+      (by simpa [MemoryContract.wordBytes] using hReadMemory)
+      (by simpa [MemoryContract.wordBytes] using hReadActive)
+      (by simpa [MemoryContract.wordBytes] using hReady.activeNoWrap)
+      (Or.inl (hEnd.trans (hAbove hDepth)))
+
 end BoundedEffect
 
 /--
@@ -5001,6 +5070,31 @@ theorem to_boundedEffect {transcript : Trace}
   cases mode with
   | stack => exact BoundedEffect.of_allocatorEffect hEffect
   | scratch => exact BoundedEffect.of_suspendedEffect hEffect
+
+theorem of_boundedEffect {transcript : Trace}
+    {config : Config} {depth : Nat} {mode : ActivationMode}
+    {before after : TargetState transcript}
+    (hEffect :
+      BoundedEffect config depth
+        (match mode with
+        | .stack => depth + 1
+        | .scratch _ _ => depth)
+        before after) :
+    ActivationEffect config depth mode before after := by
+  cases mode with
+  | stack =>
+      change BoundedEffect config depth (depth + 1) before after at hEffect
+      exact
+        { ready := hEffect.ready
+          growth := hEffect.growth
+          prefixStable := fun hDepth hBudget =>
+            hEffect.prefixStable (Nat.lt_succ_iff.mpr hDepth) hBudget }
+  | scratch =>
+      change BoundedEffect config depth depth before after at hEffect
+      exact
+        { ready := hEffect.ready
+          growth := hEffect.growth
+          prefixStable := hEffect.prefixStable }
 
 theorem refl {transcript : Trace}
     {config : Config} {depth : Nat} {mode : ActivationMode}

@@ -2753,7 +2753,14 @@ end ScratchFrame
 
 namespace CallTargets
 
-private def PreservesEffect
+private def protectedBound
+    (callerDepth : Nat)
+    (mode : AllocationObserverRelation.ActivationMode) : Nat :=
+  match mode with
+  | .stack => callerDepth + 1
+  | .scratch _ _ => callerDepth
+
+private def PreservesBoundedEffect
     (contract : MemoryContract.Contract)
     (frameBase : Nat)
     (mode : AllocationObserverRelation.ActivationMode)
@@ -2761,29 +2768,30 @@ private def PreservesEffect
     (before after : Structured.ObserverSemantics.State transcript) : Prop :=
   ∀ {globalFrameWords : Nat}
     {config : AllocationObserverRelation.Frame.Config}
-    {allocatorDepth : Nat},
+    {callerDepth readyDepth : Nat},
     AllocationSupport.scratchFrameConfig?
         contract globalFrameWords =
       some config →
     AllocationObserverRelation.Frame.ActivationOwned
-        config allocatorDepth frameBase mode →
+        config callerDepth frameBase mode →
+    callerDepth ≤ readyDepth →
     AllocationObserverRelation.Frame.AllocatorReady
-        config allocatorDepth before →
-    AllocationObserverRelation.Frame.ActivationEffect
-      config allocatorDepth mode before after
+        config readyDepth before →
+    AllocationObserverRelation.Frame.BoundedEffect
+      config readyDepth (protectedBound callerDepth mode) before after
 
-private theorem PreservesEffect.refl
+private theorem PreservesBoundedEffect.refl
     {contract : MemoryContract.Contract}
     {frameBase : Nat}
     {mode : AllocationObserverRelation.ActivationMode}
     {transcript : Trace}
     {target : Structured.ObserverSemantics.State transcript} :
-    PreservesEffect contract frameBase mode target target := by
-  intro _globalFrameWords _config _allocatorDepth
-    _hConfig _hOwned hReady
-  exact AllocationObserverRelation.Frame.ActivationEffect.refl hReady
+    PreservesBoundedEffect contract frameBase mode target target := by
+  intro _globalFrameWords _config _callerDepth _readyDepth
+    _hConfig _hOwned _hDepth hReady
+  exact AllocationObserverRelation.Frame.BoundedEffect.refl hReady
 
-private theorem PreservesEffect.trans
+private theorem PreservesBoundedEffect.trans
     {contract : MemoryContract.Contract}
     {frameBase : Nat}
     {mode : AllocationObserverRelation.ActivationMode}
@@ -2791,17 +2799,18 @@ private theorem PreservesEffect.trans
     {before middle after :
       Structured.ObserverSemantics.State transcript}
     (hFirst :
-      PreservesEffect contract frameBase mode before middle)
+      PreservesBoundedEffect contract frameBase mode before middle)
     (hSecond :
-      PreservesEffect contract frameBase mode middle after) :
-    PreservesEffect contract frameBase mode before after := by
-  intro globalFrameWords config allocatorDepth hConfig hOwned hReady
+      PreservesBoundedEffect contract frameBase mode middle after) :
+    PreservesBoundedEffect contract frameBase mode before after := by
+  intro globalFrameWords config callerDepth readyDepth
+    hConfig hOwned hDepth hReady
   exact
-    (hFirst hConfig hOwned hReady).trans
-      (hSecond hConfig hOwned
-        (hFirst hConfig hOwned hReady).ready)
+    (hFirst hConfig hOwned hDepth hReady).trans
+      (hSecond hConfig hOwned hDepth
+        (hFirst hConfig hOwned hDepth hReady).ready)
 
-private theorem PreservesEffect.of_machine_eq
+private theorem PreservesBoundedEffect.of_machine_eq
     {contract : MemoryContract.Contract}
     {frameBase : Nat}
     {mode : AllocationObserverRelation.ActivationMode}
@@ -2811,15 +2820,18 @@ private theorem PreservesEffect.of_machine_eq
     (hMachine :
       after.source.evm.toMachineState =
         before.source.evm.toMachineState) :
-    PreservesEffect contract frameBase mode before after := by
-  intro _globalFrameWords _config _allocatorDepth
-    _hConfig _hOwned hReady
-  exact
-    AllocationObserverRelation.Frame.ActivationEffect.of_allocatorEffect
-      (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
-        hReady hMachine)
+    PreservesBoundedEffect contract frameBase mode before after := by
+  intro _globalFrameWords _config callerDepth readyDepth
+    _hConfig _hOwned hDepth hReady
+  apply AllocationObserverRelation.Frame.BoundedEffect.weaken
+    (largerBound := readyDepth + 1)
+  · cases mode <;> simp [protectedBound] <;> omega
+  · exact
+      AllocationObserverRelation.Frame.BoundedEffect.of_allocatorEffect
+        (AllocationObserverRelation.Frame.AllocatorEffect.of_machine_eq
+          hReady hMachine)
 
-private theorem PreservesEffect.of_scratch_store
+private theorem PreservesBoundedEffect.of_scratch_store
     {contract : MemoryContract.Contract}
     {plan : Locals.Allocation.Plan}
     {live : List Locals.Name}
@@ -2841,9 +2853,10 @@ private theorem PreservesEffect.of_scratch_store
           (EvmYul.UInt256.ofNat
             (AllocationObserverRelation.scratchAddress frameBase slot))
           value) :
-    PreservesEffect contract frameBase
+    PreservesBoundedEffect contract frameBase
       (.scratch frameDepth frameWords) before after := by
-  intro globalFrameWords config allocatorDepth hConfig hOwned hReady
+  intro globalFrameWords config callerDepth readyDepth
+    hConfig hOwned _hDepth hReady
   have hEndLt :=
     hRel.scratchAddress_end_lt_size hLive hLocation
   have hAddressLt :
@@ -2854,10 +2867,13 @@ private theorem PreservesEffect.of_scratch_store
         (by decide : 0 < MemoryContract.wordBytes))
       (Nat.le_of_lt hEndLt)
   exact
-    hOwned.suspendedEffect_of_mstore
-      hConfig hReady hMachine
+    AllocationObserverRelation.Frame.BoundedEffect.of_mstore_above
+      hReady hMachine
       (EvmYul.UInt256.toNat_ofNat_of_lt hAddressLt)
       (hRel.scratchAddress_end_lt_hostSize hLive hLocation)
+      (Or.inl (hOwned.allocatorCell_disjoint_scratchAddress hConfig))
+      (fun hProtected =>
+        hOwned.baseAt_le_scratchAddress_of_lt hProtected)
 
 private theorem set_append_offset
     {α : Type} (above suffix : List α) (depth : Nat) (value : α) :
@@ -3082,7 +3098,7 @@ private theorem forward_core
           (source.withSource (source.source.withVars finalStore))
           targetFinal ∧
         targetFinal.source.evm.stack.length = rest.length ∧
-        PreservesEffect contract frameBase mode target targetFinal := by
+        PreservesBoundedEffect contract frameBase mode target targetFinal := by
   induction names generalizing values code source target rest with
   | nil =>
       cases values with
@@ -3097,7 +3113,7 @@ private theorem forward_core
               by
                 simpa [Locals.Source.State.withVars] using hRel,
               by simpa using congrArg List.length hStack,
-              PreservesEffect.refl⟩
+              PreservesBoundedEffect.refl⟩
       | cons value values =>
           simp [Functions.Source.Store.assignMany] at hAssign
   | cons name names ih =>
@@ -3203,8 +3219,8 @@ private theorem forward_core
                                   Locals.Source.State.withVars] using hFinalRel
                               · simpa using hFinalStack
                               · exact
-                                  PreservesEffect.trans
-                                    (PreservesEffect.of_machine_eq
+                                  PreservesBoundedEffect.trans
+                                    (PreservesBoundedEffect.of_machine_eq
                                       hHeadMachine)
                                     hTailPreserves
                           | @scratch frameDepth frameWords scratchContext =>
@@ -3239,8 +3255,8 @@ private theorem forward_core
                                   Locals.Source.State.withVars] using hFinalRel
                               · simpa using hFinalStack
                               · exact
-                                  PreservesEffect.trans
-                                    (PreservesEffect.of_machine_eq
+                                  PreservesBoundedEffect.trans
+                                    (PreservesBoundedEffect.of_machine_eq
                                       hHeadMachine)
                                     hTailPreserves
                 · have hScratchSlot :
@@ -3316,8 +3332,8 @@ private theorem forward_core
                                       Locals.Source.State.withVars] using
                                       hFinalRel
                                   · exact
-                                      PreservesEffect.trans
-                                        (PreservesEffect.of_scratch_store
+                                      PreservesBoundedEffect.trans
+                                        (PreservesBoundedEffect.of_scratch_store
                                           scratchRel hNameLive hLocation
                                           hHeadMachine)
                                         hTailPreserves
@@ -3435,9 +3451,82 @@ theorem forward_runtime
   obtain
       ⟨targetFinal, hRun, hFinalRel, hFinalStack, hAllocator⟩ :=
     forward_core hContext hWF hLive hAssign hCode hRel hStack
+  have hBounded :=
+    hAllocator hConfig hOwned (Nat.le_refl allocatorDepth) hReady
   exact
     ⟨targetFinal, hRun, hFinalRel, hFinalStack,
-      hAllocator hConfig hOwned hReady⟩
+      AllocationObserverRelation.Frame.ActivationEffect.of_boundedEffect
+        hBounded⟩
+
+/--
+Allocator-aware returned-value assignment while a deeper callee frame may
+still be allocated. The result protects exactly the caller prefix permitted by
+its activation mode and leaves allocator readiness at `readyDepth`.
+-/
+theorem forward_runtime_bounded
+    {contract : MemoryContract.Contract}
+    {globalFrameWords : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {callerDepth readyDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {names : List Locals.Name} {values : List Word}
+    {finalStore : Locals.Source.Store}
+    {code : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {rest : List Word}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hContext :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx lowerState localsCtx plan live mode)
+    (hWF : plan.WellFormed)
+    (hLive :
+      ∀ name, name ∈ names → name ∈ live)
+    (hAssign :
+      Functions.Source.Store.assignMany names values source.source.vars =
+        some finalStore)
+    (hCode :
+      AllocationLowering.lowerCallTargetsCode?
+          lowerCtx lowerState names values.length =
+        some code)
+    (hRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live values.length frameBase mode source target)
+    (hStack :
+      target.source.evm.stack = values ++ rest)
+    (hOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config callerDepth frameBase mode)
+    (hDepth : callerDepth ≤ readyDepth)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady
+        config readyDepth target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetFinal ∧
+        AllocationObserverRelation.ActivationStateRel
+          contract plan live 0 frameBase mode
+          (source.withSource (source.source.withVars finalStore))
+          targetFinal ∧
+        targetFinal.source.evm.stack.length = rest.length ∧
+        AllocationObserverRelation.Frame.BoundedEffect
+          config readyDepth (protectedBound callerDepth mode)
+          target targetFinal := by
+  obtain
+      ⟨targetFinal, hRun, hFinalRel, hFinalStack, hAllocator⟩ :=
+    forward_core hContext hWF hLive hAssign hCode hRel hStack
+  exact
+    ⟨targetFinal, hRun, hFinalRel, hFinalStack,
+      hAllocator hConfig hOwned hDepth hReady⟩
 
 end CallTargets
 

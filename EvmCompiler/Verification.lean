@@ -422,7 +422,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.weaken
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.of_mstore_above
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect.of_boundedEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect.trans_of_sameFrame
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.TargetGrowth.refl
@@ -454,6 +456,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameRelease_boundedEffect
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward_runtime
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
+#check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime_bounded
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
