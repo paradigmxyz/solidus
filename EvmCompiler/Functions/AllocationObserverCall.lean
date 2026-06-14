@@ -233,6 +233,85 @@ theorem scratch_of_arguments
 
 end CalleeEntry
 
+namespace StructuredCall
+
+/--
+A regular procedure-body evaluation determines the real Structured return-frame
+pop and return-vector attachment without an externally supplied frame witness.
+-/
+theorem regular
+    {transcript : Trace}
+    {targetProgram : Structured.Program}
+    {fuel : Nat}
+    {name : Structured.Name}
+    {proc : Structured.Proc}
+    {target bodyFinal :
+      Structured.ObserverSemantics.State transcript}
+    {args callerStack returnedValues : EvmYul.Stack Word}
+    (hLookup :
+      Structured.ProcList.lookup? name targetProgram.procs = some proc)
+    (hTargetStack :
+      target.source.evm.stack = args ++ callerStack)
+    (hArgsLength : args.length = proc.argc)
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel proc.body
+        (CalleeEntry.structuredState target args callerStack proc.retc)
+        (Structured.EffectSemantics.Outcome.regular bodyFinal))
+    (hReturnedStack :
+      bodyFinal.source.evm.stack = returnedValues)
+    (hReturnedLength : returnedValues.length = proc.retc) :
+    ∃ returned final,
+      (Structured.ObserverSemantics.stateModel transcript).popReturn?
+          bodyFinal =
+        some
+          ({ callerStack := callerStack, retc := proc.retc }, returned) ∧
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (fuel + 1) (.call name) target
+        (Structured.EffectSemantics.Outcome.regular final) ∧
+      final.cursor = bodyFinal.cursor ∧
+      final.source.evm.stack = returnedValues ++ callerStack ∧
+      final.source.evm.toMachineState =
+        bodyFinal.source.evm.toMachineState ∧
+      final.source.evm.toSharedState.toState =
+        bodyFinal.source.evm.toSharedState.toState ∧
+      final.source.returns = target.source.returns := by
+  obtain ⟨returned, hPop, hCursor, hEVM, hReturns⟩ :=
+    Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
+      hBody (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+  have hSplit :
+      Structured.StackFrame.splitArgs? proc.argc target.source.evm.stack =
+        some (args, callerStack) := by
+    rw [hTargetStack]
+    simpa [hArgsLength] using
+      Structured.StackFrame.splitArgs?_append args callerStack
+  have hAttach :
+      Structured.StackFrame.attachReturns?
+          { callerStack := callerStack, retc := proc.retc }
+          bodyFinal.source.evm.stack =
+        some (returnedValues ++ callerStack) := by
+    rw [hReturnedStack]
+    exact
+      Structured.StackFrame.attachReturns?_eq_some hReturnedLength
+  let final :=
+    (Structured.ObserverSemantics.stateModel transcript).withEVM returned
+      { bodyFinal.source.evm with
+        stack := returnedValues ++ callerStack }
+  have hEval :
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (fuel + 1) (.call name) target
+        (Structured.EffectSemantics.Outcome.regular final) := by
+    exact
+      Structured.EffectSemantics.Stmt.Eval.call_regular
+        hLookup hSplit hBody hPop hAttach
+  refine ⟨returned, final, hPop, hEval, ?_, ?_, ?_, ?_, ?_⟩
+  · simp [final, Structured.ObserverSemantics.stateModel, hCursor]
+  · simp [final, Structured.ObserverSemantics.stateModel]
+  · simp [final, Structured.ObserverSemantics.stateModel, hEVM]
+  · simp [final, Structured.ObserverSemantics.stateModel, hEVM]
+  · simp [final, Structured.ObserverSemantics.stateModel, hReturns]
+
+end StructuredCall
+
 namespace CallCompiler
 
 /--
@@ -2320,6 +2399,139 @@ theorem forward_regular
 
 end FunctionReturn
 
+namespace RegularCallee
+
+/--
+Compose the pass-owned phases of one regular callee body: metadata-only entry
+markers, parameter/return prelude, recursively preserved source body, and the
+regular-return epilogue.
+-/
+theorem compose
+    {transcript : Trace}
+    {config : AllocationObserverRelation.Frame.Config}
+    {callerDepth calleeDepth : Nat}
+    {entryMode bodyMode : AllocationObserverRelation.ActivationMode}
+    {targetProgram : Structured.Program}
+    {proc : Structured.Proc}
+    {markerBlock preludeBlock bodyBlock returnBlock : Structured.Block}
+    {targetEntry targetBodyStart targetBodyFinal targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {markerFuel preludeFuel bodyFuel returnFuel : Nat}
+    (hBodyShape :
+      proc.body.stmts =
+        markerBlock.stmts ++ preludeBlock.stmts ++
+          bodyBlock.stmts ++ returnBlock.stmts)
+    (hMarkers :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram markerFuel markerBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetEntry))
+    (hPrelude :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram preludeFuel preludeBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetBodyStart))
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyFuel bodyBlock targetBodyStart
+        (Structured.EffectSemantics.Outcome.regular targetBodyFinal))
+    (hReturn :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram returnFuel returnBlock targetBodyFinal
+        (Structured.EffectSemantics.Outcome.regular targetFinal))
+    (hSame :
+      AllocationObserverRelation.SameFrame entryMode bodyMode)
+    (hPreludeEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth entryMode targetEntry targetBodyStart)
+    (hBodyEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth bodyMode targetBodyStart targetBodyFinal)
+    (hReturnEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config calleeDepth bodyMode targetBodyFinal targetFinal)
+    (hProtectedBound :
+      (match entryMode with
+      | .stack => calleeDepth + 1
+      | .scratch _ _ => calleeDepth) =
+        callerDepth + 1) :
+    ∃ fuel,
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram fuel proc.body targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config calleeDepth (callerDepth + 1)
+        targetEntry targetFinal := by
+  rcases markerBlock with ⟨markerStmts⟩
+  rcases preludeBlock with ⟨preludeStmts⟩
+  rcases bodyBlock with ⟨bodyStmts⟩
+  rcases returnBlock with ⟨returnStmts⟩
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram markerFuel { stmts := markerStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetEntry)
+    at hMarkers
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram preludeFuel { stmts := preludeStmts } targetEntry
+      (Structured.EffectSemantics.Outcome.regular targetBodyStart)
+    at hPrelude
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram bodyFuel { stmts := bodyStmts } targetBodyStart
+      (Structured.EffectSemantics.Outcome.regular targetBodyFinal)
+    at hBody
+  change
+    Structured.ObserverSemantics.Block.Eval
+      targetProgram returnFuel { stmts := returnStmts } targetBodyFinal
+      (Structured.EffectSemantics.Outcome.regular targetFinal)
+    at hReturn
+  obtain ⟨markerPreludeFuel, hMarkerPrelude⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts) (right := preludeStmts)
+      hMarkers hPrelude
+  obtain ⟨throughBodyFuel, hThroughBody⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts ++ preludeStmts)
+      (right := bodyStmts)
+      hMarkerPrelude hBody
+  obtain ⟨fuel, hEval⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left :=
+        (markerStmts ++ preludeStmts) ++ bodyStmts)
+      (right := returnStmts)
+      hThroughBody hReturn
+  refine ⟨fuel, ?_, ?_⟩
+  · cases hProcBody : proc.body with
+    | mk procStmts =>
+        have hProcStmts :
+            procStmts =
+              markerStmts ++ preludeStmts ++ bodyStmts ++ returnStmts := by
+          simpa [hProcBody] using hBodyShape
+        subst procStmts
+        simpa [List.append_assoc] using hEval
+  · cases hSame with
+    | stack =>
+        change calleeDepth + 1 = callerDepth + 1 at hProtectedBound
+        have hEffect :=
+          AllocationObserverRelation.Frame.AllocatorEffect.trans
+            (AllocationObserverRelation.Frame.AllocatorEffect.trans
+              hPreludeEffect hBodyEffect)
+            hReturnEffect
+        exact hProtectedBound ▸
+          AllocationObserverRelation.Frame.BoundedEffect.of_allocatorEffect
+            hEffect
+    | scratch =>
+        change calleeDepth = callerDepth + 1 at hProtectedBound
+        have hEffect :=
+          AllocationObserverRelation.Frame.SuspendedEffect.trans
+            (AllocationObserverRelation.Frame.SuspendedEffect.trans
+              hPreludeEffect hBodyEffect)
+            hReturnEffect
+        exact hProtectedBound ▸
+          AllocationObserverRelation.Frame.BoundedEffect.of_suspendedEffect
+            hEffect
+
+end RegularCallee
+
 namespace ArgList
 
 /--
@@ -2753,7 +2965,7 @@ end ScratchFrame
 
 namespace CallTargets
 
-private def protectedBound
+def protectedBound
     (callerDepth : Nat)
     (mode : AllocationObserverRelation.ActivationMode) : Nat :=
   match mode with
@@ -3529,6 +3741,324 @@ theorem forward_runtime_bounded
       hAllocator hConfig hOwned hDepth hReady⟩
 
 end CallTargets
+
+namespace RegularCall
+
+/--
+Complete a regular Structured call after the callee body has produced its
+return vector, then assign those values through the real caller writeback code.
+
+The caller relation is resumed from the callee's protected-prefix effect. The
+result remains allocator-ready at `readyDepth`, allowing a scratch callee frame
+to be released by the following compiler phase.
+-/
+theorem resume_and_writeback
+    {contract : MemoryContract.Contract}
+    {globalFrameWords callerDepth readyDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {callerLowerCtx : AllocationLowering.Ctx}
+    {callerLowerState : AllocationLowering.State}
+    {callerLocalsCtx : Locals.Ctx}
+    {callerPlan : Locals.Allocation.Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase : Nat}
+    {callerMode : AllocationObserverRelation.ActivationMode}
+    {sourceAfterArgs sourceReturned :
+      Functions.ObserverSemantics.State transcript}
+    {callerTargetBase targetCallInput calleeFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {name : Structured.Name}
+    {proc : Structured.Proc}
+    {bodyFuel : Nat}
+    {callArgs callerStack returnValues : List Word}
+    {targets : List Locals.Name}
+    {returnStore : Locals.Source.Store}
+    {stores : Structured.Code}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hCallerRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive 0 callerFrameBase callerMode
+        sourceAfterArgs callerTargetBase)
+    (hCallerOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config callerDepth callerFrameBase callerMode)
+    (hCallerDepth : callerDepth ≤ readyDepth)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config callerDepth)
+    (hCallerStack :
+      callerTargetBase.source.evm.stack = callerStack)
+    (hLookup :
+      Structured.ProcList.lookup? name targetProgram.procs = some proc)
+    (hCallStack :
+      targetCallInput.source.evm.stack = callArgs ++ callerStack)
+    (hCallArgsLength : callArgs.length = proc.argc)
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval targetProgram bodyFuel proc.body
+        (CalleeEntry.structuredState
+          targetCallInput callArgs callerStack proc.retc)
+        (Structured.EffectSemantics.Outcome.regular calleeFinal))
+    (hReturnedStack :
+      calleeFinal.source.evm.stack = returnValues.reverse)
+    (hReturnedLength : returnValues.length = proc.retc)
+    (hSourceCursor : sourceReturned.cursor = calleeFinal.cursor)
+    (hSourceMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        sourceReturned.source.shared.toMachineState
+        calleeFinal.source.evm.toMachineState)
+    (hSourceWorld :
+      sourceReturned.source.shared.toState =
+        calleeFinal.source.evm.toSharedState.toState)
+    (hCallEffect :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config readyDepth (callerDepth + 1)
+        callerTargetBase calleeFinal)
+    (hCallerContext :
+      AllocationObserverContext.ActivationExprContext
+        callerLowerCtx callerLowerState callerLocalsCtx
+        callerPlan callerLive callerMode)
+    (hCallerWF : callerPlan.WellFormed)
+    (hTargetsLive :
+      ∀ target, target ∈ targets → target ∈ callerLive)
+    (hTargetsNodup : targets.Nodup)
+    (hAssign :
+      Functions.Source.Store.assignMany targets returnValues
+          sourceAfterArgs.source.vars =
+        some returnStore)
+    (hStores :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState
+          targets.reverse targets.length =
+        some stores) :
+    ∃ callFinal targetFinal,
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (bodyFuel + 1) (.call name) targetCallInput
+        (Structured.EffectSemantics.Outcome.regular callFinal) ∧
+      Structured.ObserverSemantics.Code.run stores callFinal =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive 0 callerFrameBase callerMode
+        ((Functions.ObserverSemantics.stateModel transcript).withSource
+          sourceReturned
+          { shared := sourceReturned.source.shared
+            vars := returnStore })
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = callerStack.length ∧
+      AllocationObserverRelation.Frame.BoundedEffect
+        config readyDepth
+          (CallTargets.protectedBound callerDepth callerMode)
+        callerTargetBase targetFinal := by
+  obtain
+      ⟨returned, callFinal, _hPop, hCallEval, hCallCursor,
+        hCallFinalStack, hCallMachine, hCallWorld, _hCallReturns⟩ :=
+    StructuredCall.regular hLookup hCallStack hCallArgsLength hBody
+      hReturnedStack
+      (by simpa using hReturnedLength)
+  have hAttachEffect :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config readyDepth (callerDepth + 1)
+        calleeFinal callFinal :=
+    AllocationObserverRelation.Frame.BoundedEffect.of_machine_eq
+      hCallEffect.ready hCallMachine
+  have hThroughCall :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config readyDepth (callerDepth + 1)
+        callerTargetBase callFinal :=
+    hCallEffect.trans hAttachEffect
+  have hProtected :
+      AllocationObserverRelation.Frame.ProtectedPrefix
+        config callerDepth callerTargetBase callFinal :=
+    hThroughCall.prefixStable (by omega) hBudget
+  let callerReturned :=
+    (Functions.ObserverSemantics.stateModel transcript).withSource
+      sourceReturned
+      { shared := sourceReturned.source.shared
+        vars := sourceAfterArgs.source.vars }
+  have hResumed :
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive returnValues.reverse.length
+        callerFrameBase
+        callerMode callerReturned callFinal := by
+    apply AllocationObserverRelation.Frame.resume_after_call
+      (returned := returnValues.reverse)
+      hCallerRel hCallerOwned
+    · rfl
+    · change sourceReturned.cursor = callFinal.cursor
+      exact hSourceCursor.trans hCallCursor.symm
+    · change
+        Compiler.MemoryRelation.MachineRel contract
+          sourceReturned.source.shared.toMachineState
+          callFinal.source.evm.toMachineState
+      simpa [hCallMachine] using hSourceMachine
+    · change
+        sourceReturned.source.shared.toState =
+          callFinal.source.evm.toSharedState.toState
+      simpa [hCallWorld] using hSourceWorld
+    · simpa [hCallerStack] using hCallFinalStack
+    · exact hThroughCall.ready.activeNoWrap
+    · exact hProtected
+  have hAssignReverse :
+      Functions.Source.Store.assignMany targets.reverse
+          returnValues.reverse callerReturned.source.vars =
+        some returnStore := by
+    change
+      Functions.Source.Store.assignMany targets.reverse
+          returnValues.reverse sourceAfterArgs.source.vars =
+        some returnStore
+    exact
+      Functions.Source.Store.assignMany_reverse_of_run
+        hAssign hTargetsNodup
+  have hStores' :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState targets.reverse
+            returnValues.reverse.length =
+        some stores := by
+    simpa [Functions.Source.Store.assignMany_length hAssign] using hStores
+  obtain
+      ⟨targetFinal, hStoresRun, hFinalRel, hFinalStack,
+        hWriteEffect⟩ :=
+    CallTargets.forward_runtime_bounded
+      hConfig hCallerContext hCallerWF
+      (fun target hTarget =>
+        hTargetsLive target (by simpa using hTarget))
+      hAssignReverse hStores' hResumed hCallFinalStack
+      hCallerOwned hCallerDepth hThroughCall.ready
+  have hBound :
+      CallTargets.protectedBound callerDepth callerMode ≤
+        callerDepth + 1 := by
+    cases callerMode <;> simp [CallTargets.protectedBound]
+  have hBeforeWrite :=
+    AllocationObserverRelation.Frame.BoundedEffect.weaken
+      hBound hThroughCall
+  have hEffect :=
+    hBeforeWrite.trans hWriteEffect
+  refine
+    ⟨callFinal, targetFinal, hCallEval, hStoresRun, ?_, hFinalStack,
+      hEffect⟩
+  simpa [callerReturned, Locals.Source.State.withVars] using hFinalRel
+
+/--
+Package a completed call with no callee scratch frame as the caller's ordinary
+runtime invariant and activation effect.
+-/
+theorem complete_without_release
+    {contract : MemoryContract.Contract}
+    {config : AllocationObserverRelation.Frame.Config}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetInitial targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    (hActivation :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source targetFinal)
+    (hOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config allocatorDepth frameBase mode)
+    (hEffect :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config allocatorDepth
+          (CallTargets.protectedBound allocatorDepth mode)
+        targetInitial targetFinal) :
+    AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source targetFinal ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode targetInitial targetFinal := by
+  have hActivationEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode targetInitial targetFinal := by
+    apply
+      AllocationObserverRelation.Frame.ActivationEffect.of_boundedEffect
+    simpa [CallTargets.protectedBound] using hEffect
+  exact
+    ⟨{ activation := hActivation
+       allocator := hActivationEffect.ready
+       frame := hOwned },
+      hActivationEffect⟩
+
+/--
+Execute the real scratch-frame release after caller writeback and compose the
+whole call back to the caller's allocator depth.
+-/
+theorem complete_with_release
+    {contract : MemoryContract.Contract}
+    {globalFrameWords allocatorDepth : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {mode : AllocationObserverRelation.ActivationMode}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetInitial targetAssigned :
+      Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig?
+          contract globalFrameWords =
+        some config)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config allocatorDepth)
+    (hActivation :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase mode
+        source targetAssigned)
+    (hOwned :
+      AllocationObserverRelation.Frame.ActivationOwned
+        config allocatorDepth frameBase mode)
+    (hEffect :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config (allocatorDepth + 1)
+          (CallTargets.protectedBound allocatorDepth mode)
+        targetInitial targetAssigned) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameReleaseCode config)
+          targetAssigned =
+        .ok targetFinal ∧
+      AllocationObserverContext.ActivationRuntimeInvariant
+        contract config allocatorDepth lowerCtx lowerState localsCtx
+        plan live frameBase mode source targetFinal ∧
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode targetInitial targetFinal := by
+  obtain ⟨targetFinal, hRun, hFinalInvariant, hReleaseEffect⟩ :=
+    ScratchFrame.release_to_runtime
+      hConfig hBudget hActivation hEffect.ready hOwned
+  have hBound :
+      CallTargets.protectedBound allocatorDepth mode ≤
+        allocatorDepth + 1 := by
+    cases mode <;> simp [CallTargets.protectedBound]
+  have hReleaseEffect' :=
+    AllocationObserverRelation.Frame.BoundedEffect.weaken
+      hBound hReleaseEffect
+  have hWholeEffect :
+      AllocationObserverRelation.Frame.BoundedEffect
+        config allocatorDepth
+          (CallTargets.protectedBound allocatorDepth mode)
+        targetInitial targetFinal :=
+    hEffect.trans hReleaseEffect'
+  have hActivationEffect :
+      AllocationObserverRelation.Frame.ActivationEffect
+        config allocatorDepth mode targetInitial targetFinal := by
+    apply
+      AllocationObserverRelation.Frame.ActivationEffect.of_boundedEffect
+    simpa [CallTargets.protectedBound] using hWholeEffect
+  exact ⟨targetFinal, hRun, hFinalInvariant, hActivationEffect⟩
+
+end RegularCall
 
 end AllocationObserverCall
 end Functions

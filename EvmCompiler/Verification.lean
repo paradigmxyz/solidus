@@ -422,6 +422,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.trans
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.weaken
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.of_machine_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.BoundedEffect.of_mstore_above
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationEffect.of_boundedEffect
@@ -457,6 +458,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.ArgList.forward_runtime
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime
 #check EvmCompiler.Functions.AllocationObserverCall.CallTargets.forward_runtime_bounded
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.rebase_prefix_same_source
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationExprResultRel.restore_base
+#check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.regular
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant

@@ -3378,6 +3378,52 @@ theorem pop_target {transcript : Trace}
   | scratch state =>
       exact .scratch (state.pop_target hStack)
 
+/--
+Rebase an activation across a target-only replacement of a temporary stack
+prefix while preserving the source state and shared target state.
+-/
+theorem rebase_prefix_same_source {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name}
+    {stackOffset frameBase : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript}
+    {target targetFinal : TargetState transcript}
+    {oldPrefix newPrefix baseStack : List Word}
+    (hRel :
+      ActivationStateRel contract plan live
+        (stackOffset + oldPrefix.length) frameBase mode source target)
+    (hCursor : targetFinal.cursor = target.cursor)
+    (hShared :
+      targetFinal.source.evm.toSharedState =
+        target.source.evm.toSharedState)
+    (hOldStack :
+      target.source.evm.stack = oldPrefix ++ baseStack)
+    (hNewStack :
+      targetFinal.source.evm.stack = newPrefix ++ baseStack) :
+    ActivationStateRel contract plan live
+      (stackOffset + newPrefix.length) frameBase mode source targetFinal := by
+  cases hRel with
+  | stack hOnly activeNoWrap state =>
+      have hMachine :
+          targetFinal.source.evm.toMachineState =
+            target.source.evm.toMachineState :=
+        congrArg EvmYul.SharedState.toMachineState hShared
+      refine .stack hOnly ?_ ?_
+      · simpa [hMachine] using activeNoWrap
+      · refine
+          { cursor := by simpa [hCursor] using state.cursor
+            core :=
+              { machine := by simpa [hMachine] using state.core.machine
+                world := by simpa [hShared] using state.core.world
+                store :=
+                  state.core.store.rebase_prefix_stack_only hOnly
+                    hOldStack hNewStack rfl } }
+  | scratch state =>
+      exact .scratch
+        (state.rebase_prefix_same_source
+          hCursor hShared hOldStack hNewStack)
+
 theorem consume_forward {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
@@ -4054,6 +4100,39 @@ theorem append {transcript : Trace}
   · simp [List.length_append, hHead.valuesLength, hTail.valuesLength]
   · rw [hTail.stack, hHead.stack]
     simp [List.reverse_append, List.append_assoc]
+
+/--
+Remove the concrete result prefix while retaining all source and target effects
+of expression evaluation.
+-/
+theorem restore_base {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {live : List Locals.Name} {stackOffset frameBase resultCount : Nat}
+    {mode : ActivationMode}
+    {source : SourceState transcript}
+    {targetInitial targetFinal : TargetState transcript}
+    {values : List Word}
+    (hRel :
+      ActivationExprResultRel contract plan live stackOffset frameBase
+        resultCount mode source targetInitial targetFinal values) :
+    ActivationStateRel contract plan live stackOffset frameBase mode source
+      (StateRel.popTarget targetInitial.source.evm.stack targetFinal) := by
+  have hState :
+      ActivationStateRel contract plan live
+        (stackOffset + values.reverse.length) frameBase mode
+        source targetFinal := by
+    simpa [hRel.valuesLength] using hRel.state
+  have hRebased :=
+    hState.rebase_prefix_same_source
+      (targetFinal :=
+        StateRel.popTarget targetInitial.source.evm.stack targetFinal)
+      (oldPrefix := values.reverse) (newPrefix := [])
+      (baseStack := targetInitial.source.evm.stack)
+      rfl
+      rfl
+      hRel.stack
+      rfl
+  simpa using hRebased
 
 end ActivationExprResultRel
 
@@ -4907,6 +4986,21 @@ theorem refl {transcript : Trace}
     growth := TargetGrowth.refl target
     prefixStable := fun _hDepth _hBudget =>
       ProtectedPrefix.refl config _ target }
+
+theorem of_machine_eq {transcript : Trace}
+    {config : Config} {finalDepth protectedBound : Nat}
+    {before after : TargetState transcript}
+    (hReady : AllocatorReady config finalDepth before)
+    (hMachine :
+      after.source.evm.toMachineState =
+        before.source.evm.toMachineState) :
+    BoundedEffect config finalDepth protectedBound before after :=
+  { ready := hReady.of_machine_eq hMachine
+    growth :=
+      { active := by simpa [hMachine]
+        memory := by simpa [hMachine] }
+    prefixStable := fun _hDepth _hBudget =>
+      ProtectedPrefix.of_machine_eq hMachine }
 
 theorem trans {transcript : Trace}
     {config : Config}
