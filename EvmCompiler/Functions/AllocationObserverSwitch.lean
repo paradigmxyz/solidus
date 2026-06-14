@@ -602,6 +602,8 @@ theorem switch_some_of_components
           Structured.ObserverSemantics.State transcript},
         selectedPlanning.allocation = selectedStart.allocation →
         selectedStart.allocation.env = lowerState.allocation.env →
+        AllocationLowering.StateExtends
+          outerLive lowerState selectedStart →
         ({ scope := .lexical current selectedPlanning.nextScope
            state :=
              (AllocationSupport.planBlockOpen
@@ -707,7 +709,10 @@ theorem switch_some_of_components
       (targetAfterPop :=
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
-      hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+      hSelectedPlanning hSelectedEnv
+      (AllocationLowering.StateExtends.of_shape
+        hSelectedLayout hSelectedEnv)
+      hSelectedEntry hSelectedInner
       hLowerBody hCompileSelected hSelectedInvariant
       (by
         simpa [AllocationObserverRelation.StateRel.popTarget] using
@@ -878,6 +883,8 @@ theorem switch_some_of_components
           Structured.ObserverSemantics.State transcript},
         selectedPlanning.allocation = selectedStart.allocation →
         selectedStart.allocation.env = lowerState.allocation.env →
+        AllocationLowering.StateExtends
+          outerLive lowerState selectedStart →
         ({ scope := .lexical current selectedPlanning.nextScope
            state :=
              (AllocationSupport.planBlockOpen
@@ -989,7 +996,10 @@ theorem switch_some_of_components
       (targetAfterPop :=
         AllocationObserverRelation.StateRel.popTarget
           target.source.evm.stack targetWithValue)
-      hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+      hSelectedPlanning hSelectedEnv
+      (AllocationLowering.StateExtends.of_shape
+        hSelectedLayout hSelectedEnv)
+      hSelectedEntry hSelectedInner
       hLowerBody hCompileSelected hSelectedInvariant
       (by
         simpa [AllocationObserverRelation.StateRel.popTarget] using

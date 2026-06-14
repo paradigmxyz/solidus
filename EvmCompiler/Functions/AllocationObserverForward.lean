@@ -4796,6 +4796,7 @@ theorem Cursor.switchSomeRegularRuntimeResult
             live selected selectedStart localsCtx)
         {targetBodyStart :
           Structured.ObserverSemantics.State transcript},
+        AllocationLowering.StateExtends live lowerState selectedStart →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config allocatorDepth artifact.lowerCtx
             selectedStart localsCtx bodyCursor.plan live frameBase mode
@@ -4856,7 +4857,8 @@ theorem Cursor.switchSomeRegularRuntimeResult
       (by
         intro selectedLowered selectedBodyStart bodyLowerState
           selectedPlanning bodyCode bodyLocals targetBodyStart
-          hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+          hSelectedPlanning hSelectedEnv hSelectedExtends
+          hSelectedEntry hSelectedInner
           hLowerBody hCompileBody hSelectedInvariant hReturns
         obtain
             ⟨bodyCursor, _hBodyLowered, hBodyFinal, hBodyCode,
@@ -4877,7 +4879,7 @@ theorem Cursor.switchSomeRegularRuntimeResult
           hSelectedInvariant.transport_plan
             bodyCursor.planWF hPlanAgree.symm
         obtain ⟨targetBodyFinal, hBodyResult⟩ :=
-          hBody bodyCursor hBodyInvariant hReturns
+          hBody bodyCursor hSelectedExtends hBodyInvariant hReturns
         cases hBodyResult with
         | @regular _ _ finalMode _ hBodyForward _hControl =>
             refine
@@ -4963,6 +4965,7 @@ theorem Cursor.switchSomeNonregularRuntimeResult
             live selected selectedStart localsCtx)
         {targetBodyStart :
           Structured.ObserverSemantics.State transcript},
+        AllocationLowering.StateExtends live lowerState selectedStart →
         AllocationObserverContext.ActivationRuntimeInvariant
             program.memoryContract config allocatorDepth artifact.lowerCtx
             selectedStart localsCtx bodyCursor.plan live frameBase mode
@@ -5016,7 +5019,8 @@ theorem Cursor.switchSomeNonregularRuntimeResult
       (by
         intro selectedLowered selectedBodyStart bodyLowerState
           selectedPlanning bodyCode bodyLocals targetBodyStart
-          hSelectedPlanning hSelectedEnv hSelectedEntry hSelectedInner
+          hSelectedPlanning hSelectedEnv hSelectedExtends
+          hSelectedEntry hSelectedInner
           hLowerBody hCompileBody hSelectedInvariant hReturns
         obtain
             ⟨bodyCursor, hBodyLowered, hBodyFinal, hBodyCode,
@@ -5037,9 +5041,9 @@ theorem Cursor.switchSomeNonregularRuntimeResult
           hSelectedInvariant.transport_plan
             bodyCursor.planWF hPlanAgree.symm
         obtain
-            ⟨recursiveTargetOutcome, recursiveFinalCtx,
+          ⟨recursiveTargetOutcome, recursiveFinalCtx,
               hBodyResult, hBodyP⟩ :=
-          hBody bodyCursor hBodyInvariant hReturns
+          hBody bodyCursor hSelectedExtends hBodyInvariant hReturns
         cases hBodyResult with
         | regular _hBodyForward _hControl =>
             exact False.elim (hMode rfl)
@@ -5240,7 +5244,7 @@ theorem Cursor.switchRuntimeResultOfSafeRun
           hConfig hSafe hSelect hSourceScope hInvariant
           (by
             intro selectedStart selectedPlanning bodyCursor
-              targetBodyStart hBodyInvariant _hReturns
+              targetBodyStart _hSelectedExtends hBodyInvariant _hReturns
             obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
               hBody bodyCursor hBodyRun hBodyInvariant
             cases hBodyResult with
@@ -5262,7 +5266,7 @@ theorem Cursor.switchRuntimeResultOfSafeRun
           hConfig hSafe hSelect hMode hControl hInvariant
           (by
             intro selectedStart selectedPlanning bodyCursor targetBodyStart
-              hBodyInvariant _hReturns
+              _hSelectedExtends hBodyInvariant _hReturns
             obtain ⟨targetBodyOutcome, hBodyResult⟩ :=
               hBody bodyCursor hBodyRun hBodyInvariant
             exact ⟨targetBodyOutcome, bodyCtx, hBodyResult, trivial⟩)

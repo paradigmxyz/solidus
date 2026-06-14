@@ -586,7 +586,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.blockHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.blockControlledHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ifHeadResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.ifControlledHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.switchHeadResult
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.switchControlledHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.brkHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.contHeadResult
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.leaveHeadResult
