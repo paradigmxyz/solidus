@@ -1296,6 +1296,59 @@ structure ControlDestinations
 
 namespace ControlDestinations
 
+def withoutLoopControl
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx} :
+    ControlDestinations lowerCtx currentState
+      currentLocals.withoutLoopControl currentPlan currentLive currentMode
+      sourceCtx.withoutLoopControl :=
+  { brk := .unavailable rfl rfl
+    cont := .unavailable rfl rfl }
+
+/--
+The loop body targets the activation immediately after the initializer.
+
+Post lowering may advance the fresh-slot cursor, but scoped lowering restores
+the loop-entry environment and layout. Both `break` and `continue` therefore
+derive their cleanup from the same pass-owned activation context.
+-/
+def loopBody
+    {lowerCtx : AllocationLowering.Ctx}
+    {loopState currentState : AllocationLowering.State}
+    {loopLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {loopLive : List Functions.Name}
+    {loopMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    (hCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState currentState) :
+    ControlDestinations lowerCtx currentState
+      (loopLocals.withLoopControl loopLocals.layout.length)
+      loopPlan loopLive loopMode
+      (sourceCtx.withLoopControl loopLive loopLive) := by
+  let destination :
+      ControlDestination lowerCtx currentState loopPlan loopLive loopMode :=
+    { state := loopState
+      locals := loopLocals
+      plan := loopPlan
+      live := loopLive
+      mode := loopMode
+      compiler := hCompiler
+      subset := fun _ hName => hName
+      sameFrame := SameFrame.refl loopMode
+      stateExtends := hState }
+  exact
+    { brk := .available destination rfl rfl
+      cont := .available destination rfl rfl }
+
 theorem transport
     {lowerCtx : AllocationLowering.Ctx}
     {currentState nextState : AllocationLowering.State}
