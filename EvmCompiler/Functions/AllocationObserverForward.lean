@@ -6644,6 +6644,139 @@ theorem CoreCursor.blockRuntimeResult
           (fun hRegular => False.elim (hMode hRegular)),
           (fun _ => rfl), (fun _ => hP)⟩
 
+/--
+Preserve one lexical block statement in a compiler-selected stack-only
+activation.
+-/
+theorem CoreCursor.blockStackResourceResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root : RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx bodyCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {bodyOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {P :
+      Structured.ObserverSemantics.Outcome (transcript := transcript) → Prop}
+    (cursor :
+      CoreCursor root scope live
+        { stmts := .block body :: rest } lowerState localsCtx)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ live)
+    (hControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns live sourceCtx)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        .stackOnly program.memoryContract allocatorDepth root.lowerCtx
+        lowerState localsCtx cursor.plan live frameBase mode
+        source target)
+    (hBody :
+      ∀ bodyCursor :
+          CoreCursor root
+            (.lexical scope cursor.planning.nextScope)
+            live body lowerState localsCtx,
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx bodyCursor.finalState
+            bodyCursor.finalLocals bodyCursor.plan root.returns
+            (Functions.Scope.Block.outEnv live body)
+            frameBase mode program sourceCtx body source
+            expressions.toStructured
+              { stmts :=
+                  Expressions.StmtList.toStructured bodyCursor.compiled }
+            target bodyOutcome targetOutcome bodyCtx ∧
+          P targetOutcome) :
+    ∃ afterState headCode,
+      ∃ tail :
+        CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+      ∃ sourceOutcome targetOutcome,
+        cursor.compiled = headCode ++ tail.compiled ∧
+          AllocationObserverOutcome.StmtResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            root.lowerCtx afterState localsCtx cursor.plan
+            root.returns live frameBase mode program sourceCtx
+            (.block body) source expressions.toStructured target
+            (Expressions.StmtList.toStructured headCode)
+            sourceOutcome targetOutcome sourceCtx ∧
+          StepTransport lowerState afterState localsCtx localsCtx
+            live (.block body) ∧
+          ExactTail cursor tail ∧
+          (bodyOutcome.mode = .regular →
+            sourceOutcome =
+              Functions.Source.Effectful.Outcome.regular
+                ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+                  live bodyOutcome.state)) ∧
+          (bodyOutcome.mode ≠ .regular →
+            sourceOutcome = bodyOutcome) ∧
+          (sourceOutcome.mode ≠ .regular →
+            P targetOutcome) := by
+  obtain
+      ⟨afterState, headCode, tail, targetBlock, bodyCursor,
+        hCompiled, hHeadCode, hFinish, hAfterEnv, hAfterLayout,
+        hTransport, hExact⟩ :=
+    cursor.blockCursors
+  subst headCode
+  obtain ⟨targetOutcome, hBodyResult, hP⟩ :=
+    hBody bodyCursor
+  have hPlanAgree :
+      AllocationObserverRelation.PlanAgreesOn
+        bodyCursor.plan cursor.plan live :=
+    bodyCursor.planAgreesOn cursor rfl
+  cases hBodyResult with
+  | @regular sourceFinal targetBodyFinal finalMode finalCtx
+      hBodyForward hBodyControl =>
+      obtain ⟨targetFinal, hStmtForward⟩ :=
+        AllocationObserverStatement.Sequence.RegularStmtInvariantForward.block_of_components
+          hBodyForward.toInvariant hSourceScope
+          (fun name hName =>
+            Functions.Scope.Block.mem_outEnv hName)
+          bodyCursor.sourceScoped hInvariant.activation bodyCursor.lower
+          bodyCursor.compile hFinish
+      have hStmtResource :=
+        hStmtForward.toStackResource
+          (allocatorDepth := allocatorDepth) hInvariant.owned
+      have hStmtResource' :=
+        hStmtResource.transport_lower_state hAfterEnv hAfterLayout
+      exact
+        ⟨afterState, targetBlock.stmts, tail,
+          Functions.Source.Effectful.Outcome.regular
+            ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+              live sourceFinal),
+          Structured.EffectSemantics.Outcome.regular targetFinal,
+          hCompiled,
+          .regular hStmtResource'
+            (AllocationObserverOutcome.SameControl.refl sourceCtx),
+          hTransport, hExact, (fun _ => rfl),
+          (fun hMode => False.elim (hMode rfl)),
+          (fun hMode => False.elim (hMode rfl))⟩
+  | nonregular hMode hBodyForward =>
+      have hStmtForward :=
+        AllocationObserverOutcome.NonregularStmtResourceForward.block_of_resource
+          hBodyForward hMode hPlanAgree hControl hFinish
+      exact
+        ⟨afterState, targetBlock.stmts, tail,
+          bodyOutcome, targetOutcome, hCompiled,
+          .nonregular hStmtForward, hTransport, hExact,
+          (fun hRegular => False.elim (hMode hRegular)),
+          (fun _ => rfl), (fun _ => hP)⟩
+
 
 end BodyCursor
 

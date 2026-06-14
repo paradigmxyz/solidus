@@ -4421,6 +4421,42 @@ end RegularStmtRuntimeInvariantForward
 
 namespace RegularStmtResourceInvariantForward
 
+/-- Forget resource bookkeeping while retaining the adjacent statement proof. -/
+theorem toInvariant
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    (hForward :
+      RegularStmtResourceInvariantForward contract resource allocatorDepth
+        transcript lowerCtx lowerFinal localsFinal plan finalLive frameBase
+        initialMode finalMode sourceProgram sourceCtx stmt source targetProgram
+        target compiled sourceFinal targetFinal finalCtx) :
+    RegularStmtInvariantForward contract transcript lowerCtx lowerFinal
+      localsFinal plan finalLive frameBase initialMode finalMode sourceProgram
+      sourceCtx stmt source targetProgram target compiled sourceFinal
+      targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant.activation, hSame⟩
+
 /--
 Transport a resource-indexed regular statement result across a lowering-state
 change that preserves the live allocation environment and concrete layout.
@@ -5048,6 +5084,42 @@ theorem cons_regular
 end RegularBlockRuntimeInvariantForward
 
 namespace RegularBlockResourceInvariantForward
+
+/-- Forget resource bookkeeping while retaining the adjacent block proof. -/
+theorem toInvariant
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    (hForward :
+      RegularBlockResourceInvariantForward contract resource allocatorDepth
+        transcript lowerCtx lowerFinal localsFinal plan finalLive frameBase
+        initialMode finalMode sourceProgram sourceCtx sourceBlock source
+        targetProgram targetBlock target sourceFinal targetFinal finalCtx) :
+    RegularBlockInvariantForward contract transcript lowerCtx lowerFinal
+      localsFinal plan finalLive frameBase initialMode finalMode sourceProgram
+      sourceCtx sourceBlock source targetProgram targetBlock target sourceFinal
+      targetFinal finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, hSame, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant.activation, hSame⟩
 
 theorem nil
     {contract : MemoryContract.Contract}
@@ -6295,6 +6367,43 @@ theorem toStackResource
     ⟨sourceFuel, targetFuel, hSource, hTarget, hNonregular, hOutcome,
       .stack, trivial⟩
 
+/-- Forget resource bookkeeping while retaining the abrupt statement proof. -/
+theorem ofResource
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      AllocationObserverOutcome.NonregularStmtResourceForward contract
+        resource allocatorDepth transcript plan finalLive frameBase initialMode
+        finalMode sourceProgram sourceCtx stmt source targetProgram target
+        compiled sourceOutcome targetOutcome stmtCtx) :
+    NonregularStmtForward contract transcript plan finalLive frameBase
+      finalMode sourceProgram sourceCtx stmt source targetProgram target
+      compiled sourceOutcome targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRelation,
+      _hSame, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRelation⟩
+
 end NonregularStmtForward
 
 /--
@@ -6372,6 +6481,43 @@ theorem toStackResource
   subst finalMode
   exact
     ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome, .stack, trivial⟩
+
+/-- Forget resource bookkeeping while retaining the open-block proof. -/
+theorem ofResource
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      AllocationObserverOutcome.BlockResourceForward contract resource
+        allocatorDepth transcript plan finalLive frameBase initialMode
+        finalMode sourceProgram sourceCtx sourceBlock source targetProgram
+        targetBlock target sourceOutcome targetOutcome finalCtx) :
+    BlockForward contract transcript plan finalLive frameBase finalMode
+      sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+      target sourceOutcome targetOutcome finalCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRelation,
+      _hSame, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRelation⟩
 
 end BlockForward
 
@@ -6582,6 +6728,43 @@ theorem toStackResource
   exact
     ⟨sourceFuel, targetFuel, hSource, hTarget, hOutcome, .stack, trivial⟩
 
+/-- Forget resource bookkeeping while retaining the scoped-block proof. -/
+theorem ofResource
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      AllocationObserverOutcome.ScopedBlockResourceForward contract resource
+        allocatorDepth transcript plan finalLive frameBase initialMode
+        finalMode sourceProgram sourceCtx sourceBlock source targetProgram
+        targetBlock target sourceOutcome targetOutcome) :
+    ScopedBlockForward contract transcript plan finalLive frameBase finalMode
+      sourceProgram sourceCtx sourceBlock source targetProgram targetBlock
+      target sourceOutcome targetOutcome := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRelation,
+      _hSame, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRelation⟩
+
 end ScopedBlockForward
 
 /--
@@ -6736,6 +6919,49 @@ theorem toResource
       hEffect⟩
 
 end RegularScopedBlockRuntimeInvariantForward
+
+namespace RegularScopedBlockResourceInvariantForward
+
+/--
+Forget resource bookkeeping while retaining the adjacent regular scoped-block
+proof.
+-/
+theorem toInvariant
+    {contract : MemoryContract.Contract}
+    {resource : AllocationObserverRelation.Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerFinal : AllocationLowering.State}
+    {localsFinal : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {finalLive : List Locals.Name}
+    {frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    (hForward :
+      RegularScopedBlockResourceInvariantForward contract resource
+        allocatorDepth transcript lowerCtx lowerFinal localsFinal plan
+        finalLive frameBase finalMode sourceProgram sourceCtx sourceBlock
+        source targetProgram targetBlock target sourceFinal targetFinal) :
+    RegularScopedBlockInvariantForward contract transcript lowerCtx
+      lowerFinal localsFinal plan finalLive frameBase finalMode sourceProgram
+      sourceCtx sourceBlock source targetProgram targetBlock target sourceFinal
+      targetFinal := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant, _hEffect⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hInvariant.activation⟩
+
+end RegularScopedBlockResourceInvariantForward
 
 namespace RegularScopedBlockInvariantForward
 
@@ -7222,7 +7448,8 @@ theorem RegularScopedBlockInvariantForward.finish_regular
         sourceBlock source targetProgram
         { stmts := Expressions.StmtList.toStructured compiledBody }
         target sourceFinal targetMid finalCtx)
-    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ afterLive)
     (hTargetDepth : targetDepth = outerLocals.layout.length)
     (hAfterCompiler :
       AllocationObserverContext.ActivationExprContext
@@ -7292,11 +7519,10 @@ theorem RegularScopedBlockInvariantForward.finish_regular
     Structured.EffectSemantics.Block.Eval.append_regular_exists
       hTargetBody hCleanupBlock
   have hSourceScoped :=
-    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+    Functions.Source.Effectful.Block.runScoped_regular_of_runOpen_scope
       (Functions.ObserverSemantics.stateModel transcript)
       (Functions.ObserverSemantics.primitiveSemantics transcript)
-      sourceProgram hSourceOpen
-  rw [hSourceScope] at hSourceScoped
+      sourceProgram hSourceOpen hSourceScope
   have hDefinedFinal :
       LiveDefined afterLive
         (((Functions.ObserverSemantics.stateModel transcript).restrictTo
@@ -7348,7 +7574,8 @@ theorem block_of_components
         sourceBlock source targetProgram
         { stmts := Expressions.StmtList.toStructured compiledBody }
         target sourceFinal targetMid finalCtx)
-    (hSourceScope : sourceCtx.scope = afterLive)
+    (hSourceScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ afterLive)
     (hSubset :
       ∀ name, name ∈ afterLive → name ∈ beforeLive)
     (hScoped :
@@ -7496,7 +7723,11 @@ theorem if_true_of_components
       ⟨targetFinal, bodySourceFuel, bodyTargetFuel,
         hSourceBody, hTargetBody, hFinalInvariant⟩ :=
     RegularScopedBlockInvariantForward.finish_regular
-      hBodyForward hSourceScope rfl hCondInvariant.compiler
+      hBodyForward
+      (by
+        intro name
+        rw [hSourceScope])
+      rfl hCondInvariant.compiler
       hCondInvariant.planWF hSubset hBodyScoped hLowerBody hFinish
   have hSourceCond :
       Functions.Source.Effectful.Expr.evalCondition

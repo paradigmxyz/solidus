@@ -2986,6 +2986,107 @@ theorem NonregularStmtRuntimeForward.block_of_runtime
       hOuterOutcomeRel, hSame, hEffect⟩
 
 /--
+Lift an abrupt open lexical-body result to the enclosing `.block` statement
+under the compiler-selected resource mode.
+-/
+theorem NonregularStmtResourceForward.block_of_resource
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth : Nat}
+    {transcript : Trace}
+    {bodyPlan outerPlan : Locals.Allocation.Plan}
+    {returns bodyLive outerLive : List Functions.Name}
+    {frameBase : Nat}
+    {initialMode finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {compiledBody : List Expressions.Stmt}
+    {targetBlock : Expressions.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    {outerLocals bodyLocals : Locals.Ctx}
+    (hBody :
+      BlockResourceForward contract resource allocatorDepth transcript
+        bodyPlan
+        (outcomeLive returns bodyLive sourceCtx sourceOutcome.mode)
+        frameBase initialMode finalMode sourceProgram sourceCtx sourceBlock
+        source targetProgram
+        { stmts := Expressions.StmtList.toStructured compiledBody }
+        target sourceOutcome targetOutcome finalCtx)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hPlanAgree :
+      PlanAgreesOn bodyPlan outerPlan outerLive)
+    (hControl :
+      ControlScopesWithin returns outerLive sourceCtx)
+    (hFinish :
+      Locals.finishScoped outerLocals bodyLocals compiledBody =
+        some targetBlock) :
+    NonregularStmtResourceForward contract resource allocatorDepth transcript
+      outerPlan
+      (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+      frameBase initialMode finalMode sourceProgram sourceCtx
+      (.block sourceBlock) source targetProgram target
+      (Expressions.StmtList.toStructured targetBlock.stmts)
+      sourceOutcome targetOutcome sourceCtx := by
+  rcases hBody with
+    ⟨sourceFuel, targetFuel, hSourceOpen, hTargetBody,
+      hOutcomeRel, hSame, hEffect⟩
+  have hSourceScoped :=
+    Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSemantics.primitiveSemantics transcript)
+      sourceProgram hSourceOpen hMode
+  have hSourceStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          sourceProgram sourceCtx sourceFuel (.block sourceBlock) source =
+        .ok (sourceOutcome, sourceCtx) := by
+    simp only [Functions.Source.Effectful.Stmt.run]
+    rw [hSourceScoped]
+    rfl
+  obtain ⟨cleanup, _hCleanup, hTargetShape⟩ :=
+    AllocationObserverCleanup.Plain.finishScoped_shape hFinish
+  have hTargetMode : targetOutcome.mode ≠ .regular :=
+    hOutcomeRel.target_nonregular hMode
+  have hTargetStmt :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram targetFuel
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target targetOutcome := by
+    rw [hTargetShape]
+    simpa [Expressions.StmtList.toStructured_append,
+      Expressions.StmtList.toStructured,
+      Expressions.Stmt.toStructured] using
+      (Structured.EffectSemantics.Block.Eval.append_nonregular
+        hTargetBody hTargetMode :
+        Structured.ObserverSemantics.Block.Eval
+          targetProgram targetFuel
+          { stmts :=
+              Expressions.StmtList.toStructured compiledBody ++
+                [Structured.Stmt.code cleanup] }
+          target targetOutcome)
+  have hOuterOutcomeRel :
+      ActivationOutcomeRel contract outerPlan
+        (outcomeLive returns outerLive sourceCtx sourceOutcome.mode)
+        0 frameBase finalMode sourceOutcome targetOutcome := by
+    exact
+      transport_nonregular_outcome_plan
+        hOutcomeRel hMode hPlanAgree hControl
+  exact
+    ⟨sourceFuel, targetFuel, hSourceStmt, hTargetStmt, hMode,
+      hOuterOutcomeRel, hSame, hEffect⟩
+
+/--
 One statement's complete runtime-forward result.
 
 The regular constructor retains the compiler's outgoing allocation and Locals
