@@ -313,6 +313,12 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_of_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_regular_body_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_parts
+#check EvmCompiler.Functions.AllocationLowering.lowerBlockOpen_allocation_eq_planBlockOpen
+#check EvmCompiler.Functions.AllocationLowering.lowerBlockScoped_allocation_eq_planBlockScoped
+#check EvmCompiler.Functions.AllocationLowering.lowerStmtList_allocation_eq_planStmtList
+#check EvmCompiler.Functions.AllocationLowering.lowerCases_allocation_eq_planCases
+#check EvmCompiler.Functions.AllocationLowering.lowerDefault_allocation_eq_planDefault
+#check EvmCompiler.Functions.AllocationLowering.lowerStmt_allocation_eq_planStmt
 #check EvmCompiler.Functions.AllocationLowering.lowerStmt_call_components
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_name
 #check EvmCompiler.Functions.AllocationLowering.lowerFunction?_components

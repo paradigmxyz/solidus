@@ -1313,6 +1313,513 @@ mutual
         some ([.terminalArgs kind lowered], state)
 end
 
+mutual
+
+private def allocationBlockSize : Block → Nat
+  | ⟨stmts⟩ => allocationStmtListSize stmts + 1
+
+private def allocationStmtListSize : List Stmt → Nat
+  | [] => 0
+  | stmt :: rest =>
+      allocationStmtSize stmt + allocationStmtListSize rest + 1
+
+private def allocationCasesSize : List (Word × Block) → Nat
+  | [] => 0
+  | (_, body) :: rest =>
+      allocationBlockSize body + allocationCasesSize rest + 1
+
+private def allocationDefaultSize : Option Block → Nat
+  | none => 0
+  | some body => allocationBlockSize body + 1
+
+private def allocationStmtSize : Stmt → Nat
+  | .block body => allocationBlockSize body + 1
+  | .if_ _ body => allocationBlockSize body + 1
+  | .switch _ cases defaultBody =>
+      allocationCasesSize cases + allocationDefaultSize defaultBody + 1
+  | .for_ init _ post body =>
+      allocationBlockSize init + allocationBlockSize post +
+        allocationBlockSize body + 1
+  | _ => 0
+
+end
+
+mutual
+
+/--
+The source allocation planner and allocation lowerer advance the same allocation
+state. The planner additionally records lexical scope identifiers, while the
+lowerer additionally records the concrete stack layout; neither difference
+changes declaration slots.
+
+These mutually recursive theorems are the stable owner-level interface used by
+preservation proofs to recover future declaration placement from the validated
+scope plan without replaying either compiler.
+-/
+theorem lowerBlockOpen_allocation_eq_planBlockOpen
+    (block : Block)
+    (current : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State) (lowered : Locals.Block)
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerBlockOpen ctx returns state block = some (lowered, final)) :
+    (AllocationSupport.planBlockOpen current planning block).allocation =
+      final.allocation := by
+  generalize hBlockEq : block = viewedBlock at *
+  rcases viewedBlock with ⟨stmts⟩
+  cases hList :
+      lowerStmtList ctx returns state stmts with
+  | none =>
+      simp [lowerBlockOpen, hList] at hLower
+  | some result =>
+      rcases result with ⟨loweredStmts, listFinal⟩
+      simp [lowerBlockOpen, hList] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      simpa [AllocationSupport.planBlockOpen] using
+        lowerStmtList_allocation_eq_planStmtList
+          stmts current planning ctx returns state listFinal loweredStmts
+          hAllocation hList
+termination_by (allocationBlockSize block, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [allocationBlockSize]
+  all_goals omega
+
+theorem lowerBlockScoped_allocation_eq_planBlockScoped
+    (block : Block)
+    (parent : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State) (lowered : Locals.Block)
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerBlockScoped ctx returns state block = some (lowered, final)) :
+    (AllocationSupport.planBlockScoped parent planning block).allocation =
+      final.allocation := by
+  cases hBody :
+      lowerBlockOpen ctx returns state block with
+  | none =>
+      simp [lowerBlockScoped, hBody] at hLower
+  | some result =>
+      rcases result with ⟨loweredBody, bodyFinal⟩
+      simp [lowerBlockScoped, hBody] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      have hBodyAllocation :=
+        lowerBlockOpen_allocation_eq_planBlockOpen
+          block (.lexical parent planning.nextScope)
+          { planning with nextScope := planning.nextScope + 1 }
+          ctx returns state bodyFinal loweredBody hAllocation hBody
+      simp only [AllocationSupport.planBlockScoped]
+      have hSlots := congrArg
+        (fun allocation : AllocationSupport.CompileState =>
+          ({ env := planning.allocation.env
+             nextSlot := allocation.nextSlot } :
+            AllocationSupport.CompileState))
+        hBodyAllocation
+      simpa [hAllocation] using hSlots
+termination_by (allocationBlockSize block, 1)
+decreasing_by
+  all_goals simp_wf
+  all_goals omega
+
+theorem lowerStmtList_allocation_eq_planStmtList
+    (stmts : List Stmt)
+    (current : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State) (lowered : List Locals.Stmt)
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerStmtList ctx returns state stmts = some (lowered, final)) :
+    (AllocationSupport.planStmtList current planning stmts).allocation =
+      final.allocation := by
+  generalize hStmtsEq : stmts = viewedStmts at *
+  cases viewedStmts with
+  | nil =>
+      simp [lowerStmtList] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      simpa [AllocationSupport.planStmtList] using hAllocation
+  | cons stmt rest =>
+      cases hHead :
+          lowerStmt ctx returns state stmt with
+      | none =>
+          simp [lowerStmtList, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨head, next⟩
+          cases hTail :
+              lowerStmtList ctx returns next rest with
+          | none =>
+              simp [lowerStmtList, hHead, hTail] at hLower
+          | some tailResult =>
+              rcases tailResult with ⟨tail, tailFinal⟩
+              simp [lowerStmtList, hHead, hTail] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hHeadAllocation :=
+                lowerStmt_allocation_eq_planStmt
+                  stmt current planning ctx returns state next head
+                  hAllocation hHead
+              simpa [AllocationSupport.planStmtList] using
+                lowerStmtList_allocation_eq_planStmtList
+                  rest current
+                  (AllocationSupport.planStmt current planning stmt)
+                  ctx returns next tailFinal tail hHeadAllocation hTail
+termination_by (allocationStmtListSize stmts, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [allocationStmtListSize]
+  all_goals omega
+
+theorem lowerCases_allocation_eq_planCases
+    (cases : List (Word × Block))
+    (current : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State)
+    (lowered : List (Word × Locals.Block))
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerCases ctx returns state cases = some (lowered, final)) :
+    (AllocationSupport.planCases current planning cases).allocation =
+      final.allocation := by
+  generalize hCasesEq : cases = viewedCases at *
+  cases viewedCases with
+  | nil =>
+      simp [lowerCases] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      simpa [AllocationSupport.planCases] using hAllocation
+  | cons head rest =>
+      generalize hHeadEq : head = viewedHead at *
+      rcases viewedHead with ⟨value, body⟩
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerCases, hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨loweredBody, afterBody⟩
+          cases hRest :
+              lowerCases ctx returns afterBody rest with
+          | none =>
+              simp [lowerCases, hBody, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨loweredRest, restFinal⟩
+              simp [lowerCases, hBody, hRest] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hBodyAllocation :=
+                lowerBlockScoped_allocation_eq_planBlockScoped
+                  body current planning ctx returns state afterBody
+                  loweredBody hAllocation hBody
+              simpa [AllocationSupport.planCases] using
+                lowerCases_allocation_eq_planCases
+                  rest current
+                  (AllocationSupport.planBlockScoped current planning body)
+                  ctx returns afterBody restFinal loweredRest
+                  hBodyAllocation hRest
+termination_by (allocationCasesSize cases, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [allocationCasesSize]
+  all_goals omega
+
+theorem lowerDefault_allocation_eq_planDefault
+    (body : Option Block)
+    (current : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State) (lowered : Option Locals.Block)
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerDefault ctx returns state body = some (lowered, final)) :
+    (AllocationSupport.planDefault current planning body).allocation =
+      final.allocation := by
+  generalize hDefaultEq : body = viewedDefault at *
+  cases viewedDefault with
+  | none =>
+      simp [lowerDefault] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      simpa [AllocationSupport.planDefault] using hAllocation
+  | some body =>
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerDefault, hBody] at hLower
+      | some result =>
+          rcases result with ⟨loweredBody, bodyFinal⟩
+          simp [lowerDefault, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simpa [AllocationSupport.planDefault] using
+            lowerBlockScoped_allocation_eq_planBlockScoped
+              body current planning ctx returns state bodyFinal
+              loweredBody hAllocation hBody
+termination_by (allocationDefaultSize body, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [allocationDefaultSize]
+  all_goals omega
+
+theorem lowerStmt_allocation_eq_planStmt
+    (stmt : Stmt)
+    (current : ScopeId)
+    (planning : AllocationSupport.PlanningState)
+    (ctx : Ctx) (returns : List Name)
+    (state final : State) (lowered : List Locals.Stmt)
+    (hAllocation : planning.allocation = state.allocation)
+    (hLower :
+      lowerStmt ctx returns state stmt = some (lowered, final)) :
+    (AllocationSupport.planStmt current planning stmt).allocation =
+      final.allocation := by
+  generalize hStmtEq : stmt = viewedStmt at *
+  cases viewedStmt with
+  | expr expr =>
+      cases hExpr : lowerExpr ctx state expr with
+      | none =>
+          simp [lowerStmt, hExpr] at hLower
+      | some loweredExpr =>
+          simp [lowerStmt, hExpr] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simpa [AllocationSupport.planStmt] using hAllocation
+  | let_ name value =>
+      cases hValue : lowerExpr ctx state value with
+      | none =>
+          simp [lowerStmt, hValue] at hLower
+      | some loweredValue =>
+          by_cases hStack :
+              isStackSlot ctx state.allocation.nextSlot = true
+          · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+              hStack] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            simpa [AllocationSupport.planStmt,
+              AllocationSupport.allocateName, hAllocation]
+          · have hStackFalse :
+                isStackSlot ctx state.allocation.nextSlot = false :=
+              Bool.eq_false_of_not_eq_true hStack
+            by_cases hFrame : ctx.frameName ∈ state.layout
+            · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+                hStackFalse, hFrame] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              simpa [AllocationSupport.planStmt,
+                AllocationSupport.allocateName, hAllocation]
+            · simp [lowerStmt, hValue, AllocationSupport.allocateName,
+                hStackFalse, hFrame] at hLower
+  | assign name value =>
+      cases hSlot :
+          AllocationSupport.lookupSlot? name state.allocation.env with
+      | none =>
+          simp [lowerStmt, hSlot] at hLower
+      | some slot =>
+          cases hValue : lowerExpr ctx state value with
+          | none =>
+              simp [lowerStmt, hSlot, hValue] at hLower
+          | some loweredValue =>
+              by_cases hStack : isStackSlot ctx slot = true
+              · simp [lowerStmt, hSlot, hValue, hStack] at hLower
+                rcases hLower with ⟨rfl, rfl⟩
+                simpa [AllocationSupport.planStmt] using hAllocation
+              · have hStackFalse : isStackSlot ctx slot = false :=
+                  Bool.eq_false_of_not_eq_true hStack
+                by_cases hFrame : ctx.frameName ∈ state.layout
+                · simp [lowerStmt, hSlot, hValue, hStackFalse, hFrame]
+                    at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  simpa [AllocationSupport.planStmt] using hAllocation
+                · simp [lowerStmt, hSlot, hValue, hStackFalse, hFrame]
+                    at hLower
+  | block body =>
+      cases hBody :
+          lowerBlockScoped ctx returns state body with
+      | none =>
+          simp [lowerStmt, hBody] at hLower
+      | some result =>
+          rcases result with ⟨loweredBody, bodyFinal⟩
+          simp [lowerStmt, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simpa [AllocationSupport.planStmt] using
+            lowerBlockScoped_allocation_eq_planBlockScoped
+              body current planning ctx returns state bodyFinal
+              loweredBody hAllocation hBody
+  | if_ cond body =>
+      cases hCond : lowerExpr ctx state cond with
+      | none =>
+          simp [lowerStmt, hCond] at hLower
+      | some loweredCond =>
+          cases hBody :
+              lowerBlockScoped ctx returns state body with
+          | none =>
+              simp [lowerStmt, hCond, hBody] at hLower
+          | some result =>
+              rcases result with ⟨loweredBody, bodyFinal⟩
+              simp [lowerStmt, hCond, hBody] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              simpa [AllocationSupport.planStmt] using
+                lowerBlockScoped_allocation_eq_planBlockScoped
+                  body current planning ctx returns state bodyFinal
+                  loweredBody hAllocation hBody
+  | switch scrutinee cases defaultBody =>
+      cases hScrutinee : lowerExpr ctx state scrutinee with
+      | none =>
+          simp [lowerStmt, hScrutinee] at hLower
+      | some loweredScrutinee =>
+          cases hCases :
+              lowerCases ctx returns state cases with
+          | none =>
+              simp [lowerStmt, hScrutinee, hCases] at hLower
+          | some casesResult =>
+              rcases casesResult with ⟨loweredCases, afterCases⟩
+              cases hDefault :
+                  lowerDefault ctx returns afterCases defaultBody with
+              | none =>
+                  simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+              | some defaultResult =>
+                  rcases defaultResult with ⟨loweredDefault, defaultFinal⟩
+                  simp [lowerStmt, hScrutinee, hCases, hDefault] at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  have hCasesAllocation :=
+                    lowerCases_allocation_eq_planCases
+                      cases current planning ctx returns state afterCases
+                      loweredCases hAllocation hCases
+                  simpa [AllocationSupport.planStmt] using
+                    lowerDefault_allocation_eq_planDefault
+                      defaultBody current
+                      (AllocationSupport.planCases current planning cases)
+                      ctx returns afterCases defaultFinal loweredDefault
+                      hCasesAllocation hDefault
+  | for_ init cond post body =>
+      cases hInit :
+          lowerBlockOpen ctx returns state init with
+      | none =>
+          simp [lowerStmt, hInit] at hLower
+      | some initResult =>
+          rcases initResult with ⟨loweredInit, loopState⟩
+          cases hCond : lowerExpr ctx loopState cond with
+          | none =>
+              simp [lowerStmt, hInit, hCond] at hLower
+          | some loweredCond =>
+              cases hPost :
+                  lowerBlockScoped ctx returns loopState post with
+              | none =>
+                  simp [lowerStmt, hInit, hCond, hPost] at hLower
+              | some postResult =>
+                  rcases postResult with ⟨loweredPost, afterPost⟩
+                  cases hBody :
+                      lowerBlockScoped ctx returns afterPost body with
+                  | none =>
+                      simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+                  | some bodyResult =>
+                      rcases bodyResult with ⟨loweredBody, afterBody⟩
+                      simp [lowerStmt, hInit, hCond, hPost, hBody] at hLower
+                      rcases hLower with ⟨rfl, rfl⟩
+                      let loopScope :=
+                        ScopeId.lexical current planning.nextScope
+                      let entered : AllocationSupport.PlanningState :=
+                        { planning with nextScope := planning.nextScope + 1 }
+                      have hInitAllocation :=
+                        lowerBlockOpen_allocation_eq_planBlockOpen
+                          init loopScope entered ctx returns state loopState
+                          loweredInit hAllocation hInit
+                      have hPostAllocation :=
+                        lowerBlockScoped_allocation_eq_planBlockScoped
+                          post loopScope
+                          (AllocationSupport.planBlockOpen
+                            loopScope entered init)
+                          ctx returns loopState afterPost loweredPost
+                          hInitAllocation hPost
+                      have hBodyAllocation :=
+                        lowerBlockScoped_allocation_eq_planBlockScoped
+                          body loopScope
+                          (AllocationSupport.planBlockScoped loopScope
+                            (AllocationSupport.planBlockOpen
+                              loopScope entered init)
+                            post)
+                          ctx returns afterPost afterBody loweredBody
+                          hPostAllocation hBody
+                      have hSlots := congrArg
+                        (fun allocation : AllocationSupport.CompileState =>
+                          ({ env := planning.allocation.env
+                             nextSlot := allocation.nextSlot } :
+                            AllocationSupport.CompileState))
+                        hBodyAllocation
+                      simpa [AllocationSupport.planStmt, loopScope, entered,
+                        hAllocation] using hSlots
+  | brk | cont | terminal _ =>
+      simp [lowerStmt] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      simpa [AllocationSupport.planStmt] using hAllocation
+  | leave =>
+      cases hValues : lowerReturnExprs ctx state returns with
+      | none =>
+          simp [lowerStmt, hValues] at hLower
+      | some values =>
+          simp [lowerStmt, hValues] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simpa [AllocationSupport.planStmt] using hAllocation
+  | call targets functionName args =>
+      cases hFn : AllocationSupport.lookupFun? functionName ctx.functions with
+      | none =>
+          simp [lowerStmt, hFn] at hLower
+      | some fn =>
+          by_cases hArgs : args.length = fn.params.length
+          · by_cases hTargets : targets.length = fn.returns.length
+            · by_cases hNodup : targets.Nodup
+              · cases hLowerArgs : lowerExprList ctx state args with
+                | none =>
+                    simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                      hLowerArgs] at hLower
+                | some loweredArgs =>
+                    by_cases hFrame : functionName ∈ ctx.frameFunctions
+                    · cases hConfig : ctx.frameConfig? with
+                      | none =>
+                          simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                            hLowerArgs, hFrame, hConfig] at hLower
+                      | some config =>
+                          cases hStores :
+                              lowerCallTargetsCode? ctx state targets.reverse
+                                fn.returns.length with
+                          | none =>
+                              simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                                hLowerArgs, hFrame, hConfig, hStores] at hLower
+                          | some stores =>
+                              simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                                hLowerArgs, hFrame, hConfig, hStores] at hLower
+                              rcases hLower with ⟨rfl, rfl⟩
+                              simpa [AllocationSupport.planStmt] using
+                                hAllocation
+                    · cases hStores :
+                        lowerCallTargetsCode? ctx state targets.reverse
+                          fn.returns.length with
+                      | none =>
+                          simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                            hLowerArgs, hFrame, hStores] at hLower
+                      | some stores =>
+                          simp [lowerStmt, hFn, hArgs, hTargets, hNodup,
+                            hLowerArgs, hFrame, hStores] at hLower
+                          rcases hLower with ⟨rfl, rfl⟩
+                          simpa [AllocationSupport.planStmt] using hAllocation
+              · simp [lowerStmt, hFn, hArgs, hTargets, hNodup] at hLower
+            · simp [lowerStmt, hFn, hArgs, hTargets] at hLower
+          · simp [lowerStmt, hFn, hArgs] at hLower
+  | terminalArgs kind args =>
+      cases hArgs : lowerExprSeq ctx state args with
+      | none =>
+          simp [lowerStmt, hArgs] at hLower
+      | some loweredArgs =>
+          simp [lowerStmt, hArgs] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          simpa [AllocationSupport.planStmt] using hAllocation
+termination_by (allocationStmtSize stmt, 0)
+decreasing_by
+  all_goals simp_wf
+  all_goals subst_vars
+  all_goals simp [allocationStmtSize, allocationBlockSize,
+    allocationStmtListSize, allocationCasesSize, allocationDefaultSize]
+  all_goals omega
+
+end
+
 /--
 Successful lowering of a source `if` exposes only the adjacent expression and
 scoped-block lowerers owned by this pass.
