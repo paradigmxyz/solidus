@@ -323,8 +323,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.withLoopControl
 #check EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.of_sameControl
 #check EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_congr
+#check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.reindex_live
 #check EvmCompiler.Functions.AllocationObserverCleanup.Transition.reindex_after
 #check EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody

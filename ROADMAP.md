@@ -1375,7 +1375,11 @@ corridor.
   compiler-selected callee entry, recursive body execution, outcome-indexed
   return restoration, optional frame release, and caller target assignment.
 - [ ] Lift statement, block, loop, and call preservation by source fuel without
-  a public call oracle.
+  a public call oracle. The checked dispatcher now has one fuel-bounded
+  recursive open-block interface over real synchronized cursors, plus
+  statement-owned regular and abrupt scoped adapters for loop initializer,
+  body, and post recursion. The immediate remaining loop task is the exact
+  `for` head theorem composing the three canonical source outcomes.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

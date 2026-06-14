@@ -728,7 +728,558 @@ structure Boundary
       program.memoryContract config allocatorDepth artifact.lowerCtx
       lowerState localsCtx cursor.plan live frameBase mode source target
 
+/--
+One recursively dispatched open block.
+
+The runtime theorem remains the pass-owned `BlockRuntimeResult`. The only
+dispatcher-specific addition is the outgoing source scope needed to enter
+subsequent lexical loop components after a regular initializer.
+-/
+structure BlockResult
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx) : Prop where
+  runtime :
+    ∃ targetOutcome,
+      AllocationObserverOutcome.BlockRuntimeResult
+        program.memoryContract config allocatorDepth transcript
+        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        fn.returns (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx
+  regularScope :
+    sourceOutcome.mode = .regular →
+      ∀ name,
+        name ∈ finalCtx.scope ↔
+          name ∈ Functions.Scope.Block.outEnv live sourceBlock
+
+/--
+The sole recursive interface used by structured statement adapters.
+
+Every recursive call targets a real synchronized cursor, consumes a strictly
+smaller source fuel, and receives only the shared source/control/allocation
+boundary. Generated code and recursive proof evidence stay out of the public
+boundary.
+-/
+def RecursiveBlockForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound : Nat}
+    {transcript : Trace} : Prop :=
+  ∀ {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceFuel : Nat}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx),
+    sourceFuel < fuelBound →
+    Boundary cursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx)
+      (source := source) (target := target) →
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program sourceCtx sourceFuel sourceBlock source =
+      .ok (sourceOutcome, finalCtx) →
+    BlockResult cursor (config := config)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+      (source := source) (target := target)
+      (sourceOutcome := sourceOutcome)
+
+namespace BlockResult
+
+theorem regular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (result :
+      BlockResult cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.regular sourceFinal)) :
+    ∃ targetFinal finalMode,
+      AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
+        program.memoryContract config allocatorDepth transcript
+        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceFinal targetFinal finalCtx ∧
+      AllocationObserverOutcome.SameControl sourceCtx finalCtx := by
+  obtain ⟨targetOutcome, hRuntime⟩ := result.runtime
+  cases hRuntime with
+  | regular hForward hControl =>
+      exact ⟨_, _, hForward, hControl⟩
+  | nonregular hMode _ =>
+      exact False.elim (hMode rfl)
+
+theorem nonregular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (result :
+      BlockResult cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+        (source := source) (target := target)
+        (sourceOutcome := sourceOutcome))
+    (hMode : sourceOutcome.mode ≠ .regular) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverOutcome.BlockRuntimeForward
+        program.memoryContract config allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive fn.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx := by
+  obtain ⟨targetOutcome, hRuntime⟩ := result.runtime
+  cases hRuntime with
+  | regular _ _ =>
+      exact False.elim (hMode rfl)
+  | nonregular _ hForward =>
+      exact ⟨targetOutcome, _, hForward⟩
+
+end BlockResult
+
 namespace Boundary
+
+/--
+Invoke the recursive block interface at a regular open-block result.
+-/
+theorem recursiveRegular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel sourceBlock source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx)) :
+    ∃ targetFinal finalMode,
+      AllocationObserverStatement.Sequence.RegularBlockRuntimeInvariantForward
+        program.memoryContract config allocatorDepth transcript
+        artifact.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceFinal targetFinal finalCtx ∧
+      AllocationObserverOutcome.SameControl sourceCtx finalCtx ∧
+      (∀ name,
+        name ∈ finalCtx.scope ↔
+          name ∈ Functions.Scope.Block.outEnv live sourceBlock) := by
+  have hResult :=
+    hRecursive cursor hFuel hBoundary hSource
+  obtain ⟨targetFinal, finalMode, hForward, hControl⟩ :=
+    hResult.regular
+  exact
+    ⟨targetFinal, finalMode, hForward, hControl,
+      hResult.regularScope rfl⟩
+
+/--
+Invoke the recursive block interface at an abrupt open-block result.
+-/
+theorem recursiveNonregular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel sourceBlock source =
+        .ok (sourceOutcome, finalCtx))
+    (hMode : sourceOutcome.mode ≠ .regular) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverOutcome.BlockRuntimeForward
+        program.memoryContract config allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive fn.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx :=
+  BlockResult.nonregular cursor
+    (hRecursive cursor hFuel hBoundary hSource) hMode
+
+/--
+Discharge one regular scoped block through recursive open-block preservation
+and the statement-owned lexical cleanup theorem.
+-/
+theorem recursiveScopedRegular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetBlock : Expressions.Block}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal))
+    (hAfterCompiler :
+      AllocationObserverContext.ActivationExprContext
+        artifact.lowerCtx lowerState localsCtx cursor.plan live mode)
+    (hFinish :
+      Locals.finishScoped localsCtx cursor.finalLocals cursor.compiled =
+        some targetBlock) :
+    ∃ targetFinal,
+      AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward
+        program.memoryContract config allocatorDepth transcript
+        artifact.lowerCtx lowerState localsCtx cursor.plan live frameBase mode
+        program sourceCtx sourceBlock source expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target sourceFinal targetFinal := by
+  rcases
+      Functions.Source.Effectful.Block.runScoped_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hRegular | hNonregular
+  · rcases hRegular with
+      ⟨openFinal, finalCtx, hOpen, hOutcome⟩
+    have hRestrict :
+        (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            sourceCtx.scope openFinal =
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            live openFinal :=
+      Locals.Source.Effectful.StateModel.restrictTo_congr
+        (Functions.ObserverSemantics.stateModel transcript)
+        hBoundary.sourceScope
+    have hFinal :
+        sourceFinal =
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            live openFinal := by
+      have hState :=
+        congrArg Locals.Source.Effectful.Outcome.state hOutcome
+      rw [hRestrict] at hState
+      simpa [Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] using hState
+    obtain
+        ⟨targetMid, finalMode, hForward, _hControl, _hScope⟩ :=
+      recursiveRegular cursor hRecursive hFuel hBoundary hOpen
+    obtain ⟨targetFinal, hScoped⟩ :=
+      AllocationObserverStatement.Sequence.RegularScopedBlockRuntimeInvariantForward.finish_regular
+        hForward hBoundary.sourceScope rfl hAfterCompiler cursor.planWF
+        (fun _ hName => Functions.Scope.Block.mem_outEnv hName)
+        cursor.sourceScoped cursor.lower hFinish
+    rw [← hFinal] at hScoped
+    exact ⟨targetFinal, hScoped⟩
+  · rcases hNonregular with
+      ⟨openOutcome, finalCtx, hOpen, hMode, hOutcome⟩
+    have hImpossible :
+        (Functions.Source.Effectful.Outcome.regular sourceFinal).mode ≠
+          .regular := by
+      rw [hOutcome]
+      exact hMode
+    exact False.elim (hImpossible rfl)
+
+/--
+Discharge one abrupt scoped block through recursive open-block preservation.
+The compiler-emitted lexical cleanup is unreachable and is accounted for by
+the statement-owned nonregular scoped theorem.
+-/
+theorem recursiveScopedNonregular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    {prepared : AllocationObserverCall.SelectedCallee.Prepared artifact}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {config : Frame.Config}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetBlock : Expressions.Block}
+    (cursor :
+      AllocationObserverForward.BodyCursor.Cursor prepared scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      RecursiveBlockForward (prepared := prepared)
+        (config := config) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      Boundary cursor (config := config)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceBlock sourceFuel source =
+        .ok sourceOutcome)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hFinish :
+      Locals.finishScoped localsCtx cursor.finalLocals cursor.compiled =
+        some targetBlock) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverOutcome.ScopedBlockRuntimeForward
+        program.memoryContract config allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive fn.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target sourceOutcome targetOutcome := by
+  rcases
+      Functions.Source.Effectful.Block.runScoped_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hRegular | hNonregular
+  · rcases hRegular with
+      ⟨openFinal, finalCtx, hOpen, hOutcome⟩
+    have hImpossible :
+        sourceOutcome.mode = .regular := by
+      rw [hOutcome]
+      rfl
+    exact False.elim (hMode hImpossible)
+  · rcases hNonregular with
+      ⟨openOutcome, finalCtx, hOpen, hOpenMode, hOutcome⟩
+    subst sourceOutcome
+    obtain ⟨targetOutcome, finalMode, hForward⟩ :=
+      recursiveNonregular cursor hRecursive hFuel hBoundary hOpen hOpenMode
+    exact
+      ⟨targetOutcome, finalMode,
+        AllocationObserverStatement.Sequence.ScopedBlockRuntimeForward.finish_nonregular
+          hForward hOpenMode hFinish⟩
 
 /--
 Enter a `for` initializer through its real lexical cursor.

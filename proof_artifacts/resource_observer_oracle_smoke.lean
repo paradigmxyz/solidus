@@ -758,8 +758,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.withLoopControl
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ReturnFrameAvailable.of_sameControl
 #print axioms EvmCompiler.Functions.AllocationObserverRelation.currentStackOrder_congr
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel.reindex_live
 #print axioms EvmCompiler.Functions.AllocationObserverCleanup.Transition.reindex_after
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlDestinations.loopBody
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedNonregular
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forInit
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forPost
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.forBody

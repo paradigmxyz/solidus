@@ -3358,6 +3358,28 @@ theorem mono {transcript : Trace}
   | scratch state =>
       exact .scratch (state.mono hSubset hStackOrder)
 
+/--
+Re-index an activation relation across extensionally equal live-name lists.
+
+Source scopes are set-like, while the allocation plan chooses its own stable
+stack order. The existing stack-order congruence and monotonicity theorem make
+that representation difference invisible at adjacent proof boundaries.
+-/
+theorem reindex_live {transcript : Trace}
+    {contract : MemoryContract.Contract} {plan : Plan}
+    {before after : List Locals.Name}
+    {stackOffset frameBase : Nat} {mode : ActivationMode}
+    {source : SourceState transcript} {target : TargetState transcript}
+    (hRel :
+      ActivationStateRel contract plan before stackOffset frameBase
+        mode source target)
+    (hLive : ∀ name, name ∈ after ↔ name ∈ before) :
+    ActivationStateRel contract plan after stackOffset frameBase
+      mode source target :=
+  hRel.mono
+    (fun name hName => (hLive name).mp hName)
+    (currentStackOrder_congr (plan := plan) hLive)
+
 theorem push_target_by {transcript : Trace}
     {contract : MemoryContract.Contract} {plan : Plan}
     {live : List Locals.Name} {stackOffset frameBase : Nat}
