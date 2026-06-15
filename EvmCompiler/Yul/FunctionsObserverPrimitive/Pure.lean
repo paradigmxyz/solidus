@@ -213,6 +213,59 @@ theorem forwardAt_of_pureBinary
           (.Ok sourceShared sourceVars) target from
         ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
 
+theorem backwardAt_of_pureBinary
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.Primop.Binary}
+    (hFamily : PureBinary prim op f) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs hRel hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases sourceValues with
+  | nil =>
+      have hInputs := hFamily.inputs
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | cons left rest =>
+      cases rest with
+      | nil =>
+          have hInputs := hFamily.inputs
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            hInputs, Structured.invalid] at hRun
+      | cons right extra =>
+          cases extra with
+          | cons head tail =>
+              have hInputs := hFamily.inputs
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                hInputs, Structured.invalid] at hRun
+          | nil =>
+              have hExpected :=
+                functionsPureBinaryOne hFamily target.shared left right
+              have hRun' :
+                  Locals.Source.PrimitiveSemantics.structured.eval
+                      op target.shared [right, left] =
+                    .ok (targetShared, outputs) := by
+                simpa using hRun
+              rw [hExpected] at hRun'
+              have hPair := Except.ok.inj hRun'
+              have hSharedEq := congrArg Prod.fst hPair
+              have hOutputsEq := congrArg Prod.snd hPair
+              change target.shared = targetShared at hSharedEq
+              change [f left right] = outputs at hOutputsEq
+              subst targetShared
+              subst outputs
+              refine
+                ⟨.Ok sourceShared sourceVars, ?_, ?_, rfl⟩
+              · rw [yul_primCall_succ_eq_of_pureBinary hFamily]
+                simp [EvmYul.Yul.execBinOp]
+              · simpa [Locals.Source.State.withShared] using
+                  (show
+                    StateRelation.Regular.Rel codeRel
+                      (.Ok sourceShared sourceVars) target from
+                    ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+
 theorem safePureBinary
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -238,6 +291,33 @@ theorem safePureBinary
   safeBasicOp hFamily.yulObserver hFamily.functionsObserver
     hFamily.nonterminal hFamily.compilerOp
     (forwardAt_of_pureBinary hFamily) hRel hRun
+
+theorem safePureBinaryBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.Primop.Binary}
+    {sourceValues outputs : List Word}
+    (hFamily : PureBinary prim op f)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    (safeBasicOpBackward hFamily.yulObserver hFamily.functionsObserver
+      hFamily.nonterminal hFamily.compilerOp
+      (backwardAt_of_pureBinary (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
 
 inductive PureUnary :
     EvmYul.Operation .Yul → Structured.BasicOp →

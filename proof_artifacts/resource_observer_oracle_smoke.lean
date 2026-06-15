@@ -330,13 +330,20 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAt
+#check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_parts
+#check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.BackwardAt
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.BackwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureBinary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
@@ -356,6 +363,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
@@ -1149,11 +1158,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_parts
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureBinary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
@@ -1173,6 +1187,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.guardedNoObservableFailure_of_raw

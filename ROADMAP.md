@@ -141,7 +141,11 @@ Adjacent boundary status:
   `compileProgramForward` now reaches the real compiled Functions whole-program
   runner for regular completion, `STOP`, `RETURN`, `REVERT`, and
   `SELFDESTRUCT`, including canonical `callDispatcher`/`finish` packaging.
-  Adjacent backward adequacy remains.
+  Adjacent backward adequacy has begun with a stable raw/guarded primitive
+  interface, Functions-owned observer/nonobserver inversion, checked
+  `gas()`/`msize()` reconstruction, and the complete pure-binary family.
+  Remaining primitive families and recursive expression/control/program
+  inversion remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1711,8 +1715,10 @@ corridor.
   every terminal statement/control failure are now checked. The mutually
   recursive terminal family, compiled dispatcher halt, and canonical
   whole-program terminal packaging are checked without generated evidence or a
-  call oracle. The current Yul boundary obligation is matching backward
-  adequacy.
+  call oracle. Matching backward adequacy now has checked observer-resource and
+  pure-binary leaves; the current obligation is the remaining primitive
+  families followed by recursive expression, statement, call, loop, and
+  whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -206,6 +206,31 @@ theorem primitiveSemantics_eval_observer
   simp [primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
     basicOpObserver?, hObserver, hConsume]
 
+theorem primitiveSemantics_eval_observer_parts
+    {transcript : Trace} {op : Structured.BasicOp}
+    {kind : Assembly.ResourceObserver}
+    {state final : State transcript} {outputs : List Assembly.Word}
+    (hObserver : basicOpObserver? op = some kind)
+    (hEval :
+      (primitiveSemantics transcript).eval op state [] =
+        .ok (final, outputs)) :
+    ∃ value,
+      outputs = [value] ∧
+      Simulation.ResourceReplay.consume? kind state =
+        some (value, final) := by
+  unfold primitiveSemantics at hEval
+  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
+  simp only [basicOpObserver?, hObserver] at hEval
+  cases hConsume :
+      Simulation.ResourceReplay.consume? kind state with
+  | none =>
+      simp [hConsume, Structured.invalid] at hEval
+  | some consumed =>
+      rcases consumed with ⟨value, state'⟩
+      simp [hConsume] at hEval
+      rcases hEval with ⟨rfl, rfl⟩
+      exact ⟨value, rfl, by simpa [hConsume]⟩
+
 theorem primitiveSemantics_eval_nonObserver
     {transcript : Trace} {op : Structured.BasicOp}
     {state : State transcript} {values outputs : List Assembly.Word}
@@ -221,6 +246,35 @@ theorem primitiveSemantics_eval_nonObserver
   simp [primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
     basicOpObserver?, hObserver, hEval,
     Simulation.ResourceReplay.State.withSource]
+
+theorem primitiveSemantics_eval_nonObserver_parts
+    {transcript : Trace} {op : Structured.BasicOp}
+    {state final : State transcript} {values outputs : List Assembly.Word}
+    (hObserver : basicOpObserver? op = none)
+    (hEval :
+      (primitiveSemantics transcript).eval op state values =
+        .ok (final, outputs)) :
+    ∃ shared,
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op state.source.shared values =
+        .ok (shared, outputs) ∧
+      final =
+        state.withSource (state.source.withShared shared) := by
+  unfold primitiveSemantics at hEval
+  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
+  simp only [basicOpObserver?, hObserver] at hEval
+  cases hPrimitive :
+      Locals.Source.PrimitiveSemantics.structured.eval
+        op state.source.shared values with
+  | error err =>
+      simp [hPrimitive] at hEval
+  | ok result =>
+      rcases result with ⟨shared, rawOutputs⟩
+      simp [hPrimitive] at hEval
+      rcases hEval with ⟨hFinal, hOutputs⟩
+      subst final
+      subst outputs
+      exact ⟨shared, by simpa [hPrimitive], rfl⟩
 
 theorem expr_eval_gas
     {transcript : Trace} {state state' : State transcript}
