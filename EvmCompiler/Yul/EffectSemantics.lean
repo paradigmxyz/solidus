@@ -813,6 +813,42 @@ theorem exec_if_ok_parts
               ⟨previous, stateAfterCond, condValue, rfl, hCond,
                 Or.inr ⟨hZero, (Except.ok.inj hRun).symm⟩⟩
 
+theorem exec_switch_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {scrutinee : EvmYul.Yul.Ast.Expr}
+    {cases : List (Word × List EvmYul.Yul.Ast.Stmt)}
+    {defaultBody : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.Switch scrutinee cases defaultBody)
+          codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterScrutinee value,
+      fuel = previous + 1 ∧
+      eval model prim previous scrutinee codeOverride state =
+        .ok (stateAfterScrutinee, value) ∧
+      exec model prim previous
+          (.Block
+            (EvmYul.Yul.selectSwitchCase value defaultBody cases))
+          codeOverride stateAfterScrutinee =
+        .ok final := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hScrutinee :
+          eval model prim previous scrutinee codeOverride state with
+      | error failure =>
+          simp [exec, hScrutinee] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterScrutinee, value⟩
+          simp [exec, hScrutinee] at hRun
+          exact
+            ⟨previous, stateAfterScrutinee, value,
+              rfl, hScrutinee, hRun⟩
+
 theorem exec_leave_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

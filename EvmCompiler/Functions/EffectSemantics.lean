@@ -4635,6 +4635,45 @@ theorem runOpen_cons_nonregular {σ : Type}
   | halt kind =>
       simp [Block.runOpen, hHead, hOutcomeMode]
 
+/--
+Lift one successful statement that restores its incoming context to a
+singleton open-block execution. Regular outcomes execute the empty tail;
+abrupt outcomes skip it.
+-/
+theorem runOpen_singleton_of_run {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx : Source.Ctx} {stmtFuel : Nat}
+    {stmt : Stmt} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx stmtFuel stmt source =
+        .ok (outcome, ctx)) :
+    ∃ fuel,
+      Block.runOpen model prim program ctx fuel
+          { stmts := [stmt] } source =
+        .ok (outcome, ctx) := by
+  by_cases hRegular : outcome.mode = .regular
+  · have hOutcomeEq :
+        outcome = Outcome.regular outcome.state :=
+      Outcome.eq_regular_of_mode hRegular
+    have hStmt :
+        Stmt.run model prim program ctx stmtFuel stmt source =
+          .ok (Outcome.regular outcome.state, ctx) := by
+      rw [← hOutcomeEq]
+      exact hRun
+    have hEmpty :
+        Block.runOpen model prim program ctx 1
+            { stmts := [] } outcome.state =
+          .ok (Outcome.regular outcome.state, ctx) := by
+      simpa using runOpen_nil model prim program ctx 0 outcome.state
+    obtain ⟨fuel, hSingleton⟩ :=
+      runOpen_cons_regular_exists model prim program hStmt hEmpty
+    rw [← hOutcomeEq] at hSingleton
+    exact ⟨fuel, hSingleton⟩
+  · exact
+      ⟨stmtFuel + 1,
+        runOpen_cons_nonregular model prim program hRun hRegular⟩
+
 theorem runOpen_append_nonregular_exists {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Program) :

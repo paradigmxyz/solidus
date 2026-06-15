@@ -117,9 +117,10 @@ Adjacent boundary status:
   every expression constructor by strong source-fuel induction. The former
   unvalidated expression callback has been deleted; only the strictly
   smaller-fuel body interface remains. The exhaustive leaf dispatcher,
-  structural statement-list composition, generic lexical block theorem, and
-  both paths of generic `if` preservation are checked. Switch, loop, mutual
-  body/control closure, whole functions/programs, and backward adequacy remain.
+  structural statement-list composition, generic lexical block theorem, both
+  paths of generic `if` preservation, and canonical first-match/default
+  `switch` preservation are checked. Loop, mutual body/control closure, whole
+  functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

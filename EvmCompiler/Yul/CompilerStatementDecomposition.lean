@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.Compiler
+import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler
 namespace Yul
@@ -11,6 +12,90 @@ they do not define an alternate lowering.
 -/
 
 namespace Stmt
+
+inductive SwitchDefaultLowering
+    (fuel : Nat) (before : Fresh.State) :
+    List AstStmt → Option Functions.Block → Fresh.State → Prop where
+  | none :
+      SwitchDefaultLowering fuel before [] none before
+  | some
+      {head : AstStmt} {tail : List AstStmt}
+      {lower : Functions.Block} {after : Fresh.State}
+      (lowering :
+        List.toBlockUncheckedFuel? fuel before (head :: tail) =
+          some (lower, after)) :
+      SwitchDefaultLowering fuel before (head :: tail)
+        (some lower) after
+
+namespace SwitchDefaultLowering
+
+theorem freshExtends
+    {fuel : Nat} {before after : Fresh.State}
+    {body : List AstStmt} {lower : Option Functions.Block}
+    (hLower :
+      SwitchDefaultLowering fuel before body lower after) :
+    Fresh.Extends before after := by
+  cases hLower with
+  | none => exact Fresh.Extends.refl before
+  | some lowering =>
+      exact List.toBlockUncheckedFuel?_stateExtends lowering
+
+end SwitchDefaultLowering
+
+inductive SwitchSelectionLowering
+    (start final : Fresh.State)
+    (value : Word) (defaultBody : List AstStmt)
+    (cases : List (Word × List AstStmt))
+    (lowerCases : List (Word × Functions.Block))
+    (lowerDefault : Option Functions.Block) : Prop where
+  | none
+      (source :
+        EvmYul.Yul.selectSwitchCase value defaultBody cases = [])
+      (target :
+        Functions.Source.Switch.select value lowerCases lowerDefault = none)
+      (freshExtends : Fresh.Extends start final) :
+      SwitchSelectionLowering start final value defaultBody cases
+        lowerCases lowerDefault
+  | some
+      {sourceBody : List AstStmt}
+      {lowerBody : Functions.Block}
+      {bodyFuel : Nat}
+      {bodyBefore bodyAfter : Fresh.State}
+      (source :
+        EvmYul.Yul.selectSwitchCase value defaultBody cases = sourceBody)
+      (target :
+        Functions.Source.Switch.select value lowerCases lowerDefault =
+          some lowerBody)
+      (lowering :
+        List.toBlockUncheckedFuel? bodyFuel bodyBefore sourceBody =
+          some (lowerBody, bodyAfter))
+      (beforeExtends : Fresh.Extends start bodyBefore)
+      (afterExtends : Fresh.Extends bodyAfter final) :
+      SwitchSelectionLowering start final value defaultBody cases
+        lowerCases lowerDefault
+
+namespace SwitchSelectionLowering
+
+theorem freshExtends
+    {start final : Fresh.State}
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)}
+    {lowerCases : List (Word × Functions.Block)}
+    {lowerDefault : Option Functions.Block}
+    (hSelection :
+      SwitchSelectionLowering start final value defaultBody cases
+        lowerCases lowerDefault) :
+    Fresh.Extends start final := by
+  cases hSelection with
+  | none _ _ hFresh => exact hFresh
+  | some _ _ hLower hBefore hAfter =>
+      exact
+        Fresh.Extends.trans hBefore
+          (Fresh.Extends.trans
+            (List.toBlockUncheckedFuel?_stateExtends hLower)
+            hAfter)
+
+end SwitchSelectionLowering
 
 theorem toFunctionsListUncheckedFuel?_block_parts
     {fuel : Nat} {before after : Fresh.State}
@@ -82,6 +167,201 @@ theorem toFunctionsListUncheckedFuel?_if_parts
               exact
                 ⟨previous, preCond, lowerCond, middle, lowerBody,
                   rfl, by simpa using hCond, by simpa using hBody, rfl⟩
+
+theorem CaseList.toFunctionsUncheckedFuel?_nil_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {lower : List (Word × Functions.Block)}
+    (hLower :
+      CaseList.toFunctionsUncheckedFuel? fuel before [] =
+        some (lower, after)) :
+    lower = [] ∧ after = before := by
+  cases fuel with
+  | zero =>
+      simp [CaseList.toFunctionsUncheckedFuel?] at hLower
+  | succ previous =>
+      simp [CaseList.toFunctionsUncheckedFuel?] at hLower
+      exact ⟨hLower.1, hLower.2.symm⟩
+
+theorem CaseList.toFunctionsUncheckedFuel?_cons_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {value : Word} {body : List AstStmt}
+    {rest : List (Word × List AstStmt)}
+    {lower : List (Word × Functions.Block)}
+    (hLower :
+      CaseList.toFunctionsUncheckedFuel? fuel before
+          ((value, body) :: rest) =
+        some (lower, after)) :
+    ∃ previous lowerBody middle lowerRest,
+      fuel = previous + 1 ∧
+      List.toBlockUncheckedFuel? previous before body =
+        some (lowerBody, middle) ∧
+      CaseList.toFunctionsUncheckedFuel? previous middle rest =
+        some (lowerRest, after) ∧
+      lower = (value, lowerBody) :: lowerRest := by
+  cases fuel with
+  | zero =>
+      simp [CaseList.toFunctionsUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hBody :
+          List.toBlockUncheckedFuel? previous before body with
+      | none =>
+          simp [CaseList.toFunctionsUncheckedFuel?, hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨lowerBody, middle⟩
+          cases hRest :
+              CaseList.toFunctionsUncheckedFuel? previous middle rest with
+          | none =>
+              simp [CaseList.toFunctionsUncheckedFuel?, hBody, hRest]
+                at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, final⟩
+              simp [CaseList.toFunctionsUncheckedFuel?, hBody, hRest]
+                at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                ⟨previous, lowerBody, middle, lowerRest,
+                  rfl, hBody, hRest, rfl⟩
+
+theorem SwitchSelectionLowering.of_compilers
+    {caseFuel defaultFuel : Nat}
+    {start afterCases final : Fresh.State}
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)}
+    {lowerCases : List (Word × Functions.Block)}
+    {lowerDefault : Option Functions.Block}
+    (hCases :
+      CaseList.toFunctionsUncheckedFuel? caseFuel start cases =
+        Option.some (lowerCases, afterCases))
+    (hDefault :
+      SwitchDefaultLowering defaultFuel afterCases defaultBody
+        lowerDefault final) :
+    SwitchSelectionLowering start final value defaultBody cases
+      lowerCases lowerDefault := by
+  induction cases generalizing caseFuel start lowerCases afterCases with
+  | nil =>
+      rcases
+        CaseList.toFunctionsUncheckedFuel?_nil_parts hCases
+        with ⟨rfl, rfl⟩
+      cases hDefault with
+      | none =>
+          exact
+            .none (by simp [EvmYul.Yul.selectSwitchCase])
+              (by simp [Functions.Source.Switch.select])
+              (Fresh.Extends.refl _)
+      | some hLower =>
+          exact
+            .some (by simp [EvmYul.Yul.selectSwitchCase])
+              (by simp [Functions.Source.Switch.select])
+              hLower (Fresh.Extends.refl _)
+              (Fresh.Extends.refl final)
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, caseBody⟩
+      obtain
+          ⟨previous, lowerBody, middle, lowerRest,
+            _hFuel, hBody, hRest, hLowerCases⟩ :=
+        CaseList.toFunctionsUncheckedFuel?_cons_parts hCases
+      subst lowerCases
+      have hTail :=
+        ih hRest hDefault
+      by_cases hMatch : caseValue = value
+      · exact
+          .some
+            (by simp [EvmYul.Yul.selectSwitchCase, hMatch])
+            (by simp [Functions.Source.Switch.select, hMatch])
+            hBody (Fresh.Extends.refl start)
+            hTail.freshExtends
+      · cases hTail with
+        | none hSource hTarget hFresh =>
+            exact
+              .none
+                (by
+                  simp [EvmYul.Yul.selectSwitchCase, hMatch, hSource])
+                (by
+                  simp [Functions.Source.Switch.select, hMatch, hTarget])
+                (Fresh.Extends.trans
+                  (List.toBlockUncheckedFuel?_stateExtends hBody)
+                  hFresh)
+        | some hSource hTarget hSelected hPrefix hSuffix =>
+            exact
+              .some
+                (by
+                  simp [EvmYul.Yul.selectSwitchCase, hMatch, hSource])
+                (by
+                  simp [Functions.Source.Switch.select, hMatch, hTarget])
+                hSelected
+                (Fresh.Extends.trans
+                  (List.toBlockUncheckedFuel?_stateExtends hBody)
+                  hPrefix)
+                hSuffix
+
+theorem toFunctionsListUncheckedFuel?_switch_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {scrutinee : AstExpr}
+    {cases : List (Word × List AstStmt)}
+    {defaultBody : List AstStmt}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.Switch scrutinee cases defaultBody) =
+        some (lower, after)) :
+    ∃ previous preScrutinee lowerScrutinee afterScrutinee
+        lowerCases afterCases lowerDefault,
+      fuel = previous + 1 ∧
+      Expr.lower1Unchecked? before scrutinee =
+        some (preScrutinee, lowerScrutinee, afterScrutinee) ∧
+      CaseList.toFunctionsUncheckedFuel? previous afterScrutinee cases =
+        some (lowerCases, afterCases) ∧
+      SwitchDefaultLowering previous afterCases defaultBody
+        lowerDefault after ∧
+      lower =
+        preScrutinee ++
+          [.switch lowerScrutinee lowerCases lowerDefault] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hScrutinee : Expr.lower1Unchecked? before scrutinee with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hScrutinee] at hLower
+      | some scrutineeResult =>
+          rcases scrutineeResult with
+            ⟨preScrutinee, lowerScrutinee, afterScrutinee⟩
+          cases hCases :
+              CaseList.toFunctionsUncheckedFuel?
+                previous afterScrutinee cases with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hScrutinee, hCases]
+                at hLower
+          | some casesResult =>
+              rcases casesResult with ⟨lowerCases, afterCases⟩
+              cases defaultBody with
+              | nil =>
+                  simp [toFunctionsListUncheckedFuel?,
+                    hScrutinee, hCases] at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  exact
+                    ⟨previous, preScrutinee, lowerScrutinee,
+                      afterScrutinee, lowerCases, afterCases, none,
+                      rfl, by simpa using hScrutinee, hCases,
+                      SwitchDefaultLowering.none, rfl⟩
+              | cons defaultHead defaultTail =>
+                  cases hDefault :
+                      List.toBlockUncheckedFuel? previous afterCases
+                        (defaultHead :: defaultTail) with
+                  | none =>
+                      simp [toFunctionsListUncheckedFuel?,
+                        hScrutinee, hCases, hDefault] at hLower
+                  | some defaultResult =>
+                      rcases defaultResult with ⟨lowerDefault, final⟩
+                      simp [toFunctionsListUncheckedFuel?,
+                        hScrutinee, hCases, hDefault] at hLower
+                      rcases hLower with ⟨rfl, rfl⟩
+                      exact
+                        ⟨previous, preScrutinee, lowerScrutinee,
+                          afterScrutinee, lowerCases, afterCases,
+                          some lowerDefault, rfl,
+                          by simpa using hScrutinee, hCases,
+                          SwitchDefaultLowering.some hDefault, rfl⟩
 
 theorem toFunctionsListUncheckedFuel?_let_none_parts
     {fuel : Nat} {before after : Fresh.State}

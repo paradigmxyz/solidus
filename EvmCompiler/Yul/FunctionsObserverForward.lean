@@ -816,6 +816,73 @@ end RecursiveOpenListForward
 
 namespace RecursiveOpenCompoundForward
 
+private theorem stmtsOk_selectSwitchCase
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
+    {functionNames vars : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)}
+    (hCases :
+      SolcValidation.CasesOk? profile contract functionNames vars
+          canBreak canContinue canLeave cases =
+        true)
+    (hDefault :
+      SolcValidation.StmtsOk? profile contract functionNames vars
+          canBreak canContinue canLeave defaultBody =
+        true) :
+    SolcValidation.StmtsOk? profile contract functionNames vars
+        canBreak canContinue canLeave
+        (EvmYul.Yul.selectSwitchCase value defaultBody cases) =
+      true := by
+  induction cases with
+  | nil =>
+      simpa [EvmYul.Yul.selectSwitchCase] using hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      have hParts :
+          SolcValidation.StmtsOk? profile contract functionNames vars
+                canBreak canContinue canLeave body =
+              true ∧
+            SolcValidation.CasesOk? profile contract functionNames vars
+                canBreak canContinue canLeave rest =
+              true := by
+        simpa [SolcValidation.CasesOk?] using hCases
+      by_cases hMatch : caseValue = value
+      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hParts.1
+      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using
+          ih hParts.2
+
+private theorem selectedSwitchNames
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)} :
+    ∀ name,
+      name ∈
+          Stmt.List.names
+            (EvmYul.Yul.selectSwitchCase value defaultBody cases) →
+        name ∈
+          Stmt.CaseList.names cases ++ Stmt.List.names defaultBody := by
+  induction cases with
+  | nil =>
+      intro name hMem
+      simpa [EvmYul.Yul.selectSwitchCase, Stmt.CaseList.names] using hMem
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      intro name hMem
+      by_cases hMatch : caseValue = value
+      · have hBodyMem : name ∈ Stmt.List.names body := by
+          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem
+        exact
+          by
+            simpa [Stmt.CaseList.names, List.append_assoc] using
+              List.mem_append_left
+                (Stmt.CaseList.names rest ++ Stmt.List.names defaultBody)
+                hBodyMem
+      · have hTail := ih name (by
+          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem)
+        simpa [Stmt.CaseList.names, List.append_assoc] using
+          List.mem_append_right (Stmt.List.names body) hTail
+
 theorem block
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -1511,6 +1578,397 @@ theorem ifThen
           freshExtends := hFresh
           retains := closedBody.openResult.retains
           layoutWithin := closedBody.openResult.layoutWithin
+          layoutScope := by
+            intro hRegular
+            rw [closedBody.regularLayout hRegular]
+            exact hPreparedLayoutScope
+          exitScope := by
+            have hExit := closedBody.openResult.exitScope
+            cases hMode : closedBody.openResult.outcome.mode <;>
+              simp [FunctionsObserverOutcome.ExitScopeRel, hMode]
+                at hExit ⊢
+            · rw [prepared.prepared.control.breakScope]
+              exact hExit
+            · rw [prepared.prepared.control.continueScope]
+              exact hExit
+            · rw [prepared.prepared.control.leaveScope]
+              exact hExit }
+      exact
+        ⟨{ openResult := result
+           regularLayout := by
+             intro hRegular
+             simpa [SolcValidation.StmtOutVars] using
+               closedBody.regularLayout hRegular
+           regularControl := by
+             intro hRegular
+             rw [closedBody.regularLayout hRegular]
+             exact hPreparedControl }⟩
+
+theorem switch
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {scrutinee : AstExpr}
+    {cases : List (Word × List AstStmt)}
+    {defaultBody : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hFuel : sourceFuel < bound)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave
+          (.Switch scrutinee cases defaultBody) =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.names (.Switch scrutinee cases defaultBody)))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Switch scrutinee cases defaultBody) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      ControlContextRel layout canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Switch scrutinee cases defaultBody)
+          (some sourceProgram.contract) source =
+        .ok sourceFinal) :
+    Nonempty
+      (ScopedStmtResult contract codeRel targetProgram.toFunctions
+        (.Switch scrutinee cases defaultBody) lower before after layout
+        sourceFinal target ctx canBreak canContinue canLeave) := by
+  obtain
+      ⟨compilerPrevious, preScrutinee, lowerScrutinee,
+        afterScrutinee, lowerCases, afterCases, lowerDefault,
+        _hCompilerFuel, hLowerScrutinee, hLowerCases,
+        hLowerDefault, hLowerStmt⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_switch_parts hLower
+  subst lower
+  obtain
+      ⟨sourcePrevious, sourceAfterScrutinee, value,
+        hSourceFuel, hScrutineeRun, hSelectedRun⟩ :=
+    Yul.Source.Effectful.exec_switch_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  have hOkParts := hOk
+  simp [SolcValidation.StmtOk?] at hOkParts
+  have hScrutineeFresh : Fresh.Extends before afterScrutinee :=
+    Expr.lower1Unchecked?_stateExtends hLowerScrutinee
+  have hSelection :=
+    Stmt.SwitchSelectionLowering.of_compilers
+      (value := value) hLowerCases hLowerDefault
+  have hSelectionFresh : Fresh.Extends afterScrutinee after :=
+    hSelection.freshExtends
+  have hFresh : Fresh.Extends before after :=
+    Fresh.Extends.trans hScrutineeFresh hSelectionFresh
+  obtain ⟨prepared⟩ :=
+    hExpr (exprFuel := sourcePrevious)
+      (before := before) (after := afterScrutinee)
+      (layout := layout) (expr := scrutinee)
+      (pre := preScrutinee) (lower := lowerScrutinee)
+      (source := source) (source' := sourceAfterScrutinee)
+      (target := target) (ctx := ctx) (value := value)
+      (by omega) hOkParts.1 hLowerScrutinee hRel hDomain hScope
+      hScrutineeRun
+  obtain ⟨preFuel, hPreRun⟩ := prepared.prepared.run
+  have hEvalOne :
+      Functions.Source.Effectful.Expr.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lowerScrutinee prepared.prepared.preTarget =
+        .ok (prepared.prepared.evalTarget, value) :=
+    Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      prepared.prepared.eval
+  have hPreparedLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope
+        layout prepared.prepared.finalCtx := by
+    have hExtends :=
+      Functions.Source.Effectful.Block.runOpen_scopeExtends
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions hPreRun
+    exact fun name hMem =>
+      hExtends name (hControl.scope name hMem)
+  have hPreparedControl :
+      ControlContextRel layout canBreak canContinue canLeave
+        prepared.prepared.finalCtx :=
+    ControlContextRel.transport hControl
+      (fun _name hMem => hMem)
+      prepared.prepared.control hPreparedLayoutScope
+  cases hSelection with
+  | none hSourceSelection hTargetSelection _hSelectionFresh =>
+      rw [hSourceSelection] at hSelectedRun
+      obtain
+          ⟨_blockFuel, sourceAfterEmpty, _hBlockSourceFuel,
+            hEmptySeq, hSourceFinal⟩ :=
+        Yul.Source.Effectful.exec_block_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hSelectedRun
+      obtain ⟨_seqFuel, _hSeqSourceFuel, hSourceAfterEmpty⟩ :=
+        Yul.Source.Effectful.execSeq_nil_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hEmptySeq
+      subst sourceAfterEmpty
+      obtain ⟨sourceShared, sourceVars, hSource, _hShared,
+          _hScoped, _hSourceDomain⟩ :=
+        prepared.relation.2
+      have hRestrict :
+          sourceAfterScrutinee.source.restrictStoreTo
+              sourceAfterScrutinee.source.store =
+            sourceAfterScrutinee.source := by
+        rw [hSource]
+        simp only [EvmYul.Yul.State.store,
+          EvmYul.Yul.State.restrictStoreTo]
+        rw [StateRelation.VarStore.restrict_self]
+      have hSourceFinalEq :
+          sourceFinal = sourceAfterScrutinee := by
+        change
+          sourceFinal =
+            sourceAfterScrutinee.withSource
+              (sourceAfterScrutinee.source.restrictStoreTo
+                sourceAfterScrutinee.source.store)
+          at hSourceFinal
+        rw [hSourceFinal, hRestrict]
+        exact
+          Simulation.ResourceReplay.State.withSource_self
+            sourceAfterScrutinee
+      rw [hSourceFinalEq]
+      have hSwitchStmt :
+          Functions.Source.Effectful.Stmt.run
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions prepared.prepared.finalCtx 1
+              (.switch lowerScrutinee lowerCases lowerDefault)
+              prepared.prepared.preTarget =
+            .ok
+              (Functions.Source.Effectful.Outcome.regular
+                prepared.prepared.evalTarget,
+                prepared.prepared.finalCtx) :=
+        Functions.Source.Effectful.Stmt.run_switch_none_of_eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hEvalOne hTargetSelection
+      obtain ⟨switchFuel, hSwitchRun⟩ :=
+        Functions.Source.Effectful.Block.runOpen_singleton_of_run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hSwitchStmt
+      obtain ⟨targetFuel, hTargetRun⟩ :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions preScrutinee
+          [.switch lowerScrutinee lowerCases lowerDefault]
+          ctx prepared.prepared.finalCtx target
+          prepared.prepared.preTarget
+          (Functions.Source.Effectful.Outcome.regular
+            prepared.prepared.evalTarget)
+          prepared.prepared.finalCtx
+          ⟨preFuel, hPreRun⟩ ⟨switchFuel, hSwitchRun⟩
+      have hOutcomeRel :
+          FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout
+            sourceAfterScrutinee
+            (Functions.Source.Effectful.Outcome.regular
+              prepared.prepared.evalTarget) :=
+        FunctionsObserverOutcome.ScopedOutcomeRel.regular
+          hSource prepared.relation
+      let result :
+          FunctionsObserverOutcome.ScopedOpenResult
+            contract codeRel targetProgram.toFunctions
+            (preScrutinee ++
+              [.switch lowerScrutinee lowerCases lowerDefault])
+            before after layout sourceAfterScrutinee target ctx :=
+        { finalLayout := layout
+          outcome :=
+            Functions.Source.Effectful.Outcome.regular
+              prepared.prepared.evalTarget
+          finalCtx := prepared.prepared.finalCtx
+          run := ⟨targetFuel, hTargetRun⟩
+          relation := hOutcomeRel
+          domain := prepared.prepared.domain.mono hSelectionFresh
+          scope := prepared.prepared.scope.mono hSelectionFresh
+          control := prepared.prepared.control
+          freshExtends := hFresh
+          retains := fun _hRegular _name hMem => hMem
+          layoutWithin := hLayout.mono hFresh
+          layoutScope := fun _hRegular => hPreparedLayoutScope
+          exitScope := by
+            simp [FunctionsObserverOutcome.ExitScopeRel] }
+      exact
+        ⟨{ openResult := result
+           regularLayout := fun _hRegular => rfl
+           regularControl := fun _hRegular => hPreparedControl }⟩
+  | some hSourceSelection hTargetSelection hSelectedLower
+      hBeforeSelected hAfterSelected =>
+      rename_i selectedBody selectedLowerBody selectedCompilerFuel
+        selectedBefore selectedAfter
+      rw [hSourceSelection] at hSelectedRun
+      have hSelectedOk :
+          SolcValidation.StmtsOk? profile sourceProgram.contract
+              ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+              layout canBreak canContinue canLeave selectedBody =
+            true :=
+        by
+          rw [← hSourceSelection]
+          exact
+            stmtsOk_selectSwitchCase (value := value)
+              hOkParts.2.2.1 hOkParts.2.2.2
+      have hSelectedNamesBefore :
+          StateRelation.Vars.NamesWithin before.used
+            (Stmt.List.names selectedBody) := by
+        intro name hMem
+        have hCanonical :
+            name ∈
+              Stmt.List.names
+                (EvmYul.Yul.selectSwitchCase value defaultBody cases) := by
+          rw [hSourceSelection]
+          exact hMem
+        exact hNames name (by
+          simpa [Stmt.names] using
+            List.mem_append_right (Expr.names scrutinee)
+              (selectedSwitchNames name hCanonical))
+      have hSelectedFresh :
+          Fresh.Extends before selectedBefore :=
+        Fresh.Extends.trans hScrutineeFresh hBeforeSelected
+      have hSelectedNames :
+          StateRelation.Vars.NamesWithin selectedBefore.used
+            (Stmt.List.names selectedBody) :=
+        hSelectedNamesBefore.mono hSelectedFresh
+      have hSelectedLayout :
+          StateRelation.Vars.NamesWithin selectedBefore.used layout :=
+        hLayout.mono hSelectedFresh
+      have hBlockOk :
+          SolcValidation.StmtOk? profile sourceProgram.contract
+              ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+              layout canBreak canContinue canLeave
+                (.Block selectedBody) =
+            true := by
+        simpa [SolcValidation.StmtOk?] using hSelectedOk
+      have hBlockNames :
+          StateRelation.Vars.NamesWithin selectedBefore.used
+            (Stmt.names (.Block selectedBody)) := by
+        simpa [Stmt.names] using hSelectedNames
+      have hBlockLower :=
+        Stmt.toFunctionsListUncheckedFuel?_block_of_toBlock hSelectedLower
+      obtain ⟨closedBody⟩ :=
+        block hList (sourceFuel := sourcePrevious)
+          (compilerFuel := selectedCompilerFuel + 1)
+          (before := selectedBefore) (after := selectedAfter)
+          (layout := layout)
+          (body := selectedBody)
+          (lower := [.block selectedLowerBody])
+          (source := sourceAfterScrutinee) (sourceFinal := sourceFinal)
+          (target := prepared.prepared.evalTarget)
+          (ctx := prepared.prepared.finalCtx)
+          (canBreak := canBreak) (canContinue := canContinue)
+          (canLeave := canLeave)
+          (by omega) hBlockOk hBlockNames hBlockLower
+          prepared.relation
+          (prepared.prepared.domain.mono hBeforeSelected)
+          (prepared.prepared.scope.mono hBeforeSelected)
+          hSelectedLayout hPreparedControl hSelectedRun
+      obtain ⟨bodyFuel, hBodyScoped, _hBodyCtx⟩ :=
+        Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions closedBody.openResult.run
+      have hSwitchStmt :
+          Functions.Source.Effectful.Stmt.run
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions prepared.prepared.finalCtx
+              (bodyFuel + 1)
+              (.switch lowerScrutinee lowerCases lowerDefault)
+              prepared.prepared.preTarget =
+            .ok
+              (closedBody.openResult.outcome,
+                prepared.prepared.finalCtx) :=
+        Functions.Source.Effectful.Stmt.run_switch_some_of_eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hEvalOne hTargetSelection hBodyScoped
+      obtain ⟨switchFuel, hSwitchRun⟩ :=
+        Functions.Source.Effectful.Block.runOpen_singleton_of_run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hSwitchStmt
+      obtain ⟨targetFuel, hTargetRun⟩ :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions preScrutinee
+          [.switch lowerScrutinee lowerCases lowerDefault]
+          ctx prepared.prepared.finalCtx target
+          prepared.prepared.preTarget closedBody.openResult.outcome
+          prepared.prepared.finalCtx
+          ⟨preFuel, hPreRun⟩ ⟨switchFuel, hSwitchRun⟩
+      let result :
+          FunctionsObserverOutcome.ScopedOpenResult
+            contract codeRel targetProgram.toFunctions
+            (preScrutinee ++
+              [.switch lowerScrutinee lowerCases lowerDefault])
+            before after layout sourceFinal target ctx :=
+        { finalLayout := closedBody.openResult.finalLayout
+          outcome := closedBody.openResult.outcome
+          finalCtx := prepared.prepared.finalCtx
+          run := ⟨targetFuel, hTargetRun⟩
+          relation := closedBody.openResult.relation
+          domain := closedBody.openResult.domain.mono hAfterSelected
+          scope := prepared.prepared.scope.mono hSelectionFresh
+          control := prepared.prepared.control
+          freshExtends := hFresh
+          retains := closedBody.openResult.retains
+          layoutWithin :=
+            closedBody.openResult.layoutWithin.mono hAfterSelected
           layoutScope := by
             intro hRegular
             rw [closedBody.regularLayout hRegular]
