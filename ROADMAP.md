@@ -1588,7 +1588,11 @@ corridor.
   machinery, not part of the public boundary. The next boundary discharges
   those interfaces by mutual source-fuel induction and derives call arity,
   signature uniqueness, and singleton-return facts from
-  `SolcValidation.ProgramOk`.
+  `SolcValidation.ProgramOk`. The validation extraction is checked, and the
+  statement-owned body induction now has a verified empty-body constructor
+  using ordinary block/list lowering and canonical Yul block execution. The
+  next constructor handles a nonempty statement sequence, starting with
+  declaration and assignment leaves composed from `PreparedValue`.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -2570,6 +2570,84 @@ mutual
         some ({ stmts := lower }, state')
 end
 
+theorem List.toBlockUncheckedFuel?_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {stmts : List AstStmt} {lower : Functions.Block}
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel? fuel state stmts =
+        some (lower, final)) :
+    ∃ previous lowerStmts,
+      fuel = previous + 1 ∧
+      Stmt.List.toFunctionsUncheckedFuel? previous state stmts =
+        some (lowerStmts, final) ∧
+      lower = { stmts := lowerStmts } := by
+  cases fuel with
+  | zero =>
+      simp [Stmt.List.toBlockUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hStmts :
+          Stmt.List.toFunctionsUncheckedFuel? previous state stmts with
+      | none =>
+          simp [Stmt.List.toBlockUncheckedFuel?, hStmts] at hLower
+      | some result =>
+          rcases result with ⟨lowerStmts, finalState⟩
+          simp [Stmt.List.toBlockUncheckedFuel?, hStmts] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨previous, lowerStmts, rfl, hStmts, rfl⟩
+
+theorem List.toFunctionsUncheckedFuel?_nil_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {lower : List Functions.Stmt}
+    (hLower :
+      Stmt.List.toFunctionsUncheckedFuel? fuel state [] =
+        some (lower, final)) :
+    ∃ previous, fuel = previous + 1 ∧ lower = [] ∧ final = state := by
+  cases fuel with
+  | zero =>
+      simp [Stmt.List.toFunctionsUncheckedFuel?] at hLower
+  | succ previous =>
+      simp [Stmt.List.toFunctionsUncheckedFuel?] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨previous, rfl, rfl, rfl⟩
+
+theorem List.toFunctionsUncheckedFuel?_cons_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {stmt : AstStmt} {rest : List AstStmt}
+    {lower : List Functions.Stmt}
+    (hLower :
+      Stmt.List.toFunctionsUncheckedFuel? fuel state (stmt :: rest) =
+        some (lower, final)) :
+    ∃ previous lowerStmt middle lowerRest,
+      fuel = previous + 1 ∧
+      Stmt.toFunctionsListUncheckedFuel? previous state stmt =
+        some (lowerStmt, middle) ∧
+      Stmt.List.toFunctionsUncheckedFuel? previous middle rest =
+        some (lowerRest, final) ∧
+      lower = lowerStmt ++ lowerRest := by
+  cases fuel with
+  | zero =>
+      simp [Stmt.List.toFunctionsUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hStmt :
+          Stmt.toFunctionsListUncheckedFuel? previous state stmt with
+      | none =>
+          simp [Stmt.List.toFunctionsUncheckedFuel?, hStmt] at hLower
+      | some stmtResult =>
+          rcases stmtResult with ⟨lowerStmt, middle⟩
+          cases hRest :
+              Stmt.List.toFunctionsUncheckedFuel? previous middle rest with
+          | none =>
+              simp [Stmt.List.toFunctionsUncheckedFuel?,
+                hStmt, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, finalState⟩
+              simp [Stmt.List.toFunctionsUncheckedFuel?,
+                hStmt, hRest] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                ⟨previous, lowerStmt, middle, lowerRest,
+                  rfl, hStmt, hRest, rfl⟩
+
 theorem toFunctionsListUncheckedFuel?_let_gas
     (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
     toFunctionsListUncheckedFuel? fuel.succ state

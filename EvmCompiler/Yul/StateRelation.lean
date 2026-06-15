@@ -1033,6 +1033,17 @@ theorem lookup_restrict_of_none
       simpa using
         lookup_sdiff_of_lookup_some store (store.sdiff scope) key hInnerSome
 
+theorem restrict_self (store : EvmYul.Yul.VarStore) :
+    EvmYul.Yul.State.restrictVarStore store store = store := by
+  apply Finmap.ext_lookup
+  intro key
+  cases hLookup : store.lookup key with
+  | none =>
+      exact lookup_restrict_of_none store store key hLookup
+  | some value =>
+      simpa [hLookup] using
+        lookup_restrict_of_some store store key hLookup
+
 end VarStore
 
 namespace Vars

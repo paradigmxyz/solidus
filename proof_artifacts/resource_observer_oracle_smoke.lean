@@ -27,6 +27,7 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
@@ -1163,6 +1164,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofFunctionCall
+#print axioms EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
+#print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_empty
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpression
+import EvmCompiler.Yul.SolcValidation
 
 namespace EvmCompiler
 namespace Yul
@@ -552,6 +553,8 @@ theorem ofFunctionCall
     {codeRel : StateRelation.CodeRel}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {vars : List Name}
     {functionName : Name}
     {args : List AstExpr}
     {initial final : Fresh.State}
@@ -569,13 +572,12 @@ theorem ofFunctionCall
     (hLower :
       Expr.lower1Unchecked? initial (.Call (.inr functionName) args) =
         some (pre, lower, final))
-    (hCallOk :
-      ∀ params returns body,
-        sourceProgram.contract.functions.lookup functionName =
-            some (.Def params returns body) →
-          args.length = params.length ∧
-          (identNames returns ++ identNames params).Nodup ∧
-          ∃ returnName, returns = [returnName])
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract vars 1
+          (.Call (.inr functionName) args) =
+        true)
     (hExpr :
       RecursiveExpressionForward
         contract transcript codeRel sourceProgram targetProgram)
@@ -627,7 +629,8 @@ theorem ofFunctionCall
             some (.Def params returns body) := by
         simpa using hFunction
       obtain ⟨hArgCount, hSignature, returnName, hReturns⟩ :=
-        hCallOk params returns body hLookup
+        SolcValidation.programOkWith_functionCall_parts
+          hProgramOk hExprOk hLookup
       subst returns
       obtain
           ⟨argsFresh, tmp, preArgs, lowerArgs,

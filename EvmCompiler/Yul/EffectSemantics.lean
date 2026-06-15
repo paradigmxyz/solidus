@@ -546,6 +546,109 @@ theorem evalArgs_ok_length {σ : Type}
                         evalArgs_ok_length model prim hTail
                       simp [hLength]
 
+theorem exec_block_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.Block body) codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterBody,
+      fuel = previous + 1 ∧
+      execSeq model prim previous body codeOverride state =
+        .ok stateAfterBody ∧
+      final =
+        model.withSource stateAfterBody
+          ((model.source stateAfterBody).restrictStoreTo
+            (model.source state).store) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hBody :
+          execSeq model prim previous body codeOverride state with
+      | error failure =>
+          simp [exec, hBody] at hRun
+      | ok stateAfterBody =>
+          simp [exec, hBody] at hRun
+          subst final
+          exact ⟨previous, stateAfterBody, rfl, hBody, rfl⟩
+
+theorem execSeq_nil_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      execSeq model prim fuel [] codeOverride state =
+        .ok final) :
+    ∃ previous, fuel = previous + 1 ∧ final = state := by
+  cases fuel with
+  | zero =>
+      simp [execSeq, fail] at hRun
+  | succ previous =>
+      simp [execSeq] at hRun
+      subst final
+      exact ⟨previous, rfl, rfl⟩
+
+theorem execSeq_cons_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      execSeq model prim fuel (stmt :: rest) codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterStmt,
+      fuel = previous + 1 ∧
+      exec model prim previous stmt codeOverride state =
+        .ok stateAfterStmt ∧
+      match model.source stateAfterStmt with
+      | .Ok _ _ =>
+          execSeq model prim previous rest codeOverride stateAfterStmt =
+            .ok final
+      | .OutOfFuel | .Checkpoint _ =>
+          final = stateAfterStmt := by
+  cases fuel with
+  | zero =>
+      simp [execSeq, fail] at hRun
+  | succ previous =>
+      cases hStmt :
+          exec model prim previous stmt codeOverride state with
+      | error failure =>
+          simp [execSeq, hStmt] at hRun
+      | ok stateAfterStmt =>
+          cases hSource : model.source stateAfterStmt with
+          | Ok shared vars =>
+              cases hRest :
+                  execSeq model prim previous rest codeOverride
+                    stateAfterStmt with
+              | error failure =>
+                  simp [execSeq, hStmt, hSource, hRest] at hRun
+              | ok stateAfterRest =>
+                  simp [execSeq, hStmt, hSource, hRest] at hRun
+                  subst final
+                  exact
+                    ⟨previous, stateAfterStmt, rfl, hStmt,
+                      by simpa [hSource] using hRest⟩
+          | OutOfFuel =>
+              simp [execSeq, hStmt, hSource] at hRun
+              subst final
+              exact
+                ⟨previous, stateAfterStmt, rfl, hStmt,
+                  by simp [hSource]⟩
+          | Checkpoint jump =>
+              simp [execSeq, hStmt, hSource] at hRun
+              subst final
+              exact
+                ⟨previous, stateAfterStmt, rfl, hStmt,
+                  by simp [hSource]⟩
+
 theorem evalArgs_append_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}

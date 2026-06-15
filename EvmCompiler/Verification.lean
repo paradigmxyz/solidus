@@ -53,6 +53,7 @@ import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverCompiler
@@ -204,6 +205,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCall.RecursiveBodyForward
 #check EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
 #check EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofFunctionCall
+#check EvmCompiler.Yul.SolcValidation.exprOk_functionCall_parts
+#check EvmCompiler.Yul.SolcValidation.programOkWith_function_signature_nodup
+#check EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
+#check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
+#check EvmCompiler.Yul.Stmt.List.toFunctionsUncheckedFuel?_cons_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.execSeq_cons_ok_parts
+#check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_empty
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
