@@ -27,9 +27,11 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.CompilerCallDecomposition
+import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverForward
+import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
@@ -1241,8 +1243,22 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_let_of_eval
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_assign_of_eval
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_leave_of_scope
+#print axioms EvmCompiler.Functions.Source.Effectful.Outcome.eq_regular_of_mode
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_nonregular_exists
 #print axioms EvmCompiler.Functions.ObserverSemantics.stateModel_insert
 #print axioms EvmCompiler.Functions.ObserverSemantics.stateModel_withVars
+#print axioms EvmCompiler.Yul.StateRelation.Vars.TargetDomainWithin.restrictTo
+#print axioms EvmCompiler.Yul.StateRelation.Regular.scopedRel_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Regular.scopedRel_restrict_target_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedRel_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.empty
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.appendRegular
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.appendNonregular
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_none_parts
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_leave_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_none
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_leave
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run
@@ -1258,6 +1274,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofAssignCall
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofEmpty
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLeave
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetNone
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe

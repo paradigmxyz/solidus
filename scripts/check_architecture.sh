@@ -190,8 +190,10 @@ report_matches \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/CompilerCallDecomposition.lean \
+  EvmCompiler/Yul/CompilerStatementDecomposition.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
+  EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
@@ -203,6 +205,7 @@ report_matches \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
+  EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
@@ -215,6 +218,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
+  EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
@@ -591,6 +595,7 @@ report_matches \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
+  EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \

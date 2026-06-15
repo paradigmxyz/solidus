@@ -1,5 +1,7 @@
 import EvmCompiler.Yul.CompilerCallDecomposition
+import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverOutcome
 
 namespace EvmCompiler
 namespace Yul
@@ -339,6 +341,280 @@ theorem run
         simp [ctxHead, List.reverse_cons, List.append_assoc]
 
 end InitNames
+
+namespace OpenResult
+
+theorem of_let_none
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {names : List EvmYul.Identifier}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let names none) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hNamesUsed :
+      StateRelation.Vars.NamesWithin before.used
+        (identNames names))
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Let names none)
+          codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨hLowerStmts, hAfter⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower
+  subst lower
+  subst after
+  obtain ⟨_previous, _hFuel, hCheck, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_let_none_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, hSourceDomain⟩ :=
+    hRel.2
+  have hCheckSource :
+      EvmYul.Yul.checkDeclaration
+          (.Ok sourceShared sourceVars) names =
+        .ok () := by
+    rw [← hSource]
+    exact hCheck
+  obtain ⟨hNamesNodup, hNamesFresh⟩ :=
+    StateRelation.Vars.checkDeclaration_ok_parts
+      (layout := layout) (source := sourceVars)
+      (shared := sourceShared) hSourceDomain hCheckSource
+  obtain ⟨targetFuel, finalVars, finalCtx,
+      hInsert, hTargetRun, hFinalCtx⟩ :=
+    InitNames.run
+      (contract := contract) (program := program)
+      (identNames names) target ctx
+  let targetFinal :=
+    target.withSource
+      { shared := target.source.shared, vars := finalVars }
+  have hSourceFinal' :
+      sourceFinal =
+        source.withSource (source.source.zeroFill names) := by
+    simpa using hSourceFinal
+  have hFinalRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (identNames names ++ layout) sourceFinal targetFinal := by
+    rw [hSourceFinal']
+    simpa [targetFinal, identNames_eq_self] using
+      StateRelation.Replay.scopedExact_zeroFill_insertMany
+        hRel
+        (by simpa [identNames_eq_self] using hNamesNodup)
+        (by simpa [identNames_eq_self] using hNamesFresh)
+        hInsert
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        (identNames names ++ layout) sourceFinal
+        (Functions.Source.Effectful.Outcome.regular targetFinal) := by
+    obtain
+        ⟨finalShared, finalSourceVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalDomain⟩ :=
+      hFinalRel.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource hFinalRel
+  have hFinalDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used targetFinal.source.vars := by
+    simpa [targetFinal] using
+      hDomain.insertMany hNamesUsed hInsert
+  have hFinalScope :
+      StateRelation.Vars.NamesWithin before.used finalCtx.scope := by
+    rw [hFinalCtx]
+    intro name hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hNamesUsed name (by simpa using hDeclared)
+    · exact hScope name hOuter
+  exact
+    ⟨{ finalLayout := identNames names ++ layout
+       outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+       finalCtx := finalCtx
+       run := ⟨targetFuel, by simpa [targetFinal] using hTargetRun⟩
+       relation := hOutcomeRel
+       domain := hFinalDomain
+       scope := hFinalScope
+       freshExtends := Fresh.Extends.refl before
+       retains := fun _hRegular name hMem =>
+         List.mem_append_right _ hMem
+       layoutWithin := by
+         intro name hMem
+         rcases List.mem_append.mp hMem with hDeclared | hOuter
+         · exact hNamesUsed name hDeclared
+         · exact hLayout name hOuter }⟩
+
+theorem of_leave
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout leaveLayout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Leave =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hLeaveScope : ctx.leaveScope? = some leaveLayout)
+    (hLeaveSubset :
+      ∀ name, name ∈ leaveLayout → name ∈ layout)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Leave codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨hLowerStmts, hAfter⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_leave_parts hLower
+  subst lower
+  subst after
+  obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_leave_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, _hSourceDomain⟩ :=
+    hRel.2
+  let sourceLeave :=
+    source.withSource (EvmYul.Yul.State.setLeave source.source)
+  have hSourceFinal' : sourceFinal = sourceLeave := by
+    simpa [sourceLeave] using hSourceFinal
+  have hSourceLeave :
+      sourceLeave.source =
+        .Checkpoint (.Leave sourceShared sourceVars) := by
+    change
+      EvmYul.Yul.State.setLeave source.source =
+        .Checkpoint (.Leave sourceShared sourceVars)
+    rw [hSource]
+    rfl
+  let targetLeave :=
+    target.withSource (target.source.restrictTo leaveLayout)
+  have hTargetStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 1 .leave target =
+        .ok
+          (Functions.Source.Effectful.Outcome.leave targetLeave, ctx) := by
+    simpa [targetLeave] using
+      Functions.Source.Effectful.Stmt.run_leave_of_scope
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hLeaveScope
+  have hTargetRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 2 { stmts := [.leave] } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.leave targetLeave, ctx) := by
+    exact
+      Functions.Source.Effectful.Block.runOpen_cons_nonregular
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hTargetStmt
+          (Functions.Source.Effectful.Outcome.leave_not_regular targetLeave)
+  have hWeakRel :
+      StateRelation.Replay.ScopedRel codeRel leaveLayout source targetLeave := by
+    simpa [targetLeave] using
+      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
+        hRel hLeaveSubset
+  have hSourceRestored :
+      sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
+    rw [hSourceFinal']
+    change sourceLeave.withSource (.Ok sourceShared sourceVars) = source
+    change source.withSource (.Ok sourceShared sourceVars) = source
+    rw [← hSource]
+    exact Simulation.ResourceReplay.State.withSource_self source
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel leaveLayout
+        sourceFinal
+        (Functions.Source.Effectful.Outcome.leave targetLeave) := by
+    apply
+      FunctionsObserverOutcome.ScopedOutcomeRel.leave
+        (shared := sourceShared) (vars := sourceVars)
+    · rw [hSourceFinal']
+      exact hSourceLeave
+    · rw [hSourceRestored]
+      exact hWeakRel
+  have hLeaveUsed :
+      StateRelation.Vars.NamesWithin before.used leaveLayout := by
+    intro name hMem
+    exact hLayout name (hLeaveSubset name hMem)
+  exact
+    ⟨{ finalLayout := leaveLayout
+       outcome := Functions.Source.Effectful.Outcome.leave targetLeave
+       finalCtx := ctx
+       run := ⟨2, hTargetRun⟩
+       relation := hOutcomeRel
+       domain := by
+         simpa [targetLeave, Locals.Source.State.restrictTo] using
+           hDomain.restrictTo
+       scope := hScope
+       freshExtends := Fresh.Extends.refl before
+       retains := fun hRegular =>
+         False.elim
+           (Functions.Source.Effectful.Outcome.leave_not_regular
+             targetLeave hRegular)
+       layoutWithin := hLeaveUsed }⟩
+
+end OpenResult
 
 namespace ReturnedBody
 

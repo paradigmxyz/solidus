@@ -1644,7 +1644,15 @@ corridor.
   multi-result callees, are checked through the shared call runtime,
   relation-owned visible/fresh writeback, `ReturnedBody.of_assign_call`,
   `ReturnedBody.of_let_call`, and their `RecursiveBodyForward` constructors.
-  The next obligation is the generic recursive body/control dispatcher.
+  `FunctionsObserverOutcome` now owns the outcome-indexed open statement/list
+  interface and generic append composition. Regular flow retains exact lexical
+  domains; break, continue, and leave retain scoped value agreement until the
+  owning block closes the source and target scopes. The empty-list,
+  uninitialized declaration, and leave constructors consume ordinary compiler
+  decompositions and canonical source/Functions semantics through this
+  interface. The next obligation is to migrate the remaining singleton proofs
+  into open results and complete structural list, block, and control
+  composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

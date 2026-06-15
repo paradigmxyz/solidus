@@ -36,10 +36,51 @@ def leave {σ : Type} (state : σ) : Outcome σ :=
 def halt {σ : Type} (kind : Assembly.HaltKind) (state : σ) : Outcome σ :=
   Locals.Source.Effectful.Outcome.halt kind state
 
+@[simp] theorem regular_mode {σ : Type} (state : σ) :
+    (regular state).mode = .regular := rfl
+
+@[simp] theorem brk_mode {σ : Type} (state : σ) :
+    (brk state).mode = .brk := rfl
+
+@[simp] theorem cont_mode {σ : Type} (state : σ) :
+    (cont state).mode = .cont := rfl
+
+@[simp] theorem leave_mode {σ : Type} (state : σ) :
+    (leave state).mode = .leave := rfl
+
+@[simp] theorem halt_mode {σ : Type}
+    (kind : Assembly.HaltKind) (state : σ) :
+    (halt kind state).mode = .halt kind := rfl
+
+theorem brk_not_regular {σ : Type} (state : σ) :
+    (brk state).mode ≠ .regular := by
+  simp
+
+theorem cont_not_regular {σ : Type} (state : σ) :
+    (cont state).mode ≠ .regular := by
+  simp
+
+theorem leave_not_regular {σ : Type} (state : σ) :
+    (leave state).mode ≠ .regular := by
+  simp
+
+theorem halt_not_regular {σ : Type}
+    (kind : Assembly.HaltKind) (state : σ) :
+    (halt kind state).mode ≠ .regular := by
+  simp
+
 def IsExit {σ : Type} (outcome : Outcome σ) : Prop :=
   match outcome.mode with
   | .leave | .halt _ => True
   | .regular | .brk | .cont => False
+
+theorem eq_regular_of_mode {σ : Type} {outcome : Outcome σ}
+    (hMode : outcome.mode = .regular) :
+    outcome = regular outcome.state := by
+  rcases outcome with ⟨state, mode⟩
+  change mode = .regular at hMode
+  subst mode
+  rfl
 
 theorem IsExit.not_regular {σ : Type} {outcome : Outcome σ}
     (hExit : IsExit outcome) :
@@ -52,14 +93,14 @@ theorem IsExit.ne_brk {σ : Type} {outcome : Outcome σ}
     outcome ≠ brk state := by
   intro hOutcome
   subst outcome
-  simp [IsExit, brk, Locals.Source.Effectful.Outcome.brk] at hExit
+  simp [IsExit] at hExit
 
 theorem IsExit.ne_cont {σ : Type} {outcome : Outcome σ}
     (hExit : IsExit outcome) (state : σ) :
     outcome ≠ cont state := by
   intro hOutcome
   subst outcome
-  simp [IsExit, cont, Locals.Source.Effectful.Outcome.cont] at hExit
+  simp [IsExit] at hExit
 
 end Outcome
 
@@ -4079,6 +4120,62 @@ theorem runOpen_cons_nonregular {σ : Type}
       simp [Block.runOpen, hHead, hOutcomeMode]
   | halt kind =>
       simp [Block.runOpen, hHead, hOutcomeMode]
+
+theorem runOpen_append_nonregular_exists {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) :
+    ∀ (left right : List Stmt) (ctx : Source.Ctx) (source : σ)
+      (outcome : Outcome σ) (runCtx : Source.Ctx),
+      (∃ fuel,
+        Block.runOpen model prim program ctx fuel
+            { stmts := left } source =
+          .ok (outcome, runCtx)) →
+      outcome.mode ≠ .regular →
+      ∃ fuel,
+        Block.runOpen model prim program ctx fuel
+            { stmts := left ++ right } source =
+          .ok (outcome, runCtx) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx source outcome runCtx hLeft hMode
+      rcases hLeft with ⟨fuel, hLeft⟩
+      rcases runOpen_nil_ok model prim program hLeft with
+        ⟨hOutcome, _hCtx⟩
+      rw [hOutcome] at hMode
+      simp [Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hMode
+  | cons stmt rest ih =>
+      intro right ctx source outcome runCtx hLeft hMode
+      rcases hLeft with ⟨fuel, hLeft⟩
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, Source.invalid,
+            Structured.invalid] at hLeft
+      | succ fuel =>
+          rcases
+              runOpen_cons_cases model prim program
+                (fuel := fuel) hLeft with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨afterStmt, stmtCtx, hStmt, hRest⟩
+            obtain ⟨tailFuel, hTail⟩ :=
+              ih right stmtCtx afterStmt outcome runCtx
+                ⟨fuel, hRest⟩ hMode
+            simpa [List.cons_append] using
+              runOpen_cons_regular_exists model prim program
+                hStmt hTail
+          · rcases hNonregular with
+              ⟨headOutcome, headCtx, hHead, hHeadMode,
+                hOutcome, hCtx⟩
+            subst outcome
+            subst runCtx
+            exact
+              ⟨fuel + 1,
+                by
+                  simpa [List.cons_append] using
+                    runOpen_cons_nonregular model prim program
+                      (rest := rest ++ right) hHead hHeadMode⟩
 
 end Block
 

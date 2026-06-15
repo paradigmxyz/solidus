@@ -17,6 +17,210 @@ abbrev Word := Assembly.Word
 
 namespace RecursiveBodyForward
 
+theorem ofEmpty
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns : List EvmYul.Identifier}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before [] =
+        some (fn.body, after))
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (_hReserved :
+      StateRelation.Vars.NamesWithin before.used
+        (fn.returns ++ fn.params))
+    (_hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names []))
+    (_hBodyOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (fn.returns ++ fn.params) false false true [] =
+        true)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block [])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) :=
+  FunctionsObserverStatement.ReturnedBody.of_empty
+    hLower hParams hReturns hParamStore hEntry hRun
+
+theorem ofLeave
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns : List EvmYul.Identifier}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before [.Leave] =
+        some (fn.body, after))
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (_hReserved :
+      StateRelation.Vars.NamesWithin before.used
+        (fn.returns ++ fn.params))
+    (_hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names [.Leave]))
+    (_hBodyOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (fn.returns ++ fn.params) false false true [.Leave] =
+        true)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block [.Leave])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) :=
+  FunctionsObserverStatement.ReturnedBody.of_leave
+    hLower hParams hReturns hParamStore hEntry hRun
+
+theorem ofLetNone
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns names : List EvmYul.Identifier}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before [.Let names none] =
+        some (fn.body, after))
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (_hReserved :
+      StateRelation.Vars.NamesWithin before.used
+        (fn.returns ++ fn.params))
+    (_hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names [.Let names none]))
+    (_hBodyOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (fn.returns ++ fn.params) false false true [.Let names none] =
+        true)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block [.Let names none])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) :=
+  FunctionsObserverStatement.ReturnedBody.of_let_none
+    hLower hParams hReturns hParamStore hEntry hRun
+
 theorem entryTargetDomain
     {before : Fresh.State} {fn : Functions.FunDef}
     {args : List Word} {paramStore : Locals.Source.Store}
