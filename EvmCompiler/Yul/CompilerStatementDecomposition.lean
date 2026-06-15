@@ -132,6 +132,35 @@ theorem toFunctionsListUncheckedFuel?_assign_one_parts
           rcases hLower with ⟨rfl, rfl⟩
           exact ⟨pre, lowerValue, rfl, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_expr_primitive_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {lower : List Functions.Stmt}
+    (hNonterminal : Prim.terminal? prim = none)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.ExprStmtCall (.Call (.inl prim) args)) =
+        some (lower, after)) :
+    ∃ pre lowerExpr,
+      Expr.lower0Unchecked? before (.Call (.inl prim) args) =
+        some (pre, lowerExpr, after) ∧
+      lower = pre ++ [Functions.Stmt.expr lowerExpr] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      simp only [toFunctionsListUncheckedFuel?] at hLower
+      rw [hNonterminal] at hLower
+      cases hExpr :
+          Expr.lower0Unchecked? before (.Call (.inl prim) args) with
+      | none =>
+          simp [hExpr] at hLower
+      | some result =>
+          rcases result with ⟨pre, lowerExpr, final⟩
+          simp [hExpr] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨pre, lowerExpr, rfl, rfl⟩
+
 end Stmt
 end Yul
 end EvmCompiler

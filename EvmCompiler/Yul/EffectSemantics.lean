@@ -955,6 +955,47 @@ theorem exec_assign_ok_parts
                 ⟨previous, stateAfterValue, values, rfl,
                   by simpa using hCheck, hValues, rfl⟩
 
+theorem exec_expr_primitive_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model primSemantics fuel
+          (.ExprStmtCall (.Call (.inl prim) args))
+          codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterPrim values,
+      fuel = previous + 1 ∧
+      evalValues model primSemantics (previous + 1)
+          (.Call (.inl prim) args) codeOverride state =
+        .ok (stateAfterPrim, values) ∧
+      final = model.multifill [] stateAfterPrim values := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hArgs :
+          evalArgs model primSemantics previous args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [exec, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          cases hPrim :
+              primSemantics.eval previous stateAfterArgs prim
+                reversedValues.reverse with
+          | error failure =>
+              simp [exec, hArgs, hPrim, multifill] at hRun
+          | ok result =>
+              rcases result with ⟨stateAfterPrim, values⟩
+              simp [exec, hArgs, hPrim, multifill] at hRun
+              exact
+                ⟨previous, stateAfterPrim, values, rfl,
+                  by simp [evalValues, hArgs, hPrim], hRun.symm⟩
+
 theorem execSeq_nil_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

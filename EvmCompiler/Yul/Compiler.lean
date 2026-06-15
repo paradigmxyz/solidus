@@ -1931,6 +1931,109 @@ theorem uncheckedBoundPrimitiveLowering_of_lower1Unchecked?
                     hSeq hOutputs
               · simp [hOp, hBound, hArgs, hSeq, hOutputs] at hLower
 
+inductive UncheckedPrimitiveLowering (results : Nat) :
+    Fresh.State → EvmYul.Operation .Yul → List AstExpr →
+      List Functions.Stmt → Locals.Expr results → Fresh.State → Prop where
+  | direct
+      {state : Fresh.State}
+      {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+      {op : Structured.BasicOp}
+      {lowerArgs : List (Locals.Expr 1)}
+      {seq : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+      (hDirect : List.directPureArgsSafe? args = true)
+      (hOp : Prim.toUncheckedBasicOp? prim = some op)
+      (hArgs : List.toLocals1? args = some lowerArgs)
+      (hSeq :
+        List.toStackSeq? lowerArgs
+            (Expressions.Structured.BasicOp.inputs op) =
+          some seq)
+      (hOutputs : Expressions.Structured.BasicOp.outputs op = results) :
+      UncheckedPrimitiveLowering results state prim args []
+        (cast hOutputs (.prim op seq)) state
+  | bound
+      {state final : Fresh.State}
+      {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+      {op : Structured.BasicOp}
+      {pre : List Functions.Stmt}
+      {lowerArgs : List (Locals.Expr 1)}
+      {seq : Locals.ExprSeq (Expressions.Structured.BasicOp.inputs op)}
+      (hBound : List.directPureArgsSafe? args = false)
+      (hOp : Prim.toUncheckedBasicOp? prim = some op)
+      (hArgs :
+        List.UncheckedBoundLowering state args pre lowerArgs final)
+      (hSeq :
+        List.toStackSeq? lowerArgs
+            (Expressions.Structured.BasicOp.inputs op) =
+          some seq)
+      (hOutputs : Expressions.Structured.BasicOp.outputs op = results) :
+      UncheckedPrimitiveLowering results state prim args pre
+        (cast hOutputs (.prim op seq)) final
+
+theorem uncheckedPrimitiveLowering_of_lowerUnchecked?
+    {results : Nat}
+    {state final : Fresh.State}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : Locals.Expr results}
+    (hLower :
+      lowerUnchecked? results state (.Call (.inl prim) args) =
+        some (pre, lower, final)) :
+    UncheckedPrimitiveLowering results state prim args
+      pre lower final := by
+  unfold lowerUnchecked? at hLower
+  cases hOp : Prim.toUncheckedBasicOp? prim with
+  | none =>
+      simp [hOp] at hLower
+  | some op =>
+      cases hDirect : List.directPureArgsSafe? args with
+      | false =>
+          cases hArgs : List.lowerBound1Unchecked? state args with
+          | none =>
+              simp [hOp, hDirect, hArgs] at hLower
+          | some result =>
+              rcases result with ⟨preArgs, lowerArgs, argsState⟩
+              cases hSeq :
+                  List.toStackSeq? lowerArgs
+                    (Expressions.Structured.BasicOp.inputs op) with
+              | none =>
+                  simp [hOp, hDirect, hArgs, hSeq] at hLower
+              | some seq =>
+                  by_cases hOutputs :
+                      Expressions.Structured.BasicOp.outputs op = results
+                  · have hTuple :
+                        (preArgs, cast hOutputs (.prim op seq), argsState) =
+                          (pre, lower, final) := by
+                      simpa [hOp, hDirect, hArgs, hSeq, hOutputs] using hLower
+                    cases hTuple
+                    exact
+                      UncheckedPrimitiveLowering.bound
+                        hDirect hOp
+                        (List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+                          hArgs)
+                        hSeq hOutputs
+                  · simp [hOp, hDirect, hArgs, hSeq, hOutputs] at hLower
+      | true =>
+          cases hArgs : List.toLocals1? args with
+          | none =>
+              simp [hOp, hDirect, hArgs] at hLower
+          | some lowerArgs =>
+              cases hSeq :
+                  List.toStackSeq? lowerArgs
+                    (Expressions.Structured.BasicOp.inputs op) with
+              | none =>
+                  simp [hOp, hDirect, hArgs, hSeq] at hLower
+              | some seq =>
+                  by_cases hOutputs :
+                      Expressions.Structured.BasicOp.outputs op = results
+                  · have hTuple :
+                        ([], cast hOutputs (.prim op seq), state) =
+                          (pre, lower, final) := by
+                      simpa [hOp, hDirect, hArgs, hSeq, hOutputs] using hLower
+                    cases hTuple
+                    exact
+                      UncheckedPrimitiveLowering.direct
+                        hDirect hOp hArgs hSeq hOutputs
+                  · simp [hOp, hDirect, hArgs, hSeq, hOutputs] at hLower
+
 inductive UncheckedCallArgsLowering :
     Fresh.State → List AstExpr → List Functions.Stmt →
       List (Locals.Expr 1) → Fresh.State → Prop where
