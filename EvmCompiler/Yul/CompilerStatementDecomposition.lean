@@ -42,6 +42,34 @@ theorem toFunctionsListUncheckedFuel?_leave_parts
       simp [toFunctionsListUncheckedFuel?] at hLower
       exact ⟨hLower.1.symm, hLower.2.symm⟩
 
+theorem toFunctionsListUncheckedFuel?_continue_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before .Continue =
+        some (lower, after)) :
+    lower = [.cont] ∧ after = before := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      exact ⟨hLower.1.symm, hLower.2.symm⟩
+
+theorem toFunctionsListUncheckedFuel?_break_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before .Break =
+        some (lower, after)) :
+    lower = [.brk] ∧ after = before := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      exact ⟨hLower.1.symm, hLower.2.symm⟩
+
 theorem toFunctionsListUncheckedFuel?_let_one_parts
     {fuel : Nat} {before after : Fresh.State}
     {name : EvmYul.Identifier} {expr : AstExpr}

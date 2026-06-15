@@ -1090,6 +1090,73 @@ theorem of_let_call
              hFreshExtends candidate
                (hLayout candidate hOuter) }⟩
 
+private theorem of_single_nonregular
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {before after : Fresh.State}
+    {layout finalLayout : List Name}
+    {lower : List Functions.Stmt}
+    {stmt : Functions.Stmt}
+    {sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hLower : lower = [stmt])
+    (hAfter : after = before)
+    (hTargetStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 1 stmt target =
+        .ok (outcome, ctx))
+    (hNonregular : outcome.mode ≠ .regular)
+    (hRelation :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel finalLayout
+        sourceFinal outcome)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used outcome.state.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used finalLayout) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower before after layout
+        sourceFinal target ctx) := by
+  subst lower
+  subst after
+  have hTargetRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 2 { stmts := [stmt] } target =
+        .ok (outcome, ctx) := by
+    exact
+      Functions.Source.Effectful.Block.runOpen_cons_nonregular
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hTargetStmt hNonregular
+  exact
+    ⟨{ finalLayout := finalLayout
+       outcome := outcome
+       finalCtx := ctx
+       run := ⟨2, hTargetRun⟩
+       relation := hRelation
+       domain := hDomain
+       scope := hScope
+       freshExtends := Fresh.Extends.refl before
+       retains := fun hRegular => False.elim (hNonregular hRegular)
+       layoutWithin := hLayout }⟩
+
 theorem of_leave
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -1172,21 +1239,6 @@ theorem of_leave
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
         program hLeaveScope
-  have hTargetRun :
-      Functions.Source.Effectful.Block.runOpen
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          program ctx 2 { stmts := [.leave] } target =
-        .ok
-          (Functions.Source.Effectful.Outcome.leave targetLeave, ctx) := by
-    exact
-      Functions.Source.Effectful.Block.runOpen_cons_nonregular
-        (Functions.ObserverSemantics.stateModel transcript)
-        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript)
-        program hTargetStmt
-          (Functions.Source.Effectful.Outcome.leave_not_regular targetLeave)
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel leaveLayout source targetLeave := by
     simpa [targetLeave] using
@@ -1214,22 +1266,248 @@ theorem of_leave
       StateRelation.Vars.NamesWithin before.used leaveLayout := by
     intro name hMem
     exact hLayout name (hLeaveSubset name hMem)
-  exact
-    ⟨{ finalLayout := leaveLayout
-       outcome := Functions.Source.Effectful.Outcome.leave targetLeave
-       finalCtx := ctx
-       run := ⟨2, hTargetRun⟩
-       relation := hOutcomeRel
-       domain := by
-         simpa [targetLeave, Locals.Source.State.restrictTo] using
-           hDomain.restrictTo
-       scope := hScope
-       freshExtends := Fresh.Extends.refl before
-       retains := fun hRegular =>
-         False.elim
-           (Functions.Source.Effectful.Outcome.leave_not_regular
-             targetLeave hRegular)
-       layoutWithin := hLeaveUsed }⟩
+  exact of_single_nonregular
+    rfl rfl hTargetStmt
+    (Functions.Source.Effectful.Outcome.leave_not_regular targetLeave)
+    hOutcomeRel
+    (by
+      simpa [targetLeave, Locals.Source.State.restrictTo] using
+        hDomain.restrictTo)
+    hScope hLeaveUsed
+
+theorem of_break
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout breakLayout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Break =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hBreakScope : ctx.breakScope? = some breakLayout)
+    (hBreakSubset :
+      ∀ name, name ∈ breakLayout → name ∈ layout)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Break codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨hLowerStmts, hAfter⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_break_parts hLower
+  obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_break_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, _hSourceDomain⟩ :=
+    hRel.2
+  let sourceBreak :=
+    source.withSource (EvmYul.Yul.State.setBreak source.source)
+  have hSourceFinal' : sourceFinal = sourceBreak := by
+    simpa [sourceBreak] using hSourceFinal
+  have hSourceBreak :
+      sourceBreak.source =
+        .Checkpoint (.Break sourceShared sourceVars) := by
+    change
+      EvmYul.Yul.State.setBreak source.source =
+        .Checkpoint (.Break sourceShared sourceVars)
+    rw [hSource]
+    rfl
+  let targetBreak :=
+    target.withSource (target.source.restrictTo breakLayout)
+  have hTargetStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 1 .brk target =
+        .ok
+          (Functions.Source.Effectful.Outcome.brk targetBreak, ctx) := by
+    simpa [targetBreak] using
+      Functions.Source.Effectful.Stmt.run_brk_of_scope
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hBreakScope
+  have hWeakRel :
+      StateRelation.Replay.ScopedRel codeRel breakLayout source targetBreak := by
+    simpa [targetBreak] using
+      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
+        hRel hBreakSubset
+  have hSourceRestored :
+      sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
+    rw [hSourceFinal']
+    change sourceBreak.withSource (.Ok sourceShared sourceVars) = source
+    change source.withSource (.Ok sourceShared sourceVars) = source
+    rw [← hSource]
+    exact Simulation.ResourceReplay.State.withSource_self source
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel breakLayout
+        sourceFinal
+        (Functions.Source.Effectful.Outcome.brk targetBreak) := by
+    apply
+      FunctionsObserverOutcome.ScopedOutcomeRel.brk
+        (shared := sourceShared) (vars := sourceVars)
+    · rw [hSourceFinal']
+      exact hSourceBreak
+    · rw [hSourceRestored]
+      exact hWeakRel
+  have hBreakUsed :
+      StateRelation.Vars.NamesWithin before.used breakLayout := by
+    intro name hMem
+    exact hLayout name (hBreakSubset name hMem)
+  exact of_single_nonregular
+    hLowerStmts hAfter hTargetStmt
+    (Functions.Source.Effectful.Outcome.brk_not_regular targetBreak)
+    hOutcomeRel
+    (by
+      simpa [targetBreak, Locals.Source.State.restrictTo] using
+        hDomain.restrictTo)
+    hScope hBreakUsed
+
+theorem of_continue
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout continueLayout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Continue =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hContinueScope : ctx.continueScope? = some continueLayout)
+    (hContinueSubset :
+      ∀ name, name ∈ continueLayout → name ∈ layout)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Continue codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨hLowerStmts, hAfter⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_continue_parts hLower
+  obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_continue_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, _hSourceDomain⟩ :=
+    hRel.2
+  let sourceContinue :=
+    source.withSource (EvmYul.Yul.State.setContinue source.source)
+  have hSourceFinal' : sourceFinal = sourceContinue := by
+    simpa [sourceContinue] using hSourceFinal
+  have hSourceContinue :
+      sourceContinue.source =
+        .Checkpoint (.Continue sourceShared sourceVars) := by
+    change
+      EvmYul.Yul.State.setContinue source.source =
+        .Checkpoint (.Continue sourceShared sourceVars)
+    rw [hSource]
+    rfl
+  let targetContinue :=
+    target.withSource (target.source.restrictTo continueLayout)
+  have hTargetStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx 1 .cont target =
+        .ok
+          (Functions.Source.Effectful.Outcome.cont targetContinue, ctx) := by
+    simpa [targetContinue] using
+      Functions.Source.Effectful.Stmt.run_cont_of_scope
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hContinueScope
+  have hWeakRel :
+      StateRelation.Replay.ScopedRel codeRel continueLayout
+        source targetContinue := by
+    simpa [targetContinue] using
+      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
+        hRel hContinueSubset
+  have hSourceRestored :
+      sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
+    rw [hSourceFinal']
+    change
+      sourceContinue.withSource (.Ok sourceShared sourceVars) = source
+    change source.withSource (.Ok sourceShared sourceVars) = source
+    rw [← hSource]
+    exact Simulation.ResourceReplay.State.withSource_self source
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel continueLayout
+        sourceFinal
+        (Functions.Source.Effectful.Outcome.cont targetContinue) := by
+    apply
+      FunctionsObserverOutcome.ScopedOutcomeRel.cont
+        (shared := sourceShared) (vars := sourceVars)
+    · rw [hSourceFinal']
+      exact hSourceContinue
+    · rw [hSourceRestored]
+      exact hWeakRel
+  have hContinueUsed :
+      StateRelation.Vars.NamesWithin before.used continueLayout := by
+    intro name hMem
+    exact hLayout name (hContinueSubset name hMem)
+  exact of_single_nonregular
+    hLowerStmts hAfter hTargetStmt
+    (Functions.Source.Effectful.Outcome.cont_not_regular targetContinue)
+    hOutcomeRel
+    (by
+      simpa [targetContinue, Locals.Source.State.restrictTo] using
+        hDomain.restrictTo)
+    hScope hContinueUsed
 
 end OpenResult
 

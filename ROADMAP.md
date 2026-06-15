@@ -1655,7 +1655,11 @@ corridor.
   composition does not reconstruct hidden semantics. Direct function-call
   assignment and declaration are also open results: both use the shared
   `ScopedReturnedCall` runtime, while declaration composes the ordinary
-  zero-initialization prefix. The next obligation is break/continue plus the
+  zero-initialization prefix. Break and continue now compose the canonical Yul
+  checkpoints, Functions-owned handler-scope restriction, and ordinary direct
+  lowering through the same weak abrupt-flow relation as leave. A generic
+  single-nonregular assembler owns their common block execution shape without
+  interpreting control in the observer layer. The next obligation is the
   structural statement-list induction, followed by block and compound-control
   closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul

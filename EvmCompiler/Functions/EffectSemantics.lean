@@ -1473,6 +1473,26 @@ theorem run_leave_of_scope {σ : Type}
       .ok (Outcome.leave (model.restrictTo scope state), ctx) := by
   simp [Stmt.run, hScope]
 
+theorem run_brk_of_scope {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state : σ}
+    {scope : List Name}
+    (hScope : ctx.breakScope? = some scope) :
+    Stmt.run model prim program ctx fuel .brk state =
+      .ok (Outcome.brk (model.restrictTo scope state), ctx) := by
+  simp [Stmt.run, hScope]
+
+theorem run_cont_of_scope {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state : σ}
+    {scope : List Name}
+    (hScope : ctx.continueScope? = some scope) :
+    Stmt.run model prim program ctx fuel .cont state =
+      .ok (Outcome.cont (model.restrictTo scope state), ctx) := by
+  simp [Stmt.run, hScope]
+
 /--
 A successful plain terminal statement has the requested halt mode.
 -/
