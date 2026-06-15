@@ -1545,7 +1545,11 @@ corridor.
   The next expression boundary is `lowerBound1Unchecked?`: execute generated
   argument-binding preambles, preserve hidden temporary ownership, and compose
   function-call expressions. Statements, loops, calls, and whole-main
-  composition follow.
+  composition follow. The ordinary compiler now exposes
+  `UncheckedBoundLowering`, distinguishing direct and generated-binding cases,
+  together with lower-argument arity and fresh-state extension facts. The
+  semantic proof can therefore induct on the checked compiler derivation
+  instead of duplicating the lowering or accepting temporary evidence.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

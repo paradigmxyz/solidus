@@ -151,6 +151,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
+#check EvmCompiler.Yul.Fresh.fresh?_components
+#check EvmCompiler.Yul.Fresh.extends_of_fresh?
+#check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering
+#check EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+#check EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_length_lowerArgs_eq
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

@@ -52,6 +52,68 @@ def fresh? (state : State) : Option (Name × State) := do
   let name ← freshAux state.used 0 (state.used.length + 1)
   some (name, { used := name :: state.used })
 
+def Extends (before after : State) : Prop :=
+  ∀ name, name ∈ before.used → name ∈ after.used
+
+theorem Extends.refl (state : State) :
+    Extends state state := by
+  intro name hMem
+  exact hMem
+
+theorem Extends.trans
+    {first second third : State}
+    (hFirst : Extends first second)
+    (hSecond : Extends second third) :
+    Extends first third := by
+  intro name hMem
+  exact hSecond name (hFirst name hMem)
+
+theorem freshAux_not_mem
+    {used : List Name} {idx fuel : Nat} {name : Name}
+    (hFresh : freshAux used idx fuel = some name) :
+    name ∉ used := by
+  induction fuel generalizing idx with
+  | zero =>
+      simp [freshAux] at hFresh
+  | succ fuel ih =>
+      simp only [freshAux] at hFresh
+      split at hFresh
+      · rename_i hContains
+        exact ih hFresh
+      · rename_i hContains
+        injection hFresh with hName
+        rw [← hName]
+        simpa using hContains
+
+theorem fresh?_components
+    {state state' : State} {name : Name}
+    (hFresh : fresh? state = some (name, state')) :
+    state'.used = name :: state.used ∧ name ∉ state.used := by
+  unfold fresh? at hFresh
+  cases hAux :
+      freshAux state.used 0 (state.used.length + 1) with
+  | none =>
+      simp [hAux] at hFresh
+  | some freshName =>
+      simp [hAux] at hFresh
+      rcases hFresh with ⟨rfl, rfl⟩
+      exact ⟨rfl, freshAux_not_mem hAux⟩
+
+theorem extends_of_fresh?
+    {state state' : State} {name : Name}
+    (hFresh : fresh? state = some (name, state')) :
+    Extends state state' := by
+  obtain ⟨hUsed, _hNotMem⟩ := fresh?_components hFresh
+  intro key hMem
+  rw [hUsed]
+  exact List.mem_cons_of_mem name hMem
+
+theorem not_mem_of_fresh?
+    {state state' : State} {name : Name}
+    (hFresh : fresh? state = some (name, state')) :
+    name ∉ state.used :=
+  (fresh?_components hFresh).2
+
 def freshMany? : Nat → State → Option (List Name × State)
   | 0, state => some ([], state)
   | count + 1, state => do
@@ -1242,6 +1304,186 @@ theorem lowerBound1?_lowerArgs_vars
       lowerArgs = names.map (fun name => (.var name : Locals.Expr 1)) :=
   BoundLowering.lowerArgs_vars
     (boundLowering_of_lowerBound1? hLower)
+
+inductive UncheckedBoundLowering :
+    Fresh.State → List AstExpr → List Functions.Stmt →
+      List (Locals.Expr 1) → Fresh.State → Prop where
+  | nil (state : Fresh.State) :
+      UncheckedBoundLowering state [] [] [] state
+  | direct
+      {state stateRest stateHead : Fresh.State}
+      {expr : AstExpr} {rest : List AstExpr}
+      {preRest preHead : List Functions.Stmt}
+      {lowerRest : List (Locals.Expr 1)}
+      {lowerHead : Locals.Expr 1}
+      (hRest :
+        UncheckedBoundLowering state rest preRest lowerRest stateRest)
+      (hHead :
+        EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
+          some (preHead, lowerHead, stateHead))
+      (hDirect :
+        directPureArgSafeAt? lowerRest.length expr = true ∧
+          lowerRest.length < 4) :
+      UncheckedBoundLowering state (expr :: rest)
+        (preRest ++ preHead) (lowerHead :: lowerRest) stateHead
+  | bound
+      {state stateRest stateHead stateFresh : Fresh.State}
+      {expr : AstExpr} {rest : List AstExpr}
+      {preRest preHead : List Functions.Stmt}
+      {lowerRest : List (Locals.Expr 1)}
+      {lowerHead : Locals.Expr 1} {tmp : Name}
+      (hRest :
+        UncheckedBoundLowering state rest preRest lowerRest stateRest)
+      (hHead :
+        EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
+          some (preHead, lowerHead, stateHead))
+      (hDirect :
+        ¬(directPureArgSafeAt? lowerRest.length expr = true ∧
+          lowerRest.length < 4))
+      (hFresh : Fresh.fresh? stateHead = some (tmp, stateFresh)) :
+      UncheckedBoundLowering state (expr :: rest)
+        (preRest ++ preHead ++ [Functions.Stmt.let_ tmp lowerHead])
+        (.var tmp :: lowerRest) stateFresh
+
+namespace UncheckedBoundLowering
+
+theorem to_lowerBound1Unchecked?
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedBoundLowering state args pre lowerArgs state') :
+    lowerBound1Unchecked? state args =
+      some (pre, lowerArgs, state') := by
+  induction hLowering with
+  | nil =>
+      rfl
+  | @direct stateRest stateHead expr rest preRest preHead lowerRest
+      lowerHead hRest hHead hDirect ih =>
+      have hHead' :
+          lowerUnchecked? 1 stateRest expr =
+            some (preHead, lowerHead, stateHead) := by
+        simpa [lower1Unchecked?] using hHead
+      simp [lowerBound1Unchecked?, ih, hHead', hDirect]
+  | @bound stateRest stateHead stateFresh expr rest preRest preHead
+      lowerRest lowerHead tmp hRest hHead hDirect hFresh ih =>
+      have hHead' :
+          lowerUnchecked? 1 stateRest expr =
+            some (preHead, lowerHead, stateHead) := by
+        simpa [lower1Unchecked?] using hHead
+      simp [lowerBound1Unchecked?, ih, hHead', hDirect, hFresh]
+
+theorem length_lowerArgs_eq
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedBoundLowering state args pre lowerArgs state') :
+    lowerArgs.length = args.length := by
+  induction hLowering with
+  | nil =>
+      rfl
+  | direct _hRest _hHead _hDirect ih =>
+      simp [ih]
+  | bound _hRest _hHead _hDirect _hFresh ih =>
+      simp [ih]
+
+theorem stateExtends
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedBoundLowering state args pre lowerArgs state')
+    (hExpr :
+      ∀ {before after : Fresh.State} {expr : AstExpr}
+        {exprPre : List Functions.Stmt} {lower : Locals.Expr 1},
+        EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
+            some (exprPre, lower, after) →
+          Fresh.Extends before after) :
+    Fresh.Extends state state' := by
+  induction hLowering with
+  | nil =>
+      exact Fresh.Extends.refl _
+  | direct _hRest hHead _hDirect ih =>
+      exact Fresh.Extends.trans ih (hExpr hHead)
+  | bound _hRest hHead _hDirect hFresh ih =>
+      exact
+        Fresh.Extends.trans
+          (Fresh.Extends.trans ih (hExpr hHead))
+          (Fresh.extends_of_fresh? hFresh)
+
+end UncheckedBoundLowering
+
+theorem uncheckedBoundLowering_of_lowerBound1Unchecked?
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLower :
+      lowerBound1Unchecked? state args =
+        some (pre, lowerArgs, state')) :
+    UncheckedBoundLowering state args pre lowerArgs state' := by
+  induction args generalizing state pre lowerArgs state' with
+  | nil =>
+      have hTuple :
+          ([], [], state) = (pre, lowerArgs, state') := by
+        simpa [lowerBound1Unchecked?] using hLower
+      cases hTuple
+      exact UncheckedBoundLowering.nil state
+  | cons expr rest ih =>
+      simp [lowerBound1Unchecked?] at hLower
+      cases hRest : lowerBound1Unchecked? state rest with
+      | none =>
+          simp [hRest] at hLower
+      | some restResult =>
+          rcases restResult with ⟨preRest, lowerRest, stateRest⟩
+          cases hHead :
+              EvmCompiler.Yul.Expr.lowerUnchecked? 1 stateRest expr with
+          | none =>
+              simp [hRest, hHead] at hLower
+          | some headResult =>
+              rcases headResult with ⟨preHead, lowerHead, stateHead⟩
+              by_cases hDirect :
+                  directPureArgSafeAt? lowerRest.length expr = true ∧
+                    lowerRest.length < 4
+              · have hHeadLower1 :
+                    EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
+                      some (preHead, lowerHead, stateHead) := by
+                  simpa [EvmCompiler.Yul.Expr.lower1Unchecked?] using hHead
+                have hTuple :
+                    (preRest ++ preHead, lowerHead :: lowerRest, stateHead) =
+                      (pre, lowerArgs, state') := by
+                  simpa [lowerBound1Unchecked?, hRest, hHead, hDirect]
+                    using hLower
+                cases hTuple
+                exact
+                  UncheckedBoundLowering.direct
+                    (ih hRest) hHeadLower1 hDirect
+              · cases hFresh : Fresh.fresh? stateHead with
+                | none =>
+                    simp [hRest, hHead, hDirect, hFresh] at hLower
+                | some freshResult =>
+                    rcases freshResult with ⟨tmp, stateFresh⟩
+                    have hTuple :
+                        (preRest ++ preHead ++
+                            [Functions.Stmt.let_ tmp lowerHead],
+                          .var tmp :: lowerRest, stateFresh) =
+                          (pre, lowerArgs, state') := by
+                      simpa [lowerBound1Unchecked?, hRest, hHead,
+                        hDirect, hFresh] using hLower
+                    cases hTuple
+                    have hHeadLower1 :
+                        EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
+                          some (preHead, lowerHead, stateHead) := by
+                      simpa [EvmCompiler.Yul.Expr.lower1Unchecked?] using hHead
+                    exact
+                      UncheckedBoundLowering.bound
+                        (ih hRest) hHeadLower1 hDirect hFresh
+
+theorem lowerBound1Unchecked?_length_lowerArgs_eq
+    {state state' : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+    (hLower :
+      lowerBound1Unchecked? state args =
+        some (pre, lowerArgs, state')) :
+    lowerArgs.length = args.length :=
+  UncheckedBoundLowering.length_lowerArgs_eq
+    (uncheckedBoundLowering_of_lowerBound1Unchecked? hLower)
 
 end List
 

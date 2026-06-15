@@ -352,6 +352,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
+#check EvmCompiler.Yul.Fresh.fresh?_components
+#check EvmCompiler.Yul.Fresh.extends_of_fresh?
+#check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering
+#check EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+#check EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_length_lowerArgs_eq
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Yul.EndToEnd.State.InitialRel
@@ -1119,6 +1124,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
+#print axioms EvmCompiler.Yul.Fresh.fresh?_components
+#print axioms EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
