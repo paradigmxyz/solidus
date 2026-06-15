@@ -80,6 +80,14 @@ abbrev evalCondition {σ : Type} (model : StateModel σ)
     (state : σ) : Except EVMException (σ × Bool) :=
   Locals.Source.Effectful.Expr.evalCondition model prim expr state
 
+theorem eval_var {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {name : Name} {state : σ} {value : Word}
+    (hLookup : model.vars state name = some value) :
+    eval model prim (.var name : Functions.Expr 1) state =
+      .ok (state, [value]) := by
+  simp [eval, Locals.Source.Effectful.Expr.eval, hLookup]
+
 end Expr
 
 namespace ArgList
@@ -3618,6 +3626,19 @@ theorem Stmt.run_success_unique {σ : Type}
   exact Except.ok.inj hRight'
 
 namespace Block
+
+/--
+An empty open block succeeds at every positive fuel with the unchanged regular
+state and context.
+-/
+theorem runOpen_nil {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) (ctx : Source.Ctx) (fuel : Nat) (state : σ) :
+    Block.runOpen model prim program ctx (fuel + 1)
+        { stmts := [] } state =
+      .ok (Outcome.regular state, ctx) := by
+  simp [Block.runOpen, Outcome.regular,
+    Locals.Source.Effectful.Outcome.regular]
 
 /--
 Successful empty open-block execution is the unchanged regular state and

@@ -1141,6 +1141,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.eval_function_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_ok_length
 #print axioms EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
 #print axioms EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
@@ -1155,9 +1157,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.names
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem
 #print axioms EvmCompiler.Yul.Expr.uncheckedFunctionCallLowering_of_lower1Unchecked?
+#print axioms EvmCompiler.Yul.Expr.UncheckedFunctionCallLowering.parts
 #print axioms EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
 #print axioms EvmCompiler.Yul.Contract.functionEntries_names_nodup
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofFunctionCall
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

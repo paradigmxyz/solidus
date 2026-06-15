@@ -25,6 +25,16 @@ def identName (name : EvmYul.Identifier) : Name :=
 def identNames (names : List EvmYul.Identifier) : List Name :=
   names.map identName
 
+theorem identNames_eq_self (names : List EvmYul.Identifier) :
+    identNames names = names := by
+  induction names with
+  | nil =>
+      rfl
+  | cons head tail ih =>
+      simp only [identNames, List.map_cons] at ih ⊢
+      rw [ih]
+      rfl
+
 namespace Fresh
 
 structure State where
@@ -1683,6 +1693,26 @@ theorem uncheckedFunctionCallLowering_of_lower1Unchecked?
                       (List.uncheckedBoundLowering_of_lowerBound1Unchecked?
                         hArgs))
                     hFresh
+
+theorem UncheckedFunctionCallLowering.parts
+    {state final : Fresh.State} {functionName : Name}
+    {args : List AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    (hLowering :
+      UncheckedFunctionCallLowering state functionName args
+        pre lower final) :
+    ∃ argsState tmp preArgs lowerArgs,
+      UncheckedCallArgsLowering state args
+        preArgs lowerArgs argsState ∧
+      Fresh.fresh? argsState = some (tmp, final) ∧
+      pre =
+        preArgs ++
+          [Functions.Stmt.let_ tmp (.lit zero),
+            Functions.Stmt.call [tmp] functionName lowerArgs] ∧
+      lower = .var tmp := by
+  cases hLowering with
+  | call _hSupported hArgs hFresh =>
+      exact ⟨_, _, _, _, hArgs, hFresh, rfl, rfl⟩
 
 def Supported (results : Nat) (expr : AstExpr) : Prop :=
   ∃ state pre lower state',

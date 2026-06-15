@@ -1171,6 +1171,19 @@ theorem TargetDomainWithin.insert
   · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
     exact List.mem_cons_of_mem name (hDomain key result hLookup)
 
+theorem TargetDomainWithin.insert_visible
+    {used : List Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin used target)
+    {name : Name} {value : Assembly.Word}
+    (hMem : name ∈ used) :
+    TargetDomainWithin used
+      (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  by_cases hEq : key = name
+  · simpa [hEq] using hMem
+  · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
+    exact hDomain key result hLookup
+
 theorem TargetDomainWithin.congr
     {used : List Name} {left right : Locals.Source.Store}
     (hDomain : TargetDomainWithin used left)
@@ -1838,6 +1851,27 @@ theorem restore_call
   simp [hBodySource, EvmYul.Yul.State.overwrite?,
     EvmYul.Yul.State.setStore]
 
+theorem restore_call_lookup
+    {codeRel : CodeRel} {layout : List Name}
+    {callerSource bodySource : EvmYul.Yul.State}
+    {callerTarget bodyTarget : Locals.Source.State}
+    (hCaller : Rel codeRel callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel layout bodySource.reviveJump bodyTarget)
+    (name : Name) :
+    ((bodySource.reviveJump.overwrite? callerSource).setStore
+        callerSource).lookup? name =
+      callerSource.lookup? name := by
+  rcases hCaller with
+    ⟨callerShared, callerVars, hCallerSource,
+      _hCallerShared, _hCallerVars⟩
+  rcases hBody with
+    ⟨bodyShared, bodyVars, hBodySource,
+      _hBodyShared, _hBodyVars, _hBodyDomain⟩
+  subst callerSource
+  simp [hBodySource, EvmYul.Yul.State.overwrite?,
+    EvmYul.Yul.State.setStore, EvmYul.Yul.State.lookup?]
+
 end Regular
 
 namespace Replay
@@ -2030,6 +2064,23 @@ theorem restore_call
   exact
     ⟨hBody.1,
       Regular.restore_call hCaller.2 hBody.2⟩
+
+theorem restore_call_lookup
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {callerSource bodySource :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {callerTarget bodyTarget :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hCaller : Rel codeRel callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel layout
+        (bodySource.withSource bodySource.source.reviveJump) bodyTarget)
+    (name : Name) :
+    ((bodySource.source.reviveJump.overwrite?
+        callerSource.source).setStore callerSource.source).lookup? name =
+      callerSource.source.lookup? name :=
+  Regular.restore_call_lookup hCaller.2 hBody.2 name
 
 theorem scopedExact_consumedExactly_iff
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

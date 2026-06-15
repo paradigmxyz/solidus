@@ -1579,9 +1579,16 @@ corridor.
   function lowering exposes the selected target body; and
   `FunctionsObserverCall.ReturnedBody.compose` derives target `runBody`, exact
   return values, and caller-local restoration from the recursive body result.
-  The next boundary constructs the complete function-call `PreparedValue` by
-  combining that call result with generated result-local initialization,
-  assignment, and final variable evaluation.
+  `FunctionsObserverCall.PreparedValue.ofFunctionCall` now constructs the
+  complete function-call value from the ordinary expression lowering,
+  compiler-selected callee, canonical source call, generated result-local
+  initialization, checked body result, assignment, restoration, and final
+  variable evaluation. Its only recursive premises are the pass-owned
+  source-fuel expression/body induction interfaces; they are internal proof
+  machinery, not part of the public boundary. The next boundary discharges
+  those interfaces by mutual source-fuel induction and derives call arity,
+  signature uniqueness, and singleton-return facts from
+  `SolcValidation.ProgramOk`.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
