@@ -1665,8 +1665,11 @@ corridor.
   statement-list induction over the real compiler and source semantics:
   regular heads recurse through exact layout/control invariants, while abrupt
   heads absorb the untouched suffix through compiler freshness monotonicity.
-  The next obligation is constructing the all-statement dispatcher, followed
-  by block and compound-control closure.
+  `RecursiveOpenStmtForward.ofCompound` is now the checked all-leaf dispatcher:
+  declarations, assignments, primitive/user calls, and abrupt control consume
+  statement-owned result interfaces with exact regular-flow layouts, while
+  block/if/switch/for delegate to the adjacent compound interface. The next
+  obligation is pass-owned block and compound-control closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

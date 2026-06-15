@@ -108,6 +108,36 @@ structure ScopedStmtResult
 
 namespace ScopedStmtResult
 
+def ofStatement
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (result :
+      FunctionsObserverStatement.OpenResult.Result
+        contract codeRel program stmt lower initial final entryLayout
+        sourceFinal target ctx)
+    (hControl :
+      ControlContextRel entryLayout
+        canBreak canContinue canLeave ctx) :
+    ScopedStmtResult contract codeRel program stmt lower
+      initial final entryLayout sourceFinal target ctx
+      canBreak canContinue canLeave :=
+  { openResult := result.openResult
+    regularLayout := result.regularLayout
+    regularControl := fun hRegular =>
+      ControlContextRel.transport hControl
+        (result.openResult.retains hRegular)
+        result.openResult.control }
+
 def ofOpen
     {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -255,6 +285,298 @@ def RecursiveOpenListForward
         (ScopedListResult contract codeRel targetProgram.toFunctions
           stmts lower before after layout sourceFinal target ctx
           canBreak canContinue canLeave)
+
+inductive CompoundStmt : AstStmt → Prop where
+  | block (body : List AstStmt) : CompoundStmt (.Block body)
+  | switch (scrutinee : AstExpr)
+      (cases : List (Word × List AstStmt)) (defaultBody : List AstStmt) :
+      CompoundStmt (.Switch scrutinee cases defaultBody)
+  | forLoop (cond : AstExpr) (post body : List AstStmt) :
+      CompoundStmt (.For cond post body)
+  | ifThen (cond : AstExpr) (body : List AstStmt) :
+      CompoundStmt (.If cond body)
+
+def RecursiveOpenCompoundForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool},
+    CompoundStmt stmt →
+      sourceFuel < bound →
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave stmt =
+        true →
+      StateRelation.Vars.NamesWithin before.used (Stmt.names stmt) →
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before stmt =
+        some (lower, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      StateRelation.Vars.NamesWithin before.used layout →
+      ControlContextRel layout canBreak canContinue canLeave ctx →
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel stmt (some sourceProgram.contract) source =
+        .ok sourceFinal →
+      Nonempty
+        (ScopedStmtResult contract codeRel targetProgram.toFunctions
+          stmt lower before after layout sourceFinal target ctx
+          canBreak canContinue canLeave)
+
+namespace RecursiveOpenStmtForward
+
+theorem ofCompound
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hCompound :
+      RecursiveOpenCompoundForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    RecursiveOpenStmtForward contract transcript codeRel
+      sourceProgram targetProgram profile bound := by
+  intro sourceFuel compilerFuel before after layout stmt lower
+    source sourceFinal target ctx canBreak canContinue canLeave
+    hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+  have hValueAt :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel :=
+    hValue.mono (Nat.le_of_lt hFuel)
+  have hExprAt :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel :=
+    hValueAt.expression
+  have hBodyAt :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel :=
+    hBody.mono (Nat.le_of_lt hFuel)
+  cases stmt with
+  | Block body =>
+      exact
+        hCompound (.block body) hFuel hOk hNames hLower hRel hDomain
+          hScope hLayout hControl hRun
+  | Switch scrutinee cases defaultBody =>
+      exact
+        hCompound (.switch scrutinee cases defaultBody)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+  | For cond post body =>
+      exact
+        hCompound (.forLoop cond post body)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+  | If cond body =>
+      exact
+        hCompound (.ifThen cond body)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+  | Let names value? =>
+      cases value? with
+      | none =>
+          have hNamesUsed :
+              StateRelation.Vars.NamesWithin before.used
+                (identNames names) := by
+            simpa [Stmt.names] using hNames
+          obtain ⟨result⟩ :=
+            FunctionsObserverStatement.OpenResult.of_let_none
+              hLower hRel hDomain hScope hLayout hNamesUsed hRun
+          exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+      | some value =>
+          by_cases hFunctionCall :
+              ∃ functionName functionArgs,
+                value = .Call (.inr functionName) functionArgs
+          · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+            have hExprOk :
+                SolcValidation.ExprOk? profile sourceProgram.contract
+                    layout names.length
+                    (.Call (.inr functionName) functionArgs) =
+                  true := by
+              simp [SolcValidation.StmtOk?] at hOk
+              exact hOk.2
+            have hNamesUsed :
+                StateRelation.Vars.NamesWithin before.used
+                  (identNames names) := by
+              intro candidate hMem
+              apply hNames candidate
+              exact List.mem_append_left _ hMem
+            obtain ⟨result⟩ :=
+              FunctionsObserverStatement.OpenResult.of_let_call
+                hDecomposition hProgramOk hExprOk hLower hRel hDomain
+                hScope hLayout hNamesUsed hValueAt hBodyAt hRun
+            exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+          · have hNotFunctionCall :
+                ∀ functionName functionArgs,
+                  value ≠ .Call (.inr functionName) functionArgs := by
+              intro functionName functionArgs hEq
+              exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+            obtain ⟨name, hNamesEq⟩ :=
+              Stmt.toFunctionsListUncheckedFuel?_let_noncall_singleton
+                hNotFunctionCall hLower
+            subst names
+            have hExprOk :
+                SolcValidation.ExprOk? profile sourceProgram.contract
+                    layout 1 value =
+                  true := by
+              simp [SolcValidation.StmtOk?] at hOk
+              exact hOk.2
+            have hNameUsed : identName name ∈ before.used := by
+              apply hNames
+              simp [Stmt.names, identNames, identName]
+            obtain ⟨result⟩ :=
+              FunctionsObserverStatement.OpenResult.of_let_one
+                (codeOverride := some sourceProgram.contract)
+                hNotFunctionCall hExprOk hLower hRel hDomain hScope
+                hLayout hNameUsed hValueAt hRun
+            exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+  | Assign names value =>
+      by_cases hFunctionCall :
+          ∃ functionName functionArgs,
+            value = .Call (.inr functionName) functionArgs
+      · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+        have hExprOk :
+            SolcValidation.ExprOk? profile sourceProgram.contract
+                layout names.length
+                (.Call (.inr functionName) functionArgs) =
+              true := by
+          simp [SolcValidation.StmtOk?] at hOk
+          exact hOk.2
+        obtain ⟨result⟩ :=
+          FunctionsObserverStatement.OpenResult.of_assign_call
+            hDecomposition hProgramOk hExprOk hLower hRel hDomain
+            hScope hLayout hValueAt hBodyAt hRun
+        exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+      · have hNotFunctionCall :
+            ∀ functionName functionArgs,
+              value ≠ .Call (.inr functionName) functionArgs := by
+          intro functionName functionArgs hEq
+          exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+        obtain ⟨name, hNamesEq⟩ :=
+          Stmt.toFunctionsListUncheckedFuel?_assign_noncall_singleton
+            hNotFunctionCall hLower
+        subst names
+        have hExprOk :
+            SolcValidation.ExprOk? profile sourceProgram.contract
+                layout 1 value =
+              true := by
+          simp [SolcValidation.StmtOk?] at hOk
+          exact hOk.2
+        obtain ⟨result⟩ :=
+          FunctionsObserverStatement.OpenResult.of_assign_one
+            hNotFunctionCall hExprOk hLower hRel hDomain hScope hLayout
+            hValueAt hRun
+        exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+  | ExprStmtCall value =>
+      cases value with
+      | Lit literal =>
+          simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+      | Var name =>
+          simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+      | Call callee args =>
+          cases callee with
+          | inl prim =>
+              have hExprOk :
+                  SolcValidation.ExprOk? profile sourceProgram.contract
+                      layout 0 (.Call (.inl prim) args) =
+                    true := by
+                simpa [SolcValidation.StmtOk?] using hOk
+              obtain
+                  ⟨evalPrevious, sourceAfterPrim, values,
+                    _hSourceFuel, hEvalValues, _hSourceFinal⟩ :=
+                Yul.Source.Effectful.exec_expr_primitive_ok_parts
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  hRun
+              obtain
+                  ⟨callFuel, sourceAfterArgs, reversedValues,
+                    _hEvalFuel, _hArgsRun, hEval⟩ :=
+                Yul.Source.Effectful.evalValues_primitive_ok_parts
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  hEvalValues
+              have hNonterminal :
+                  Prim.terminal? prim = none :=
+                ObserverSafety.SafeSemantics.terminal_none_of_eval_ok hEval
+              obtain ⟨result⟩ :=
+                FunctionsObserverStatement.OpenResult.of_expr_primitive
+                  hNonterminal hExprOk hLower hRel hDomain hScope hLayout
+                  hExprAt hRun
+              exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+          | inr functionName =>
+              have hExprOk :
+                  SolcValidation.ExprOk? profile sourceProgram.contract
+                      layout 0 (.Call (.inr functionName) args) =
+                    true := by
+                simpa [SolcValidation.StmtOk?] using hOk
+              obtain ⟨result⟩ :=
+                FunctionsObserverStatement.OpenResult.of_expr_call
+                  hDecomposition hProgramOk hExprOk hLower hRel hDomain
+                  hScope hLayout hExprAt hBodyAt hRun
+              exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+  | Break =>
+      have hEnabled : canBreak = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.breakScope
+      simp [ScopeOptionWithin, hEnabled] at hWithin
+      obtain ⟨breakLayout, hBreakScope, hBreakSubset⟩ := hWithin
+      obtain ⟨result⟩ :=
+        FunctionsObserverStatement.OpenResult.of_break
+          hLower hRel hDomain hScope hLayout hBreakScope hBreakSubset hRun
+      exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+  | Continue =>
+      have hEnabled : canContinue = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.continueScope
+      simp [ScopeOptionWithin, hEnabled] at hWithin
+      obtain ⟨continueLayout, hContinueScope, hContinueSubset⟩ := hWithin
+      obtain ⟨result⟩ :=
+        FunctionsObserverStatement.OpenResult.of_continue
+          hLower hRel hDomain hScope hLayout
+          hContinueScope hContinueSubset hRun
+      exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+  | Leave =>
+      have hEnabled : canLeave = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.leaveScope
+      simp [ScopeOptionWithin, hEnabled] at hWithin
+      obtain ⟨leaveLayout, hLeaveScope, hLeaveSubset⟩ := hWithin
+      obtain ⟨result⟩ :=
+        FunctionsObserverStatement.OpenResult.of_leave
+          hLower hRel hDomain hScope hLayout hLeaveScope hLeaveSubset hRun
+      exact ⟨ScopedStmtResult.ofStatement result hControl⟩
+
+end RecursiveOpenStmtForward
 
 namespace RecursiveOpenListForward
 

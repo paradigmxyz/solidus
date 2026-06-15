@@ -161,6 +161,81 @@ theorem toFunctionsListUncheckedFuel?_expr_primitive_parts
           rcases hLower with ⟨rfl, rfl⟩
           exact ⟨pre, lowerExpr, rfl, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_let_noncall_singleton
+    {fuel : Nat} {before after : Fresh.State}
+    {names : List EvmYul.Identifier} {expr : AstExpr}
+    {lower : List Functions.Stmt}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.Let names (some expr)) =
+        some (lower, after)) :
+    ∃ name, names = [name] := by
+  cases fuel with
+  | zero => cases hLower
+  | succ fuel =>
+      cases names with
+      | nil =>
+          cases expr with
+          | Lit value => cases hLower
+          | Var name => cases hLower
+          | Call callee args =>
+              cases callee with
+              | inl prim => cases hLower
+              | inr functionName =>
+                  exact (hNotFunctionCall functionName args rfl).elim
+      | cons name rest =>
+          cases rest with
+          | nil => exact ⟨name, rfl⟩
+          | cons next rest =>
+              cases expr with
+              | Lit value => cases hLower
+              | Var varName => cases hLower
+              | Call callee args =>
+                  cases callee with
+                  | inl prim => cases hLower
+                  | inr functionName =>
+                      exact (hNotFunctionCall functionName args rfl).elim
+
+theorem toFunctionsListUncheckedFuel?_assign_noncall_singleton
+    {fuel : Nat} {before after : Fresh.State}
+    {names : List EvmYul.Identifier} {expr : AstExpr}
+    {lower : List Functions.Stmt}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before (.Assign names expr) =
+        some (lower, after)) :
+    ∃ name, names = [name] := by
+  cases fuel with
+  | zero => cases hLower
+  | succ fuel =>
+      cases names with
+      | nil =>
+          cases expr with
+          | Lit value => cases hLower
+          | Var name => cases hLower
+          | Call callee args =>
+              cases callee with
+              | inl prim => cases hLower
+              | inr functionName =>
+                  exact (hNotFunctionCall functionName args rfl).elim
+      | cons name rest =>
+          cases rest with
+          | nil => exact ⟨name, rfl⟩
+          | cons next rest =>
+              cases expr with
+              | Lit value => cases hLower
+              | Var varName => cases hLower
+              | Call callee args =>
+                  cases callee with
+                  | inl prim => cases hLower
+                  | inr functionName =>
+                      exact (hNotFunctionCall functionName args rfl).elim
+
 end Stmt
 end Yul
 end EvmCompiler

@@ -527,6 +527,28 @@ def RecursiveScopedExpressionForward
           contract transcript codeRel targetProgram.toFunctions
           pre lower after layout source' target ctx value)
 
+namespace RecursiveScopedExpressionForward
+
+theorem mono
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {smaller bound : Nat}
+    (hForward :
+      RecursiveScopedExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hBound : smaller ≤ bound) :
+    RecursiveScopedExpressionForward contract transcript codeRel
+      sourceProgram targetProgram profile smaller := by
+  intro exprFuel before after layout expr pre lower source source'
+    target ctx value hFuel
+  exact hForward (lt_of_lt_of_le hFuel hBound)
+
+end RecursiveScopedExpressionForward
+
 def RecursiveScopedValueForward
     (contract : MemoryContract.Contract)
     (transcript : Trace)
@@ -564,6 +586,24 @@ def RecursiveScopedValueForward
               pre lower after layout source' target ctx value)
 
 namespace RecursiveScopedValueForward
+
+theorem mono
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {smaller bound : Nat}
+    (hForward :
+      RecursiveScopedValueForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hBound : smaller ≤ bound) :
+    RecursiveScopedValueForward contract transcript codeRel
+      sourceProgram targetProgram profile smaller := by
+  intro exprFuel before after layout expr pre lower source source'
+    target ctx values hFuel
+  exact hForward (lt_of_lt_of_le hFuel hBound)
 
 theorem expression
     {contract : MemoryContract.Contract}
@@ -652,6 +692,28 @@ def RecursiveBodyForward
           (ReturnedBody contract transcript codeRel
             targetProgram.toFunctions fn args targetFuel
             sourceAfterBody targetCaller)
+
+namespace RecursiveBodyForward
+
+theorem mono
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {smaller bound : Nat}
+    (hForward :
+      RecursiveBodyForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hBound : smaller ≤ bound) :
+    RecursiveBodyForward contract transcript codeRel
+      sourceProgram targetProgram profile smaller := by
+  intro sourceFuel before after params returns body fn args
+    paramStore sourceCaller sourceAfterBody targetCaller hFuel
+  exact hForward (lt_of_lt_of_le hFuel hBound)
+
+end RecursiveBodyForward
 
 namespace ScopedReturnedCall
 

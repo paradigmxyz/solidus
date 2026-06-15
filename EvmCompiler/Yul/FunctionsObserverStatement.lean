@@ -353,6 +353,27 @@ end InitNames
 
 namespace OpenResult
 
+structure Result
+    {transcript : Trace}
+    (contract : MemoryContract.Contract)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (stmt : AstStmt)
+    (lower : List Functions.Stmt)
+    (initial final : Fresh.State)
+    (entryLayout : List Name)
+    (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) where
+  openResult :
+    FunctionsObserverOutcome.ScopedOpenResult
+      contract codeRel program lower initial final entryLayout
+      sourceFinal target ctx
+  regularLayout :
+    openResult.outcome.mode = .regular →
+      openResult.finalLayout =
+        SolcValidation.StmtOutVars entryLayout stmt
+
 theorem of_let_none
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -393,9 +414,8 @@ theorem of_let_none
           codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel program lower before after layout
-        sourceFinal target ctx) := by
+      (Result contract codeRel program (.Let names none)
+        lower before after layout sourceFinal target ctx) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower
   subst lower
@@ -466,24 +486,28 @@ theorem of_let_none
     · exact hNamesUsed name (by simpa using hDeclared)
     · exact hScope name hOuter
   exact
-    ⟨{ finalLayout := identNames names ++ layout
-       outcome := Functions.Source.Effectful.Outcome.regular targetFinal
-       finalCtx := finalCtx
-       run := ⟨targetFuel, by simpa [targetFinal] using hTargetRun⟩
-       relation := hOutcomeRel
-       domain := hFinalDomain
-       scope := hFinalScope
-       control := by
-         rw [hFinalCtx]
-         exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
-       freshExtends := Fresh.Extends.refl before
-       retains := fun _hRegular name hMem =>
-         List.mem_append_right _ hMem
-       layoutWithin := by
-         intro name hMem
-         rcases List.mem_append.mp hMem with hDeclared | hOuter
-         · exact hNamesUsed name hDeclared
-         · exact hLayout name hOuter }⟩
+    ⟨{ openResult :=
+         { finalLayout := identNames names ++ layout
+           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+           finalCtx := finalCtx
+           run := ⟨targetFuel, by simpa [targetFinal] using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hFinalDomain
+           scope := hFinalScope
+           control := by
+             rw [hFinalCtx]
+             exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
+           freshExtends := Fresh.Extends.refl before
+           retains := fun _hRegular name hMem =>
+             List.mem_append_right _ hMem
+           layoutWithin := by
+             intro name hMem
+             rcases List.mem_append.mp hMem with hDeclared | hOuter
+             · exact hNamesUsed name hDeclared
+             · exact hLayout name hOuter }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_let_one
     {contract : MemoryContract.Contract}
@@ -537,8 +561,8 @@ theorem of_let_one
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
+      (Result contract codeRel targetProgram.toFunctions
+        (.Let [name] (some expr)) lower before after layout
         sourceFinal target ctx) := by
   obtain ⟨pre, lowerValue, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_one_parts
@@ -621,24 +645,28 @@ theorem of_let_one
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource hDeclaredRel
   exact
-    ⟨{ finalLayout := identName name :: layout
-       outcome := Functions.Source.Effectful.Outcome.regular targetFinal
-       finalCtx := finalCtx
-       run := ⟨targetFuel, hTargetRun⟩
-       relation := hOutcomeRel
-       domain := hFinalDomain
-       scope := hFinalScope
-       control := hFinalControl
-       freshExtends := hFreshExtends
-       retains := fun _hRegular candidate hMem =>
-         List.mem_cons_of_mem (identName name) hMem
-       layoutWithin := by
-         intro candidate hMem
-         rcases List.mem_cons.mp hMem with hHead | hTail
-         · simpa [hHead] using hNameAfter
-         · exact
-             hFreshExtends candidate
-               (hLayout candidate hTail) }⟩
+    ⟨{ openResult :=
+         { finalLayout := identName name :: layout
+           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+           finalCtx := finalCtx
+           run := ⟨targetFuel, hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hFinalDomain
+           scope := hFinalScope
+           control := hFinalControl
+           freshExtends := hFreshExtends
+           retains := fun _hRegular candidate hMem =>
+             List.mem_cons_of_mem (identName name) hMem
+           layoutWithin := by
+             intro candidate hMem
+             rcases List.mem_cons.mp hMem with hHead | hTail
+             · simpa [hHead] using hNameAfter
+             · exact
+                 hFreshExtends candidate
+                   (hLayout candidate hTail) }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_assign_one
     {contract : MemoryContract.Contract}
@@ -690,8 +718,8 @@ theorem of_assign_one
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
+      (Result contract codeRel targetProgram.toFunctions
+        (.Assign [name] expr) lower before after layout
         sourceFinal target ctx) := by
   obtain ⟨pre, lowerValue, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
@@ -760,17 +788,21 @@ theorem of_assign_one
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource hAssignedRel
   exact
-    ⟨{ finalLayout := layout
-       outcome := Functions.Source.Effectful.Outcome.regular targetFinal
-       finalCtx := hScopedValue.prepared.finalCtx
-       run := ⟨targetFuel, hTargetRun⟩
-       relation := hOutcomeRel
-       domain := hFinalDomain
-       scope := hScopedValue.prepared.scope
-       control := hScopedValue.prepared.control
-       freshExtends := hFreshExtends
-       retains := fun _hRegular _candidate hMem => hMem
-       layoutWithin := hLayout.mono hFreshExtends }⟩
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+           finalCtx := hScopedValue.prepared.finalCtx
+           run := ⟨targetFuel, hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hFinalDomain
+           scope := hScopedValue.prepared.scope
+           control := hScopedValue.prepared.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_expr_primitive
     {contract : MemoryContract.Contract}
@@ -821,9 +853,9 @@ theorem of_expr_primitive
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
-        sourceFinal target ctx) := by
+      (Result contract codeRel targetProgram.toFunctions
+        (.ExprStmtCall (.Call (.inl prim) args))
+        lower before after layout sourceFinal target ctx) := by
   obtain ⟨pre, lowerExpr, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_expr_primitive_parts
       hNonterminal hLower
@@ -932,19 +964,23 @@ theorem of_expr_primitive
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource prepared.relation
   exact
-    ⟨{ finalLayout := layout
-       outcome :=
-         Functions.Source.Effectful.Outcome.regular
-           prepared.prepared.evalTarget
-       finalCtx := prepared.prepared.finalCtx
-       run := ⟨targetFuel, by simpa using hTargetRun⟩
-       relation := hOutcomeRel
-       domain := prepared.prepared.domain
-       scope := prepared.prepared.scope
-       control := prepared.prepared.control
-       freshExtends := hFreshExtends
-       retains := fun _hRegular _candidate hMem => hMem
-       layoutWithin := hLayout.mono hFreshExtends }⟩
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular
+               prepared.prepared.evalTarget
+           finalCtx := prepared.prepared.finalCtx
+           run := ⟨targetFuel, by simpa using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := prepared.prepared.domain
+           scope := prepared.prepared.scope
+           control := prepared.prepared.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_expr_call
     {contract : MemoryContract.Contract}
@@ -1003,9 +1039,9 @@ theorem of_expr_call
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
-        sourceFinal target ctx) := by
+      (Result contract codeRel targetProgram.toFunctions
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        lower before after layout sourceFinal target ctx) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_expr_call_parts hLower
   subst lower
@@ -1044,19 +1080,23 @@ theorem of_expr_call
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource returnedCall.relation
   exact
-    ⟨{ finalLayout := layout
-       outcome :=
-         Functions.Source.Effectful.Outcome.regular
-           returnedCall.finalTarget
-       finalCtx := returnedCall.finalCtx
-       run := by simpa using returnedCall.run
-       relation := hOutcomeRel
-       domain := returnedCall.domain
-       scope := returnedCall.scope
-       control := returnedCall.control
-       freshExtends := hFreshExtends
-       retains := fun _hRegular _candidate hMem => hMem
-       layoutWithin := hLayout.mono hFreshExtends }⟩
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular
+               returnedCall.finalTarget
+           finalCtx := returnedCall.finalCtx
+           run := by simpa using returnedCall.run
+           relation := hOutcomeRel
+           domain := returnedCall.domain
+           scope := returnedCall.scope
+           control := returnedCall.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_assign_call
     {contract : MemoryContract.Contract}
@@ -1117,9 +1157,9 @@ theorem of_assign_call
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
-        sourceFinal target ctx) := by
+      (Result contract codeRel targetProgram.toFunctions
+        (.Assign names (.Call (.inr functionName) callArgs))
+        lower before after layout sourceFinal target ctx) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_assign_call_parts hLower
   subst lower
@@ -1176,20 +1216,24 @@ theorem of_assign_call
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource returnedCall.relation
   exact
-    ⟨{ finalLayout := layout
-       outcome :=
-         Functions.Source.Effectful.Outcome.regular
-           returnedCall.finalTarget
-       finalCtx := returnedCall.finalCtx
-       run := by
-         simpa [identNames_eq_self] using returnedCall.run
-       relation := hOutcomeRel
-       domain := returnedCall.domain
-       scope := returnedCall.scope
-       control := returnedCall.control
-       freshExtends := hFreshExtends
-       retains := fun _hRegular _candidate hMem => hMem
-       layoutWithin := hLayout.mono hFreshExtends }⟩
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular
+               returnedCall.finalTarget
+           finalCtx := returnedCall.finalCtx
+           run := by
+             simpa [identNames_eq_self] using returnedCall.run
+           relation := hOutcomeRel
+           domain := returnedCall.domain
+           scope := returnedCall.scope
+           control := returnedCall.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_let_call
     {contract : MemoryContract.Contract}
@@ -1252,9 +1296,9 @@ theorem of_let_call
           (some sourceProgram.contract) source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions lower before after layout
-        sourceFinal target ctx) := by
+      (Result contract codeRel targetProgram.toFunctions
+        (.Let names (some (.Call (.inr functionName) callArgs)))
+        lower before after layout sourceFinal target ctx) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_call_parts hLower
   subst lower
@@ -1367,36 +1411,40 @@ theorem of_let_call
       FunctionsObserverOutcome.ScopedOutcomeRel.regular
         hFinalSource returnedCall.relation
   exact
-    ⟨{ finalLayout := identNames names ++ layout
-       outcome :=
-         Functions.Source.Effectful.Outcome.regular
-           returnedCall.finalTarget
-       finalCtx := returnedCall.finalCtx
-       run := ⟨targetFuel, by
-         simpa [List.append_assoc] using hTargetRun⟩
-       relation := hOutcomeRel
-       domain := returnedCall.domain
-       scope := returnedCall.scope
-       control := by
-         have hInitControl :
-             Functions.Source.Ctx.SameControl ctx initCtx := by
-           rw [hInitCtx]
-           exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
-         exact
-           Functions.Source.Ctx.SameControl.trans
-             hInitControl returnedCall.control
-       freshExtends := hFreshExtends
-       retains := fun _hRegular candidate hMem =>
-         List.mem_append_right _ hMem
-       layoutWithin := by
-         intro candidate hMem
-         rcases List.mem_append.mp hMem with hDeclared | hOuter
-         · exact
-             hFreshExtends candidate
-               (hNamesUsed candidate hDeclared)
-         · exact
-             hFreshExtends candidate
-               (hLayout candidate hOuter) }⟩
+    ⟨{ openResult :=
+         { finalLayout := identNames names ++ layout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular
+               returnedCall.finalTarget
+           finalCtx := returnedCall.finalCtx
+           run := ⟨targetFuel, by
+             simpa [List.append_assoc] using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := returnedCall.domain
+           scope := returnedCall.scope
+           control := by
+             have hInitControl :
+                 Functions.Source.Ctx.SameControl ctx initCtx := by
+               rw [hInitCtx]
+               exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
+             exact
+               Functions.Source.Ctx.SameControl.trans
+                 hInitControl returnedCall.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular candidate hMem =>
+             List.mem_append_right _ hMem
+           layoutWithin := by
+             intro candidate hMem
+             rcases List.mem_append.mp hMem with hDeclared | hOuter
+             · exact
+                 hFreshExtends candidate
+                   (hNamesUsed candidate hDeclared)
+             · exact
+                 hFreshExtends candidate
+                   (hLayout candidate hOuter) }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 private theorem of_single_nonregular
     {contract : MemoryContract.Contract}
@@ -1435,9 +1483,11 @@ private theorem of_single_nonregular
     (hLayout :
       StateRelation.Vars.NamesWithin before.used finalLayout) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel program lower before after layout
-        sourceFinal target ctx) := by
+      { result :
+          FunctionsObserverOutcome.ScopedOpenResult
+            contract codeRel program lower before after layout
+            sourceFinal target ctx //
+        result.outcome = outcome } := by
   subst lower
   subst after
   have hTargetRun :
@@ -1453,18 +1503,22 @@ private theorem of_single_nonregular
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
         program hTargetStmt hNonregular
-  exact
-    ⟨{ finalLayout := finalLayout
-       outcome := outcome
-       finalCtx := ctx
-       run := ⟨2, hTargetRun⟩
-       relation := hRelation
-       domain := hDomain
-       scope := hScope
-       control := Functions.Source.Ctx.SameControl.refl ctx
-       freshExtends := Fresh.Extends.refl before
-       retains := fun hRegular => False.elim (hNonregular hRegular)
-       layoutWithin := hLayout }⟩
+  let result :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program [stmt] before before layout
+        sourceFinal target ctx :=
+    { finalLayout := finalLayout
+      outcome := outcome
+      finalCtx := ctx
+      run := ⟨2, hTargetRun⟩
+      relation := hRelation
+      domain := hDomain
+      scope := hScope
+      control := Functions.Source.Ctx.SameControl.refl ctx
+      freshExtends := Fresh.Extends.refl before
+      retains := fun hRegular => False.elim (hNonregular hRegular)
+      layoutWithin := hLayout }
+  exact ⟨⟨result, rfl⟩⟩
 
 theorem of_leave
     {contract : MemoryContract.Contract}
@@ -1503,8 +1557,7 @@ theorem of_leave
           sourceFuel .Leave codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel program lower before after layout
+      (Result contract codeRel program .Leave lower before after layout
         sourceFinal target ctx) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_leave_parts hLower
@@ -1575,14 +1628,22 @@ theorem of_leave
       StateRelation.Vars.NamesWithin before.used leaveLayout := by
     intro name hMem
     exact hLayout name (hLeaveSubset name hMem)
-  exact of_single_nonregular
-    rfl rfl hTargetStmt
-    (Functions.Source.Effectful.Outcome.leave_not_regular targetLeave)
-    hOutcomeRel
-    (by
-      simpa [targetLeave, Locals.Source.State.restrictTo] using
-        hDomain.restrictTo)
-    hScope hLeaveUsed
+  have hNonregular :=
+    Functions.Source.Effectful.Outcome.leave_not_regular targetLeave
+  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+    of_single_nonregular
+      rfl rfl hTargetStmt hNonregular hOutcomeRel
+      (by
+        simpa [targetLeave, Locals.Source.State.restrictTo] using
+          hDomain.restrictTo)
+      hScope hLeaveUsed
+  exact
+    ⟨{ openResult := result
+       regularLayout := fun hRegular => by
+         apply False.elim
+         apply hNonregular
+         rw [← hResultOutcome]
+         exact hRegular }⟩
 
 theorem of_break
     {contract : MemoryContract.Contract}
@@ -1621,8 +1682,7 @@ theorem of_break
           sourceFuel .Break codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel program lower before after layout
+      (Result contract codeRel program .Break lower before after layout
         sourceFinal target ctx) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_break_parts hLower
@@ -1691,14 +1751,22 @@ theorem of_break
       StateRelation.Vars.NamesWithin before.used breakLayout := by
     intro name hMem
     exact hLayout name (hBreakSubset name hMem)
-  exact of_single_nonregular
-    hLowerStmts hAfter hTargetStmt
-    (Functions.Source.Effectful.Outcome.brk_not_regular targetBreak)
-    hOutcomeRel
-    (by
-      simpa [targetBreak, Locals.Source.State.restrictTo] using
-        hDomain.restrictTo)
-    hScope hBreakUsed
+  have hNonregular :=
+    Functions.Source.Effectful.Outcome.brk_not_regular targetBreak
+  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+    of_single_nonregular
+      hLowerStmts hAfter hTargetStmt hNonregular hOutcomeRel
+      (by
+        simpa [targetBreak, Locals.Source.State.restrictTo] using
+          hDomain.restrictTo)
+      hScope hBreakUsed
+  exact
+    ⟨{ openResult := result
+       regularLayout := fun hRegular => by
+         apply False.elim
+         apply hNonregular
+         rw [← hResultOutcome]
+         exact hRegular }⟩
 
 theorem of_continue
     {contract : MemoryContract.Contract}
@@ -1737,8 +1805,7 @@ theorem of_continue
           sourceFuel .Continue codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel program lower before after layout
+      (Result contract codeRel program .Continue lower before after layout
         sourceFinal target ctx) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_continue_parts hLower
@@ -1809,14 +1876,22 @@ theorem of_continue
       StateRelation.Vars.NamesWithin before.used continueLayout := by
     intro name hMem
     exact hLayout name (hContinueSubset name hMem)
-  exact of_single_nonregular
-    hLowerStmts hAfter hTargetStmt
-    (Functions.Source.Effectful.Outcome.cont_not_regular targetContinue)
-    hOutcomeRel
-    (by
-      simpa [targetContinue, Locals.Source.State.restrictTo] using
-        hDomain.restrictTo)
-    hScope hContinueUsed
+  have hNonregular :=
+    Functions.Source.Effectful.Outcome.cont_not_regular targetContinue
+  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+    of_single_nonregular
+      hLowerStmts hAfter hTargetStmt hNonregular hOutcomeRel
+      (by
+        simpa [targetContinue, Locals.Source.State.restrictTo] using
+          hDomain.restrictTo)
+      hScope hContinueUsed
+  exact
+    ⟨{ openResult := result
+       regularLayout := fun hRegular => by
+         apply False.elim
+         apply hNonregular
+         rw [← hResultOutcome]
+         exact hRegular }⟩
 
 end OpenResult
 

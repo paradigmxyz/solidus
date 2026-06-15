@@ -315,6 +315,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_continue_parts
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_one_parts
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_noncall_singleton
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_noncall_singleton
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.Result
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_none
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_leave
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_break
@@ -344,6 +347,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallParts
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedExpressionForward.mono
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedValueForward.mono
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveBodyForward.mono
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.terminal_none_of_eval_ok
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_expr_primitive
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_expr_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_call
@@ -361,9 +368,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopeOptionWithin
 #check EvmCompiler.Yul.FunctionsObserverForward.ControlContextRel
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedStmtResult
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopedStmtResult.ofStatement
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenStmtForward
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward
+#check EvmCompiler.Yul.FunctionsObserverForward.CompoundStmt
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenStmtForward.ofCompound
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
