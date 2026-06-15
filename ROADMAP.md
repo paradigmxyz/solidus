@@ -95,8 +95,8 @@ Adjacent boundary status:
 - [ ] Yul -> Functions: gas/msize primitive, expression, and let-statement
   leaves are checked in the pass-owned module; complete expression,
   statement, function, and program forward/backward theorems remain.
-- [ ] Functions -> allocated Locals/Expressions: shared allocation artifacts
-  exist, but observer-aware forward/backward theorems remain. The frontend now
+- [ ] Functions -> allocated Locals/Expressions: public whole-main forward
+  preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
   `MemoryContract.Contract` through Yul, Functions, object lowering, allocation,
   and checked artifacts. Scratch plans must be authorized by that contract.
@@ -1476,6 +1476,13 @@ corridor.
   guarded source run from a source-facing reservation-safety contract; target
   execution cannot derive reservation noninterference because ordinary EVM
   memory operations do not reject accesses to compiler-reserved spill memory.
+  The opcode/range contract now lives in shared
+  `Simulation.MemorySafety`. Functions retains compatibility aliases, and
+  `Yul.ObserverSafety` specializes the canonical parameterized Yul semantics
+  with the same contract at the primitive handler. This adds no Yul control
+  interpreter and exposes no compiler artifact; the next proof obligation is
+  observable-result refinement from the guarded Yul handler to ordinary
+  observer replay, followed by adjacent Yul-to-Functions composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -17,6 +17,7 @@ import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Public.Observer
+import EvmCompiler.Simulation.MemorySafety
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.ObserverCallAdequacy
 import EvmCompiler.Structured.ObserverFrameInvariant
@@ -25,12 +26,15 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObserverSemantics
+import EvmCompiler.Yul.ObserverSafety
 import EvmCompiler.Yul.StateRelation
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.TypedCfg.ObserverPreservation
 
 #check EvmCompiler.Yul.Source.Effectful.StateModel
 #check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.runWith
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactTerminates
 #check EvmCompiler.Simulation.ResourceReplay.State
 #check EvmCompiler.Locals.ObserverSemantics.Program.ExactReplay
 #check EvmCompiler.Functions.Source.Effectful.Program.runState
@@ -995,6 +999,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.forwardOpen
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainForward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainTargetAgreement
+#print axioms EvmCompiler.Simulation.MemorySafety.primitiveMemorySafe_unrestricted_of_noExternal
+#print axioms EvmCompiler.Yul.ObserverSafety.primitiveSafe_gas
+#print axioms EvmCompiler.Yul.ObserverSafety.primitiveSafe_msize
+#print axioms EvmCompiler.Yul.ObserverSafety.primitiveSafe_stop
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_yulHalt_parts
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_revert_parts
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

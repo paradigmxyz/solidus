@@ -27,6 +27,7 @@ import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Locals.PrimitivePreservation
+import EvmCompiler.Simulation.MemorySafety
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Structured.TypedCfgPreservation
 import EvmCompiler.Structured.EffectSemantics
@@ -52,6 +53,7 @@ import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObjectSemantics
 import EvmCompiler.Yul.ObserverSemantics
+import EvmCompiler.Yul.ObserverSafety
 import EvmCompiler.Yul.StateRelation
 
 /-!
@@ -76,6 +78,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
 #check EvmCompiler.Functions.AllocationObserverSafety.PrimitiveMemorySafe
 #check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
+#check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
+#check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
 #check EvmCompiler.Functions.AllocationObserverContext.classify_var
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
@@ -770,6 +774,14 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.eval_parts
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.terminal_parts
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.runWith
+#check EvmCompiler.Yul.ObserverSafety.PrimitiveSafe
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_yulHalt_parts
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_revert_parts
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactReplay
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactTerminates
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalOne
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition

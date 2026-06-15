@@ -386,12 +386,9 @@ def installContract {transcript : Trace} (program : Yul.Program)
     (state : State transcript) :
     (installContract program state).remaining = state.remaining := rfl
 
-def run (fuel : Nat) (program : Yul.Program)
-    (source : EvmYul.Yul.State) (trace : Trace) :
-    Except EvmYul.Yul.Exception (Result trace) :=
-  match
-      callDispatcher fuel (some program.contract)
-        (installContract program { source := source }) with
+def finish {transcript : Trace} :
+    Yul.Source.Effectful.Result (State transcript) (State transcript × List Word) →
+      Except EvmYul.Yul.Exception (Result transcript)
   | .ok (state', _rets) => .ok (.regular state')
   | .error failure =>
       match failure.exception with
@@ -400,6 +397,26 @@ def run (fuel : Nat) (program : Yul.Program)
       | .Revert sourceBeforeRevert =>
           .ok (.revert (failure.state.withSource sourceBeforeRevert))
       | err => .error err
+
+/--
+Run the canonical parameterized Yul control semantics with a chosen primitive
+handler, then package ordinary and terminal source outcomes uniformly.
+-/
+def runWith
+    (trace : Trace)
+    (primitive : Yul.Source.Effectful.PrimitiveSemantics (State trace))
+    (fuel : Nat) (program : Yul.Program)
+    (source : EvmYul.Yul.State) :
+    Except EvmYul.Yul.Exception (Result trace) :=
+  finish
+    (Yul.Source.Effectful.callDispatcher
+      (stateModel trace) primitive fuel (some program.contract)
+      (installContract program { source := source }))
+
+def run (fuel : Nat) (program : Yul.Program)
+    (source : EvmYul.Yul.State) (trace : Trace) :
+    Except EvmYul.Yul.Exception (Result trace) :=
+  runWith trace (primitiveSemantics trace) fuel program source
 
 def ExactReplay (fuel : Nat) (program : Yul.Program)
     (source : EvmYul.Yul.State) (transcript : Trace)
