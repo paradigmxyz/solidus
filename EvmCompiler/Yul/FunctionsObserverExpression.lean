@@ -242,8 +242,7 @@ theorem directAt
                       rcases hRun with ⟨rfl, rfl⟩
                       have hTargetLookup :
                           target.source.vars name = some value := by
-                        rw [← hVars name]
-                        exact hLookup
+                        exact hVars name value hLookup
                       refine ⟨target, ?_, hRel, by simp⟩
                       simp [Functions.Source.Effectful.Expr.eval,
                         Locals.Source.Effectful.Expr.eval,

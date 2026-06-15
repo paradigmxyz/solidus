@@ -101,6 +101,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Vars.DomainExact
 #check EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok
 #check EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
+#check EvmCompiler.Yul.StateRelation.Replay.insert_target_hidden
 #check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #check EvmCompiler.Yul.StateRelation.Shared.withMachine

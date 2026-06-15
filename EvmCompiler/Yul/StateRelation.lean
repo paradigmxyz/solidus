@@ -1039,15 +1039,14 @@ namespace Vars
 
 def Rel (source : EvmYul.Yul.VarStore)
     (target : Locals.Source.Store) : Prop :=
-  ∀ name, source.lookup name = target name
+  ∀ name value, source.lookup name = some value →
+    target name = some value
 
 /-!
-`Rel` is useful at roots where both stores are known to contain exactly the
-same names.  Statement lowering also introduces compiler-private temporaries,
-so recursive Yul-to-Functions proofs use the scoped relation below instead.
-The exact-domain predicate remains source-only: it is the fact needed to
-justify imported Yul declaration and assignment checks without forbidding
-hidden target names.
+`Rel` preserves every source-visible binding while permitting
+compiler-private target temporaries. `DomainExact` remains source-only: it is
+the fact needed to justify imported Yul declaration and assignment checks and
+to prove that a fresh compiler name is hidden from the source.
 -/
 
 def ScopedRel (layout : List Name) (source : EvmYul.Yul.VarStore)
@@ -1060,15 +1059,23 @@ def DomainExact (layout : List Name)
 
 theorem empty :
     Rel (default : EvmYul.Yul.VarStore) Locals.Source.Store.empty := by
-  intro name
-  rfl
+  intro name value hLookup
+  change (none : Option Assembly.Word) = some value at hLookup
+  cases hLookup
 
 theorem scoped_of_rel {layout : List Name}
     {source : EvmYul.Yul.VarStore} {target : Locals.Source.Store}
-    (hRel : Rel source target) :
+    (hRel : Rel source target)
+    (hDomain : DomainExact layout source) :
     ScopedRel layout source target := by
-  intro name _hMem
-  exact hRel name
+  intro name hMem
+  have hSome : (source.lookup name).isSome = true :=
+    (hDomain name).mpr hMem
+  cases hLookup : source.lookup name with
+  | none =>
+      simp [hLookup] at hSome
+  | some value =>
+      exact (hRel name value hLookup).symm
 
 theorem scoped_of_subset
     {outer inner : List Name}
@@ -1099,11 +1106,29 @@ theorem insert
     (value : Assembly.Word) :
     Rel (source.insert name value)
       (Locals.Source.Store.insert target name value) := by
-  intro key
+  intro key result hLookup
   by_cases hKey : key = name
   · subst key
+    simp at hLookup
+    rcases hLookup with ⟨rfl⟩
     simp [Locals.Source.Store.insert]
-  · simpa [hKey, Locals.Source.Store.insert] using hRel key
+  · rw [Finmap.lookup_insert_of_ne source hKey] at hLookup
+    rw [Locals.Source.Store.insert_of_ne hKey]
+    exact hRel key result hLookup
+
+theorem insert_target_hidden
+    {source : EvmYul.Yul.VarStore} {target : Locals.Source.Store}
+    (hRel : Rel source target) {name : Name} {value : Assembly.Word}
+    (hHidden : source.lookup name = none) :
+    Rel source (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  have hNe : key ≠ name := by
+    intro hEq
+    subst key
+    rw [hHidden] at hLookup
+    contradiction
+  rw [Locals.Source.Store.insert_of_ne hNe]
+  exact hRel key result hLookup
 
 theorem scoped_insert_hidden
     {layout : List Name} {source : EvmYul.Yul.VarStore}
@@ -1360,6 +1385,20 @@ theorem multifill_single
       Vars.insert hVars name value⟩
   simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert]
 
+theorem insert_target_hidden
+    {codeRel : CodeRel} {source : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    (hRel : Rel codeRel source target)
+    {name : Name} {value : Assembly.Word}
+    (hHidden : source.lookup? name = none) :
+    Rel codeRel source (target.insert name value) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  exact
+    ⟨sourceShared, sourceVars, rfl, hShared,
+      Vars.insert_target_hidden hVars (by simpa using hHidden)⟩
+
 def ScopedExactRel (codeRel : CodeRel) (layout : List Name)
     (source : EvmYul.Yul.State)
     (target : Locals.Source.State) : Prop :=
@@ -1381,9 +1420,11 @@ theorem scopedExact_of_rel
     ScopedExactRel codeRel layout source target := by
   rcases hRel with
     ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  have hSourceDomain :=
+    hDomain sourceShared sourceVars hSource
   exact
     ⟨sourceShared, sourceVars, hSource, hShared,
-      Vars.scoped_of_rel hVars, hDomain sourceShared sourceVars hSource⟩
+      Vars.scoped_of_rel hVars hSourceDomain, hSourceDomain⟩
 
 theorem scopedExact_insert_hidden
     {codeRel : CodeRel} {layout : List Name}
@@ -1526,6 +1567,20 @@ theorem multifill_single
       (target.withSource (target.source.insert name value)) := by
   exact
     ⟨hRel.1, Regular.multifill_single hRel.2 name value⟩
+
+theorem insert_target_hidden
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : Rel codeRel source target)
+    {name : Name} {value : Assembly.Word}
+    (hHidden : source.source.lookup? name = none) :
+    Rel codeRel source
+      (target.withSource (target.source.insert name value)) := by
+  exact
+    ⟨hRel.1, Regular.insert_target_hidden hRel.2 hHidden⟩
 
 def ScopedExactRel {transcript : Assembly.ResourceTrace}
     (codeRel : CodeRel) (layout : List Name)

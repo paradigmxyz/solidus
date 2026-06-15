@@ -1497,10 +1497,11 @@ corridor.
   primitive refinement interface. Guarded `SafeSemantics.Program.ExactReplay`
   now yields ordinary observer exact replay with the same consumed transcript.
   Adjacent Yul-to-Functions state ownership is now checked: visible source
-  names use a scoped relation, the imported Yul store carries an exact-domain
-  invariant for declaration/assignment checks, compiler-private target
-  temporaries are hidden, and block scope restoration preserves both
-  invariants. `FunctionsObserverCompiler` derives body/function lowering and
+  names are preserved by the base relation while target stores may carry
+  compiler-private temporaries; the imported Yul store carries a separate
+  exact-domain invariant for declaration/assignment and freshness checks.
+  Scoped block relations and restoration preserve both invariants.
+  `FunctionsObserverCompiler` derives body/function lowering and
   the generated Functions program from the ordinary
   `Program.toObjectsWithObservers?` equation; it does not implement a parallel
   compiler. Canonical guarded Functions semantics now lives in
