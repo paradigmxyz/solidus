@@ -1629,8 +1629,15 @@ corridor.
   exhaustive fuel-bounded dispatcher. `FunctionsObserverCall` owns the stable
   validated expression/value/body interfaces, statement constructors consume
   that single interface, and `FunctionsObserverForward` owns only their
-  source-fuel composition. The next obligation is the recursive body
-  dispatcher, beginning with direct call-valued declarations and assignments.
+  source-fuel composition. The ordinary compiler now proves fresh-state
+  monotonicity through expressions, statements, blocks, function definitions,
+  and complete function lists. Selected-callee decomposition transports the
+  contract's initial reservation to the exact pre-body state and proves every
+  compiled return/parameter name is reserved there; Functions semantics proves
+  the corresponding initialized entry store has no other names. The next
+  obligation is the recursive body dispatcher, using those compiler-owned
+  domain and scope facts for direct call-valued declarations, assignments, and
+  then the remaining statement/control forms.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -1085,6 +1085,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
+#print axioms EvmCompiler.Functions.Source.Store.insertMany_empty_apply_mem
+#print axioms EvmCompiler.Functions.Source.Store.initReturns_insertMany_empty_apply_mem
+#print axioms EvmCompiler.Yul.Expr.lowerUnchecked?_stateExtends
+#print axioms EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_stateExtends
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_stateExtends
+#print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_stateExtends
+#print axioms EvmCompiler.Yul.FunctionDefinition.toFunDefUncheckedFuel?_stateExtends
+#print axioms EvmCompiler.Yul.FunctionList.toFunDefsUncheckedFuel?_stateExtends
+#print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem_stateExtends
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction_parts

@@ -237,6 +237,20 @@ theorem insertMany_apply_of_not_mem :
         _ = store key :=
           Locals.Source.Store.insert_of_ne hHead
 
+theorem insertMany_empty_apply_mem
+    {names : List Name} {values : List Word}
+    {store' : Store} {key : Name} {value : Word}
+    (hInsert :
+      insertMany names values Locals.Source.Store.empty =
+        some store')
+    (hLookup : store' key = some value) :
+    key ∈ names := by
+  by_contra hNotMem
+  have hEmpty :=
+    insertMany_apply_of_not_mem hInsert hNotMem
+  rw [hEmpty] at hLookup
+  simp [Locals.Source.Store.empty] at hLookup
+
 theorem lookupMany_insertMany_self :
     ∀ {names : List Name} {values : List Word}
       {store store' : Store},
@@ -293,6 +307,23 @@ theorem initReturns_apply_of_not_mem :
           initReturns_apply_of_not_mem hTail
         _ = store key :=
           Locals.Source.Store.insert_of_ne hHead
+
+theorem initReturns_insertMany_empty_apply_mem
+    {returns params : List Name} {args : List Word}
+    {paramStore : Store} {key : Name} {value : Word}
+    (hInsert :
+      insertMany params args Locals.Source.Store.empty =
+        some paramStore)
+    (hLookup :
+      initReturns returns paramStore key = some value) :
+    key ∈ returns ++ params := by
+  by_cases hReturn : key ∈ returns
+  · exact List.mem_append_left _ hReturn
+  · have hParamLookup : paramStore key = some value := by
+      simpa [initReturns_apply_of_not_mem hReturn] using hLookup
+    exact
+      List.mem_append_right returns
+        (insertMany_empty_apply_mem hInsert hParamLookup)
 
 /--
 Every name initialized by `initReturns` maps to the canonical zero word.

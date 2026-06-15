@@ -129,6 +129,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.World.tstore
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
+#check EvmCompiler.Functions.Source.Store.insertMany_empty_apply_mem
+#check EvmCompiler.Functions.Source.Store.initReturns_insertMany_empty_apply_mem
+#check EvmCompiler.Yul.Expr.lowerUnchecked?_stateExtends
+#check EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_stateExtends
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_stateExtends
+#check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_stateExtends
+#check EvmCompiler.Yul.FunctionDefinition.toFunDefUncheckedFuel?_stateExtends
+#check EvmCompiler.Yul.FunctionList.toFunDefsUncheckedFuel?_stateExtends
+#check EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem_stateExtends
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #check EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
 #check EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction_parts

@@ -522,6 +522,218 @@ def lower0Unchecked? (state : Fresh.State) (expr : AstExpr) :
     Option (List Functions.Stmt × Locals.Expr 0 × Fresh.State) :=
   lowerUnchecked? 0 state expr
 
+theorem lowerUnchecked?_stateExtends
+    {results : Nat} {state final : Fresh.State}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    (hLower :
+      lowerUnchecked? results state expr =
+        some (pre, lower, final)) :
+    Fresh.Extends state final := by
+  induction results, state, expr using lowerUnchecked?.induct
+      (motive_2 := fun listState args =>
+        ∀ listPre listLower listFinal,
+          List.lowerBound1Unchecked? listState args =
+              some (listPre, listLower, listFinal) →
+            Fresh.Extends listState listFinal)
+      generalizing pre final with
+  | case1 state value =>
+      simp [lowerUnchecked?] at hLower
+      rw [← hLower.2.2]
+      exact Fresh.Extends.refl _
+  | case2 results state value hNe =>
+      simp [lowerUnchecked?, hNe] at hLower
+  | case3 state name =>
+      simp [lowerUnchecked?] at hLower
+      rw [← hLower.2.2]
+      exact Fresh.Extends.refl _
+  | case4 results state name hNe =>
+      simp [lowerUnchecked?, hNe] at hLower
+  | case5 results state functionName args hUnsupported =>
+      simp [lowerUnchecked?, hUnsupported] at hLower
+  | case6 state functionName args hSupported hDirect =>
+      cases hArgs : List.toLocals1? args with
+      | none =>
+          simp [lowerUnchecked?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          cases hFresh : Fresh.fresh? state with
+          | none =>
+              simp [lowerUnchecked?, hSupported, hDirect, hArgs, hFresh]
+                at hLower
+          | some result =>
+              rcases result with ⟨tmp, stateAfter⟩
+              simp [lowerUnchecked?, hSupported, hDirect, hArgs, hFresh]
+                at hLower
+              rw [← hLower.2.2]
+              exact Fresh.extends_of_fresh? hFresh
+  | case7 state functionName args hSupported hBound ih =>
+      cases hArgs : List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [lowerUnchecked?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, stateAfterArgs⟩
+          cases hFresh : Fresh.fresh? stateAfterArgs with
+          | none =>
+              simp [lowerUnchecked?, hSupported, hBound, hArgs, hFresh]
+                at hLower
+          | some result =>
+              rcases result with ⟨tmp, stateAfter⟩
+              simp [lowerUnchecked?, hSupported, hBound, hArgs, hFresh]
+                at hLower
+              rw [← hLower.2.2]
+              exact
+                Fresh.Extends.trans (ih _ _ _ hArgs)
+                  (Fresh.extends_of_fresh? hFresh)
+  | case8 results state functionName args hSupported hNe =>
+      simp [lowerUnchecked?, hSupported, hNe] at hLower
+  | case9 results state prim args ih =>
+      cases hOp : Prim.toUncheckedBasicOp? prim with
+      | none =>
+          simp [lowerUnchecked?, hOp] at hLower
+      | some op =>
+          cases hDirect : List.directPureArgsSafe? args with
+          | false =>
+              cases hArgs : List.lowerBound1Unchecked? state args with
+              | none =>
+                  simp [lowerUnchecked?, hOp, hDirect, hArgs] at hLower
+              | some result =>
+                  rcases result with
+                    ⟨preArgs, lowerArgs, stateAfterArgs⟩
+                  cases hSeq :
+                      List.toStackSeq? lowerArgs
+                        (Expressions.Structured.BasicOp.inputs op) with
+                  | none =>
+                      simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq]
+                        at hLower
+                  | some seq =>
+                      by_cases hOutputs :
+                          Expressions.Structured.BasicOp.outputs op = results
+                      · simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq,
+                          hOutputs] at hLower
+                        rw [← hLower.2.2]
+                        exact ih _ _ _ hArgs
+                      · simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq,
+                          hOutputs] at hLower
+          | true =>
+              cases hArgs : List.toLocals1? args with
+              | none =>
+                  simp [lowerUnchecked?, hOp, hDirect, hArgs] at hLower
+              | some lowerArgs =>
+                  cases hSeq :
+                      List.toStackSeq? lowerArgs
+                        (Expressions.Structured.BasicOp.inputs op) with
+                  | none =>
+                      simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq]
+                        at hLower
+                  | some seq =>
+                      by_cases hOutputs :
+                          Expressions.Structured.BasicOp.outputs op = results
+                      · simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq,
+                          hOutputs] at hLower
+                        rw [← hLower.2.2]
+                        exact Fresh.Extends.refl _
+                      · simp [lowerUnchecked?, hOp, hDirect, hArgs, hSeq,
+                          hOutputs] at hLower
+  | case10 state =>
+      rename_i listPre listLower listFinal hList
+      intro name hMem
+      simp [List.lowerBound1Unchecked?] at hList
+      rw [← hList.2.2]
+      exact hMem
+  | case11 state expr rest ihRest ihExpr =>
+      rename_i listPre listLower listFinal hList
+      intro name hMem
+      cases hRest : List.lowerBound1Unchecked? state rest with
+      | none =>
+          simp [List.lowerBound1Unchecked?, hRest] at hList
+      | some restResult =>
+          rcases restResult with ⟨preRest, lowerRest, stateAfterRest⟩
+          cases hHead : lowerUnchecked? 1 stateAfterRest expr with
+          | none =>
+              simp [List.lowerBound1Unchecked?, hRest, hHead] at hList
+          | some headResult =>
+              rcases headResult with
+                ⟨preHead, lowerHead, stateAfterHead⟩
+              by_cases hDeferred :
+                  deferredBoundArgSafe? expr = true ∧
+                    lowerRest.length < 4
+              · simp [List.lowerBound1Unchecked?, hRest, hHead, hDeferred]
+                  at hList
+                rw [← hList.2.2]
+                exact
+                  Fresh.Extends.trans
+                    (ihRest _ _ _ hRest) (ihExpr _ hHead) name hMem
+              · cases hFresh : Fresh.fresh? stateAfterHead with
+                | none =>
+                    simp [List.lowerBound1Unchecked?, hRest, hHead,
+                      hDeferred, hFresh] at hList
+                | some freshResult =>
+                    rcases freshResult with ⟨tmp, stateAfterFresh⟩
+                    simp [List.lowerBound1Unchecked?, hRest, hHead,
+                      hDeferred, hFresh] at hList
+                    rw [← hList.2.2]
+                    exact
+                      Fresh.Extends.trans
+                        (Fresh.Extends.trans
+                          (ihRest _ _ _ hRest) (ihExpr _ hHead))
+                        (Fresh.extends_of_fresh? hFresh) name hMem
+
+theorem lower1Unchecked?_stateExtends
+    {state final : Fresh.State} {expr : AstExpr}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (hLower :
+      lower1Unchecked? state expr = some (pre, lower, final)) :
+    Fresh.Extends state final :=
+  lowerUnchecked?_stateExtends hLower
+
+theorem List.lowerBound1Unchecked?_stateExtends
+    {state final : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : List (Locals.Expr 1)}
+    (hLower :
+      List.lowerBound1Unchecked? state args =
+        some (pre, lower, final)) :
+    Fresh.Extends state final := by
+  induction args generalizing state pre lower final with
+  | nil =>
+      simp [List.lowerBound1Unchecked?] at hLower
+      rw [← hLower.2.2]
+      exact Fresh.Extends.refl _
+  | cons expr rest ih =>
+      cases hRest : List.lowerBound1Unchecked? state rest with
+      | none =>
+          simp [List.lowerBound1Unchecked?, hRest] at hLower
+      | some restResult =>
+          rcases restResult with ⟨preRest, lowerRest, stateAfterRest⟩
+          cases hHead : lowerUnchecked? 1 stateAfterRest expr with
+          | none =>
+              simp [List.lowerBound1Unchecked?, hRest, hHead] at hLower
+          | some headResult =>
+              rcases headResult with
+                ⟨preHead, lowerHead, stateAfterHead⟩
+              by_cases hDeferred :
+                  deferredBoundArgSafe? expr = true ∧
+                    lowerRest.length < 4
+              · simp [List.lowerBound1Unchecked?, hRest, hHead, hDeferred]
+                  at hLower
+                rw [← hLower.2.2]
+                exact
+                  Fresh.Extends.trans
+                    (ih hRest) (lowerUnchecked?_stateExtends hHead)
+              · cases hFresh : Fresh.fresh? stateAfterHead with
+                | none =>
+                    simp [List.lowerBound1Unchecked?, hRest, hHead,
+                      hDeferred, hFresh] at hLower
+                | some freshResult =>
+                    rcases freshResult with ⟨tmp, stateAfterFresh⟩
+                    simp [List.lowerBound1Unchecked?, hRest, hHead,
+                      hDeferred, hFresh] at hLower
+                    rw [← hLower.2.2]
+                    exact
+                      Fresh.Extends.trans
+                        (Fresh.Extends.trans
+                          (ih hRest) (lowerUnchecked?_stateExtends hHead))
+                        (Fresh.extends_of_fresh? hFresh)
+
 theorem lower1Unchecked?_direct_parts
     {offset : Nat} {state state' : Fresh.State}
     {expr : AstExpr} {pre : List Functions.Stmt}
@@ -2688,6 +2900,616 @@ mutual
         some ({ stmts := lower }, state')
 end
 
+theorem toFunctionsListUncheckedFuel?_let_one_noncall
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier)
+    (value : AstExpr)
+    (hNotCall :
+      ∀ functionName args,
+        value ≠ .Call (.inr functionName) args) :
+    toFunctionsListUncheckedFuel? (fuel + 1) state
+        (.Let [name] (some value)) =
+      (Expr.lower1Unchecked? state value).bind fun result =>
+        some
+          (result.1 ++
+            [Functions.Stmt.let_ (identName name) result.2.1],
+            result.2.2) := by
+  cases value
+  case Call callee args =>
+    cases callee
+    case inl prim =>
+      rfl
+    case inr functionName =>
+      exact (hNotCall functionName args rfl).elim
+  all_goals rfl
+
+theorem toFunctionsListUncheckedFuel?_assign_one_noncall
+    (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier)
+    (value : AstExpr)
+    (hNotCall :
+      ∀ functionName args,
+        value ≠ .Call (.inr functionName) args) :
+    toFunctionsListUncheckedFuel? (fuel + 1) state
+        (.Assign [name] value) =
+      (Expr.lower1Unchecked? state value).bind fun result =>
+        some
+          (result.1 ++
+            [Functions.Stmt.assign (identName name) result.2.1],
+            result.2.2) := by
+  cases value
+  case Call callee args =>
+    cases callee
+    case inl prim =>
+      rfl
+    case inr functionName =>
+      exact (hNotCall functionName args rfl).elim
+  all_goals rfl
+
+theorem toFunctionsListUncheckedFuel?_expr_noncall
+    (fuel : Nat) (state : Fresh.State) (expr : AstExpr)
+    (hNotFunctionCall :
+      ∀ functionName args,
+        expr ≠ .Call (.inr functionName) args)
+    (hNotPrimitiveCall :
+      ∀ prim args,
+        expr ≠ .Call (.inl prim) args) :
+    toFunctionsListUncheckedFuel? (fuel + 1) state
+        (.ExprStmtCall expr) =
+      (Expr.lower0Unchecked? state expr).bind fun result =>
+        some
+          (result.1 ++ [Functions.Stmt.expr result.2.1],
+            result.2.2) := by
+  cases expr
+  case Call callee args =>
+    cases callee
+    case inl prim =>
+      exact (hNotPrimitiveCall prim args rfl).elim
+    case inr functionName =>
+      exact (hNotFunctionCall functionName args rfl).elim
+  all_goals rfl
+
+theorem toFunctionsListUncheckedFuel?_stateExtends
+    {fuel : Nat} {state final : Fresh.State}
+    {stmt : AstStmt} {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel state stmt =
+        some (lower, final)) :
+    Fresh.Extends state final := by
+  induction fuel, state, stmt using
+      toFunctionsListUncheckedFuel?.induct
+        (motive_2 := fun fuel state cases =>
+          ∀ {lower final},
+            CaseList.toFunctionsUncheckedFuel? fuel state cases =
+              some (lower, final) →
+            Fresh.Extends state final)
+        (motive_3 := fun fuel state stmts =>
+          ∀ {lower final},
+            List.toBlockUncheckedFuel? fuel state stmts =
+              some (lower, final) →
+            Fresh.Extends state final)
+        (motive_4 := fun fuel state stmts =>
+          ∀ {lower final},
+            List.toFunctionsUncheckedFuel? fuel state stmts =
+              some (lower, final) →
+            Fresh.Extends state final)
+        generalizing lower final with
+  | case1 =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | case2 =>
+      rename_i fuel state body ih
+      cases hBody : List.toBlockUncheckedFuel? fuel state body with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hBody] at hLower
+      | some result =>
+          rcases result with ⟨lowerBody, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hBody] at hLower
+          rw [← hLower.2]
+          exact ih hBody
+  | case3 =>
+      rename_i fuel state names
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case4 =>
+      rename_i fuel state functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case5 =>
+      rename_i fuel state functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case6 =>
+      rename_i fuel state functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case7 =>
+      rename_i fuel state name functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case8 =>
+      rename_i fuel state name functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case9 =>
+      rename_i fuel state name functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case10 =>
+      rename_i fuel state name value hNotCall
+      rw [toFunctionsListUncheckedFuel?_let_one_noncall
+        fuel state name value hNotCall] at hLower
+      cases hValue : Expr.lower1Unchecked? state value with
+      | none =>
+          simp [hValue] at hLower
+      | some result =>
+          rcases result with ⟨preValue, lowerValue, middle⟩
+          simp [hValue] at hLower
+          rw [← hLower.2]
+          exact Expr.lower1Unchecked?_stateExtends hValue
+  | case11 =>
+      rename_i fuel state name next rest functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case12 =>
+      rename_i fuel state name next rest functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case13 =>
+      rename_i fuel state name next rest functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case14 =>
+      rename_i fuel state names value hNotEmpty hNotSingleCall
+        hNotSingle hNotMultiCall
+      cases names
+      case nil =>
+        cases value
+        case Call callee args =>
+          cases callee
+          case inl prim =>
+            change
+              (none : Option (List Functions.Stmt × Fresh.State)) =
+                some (lower, final) at hLower
+            cases hLower
+          case inr functionName =>
+            exact (hNotEmpty functionName args rfl rfl).elim
+        all_goals
+          change
+            (none : Option (List Functions.Stmt × Fresh.State)) =
+              some (lower, final) at hLower
+          cases hLower
+      case cons name tail =>
+        cases tail
+        case nil =>
+          exact (hNotSingle name rfl).elim
+        case cons next rest =>
+          cases value
+          case Call callee args =>
+            cases callee
+            case inl prim =>
+              change
+                (none : Option (List Functions.Stmt × Fresh.State)) =
+                  some (lower, final) at hLower
+              cases hLower
+            case inr functionName =>
+              exact
+                (hNotMultiCall name next rest functionName args
+                  rfl rfl).elim
+          all_goals
+            change
+              (none : Option (List Functions.Stmt × Fresh.State)) =
+                some (lower, final) at hLower
+            cases hLower
+  | case15 =>
+      rename_i fuel state functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case16 =>
+      rename_i fuel state functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case17 =>
+      rename_i fuel state functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case18 =>
+      rename_i fuel state name functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case19 =>
+      rename_i fuel state name functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case20 =>
+      rename_i fuel state name functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case21 =>
+      rename_i fuel state name value hNotCall
+      rw [toFunctionsListUncheckedFuel?_assign_one_noncall
+        fuel state name value hNotCall] at hLower
+      cases hValue : Expr.lower1Unchecked? state value with
+      | none =>
+          simp [hValue] at hLower
+      | some result =>
+          rcases result with ⟨preValue, lowerValue, middle⟩
+          simp [hValue] at hLower
+          rw [← hLower.2]
+          exact Expr.lower1Unchecked?_stateExtends hValue
+  | case22 =>
+      rename_i fuel state name next rest functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case23 =>
+      rename_i fuel state name next rest functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case24 =>
+      rename_i fuel state name next rest functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case25 =>
+      rename_i fuel state names value hNotEmpty hNotSingleCall
+        hNotSingle hNotMultiCall
+      cases names
+      case nil =>
+        cases value
+        case Call callee args =>
+          cases callee
+          case inl prim =>
+            change
+              (none : Option (List Functions.Stmt × Fresh.State)) =
+                some (lower, final) at hLower
+            cases hLower
+          case inr functionName =>
+            exact (hNotEmpty functionName args rfl rfl).elim
+        all_goals
+          change
+            (none : Option (List Functions.Stmt × Fresh.State)) =
+              some (lower, final) at hLower
+          cases hLower
+      case cons name tail =>
+        cases tail
+        case nil =>
+          exact (hNotSingle name rfl).elim
+        case cons next rest =>
+          cases value
+          case Call callee args =>
+            cases callee
+            case inl prim =>
+              change
+                (none : Option (List Functions.Stmt × Fresh.State)) =
+                  some (lower, final) at hLower
+              cases hLower
+            case inr functionName =>
+              exact
+                (hNotMultiCall name next rest functionName args
+                  rfl rfl).elim
+          all_goals
+            change
+              (none : Option (List Functions.Stmt × Fresh.State)) =
+                some (lower, final) at hLower
+            cases hLower
+  | case26 =>
+      rename_i fuel state functionName args hUnsupported
+      simp [toFunctionsListUncheckedFuel?, hUnsupported] at hLower
+  | case27 =>
+      rename_i fuel state functionName args hSupported hDirect
+      cases hArgs : Expr.List.toLocals1? args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+      | some lowerArgs =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hDirect, hArgs] at hLower
+          rw [← hLower.2]
+          exact Fresh.Extends.refl _
+  | case28 =>
+      rename_i fuel state functionName args hSupported hBound
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hSupported, hBound, hArgs] at hLower
+          rw [← hLower.2]
+          exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case29 =>
+      rename_i fuel state prim args kind hTerminal
+      cases hArgs : Expr.List.lowerBound1Unchecked? state args with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hTerminal, hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, middle⟩
+          cases hSeq :
+              Expr.List.toStackSeq? lowerArgs kind.argCount with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hTerminal, hArgs, hSeq]
+                at hLower
+          | some seq =>
+              simp [toFunctionsListUncheckedFuel?, hTerminal, hArgs, hSeq]
+                at hLower
+              rw [← hLower.2]
+              exact Expr.List.lowerBound1Unchecked?_stateExtends hArgs
+  | case30 =>
+      rename_i fuel state prim args hTerminal
+      cases hExpr :
+          Expr.lower0Unchecked? state (.Call (.inl prim) args) with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hTerminal, hExpr] at hLower
+      | some result =>
+          rcases result with ⟨preExpr, lowerExpr, middle⟩
+          simp [toFunctionsListUncheckedFuel?, hTerminal, hExpr] at hLower
+          rw [← hLower.2]
+          exact Expr.lowerUnchecked?_stateExtends hExpr
+  | case31 =>
+      rename_i fuel state expr hNotFunctionCall hNotPrimitiveCall
+      rw [toFunctionsListUncheckedFuel?_expr_noncall
+        fuel state expr hNotFunctionCall hNotPrimitiveCall] at hLower
+      cases hExpr : Expr.lower0Unchecked? state expr with
+      | none =>
+          simp [hExpr] at hLower
+      | some result =>
+          rcases result with ⟨preExpr, lowerExpr, middle⟩
+          simp [hExpr] at hLower
+          rw [← hLower.2]
+          exact Expr.lowerUnchecked?_stateExtends hExpr
+  | case32 =>
+      rename_i fuel state scrutinee cases defaultBody ihCases ihDefault
+      cases hScrutinee : Expr.lower1Unchecked? state scrutinee with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hScrutinee] at hLower
+      | some scrutineeResult =>
+          rcases scrutineeResult with
+            ⟨preScrutinee, lowerScrutinee, afterScrutinee⟩
+          cases hCases :
+              CaseList.toFunctionsUncheckedFuel?
+                fuel afterScrutinee cases with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hScrutinee, hCases]
+                at hLower
+          | some casesResult =>
+              rcases casesResult with ⟨lowerCases, afterCases⟩
+              cases defaultBody with
+              | nil =>
+                  simp [toFunctionsListUncheckedFuel?, hScrutinee, hCases]
+                    at hLower
+                  rw [← hLower.2]
+                  exact
+                    Fresh.Extends.trans
+                      (Expr.lower1Unchecked?_stateExtends hScrutinee)
+                      (ihCases _ hCases)
+              | cons defaultHead defaultTail =>
+                  cases hDefault :
+                      List.toBlockUncheckedFuel? fuel
+                        afterCases (defaultHead :: defaultTail) with
+                  | none =>
+                      simp [toFunctionsListUncheckedFuel?, hScrutinee,
+                        hCases, hDefault] at hLower
+                  | some defaultResult =>
+                      rcases defaultResult with ⟨lowerDefault, afterDefault⟩
+                      simp [toFunctionsListUncheckedFuel?, hScrutinee,
+                        hCases, hDefault] at hLower
+                      rw [← hLower.2]
+                      exact
+                        Fresh.Extends.trans
+                          (Expr.lower1Unchecked?_stateExtends hScrutinee)
+                          (Fresh.Extends.trans
+                            (ihCases _ hCases) (ihDefault _ hDefault))
+  | case33 =>
+      rename_i fuel state cond post body ihPost ihBody
+      cases hCond : Expr.lower1Unchecked? state cond with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hCond] at hLower
+      | some condResult =>
+          rcases condResult with ⟨preCond, lowerCond, afterCond⟩
+          cases hPost :
+              List.toBlockUncheckedFuel? fuel afterCond post with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hCond, hPost] at hLower
+          | some postResult =>
+              rcases postResult with ⟨lowerPost, afterPost⟩
+              cases hBody :
+                  List.toBlockUncheckedFuel? fuel afterPost body with
+              | none =>
+                  simp [toFunctionsListUncheckedFuel?, hCond, hPost, hBody]
+                    at hLower
+              | some bodyResult =>
+                  rcases bodyResult with ⟨lowerBody, afterBody⟩
+                  simp [toFunctionsListUncheckedFuel?, hCond, hPost, hBody]
+                    at hLower
+                  rw [← hLower.2]
+                  exact
+                    Fresh.Extends.trans
+                      (Expr.lower1Unchecked?_stateExtends hCond)
+                      (Fresh.Extends.trans
+                        (ihPost _ hPost) (ihBody _ hBody))
+  | case34 =>
+      rename_i fuel state cond body ihBody
+      cases hCond : Expr.lower1Unchecked? state cond with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hCond] at hLower
+      | some condResult =>
+          rcases condResult with ⟨preCond, lowerCond, afterCond⟩
+          cases hBody :
+              List.toBlockUncheckedFuel? fuel afterCond body with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hCond, hBody] at hLower
+          | some bodyResult =>
+              rcases bodyResult with ⟨lowerBody, afterBody⟩
+              simp [toFunctionsListUncheckedFuel?, hCond, hBody] at hLower
+              rw [← hLower.2]
+              exact
+                Fresh.Extends.trans
+                  (Expr.lower1Unchecked?_stateExtends hCond)
+                  (ihBody _ hBody)
+  | case35 =>
+      rename_i fuel state
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case36 =>
+      rename_i fuel state
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case37 =>
+      rename_i fuel state
+      simp [toFunctionsListUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case38 =>
+      rename_i state cases lower final hLower
+      simp [CaseList.toFunctionsUncheckedFuel?] at hLower
+  | case39 =>
+      rename_i fuel state lower final hLower
+      simp [CaseList.toFunctionsUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case40 =>
+      rename_i fuel state value body rest ihBody ihRest lower final hLower
+      cases hBody : List.toBlockUncheckedFuel? fuel state body with
+      | none =>
+          simp [CaseList.toFunctionsUncheckedFuel?, hBody] at hLower
+      | some bodyResult =>
+          rcases bodyResult with ⟨lowerBody, afterBody⟩
+          cases hRest :
+              CaseList.toFunctionsUncheckedFuel? fuel afterBody rest with
+          | none =>
+              simp [CaseList.toFunctionsUncheckedFuel?, hBody, hRest]
+                at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, afterRest⟩
+              simp [CaseList.toFunctionsUncheckedFuel?, hBody, hRest]
+                at hLower
+              rw [← hLower.2]
+              exact
+                Fresh.Extends.trans
+                  (ihBody hBody) (ihRest _ hRest)
+  | case41 =>
+      rename_i state stmts lower final hLower
+      simp [List.toBlockUncheckedFuel?] at hLower
+  | case42 =>
+      rename_i fuel state stmts ih lower final hLower
+      cases hStmts :
+          List.toFunctionsUncheckedFuel? fuel state stmts with
+      | none =>
+          simp [List.toBlockUncheckedFuel?, hStmts] at hLower
+      | some stmtsResult =>
+          rcases stmtsResult with ⟨lowerStmts, afterStmts⟩
+          simp [List.toBlockUncheckedFuel?, hStmts] at hLower
+          rw [← hLower.2]
+          exact ih hStmts
+  | case43 =>
+      rename_i state stmts lower final hLower
+      simp [List.toFunctionsUncheckedFuel?] at hLower
+  | case44 =>
+      rename_i fuel state lower final hLower
+      simp [List.toFunctionsUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | case45 =>
+      rename_i fuel state stmt rest ihStmt ihRest lower final hLower
+      cases hStmt : toFunctionsListUncheckedFuel? fuel state stmt with
+      | none =>
+          simp [List.toFunctionsUncheckedFuel?, hStmt] at hLower
+      | some stmtResult =>
+          rcases stmtResult with ⟨lowerStmt, afterStmt⟩
+          cases hRest :
+              List.toFunctionsUncheckedFuel? fuel afterStmt rest with
+          | none =>
+              simp [List.toFunctionsUncheckedFuel?, hStmt, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, afterRest⟩
+              simp [List.toFunctionsUncheckedFuel?, hStmt, hRest] at hLower
+              rw [← hLower.2]
+              exact
+                Fresh.Extends.trans
+                  (ihStmt hStmt) (ihRest _ hRest)
+
+theorem List.toBlockUncheckedFuel?_stateExtends
+    {fuel : Nat} {state final : Fresh.State}
+    {stmts : List AstStmt} {lower : Functions.Block}
+    (hLower :
+      List.toBlockUncheckedFuel? fuel state stmts =
+        some (lower, final)) :
+    Fresh.Extends state final := by
+  have hStmt :
+      toFunctionsListUncheckedFuel? (fuel + 1) state (.Block stmts) =
+        some ([Functions.Stmt.block lower], final) := by
+    simp [toFunctionsListUncheckedFuel?, hLower]
+  exact toFunctionsListUncheckedFuel?_stateExtends hStmt
+
+theorem List.toFunctionsUncheckedFuel?_stateExtends
+    {fuel : Nat} {state final : Fresh.State}
+    {stmts : List AstStmt} {lower : List Functions.Stmt}
+    (hLower :
+      List.toFunctionsUncheckedFuel? fuel state stmts =
+        some (lower, final)) :
+    Fresh.Extends state final := by
+  have hBlock :
+      List.toBlockUncheckedFuel? (fuel + 1) state stmts =
+        some ({ stmts := lower }, final) := by
+    simp [List.toBlockUncheckedFuel?, hLower]
+  exact List.toBlockUncheckedFuel?_stateExtends hBlock
+
 theorem List.toBlockUncheckedFuel?_parts
     {fuel : Nat} {state final : Fresh.State}
     {stmts : List AstStmt} {lower : Functions.Block}
@@ -3471,6 +4293,20 @@ theorem toFunDefUncheckedFuel?_parts
       rcases hLower with ⟨rfl, rfl⟩
       exact ⟨rfl, rfl, rfl, rfl⟩
 
+theorem toFunDefUncheckedFuel?_stateExtends
+    {fuel : Nat} {state final : Fresh.State}
+    {name : Name} {fn : AstFunctionDefinition}
+    {lower : Functions.FunDef}
+    (hLower :
+      toFunDefUncheckedFuel? fuel state name fn =
+        some (lower, final)) :
+    Fresh.Extends state final := by
+  cases fn with
+  | Def params returns body =>
+      exact
+        Stmt.List.toBlockUncheckedFuel?_stateExtends
+          (toFunDefUncheckedFuel?_parts hLower).2.2.2
+
 noncomputable def toFunDef? (state : Fresh.State) (name : Name) :
     AstFunctionDefinition → Option (Functions.FunDef × Fresh.State)
   | fn => toFunDefFuel? (fuel fn) state name fn
@@ -3554,6 +4390,42 @@ def toFunDefsUncheckedFuel? (fuel : Nat) :
         FunctionDefinition.toFunDefUncheckedFuel? fuel state name fn
       let (lowerRest, state'') ← toFunDefsUncheckedFuel? fuel state' rest
       some (lowerFn :: lowerRest, state'')
+
+theorem toFunDefsUncheckedFuel?_stateExtends
+    {fuel : Nat} {state final : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLower :
+      toFunDefsUncheckedFuel? fuel state functions =
+        some (lower, final)) :
+    Fresh.Extends state final := by
+  induction functions generalizing state lower final with
+  | nil =>
+      simp [toFunDefsUncheckedFuel?] at hLower
+      rw [← hLower.2]
+      exact Fresh.Extends.refl _
+  | cons entry rest ih =>
+      rcases entry with ⟨name, fn⟩
+      cases hHead :
+          FunctionDefinition.toFunDefUncheckedFuel?
+            fuel state name fn with
+      | none =>
+          simp [toFunDefsUncheckedFuel?, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨lowerFn, middle⟩
+          cases hRest :
+              toFunDefsUncheckedFuel? fuel middle rest with
+          | none =>
+              simp [toFunDefsUncheckedFuel?, hHead, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, afterRest⟩
+              simp [toFunDefsUncheckedFuel?, hHead, hRest] at hLower
+              rw [← hLower.2]
+              exact
+                Fresh.Extends.trans
+                  (FunctionDefinition.toFunDefUncheckedFuel?_stateExtends
+                    hHead)
+                  (ih hRest)
 
 inductive UncheckedLowering (fuel : Nat) :
     Fresh.State → List (Name × AstFunctionDefinition) →
@@ -3644,6 +4516,42 @@ theorem member
           ⟨before, after, lowerFn,
             List.mem_cons_of_mem lowerHead hLowerMem, hLowerFn⟩
 
+theorem member_stateExtends
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state')
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ functions) :
+    ∃ before after lowerFn,
+      Fresh.Extends state before ∧
+      lowerFn ∈ lower ∧
+      FunctionDefinition.toFunDefUncheckedFuel?
+          fuel before name fn =
+        some (lowerFn, after) := by
+  induction hLowering with
+  | nil =>
+      simp at hMem
+  | @cons state stateHead stateFinal headName headFn rest
+      lowerHead lowerRest hHead hRest ih =>
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        exact
+          ⟨state, stateHead, lowerHead, Fresh.Extends.refl _,
+            by simp, hHead⟩
+      · obtain
+          ⟨before, after, lowerFn, hPrefix, hLowerMem, hLowerFn⟩ :=
+            ih hTail
+        exact
+          ⟨before, after, lowerFn,
+            Fresh.Extends.trans
+              (FunctionDefinition.toFunDefUncheckedFuel?_stateExtends
+                hHead)
+              hPrefix,
+            List.mem_cons_of_mem lowerHead hLowerMem, hLowerFn⟩
+
 theorem find_of_mem
     {fuel : Nat} {state state' : Fresh.State}
     {functions : List (Name × AstFunctionDefinition)}
@@ -3672,6 +4580,38 @@ theorem find_of_mem
       hLowerMem hLowerNames
   exact ⟨before, after, lowerFn, by simpa [hLowerName] using hFind,
     hLowerFn⟩
+
+theorem find_of_mem_stateExtends
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state')
+    (hNames : (functions.map Prod.fst).Nodup)
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ functions) :
+    ∃ before after lowerFn,
+      Fresh.Extends state before ∧
+      Functions.Source.FunList.find? name lower = some lowerFn ∧
+      FunctionDefinition.toFunDefUncheckedFuel?
+          fuel before name fn =
+        some (lowerFn, after) := by
+  obtain
+      ⟨before, after, lowerFn, hPrefix, hLowerMem, hLowerFn⟩ :=
+    hLowering.member_stateExtends hMem
+  have hLowerName : lowerFn.name = name :=
+    FunctionDefinition.toFunDefUncheckedFuel?_name hLowerFn
+  have hLowerNames : (lower.map fun entry => entry.name).Nodup := by
+    rw [hLowering.names]
+    exact hNames
+  have hFind :
+      Functions.Source.FunList.find? lowerFn.name lower =
+        some lowerFn :=
+    Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
+      hLowerMem hLowerNames
+  exact
+    ⟨before, after, lowerFn, hPrefix,
+      by simpa [hLowerName] using hFind, hLowerFn⟩
 
 end UncheckedLowering
 

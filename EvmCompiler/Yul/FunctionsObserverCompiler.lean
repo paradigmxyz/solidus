@@ -88,6 +88,8 @@ theorem Decomposition.findFunction
     {name : Name} {fn : AstFunctionDefinition}
     (hLookup : program.contract.functions.lookup name = some fn) :
     ∃ before after lowerFn,
+      Fresh.Extends
+          (Fresh.initial (Contract.names program.contract)) before ∧
       Functions.Source.FunList.find? name
           targetProgram.toFunctions.functions =
         some lowerFn ∧
@@ -107,11 +109,17 @@ theorem Decomposition.findFunction
         functions afterFunctions :=
     FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
       hFunctions
-  obtain ⟨before, after, lowerFn, hFind, hLowerFn⟩ :=
-    hLowering.find_of_mem
+  obtain ⟨before, after, lowerFn, hFunctionsPrefix, hFind, hLowerFn⟩ :=
+    hLowering.find_of_mem_stateExtends
       (Contract.functionEntries_names_nodup program.contract)
       (Contract.functionEntries_mem_of_lookup hLookup)
-  refine ⟨before, after, lowerFn, ?_, hLowerFn⟩
+  have hBodyPrefix :
+      Fresh.Extends
+        (Fresh.initial (Contract.names program.contract)) afterBody :=
+    Stmt.toFunctionsListUncheckedFuel?_stateExtends hBody
+  refine
+    ⟨before, after, lowerFn,
+      Fresh.Extends.trans hBodyPrefix hFunctionsPrefix, ?_, hLowerFn⟩
   rw [hTarget]
   exact hFind
 
@@ -124,6 +132,8 @@ theorem Decomposition.findFunction_parts
       program.contract.functions.lookup name =
         some (.Def params returns body)) :
     ∃ before after lowerFn,
+      Fresh.Extends
+          (Fresh.initial (Contract.names program.contract)) before ∧
       Functions.Source.FunList.find? name
           targetProgram.toFunctions.functions =
         some lowerFn ∧
@@ -134,13 +144,26 @@ theorem Decomposition.findFunction_parts
           (FunctionList.fuel
             (Contract.functionEntries program.contract))
           before body =
-        some (lowerFn.body, after) := by
-  obtain ⟨before, after, lowerFn, hFind, hLower⟩ :=
+        some (lowerFn.body, after) ∧
+      ∀ candidate,
+        candidate ∈ lowerFn.returns ++ lowerFn.params →
+          candidate ∈ before.used := by
+  obtain ⟨before, after, lowerFn, hPrefix, hFind, hLower⟩ :=
     hDecomposition.findFunction hLookup
   obtain ⟨hName, hParams, hReturns, hBody⟩ :=
     FunctionDefinition.toFunDefUncheckedFuel?_parts hLower
-  exact
-    ⟨before, after, lowerFn, hFind, hName, hParams, hReturns, hBody⟩
+  refine
+    ⟨before, after, lowerFn, hPrefix, hFind, hName, hParams, hReturns,
+      hBody, ?_⟩
+  intro candidate hCandidate
+  rw [hReturns, hParams] at hCandidate
+  apply hPrefix candidate
+  change candidate ∈ Contract.names program.contract
+  rcases List.mem_append.mp hCandidate with hReturn | hParam
+  · exact
+      Contract.function_return_mem_names_of_lookup hLookup hReturn
+  · exact
+      Contract.function_param_mem_names_of_lookup hLookup hParam
 
 end FunctionsObserverCompiler
 end Yul

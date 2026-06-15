@@ -750,8 +750,8 @@ theorem ofFunctionCall
                 hRel hDomain hScope hArgsRun
       obtain ⟨preparedArgs⟩ := hPreparedArgs
       obtain
-          ⟨before, after, fn, hFind, _hName, hParams, hFnReturns,
-            hLowerBody⟩ :=
+          ⟨before, after, fn, _hPrefix, hFind, _hName, hParams,
+            hFnReturns, hLowerBody, _hReserved⟩ :=
         hDecomposition.findFunction_parts hLookup
       have hArgsLength :
           reversedValues.reverse.length = (identNames params).length := by
