@@ -996,6 +996,57 @@ theorem exec_expr_primitive_ok_parts
                 ⟨previous, stateAfterPrim, values, rfl,
                   by simp [evalValues, hArgs, hPrim], hRun.symm⟩
 
+theorem exec_expr_function_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model primSemantics fuel
+          (.ExprStmtCall (.Call (.inr functionName) args))
+          codeOverride state =
+        .ok final) :
+    ∃ argsFuel callFuel stateAfterArgs reversedValues
+        stateAfterCall returnValues,
+      fuel = argsFuel + 1 ∧
+      argsFuel = callFuel + 1 ∧
+      evalArgs model primSemantics argsFuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues) ∧
+      call model primSemantics callFuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (stateAfterCall, returnValues) ∧
+      final = model.multifill [] stateAfterCall returnValues := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ argsFuel =>
+      cases hArgs :
+          evalArgs model primSemantics argsFuel args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [exec, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          cases argsFuel with
+          | zero =>
+              simp [exec, hArgs, fail] at hRun
+          | succ callFuel =>
+              cases hCall :
+                  call model primSemantics callFuel reversedValues.reverse
+                    (some functionName) codeOverride stateAfterArgs with
+              | error failure =>
+                  simp [exec, hArgs, hCall, multifill] at hRun
+              | ok result =>
+                  rcases result with ⟨stateAfterCall, returnValues⟩
+                  simp [exec, hArgs, hCall, multifill] at hRun
+                  exact
+                    ⟨callFuel + 1, callFuel, stateAfterArgs,
+                      reversedValues, stateAfterCall, returnValues,
+                      by omega, rfl, hArgs, hCall, hRun.symm⟩
+
 theorem execSeq_nil_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

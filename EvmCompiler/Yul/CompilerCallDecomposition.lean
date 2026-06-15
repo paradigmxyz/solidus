@@ -234,6 +234,66 @@ theorem toFunctionsListUncheckedFuel?_assign_call_parts
               ⟨preArgs, lowerArgs,
                 Expr.uncheckedCallArgsLowering_of_choice hArgs, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_expr_call_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {functionName : Name} {args : List AstExpr}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel state
+          (.ExprStmtCall (.Call (.inr functionName) args)) =
+        some (lower, final)) :
+    ∃ preArgs lowerArgs,
+      Expr.UncheckedCallArgsLowering state args
+        preArgs lowerArgs final ∧
+      lower =
+        preArgs ++
+          [Functions.Stmt.call [] functionName lowerArgs] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      simp only [toFunctionsListUncheckedFuel?] at hLower
+      by_cases hUnsupported :
+          ObjectBuiltin.unsupported? functionName
+      · simp [hUnsupported] at hLower
+      · by_cases hDirect : Expr.List.directCallArgsSafe? args
+        · cases hArgs : Expr.List.toLocals1? args with
+          | none =>
+              simp [hUnsupported, hDirect, hArgs] at hLower
+          | some lowerArgs =>
+              simp [hUnsupported, hDirect, hArgs] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hChoice :
+                  (if Expr.List.directCallArgsSafe? args then do
+                      let lowered ← Expr.List.toLocals1? args
+                      some ([], lowered, state)
+                    else
+                      Expr.List.lowerBound1Unchecked? state args) =
+                    some ([], lowerArgs, state) := by
+                simp [hDirect, hArgs]
+              exact
+                ⟨[], lowerArgs,
+                  Expr.uncheckedCallArgsLowering_of_choice hChoice, rfl⟩
+        · cases hArgs :
+            Expr.List.lowerBound1Unchecked? state args with
+          | none =>
+              simp [hUnsupported, hDirect, hArgs] at hLower
+          | some result =>
+              rcases result with ⟨preArgs, lowerArgs, argsFinal⟩
+              simp [hUnsupported, hDirect, hArgs] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              have hChoice :
+                  (if Expr.List.directCallArgsSafe? args then do
+                      let lowered ← Expr.List.toLocals1? args
+                      some ([], lowered, state)
+                    else
+                      Expr.List.lowerBound1Unchecked? state args) =
+                    some (preArgs, lowerArgs, argsFinal) := by
+                simp [hDirect, hArgs]
+              exact
+                ⟨preArgs, lowerArgs,
+                  Expr.uncheckedCallArgsLowering_of_choice hChoice, rfl⟩
+
 end Stmt
 
 namespace Stmt.List
