@@ -92,6 +92,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists
 #check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
@@ -158,6 +159,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward_targetDomain
+#check EvmCompiler.Yul.FunctionsObserverExpression.bindGenerated
+#check EvmCompiler.Yul.FunctionsObserverExpression.Prepared
+#check EvmCompiler.Yul.FunctionsObserverExpression.Prepared.append
+#check EvmCompiler.Yul.FunctionsObserverExpression.Prepared.generated
 #check EvmCompiler.Yul.Fresh.fresh?_components
 #check EvmCompiler.Yul.Fresh.extends_of_fresh?
 #check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering

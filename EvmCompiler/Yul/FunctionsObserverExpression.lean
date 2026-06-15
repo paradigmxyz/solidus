@@ -655,6 +655,239 @@ theorem toLocalsArgs_forward_targetDomain
   exact
     ⟨target', hTarget, hFinalRel, hDomain.congr hVars⟩
 
+theorem bindGenerated
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {ctx : Functions.Source.Ctx} {stmtFuel : Nat}
+    {before after : Fresh.State} {tmp : Name}
+    {lower : Locals.Expr 1} {value : Word}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {targetBefore targetAfter :
+      Functions.ObserverSemantics.State transcript}
+    (hFresh : Fresh.fresh? before = some (tmp, after))
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, [value]))
+    (hRel : StateRelation.Replay.Rel codeRel source targetAfter)
+    (hDomain :
+      StateRelation.Vars.TargetDomainExact
+        before.used targetAfter.source.vars)
+    (hCtx : ctx.scope = before.used) :
+    let targetBound :=
+      targetAfter.withSource (targetAfter.source.insert tmp value)
+    let ctxBound := { ctx with scope := tmp :: ctx.scope }
+    Functions.Source.Effectful.Stmt.run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx stmtFuel (.let_ tmp lower) targetBefore =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular targetBound, ctxBound) ∧
+    StateRelation.Replay.Rel codeRel source targetBound ∧
+    StateRelation.Vars.TargetDomainExact
+      after.used targetBound.source.vars ∧
+    ctxBound.scope = after.used := by
+  have hEvalOne :
+      Functions.Source.Effectful.Expr.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, value) := by
+    unfold Functions.Source.Effectful.Expr.evalOne
+    unfold Locals.Source.Effectful.Expr.evalOne
+    change
+      Locals.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, [value]) at hEval
+    rw [hEval]
+    rfl
+  obtain ⟨hUsed, hNotMem⟩ := Fresh.fresh?_components hFresh
+  have hSourceHidden :
+      source.source.lookup? tmp = none :=
+    StateRelation.Replay.source_lookup_none_of_targetDomain
+      hRel hDomain hNotMem
+  have hFinalRel :
+      StateRelation.Replay.Rel codeRel source
+        (targetAfter.withSource (targetAfter.source.insert tmp value)) :=
+    StateRelation.Replay.insert_target_hidden hRel hSourceHidden
+  have hFinalDomain :
+      StateRelation.Vars.TargetDomainExact after.used
+        (targetAfter.withSource
+          (targetAfter.source.insert tmp value)).source.vars := by
+    rw [hUsed]
+    exact hDomain.insert hNotMem
+  dsimp
+  refine ⟨?_, hFinalRel, hFinalDomain, ?_⟩
+  · unfold Functions.Source.Effectful.Stmt.run
+    rw [hEvalOne]
+    rfl
+  · simpa [hCtx] using hUsed.symm
+
+structure Prepared
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (pre : List Functions.Stmt)
+    (fresh : Fresh.State)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) where
+  finalTarget : Functions.ObserverSemantics.State transcript
+  finalCtx : Functions.Source.Ctx
+  run :
+    ∃ fuel,
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := pre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget, finalCtx)
+  rel : StateRelation.Replay.Rel codeRel source finalTarget
+  domain :
+    StateRelation.Vars.TargetDomainExact
+      fresh.used finalTarget.source.vars
+  scope : finalCtx.scope = fresh.used
+
+namespace Prepared
+
+def empty
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainExact fresh.used target.source.vars)
+    (hScope : ctx.scope = fresh.used) :
+    Prepared contract transcript codeRel program []
+      fresh source target ctx := by
+  exact
+    { finalTarget := target
+      finalCtx := ctx
+      run :=
+        ⟨1, by
+          simp [Functions.Source.Effectful.Block.runOpen,
+            Functions.Source.Effectful.Outcome.regular,
+            Locals.Source.Effectful.Outcome.regular]⟩
+      rel := hRel
+      domain := hDomain
+      scope := hScope }
+
+def append
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {left right : List Functions.Stmt}
+    {middleFresh finalFresh : Fresh.State}
+    {middleSource finalSource :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLeft :
+      Prepared contract transcript codeRel program left
+        middleFresh middleSource target ctx)
+    (hRight :
+      Prepared contract transcript codeRel program right
+        finalFresh finalSource hLeft.finalTarget hLeft.finalCtx) :
+    Prepared contract transcript codeRel program (left ++ right)
+      finalFresh finalSource target ctx := by
+  exact
+    { finalTarget := hRight.finalTarget
+      finalCtx := hRight.finalCtx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program left right ctx hLeft.finalCtx target hLeft.finalTarget
+          (Functions.Source.Effectful.Outcome.regular hRight.finalTarget)
+          hRight.finalCtx hLeft.run hRight.run
+      rel := hRight.rel
+      domain := hRight.domain
+      scope := hRight.scope }
+
+def generated
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {ctx : Functions.Source.Ctx}
+    {before after : Fresh.State} {tmp : Name}
+    {lower : Locals.Expr 1} {value : Word}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {targetBefore targetAfter :
+      Functions.ObserverSemantics.State transcript}
+    (hFresh : Fresh.fresh? before = some (tmp, after))
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, [value]))
+    (hRel : StateRelation.Replay.Rel codeRel source targetAfter)
+    (hDomain :
+      StateRelation.Vars.TargetDomainExact
+        before.used targetAfter.source.vars)
+    (hCtx : ctx.scope = before.used) :
+    Prepared contract transcript codeRel program
+      [.let_ tmp lower] after source targetBefore ctx := by
+  have hBound :=
+    bindGenerated
+      (contract := contract) (transcript := transcript)
+      (codeRel := codeRel) (program := program)
+      (ctx := ctx) (stmtFuel := 1)
+      hFresh hEval hRel hDomain hCtx
+  dsimp at hBound
+  rcases hBound with ⟨hStmt, hFinalRel, hFinalDomain, hFinalScope⟩
+  let targetBound :=
+    targetAfter.withSource (targetAfter.source.insert tmp value)
+  let ctxBound := { ctx with scope := tmp :: ctx.scope }
+  refine
+    { finalTarget := targetBound
+      finalCtx := ctxBound
+      run := ?_
+      rel := hFinalRel
+      domain := hFinalDomain
+      scope := hFinalScope }
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctxBound 1 { stmts := [] } targetBound =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetBound,
+            ctxBound) := by
+    simp [Functions.Source.Effectful.Block.runOpen,
+      Functions.Source.Effectful.Outcome.regular,
+      Locals.Source.Effectful.Outcome.regular]
+  exact
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hStmt hEmpty
+
+end Prepared
+
 end FunctionsObserverExpression
 end Yul
 end EvmCompiler

@@ -1548,6 +1548,10 @@ corridor.
   carries an exact target-domain invariant indexed by the compiler used-name
   list. Fresh compiler names are therefore absent from both the target store
   and, via the source-visible relation, the current Yul source state.
+  Canonical Functions semantics now composes regular open-block fragments
+  across list append. The Yul expression pass packages generated preamble
+  execution as `Prepared`, with checked empty, append, and fresh-binding
+  constructors preserving replay, exact target domains, and compiler scope.
   The next expression boundary is `lowerBound1Unchecked?`: execute generated
   argument-binding preambles, preserve hidden temporary ownership, and compose
   function-call expressions. Statements, loops, calls, and whole-main

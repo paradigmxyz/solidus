@@ -3620,6 +3620,29 @@ theorem Stmt.run_success_unique {σ : Type}
 namespace Block
 
 /--
+Successful empty open-block execution is the unchanged regular state and
+context.
+-/
+theorem runOpen_nil_ok {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state : σ}
+    {outcome : Outcome σ} {runCtx : Source.Ctx}
+    (hRun :
+      Block.runOpen model prim program ctx fuel { stmts := [] } state =
+        .ok (outcome, runCtx)) :
+    outcome = Outcome.regular state ∧ runCtx = ctx := by
+  cases fuel with
+  | zero =>
+      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ fuel =>
+      have hPair :
+          (Outcome.regular state, ctx) = (outcome, runCtx) := by
+        simpa [Block.runOpen] using hRun
+      injection hPair with hOutcome hCtx
+      exact ⟨hOutcome.symm, hCtx.symm⟩
+
+/--
 A regular open-block result becomes a scoped result by restricting only the
 source variable store to the incoming lexical scope.
 -/
@@ -3850,6 +3873,60 @@ theorem runOpen_cons_cases {σ : Type}
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
           · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+
+/--
+Compose two successful effectful open-block fragments when the first fragment
+returns regularly.
+-/
+theorem runOpen_append_regular_exists {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) :
+    ∀ (left right : List Stmt) (ctx midCtx : Source.Ctx)
+      (source mid : σ) (outcome : Outcome σ) (runCtx : Source.Ctx),
+      (∃ fuel,
+        Block.runOpen model prim program ctx fuel { stmts := left } source =
+          .ok (Outcome.regular mid, midCtx)) →
+      (∃ fuel,
+        Block.runOpen model prim program midCtx fuel { stmts := right } mid =
+          .ok (outcome, runCtx)) →
+      ∃ fuel,
+        Block.runOpen model prim program ctx fuel
+            { stmts := left ++ right } source =
+          .ok (outcome, runCtx) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx midCtx source mid outcome runCtx hLeft hRight
+      rcases hLeft with ⟨fuel, hLeft⟩
+      rcases runOpen_nil_ok model prim program hLeft with
+        ⟨hOutcome, hCtx⟩
+      cases hOutcome
+      cases hCtx
+      simpa using hRight
+  | cons stmt rest ih =>
+      intro right ctx midCtx source mid outcome runCtx hLeft hRight
+      rcases hLeft with ⟨fuel, hLeft⟩
+      cases fuel with
+      | zero =>
+          simp [Block.runOpen, Source.invalid, Structured.invalid] at hLeft
+      | succ fuel =>
+          rcases
+              runOpen_cons_cases model prim program
+                (fuel := fuel) hLeft with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨afterStmt, stmtCtx, hStmt, hRest⟩
+            obtain ⟨tailFuel, hTail⟩ :=
+              ih right stmtCtx midCtx afterStmt mid outcome runCtx
+                ⟨fuel, hRest⟩ hRight
+            exact
+              runOpen_cons_regular_exists model prim program
+                hStmt hTail
+          · rcases hNonregular with
+              ⟨headOutcome, headCtx, _hHead, hMode, hOutcome, _hCtx⟩
+            rw [← hOutcome] at hMode
+            simp [Outcome.regular,
+              Locals.Source.Effectful.Outcome.regular] at hMode
 
 /--
 A nonregular source statement makes the remaining source list unreachable.
