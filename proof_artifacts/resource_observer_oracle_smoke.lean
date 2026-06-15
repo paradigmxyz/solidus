@@ -1174,6 +1174,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.restore_call
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restore_call
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_multifill_assignMany
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_multifill_assignMany_fresh
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_insertMany_hidden
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_target
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok_parts
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok_parts
@@ -1223,6 +1225,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_none_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_one_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_one_parts
+#print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_call_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
@@ -1250,7 +1253,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofReturnedBody
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofAssignCall
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe

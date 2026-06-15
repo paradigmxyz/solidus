@@ -1344,6 +1344,307 @@ theorem of_assign_one
   · rw [hRevived]
     exact hRestrictedRel
 
+theorem of_let_call
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns names : List EvmYul.Identifier}
+    {functionName : Name}
+    {callArgs : List AstExpr}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering before callArgs
+        preArgs lowerArgs after)
+    (hFnBody :
+      fn.body =
+        { stmts :=
+            Stmt.initNames (identNames names) ++ preArgs ++
+              [Functions.Stmt.call
+                (identNames names) functionName lowerArgs] })
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          (fn.returns ++ fn.params) names.length
+          (.Call (.inr functionName) callArgs) =
+        true)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hTargetDomain :
+      StateRelation.Vars.TargetDomainWithin before.used
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns
+                fn.returns paramStore }).source.vars)
+    (hTargetScope :
+      StateRelation.Vars.NamesWithin before.used
+        (Functions.Source.Effectful.FunDef.bodyCtx fn).scope)
+    (hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names
+          [.Let names (some (.Call (.inr functionName) callArgs))]))
+    (hExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hBody :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel
+          (.Block
+            [.Let names
+              (some (.Call (.inr functionName) callArgs))])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) := by
+  let sourceEntry :=
+    sourceCaller.withSource
+      (EvmYul.Yul.State.mkOk
+        (sourceCaller.source.initcall params returns args))
+  let targetEntry :=
+    targetCaller.withSource
+      { shared := targetCaller.source.shared,
+        vars :=
+          Functions.Source.Store.initReturns fn.returns paramStore }
+  obtain
+      ⟨entryShared, entryVars, hEntrySource,
+        _hEntryShared, _hEntryVars, hEntryDomain⟩ :=
+    hEntry.2
+  obtain
+      ⟨_sourcePrevious, stateAfterSeq, _hSourceFuel,
+        hSeqRun, hSourceAfter⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨_seqPrevious, stateAfterLet, _hSeqFuel,
+        hLetRun, hSeqFinal⟩ :=
+    Yul.Source.Effectful.execSeq_cons_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hSeqRun
+  obtain
+      ⟨evalFuel, sourceAfterCall, values, hLetFuel,
+        hCheck, hEvalValues, hStateAfterLet⟩ :=
+    Yul.Source.Effectful.exec_let_some_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hLetRun
+  have hCheckEntry :
+      EvmYul.Yul.checkDeclaration
+          (.Ok entryShared entryVars) names =
+        .ok () := by
+    rw [← hEntrySource]
+    simpa [sourceEntry] using hCheck
+  obtain ⟨hTargetsNodup, hTargetsFresh⟩ :=
+    StateRelation.Vars.checkDeclaration_ok_parts
+      (layout := fn.returns ++ fn.params)
+      (source := entryVars) (shared := entryShared)
+      hEntryDomain hCheckEntry
+  have hNamesUsed :
+      StateRelation.Vars.NamesWithin before.used
+        (identNames names) := by
+    intro name hMem
+    apply hBodyNames name
+    simp [Stmt.List.names, Stmt.names, hMem]
+  obtain ⟨initFuel, initVars, initCtx,
+      hInsert, hInitRun, hInitCtx⟩ :=
+    InitNames.run
+      (contract := contract) (program := targetProgram.toFunctions)
+      (identNames names) targetEntry
+      (Functions.Source.Effectful.FunDef.bodyCtx fn)
+  let targetDeclared :=
+    targetEntry.withSource
+      { shared := targetEntry.source.shared, vars := initVars }
+  have hDeclaredRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params) sourceEntry targetDeclared := by
+    simpa [sourceEntry, targetEntry, targetDeclared] using
+      StateRelation.Replay.scopedExact_insertMany_hidden
+        hEntry
+        (by simpa [identNames_eq_self] using hTargetsFresh)
+        hInsert
+  have hDeclaredDomain :
+      StateRelation.Vars.TargetDomainWithin before.used
+        targetDeclared.source.vars := by
+    simpa [targetEntry, targetDeclared] using
+      hTargetDomain.insertMany hNamesUsed hInsert
+  have hDeclaredScope :
+      StateRelation.Vars.NamesWithin before.used initCtx.scope := by
+    rw [hInitCtx]
+    intro name hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hNamesUsed name (by simpa using hDeclared)
+    · exact hTargetScope name hOuter
+  have hTargetsContain :
+      ∀ name, name ∈ identNames names →
+        targetDeclared.source.vars.contains name = true := by
+    intro name hMem
+    simpa [targetDeclared] using
+      Functions.Source.Store.insertMany_contains_of_mem
+        (by simpa [identNames_eq_self] using hTargetsNodup)
+        hInsert hMem
+  let sourceDeclared :=
+    sourceAfterCall.withSource
+      (sourceAfterCall.source.multifill names values)
+  have hStateAfterLet' : stateAfterLet = sourceDeclared := by
+    simpa [sourceDeclared] using hStateAfterLet
+  obtain ⟨returnedCall⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+      (sourceFinal := sourceDeclared)
+      hDecomposition hArgsLowering hProgramOk
+      (by simpa [identNames_eq_self] using hExprOk)
+      (by simpa [identNames_eq_self] using hTargetsNodup)
+      (by simpa [identNames_eq_self] using hTargetsFresh)
+      hTargetsContain
+      (fun hFuel hOk hLower hRel hDomain hScope hExprRun =>
+        hExpr (by omega) hOk hLower hRel hDomain hScope hExprRun)
+      (fun hFuel hLower hCallParams hCallReturns hCallParamStore
+          hReserved hCallBodyNames hBodyOk hCallEntry hBodyRun =>
+        hBody (by omega) hLower hCallParams hCallReturns
+          hCallParamStore hReserved hCallBodyNames hBodyOk
+          hCallEntry hBodyRun)
+      hDeclaredRel hDeclaredDomain hDeclaredScope hEvalValues
+      (by simp [sourceDeclared, identNames_eq_self])
+  obtain
+      ⟨declaredShared, declaredVars, hDeclaredSource,
+        _hDeclaredShared, _hDeclaredVars, _hDeclaredSourceDomain⟩ :=
+    returnedCall.relation.2
+  have hStateAfterSeq : stateAfterSeq = sourceDeclared := by
+    rw [hStateAfterLet'] at hSeqFinal
+    change
+      (match sourceDeclared.source with
+      | .Ok _ _ =>
+          Yul.Source.Effectful.execSeq
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              _ [] (some sourceProgram.contract) sourceDeclared =
+            .ok stateAfterSeq
+      | .OutOfFuel | .Checkpoint _ =>
+          stateAfterSeq = sourceDeclared) at hSeqFinal
+    rw [hDeclaredSource] at hSeqFinal
+    obtain ⟨_tailPrevious, _hTailFuel, hTailFinal⟩ :=
+      Yul.Source.Effectful.execSeq_nil_ok_parts
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        hSeqFinal
+    exact hTailFinal
+  have hSourceAfterBody :
+      sourceAfterBody =
+        sourceDeclared.withSource
+          (.Ok declaredShared
+            (EvmYul.Yul.State.restrictVarStore
+              declaredVars entryVars)) := by
+    rw [hSourceAfter, hStateAfterSeq]
+    change
+      sourceDeclared.withSource
+          (sourceDeclared.source.restrictStoreTo sourceEntry.source.store) =
+        _
+    rw [hDeclaredSource, hEntrySource]
+    rfl
+  have hRestrictedRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params) sourceAfterBody
+        returnedCall.finalTarget := by
+    rw [hSourceAfterBody]
+    exact
+      StateRelation.Replay.scopedExact_restrict_source
+        hDeclaredSource returnedCall.relation hEntryDomain
+        (by
+          intro candidate hMem
+          exact List.mem_append_right _ hMem)
+  have hRevived :
+      sourceAfterBody.withSource sourceAfterBody.source.reviveJump =
+        sourceAfterBody := by
+    rw [hSourceAfterBody]
+    rfl
+  let targetOutcome :=
+    Functions.Source.Effectful.Outcome.regular returnedCall.finalTarget
+  obtain ⟨callFuel, hCallRun⟩ := returnedCall.run
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions
+      (Stmt.initNames (identNames names))
+      (preArgs ++
+        [Functions.Stmt.call
+          (identNames names) functionName lowerArgs])
+      (Functions.Source.Effectful.FunDef.bodyCtx fn)
+      initCtx targetEntry targetDeclared
+      targetOutcome returnedCall.finalCtx
+      ⟨initFuel, by simpa [targetDeclared] using hInitRun⟩
+      ⟨callFuel, hCallRun⟩
+  have hBodyRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel fn.body targetEntry =
+        .ok (targetOutcome, returnedCall.finalCtx) := by
+    rw [hFnBody]
+    simpa [targetOutcome, targetDeclared] using hTargetRun
+  refine
+    ⟨targetFuel,
+      ⟨paramStore, targetOutcome, returnedCall.finalCtx,
+        hParamStore, ?_, ?_, ?_⟩⟩
+  · simpa [targetEntry] using hBodyRun
+  · exact Or.inl rfl
+  · rw [hRevived]
+    exact hRestrictedRel
+
 theorem of_assign_call
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -1496,9 +1797,9 @@ theorem of_assign_call
       (fun hFuel hOk hLower hRel hDomain hScope hExprRun =>
         hExpr (by omega) hOk hLower hRel hDomain hScope hExprRun)
       (fun hFuel hLower hCallParams hCallReturns hCallParamStore
-          hReserved hBodyOk hCallEntry hBodyRun =>
+          hReserved hBodyNames hBodyOk hCallEntry hBodyRun =>
         hBody (by omega) hLower hCallParams hCallReturns
-          hCallParamStore hReserved hBodyOk hCallEntry hBodyRun)
+          hCallParamStore hReserved hBodyNames hBodyOk hCallEntry hBodyRun)
       hEntry
       (by simpa [targetEntry] using hTargetDomain)
       hTargetScope hEvalValues rfl

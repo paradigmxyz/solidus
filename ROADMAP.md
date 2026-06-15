@@ -1638,14 +1638,13 @@ corridor.
   validation now supplies the selected function's complete body check at the
   private recursive boundary. Multi-name assignment writeback and exact
   caller-domain restoration are relation-owned, while
-  `CompilerCallDecomposition` exposes ordinary direct-call assignment lowering
-  without observer-specific compilation. The first direct call-valued
-  assignment body, including zero-, one-, and multi-result callees, is checked
-  through `ScopedReturnedCall.ofFunctionCall`,
-  `ReturnedBody.of_assign_call`, and
-  `RecursiveBodyForward.ofAssignCall`. The next obligation is the matching
-  direct call-valued declaration path and then the generic recursive
-  body/control dispatcher.
+  `CompilerCallDecomposition` exposes ordinary direct-call assignment and
+  declaration lowering without observer-specific compilation. Direct
+  call-valued assignment and declaration bodies, including zero-, one-, and
+  multi-result callees, are checked through the shared call runtime,
+  relation-owned visible/fresh writeback, `ReturnedBody.of_assign_call`,
+  `ReturnedBody.of_let_call`, and their `RecursiveBodyForward` constructors.
+  The next obligation is the generic recursive body/control dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

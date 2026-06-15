@@ -211,6 +211,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok_parts
 #check EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok_parts
 #check EvmCompiler.Yul.StateRelation.Vars.target_contains_of_scopedExact
+#check EvmCompiler.Yul.StateRelation.Vars.TargetDomainWithin.insertMany
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_insertMany_hidden
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_multifill_assignMany_fresh
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
@@ -294,9 +297,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_none
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_one
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
+#check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_call_parts
 #check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+#check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofAssignCall
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe

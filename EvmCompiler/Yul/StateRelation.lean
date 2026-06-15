@@ -1206,6 +1206,33 @@ theorem TargetDomainWithin.insert_visible
   · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
     exact hDomain key result hLookup
 
+theorem TargetDomainWithin.insertMany
+    {used : List Name} :
+    ∀ {names : List Name} {values : List Assembly.Word}
+      {target finalTarget : Locals.Source.Store},
+      TargetDomainWithin used target →
+      (∀ name, name ∈ names → name ∈ used) →
+      Functions.Source.Store.insertMany names values target =
+        some finalTarget →
+      TargetDomainWithin used finalTarget
+  | [], [], target, finalTarget, hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst finalTarget
+      exact hDomain
+  | [], _value :: _values, _target, _finalTarget,
+      _hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _target, _finalTarget,
+      _hDomain, _hUsed, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, target, finalTarget,
+      hDomain, hUsed, hInsert => by
+      exact
+        TargetDomainWithin.insertMany
+          (hDomain.insert_visible (hUsed name (by simp)))
+          (fun candidate hMem => hUsed candidate (by simp [hMem]))
+          hInsert
+
 theorem TargetDomainWithin.assignMany
     {used : List Name} :
     ∀ {names : List Name} {values : List Assembly.Word}
@@ -1614,6 +1641,67 @@ theorem scopedExact_multifill_assignMany
         · exact
             domainExact_insert_visible hTailDomain
               (hVisible name (by simp))
+      · simp [hContains] at hAssign
+
+theorem scopedExact_multifill_assignMany_fresh
+    {shared : EvmYul.SharedState .Yul} :
+    ∀ {names : List Name} {values : List Assembly.Word}
+      {layout : List Name}
+      {source : EvmYul.Yul.VarStore}
+      {target finalTarget : Locals.Source.Store},
+      ScopedRel layout source target →
+      DomainExact layout source →
+      names.Nodup →
+      (∀ name, name ∈ names → name ∉ layout) →
+      Functions.Source.Store.assignMany names values target =
+        some finalTarget →
+      ∃ finalSource,
+        (EvmYul.Yul.State.Ok shared source).multifill names values =
+          EvmYul.Yul.State.Ok shared finalSource ∧
+        ScopedRel (names ++ layout) finalSource finalTarget ∧
+        DomainExact (names ++ layout) finalSource
+  | [], [], layout, source, target, finalTarget,
+      hScoped, hDomain, _hNodup, _hFresh, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+      subst finalTarget
+      exact
+        ⟨source, by simp [EvmYul.Yul.State.multifill],
+          hScoped, hDomain⟩
+  | [], _value :: _values, _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hFresh, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | _name :: _names, [], _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hFresh, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | name :: names, value :: values, layout, source, target, finalTarget,
+      hScoped, hDomain, hNodup, hFresh, hAssign => by
+      have hParts := List.nodup_cons.mp hNodup
+      unfold Functions.Source.Store.assignMany at hAssign
+      by_cases hContains : target.contains name
+      · simp [hContains] at hAssign
+        obtain ⟨tailTarget, hTailAssign, hFinalTarget⟩ :=
+          Functions.Source.Store.assignMany_remove_insert_of_not_mem
+            hAssign hParts.1
+        have hTailFresh :
+            ∀ candidate, candidate ∈ names → candidate ∉ layout := by
+          intro candidate hMem
+          exact hFresh candidate (by simp [hMem])
+        obtain
+            ⟨tailSource, hTailSource, hTailScoped, hTailDomain⟩ :=
+          scopedExact_multifill_assignMany_fresh
+            hScoped hDomain hParts.2 hTailFresh hTailAssign
+        have hHeadFresh : name ∉ names ++ layout := by
+          simp only [List.mem_append, not_or]
+          exact ⟨hParts.1, hFresh name (by simp)⟩
+        subst finalTarget
+        refine
+          ⟨tailSource.insert name value, ?_, ?_, ?_⟩
+        · simpa [EvmYul.Yul.State.multifill] using
+            congrArg (fun state => state.insert name value) hTailSource
+        · simpa [List.cons_append] using
+            scoped_cons_insert hTailScoped hHeadFresh
+        · simpa [List.cons_append] using
+            domainExact_insert hTailDomain
       · simp [hContains] at hAssign
 
 theorem firstDuplicate?_none_of_nodup
@@ -2053,6 +2141,53 @@ theorem scopedExact_multifill_assignMany
   exact
     ⟨sourceShared, finalSource, hFinalSource, hShared,
       hFinalScoped, hFinalDomain⟩
+
+theorem scopedExact_multifill_assignMany_fresh
+    {codeRel : CodeRel} {layout names : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hAssign :
+      Functions.Source.Store.assignMany names values target.vars =
+        some finalVars) :
+    ScopedExactRel codeRel (names ++ layout)
+      (source.multifill names values)
+      { shared := target.shared, vars := finalVars } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, hDomain⟩
+  subst source
+  obtain ⟨finalSource, hFinalSource, hFinalScoped, hFinalDomain⟩ :=
+    Vars.scopedExact_multifill_assignMany_fresh
+      (shared := sourceShared) hScoped hDomain hNoDup hFresh hAssign
+  exact
+    ⟨sourceShared, finalSource, hFinalSource, hShared,
+      hFinalScoped, hFinalDomain⟩
+
+theorem scopedExact_insertMany_hidden
+    {codeRel : CodeRel} {layout names : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hInsert :
+      Functions.Source.Store.insertMany names values target.vars =
+        some finalVars) :
+    ScopedExactRel codeRel layout source
+      { shared := target.shared, vars := finalVars } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, hDomain⟩
+  refine
+    ⟨sourceShared, sourceVars, hSource, hShared, ?_, hDomain⟩
+  intro name hMem
+  change sourceVars.lookup name = finalVars name
+  rw [Functions.Source.Store.insertMany_apply_of_not_mem hInsert]
+  · exact hScoped name hMem
+  · intro hNames
+    exact hFresh name hNames hMem
 
 theorem scopedExact_zeroFill_insertMany
     {codeRel : CodeRel} {layout names : List Name}
@@ -2619,6 +2754,51 @@ theorem scopedExact_multifill_assignMany
     ⟨hRel.1,
       Regular.scopedExact_multifill_assignMany
         hRel.2 hNoDup hVisible hAssign⟩
+
+theorem scopedExact_multifill_assignMany_fresh
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout names : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hAssign :
+      Functions.Source.Store.assignMany names values target.source.vars =
+        some finalVars) :
+    ScopedExactRel codeRel (names ++ layout)
+      (source.withSource (source.source.multifill names values))
+      (target.withSource
+        { shared := target.source.shared, vars := finalVars }) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedExact_multifill_assignMany_fresh
+        hRel.2 hNoDup hFresh hAssign⟩
+
+theorem scopedExact_insertMany_hidden
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout names : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hInsert :
+      Functions.Source.Store.insertMany names values target.source.vars =
+        some finalVars) :
+    ScopedExactRel codeRel layout source
+      (target.withSource
+        { shared := target.source.shared, vars := finalVars }) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedExact_insertMany_hidden hRel.2 hFresh hInsert⟩
 
 theorem scopedExact_zeroFill_insertMany
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

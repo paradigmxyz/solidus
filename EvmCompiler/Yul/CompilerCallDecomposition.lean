@@ -40,6 +40,53 @@ end Expr
 
 namespace Stmt
 
+theorem toFunctionsListUncheckedFuel?_let_call
+    (fuel : Nat) (state : Fresh.State)
+    (names : List EvmYul.Identifier)
+    (functionName : Name) (args : List AstExpr) :
+    toFunctionsListUncheckedFuel? (fuel + 1) state
+        (.Let names (some (.Call (.inr functionName) args))) =
+      if ObjectBuiltin.unsupported? functionName then
+        none
+      else
+        (if Expr.List.directCallArgsSafe? args then do
+            let lowerArgs ← Expr.List.toLocals1? args
+            some ([], lowerArgs, state)
+          else
+            Expr.List.lowerBound1Unchecked? state args).bind fun result =>
+          some
+            (initNames (identNames names) ++ result.1 ++
+              [Functions.Stmt.call
+                (identNames names) functionName result.2.1],
+              result.2.2) := by
+  cases names with
+  | nil =>
+      simp only [toFunctionsListUncheckedFuel?]
+      by_cases hUnsupported : ObjectBuiltin.unsupported? functionName
+      · simp [hUnsupported, identNames, initNames]
+      · by_cases hDirect : Expr.List.directCallArgsSafe? args
+        · cases hLocals : Expr.List.toLocals1? args <;>
+            simp [hUnsupported, hDirect, hLocals, identNames, initNames]
+        · simp [hUnsupported, hDirect, identNames, initNames]
+  | cons name rest =>
+      cases rest with
+      | nil =>
+          simp only [toFunctionsListUncheckedFuel?]
+          by_cases hUnsupported : ObjectBuiltin.unsupported? functionName
+          · simp [hUnsupported]
+          · by_cases hDirect : Expr.List.directCallArgsSafe? args
+            · cases hLocals : Expr.List.toLocals1? args <;>
+                simp [hUnsupported, hDirect, hLocals]
+            · simp [hUnsupported, hDirect]
+      | cons next rest =>
+          simp only [toFunctionsListUncheckedFuel?]
+          by_cases hUnsupported : ObjectBuiltin.unsupported? functionName
+          · simp [hUnsupported]
+          · by_cases hDirect : Expr.List.directCallArgsSafe? args
+            · cases hLocals : Expr.List.toLocals1? args <;>
+                simp [hUnsupported, hDirect, hLocals]
+            · simp [hUnsupported, hDirect]
+
 theorem toFunctionsListUncheckedFuel?_assign_call
     (fuel : Nat) (state : Fresh.State)
     (names : List EvmYul.Identifier)
@@ -90,6 +137,60 @@ theorem toFunctionsListUncheckedFuel?_assign_call
 end Stmt
 
 namespace Stmt.List
+
+theorem toBlockUncheckedFuel?_singleton_let_call_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {names : List EvmYul.Identifier}
+    {functionName : Name} {args : List AstExpr}
+    {lower : Functions.Block}
+    (hLower :
+      toBlockUncheckedFuel? fuel state
+          [.Let names (some (.Call (.inr functionName) args))] =
+        some (lower, final)) :
+    ∃ preArgs lowerArgs,
+      Expr.UncheckedCallArgsLowering state args
+        preArgs lowerArgs final ∧
+      lower =
+        { stmts :=
+            Stmt.initNames (identNames names) ++ preArgs ++
+              [Functions.Stmt.call
+                (identNames names) functionName lowerArgs] } := by
+  obtain ⟨previous, lowerStmts, _hFuel, hList, hBlock⟩ :=
+    toBlockUncheckedFuel?_parts hLower
+  obtain
+      ⟨stmtFuel, lowerStmt, middle, lowerRest,
+        _hPrevious, hStmt, hRest, hStmts⟩ :=
+    toFunctionsUncheckedFuel?_cons_parts hList
+  cases stmtFuel with
+  | zero =>
+      simp [Stmt.toFunctionsListUncheckedFuel?] at hStmt
+  | succ remaining =>
+      rw [Stmt.toFunctionsListUncheckedFuel?_let_call] at hStmt
+      by_cases hUnsupported :
+          ObjectBuiltin.unsupported? functionName
+      · simp [hUnsupported] at hStmt
+      · cases hArgs :
+          (if Expr.List.directCallArgsSafe? args then do
+              let lowerArgs ← Expr.List.toLocals1? args
+              some ([], lowerArgs, state)
+            else
+              Expr.List.lowerBound1Unchecked? state args) with
+        | none =>
+            rw [hArgs] at hStmt
+            simp [hUnsupported] at hStmt
+        | some result =>
+            rcases result with ⟨preArgs, lowerArgs, argsFinal⟩
+            rw [hArgs] at hStmt
+            simp [hUnsupported] at hStmt
+            rcases hStmt with ⟨rfl, rfl⟩
+            obtain ⟨_restFuel, _hRestFuel, hLowerRest, hFinal⟩ :=
+              toFunctionsUncheckedFuel?_nil_parts hRest
+            subst lowerRest
+            subst final
+            refine
+              ⟨preArgs, lowerArgs,
+                Expr.uncheckedCallArgsLowering_of_choice hArgs, ?_⟩
+            simpa [hStmts] using hBlock
 
 theorem toBlockUncheckedFuel?_singleton_assign_call_parts
     {fuel : Nat} {state final : Fresh.State}

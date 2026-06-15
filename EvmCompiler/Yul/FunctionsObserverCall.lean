@@ -164,7 +164,7 @@ structure ScopedReturnedCall
 
 namespace ScopedReturnedCall
 
-theorem ofReturnedBody
+private theorem ofReturnedBodyWithWriteback
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -175,7 +175,7 @@ theorem ofReturnedBody
     {preArgs : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
     {fresh : Fresh.State}
-    {layout : List Name}
+    {layout finalLayout : List Name}
     {argValues returnValues : List Word}
     {bodyFuel : Nat}
     {sourceAfterArgs sourceAfterBody sourceFinal :
@@ -187,8 +187,10 @@ theorem ofReturnedBody
         contract transcript codeRel program preArgs lowerArgs fresh layout
         sourceAfterArgs target ctx argValues)
     (hTargetsNodup : targets.Nodup)
-    (hTargetsVisible :
-      ∀ name, name ∈ targets → name ∈ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
     (hFind :
       Functions.Source.FunList.find? functionName program.functions =
         some fn)
@@ -198,15 +200,27 @@ theorem ofReturnedBody
     (hReturnValues :
       List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
     (hLength : returnValues.length = targets.length)
-    (hSourceFinal :
-      sourceFinal =
-        sourceAfterBody.withSource
-          (((sourceAfterBody.source.reviveJump.overwrite?
-            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
-              targets returnValues)) :
+    (hWriteback :
+      ∀ {finalVars : Locals.Source.Store},
+        Functions.Source.Store.assignMany targets returnValues
+            argsPrepared.prepared.prepared.finalTarget.source.vars =
+          some finalVars →
+        StateRelation.Replay.ScopedExactRel codeRel layout
+            (sourceAfterBody.withSource
+              ((sourceAfterBody.source.reviveJump.overwrite?
+                sourceAfterArgs.source).setStore sourceAfterArgs.source))
+            (body.bodyOutcome.state.withSource
+              { shared := body.bodyOutcome.state.source.shared,
+                vars :=
+                  argsPrepared.prepared.prepared.finalTarget.source.vars }) →
+        StateRelation.Replay.ScopedExactRel codeRel finalLayout
+          sourceFinal
+          (body.bodyOutcome.state.withSource
+            { shared := body.bodyOutcome.state.source.shared,
+              vars := finalVars })) :
     Nonempty
       (ScopedReturnedCall contract transcript codeRel program functionName
-        targets preArgs lowerArgs fresh layout sourceFinal target ctx) := by
+        targets preArgs lowerArgs fresh finalLayout sourceFinal target ctx) := by
   let targetAfterArgs := argsPrepared.prepared.prepared.finalTarget
   have hArgsEval :
       Functions.Source.Effectful.ArgList.eval
@@ -241,17 +255,6 @@ theorem ofReturnedBody
         (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript)
         program body.params body.run body.mode hReturns rfl
-  obtain
-      ⟨_sourceShared, _sourceVars, _hSource, _hShared,
-        hScoped, hSourceDomain⟩ :=
-    argsPrepared.relation.2
-  have hTargetsContain :
-      ∀ name, name ∈ targets →
-        targetAfterArgs.source.vars.contains name = true := by
-    intro name hMem
-    exact
-      StateRelation.Vars.target_contains_of_scopedExact
-        hScoped hSourceDomain (hTargetsVisible name hMem)
   obtain ⟨finalVars, hAssign⟩ :=
     Functions.Source.Store.assignMany_exists_of_length_of_contains
       hLength hTargetsContain
@@ -338,19 +341,20 @@ theorem ofReturnedBody
     StateRelation.Replay.scopedExact_restore_call
       argsPrepared.relation body.relation
   have hFinalRel :
-      StateRelation.Replay.ScopedExactRel codeRel layout
-        sourceFinal finalTarget := by
-    rw [hSourceFinal]
-    exact
-      StateRelation.Replay.scopedExact_multifill_assignMany
-        hRestored hTargetsNodup hTargetsVisible hAssign
+      StateRelation.Replay.ScopedExactRel codeRel finalLayout
+        sourceFinal finalTarget :=
+    hWriteback hAssign hRestored
   have hTargetsUsed :
       ∀ name, name ∈ targets → name ∈ fresh.used := by
     intro name hMem
     cases hLookup : targetAfterArgs.source.vars name with
     | none =>
         have hContains := hTargetsContain name hMem
-        simp [Locals.Source.Store.contains, hLookup] at hContains
+        have hLookup' :
+            argsPrepared.prepared.prepared.finalTarget.source.vars name =
+              none := by
+          simpa [targetAfterArgs] using hLookup
+        simp [Locals.Source.Store.contains, hLookup'] at hContains
     | some value =>
         exact
           argsPrepared.prepared.prepared.domain name value hLookup
@@ -363,6 +367,127 @@ theorem ofReturnedBody
          argsPrepared.prepared.prepared.domain.assignMany
            hTargetsUsed hAssign
        scope := argsPrepared.prepared.prepared.scope }⟩
+
+theorem ofReturnedBody
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      ReturnedBody contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel program functionName
+        targets preArgs lowerArgs fresh layout sourceFinal target ctx) := by
+  obtain
+      ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+        hScoped, hSourceDomain⟩ :=
+    argsPrepared.relation.2
+  have hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true := by
+    intro name hMem
+    exact
+      StateRelation.Vars.target_contains_of_scopedExact
+        hScoped hSourceDomain (hTargetsVisible name hMem)
+  apply
+    ofReturnedBodyWithWriteback argsPrepared hTargetsNodup
+      hTargetsContain hFind body hReturnValues hLength
+  intro finalVars hAssign hRestored
+  rw [hSourceFinal]
+  exact
+    StateRelation.Replay.scopedExact_multifill_assignMany
+      hRestored hTargetsNodup hTargetsVisible hAssign
+
+theorem ofReturnedBodyFresh
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      ReturnedBody contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel program functionName
+        targets preArgs lowerArgs fresh (targets ++ layout)
+        sourceFinal target ctx) := by
+  apply
+    ofReturnedBodyWithWriteback argsPrepared hTargetsNodup
+      hTargetsContain hFind body hReturnValues hLength
+  intro finalVars hAssign hRestored
+  rw [hSourceFinal]
+  exact
+    StateRelation.Replay.scopedExact_multifill_assignMany_fresh
+      hRestored hTargetsNodup hTargetsFresh hAssign
 
 end ScopedReturnedCall
 
@@ -496,6 +621,8 @@ def RecursiveBodyForward
         some paramStore →
       StateRelation.Vars.NamesWithin before.used
         (fn.returns ++ fn.params) →
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names body) →
       SolcValidation.StmtsOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
           (fn.returns ++ fn.params) false false true body =
@@ -526,7 +653,44 @@ def RecursiveBodyForward
 
 namespace ScopedReturnedCall
 
-theorem ofFunctionCall
+private structure WritebackPolicy
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    (layout targets : List Name)
+    (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript) where
+  finalLayout : List Name
+  contains :
+    ∀ name, name ∈ targets →
+      target.source.vars.contains name = true
+  relation :
+    ∀ {sourceAfterArgs sourceAfterBody :
+        ObserverSemantics.SourceReplay.State transcript}
+      {targetAfterArgs bodyTarget :
+        Functions.ObserverSemantics.State transcript}
+      {returnValues : List Word}
+      {finalVars : Locals.Source.Store},
+      sourceFinal =
+          sourceAfterBody.withSource
+            (((sourceAfterBody.source.reviveJump.overwrite?
+              sourceAfterArgs.source).setStore
+                sourceAfterArgs.source).multifill targets returnValues) →
+      StateRelation.Replay.ScopedExactRel codeRel layout
+          (sourceAfterBody.withSource
+            ((sourceAfterBody.source.reviveJump.overwrite?
+              sourceAfterArgs.source).setStore sourceAfterArgs.source))
+          (bodyTarget.withSource
+            { shared := bodyTarget.source.shared,
+              vars := targetAfterArgs.source.vars }) →
+      Functions.Source.Store.assignMany targets returnValues
+          targetAfterArgs.source.vars =
+        some finalVars →
+      StateRelation.Replay.ScopedExactRel codeRel finalLayout
+        sourceFinal
+        (bodyTarget.withSource
+          { shared := bodyTarget.source.shared, vars := finalVars })
+
+private theorem ofFunctionCallWithPolicy
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -559,8 +723,8 @@ theorem ofFunctionCall
           (.Call (.inr functionName) args) =
         true)
     (hTargetsNodup : targets.Nodup)
-    (hTargetsVisible :
-      ∀ name, name ∈ targets → name ∈ layout)
+    (policy :
+      WritebackPolicy codeRel layout targets sourceFinal target)
     (hExpr :
       RecursiveScopedExpressionForward
         contract transcript codeRel sourceProgram targetProgram profile fuel)
@@ -589,7 +753,7 @@ theorem ofFunctionCall
     Nonempty
       (ScopedReturnedCall contract transcript codeRel
         targetProgram.toFunctions functionName targets preArgs lowerArgs
-        final layout sourceFinal target ctx) := by
+        final policy.finalLayout sourceFinal target ctx) := by
   obtain
       ⟨callFuel, sourceAfterArgs, reversedValues,
         hFuel, hArgsRun, hCallRun⟩ :=
@@ -651,8 +815,25 @@ theorem ofFunctionCall
                     hExprDomain hExprScope hExprRun)
                 hRel hDomain hScope hArgsRun
       obtain ⟨preparedArgs⟩ := hPreparedArgs
+      have hTargetsContain :
+          ∀ name, name ∈ targets →
+            preparedArgs.prepared.prepared.finalTarget.source.vars.contains
+                name =
+              true := by
+        intro name hMem
+        cases hLookupTarget : target.source.vars name with
+        | none =>
+            have hContains := policy.contains name hMem
+            simp [Locals.Source.Store.contains, hLookupTarget] at hContains
+        | some value =>
+            have hFinalLookup :
+                preparedArgs.prepared.prepared.finalTarget.source.vars name =
+                  some value :=
+              preparedArgs.prepared.prepared.varsExtends
+                name value hLookupTarget
+            simp [Locals.Source.Store.contains, hFinalLookup]
       obtain
-          ⟨before, after, fn, _hPrefix, hFind, _hName, hParams,
+          ⟨before, after, fn, hPrefix, hFind, _hName, hParams,
             hFnReturns, hLowerBody, hReserved⟩ :=
         hDecomposition.findFunction_parts hLookup
       have hArgsLength :
@@ -720,10 +901,20 @@ theorem ofFunctionCall
         exact
           SolcValidation.programOkWith_function_bodyOk
             hProgramOk hLookup
+      have hBodyNames :
+          StateRelation.Vars.NamesWithin before.used
+            (Stmt.List.names body) := by
+        intro candidate hMem
+        apply hPrefix candidate
+        change candidate ∈ Contract.names sourceProgram.contract
+        exact
+          (Contract.function_names_mem_names_of_lookup hLookup).2 candidate
+            (by
+              simp [FunctionDefinition.names, hMem])
       obtain ⟨targetBodyFuel, returnedBodyNonempty⟩ :=
         hBody (by omega) hLowerBody hParams hFnReturns
           (by simpa [hParams] using hParamStore)
-          hReserved hBodyOk hEntry hBodyRun
+          hReserved hBodyNames hBodyOk hEntry hBodyRun
       obtain ⟨returnedBody⟩ := returnedBodyNonempty
       have hReturnedValues :
           List.map sourceAfterBody.source.lookup! fn.returns =
@@ -749,9 +940,179 @@ theorem ofFunctionCall
         rw [hSourceFinal, hSourceAfterCall]
         rfl
       exact
-        ScopedReturnedCall.ofReturnedBody preparedArgs
-          hTargetsNodup hTargetsVisible hFind returnedBody
-          hReturnedValues hReturnLength hSourceFinal'
+        ofReturnedBodyWithWriteback preparedArgs hTargetsNodup
+          hTargetsContain hFind returnedBody hReturnedValues hReturnLength
+          (fun hAssign hRestored =>
+            policy.relation hSourceFinal' hRestored hAssign)
+
+theorem ofFunctionCall
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fuel : Nat}
+    {source sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hExpr :
+      RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hBody :
+      RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final layout sourceFinal target ctx) := by
+  obtain
+      ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+        hScoped, hSourceDomain⟩ :=
+    hRel.2
+  let policy :
+      WritebackPolicy codeRel layout targets sourceFinal target :=
+    { finalLayout := layout
+      contains := fun name hMem =>
+        StateRelation.Vars.target_contains_of_scopedExact
+          hScoped hSourceDomain (hTargetsVisible name hMem)
+      relation := by
+        intro sourceAfterArgs sourceAfterBody targetAfterArgs bodyTarget
+          callReturnValues finalVars hFinal hRestored hAssign
+        rw [hFinal]
+        exact
+          StateRelation.Replay.scopedExact_multifill_assignMany
+            hRestored hTargetsNodup hTargetsVisible hAssign }
+  exact
+    ofFunctionCallWithPolicy hDecomposition hArgsLowering hProgramOk
+      hExprOk hTargetsNodup policy hExpr hBody hRel hDomain hScope
+      hRun hSourceFinal
+
+theorem ofFunctionCallFresh
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fuel : Nat}
+    {source sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true)
+    (hExpr :
+      RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hBody :
+      RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final (targets ++ layout) sourceFinal target ctx) := by
+  let policy :
+      WritebackPolicy codeRel layout targets sourceFinal target :=
+    { finalLayout := targets ++ layout
+      contains := hTargetsContain
+      relation := by
+        intro sourceAfterArgs sourceAfterBody targetAfterArgs bodyTarget
+          callReturnValues finalVars hFinal hRestored hAssign
+        rw [hFinal]
+        exact
+          StateRelation.Replay.scopedExact_multifill_assignMany_fresh
+            hRestored hTargetsNodup hTargetsFresh hAssign }
+  exact
+    ofFunctionCallWithPolicy hDecomposition hArgsLowering hProgramOk
+      hExprOk hTargetsNodup policy hExpr hBody hRel hDomain hScope
+      hRun hSourceFinal
 
 end ScopedReturnedCall
 
@@ -1231,7 +1592,7 @@ theorem ofFunctionCall
                 hRel hDomain hScope hArgsRun
       obtain ⟨preparedArgs⟩ := hPreparedArgs
       obtain
-          ⟨before, after, fn, _hPrefix, hFind, _hName, hParams,
+          ⟨before, after, fn, hPrefix, hFind, _hName, hParams,
             hFnReturns, hLowerBody, hReserved⟩ :=
         hDecomposition.findFunction_parts hLookup
       have hArgsLength :
@@ -1319,9 +1680,19 @@ theorem ofFunctionCall
           exact
             SolcValidation.programOkWith_function_bodyOk
               hProgramOk hLookup
+        have hBodyNames :
+            StateRelation.Vars.NamesWithin before.used
+              (Stmt.List.names body) := by
+          intro candidate hMem
+          apply hPrefix candidate
+          change candidate ∈ Contract.names sourceProgram.contract
+          exact
+            (Contract.function_names_mem_names_of_lookup hLookup).2 candidate
+              (by
+                simp [FunctionDefinition.names, hMem])
         hBody (by omega) hLowerBody hParams hFnReturns
           (by simpa [hParams] using hParamStore)
-          hReserved hBodyOk
+          hReserved hBodyNames hBodyOk
           hEntry hBodyRun
       obtain ⟨returnedBody⟩ := returnedBodyNonempty
       have hReturnedValues :

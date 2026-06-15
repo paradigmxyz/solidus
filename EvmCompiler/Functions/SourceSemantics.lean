@@ -320,6 +320,39 @@ theorem lookupMany_insertMany_self :
       simp only [Bind.bind, Option.bind]
       rw [hTail]
 
+theorem lookupMany_contains_of_mem :
+    ∀ {names : List Name} {values : List Word}
+      {store : Store} {name : Name},
+      lookupMany names store = some values →
+      name ∈ names →
+      store.contains name = true
+  | [], _values, _store, _name, _hLookup, hMem => by
+      simp at hMem
+  | head :: rest, values, store, name, hLookup, hMem => by
+      cases hHead : store head with
+      | none =>
+          simp [lookupMany, hHead] at hLookup
+      | some value =>
+          cases hTail : lookupMany rest store with
+          | none =>
+              simp [lookupMany, hHead, hTail] at hLookup
+          | some restValues =>
+              simp [lookupMany, hHead, hTail] at hLookup
+              rcases hLookup with ⟨rfl⟩
+              rcases List.mem_cons.mp hMem with rfl | hRest
+              · simp [Locals.Source.Store.contains, hHead]
+              · exact lookupMany_contains_of_mem hTail hRest
+
+theorem insertMany_contains_of_mem
+    {names : List Name} {values : List Word}
+    {store finalStore : Store} {name : Name}
+    (hNodup : names.Nodup)
+    (hInsert : insertMany names values store = some finalStore)
+    (hMem : name ∈ names) :
+    finalStore.contains name = true :=
+  lookupMany_contains_of_mem
+    (lookupMany_insertMany_self hNodup hInsert) hMem
+
 theorem initReturns_apply_of_not_mem :
     ∀ {returns : List Name} {store : Store} {key : Name},
       key ∉ returns →
