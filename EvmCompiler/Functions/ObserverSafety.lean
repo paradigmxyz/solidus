@@ -214,6 +214,54 @@ theorem successRefines
   · intro kind state values final hEval
     exact (terminal_parts hEval).2
 
+theorem expr_eval_vars_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {results : Nat} {expr : Functions.Expr results}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          expr source =
+        .ok (final, values)) :
+    final.source.vars = source.source.vars := by
+  have hObserver :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          expr source =
+        .ok (final, values) :=
+    Locals.Source.Effectful.Expr.eval_of_successRefines
+      (Functions.ObserverSemantics.stateModel transcript)
+      (successRefines contract transcript) hEval
+  exact Functions.ObserverSemantics.expr_eval_vars_eq hObserver
+
+theorem argList_eval_vars_eq
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {args : List (Functions.Expr 1)}
+    {source final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          args source =
+        .ok (final, values)) :
+    final.source.vars = source.source.vars := by
+  have hObserver :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          args source =
+        .ok (final, values) :=
+    Functions.Source.Effectful.ArgList.eval_of_successRefines
+      (Functions.ObserverSemantics.stateModel transcript)
+      (successRefines contract transcript) hEval
+  exact Functions.ObserverSemantics.argList_eval_vars_eq hObserver
+
 theorem block_runOpen_eq
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

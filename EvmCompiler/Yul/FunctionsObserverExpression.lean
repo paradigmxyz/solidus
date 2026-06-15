@@ -575,6 +575,86 @@ theorem toLocalsArgs_forward
   (directAt contract transcript codeRel codeOverride fuel).evalArgs
     hLower hRel hRun
 
+theorem toLocals_forward_targetDomain
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel results : Nat}
+    {expr : AstExpr} {lower : Locals.Expr results}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {values : List Word} {used : List Name}
+    (hLower :
+      EvmCompiler.Yul.Expr.toLocals? results expr = some lower)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainExact used target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel expr codeOverride source =
+        .ok (source', values)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower target =
+        .ok (target', values) ∧
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      values.length = results ∧
+      StateRelation.Vars.TargetDomainExact used target'.source.vars := by
+  obtain ⟨target', hTarget, hFinalRel, hLength⟩ :=
+    toLocals_forward hLower hRel hRun
+  have hVars :
+      target'.source.vars = target.source.vars :=
+    Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq hTarget
+  exact
+    ⟨target', hTarget, hFinalRel, hLength,
+      hDomain.congr hVars⟩
+
+theorem toLocalsArgs_forward_targetDomain
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel : Nat}
+    {args : List AstExpr} {lower : List (Locals.Expr 1)}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {values : List Word} {used : List Name}
+    (hLower :
+      EvmCompiler.Yul.Expr.List.toLocals1? args = some lower)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainExact used target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel args codeOverride source =
+        .ok (source', values)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower target =
+        .ok (target', values) ∧
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      StateRelation.Vars.TargetDomainExact used target'.source.vars := by
+  obtain ⟨target', hTarget, hFinalRel⟩ :=
+    toLocalsArgs_forward hLower hRel hRun
+  have hVars :
+      target'.source.vars = target.source.vars :=
+    Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq hTarget
+  exact
+    ⟨target', hTarget, hFinalRel, hDomain.congr hVars⟩
+
 end FunctionsObserverExpression
 end Yul
 end EvmCompiler

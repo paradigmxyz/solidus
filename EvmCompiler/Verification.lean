@@ -89,6 +89,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_outputs_length
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.successRefines
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
@@ -99,9 +101,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
 #check EvmCompiler.Yul.StateRelation.Vars.ScopedRel
 #check EvmCompiler.Yul.StateRelation.Vars.DomainExact
+#check EvmCompiler.Yul.StateRelation.Vars.TargetDomainExact
 #check EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok
 #check EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
 #check EvmCompiler.Yul.StateRelation.Replay.insert_target_hidden
+#check EvmCompiler.Yul.StateRelation.Replay.source_lookup_none_of_targetDomain
 #check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #check EvmCompiler.Yul.StateRelation.Shared.withMachine
@@ -152,6 +156,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward_targetDomain
 #check EvmCompiler.Yul.Fresh.fresh?_components
 #check EvmCompiler.Yul.Fresh.extends_of_fresh?
 #check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering

@@ -1097,6 +1097,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.World.sstore
 #print axioms EvmCompiler.Yul.StateRelation.World.tstore
 #print axioms EvmCompiler.Yul.StateRelation.Replay.insert_target_hidden
+#print axioms EvmCompiler.Yul.StateRelation.Replay.source_lookup_none_of_targetDomain
+#print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq
+#print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
@@ -1125,6 +1128,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward_targetDomain
 #print axioms EvmCompiler.Yul.Fresh.fresh?_components
 #print axioms EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe

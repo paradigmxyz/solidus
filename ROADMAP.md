@@ -1543,6 +1543,11 @@ corridor.
   lists. Public `toLocals_forward` and `toLocalsArgs_forward` consume only the
   ordinary compiler equations, guarded source run, and state relation; they
   preserve effects, values, and declared output arity without a call oracle.
+  Functions-owned observer semantics now proves that successful expressions
+  and argument lists preserve the locals store, and the adjacent Yul pass
+  carries an exact target-domain invariant indexed by the compiler used-name
+  list. Fresh compiler names are therefore absent from both the target store
+  and, via the source-visible relation, the current Yul source state.
   The next expression boundary is `lowerBound1Unchecked?`: execute generated
   argument-binding preambles, preserve hidden temporary ownership, and compose
   function-call expressions. Statements, loops, calls, and whole-main

@@ -18,6 +18,167 @@ def primitiveSemantics (transcript : Trace) :
     Functions.Source.Effectful.PrimitiveSemantics (State transcript) :=
   Locals.ObserverSemantics.primitiveSemantics transcript
 
+mutual
+  theorem expr_eval_vars_eq
+      {transcript : Trace} {results : Nat}
+      {expr : Functions.Expr results}
+      {source final : State transcript} {values : List Assembly.Word}
+      (hEval :
+        Functions.Source.Effectful.Expr.eval
+            (stateModel transcript) (primitiveSemantics transcript)
+            expr source =
+          .ok (final, values)) :
+      final.source.vars = source.source.vars := by
+    cases expr with
+    | lit value =>
+        simp [Functions.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.eval] at hEval
+        rcases hEval with ⟨rfl, rfl⟩
+        rfl
+    | var name =>
+        cases hLookup : source.source.vars name with
+        | none =>
+            simp [Functions.Source.Effectful.Expr.eval,
+              Locals.Source.Effectful.Expr.eval, stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.vars,
+              Functions.Source.invalid, Structured.invalid,
+              hLookup] at hEval
+        | some value =>
+            simp [Functions.Source.Effectful.Expr.eval,
+              Locals.Source.Effectful.Expr.eval, stateModel,
+              Locals.ObserverSemantics.stateModel,
+              Locals.Source.Effectful.StateModel.vars,
+              hLookup] at hEval
+            rcases hEval with ⟨rfl, rfl⟩
+            rfl
+    | code code =>
+        simp [Functions.Source.Effectful.Expr.eval,
+          Locals.Source.Effectful.Expr.eval,
+          Functions.Source.invalid, Structured.invalid] at hEval
+    | prim op args =>
+        unfold Functions.Source.Effectful.Expr.eval at hEval
+        unfold Locals.Source.Effectful.Expr.eval at hEval
+        cases hArgs :
+            Locals.Source.Effectful.Expr.ExprSeq.eval
+              (stateModel transcript) (primitiveSemantics transcript)
+              args source with
+        | error err =>
+            simp [hArgs] at hEval
+        | ok argsResult =>
+            rcases argsResult with ⟨afterArgs, argValues⟩
+            simp only [hArgs, Bind.bind, Except.bind] at hEval
+            have hPrimVars :
+                final.source.vars = afterArgs.source.vars :=
+              Locals.ObserverSemantics.primitiveSemantics_eval_vars_eq hEval
+            exact hPrimVars.trans (exprSeq_eval_vars_eq hArgs)
+
+  theorem exprSeq_eval_vars_eq
+      {transcript : Trace} {results : Nat}
+      {exprs : Locals.ExprSeq results}
+      {source final : State transcript} {values : List Assembly.Word}
+      (hEval :
+        Locals.Source.Effectful.Expr.ExprSeq.eval
+            (stateModel transcript) (primitiveSemantics transcript)
+            exprs source =
+          .ok (final, values)) :
+      final.source.vars = source.source.vars := by
+    cases exprs with
+    | nil =>
+        simp [Locals.Source.Effectful.Expr.ExprSeq.eval] at hEval
+        rcases hEval with ⟨rfl, rfl⟩
+        rfl
+    | @cons left right head tail =>
+        unfold Locals.Source.Effectful.Expr.ExprSeq.eval at hEval
+        cases hHead :
+            Functions.Source.Effectful.Expr.eval
+              (stateModel transcript) (primitiveSemantics transcript)
+              head source with
+        | error err =>
+            simp [hHead] at hEval
+        | ok headResult =>
+            rcases headResult with ⟨afterHead, headValues⟩
+            simp only [hHead, Bind.bind, Except.bind] at hEval
+            cases hTail :
+                Locals.Source.Effectful.Expr.ExprSeq.eval
+                  (stateModel transcript) (primitiveSemantics transcript)
+                  tail afterHead with
+            | error err =>
+                simp [hTail] at hEval
+            | ok tailResult =>
+                rcases tailResult with ⟨afterTail, tailValues⟩
+                simp only [hTail, Bind.bind, Except.bind] at hEval
+                rcases hEval with ⟨rfl, rfl⟩
+                exact (exprSeq_eval_vars_eq hTail).trans
+                  (expr_eval_vars_eq hHead)
+end
+
+theorem argList_eval_vars_eq
+    {transcript : Trace}
+    {args : List (Functions.Expr 1)}
+    {source final : State transcript} {values : List Assembly.Word}
+    (hEval :
+      Functions.Source.Effectful.ArgList.eval
+          (stateModel transcript) (primitiveSemantics transcript)
+          args source =
+        .ok (final, values)) :
+    final.source.vars = source.source.vars := by
+  induction args generalizing source final values with
+  | nil =>
+      simp [Functions.Source.Effectful.ArgList.eval] at hEval
+      rcases hEval with ⟨rfl, rfl⟩
+      rfl
+  | cons head rest ih =>
+      unfold Functions.Source.Effectful.ArgList.eval at hEval
+      cases hHead :
+          Functions.Source.Effectful.Expr.evalOne
+            (stateModel transcript) (primitiveSemantics transcript)
+            head source with
+      | error err =>
+          simp [hHead] at hEval
+      | ok headResult =>
+          rcases headResult with ⟨afterHead, headValue⟩
+          simp only [hHead, Bind.bind, Except.bind] at hEval
+          cases hRest :
+              Functions.Source.Effectful.ArgList.eval
+                (stateModel transcript) (primitiveSemantics transcript)
+                rest afterHead with
+          | error err =>
+              simp [hRest] at hEval
+          | ok restResult =>
+              rcases restResult with ⟨afterRest, restValues⟩
+              simp only [hRest, Bind.bind, Except.bind] at hEval
+              rcases hEval with ⟨rfl, rfl⟩
+              have hHeadEval :
+                  Functions.Source.Effectful.Expr.eval
+                      (stateModel transcript) (primitiveSemantics transcript)
+                      head source =
+                    .ok (afterHead, [headValue]) := by
+                unfold Functions.Source.Effectful.Expr.evalOne at hHead
+                unfold Locals.Source.Effectful.Expr.evalOne at hHead
+                cases hExpr :
+                    Functions.Source.Effectful.Expr.eval
+                      (stateModel transcript) (primitiveSemantics transcript)
+                      head source with
+                | error err =>
+                    simp [hExpr] at hHead
+                | ok result =>
+                    rcases result with ⟨stateAfterExpr, exprValues⟩
+                    cases exprValues with
+                    | nil =>
+                        simp [hExpr, Functions.Source.invalid,
+                          Structured.invalid] at hHead
+                    | cons value tail =>
+                        cases tail with
+                        | nil =>
+                            simp [hExpr] at hHead
+                            rcases hHead with ⟨rfl, rfl⟩
+                            rfl
+                        | cons second remaining =>
+                            simp [hExpr, Functions.Source.invalid,
+                              Structured.invalid] at hHead
+              exact (ih hRest).trans (expr_eval_vars_eq hHeadEval)
+
 theorem primitiveSemantics_eval_observer
     {transcript : Trace} {op : Structured.BasicOp}
     {kind : Assembly.ResourceObserver}

@@ -1057,6 +1057,10 @@ def DomainExact (layout : List Name)
     (source : EvmYul.Yul.VarStore) : Prop :=
   ∀ name, (source.lookup name).isSome = true ↔ name ∈ layout
 
+def TargetDomainExact (used : List Name)
+    (target : Locals.Source.Store) : Prop :=
+  ∀ name, (target name).isSome = true ↔ name ∈ used
+
 theorem empty :
     Rel (default : EvmYul.Yul.VarStore) Locals.Source.Store.empty := by
   intro name value hLookup
@@ -1129,6 +1133,48 @@ theorem insert_target_hidden
     contradiction
   rw [Locals.Source.Store.insert_of_ne hNe]
   exact hRel key result hLookup
+
+theorem targetDomainExact_empty :
+    TargetDomainExact [] Locals.Source.Store.empty := by
+  intro name
+  simp [TargetDomainExact, Locals.Source.Store.empty]
+
+theorem TargetDomainExact.lookup_none
+    {used : List Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainExact used target)
+    {name : Name} (hHidden : name ∉ used) :
+    target name = none := by
+  cases hLookup : target name with
+  | none =>
+      rfl
+  | some value =>
+      have hMem : name ∈ used :=
+        (hDomain name).mp (by simp [hLookup])
+      contradiction
+
+theorem TargetDomainExact.insert
+    {used : List Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainExact used target)
+    {name : Name} {value : Assembly.Word}
+    (hFresh : name ∉ used) :
+    TargetDomainExact (name :: used)
+      (Locals.Source.Store.insert target name value) := by
+  intro key
+  by_cases hEq : key = name
+  · subst key
+    simp [Locals.Source.Store.insert]
+  · rw [Locals.Source.Store.insert_of_ne hEq]
+    simp only [List.mem_cons]
+    rw [hDomain key]
+    simp [hEq]
+
+theorem TargetDomainExact.congr
+    {used : List Name} {left right : Locals.Source.Store}
+    (hDomain : TargetDomainExact used left)
+    (hEq : right = left) :
+    TargetDomainExact used right := by
+  subst right
+  exact hDomain
 
 theorem scoped_insert_hidden
     {layout : List Name} {source : EvmYul.Yul.VarStore}
@@ -1581,6 +1627,30 @@ theorem insert_target_hidden
       (target.withSource (target.source.insert name value)) := by
   exact
     ⟨hRel.1, Regular.insert_target_hidden hRel.2 hHidden⟩
+
+theorem source_lookup_none_of_targetDomain
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : Rel codeRel source target)
+    {used : List Name}
+    (hDomain : Vars.TargetDomainExact used target.source.vars)
+    {name : Name} (hHidden : name ∉ used) :
+    source.source.lookup? name = none := by
+  rcases hRel.2 with
+    ⟨sourceShared, sourceVars, hSource, _hShared, hVars⟩
+  have hTargetNone : target.source.vars name = none :=
+    hDomain.lookup_none hHidden
+  rw [hSource]
+  cases hLookup : sourceVars.lookup name with
+  | none =>
+      simpa [EvmYul.Yul.State.lookup?, hLookup]
+  | some value =>
+      have hTargetSome := hVars name value hLookup
+      rw [hTargetNone] at hTargetSome
+      contradiction
 
 def ScopedExactRel {transcript : Assembly.ResourceTrace}
     (codeRel : CodeRel) (layout : List Name)
