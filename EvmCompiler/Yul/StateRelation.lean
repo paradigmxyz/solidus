@@ -1329,6 +1329,26 @@ theorem scoped_restrict
       rw [Locals.Source.Store.restrictTo_mem hMem]
       exact hRel name hMem
 
+theorem scoped_restrict_source
+    {retained current : List Name}
+    {source scope : EvmYul.Yul.VarStore}
+    {target : Locals.Source.Store}
+    (hRel : ScopedRel current source target)
+    (hScope : DomainExact retained scope)
+    (hSubset : ∀ name, name ∈ retained → name ∈ current) :
+    ScopedRel retained
+      (EvmYul.Yul.State.restrictVarStore source scope)
+      target := by
+  intro name hMem
+  have hScopeSome : (scope.lookup name).isSome = true :=
+    (hScope name).mpr hMem
+  cases hScopeLookup : scope.lookup name with
+  | none =>
+      simp [hScopeLookup] at hScopeSome
+  | some value =>
+      rw [VarStore.lookup_restrict_of_some source scope name hScopeLookup]
+      exact hRel name (hSubset name hMem)
+
 theorem domainExact_insert
     {layout : List Name} {source : EvmYul.Yul.VarStore}
     {name : Name} {value : Assembly.Word}
@@ -1528,6 +1548,51 @@ theorem checkDeclaration_ok
   simp [EvmYul.Yul.checkDeclaration,
     firstDuplicate?_none_of_nodup names hNoDup,
     firstDeclared?_none hDomain hFresh]
+
+theorem nodup_of_firstDuplicate?_eq_none :
+    ∀ {names : List Name},
+      EvmYul.Yul.firstDuplicate? names = none →
+        names.Nodup
+  | [], _hNone => by simp
+  | name :: rest, hNone => by
+      by_cases hMem : name ∈ rest
+      · simp [EvmYul.Yul.firstDuplicate?, hMem] at hNone
+      · simp [EvmYul.Yul.firstDuplicate?, hMem] at hNone
+        exact List.nodup_cons.mpr
+          ⟨hMem, nodup_of_firstDuplicate?_eq_none hNone⟩
+
+theorem checkDeclaration_ok_parts
+    {layout : List Name} {source : EvmYul.Yul.VarStore}
+    {shared : EvmYul.SharedState .Yul} {names : List Name}
+    (hDomain : DomainExact layout source)
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (.Ok shared source) names = .ok ()) :
+    names.Nodup ∧
+      ∀ name, name ∈ names → name ∉ layout := by
+  unfold EvmYul.Yul.checkDeclaration at hCheck
+  cases hDuplicate :
+      EvmYul.Yul.firstDuplicate? names with
+  | some duplicate =>
+      simp [hDuplicate] at hCheck
+  | none =>
+      cases hDeclared :
+          EvmYul.Yul.firstDeclared? (.Ok shared source) names with
+      | some declared =>
+          simp [hDuplicate, hDeclared] at hCheck
+      | none =>
+          refine
+            ⟨nodup_of_firstDuplicate?_eq_none hDuplicate, ?_⟩
+          intro name hMem hLayout
+          have hNotDeclared :=
+            List.find?_eq_none.mp hDeclared name hMem
+          have hSome : (source.lookup name).isSome = true :=
+            (hDomain name).mpr hLayout
+          cases hLookup : source.lookup name with
+          | none =>
+              simp [hLookup] at hSome
+          | some value =>
+              simp [EvmYul.Yul.firstDeclared?,
+                EvmYul.Yul.State.lookup?, hLookup] at hNotDeclared
 
 theorem firstUndeclared?_none
     {layout : List Name} {source : EvmYul.Yul.VarStore}
@@ -1806,6 +1871,36 @@ theorem scopedExact_multifill_single_visible
       Vars.domainExact_insert_visible hDomain hMem⟩
   simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert]
 
+theorem scopedExact_zeroFill_insertMany
+    {codeRel : CodeRel} {layout names : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hInsert :
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.vars =
+        some finalVars) :
+    ScopedExactRel codeRel (names ++ layout)
+      (source.zeroFill names)
+      { shared := target.shared, vars := finalVars } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, hDomain⟩
+  subst source
+  obtain ⟨finalSource, hFinalSource, hFinalScoped, hFinalDomain⟩ :=
+    Vars.scopedExact_multifill_insertMany
+      (shared := sourceShared) hScoped hDomain hNoDup hFresh hInsert
+  have hZeroFill :
+      (EvmYul.Yul.State.Ok sourceShared sourceVars).zeroFill names =
+        .Ok sourceShared finalSource := by
+    rw [Vars.zeroFill_eq_multifill_zero]
+    exact hFinalSource
+  exact
+    ⟨sourceShared, finalSource, hZeroFill, hShared,
+      hFinalScoped, hFinalDomain⟩
+
 theorem scopedExact_restrict
     {codeRel : CodeRel} {retained current : List Name}
     {shared : EvmYul.SharedState .Yul}
@@ -1826,6 +1921,28 @@ theorem scopedExact_restrict
     ⟨shared, EvmYul.Yul.State.restrictVarStore sourceVars scopeVars,
       rfl, hShared,
       Vars.scoped_restrict (Vars.scoped_of_subset hVars hSubset) hScope,
+      Vars.domainExact_restrict hDomain hScope hSubset⟩
+
+theorem scopedExact_restrict_source
+    {codeRel : CodeRel} {retained current : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {target : Locals.Source.State}
+    (hRel :
+      ScopedExactRel codeRel current (.Ok shared sourceVars) target)
+    (hScope : Vars.DomainExact retained scopeVars)
+    (hSubset : ∀ name, name ∈ retained → name ∈ current) :
+    ScopedExactRel codeRel retained
+      (.Ok shared
+        (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars))
+      target := by
+  rcases hRel with
+    ⟨sourceShared, relatedVars, hSource, hShared, hVars, hDomain⟩
+  cases hSource
+  exact
+    ⟨shared, EvmYul.Yul.State.restrictVarStore sourceVars scopeVars,
+      rfl, hShared,
+      Vars.scoped_restrict_source hVars hScope hSubset,
       Vars.domainExact_restrict hDomain hScope hSubset⟩
 
 theorem lookupMany_of_scopedExact
@@ -2178,6 +2295,31 @@ theorem scopedExact_multifill_single_visible
     ⟨hRel.1,
       Regular.scopedExact_multifill_single_visible hRel.2 name value hMem⟩
 
+theorem scopedExact_zeroFill_insertMany
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout names : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hFresh : ∀ name, name ∈ names → name ∉ layout)
+    (hInsert :
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.source.vars =
+        some finalVars) :
+    ScopedExactRel codeRel (names ++ layout)
+      (source.withSource (source.source.zeroFill names))
+      (target.withSource
+        { shared := target.source.shared, vars := finalVars }) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedExact_zeroFill_insertMany
+        hRel.2 hNoDup hFresh hInsert⟩
+
 theorem scopedExact_restrict
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
     {retained current : List Name}
@@ -2199,6 +2341,30 @@ theorem scopedExact_restrict
   refine ⟨hRel.1, ?_⟩
   exact
     Regular.scopedExact_restrict
+      (hRel := by simpa [hSource] using hRel.2)
+      hScope hSubset
+
+theorem scopedExact_restrict_source
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {retained current : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hSource : source.source = .Ok shared sourceVars)
+    (hRel : ScopedExactRel codeRel current source target)
+    (hScope : Vars.DomainExact retained scopeVars)
+    (hSubset : ∀ name, name ∈ retained → name ∈ current) :
+    ScopedExactRel codeRel retained
+      (source.withSource
+        (.Ok shared
+          (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars)))
+      target := by
+  refine ⟨hRel.1, ?_⟩
+  exact
+    Regular.scopedExact_restrict_source
       (hRel := by simpa [hSource] using hRel.2)
       hScope hSubset
 

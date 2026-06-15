@@ -598,6 +598,34 @@ theorem exec_leave_ok_parts
       subst final
       exact ⟨previous, rfl, rfl⟩
 
+theorem exec_let_none_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.Let names none) codeOverride state =
+        .ok final) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok () ∧
+      final =
+        model.withSource state ((model.source state).zeroFill names) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hCheck :
+          EvmYul.Yul.checkDeclaration (model.source state) names with
+      | error err =>
+          simp [exec, hCheck, fail] at hRun
+      | ok unit =>
+          cases unit
+          simp [exec, hCheck] at hRun
+          subst final
+          exact ⟨previous, rfl, by simpa using hCheck, rfl⟩
+
 theorem execSeq_nil_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

@@ -1309,6 +1309,22 @@ end FunDef
 namespace Stmt
 
 /--
+A literal-valued declaration is effect-free and extends the current scope.
+-/
+theorem run_let_lit {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state : σ}
+    (name : Name) (value : Word) :
+    Stmt.run model prim program ctx fuel (.let_ name (.lit value)) state =
+      .ok
+        (Outcome.regular (model.insert state name value),
+          { ctx with scope := name :: ctx.scope }) := by
+  simp [Stmt.run, Expr.evalOne, Expr.eval,
+    Locals.Source.Effectful.Expr.evalOne,
+    Locals.Source.Effectful.Expr.eval]
+
+/--
 A successful `leave` statement has leave mode.
 -/
 theorem run_leave_mode {σ : Type}

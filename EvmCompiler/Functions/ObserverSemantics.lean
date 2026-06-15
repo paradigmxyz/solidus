@@ -14,6 +14,13 @@ def stateModel (transcript : Trace) :
     Functions.Source.Effectful.StateModel (State transcript) :=
   Locals.ObserverSemantics.stateModel transcript
 
+@[simp] theorem stateModel_insert
+    {transcript : Trace} (state : State transcript)
+    (name : Functions.Name) (value : Assembly.Word) :
+    (stateModel transcript).insert state name value =
+      state.withSource (state.source.insert name value) := by
+  rfl
+
 def primitiveSemantics (transcript : Trace) :
     Functions.Source.Effectful.PrimitiveSemantics (State transcript) :=
   Locals.ObserverSemantics.primitiveSemantics transcript

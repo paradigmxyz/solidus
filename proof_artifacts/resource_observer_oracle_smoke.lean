@@ -1150,6 +1150,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
 #print axioms EvmCompiler.Yul.StateRelation.Replay.restore_call
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_target
+#print axioms EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok_parts
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
@@ -1168,11 +1171,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_leave_parts
+#print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_none_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_let_none_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_let_lit
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_leave_of_scope
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_empty
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_leave
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_none
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
