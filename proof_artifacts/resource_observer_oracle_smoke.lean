@@ -1196,6 +1196,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Expr.UncheckedFunctionCallLowering.parts
 #print axioms EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
 #print axioms EvmCompiler.Yul.Contract.functionEntries_names_nodup
+#print axioms EvmCompiler.Yul.Contract.function_names_mem_names_of_lookup
+#print axioms EvmCompiler.Yul.Contract.function_param_mem_names_of_lookup
+#print axioms EvmCompiler.Yul.Contract.function_return_mem_names_of_lookup
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall

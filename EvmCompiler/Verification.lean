@@ -236,6 +236,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.UncheckedFunctionCallLowering.parts
 #check EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
 #check EvmCompiler.Yul.Contract.functionEntries_names_nodup
+#check EvmCompiler.Yul.Contract.function_names_mem_names_of_lookup
+#check EvmCompiler.Yul.Contract.function_param_mem_names_of_lookup
+#check EvmCompiler.Yul.Contract.function_return_mem_names_of_lookup
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedExpressionForward

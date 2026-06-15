@@ -3389,6 +3389,20 @@ def names : AstFunctionDefinition → List Name
   | .Def params returns body =>
       identNames params ++ identNames returns ++ Stmt.List.names body
 
+theorem param_mem_names
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {name : Name}
+    (hMem : name ∈ identNames params) :
+    name ∈ names (.Def params returns body) := by
+  simp [names, hMem]
+
+theorem return_mem_names
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {name : Name}
+    (hMem : name ∈ identNames returns) :
+    name ∈ names (.Def params returns body) := by
+  simp [names, hMem]
+
 def fuel : AstFunctionDefinition → Nat
   | .Def _params _returns body => Stmt.List.fuel body + 2
 
@@ -3490,6 +3504,32 @@ def names : List (Name × AstFunctionDefinition) → List Name
   | [] => []
   | (name, fn) :: rest =>
       name :: FunctionDefinition.names fn ++ names rest
+
+theorem function_names_mem
+    {functions : List (Name × AstFunctionDefinition)}
+    {functionName : Name} {fn : AstFunctionDefinition}
+    (hMem : (functionName, fn) ∈ functions) :
+    functionName ∈ names functions ∧
+      ∀ candidate,
+        candidate ∈ FunctionDefinition.names fn →
+          candidate ∈ names functions := by
+  induction functions with
+  | nil =>
+      simp at hMem
+  | cons entry rest ih =>
+      rcases entry with ⟨headName, headFn⟩
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        constructor
+        · simp [names]
+        · intro candidate hCandidate
+          simp [names, hCandidate]
+      · obtain ⟨hFunction, hFnNames⟩ := ih hTail
+        constructor
+        · simp [names, hFunction]
+        · intro candidate hCandidate
+          simp [names, hFnNames candidate hCandidate]
 
 def fuel : List (Name × AstFunctionDefinition) → Nat
   | [] => 2
@@ -3788,6 +3828,48 @@ theorem functionEntries_names_nodup (contract : AstContract) :
 
 noncomputable def names (contract : AstContract) : List Name :=
   Stmt.names contract.dispatcher ++ FunctionList.names (functionEntries contract)
+
+theorem function_names_mem_names_of_lookup
+    {contract : AstContract} {functionName : Name}
+    {fn : AstFunctionDefinition}
+    (hLookup : contract.functions.lookup functionName = some fn) :
+    functionName ∈ names contract ∧
+      ∀ candidate,
+        candidate ∈ FunctionDefinition.names fn →
+          candidate ∈ names contract := by
+  have hEntry :
+      (functionName, fn) ∈ functionEntries contract :=
+    functionEntries_mem_of_lookup hLookup
+  obtain ⟨hFunction, hFnNames⟩ :=
+    FunctionList.function_names_mem hEntry
+  constructor
+  · simp [names, hFunction]
+  · intro candidate hCandidate
+    simp [names, hFnNames candidate hCandidate]
+
+theorem function_param_mem_names_of_lookup
+    {contract : AstContract} {functionName : Name}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {candidate : Name}
+    (hLookup :
+      contract.functions.lookup functionName =
+        some (.Def params returns body))
+    (hMem : candidate ∈ identNames params) :
+    candidate ∈ names contract :=
+  (function_names_mem_names_of_lookup hLookup).2 candidate
+    (FunctionDefinition.param_mem_names hMem)
+
+theorem function_return_mem_names_of_lookup
+    {contract : AstContract} {functionName : Name}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {candidate : Name}
+    (hLookup :
+      contract.functions.lookup functionName =
+        some (.Def params returns body))
+    (hMem : candidate ∈ identNames returns) :
+    candidate ∈ names contract :=
+  (function_names_mem_names_of_lookup hLookup).2 candidate
+    (FunctionDefinition.return_mem_names hMem)
 
 noncomputable def toObjects? (contract : AstContract) :
     Option Objects.Program := do
