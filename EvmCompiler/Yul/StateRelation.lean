@@ -1,4 +1,4 @@
-import EvmCompiler.Locals.SourceSemantics
+import EvmCompiler.Functions.SourceSemantics
 import EvmCompiler.Simulation.ResourceReplay
 import EvmYul.Yul.Interpreter
 import EvmYul.Yul.StateOps
@@ -1382,6 +1382,95 @@ theorem domainExact_restrict
         rw [VarStore.lookup_restrict_of_some source scope name hScopeLookup]
         exact hSourceSome
 
+theorem zeroFill_eq_multifill_zero
+    (shared : EvmYul.SharedState .Yul)
+    (source : EvmYul.Yul.VarStore) (names : List Name) :
+    (EvmYul.Yul.State.Ok shared source).zeroFill names =
+      (EvmYul.Yul.State.Ok shared source).multifill names
+        (names.map fun _name => Functions.Source.zero) := by
+  induction names with
+  | nil =>
+      rfl
+  | cons name rest ih =>
+      simpa [EvmYul.Yul.State.zeroFill,
+        EvmYul.Yul.State.multifill] using
+          congrArg (fun state => state.insert name Functions.Source.zero) ih
+
+theorem scopedExact_multifill_insertMany
+    {shared : EvmYul.SharedState .Yul} :
+    ∀ {names : List Name} {values : List Assembly.Word}
+      {layout : List Name}
+      {source : EvmYul.Yul.VarStore}
+      {target finalTarget : Locals.Source.Store},
+      ScopedRel layout source target →
+      DomainExact layout source →
+      names.Nodup →
+      (∀ name, name ∈ names → name ∉ layout) →
+      Functions.Source.Store.insertMany names values target =
+        some finalTarget →
+      ∃ finalSource,
+        (EvmYul.Yul.State.Ok shared source).multifill names values =
+          EvmYul.Yul.State.Ok shared finalSource ∧
+        ScopedRel (names ++ layout) finalSource finalTarget ∧
+        DomainExact (names ++ layout) finalSource
+  | [], [], layout, source, target, finalTarget,
+      hScoped, hDomain, _hNodup, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+      subst finalTarget
+      exact ⟨source, by simp [EvmYul.Yul.State.multifill],
+        hScoped, hDomain⟩
+  | [], _value :: _values, _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | _name :: _names, [], _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hFresh, hInsert => by
+      simp [Functions.Source.Store.insertMany] at hInsert
+  | name :: names, value :: values, layout, source, target, finalTarget,
+      hScoped, hDomain, hNodup, hFresh, hInsert => by
+      have hParts := List.nodup_cons.mp hNodup
+      have hLength : values.length = names.length := by
+        have hAllLength :=
+          Functions.Source.Store.insertMany_length hInsert
+        simpa using hAllLength
+      obtain ⟨tailTarget, hTailInsert⟩ :=
+        Functions.Source.Store.insertMany_exists_of_length
+          (store := target) hLength
+      have hTailFresh :
+          ∀ candidate, candidate ∈ names → candidate ∉ layout := by
+        intro candidate hMem
+        exact hFresh candidate (by simp [hMem])
+      obtain
+          ⟨tailSource, hTailSource, hTailScoped, hTailDomain⟩ :=
+        scopedExact_multifill_insertMany
+          hScoped hDomain hParts.2 hTailFresh hTailInsert
+      have hHeadFresh : name ∉ names ++ layout := by
+        simp only [List.mem_append, not_or]
+        exact ⟨hParts.1, hFresh name (by simp)⟩
+      have hTargetInsert :
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target name value) =
+            some (Locals.Source.Store.insert tailTarget name value) :=
+        Functions.Source.Store.insertMany_commute_insert_of_not_mem
+          hTailInsert hParts.1
+      have hTargetEq :
+          finalTarget =
+            Locals.Source.Store.insert tailTarget name value := by
+        change
+          Functions.Source.Store.insertMany names values
+              (Locals.Source.Store.insert target name value) =
+            some finalTarget at hInsert
+        rw [hTargetInsert] at hInsert
+        exact Option.some.inj hInsert.symm
+      subst finalTarget
+      refine
+        ⟨tailSource.insert name value, ?_, ?_, ?_⟩
+      · simpa [EvmYul.Yul.State.multifill] using
+          congrArg (fun state => state.insert name value) hTailSource
+      · simpa [List.cons_append] using
+          scoped_cons_insert hTailScoped hHeadFresh
+      · simpa [List.cons_append] using
+          domainExact_insert hTailDomain
+
 theorem firstDuplicate?_none_of_nodup
     (names : List Name) (hNoDup : names.Nodup) :
     EvmYul.Yul.firstDuplicate? names = none := by
@@ -1444,6 +1533,36 @@ theorem checkAssignment_ok
   simp [EvmYul.Yul.checkAssignment,
     firstDuplicate?_none_of_nodup names hNoDup,
     firstUndeclared?_none hDomain hDeclared]
+
+theorem lookupMany_of_scopedExact
+    {layout names : List Name}
+    {source : EvmYul.Yul.VarStore}
+    {target : Locals.Source.Store}
+    (hScoped : ScopedRel layout source target)
+    (hDomain : DomainExact layout source)
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Functions.Source.Store.lookupMany names target =
+      some (names.map fun name => (source.lookup name).getD Functions.Source.zero) := by
+  induction names with
+  | nil =>
+      rfl
+  | cons name rest ih =>
+      have hNameMem : name ∈ layout :=
+        hSubset name (by simp)
+      have hRestSubset :
+          ∀ candidate, candidate ∈ rest → candidate ∈ layout := by
+        intro candidate hMem
+        exact hSubset candidate (by simp [hMem])
+      have hSome : (source.lookup name).isSome = true :=
+        (hDomain name).mpr hNameMem
+      cases hLookup : source.lookup name with
+      | none =>
+          simp [hLookup] at hSome
+      | some value =>
+          have hTarget : target name = some value := by
+            simpa [hLookup] using (hScoped name hNameMem).symm
+          simp [Functions.Source.Store.lookupMany, hLookup, hTarget,
+            ih hRestSubset]
 
 end Vars
 
@@ -1525,6 +1644,95 @@ theorem scopedExact_of_rel
     ⟨sourceShared, sourceVars, hSource, hShared,
       Vars.scoped_of_rel hVars hSourceDomain, hSourceDomain⟩
 
+theorem scopedExact_initcall
+    {codeRel : CodeRel}
+    {source : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {params returns : List Name} {args : List Assembly.Word}
+    {paramStore : Locals.Source.Store}
+    (hRel : Rel codeRel source target)
+    (hSignature : (returns ++ params).Nodup)
+    (hParams :
+      Functions.Source.Store.insertMany params args
+          Locals.Source.Store.empty =
+        some paramStore) :
+    ScopedExactRel codeRel (returns ++ params)
+      (EvmYul.Yul.State.mkOk (source.initcall params returns args))
+      { shared := target.shared,
+        vars := Functions.Source.Store.initReturns returns paramStore } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, _hVars⟩
+  subst source
+  have hSignatureParts := List.nodup_append.mp hSignature
+  have hReturnsNodup : returns.Nodup := hSignatureParts.1
+  have hParamsNodup : params.Nodup := hSignatureParts.2.1
+  have hParamsFresh :
+      ∀ name, name ∈ params → name ∉ returns := by
+    intro name hParam hReturn
+    exact hSignatureParts.2.2 name hReturn name hParam rfl
+  have hReturnsFresh :
+      ∀ name, name ∈ returns → name ∉ params := by
+    intro name hReturn hParam
+    exact hSignatureParts.2.2 name hReturn name hParam rfl
+  have hReturnsInsert :
+      Functions.Source.Store.insertMany returns
+          (returns.map fun _name => Functions.Source.zero)
+          Locals.Source.Store.empty =
+        some
+          (Functions.Source.Store.initReturns returns
+            Locals.Source.Store.empty) :=
+    Functions.Source.Store.insertMany_zero_eq_initReturns
+      returns Locals.Source.Store.empty
+  obtain
+      ⟨returnSource, hReturnSource, hReturnScoped, hReturnDomain⟩ :=
+    Vars.scopedExact_multifill_insertMany
+      (shared := sourceShared)
+      Vars.scoped_empty Vars.domainExact_empty hReturnsNodup
+      (by simp) hReturnsInsert
+  have hParamsAfterReturns :
+      Functions.Source.Store.insertMany params args
+          (Functions.Source.Store.initReturns returns
+            Locals.Source.Store.empty) =
+        some
+          (Functions.Source.Store.initReturns returns paramStore) :=
+    Functions.Source.Store.insertMany_initReturns_commute
+      hParams hReturnsFresh
+  obtain
+      ⟨finalSource, hParamSource, hFinalScoped, hFinalDomain⟩ :=
+    Vars.scopedExact_multifill_insertMany
+      (shared := sourceShared)
+      hReturnScoped hReturnDomain hParamsNodup
+      (by simpa using hParamsFresh)
+      hParamsAfterReturns
+  have hZeroSource :
+      (EvmYul.Yul.State.Ok sourceShared
+          (default : EvmYul.Yul.VarStore)).zeroFill returns =
+        EvmYul.Yul.State.Ok sourceShared returnSource := by
+    rw [Vars.zeroFill_eq_multifill_zero]
+    exact hReturnSource
+  have hInit :
+      (EvmYul.Yul.State.Ok sourceShared sourceVars).initcall
+          params returns args =
+        EvmYul.Yul.State.Ok sourceShared finalSource := by
+    simp only [EvmYul.Yul.State.initcall,
+      EvmYul.Yul.State.setStore]
+    rw [hZeroSource]
+    exact hParamSource
+  have hScoped :
+      Vars.ScopedRel (returns ++ params) finalSource
+        (Functions.Source.Store.initReturns returns paramStore) := by
+    intro name hMem
+    apply hFinalScoped
+    simpa [List.mem_append, or_comm] using hMem
+  have hDomain :
+      Vars.DomainExact (returns ++ params) finalSource := by
+    intro name
+    rw [hFinalDomain name]
+    simp [List.mem_append, or_comm]
+  exact
+    ⟨sourceShared, finalSource, by rw [hInit]; rfl, hShared,
+      hScoped, hDomain⟩
+
 theorem scopedExact_insert_hidden
     {codeRel : CodeRel} {layout : List Name}
     {source : EvmYul.Yul.State} {target : Locals.Source.State}
@@ -1595,6 +1803,40 @@ theorem scopedExact_restrict
       rfl, hShared,
       Vars.scoped_restrict (Vars.scoped_of_subset hVars hSubset) hScope,
       Vars.domainExact_restrict hDomain hScope hSubset⟩
+
+theorem lookupMany_of_scopedExact
+    {codeRel : CodeRel} {layout names : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Functions.Source.Store.lookupMany names target.vars =
+      some (names.map source.lookup!) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, _hShared, hScoped, hDomain⟩
+  subst source
+  simpa [EvmYul.Yul.State.lookup!, EvmYul.Yul.State.lookup?] using
+    Vars.lookupMany_of_scopedExact hScoped hDomain hSubset
+
+theorem restore_call
+    {codeRel : CodeRel} {layout : List Name}
+    {callerSource bodySource : EvmYul.Yul.State}
+    {callerTarget bodyTarget : Locals.Source.State}
+    (hCaller : Rel codeRel callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel layout bodySource.reviveJump bodyTarget) :
+    Rel codeRel
+      ((bodySource.reviveJump.overwrite? callerSource).setStore callerSource)
+      { shared := bodyTarget.shared, vars := callerTarget.vars } := by
+  rcases hCaller with
+    ⟨callerShared, callerVars, hCallerSource, _hCallerShared, hCallerVars⟩
+  rcases hBody with
+    ⟨bodyShared, bodyVars, hBodySource, hBodyShared,
+      _hBodyVars, _hBodyDomain⟩
+  subst callerSource
+  refine
+    ⟨bodyShared, callerVars, ?_, hBodyShared, hCallerVars⟩
+  simp [hBodySource, EvmYul.Yul.State.overwrite?,
+    EvmYul.Yul.State.setStore]
 
 end Regular
 
@@ -1713,6 +1955,81 @@ def ScopedExactRel {transcript : Assembly.ResourceTrace}
       Simulation.ResourceReplay.State Locals.Source.State transcript) : Prop :=
   source.cursor = target.cursor ∧
     Regular.ScopedExactRel codeRel layout source.source target.source
+
+theorem scopedExact_initcall
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    {params returns : List Name} {args : List Assembly.Word}
+    {paramStore : Locals.Source.Store}
+    (hRel : Rel codeRel source target)
+    (hSignature : (returns ++ params).Nodup)
+    (hParams :
+      Functions.Source.Store.insertMany params args
+          Locals.Source.Store.empty =
+        some paramStore) :
+    ScopedExactRel codeRel (returns ++ params)
+      (source.withSource
+        (EvmYul.Yul.State.mkOk
+          (source.source.initcall params returns args)))
+      (target.withSource
+        { shared := target.source.shared,
+          vars := Functions.Source.Store.initReturns returns paramStore }) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedExact_initcall hRel.2 hSignature hParams⟩
+
+theorem lookupBang_reviveJump
+    (source : EvmYul.Yul.State) (name : Name) :
+    source.reviveJump.lookup! name = source.lookup! name := by
+  cases source with
+  | Ok shared vars =>
+      rfl
+  | OutOfFuel =>
+      rfl
+  | Checkpoint jump =>
+      cases jump <;> rfl
+
+theorem lookupMany_of_scopedExact
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout names : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel :
+      ScopedExactRel codeRel layout
+        (source.withSource source.source.reviveJump) target)
+    (hSubset : ∀ name, name ∈ names → name ∈ layout) :
+    Functions.Source.Store.lookupMany names target.source.vars =
+      some (names.map source.source.lookup!) := by
+  rw [← List.map_congr_left
+    (fun name _hMem => lookupBang_reviveJump source.source name)]
+  exact Regular.lookupMany_of_scopedExact hRel.2 hSubset
+
+theorem restore_call
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {callerSource bodySource :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {callerTarget bodyTarget :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hCaller : Rel codeRel callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel layout
+        (bodySource.withSource bodySource.source.reviveJump) bodyTarget) :
+    Rel codeRel
+      (bodySource.withSource
+        ((bodySource.source.reviveJump.overwrite?
+          callerSource.source).setStore callerSource.source))
+      (bodyTarget.withSource
+        { shared := bodyTarget.source.shared,
+          vars := callerTarget.source.vars }) := by
+  exact
+    ⟨hBody.1,
+      Regular.restore_call hCaller.2 hBody.2⟩
 
 theorem scopedExact_consumedExactly_iff
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

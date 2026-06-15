@@ -1591,6 +1591,99 @@ theorem lowerBound1Unchecked?_length_lowerArgs_eq
 
 end List
 
+inductive UncheckedCallArgsLowering :
+    Fresh.State → List AstExpr → List Functions.Stmt →
+      List (Locals.Expr 1) → Fresh.State → Prop where
+  | empty (state : Fresh.State) :
+      UncheckedCallArgsLowering state [] [] [] state
+  | bound
+      {state state' : Fresh.State} {args : List AstExpr}
+      {pre : List Functions.Stmt} {lowerArgs : List (Locals.Expr 1)}
+      (hNonempty : args ≠ [])
+      (hLowering :
+        List.UncheckedBoundLowering state args pre lowerArgs state') :
+      UncheckedCallArgsLowering state args pre lowerArgs state'
+
+inductive UncheckedFunctionCallLowering :
+    Fresh.State → Name → List AstExpr → List Functions.Stmt →
+      Locals.Expr 1 → Fresh.State → Prop where
+  | call
+      {state argsState final : Fresh.State}
+      {functionName tmp : Name} {args : List AstExpr}
+      {preArgs : List Functions.Stmt}
+      {lowerArgs : List (Locals.Expr 1)}
+      (hSupported : ObjectBuiltin.unsupported? functionName = false)
+      (hArgs :
+        UncheckedCallArgsLowering state args preArgs lowerArgs argsState)
+      (hFresh : Fresh.fresh? argsState = some (tmp, final)) :
+      UncheckedFunctionCallLowering state functionName args
+        (preArgs ++
+          [Functions.Stmt.let_ tmp (.lit zero),
+            Functions.Stmt.call [tmp] functionName lowerArgs])
+        (.var tmp) final
+
+theorem uncheckedFunctionCallLowering_of_lower1Unchecked?
+    {state final : Fresh.State} {functionName : Name}
+    {args : List AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    (hLower :
+      lower1Unchecked? state (.Call (.inr functionName) args) =
+        some (pre, lower, final)) :
+    UncheckedFunctionCallLowering state functionName args pre lower final := by
+  unfold lower1Unchecked? lowerUnchecked? at hLower
+  by_cases hUnsupported : ObjectBuiltin.unsupported? functionName
+  · simp [hUnsupported] at hLower
+  · cases args with
+    | nil =>
+        cases hFresh : Fresh.fresh? state with
+        | none =>
+            simp [hUnsupported, List.directCallArgsSafe?,
+              List.toLocals1?, hFresh] at hLower
+        | some result =>
+            rcases result with ⟨tmp, finalState⟩
+            have hTuple :
+                ([Functions.Stmt.let_ tmp (.lit zero),
+                    Functions.Stmt.call [tmp] functionName []],
+                  (.var tmp : Locals.Expr 1), finalState) =
+                (pre, lower, final) := by
+              simpa [hUnsupported, List.directCallArgsSafe?,
+                List.toLocals1?, hFresh] using hLower
+            cases hTuple
+            exact
+              UncheckedFunctionCallLowering.call
+                (by simpa using hUnsupported)
+                (UncheckedCallArgsLowering.empty state) hFresh
+    | cons head tail =>
+        cases hArgs :
+            List.lowerBound1Unchecked? state (head :: tail) with
+        | none =>
+            simp [hUnsupported, List.directCallArgsSafe?, hArgs] at hLower
+        | some result =>
+            rcases result with ⟨preArgs, lowerArgs, argsState⟩
+            cases hFresh : Fresh.fresh? argsState with
+            | none =>
+                simp [hUnsupported, List.directCallArgsSafe?,
+                  hArgs, hFresh] at hLower
+            | some result =>
+                rcases result with ⟨tmp, finalState⟩
+                have hTuple :
+                    (preArgs ++
+                        [Functions.Stmt.let_ tmp (.lit zero),
+                          Functions.Stmt.call [tmp] functionName lowerArgs],
+                      (.var tmp : Locals.Expr 1), finalState) =
+                    (pre, lower, final) := by
+                  simpa [hUnsupported, List.directCallArgsSafe?,
+                    hArgs, hFresh] using hLower
+                cases hTuple
+                exact
+                  UncheckedFunctionCallLowering.call
+                    (by simpa using hUnsupported)
+                    (UncheckedCallArgsLowering.bound
+                      (by simp)
+                      (List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+                        hArgs))
+                    hFresh
+
 def Supported (results : Nat) (expr : AstExpr) : Prop :=
   ∃ state pre lower state',
     lower? results state expr = some (pre, lower, state')
@@ -2930,6 +3023,29 @@ theorem toFunDefUncheckedFuel?_name
           simp [toFunDefUncheckedFuel?, hBody] at hLower
           rcases hLower with ⟨rfl, rfl⟩
           rfl
+
+theorem toFunDefUncheckedFuel?_parts
+    {fuel : Nat} {state state' : Fresh.State}
+    {name : Name} {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {lower : Functions.FunDef}
+    (hLower :
+      toFunDefUncheckedFuel? fuel state name
+          (.Def params returns body) =
+        some (lower, state')) :
+    lower.name = name ∧
+      lower.params = identNames params ∧
+      lower.returns = identNames returns ∧
+      Stmt.List.toBlockUncheckedFuel? fuel state body =
+        some (lower.body, state') := by
+  cases hBody :
+      Stmt.List.toBlockUncheckedFuel? fuel state body with
+  | none =>
+      simp [toFunDefUncheckedFuel?, hBody] at hLower
+  | some result =>
+      rcases result with ⟨lowerBody, finalState⟩
+      simp [toFunDefUncheckedFuel?, hBody] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact ⟨rfl, rfl, rfl, rfl⟩
 
 noncomputable def toFunDef? (state : Fresh.State) (name : Name) :
     AstFunctionDefinition → Option (Functions.FunDef × Fresh.State)

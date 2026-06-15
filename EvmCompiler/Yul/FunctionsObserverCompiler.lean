@@ -115,6 +115,33 @@ theorem Decomposition.findFunction
   rw [hTarget]
   exact hFind
 
+theorem Decomposition.findFunction_parts
+    {program : Program} {targetProgram : Objects.Program}
+    (hDecomposition : Decomposition program targetProgram)
+    {name : Name} {params returns : List EvmYul.Identifier}
+    {body : List AstStmt}
+    (hLookup :
+      program.contract.functions.lookup name =
+        some (.Def params returns body)) :
+    ∃ before after lowerFn,
+      Functions.Source.FunList.find? name
+          targetProgram.toFunctions.functions =
+        some lowerFn ∧
+      lowerFn.name = name ∧
+      lowerFn.params = identNames params ∧
+      lowerFn.returns = identNames returns ∧
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries program.contract))
+          before body =
+        some (lowerFn.body, after) := by
+  obtain ⟨before, after, lowerFn, hFind, hLower⟩ :=
+    hDecomposition.findFunction hLookup
+  obtain ⟨hName, hParams, hReturns, hBody⟩ :=
+    FunctionDefinition.toFunDefUncheckedFuel?_parts hLower
+  exact
+    ⟨before, after, lowerFn, hFind, hName, hParams, hReturns, hBody⟩
+
 end FunctionsObserverCompiler
 end Yul
 end EvmCompiler

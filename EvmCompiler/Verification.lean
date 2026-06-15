@@ -52,6 +52,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverCompiler
@@ -128,6 +129,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #check EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
+#check EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAt
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
@@ -174,7 +176,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
 #check EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
+#check EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
+#check EvmCompiler.Yul.StateRelation.Replay.restore_call
 #check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
@@ -184,8 +190,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering.names
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering.member
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem
+#check EvmCompiler.Yul.Expr.UncheckedCallArgsLowering
+#check EvmCompiler.Yul.Expr.UncheckedFunctionCallLowering
+#check EvmCompiler.Yul.Expr.uncheckedFunctionCallLowering_of_lower1Unchecked?
 #check EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
 #check EvmCompiler.Yul.Contract.functionEntries_names_nodup
+#check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody
+#check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

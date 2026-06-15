@@ -26,6 +26,7 @@ import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
@@ -1084,6 +1085,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
+#print axioms EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction_parts
 #print axioms EvmCompiler.Yul.StateRelation.Shared.withMachine
 #print axioms EvmCompiler.Yul.StateRelation.Shared.logOp
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
@@ -1139,7 +1141,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
 #print axioms EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
+#print axioms EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.restore_call
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
@@ -1148,8 +1154,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.names
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem
+#print axioms EvmCompiler.Yul.Expr.uncheckedFunctionCallLowering_of_lower1Unchecked?
 #print axioms EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
 #print axioms EvmCompiler.Yul.Contract.functionEntries_names_nodup
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

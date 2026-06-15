@@ -158,6 +158,16 @@ def assignMany : List Name → List Word → Store → Option Store
         none
   | _, _, _ => none
 
+theorem insertMany_zero_eq_initReturns
+    (returns : List Name) (store : Store) :
+    insertMany returns (returns.map fun _name => zero) store =
+      some (initReturns returns store) := by
+  induction returns generalizing store with
+  | nil =>
+      rfl
+  | cons name rest ih =>
+      exact ih (Locals.Source.Store.insert store name zero)
+
 theorem insertMany_length :
     ∀ {names : List Name} {values : List Word} {store store' : Store},
       insertMany names values store = some store' →
@@ -178,6 +188,24 @@ theorem insertMany_length :
           (store := Locals.Source.Store.insert store name value)
           (store' := store') hInsert
       simp [hTail]
+
+theorem insertMany_exists_of_length :
+    ∀ {names : List Name} {values : List Word} {store : Store},
+      values.length = names.length →
+        ∃ store', insertMany names values store = some store'
+  | [], [], store, _hLength => by
+      exact ⟨store, rfl⟩
+  | [], _value :: _values, _store, hLength => by
+      simp at hLength
+  | _name :: _names, [], _store, hLength => by
+      simp at hLength
+  | name :: names, value :: values, store, hLength => by
+      simp only [List.length_cons, Nat.succ.injEq] at hLength
+      obtain ⟨store', hInsert⟩ :=
+        insertMany_exists_of_length
+          (names := names) (values := values)
+          (store := Locals.Source.Store.insert store name value) hLength
+      exact ⟨store', hInsert⟩
 
 theorem insertMany_apply_of_not_mem :
     ∀ {names : List Name} {values : List Word}
@@ -733,6 +761,72 @@ theorem insert_comm_of_ne {store : Store} {left right : Name}
     · subst key
       simp [Locals.Source.Store.insert, hRight]
     · simp [Locals.Source.Store.insert, hLeft, hRight]
+
+theorem insertMany_commute_insert_of_not_mem :
+    ∀ {names : List Name} {values : List Word} {store store' : Store}
+      {protectedName : Name} {protectedValue : Word},
+      insertMany names values store = some store' →
+        protectedName ∉ names →
+          insertMany names values
+              (Locals.Source.Store.insert store protectedName protectedValue) =
+            some
+              (Locals.Source.Store.insert store' protectedName protectedValue)
+  | [], [], store, store', protectedName, protectedValue, hInsert,
+      _hNotMem => by
+      simp [insertMany] at hInsert
+      cases hInsert
+      simp [insertMany]
+  | [], _value :: _values, _store, _store', _protectedName,
+      _protectedValue, hInsert, _hNotMem => by
+      simp [insertMany] at hInsert
+  | _head :: _tail, [], _store, _store', _protectedName,
+      _protectedValue, hInsert, _hNotMem => by
+      simp [insertMany] at hInsert
+  | head :: tail, value :: values, store, store', protectedName,
+      protectedValue, hInsert, hNotMem => by
+      have hHeadNe : head ≠ protectedName := by
+        intro hEq
+        subst protectedName
+        exact hNotMem (by simp)
+      have hTailNotMem : protectedName ∉ tail := by
+        intro hMem
+        exact hNotMem (by simp [hMem])
+      have hComm :
+          Locals.Source.Store.insert
+              (Locals.Source.Store.insert store protectedName protectedValue)
+              head value =
+            Locals.Source.Store.insert
+              (Locals.Source.Store.insert store head value)
+              protectedName protectedValue :=
+        insert_comm_of_ne (store := store) (left := protectedName)
+          (right := head) (leftValue := protectedValue)
+          (rightValue := value) hHeadNe.symm
+      unfold insertMany at hInsert ⊢
+      rw [hComm]
+      exact insertMany_commute_insert_of_not_mem hInsert hTailNotMem
+
+theorem insertMany_initReturns_commute
+    {names : List Name} {values : List Word}
+    {store store' : Store} {returns : List Name}
+    (hInsert : insertMany names values store = some store')
+    (hDisjoint : ∀ name, name ∈ returns → name ∉ names) :
+    insertMany names values (initReturns returns store) =
+      some (initReturns returns store') := by
+  induction returns generalizing store store' with
+  | nil =>
+      exact hInsert
+  | cons name rest ih =>
+      have hNameNotMem : name ∉ names :=
+        hDisjoint name (by simp)
+      have hRestDisjoint :
+          ∀ candidate, candidate ∈ rest → candidate ∉ names := by
+        intro candidate hMem
+        exact hDisjoint candidate (by simp [hMem])
+      have hInserted :=
+        insertMany_commute_insert_of_not_mem
+          (protectedName := name) (protectedValue := zero)
+          hInsert hNameNotMem
+      exact ih hInserted hRestDisjoint
 
 theorem assignMany_commute_insert_of_not_mem :
     ∀ {names : List Name} {values : List Word} {store store' : Store}

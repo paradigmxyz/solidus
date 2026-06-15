@@ -1574,9 +1574,14 @@ corridor.
   whose values are checked invariant under later shared effects and fresh
   target locals. The result executes every generated argument preamble and
   proves the final Functions argument list returns the source values in call
-  order. The next boundary constructs recursive function-call
-  `PreparedValue`s from the compiler-selected callee and checked body
-  preservation.
+  order. Call-frame entry now has an exact `returns ++ params` scoped relation;
+  canonical call inversion exposes the lower-fuel source body; ordinary
+  function lowering exposes the selected target body; and
+  `FunctionsObserverCall.ReturnedBody.compose` derives target `runBody`, exact
+  return values, and caller-local restoration from the recursive body result.
+  The next boundary constructs the complete function-call `PreparedValue` by
+  combining that call result with generated result-local initialization,
+  assignment, and final variable evaluation.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

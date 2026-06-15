@@ -394,6 +394,62 @@ mutual
 
 end
 
+theorem call_succ_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {args : List Word}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      call model prim (fuel + 1) args (some functionName)
+          codeOverride state =
+        .ok (final, values)) :
+    ∃ yulContract params returns body stateAfterBody,
+      (model.source state).sharedState.accountMap.find?
+          (model.source state).executionEnv.codeOwner =
+        some yulContract ∧
+      (codeOverride.getD yulContract.code).functions.lookup functionName =
+        some (.Def params returns body) ∧
+      exec model prim fuel (.Block body) codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall params returns args))) =
+        .ok stateAfterBody ∧
+      final =
+        model.withSource stateAfterBody
+          (((model.source stateAfterBody).reviveJump.overwrite?
+              (model.source state)).setStore (model.source state)) ∧
+      values = List.map (model.source stateAfterBody).lookup! returns := by
+  unfold call at hRun
+  cases hContract :
+      (model.source state).sharedState.accountMap.find?
+        (model.source state).executionEnv.codeOwner with
+  | none =>
+      simp [hContract, fail] at hRun
+  | some yulContract =>
+      cases hFunction :
+          (codeOverride.getD yulContract.code).functions.lookup functionName with
+      | none =>
+          simp [hContract, hFunction, fail] at hRun
+      | some fn =>
+          cases fn with
+          | Def params returns body =>
+              cases hBody :
+                  exec model prim fuel (.Block body) codeOverride
+                    (model.withSource state
+                      (EvmYul.Yul.State.mkOk
+                        ((model.source state).initcall
+                          params returns args))) with
+              | error failure =>
+                  simp [hContract, hFunction, hBody] at hRun
+              | ok stateAfterBody =>
+                  simp [hContract, hFunction, hBody] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  exact
+                    ⟨yulContract, params, returns, body, stateAfterBody,
+                      rfl, hFunction, hBody, rfl, rfl⟩
+
 theorem evalArgs_append_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
