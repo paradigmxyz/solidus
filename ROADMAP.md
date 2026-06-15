@@ -131,9 +131,12 @@ Adjacent boundary status:
   regular family for successful prefixes. Compiler-owned function bodies have
   a block-indexed terminal result, and canonical Functions `runBody`/call
   semantics lift it through a halting call without return lookup, writeback, or
-  caller restoration. Recursive terminal propagation through argument
-  evaluation, conditionals, switch, loops, source call selection,
-  dispatcher/finish, and adjacent backward adequacy remain.
+  caller restoration. Recursive terminal expression propagation through direct
+  and generated-binding primitives plus compiler-selected internal calls is
+  checked, as are non-call singleton declaration and assignment failures.
+  Call-valued declarations/assignments, terminal primitive statements,
+  conditionals, switch, loops, dispatcher/finish composition, and adjacent
+  backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1699,9 +1702,10 @@ corridor.
   semantic-family classifier now proves that every safe compiler-selected
   nonterminal primitive cannot produce an observable `YulHalt` or `Revert`;
   malformed arities, static rejection, exhausted replay, and excluded external
-  operations are discharged internally. The current obligation is recursive
-  terminal expression/control propagation and whole-program terminal
-  composition, followed by matching backward adequacy.
+  operations are discharged internally. Recursive terminal expressions plus
+  non-call singleton declaration and assignment failures are now checked. The
+  current obligation is compound terminal control, remaining call/terminal
+  leaves, whole-program terminal composition, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

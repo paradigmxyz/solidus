@@ -387,6 +387,105 @@ theorem call_observable_error_parts
                       | ok stateAfterBody =>
                           simp [call, hContract, hFunction, hBody] at hRun
 
+theorem exec_expr_primitive_observable_error_evalValues
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel
+          (.ExprStmtCall (.Call (.inl prim) args))
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    evalValues model primSemantics fuel
+        (.Call (.inl prim) args) codeOverride state =
+      .error failure := by
+  rcases
+      exec_expr_primitive_error_parts
+        model primSemantics hRun with hOuter | hPrevious
+  · rcases hOuter with ⟨rfl, hFailure⟩
+    rw [← hFailure] at hObservable
+    simp [Exception.Observable] at hObservable
+  · rcases hPrevious with
+      ⟨previous, hFuel, hArgsFailure | hPrimitiveFailure⟩
+    · subst fuel
+      simp [evalValues, hArgsFailure]
+    · rcases hPrimitiveFailure with
+        ⟨stateAfterArgs, reversedValues, hArgsRun, hPrimRun⟩
+      subst fuel
+      simp [evalValues, hArgsRun, hPrimRun]
+
+theorem exec_let_some_observable_error_evalValues
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hRun :
+      exec model primSemantics fuel (.Let names (some expr))
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      evalValues model primSemantics previous expr codeOverride state =
+        .error failure := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases hEval :
+          evalValues model primSemantics previous expr
+            codeOverride state with
+      | error evalFailure =>
+          simp [exec, hCheck, multifill, hEval] at hRun
+          subst failure
+          exact ⟨previous, rfl, hEval⟩
+      | ok result =>
+          simp [exec, hCheck, multifill, hEval] at hRun
+
+theorem exec_assign_observable_error_evalValues
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+    (hRun :
+      exec model primSemantics fuel (.Assign names expr)
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      evalValues model primSemantics previous expr codeOverride state =
+        .error failure := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases hEval :
+          evalValues model primSemantics previous expr
+            codeOverride state with
+      | error evalFailure =>
+          simp [exec, hCheck, multifill, hEval] at hRun
+          subst failure
+          exact ⟨previous, rfl, hEval⟩
+      | ok result =>
+          simp [exec, hCheck, multifill, hEval] at hRun
+
 end Effectful
 end Source
 end Yul

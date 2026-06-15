@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.Compiler
 import EvmCompiler.Yul.FunctionsObserverPrimitive
+import EvmCompiler.Yul.EffectRefinement.Failure
 
 namespace EvmCompiler
 namespace Yul
@@ -892,6 +893,312 @@ theorem directAt
                                         simp [Functions.Source.Effectful.ArgList.eval,
                                           hTargetHeadOne,
                                           hTargetRest]
+
+structure DirectNoObservableFailureAt
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (fuel : Nat) : Prop where
+  evalValues :
+    ∀ {results : Nat} {expr : AstExpr} {lower : Locals.Expr results}
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {target : Functions.ObserverSemantics.State transcript}
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)},
+      EvmCompiler.Yul.Expr.toLocals? results expr = some lower →
+      StateRelation.Replay.Rel codeRel source target →
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel expr codeOverride source =
+        .error failure →
+      Yul.Source.Effectful.Exception.Observable failure.exception →
+      False
+  evalArgs :
+    ∀ {args : List AstExpr} {lower : List (Locals.Expr 1)}
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {target : Functions.ObserverSemantics.State transcript}
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)},
+      EvmCompiler.Yul.Expr.List.toLocals1? args = some lower →
+      StateRelation.Replay.Rel codeRel source target →
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel args codeOverride source =
+        .error failure →
+      Yul.Source.Effectful.Exception.Observable failure.exception →
+      False
+
+theorem directNoObservableFailureAt
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (fuel : Nat) :
+    DirectNoObservableFailureAt
+      contract transcript codeRel codeOverride fuel := by
+  induction fuel using Nat.strong_induction_on with
+  | h fuel ih =>
+      cases fuel with
+      | zero =>
+          exact
+            { evalValues := by
+                intro results expr lower source target failure
+                  hLower hRel hRun hObservable
+                simp [Yul.Source.Effectful.evalValues,
+                  Yul.Source.Effectful.fail] at hRun
+                rw [← hRun] at hObservable
+                simp [Yul.Source.Effectful.Exception.Observable]
+                  at hObservable
+              evalArgs := by
+                intro args lower source target failure
+                  hLower hRel hRun hObservable
+                simp [Yul.Source.Effectful.evalArgs,
+                  Yul.Source.Effectful.fail] at hRun
+                rw [← hRun] at hObservable
+                simp [Yul.Source.Effectful.Exception.Observable]
+                  at hObservable }
+      | succ previous =>
+          have hPrevious :
+              DirectNoObservableFailureAt
+                contract transcript codeRel codeOverride previous :=
+            ih previous (Nat.lt_succ_self previous)
+          have hPreviousForward :
+              DirectAt contract transcript codeRel codeOverride previous :=
+            directAt contract transcript codeRel codeOverride previous
+          refine
+            { evalValues := ?_
+              evalArgs := ?_ }
+          · intro results expr lower source target failure
+              hLower hRel hRun hObservable
+            cases expr with
+            | Lit value =>
+                simp [Yul.Source.Effectful.evalValues] at hRun
+            | Var name =>
+                cases hLookup :
+                    (ObserverSemantics.SourceReplay.stateModel transcript).source
+                      source |>.lookup? name with
+                | none =>
+                    simp [Yul.Source.Effectful.evalValues, hLookup,
+                      Yul.Source.Effectful.fail] at hRun
+                    rw [← hRun] at hObservable
+                    simp [Yul.Source.Effectful.Exception.Observable]
+                      at hObservable
+                | some value =>
+                    simp [Yul.Source.Effectful.evalValues, hLookup] at hRun
+            | Call callee args =>
+                cases callee with
+                | inr functionName =>
+                    simp [EvmCompiler.Yul.Expr.toLocals?] at hLower
+                | inl prim =>
+                    cases hOp : Prim.toBasicOp? prim with
+                    | none =>
+                        simp [EvmCompiler.Yul.Expr.toLocals?, hOp] at hLower
+                    | some op =>
+                        cases hArgsLower :
+                            EvmCompiler.Yul.Expr.List.toLocals1? args with
+                        | none =>
+                            simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                              hArgsLower] at hLower
+                        | some lowerArgs =>
+                            cases hSeq :
+                                EvmCompiler.Yul.Expr.List.toStackSeq?
+                                  lowerArgs
+                                  (Expressions.Structured.BasicOp.inputs op) with
+                            | none =>
+                                simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                                  hArgsLower, hSeq] at hLower
+                            | some seq =>
+                                by_cases hOutputs :
+                                    Expressions.Structured.BasicOp.outputs op =
+                                      results
+                                · simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                                    hArgsLower, hSeq, hOutputs] at hLower
+                                  have hLowerReverse :
+                                      EvmCompiler.Yul.Expr.List.toLocals1?
+                                          args.reverse =
+                                        some lowerArgs.reverse :=
+                                    EvmCompiler.Yul.Expr.List.toLocals1?_reverse
+                                      hArgsLower
+                                  obtain
+                                      ⟨callFuel, hFuel,
+                                        hArgsFailure | hPrimitiveFailure⟩ :=
+                                    Yul.Source.Effectful.evalValues_primitive_observable_error_parts
+                                      (ObserverSemantics.SourceReplay.stateModel
+                                        transcript)
+                                      (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                        contract transcript)
+                                      hRun hObservable
+                                  · have hCallFuel :
+                                        callFuel = previous := by
+                                      omega
+                                    exact
+                                      hPrevious.evalArgs hLowerReverse hRel
+                                        (by simpa [hCallFuel] using hArgsFailure)
+                                        hObservable
+                                  · rcases hPrimitiveFailure with
+                                      ⟨sourceAfterArgs, reversedValues,
+                                        hArgsRun, hPrimRun⟩
+                                    have hCallFuel :
+                                        callFuel = previous := by
+                                      omega
+                                    have hArgsRun' :
+                                        Yul.Source.Effectful.evalArgs
+                                            (ObserverSemantics.SourceReplay.stateModel
+                                              transcript)
+                                            (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                              contract transcript)
+                                            previous args.reverse codeOverride
+                                            source =
+                                          .ok
+                                            (sourceAfterArgs,
+                                              reversedValues) := by
+                                      simpa [hCallFuel] using hArgsRun
+                                    obtain
+                                        ⟨targetAfterArgs, hTargetArgList,
+                                          hArgsRel, _hArgsStore⟩ :=
+                                      hPreviousForward.evalArgs
+                                        hLowerReverse hRel hArgsRun'
+                                    have hArgLength :
+                                        reversedValues.length =
+                                          lowerArgs.reverse.length :=
+                                      Functions.Source.Effectful.ArgList.eval_length
+                                        (Functions.ObserverSemantics.stateModel
+                                          transcript)
+                                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                                          contract transcript)
+                                        hTargetArgList
+                                    have hSeq' :
+                                        EvmCompiler.Yul.Expr.List.toSeq?
+                                            lowerArgs.reverse
+                                            (Expressions.Structured.BasicOp.inputs
+                                              op) =
+                                          some seq := by
+                                      simpa [EvmCompiler.Yul.Expr.List.toStackSeq?]
+                                        using hSeq
+                                    have hSeqLength :
+                                        lowerArgs.reverse.length =
+                                          Expressions.Structured.BasicOp.inputs
+                                            op :=
+                                      EvmCompiler.Yul.Expr.List.toSeq?_length
+                                        hSeq'
+                                    have hArity :
+                                        reversedValues.reverse.length =
+                                          Expressions.Structured.BasicOp.inputs
+                                            op := by
+                                      simpa [List.length_reverse, hArgLength]
+                                        using hSeqLength
+                                    exact
+                                      EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected_noObservableFailure
+                                        (Prim.toBasicOp?_some_terminal_none hOp)
+                                        (Prim.toUncheckedBasicOp?_of_toBasicOp?
+                                          hOp)
+                                        hArity hArgsRel hPrimRun hObservable
+                                · simp [EvmCompiler.Yul.Expr.toLocals?, hOp,
+                                    hArgsLower, hSeq, hOutputs] at hLower
+          · intro args lower source target failure
+              hLower hRel hRun hObservable
+            cases args with
+            | nil =>
+                simp [Yul.Source.Effectful.evalArgs] at hRun
+            | cons head rest =>
+                cases hHeadLower :
+                    EvmCompiler.Yul.Expr.toLocals? 1 head with
+                | none =>
+                    simp [EvmCompiler.Yul.Expr.List.toLocals1?,
+                      hHeadLower] at hLower
+                | some lowerHead =>
+                    cases hRestLower :
+                        EvmCompiler.Yul.Expr.List.toLocals1? rest with
+                    | none =>
+                        simp [EvmCompiler.Yul.Expr.List.toLocals1?,
+                          hHeadLower, hRestLower] at hLower
+                    | some lowerRest =>
+                        simp [EvmCompiler.Yul.Expr.List.toLocals1?,
+                          hHeadLower, hRestLower] at hLower
+                        cases hHeadRun :
+                            Yul.Source.Effectful.eval
+                              (ObserverSemantics.SourceReplay.stateModel
+                                transcript)
+                              (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                contract transcript)
+                              previous head codeOverride source with
+                        | error headFailure =>
+                            simp [Yul.Source.Effectful.evalArgs, hHeadRun,
+                              Yul.Source.Effectful.evalTail] at hRun
+                            subst failure
+                            exact
+                              hPrevious.evalValues hHeadLower hRel
+                                (Yul.Source.Effectful.eval_observable_error
+                                  (ObserverSemantics.SourceReplay.stateModel
+                                    transcript)
+                                  (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                    contract transcript)
+                                  hHeadRun)
+                                hObservable
+                        | ok headResult =>
+                            rcases headResult with
+                              ⟨sourceAfterHead, value⟩
+                            simp [Yul.Source.Effectful.evalArgs, hHeadRun]
+                              at hRun
+                            unfold Yul.Source.Effectful.eval at hHeadRun
+                            cases hHeadValues :
+                                Yul.Source.Effectful.evalValues
+                                  (ObserverSemantics.SourceReplay.stateModel
+                                    transcript)
+                                  (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                    contract transcript)
+                                  previous head codeOverride source with
+                            | error headValuesFailure =>
+                                simp [hHeadValues] at hHeadRun
+                            | ok headValuesResult =>
+                                rcases headValuesResult with
+                                  ⟨sourceAfterValues, headValues⟩
+                                simp [hHeadValues] at hHeadRun
+                                rcases hHeadRun with ⟨rfl, rfl⟩
+                                obtain
+                                    ⟨targetAfterHead, _hTargetHead,
+                                      hHeadRel, _hHeadLength, _hHeadStore⟩ :=
+                                  hPreviousForward.evalValues
+                                    hHeadLower hRel hHeadValues
+                                cases previous with
+                                | zero =>
+                                    simp [Yul.Source.Effectful.evalTail,
+                                      Yul.Source.Effectful.fail] at hRun
+                                    rw [← hRun] at hObservable
+                                    simp
+                                      [Yul.Source.Effectful.Exception.Observable]
+                                      at hObservable
+                                | succ tailFuel =>
+                                    cases hRestRun :
+                                        Yul.Source.Effectful.evalArgs
+                                          (ObserverSemantics.SourceReplay.stateModel
+                                            transcript)
+                                          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                                            contract transcript)
+                                          tailFuel rest codeOverride
+                                          sourceAfterValues with
+                                    | error restFailure =>
+                                        simp [Yul.Source.Effectful.evalTail,
+                                          hRestRun] at hRun
+                                        subst failure
+                                        have hTail :
+                                            DirectNoObservableFailureAt
+                                              contract transcript codeRel
+                                              codeOverride tailFuel :=
+                                          ih tailFuel (by omega)
+                                        exact
+                                          hTail.evalArgs hRestLower hHeadRel
+                                            hRestRun hObservable
+                                    | ok restResult =>
+                                        simp [Yul.Source.Effectful.evalTail,
+                                          hRestRun] at hRun
 
 theorem toLocals_forward
     {contract : MemoryContract.Contract}
