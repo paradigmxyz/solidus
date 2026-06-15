@@ -1520,6 +1520,8 @@ corridor.
   The adjacent log family covers `log0` through `log4` with exact source
   arities, static-mode rejection, memory-derived log data, topic arrays,
   active-memory growth, and substate log append.
+  `invalid` is covered by a vacuous adjacent theorem because neither source
+  nor target continuing semantics admits a successful execution.
   `selfbalance` is derived through related account maps rather than a
   whole-world equality. The primitive interface has separate exact-arity
   support for permissive imported-Yul handlers, and the state relation

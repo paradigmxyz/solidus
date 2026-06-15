@@ -336,6 +336,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalid
 #check EvmCompiler.Yul.StateRelation.World.sstore
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
@@ -1096,6 +1097,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalid
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload

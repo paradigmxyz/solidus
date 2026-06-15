@@ -133,6 +133,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalid
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload

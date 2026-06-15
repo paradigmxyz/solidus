@@ -1,6 +1,7 @@
 import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Copy
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Environment
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Invalid
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Log
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Machine
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Pure
