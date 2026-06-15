@@ -356,6 +356,12 @@ inductive WorldUnaryAccess :
   | extcodesize :
       WorldUnaryAccess (.Env .EXTCODESIZE) .extcodesize
         EvmYul.State.extCodeSize EvmYul.State.extCodeSize
+  | sload :
+      WorldUnaryAccess (.StackMemFlow .SLOAD) .sload
+        EvmYul.State.sload EvmYul.State.sload
+  | tload :
+      WorldUnaryAccess (.StackMemFlow .TLOAD) .tload
+        EvmYul.State.tload EvmYul.State.tload
 
 theorem WorldUnaryAccess.metadata
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -407,6 +413,30 @@ theorem WorldUnaryAccess.related
           EvmYul.State.lookupAccount, address] using
           StateRelation.AccountMap.codeSize_eq
             hRel.accounts address
+  | sload =>
+      let owner := source.executionEnv.codeOwner
+      have hTargetOwner :
+          target.executionEnv.codeOwner = owner := by
+        simpa [owner] using hRel.executionEnv.codeOwner.symm
+      constructor
+      · simpa [EvmYul.State.sload, owner, hTargetOwner] using
+          StateRelation.World.addAccessedStorageKey hRel
+            (owner, value)
+      · simpa [EvmYul.State.sload,
+          EvmYul.State.lookupAccount, owner, hTargetOwner] using
+          StateRelation.AccountMap.storageValue_eq
+            hRel.accounts owner value
+  | tload =>
+      let owner := source.executionEnv.codeOwner
+      have hTargetOwner :
+          target.executionEnv.codeOwner = owner := by
+        simpa [owner] using hRel.executionEnv.codeOwner.symm
+      constructor
+      · simpa [EvmYul.State.tload] using hRel
+      · simpa [EvmYul.State.tload,
+          EvmYul.State.lookupAccount, owner, hTargetOwner] using
+          StateRelation.AccountMap.transientStorageValue_eq
+            hRel.accounts owner value
 
 theorem yul_primCall_succ_eq_of_worldUnaryAccess
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}

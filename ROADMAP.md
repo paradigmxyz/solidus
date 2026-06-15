@@ -1512,6 +1512,8 @@ corridor.
   `returndatasize`, `pop`, `mload`, `mstore`, `mstore8`, `mcopy`, and
   `keccak256`, plus `calldatacopy`, `codecopy`, and successful
   `returndatacopy`, `extcodecopy`, `balance`, and `extcodesize`.
+  The same unary access family also covers `sload` and `tload`, with storage,
+  transient-storage, and warm-key facts supplied by the state relation.
   `selfbalance` is derived through related account maps rather than a
   whole-world equality. The primitive interface has separate exact-arity
   support for permissive imported-Yul handlers, and the state relation

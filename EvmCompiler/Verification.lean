@@ -106,7 +106,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
 #check EvmCompiler.Yul.StateRelation.AccountMap.codeImage_eq
 #check EvmCompiler.Yul.StateRelation.AccountMap.codeSize_eq
+#check EvmCompiler.Yul.StateRelation.AccountMap.storageValue_eq
+#check EvmCompiler.Yul.StateRelation.AccountMap.transientStorageValue_eq
 #check EvmCompiler.Yul.StateRelation.World.addAccessedAccount
+#check EvmCompiler.Yul.StateRelation.World.addAccessedStorageKey
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?

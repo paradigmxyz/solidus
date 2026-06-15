@@ -91,6 +91,26 @@ theorem codeImage_eq
       EvmYul.State.accountCodeImage target := by
   simpa [EvmYul.State.accountCodeImage] using hRel.codeImage
 
+theorem storageValue_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel codeRel source target)
+    (key : EvmYul.UInt256) :
+    source.lookupStorage key = target.lookupStorage key := by
+  simp [EvmYul.Account.lookupStorage, hRel.storage]
+
+theorem transientStorageValue_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel codeRel source target)
+    (key : EvmYul.UInt256) :
+    source.lookupTransientStorage key =
+      target.lookupTransientStorage key := by
+  simp [EvmYul.Account.lookupTransientStorage,
+    hRel.transientStorage]
+
 end Account
 
 namespace AccountMap
@@ -186,6 +206,74 @@ theorem codeSize_eq
                 (EvmYul.State.accountCodeImage targetAccount).size
           rw [Account.codeImage_eq hAccount]
 
+theorem storageValue_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) :
+    (source.find? address).option ⟨0⟩
+        (EvmYul.Account.lookupStorage (k := key)) =
+      (target.find? address).option ⟨0⟩
+        (EvmYul.Account.lookupStorage (k := key)) := by
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none => rfl
+      | some targetAccount =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          change
+            sourceAccount.lookupStorage key =
+              targetAccount.lookupStorage key
+          exact Account.storageValue_eq hAccount key
+
+theorem transientStorageValue_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) :
+    (source.find? address).option ⟨0⟩
+        (EvmYul.Account.lookupTransientStorage (k := key)) =
+      (target.find? address).option ⟨0⟩
+        (EvmYul.Account.lookupTransientStorage (k := key)) := by
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none => rfl
+      | some targetAccount =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          change
+            sourceAccount.lookupTransientStorage key =
+              targetAccount.lookupTransientStorage key
+          exact Account.transientStorageValue_eq hAccount key
+
 end AccountMap
 
 namespace World
@@ -239,6 +327,41 @@ theorem addAccessedAccount
           hRel.genesisBlockHeader
       createdAccounts := by
         simpa [EvmYul.State.addAccessedAccount] using
+          hRel.createdAccounts }
+
+theorem addAccessedStorageKey
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (storageKey : EvmYul.AccountAddress × EvmYul.UInt256) :
+    Rel codeRel
+      (source.addAccessedStorageKey storageKey)
+      (target.addAccessedStorageKey storageKey) := by
+  exact
+    { accounts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using hRel.accounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.transactionReceipts
+      substate := by
+        simp [EvmYul.State.addAccessedStorageKey, hRel.substate]
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.addAccessedStorageKey] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
+          hRel.genesisBlockHeader
+      createdAccounts := by
+        simpa [EvmYul.State.addAccessedStorageKey] using
           hRel.createdAccounts }
 
 end World
