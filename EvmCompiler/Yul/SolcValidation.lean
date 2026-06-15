@@ -424,6 +424,38 @@ theorem exprOk_functionCall_parts
   simp [ExprOk?, lookupFunction?, hLookup] at hOk
   exact ⟨hOk.1, hOk.2.1⟩
 
+theorem exprsOk_of_exprOk_functionCall
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} {expected : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {params returns : List EvmYul.Identifier} {body : List AstStmt}
+    (hOk :
+      ExprOk? profile contract vars expected
+          (.Call (.inr functionName) args) =
+        true)
+    (hLookup :
+      contract.functions.lookup functionName =
+        some (.Def params returns body)) :
+    ExprsOk? profile contract vars args = true := by
+  simp [ExprOk?, lookupFunction?, hLookup] at hOk
+  exact hOk.2.2
+
+theorem exprOk_of_exprsOk_of_mem
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} :
+    ∀ {args : List AstExpr} {expr : AstExpr},
+      ExprsOk? profile contract vars args = true →
+      expr ∈ args →
+      ExprOk? profile contract vars 1 expr = true
+  | [], expr, hOk, hMem => by
+      simp at hMem
+  | head :: tail, expr, hOk, hMem => by
+      simp [ExprsOk?] at hOk
+      simp at hMem
+      rcases hMem with rfl | hTail
+      · exact hOk.1
+      · exact exprOk_of_exprsOk_of_mem hOk.2 hTail
+
 theorem returns_singleton_of_exprOk_functionCall
     {profile : DialectProfile} {contract : AstContract}
     {vars : List Name} {functionName : Name} {args : List AstExpr}

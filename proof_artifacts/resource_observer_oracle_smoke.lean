@@ -1198,7 +1198,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Contract.functionEntries_names_nodup
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
-#print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofFunctionCall
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall
 #print axioms EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_leave_parts

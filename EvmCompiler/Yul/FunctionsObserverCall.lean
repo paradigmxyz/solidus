@@ -123,22 +123,26 @@ theorem compose
 
 end ReturnedBody
 
-def RecursiveExpressionForward
+def RecursiveScopedExpressionForward
     (contract : MemoryContract.Contract)
     (transcript : Trace)
     (codeRel : StateRelation.CodeRel)
     (sourceProgram : Yul.Program)
     (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
     (bound : Nat) : Prop :=
   ∀ {exprFuel : Nat} {before after : Fresh.State}
+    {vars layout : List Name}
     {expr : AstExpr} {pre : List Functions.Stmt}
     {lower : Locals.Expr 1}
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {value : Word},
     exprFuel < bound →
+      SolcValidation.ExprOk? profile sourceProgram.contract vars 1 expr =
+        true →
       Expr.lower1Unchecked? before expr = some (pre, lower, after) →
-      StateRelation.Replay.Rel codeRel source target →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
       StateRelation.Vars.TargetDomainWithin
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
@@ -149,9 +153,9 @@ def RecursiveExpressionForward
           exprFuel expr (some sourceProgram.contract) source =
         .ok (source', value) →
       Nonempty
-        (FunctionsObserverExpression.PreparedValue
+        (FunctionsObserverExpression.ScopedPreparedValue
           contract transcript codeRel targetProgram.toFunctions
-          pre lower after source' target ctx value)
+          pre lower after layout source' target ctx value)
 
 def RecursiveBodyForward
     (contract : MemoryContract.Contract)
@@ -551,6 +555,10 @@ def ofReturnedCall
   · simpa [List.append_assoc] using fullPrepared.run
   · exact hVarsExtends
 
+end PreparedValue
+
+namespace ScopedPreparedValue
+
 theorem ofFunctionCall
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -583,12 +591,13 @@ theorem ofFunctionCall
           (.Call (.inr functionName) args) =
         true)
     (hExpr :
-      RecursiveExpressionForward
-        contract transcript codeRel sourceProgram targetProgram fuel)
+      RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
     (hBody :
       RecursiveBodyForward
         contract transcript codeRel sourceProgram targetProgram fuel)
-    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel vars source target)
     (hDomain :
       StateRelation.Vars.TargetDomainWithin
         initial.used target.source.vars)
@@ -603,9 +612,9 @@ theorem ofFunctionCall
           (some sourceProgram.contract) source =
         .ok (sourceFinal, value)) :
     Nonempty
-      (FunctionsObserverExpression.PreparedValue
+      (FunctionsObserverExpression.ScopedPreparedValue
         contract transcript codeRel targetProgram.toFunctions
-        pre lower final sourceFinal target ctx value) := by
+        pre lower final vars sourceFinal target ctx value) := by
   obtain
       ⟨callFuel, sourceAfterArgs, reversedValues, returnValues,
         _hFuel, hArgsRun, hCallRun, hValue⟩ :=
@@ -632,6 +641,10 @@ theorem ofFunctionCall
           sourceProgram.contract.functions.lookup functionName =
             some (.Def params returns body) := by
         simpa using hFunction
+      have hArgsOk :
+          SolcValidation.ExprsOk? profile sourceProgram.contract vars args =
+            true :=
+        SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
       obtain ⟨hArgCount, hSignature, returnName, hReturns⟩ :=
         SolcValidation.programOkWith_functionCall_parts
           hProgramOk hExprOk hLookup
@@ -643,9 +656,9 @@ theorem ofFunctionCall
           hLower).parts
       have hPreparedArgs :
           Nonempty
-            (FunctionsObserverExpression.PreparedArgs
+            (FunctionsObserverExpression.ScopedPreparedArgs
               contract transcript codeRel targetProgram.toFunctions
-              preArgs lowerArgs argsFresh sourceAfterArgs target ctx
+              preArgs lowerArgs argsFresh vars sourceAfterArgs target ctx
               reversedValues.reverse) := by
         cases hArgsLowering with
         | empty =>
@@ -653,14 +666,19 @@ theorem ofFunctionCall
             rcases hArgsRun with ⟨rfl, rfl⟩
             exact
               ⟨FunctionsObserverExpression.PreparedArgs.empty
-                hRel hDomain hScope⟩
+                  (StateRelation.Replay.rel_of_scopedExact hRel)
+                  hDomain hScope,
+                hRel⟩
         | bound hNonempty hArgsLowering =>
             exact
-              FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
+              FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
                 hArgsLowering
-                (fun hLt hExprLower hExprRel hExprDomain hExprScope hExprRun =>
-                  hExpr (by omega) hExprLower hExprRel hExprDomain
-                    hExprScope hExprRun)
+                (fun expr hMem =>
+                  SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk hMem)
+                (fun hLt hArgOk hExprLower hExprRel hExprDomain
+                    hExprScope hExprRun =>
+                  hExpr (by omega) hArgOk hExprLower hExprRel
+                    hExprDomain hExprScope hExprRun)
                 hRel hDomain hScope hArgsRun
       obtain ⟨preparedArgs⟩ := hPreparedArgs
       obtain
@@ -685,22 +703,23 @@ theorem ofFunctionCall
       have hNotMem : tmp ∉ argsFresh.used :=
         Fresh.not_mem_of_fresh? hFresh
       have hTargetHidden :
-          preparedArgs.prepared.finalTarget.source.vars tmp = none :=
-        preparedArgs.prepared.domain.lookup_none hNotMem
+          preparedArgs.prepared.prepared.finalTarget.source.vars tmp = none :=
+        preparedArgs.prepared.prepared.domain.lookup_none hNotMem
       have hSourceHidden :
           sourceAfterArgs.source.lookup? tmp = none :=
         StateRelation.Replay.source_lookup_none_of_targetDomainWithin
-          preparedArgs.prepared.rel preparedArgs.prepared.domain hNotMem
+          preparedArgs.prepared.prepared.rel
+          preparedArgs.prepared.prepared.domain hNotMem
       let targetCaller :=
-        preparedArgs.prepared.finalTarget.withSource
-          (preparedArgs.prepared.finalTarget.source.insert
+        preparedArgs.prepared.prepared.finalTarget.withSource
+          (preparedArgs.prepared.prepared.finalTarget.source.insert
             tmp Functions.Source.zero)
       have hCallerRel :
           StateRelation.Replay.Rel codeRel sourceAfterArgs targetCaller := by
         dsimp [targetCaller]
         exact
           StateRelation.Replay.insert_target_hidden
-            preparedArgs.prepared.rel hSourceHidden
+            preparedArgs.prepared.prepared.rel hSourceHidden
       have hEntry :
           StateRelation.Replay.ScopedExactRel codeRel
             (fn.returns ++ fn.params)
@@ -753,11 +772,39 @@ theorem ofFunctionCall
           simpa using hValue
         rw [hFnReturns]
         simp [identNames, identName, ← hReturnValue]
+      let prepared :=
+        PreparedValue.ofReturnedCall preparedArgs.prepared
+          hFresh hFind returnedBody hSourceFinal hReturnedValues
+      refine ⟨prepared, ?_⟩
+      apply StateRelation.Replay.scopedExact_of_rel_store prepared.rel
+      rw [hSourceFinal]
+      change
+        StateRelation.Vars.DomainExact vars
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).store)
+      have hRestoredStore :
+          ((sourceAfterBody.source.reviveJump.overwrite?
+              sourceAfterArgs.source).setStore sourceAfterArgs.source).store =
+            sourceAfterArgs.source.store := by
+        obtain
+            ⟨sourceShared, sourceVars, hSourceArgs,
+              _hShared, _hVars, _hDomain⟩ :=
+          preparedArgs.relation.2
+        obtain
+            ⟨bodyShared, bodyVars, hBodySource,
+              _hBodyShared, _hBodyVars, _hBodyDomain⟩ :=
+          returnedBody.relation.2
+        change
+          sourceAfterBody.source.reviveJump =
+            .Ok bodyShared bodyVars at hBodySource
+        rw [hSourceArgs, hBodySource]
+        rfl
+      rw [hRestoredStore]
       exact
-        ⟨ofReturnedCall preparedArgs hFresh hFind returnedBody
-          hSourceFinal hReturnedValues⟩
+        StateRelation.Replay.sourceStoreDomain_of_scopedExact
+          preparedArgs.relation
 
-end PreparedValue
+end ScopedPreparedValue
 
 end FunctionsObserverCall
 end Yul

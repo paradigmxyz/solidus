@@ -110,10 +110,12 @@ Adjacent boundary status:
   lowering decompositions, scoped prepared-argument composition, exact
   stack-order stability, and one checked `ofPrimitive` theorem covering every
   compiler-selected primitive expression without generated-code evidence.
-  Constructing the scoped function-call case and assembling the full interface
-  by main source-fuel induction, function-call declaration/assignment forms,
-  complete control statements, whole functions/programs, and backward
-  adequacy remain.
+  The scoped function-call case is also checked: source validation supplies
+  argument eligibility, the ordinary call lowering selects the callee, and
+  the returned-body relation restores the caller's exact lexical domain.
+  Assembling these constructors by main source-fuel induction,
+  function-call declaration/assignment forms, complete control statements,
+  whole functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1596,21 +1598,22 @@ corridor.
   function lowering exposes the selected target body; and
   `FunctionsObserverCall.ReturnedBody.compose` derives target `runBody`, exact
   return values, and caller-local restoration from the recursive body result.
-  `FunctionsObserverCall.PreparedValue.ofFunctionCall` now constructs the
+  `FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall` now constructs the
   complete function-call value from the ordinary expression lowering,
   compiler-selected callee, canonical source call, generated result-local
   initialization, checked body result, assignment, restoration, and final
-  variable evaluation. Its only recursive premises are the pass-owned
-  source-fuel expression/body induction interfaces; they are internal proof
-  machinery, not part of the public boundary. The next boundary discharges
-  those interfaces by mutual source-fuel induction and derives call arity,
-  signature uniqueness, and singleton-return facts from
-  `SolcValidation.ProgramOk`. The validation extraction is checked, and the
-  statement-owned body induction now has a verified empty-body constructor
-  using ordinary block/list lowering and canonical Yul block execution. The
-  declaration/assignment kernel now handles uninitialized multi-name
-  declarations and initialized non-call singleton forms. Scoped/full relation
-  conversion is shared by the relation owner, while
+  variable evaluation while preserving the caller's exact source domain.
+  Its only recursive premises are strictly smaller-fuel, pass-owned scoped
+  expression/body interfaces; they remain internal proof machinery rather
+  than a public call oracle. `SolcValidation` now extracts both whole argument
+  validity and per-member validity from the accepted call, so generated
+  argument preambles compose through the same scoped expression interface as
+  direct leaves. The next boundary discharges those recursive interfaces by
+  mutual source-fuel induction. The statement-owned body induction already has
+  a verified empty-body constructor using ordinary block/list lowering and
+  canonical Yul block execution. The declaration/assignment kernel handles
+  uninitialized multi-name declarations and initialized non-call singleton
+  forms. Scoped/full relation conversion is shared by the relation owner, while
   `ScopedPreparedValue.direct`, `ofLiteral`, and `ofVariable` provide the first
   checked constructors of the bounded recursive value interface without
   duplicating semantics or lowering. `ForwardAt` and its guarded lift now
@@ -1619,8 +1622,8 @@ corridor.
   through argument evaluation. `ScopedPreparedValue.ofGas` and `ofMsize`
   therefore reconstruct exact scoped relations from the ordinary unchecked
   compiler equations and canonical observer semantics. Generated-argument
-  primitive and function-call scoped-value constructors are the next
-  expression obligations.
+  primitive and function-call scoped-value constructors are now checked; the
+  remaining expression obligation is their exhaustive fuel-bounded dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

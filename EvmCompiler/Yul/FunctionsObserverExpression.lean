@@ -2313,9 +2313,11 @@ theorem ofUncheckedLowering
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {reversedValues : List Word}
+    {Eligible : AstExpr → Prop}
     (hLowering :
       EvmCompiler.Yul.Expr.List.UncheckedBoundLowering
         initial args pre lowerArgs final)
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
     (hExpr :
       ∀ {exprFuel : Nat} {before after : Fresh.State}
         {expr : AstExpr} {exprPre : List Functions.Stmt}
@@ -2325,6 +2327,7 @@ theorem ofUncheckedLowering
         {exprTarget : Functions.ObserverSemantics.State transcript}
         {exprCtx : Functions.Source.Ctx} {value : Word},
         exprFuel < fuel →
+          Eligible expr →
           EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
             some (exprPre, lower, after) →
           StateRelation.Replay.ScopedExactRel codeRel layout
@@ -2389,7 +2392,10 @@ theorem ofUncheckedLowering
             contract transcript)
           hHeadRun
       obtain ⟨restPrepared⟩ :=
-        ih hExpr hRel hDomain hScope hRestRun
+        ih
+          (fun candidate hMem =>
+            hEligible candidate (List.mem_cons_of_mem expr hMem))
+          hExpr hRel hDomain hScope hRestRun
       have hSourceEq : source' = middle :=
         deferredSourceEval_state_eq hDirect.1 hHeadEval
       subst source'
@@ -2442,9 +2448,13 @@ theorem ofUncheckedLowering
             contract transcript)
           hHeadRun
       obtain ⟨restPrepared⟩ :=
-        ih hExpr hRel hDomain hScope hRestRun
+        ih
+          (fun candidate hMem =>
+            hEligible candidate (List.mem_cons_of_mem expr hMem))
+          hExpr hRel hDomain hScope hRestRun
       obtain ⟨headPrepared⟩ :=
-        hExpr (by omega) hHead restPrepared.relation
+        hExpr (by omega) (hEligible expr (by simp)) hHead
+          restPrepared.relation
           restPrepared.prepared.prepared.domain
           restPrepared.prepared.prepared.scope hHeadEval
       let result :=
@@ -2692,7 +2702,8 @@ noncomputable def ofBoundPrimitive
       | succ primFuel =>
           obtain ⟨argsPrepared⟩ :=
             ScopedPreparedArgs.ofUncheckedLowering hArgs
-              (fun hExprFuel hExprLower hExprRel hExprDomain
+              (fun _expr _hMem => True.intro)
+              (fun hExprFuel _hEligible hExprLower hExprRel hExprDomain
                   hExprScope hExprRun =>
                 hExpr (by omega) hExprLower hExprRel hExprDomain
                   hExprScope hExprRun)

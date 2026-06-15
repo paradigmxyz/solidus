@@ -238,11 +238,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Contract.functionEntries_names_nodup
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
-#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveExpressionForward
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedExpressionForward
 #check EvmCompiler.Yul.FunctionsObserverCall.RecursiveBodyForward
 #check EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
-#check EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofFunctionCall
+#check EvmCompiler.Yul.FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall
 #check EvmCompiler.Yul.SolcValidation.exprOk_functionCall_parts
+#check EvmCompiler.Yul.SolcValidation.exprsOk_of_exprOk_functionCall
+#check EvmCompiler.Yul.SolcValidation.exprOk_of_exprsOk_of_mem
 #check EvmCompiler.Yul.SolcValidation.programOkWith_function_signature_nodup
 #check EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
 #check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
