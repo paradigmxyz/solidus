@@ -342,8 +342,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedExpression
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedExpression.ofPrimitive
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+#check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallParts
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_expr_primitive
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_expr_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call

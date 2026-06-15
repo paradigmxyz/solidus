@@ -692,7 +692,7 @@ private structure WritebackPolicy
         (bodyTarget.withSource
           { shared := bodyTarget.source.shared, vars := finalVars })
 
-private theorem ofFunctionCallWithPolicy
+private theorem ofFunctionCallPartsWithPolicy
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -705,12 +705,12 @@ private theorem ofFunctionCallWithPolicy
     {initial final : Fresh.State}
     {preArgs : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
-    {fuel : Nat}
-    {source sourceAfterCall sourceFinal :
+    {bound argsFuel callFuel : Nat}
+    {source sourceAfterArgs sourceAfterCall sourceFinal :
       ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
-    {returnValues : List Word}
+    {reversedValues returnValues : List Word}
     (hDecomposition :
       FunctionsObserverCompiler.Decomposition
         sourceProgram targetProgram)
@@ -729,10 +729,10 @@ private theorem ofFunctionCallWithPolicy
       WritebackPolicy codeRel layout targets sourceFinal target)
     (hExpr :
       RecursiveScopedExpressionForward
-        contract transcript codeRel sourceProgram targetProgram profile fuel)
+        contract transcript codeRel sourceProgram targetProgram profile bound)
     (hBody :
       RecursiveBodyForward
-        contract transcript codeRel sourceProgram targetProgram profile fuel)
+        contract transcript codeRel sourceProgram targetProgram profile bound)
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
     (hDomain :
@@ -740,13 +740,22 @@ private theorem ofFunctionCallWithPolicy
         initial.used target.source.vars)
     (hScope :
       StateRelation.Vars.NamesWithin initial.used ctx.scope)
-    (hRun :
-      Yul.Source.Effectful.evalValues
+    (hArgsFuel : argsFuel < bound)
+    (hCallFuel : callFuel < bound)
+    (hArgsRun :
+      Yul.Source.Effectful.evalArgs
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          fuel (.Call (.inr functionName) args)
-          (some sourceProgram.contract) source =
+          argsFuel args.reverse (some sourceProgram.contract) source =
+        .ok (sourceAfterArgs, reversedValues))
+    (hCallRun :
+      Yul.Source.Effectful.call
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          callFuel reversedValues.reverse (some functionName)
+          (some sourceProgram.contract) sourceAfterArgs =
         .ok (sourceAfterCall, returnValues))
     (hSourceFinal :
       sourceFinal =
@@ -756,14 +765,6 @@ private theorem ofFunctionCallWithPolicy
       (ScopedReturnedCall contract transcript codeRel
         targetProgram.toFunctions functionName targets preArgs lowerArgs
         final policy.finalLayout sourceFinal target ctx) := by
-  obtain
-      ⟨callFuel, sourceAfterArgs, reversedValues,
-        hFuel, hArgsRun, hCallRun⟩ :=
-    Yul.Source.Effectful.evalValues_function_ok_parts
-      (ObserverSemantics.SourceReplay.stateModel transcript)
-      (ObserverSafety.SafeSemantics.primitiveSemantics
-        contract transcript)
-      hRun
   cases callFuel with
   | zero =>
       simp [Yul.Source.Effectful.call,
@@ -798,13 +799,18 @@ private theorem ofFunctionCallWithPolicy
               reversedValues.reverse) := by
         cases hArgsLowering with
         | empty =>
-            simp [Yul.Source.Effectful.evalArgs] at hArgsRun
-            rcases hArgsRun with ⟨rfl, rfl⟩
-            exact
-              ⟨FunctionsObserverExpression.PreparedArgs.empty
-                  (StateRelation.Replay.rel_of_scopedExact hRel)
-                  hDomain hScope,
-                hRel⟩
+            cases argsFuel with
+            | zero =>
+                simp [Yul.Source.Effectful.evalArgs,
+                  Yul.Source.Effectful.fail] at hArgsRun
+            | succ previous =>
+                simp [Yul.Source.Effectful.evalArgs] at hArgsRun
+                rcases hArgsRun with ⟨rfl, rfl⟩
+                exact
+                  ⟨FunctionsObserverExpression.PreparedArgs.empty
+                      (StateRelation.Replay.rel_of_scopedExact hRel)
+                      hDomain hScope,
+                    hRel⟩
         | bound hNonempty hArgsLowering =>
             exact
               FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
@@ -946,6 +952,180 @@ private theorem ofFunctionCallWithPolicy
           hTargetsContain hFind returnedBody hReturnedValues hReturnLength
           (fun hAssign hRestored =>
             policy.relation hSourceFinal' hRestored hAssign)
+
+private theorem ofFunctionCallWithPolicy
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fuel : Nat}
+    {source sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hTargetsNodup : targets.Nodup)
+    (policy :
+      WritebackPolicy codeRel layout targets sourceFinal target)
+    (hExpr :
+      RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hBody :
+      RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile fuel)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final policy.finalLayout sourceFinal target ctx) := by
+  obtain
+      ⟨callFuel, sourceAfterArgs, reversedValues,
+        hFuel, hArgsRun, hCallRun⟩ :=
+    Yul.Source.Effectful.evalValues_function_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  exact
+    ofFunctionCallPartsWithPolicy hDecomposition hArgsLowering
+      hProgramOk hExprOk hTargetsNodup policy hExpr hBody
+      hRel hDomain hScope (by omega) (by omega)
+      hArgsRun hCallRun hSourceFinal
+
+theorem ofFunctionCallParts
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {layout targets : List Name}
+    {functionName : Name}
+    {args : List AstExpr}
+    {initial final : Fresh.State}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {bound argsFuel callFuel : Nat}
+    {source sourceAfterArgs sourceAfterCall sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {reversedValues returnValues : List Word}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout targets.length
+          (.Call (.inr functionName) args) =
+        true)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hExpr :
+      RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hBody :
+      RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hArgsFuel : argsFuel < bound)
+    (hCallFuel : callFuel < bound)
+    (hArgsRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          argsFuel args.reverse (some sourceProgram.contract) source =
+        .ok (sourceAfterArgs, reversedValues))
+    (hCallRun :
+      Yul.Source.Effectful.call
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          callFuel reversedValues.reverse (some functionName)
+          (some sourceProgram.contract) sourceAfterArgs =
+        .ok (sourceAfterCall, returnValues))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill targets returnValues)) :
+    Nonempty
+      (ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final layout sourceFinal target ctx) := by
+  obtain
+      ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+        hScoped, hSourceDomain⟩ :=
+    hRel.2
+  let policy :
+      WritebackPolicy codeRel layout targets sourceFinal target :=
+    { finalLayout := layout
+      contains := fun name hMem =>
+        StateRelation.Vars.target_contains_of_scopedExact
+          hScoped hSourceDomain (hTargetsVisible name hMem)
+      relation := by
+        intro sourceAfterArgs sourceAfterBody targetAfterArgs bodyTarget
+          callReturnValues finalVars hFinal hRestored hAssign
+        rw [hFinal]
+        exact
+          StateRelation.Replay.scopedExact_multifill_assignMany
+            hRestored hTargetsNodup hTargetsVisible hAssign }
+  exact
+    ofFunctionCallPartsWithPolicy hDecomposition hArgsLowering
+      hProgramOk hExprOk hTargetsNodup policy hExpr hBody
+      hRel hDomain hScope hArgsFuel hCallFuel
+      hArgsRun hCallRun hSourceFinal
 
 theorem ofFunctionCall
     {contract : MemoryContract.Contract}
