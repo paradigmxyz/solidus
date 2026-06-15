@@ -1257,8 +1257,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.appendNonregular
 #print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_none_parts
 #print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_leave_parts
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_one_parts
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_none
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_leave
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_one
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_one
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run

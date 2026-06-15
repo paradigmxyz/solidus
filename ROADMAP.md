@@ -1648,11 +1648,13 @@ corridor.
   interface and generic append composition. Regular flow retains exact lexical
   domains; break, continue, and leave retain scoped value agreement until the
   owning block closes the source and target scopes. The empty-list,
-  uninitialized declaration, and leave constructors consume ordinary compiler
-  decompositions and canonical source/Functions semantics through this
-  interface. The next obligation is to migrate the remaining singleton proofs
-  into open results and complete structural list, block, and control
-  composition.
+  uninitialized declaration, single-value declaration, single-value
+  assignment, and leave constructors consume ordinary compiler decompositions
+  and canonical source/Functions semantics through this interface. Value
+  helpers now expose their exact final target/context facts so statement
+  composition does not reconstruct hidden semantics. The next obligation is
+  to migrate direct function-call statements into open results and complete
+  structural list, block, and control composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

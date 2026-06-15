@@ -42,6 +42,68 @@ theorem toFunctionsListUncheckedFuel?_leave_parts
       simp [toFunctionsListUncheckedFuel?] at hLower
       exact ⟨hLower.1.symm, hLower.2.symm⟩
 
+theorem toFunctionsListUncheckedFuel?_let_one_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {name : EvmYul.Identifier} {expr : AstExpr}
+    {lower : List Functions.Stmt}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.Let [name] (some expr)) =
+        some (lower, after)) :
+    ∃ pre lowerValue,
+      Expr.lower1Unchecked? before expr =
+        some (pre, lowerValue, after) ∧
+      lower =
+        pre ++ [Functions.Stmt.let_ (identName name) lowerValue] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      rw [toFunctionsListUncheckedFuel?_let_one_noncall
+        fuel before name expr hNotFunctionCall] at hLower
+      cases hValue : Expr.lower1Unchecked? before expr with
+      | none =>
+          simp [hValue] at hLower
+      | some result =>
+          rcases result with ⟨pre, lowerValue, final⟩
+          simp [hValue] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨pre, lowerValue, rfl, rfl⟩
+
+theorem toFunctionsListUncheckedFuel?_assign_one_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {name : EvmYul.Identifier} {expr : AstExpr}
+    {lower : List Functions.Stmt}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.Assign [name] expr) =
+        some (lower, after)) :
+    ∃ pre lowerValue,
+      Expr.lower1Unchecked? before expr =
+        some (pre, lowerValue, after) ∧
+      lower =
+        pre ++ [Functions.Stmt.assign (identName name) lowerValue] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      rw [toFunctionsListUncheckedFuel?_assign_one_noncall
+        fuel before name expr hNotFunctionCall] at hLower
+      cases hValue : Expr.lower1Unchecked? before expr with
+      | none =>
+          simp [hValue] at hLower
+      | some result =>
+          rcases result with ⟨pre, lowerValue, final⟩
+          simp [hValue] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨pre, lowerValue, rfl, rfl⟩
+
 end Stmt
 end Yul
 end EvmCompiler

@@ -307,8 +307,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.appendNonregular
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_none_parts
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_leave_parts
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_one_parts
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_none
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_leave
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_one
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_one
 #check EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run
 #check EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run
 #check EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run
