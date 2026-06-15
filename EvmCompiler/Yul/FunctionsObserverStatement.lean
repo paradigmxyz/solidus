@@ -759,6 +759,337 @@ theorem of_assign_one
        retains := fun _hRegular _candidate hMem => hMem
        layoutWithin := hLayout.mono hFreshExtends }⟩
 
+theorem of_assign_call
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {names : List EvmYul.Identifier}
+    {functionName : Name}
+    {callArgs : List AstExpr}
+    {lower : List Functions.Stmt}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout names.length
+          (.Call (.inr functionName) callArgs) =
+        true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Assign names (.Call (.inr functionName) callArgs)) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hBody :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel
+          (.Assign names (.Call (.inr functionName) callArgs))
+          (some sourceProgram.contract) source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel targetProgram.toFunctions lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_assign_call_parts hLower
+  subst lower
+  obtain
+      ⟨evalFuel, sourceAfterCall, returnValues, hFuel,
+        hCheck, hEvalValues, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_assign_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, hSourceDomain⟩ :=
+    hRel.2
+  have hCheckSource :
+      EvmYul.Yul.checkAssignment
+          (.Ok sourceShared sourceVars) names =
+        .ok () := by
+    rw [← hSource]
+    exact hCheck
+  obtain ⟨hTargetsNodup, hTargetsVisible⟩ :=
+    StateRelation.Vars.checkAssignment_ok_parts
+      (layout := layout) (source := sourceVars)
+      (shared := sourceShared) hSourceDomain hCheckSource
+  obtain ⟨returnedCall⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+      hDecomposition hArgsLowering hProgramOk
+      (by simpa [identNames_eq_self] using hExprOk)
+      (by simpa [identNames_eq_self] using hTargetsNodup)
+      (by simpa [identNames_eq_self] using hTargetsVisible)
+      (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+          hArgScope hArgRun =>
+        FunctionsObserverCall.RecursiveScopedValueForward.expression
+          hValue (by omega) hArgOk hArgLower hArgRel hArgDomain
+          hArgScope hArgRun)
+      (fun hBodyFuel hBodyLower hParams hReturns hParamStore
+          hReserved hBodyNames hBodyOk hBodyEntry hBodyRun =>
+        hBody (by omega) hBodyLower hParams hReturns hParamStore
+          hReserved hBodyNames hBodyOk hBodyEntry hBodyRun)
+      hRel hDomain hScope hEvalValues
+      (by simpa [identNames_eq_self] using hSourceFinal)
+  have hFreshExtends : Fresh.Extends before after :=
+    hArgsLowering.stateExtends
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout sourceFinal
+        (Functions.Source.Effectful.Outcome.regular
+          returnedCall.finalTarget) := by
+    obtain
+        ⟨finalShared, finalVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+      returnedCall.relation.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource returnedCall.relation
+  exact
+    ⟨{ finalLayout := layout
+       outcome :=
+         Functions.Source.Effectful.Outcome.regular
+           returnedCall.finalTarget
+       finalCtx := returnedCall.finalCtx
+       run := by
+         simpa [identNames_eq_self] using returnedCall.run
+       relation := hOutcomeRel
+       domain := returnedCall.domain
+       scope := returnedCall.scope
+       freshExtends := hFreshExtends
+       retains := fun _hRegular _candidate hMem => hMem
+       layoutWithin := hLayout.mono hFreshExtends }⟩
+
+theorem of_let_call
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {compilerFuel sourceFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {names : List EvmYul.Identifier}
+    {functionName : Name}
+    {callArgs : List AstExpr}
+    {lower : List Functions.Stmt}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition
+        sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout names.length
+          (.Call (.inr functionName) callArgs) =
+        true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let names (some (.Call (.inr functionName) callArgs))) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hNamesUsed :
+      StateRelation.Vars.NamesWithin before.used (identNames names))
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hBody :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel
+          (.Let names (some (.Call (.inr functionName) callArgs)))
+          (some sourceProgram.contract) source =
+        .ok sourceFinal) :
+    Nonempty
+      (FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel targetProgram.toFunctions lower before after layout
+        sourceFinal target ctx) := by
+  obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_let_call_parts hLower
+  subst lower
+  obtain
+      ⟨evalFuel, sourceAfterCall, returnValues, hFuel,
+        hCheck, hEvalValues, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_let_some_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, hSourceDomain⟩ :=
+    hRel.2
+  have hCheckSource :
+      EvmYul.Yul.checkDeclaration
+          (.Ok sourceShared sourceVars) names =
+        .ok () := by
+    rw [← hSource]
+    exact hCheck
+  obtain ⟨hTargetsNodup, hTargetsFresh⟩ :=
+    StateRelation.Vars.checkDeclaration_ok_parts
+      (layout := layout) (source := sourceVars)
+      (shared := sourceShared) hSourceDomain hCheckSource
+  obtain
+      ⟨initFuel, initVars, initCtx,
+        hInsert, hInitRun, hInitCtx⟩ :=
+    InitNames.run
+      (contract := contract) (program := targetProgram.toFunctions)
+      (identNames names) target ctx
+  let targetDeclared :=
+    target.withSource
+      { shared := target.source.shared, vars := initVars }
+  have hDeclaredRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        source targetDeclared := by
+    simpa [targetDeclared] using
+      StateRelation.Replay.scopedExact_insertMany_hidden
+        hRel
+        (by simpa [identNames_eq_self] using hTargetsFresh)
+        hInsert
+  have hDeclaredDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used targetDeclared.source.vars := by
+    simpa [targetDeclared] using
+      hDomain.insertMany hNamesUsed hInsert
+  have hDeclaredScope :
+      StateRelation.Vars.NamesWithin before.used initCtx.scope := by
+    rw [hInitCtx]
+    intro candidate hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hNamesUsed candidate (by simpa using hDeclared)
+    · exact hScope candidate hOuter
+  have hTargetsContain :
+      ∀ candidate, candidate ∈ identNames names →
+        targetDeclared.source.vars.contains candidate = true := by
+    intro candidate hMem
+    simpa [targetDeclared] using
+      Functions.Source.Store.insertMany_contains_of_mem
+        (by simpa [identNames_eq_self] using hTargetsNodup)
+        hInsert hMem
+  obtain ⟨returnedCall⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+      hDecomposition hArgsLowering hProgramOk
+      (by simpa [identNames_eq_self] using hExprOk)
+      (by simpa [identNames_eq_self] using hTargetsNodup)
+      (by simpa [identNames_eq_self] using hTargetsFresh)
+      hTargetsContain
+      (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+          hArgScope hArgRun =>
+        FunctionsObserverCall.RecursiveScopedValueForward.expression
+          hValue (by omega) hArgOk hArgLower hArgRel hArgDomain
+          hArgScope hArgRun)
+      (fun hBodyFuel hBodyLower hParams hReturns hParamStore
+          hReserved hBodyNames hBodyOk hBodyEntry hBodyRun =>
+        hBody (by omega) hBodyLower hParams hReturns hParamStore
+          hReserved hBodyNames hBodyOk hBodyEntry hBodyRun)
+      hDeclaredRel hDeclaredDomain hDeclaredScope hEvalValues
+      (by simpa [identNames_eq_self] using hSourceFinal)
+  obtain ⟨callFuel, hCallRun⟩ := returnedCall.run
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions
+      (Stmt.initNames (identNames names))
+      (preArgs ++
+        [Functions.Stmt.call
+          (identNames names) functionName lowerArgs])
+      ctx initCtx target targetDeclared
+      (Functions.Source.Effectful.Outcome.regular
+        returnedCall.finalTarget)
+      returnedCall.finalCtx
+      ⟨initFuel, by simpa [targetDeclared] using hInitRun⟩
+      ⟨callFuel, by simpa [identNames_eq_self] using hCallRun⟩
+  have hFreshExtends : Fresh.Extends before after :=
+    hArgsLowering.stateExtends
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        (identNames names ++ layout) sourceFinal
+        (Functions.Source.Effectful.Outcome.regular
+          returnedCall.finalTarget) := by
+    obtain
+        ⟨finalShared, finalVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+      returnedCall.relation.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource returnedCall.relation
+  exact
+    ⟨{ finalLayout := identNames names ++ layout
+       outcome :=
+         Functions.Source.Effectful.Outcome.regular
+           returnedCall.finalTarget
+       finalCtx := returnedCall.finalCtx
+       run := ⟨targetFuel, by
+         simpa [List.append_assoc] using hTargetRun⟩
+       relation := hOutcomeRel
+       domain := returnedCall.domain
+       scope := returnedCall.scope
+       freshExtends := hFreshExtends
+       retains := fun _hRegular candidate hMem =>
+         List.mem_append_right _ hMem
+       layoutWithin := by
+         intro candidate hMem
+         rcases List.mem_append.mp hMem with hDeclared | hOuter
+         · exact
+             hFreshExtends candidate
+               (hNamesUsed candidate hDeclared)
+         · exact
+             hFreshExtends candidate
+               (hLayout candidate hOuter) }⟩
+
 theorem of_leave
     {contract : MemoryContract.Contract}
     {transcript : Trace}

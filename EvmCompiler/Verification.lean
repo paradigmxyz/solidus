@@ -323,8 +323,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
 #check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_call_parts
 #check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts
+#check EvmCompiler.Yul.Expr.UncheckedCallArgsLowering.stateExtends
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_call_parts
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_call_parts
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_call
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall

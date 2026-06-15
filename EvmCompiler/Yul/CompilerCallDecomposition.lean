@@ -36,6 +36,21 @@ theorem uncheckedCallArgsLowering_of_choice
           (by simp)
           (List.uncheckedBoundLowering_of_lowerBound1Unchecked? hLower)
 
+theorem UncheckedCallArgsLowering.stateExtends
+    {state final : Fresh.State} {args : List AstExpr}
+    {pre : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    (hLowering :
+      UncheckedCallArgsLowering state args pre lowerArgs final) :
+    Fresh.Extends state final := by
+  cases hLowering with
+  | empty =>
+      exact Fresh.Extends.refl _
+  | bound _hNonempty hBound =>
+      exact
+        hBound.stateExtends
+          (fun hLower => lower1Unchecked?_stateExtends hLower)
+
 end Expr
 
 namespace Stmt
@@ -133,6 +148,91 @@ theorem toFunctionsListUncheckedFuel?_assign_call
             · cases hLocals : Expr.List.toLocals1? args <;>
                 simp [hUnsupported, hDirect, hLocals]
             · simp [hUnsupported, hDirect]
+
+theorem toFunctionsListUncheckedFuel?_let_call_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {names : List EvmYul.Identifier}
+    {functionName : Name} {args : List AstExpr}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel state
+          (.Let names (some (.Call (.inr functionName) args))) =
+        some (lower, final)) :
+    ∃ preArgs lowerArgs,
+      Expr.UncheckedCallArgsLowering state args
+        preArgs lowerArgs final ∧
+      lower =
+        initNames (identNames names) ++ preArgs ++
+          [Functions.Stmt.call
+            (identNames names) functionName lowerArgs] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      rw [toFunctionsListUncheckedFuel?_let_call] at hLower
+      by_cases hUnsupported :
+          ObjectBuiltin.unsupported? functionName
+      · simp [hUnsupported] at hLower
+      · cases hArgs :
+          (if Expr.List.directCallArgsSafe? args then do
+              let lowerArgs ← Expr.List.toLocals1? args
+              some ([], lowerArgs, state)
+            else
+              Expr.List.lowerBound1Unchecked? state args) with
+        | none =>
+            rw [hArgs] at hLower
+            simp [hUnsupported] at hLower
+        | some result =>
+            rcases result with ⟨preArgs, lowerArgs, argsFinal⟩
+            rw [hArgs] at hLower
+            simp [hUnsupported] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            exact
+              ⟨preArgs, lowerArgs,
+                Expr.uncheckedCallArgsLowering_of_choice hArgs,
+                by simp [List.append_assoc]⟩
+
+theorem toFunctionsListUncheckedFuel?_assign_call_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {names : List EvmYul.Identifier}
+    {functionName : Name} {args : List AstExpr}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel state
+          (.Assign names (.Call (.inr functionName) args)) =
+        some (lower, final)) :
+    ∃ preArgs lowerArgs,
+      Expr.UncheckedCallArgsLowering state args
+        preArgs lowerArgs final ∧
+      lower =
+        preArgs ++
+          [Functions.Stmt.call
+            (identNames names) functionName lowerArgs] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      rw [toFunctionsListUncheckedFuel?_assign_call] at hLower
+      by_cases hUnsupported :
+          ObjectBuiltin.unsupported? functionName
+      · simp [hUnsupported] at hLower
+      · cases hArgs :
+          (if Expr.List.directCallArgsSafe? args then do
+              let lowerArgs ← Expr.List.toLocals1? args
+              some ([], lowerArgs, state)
+            else
+              Expr.List.lowerBound1Unchecked? state args) with
+        | none =>
+            rw [hArgs] at hLower
+            simp [hUnsupported] at hLower
+        | some result =>
+            rcases result with ⟨preArgs, lowerArgs, argsFinal⟩
+            rw [hArgs] at hLower
+            simp [hUnsupported] at hLower
+            rcases hLower with ⟨rfl, rfl⟩
+            exact
+              ⟨preArgs, lowerArgs,
+                Expr.uncheckedCallArgsLowering_of_choice hArgs, rfl⟩
 
 end Stmt
 

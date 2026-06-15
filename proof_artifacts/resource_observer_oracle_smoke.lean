@@ -1229,6 +1229,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_one_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_let_call_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts
+#print axioms EvmCompiler.Yul.Expr.UncheckedCallArgsLowering.stateExtends
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_call_parts
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_call_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_let_none_ok_parts
@@ -1274,6 +1277,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofReturnedBody
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_call
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_call
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall

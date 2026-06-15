@@ -1652,9 +1652,12 @@ corridor.
   assignment, and leave constructors consume ordinary compiler decompositions
   and canonical source/Functions semantics through this interface. Value
   helpers now expose their exact final target/context facts so statement
-  composition does not reconstruct hidden semantics. The next obligation is
-  to migrate direct function-call statements into open results and complete
-  structural list, block, and control composition.
+  composition does not reconstruct hidden semantics. Direct function-call
+  assignment and declaration are also open results: both use the shared
+  `ScopedReturnedCall` runtime, while declaration composes the ordinary
+  zero-initialization prefix. The next obligation is break/continue plus the
+  structural statement-list induction, followed by block and compound-control
+  closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
