@@ -5993,6 +5993,64 @@ restored from `ProtectedPrefix`, while target growth transports frame bounds.
 The caller source store is unchanged; only its shared state may have advanced
 through the callee.
 -/
+theorem resume_after_call_stack
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {plan : Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {sourceBefore sourceAfter : SourceState transcript}
+    {targetBefore targetAfter : TargetState transcript}
+    {returned : List Word}
+    (hRel :
+      ActivationStateRel contract plan live 0 frameBase .stack
+        sourceBefore targetBefore)
+    (hVars :
+      sourceAfter.source.vars = sourceBefore.source.vars)
+    (hCursor : sourceAfter.cursor = targetAfter.cursor)
+    (hMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        sourceAfter.source.shared.toMachineState
+        targetAfter.source.evm.toMachineState)
+    (hWorld :
+      sourceAfter.source.shared.toState =
+        targetAfter.source.evm.toSharedState.toState)
+    (hStack :
+      targetAfter.source.evm.stack =
+        returned ++ targetBefore.source.evm.stack)
+    (hActiveNoWrap :
+      targetAfter.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size) :
+    ActivationStateRel contract plan live returned.length frameBase .stack
+      sourceAfter targetAfter := by
+  cases hRel with
+  | stack hOnly _hBeforeNoWrap hState =>
+      refine .stack hOnly hActiveNoWrap ?_
+      refine
+        { cursor := hCursor
+          core :=
+            { machine := hMachine
+              world := hWorld
+              store := ?_ } }
+      intro name location hLive hLocation
+      have hOld :=
+        hState.core.store name location hLive hLocation
+      cases location with
+      | stack planDepth =>
+          rcases hOld with ⟨depth, hDepth, hValue⟩
+          refine ⟨depth, hDepth, ?_⟩
+          rw [hStack]
+          rw [List.getElem?_append_right
+            (Nat.le_add_right returned.length depth)]
+          simpa [hVars] using hValue
+      | scratch slot =>
+          exact False.elim (hOnly name slot hLive hLocation)
+
+/--
+Reconstruct a caller activation in either resource mode. The stack-only case
+is the configuration-free theorem above; the scratch case additionally
+requires preservation of the caller's protected allocator prefix.
+-/
 theorem resume_after_call
     {transcript : Trace}
     {contract : MemoryContract.Contract}

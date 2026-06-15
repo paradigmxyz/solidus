@@ -1437,9 +1437,11 @@ corridor.
   activation exits, and the resource lift occurs at the enclosing statement
   boundary. A single controlled-head theorem now selects initializer exit,
   regular completion, or activation exit from the canonical source run. The
-  remaining Functions work is selected no-frame calls, the shared stack-only
-  recursive constructor, whole-program forward packaging, and matching
-  backward adequacy.
+  Configuration-free caller restoration, all-stack callee prelude and return,
+  pure callee phase composition, and caller writeback interfaces are checked.
+  The remaining Functions work is composing those interfaces for selected
+  no-frame calls, the shared stack-only recursive constructor, whole-program
+  forward packaging, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

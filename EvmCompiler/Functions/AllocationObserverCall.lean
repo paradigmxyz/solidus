@@ -2903,6 +2903,158 @@ No generated code is accepted from the caller: both compilation phases are
 recovered from `FunctionPreludeContext`, which is constructed by the real
 validator, Functions lowerer, and Locals compiler.
 -/
+theorem forward_stack
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {frameWords frameBase : Nat}
+    {slots : AllocationSupport.FunSlots}
+    {entryCtx paramCtx returnCtx : Locals.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    (hContext :
+      AllocationObserverContext.FunctionPreludeContext
+        lowerCtx plan frameWords slots entryCtx paramCtx returnCtx .stack)
+    (hEntry :
+      AllocationObserverRelation.ActivationCalleeEntryRel contract plan
+        [] slots.params frameBase .stack source target)
+    (hEntryStackLength :
+      target.source.evm.stack.length = entryCtx.layout.length)
+    (hZero :
+      ∀ name, name ∈ slots.returns.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord) :
+    ∃ compiled finalTarget fuel,
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx slots.params
+                entryCtx.layout).1 ++
+              (AllocationLowering.lowerReturns lowerCtx slots.returns
+                paramCtx.layout).1 } =
+        some (compiled, returnCtx) ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverRelation.ActivationStateRel contract plan
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        0 frameBase .stack source finalTarget ∧
+      finalTarget.source.evm.stack.length = returnCtx.layout.length := by
+  cases hContext with
+  | stack parameterSlots returnSlots signatureNodup frameFresh
+      parameters returns
+      parameterCompile returnCompile entryLayout parameterLayout bodyLayout =>
+      obtain ⟨paramExpected, hParamExpected⟩ := parameterCompile
+      obtain
+          ⟨paramCompiled, paramFinalCtx, paramTarget, paramFuel,
+            hParamCompile, _hParamLayout, hParamEval, hParamRel,
+            hParamStackLength, _hParamMachine⟩ :=
+        ParameterPrelude.forward_stack_of_context
+          parameters parameterSlots hEntry hEntryStackLength
+      rw [hParamExpected] at hParamCompile
+      cases hParamCompile
+      have hParamRel' :
+          AllocationObserverRelation.ActivationStateRel contract plan
+            (slots.params.map Prod.fst).reverse 0 frameBase .stack
+            source paramTarget := by
+        simpa using hParamRel
+      obtain ⟨returnExpected, hReturnExpected⟩ := returnCompile
+      obtain
+          ⟨returnCompiled, returnFinalCtx, returnTarget, returnFuel,
+            hReturnCompile, _hReturnLayout, hReturnEval, hReturnRel,
+            hReturnStackLength, _hReturnMachine⟩ :=
+        ReturnPrelude.forward_stack_of_context
+          returns returnSlots hParamRel' hZero hParamStackLength
+      rw [hReturnExpected] at hReturnCompile
+      cases hReturnCompile
+      have hCompile :=
+        Locals.Block.compileOpen_append hParamExpected hReturnExpected
+      obtain ⟨fuel, hEval⟩ :=
+        Structured.EffectSemantics.Block.Eval.append_regular_exists
+          hParamEval hReturnEval
+      refine
+        ⟨paramExpected ++ returnExpected, returnTarget, fuel,
+          hCompile, ?_, hReturnRel, hReturnStackLength⟩
+      change
+        Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          { stmts :=
+              Expressions.StmtList.toStructured
+                (paramExpected ++ returnExpected) }
+          target
+          (Structured.EffectSemantics.Outcome.regular returnTarget)
+      rw [Expressions.StmtList.toStructured_append]
+      exact hEval
+
+/--
+Package the all-stack function prelude as the ordinary activation invariant
+consumed by recursive body preservation.
+-/
+theorem forward_stack_invariant
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {frameWords frameBase : Nat}
+    {slots : AllocationSupport.FunSlots}
+    {entryCtx paramCtx returnCtx : Locals.Ctx}
+    {bodyState : AllocationLowering.State}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    (hContext :
+      AllocationObserverContext.FunctionPreludeContext
+        lowerCtx plan frameWords slots entryCtx paramCtx returnCtx .stack)
+    (hEntry :
+      AllocationObserverRelation.ActivationCalleeEntryRel contract plan
+        [] slots.params frameBase .stack source target)
+    (hEntryStackLength :
+      target.source.evm.stack.length = entryCtx.layout.length)
+    (hZero :
+      ∀ name, name ∈ slots.returns.map Prod.fst →
+        source.source.vars name = some AllocationSupport.zeroWord)
+    (hWF : plan.WellFormed)
+    (hBodyEnv :
+      bodyState.allocation.env =
+        AllocationSupport.functionEnv slots)
+    (hBodyLayout : bodyState.layout = returnCtx.layout)
+    (hDefined :
+      AllocationObserverRelation.LiveDefined
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        source.source) :
+    ∃ compiled finalTarget fuel,
+      Locals.Block.compileOpen entryCtx
+          { stmts :=
+              (AllocationLowering.lowerParams lowerCtx slots.params
+                entryCtx.layout).1 ++
+              (AllocationLowering.lowerReturns lowerCtx slots.returns
+                paramCtx.layout).1 } =
+        some (compiled, returnCtx) ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram fuel
+          (Expressions.Block.toStructured { stmts := compiled })
+          target
+          (Structured.EffectSemantics.Outcome.regular finalTarget) ∧
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx bodyState returnCtx plan
+        ((slots.returns.map Prod.fst).reverse ++
+          (slots.params.map Prod.fst).reverse)
+        frameBase .stack source finalTarget := by
+  obtain
+      ⟨compiled, finalTarget, fuel, hCompile, hEval,
+        hRel, hStackLength⟩ :=
+    forward_stack hContext hEntry hEntryStackLength hZero
+  exact
+    ⟨compiled, finalTarget, fuel, hCompile, hEval,
+      { compiler :=
+          AllocationObserverContext.FunctionPreludeContext.bodyCompiler
+            hContext hBodyEnv hBodyLayout hWF
+        planWF := hWF
+        defined := hDefined
+        state := hRel
+        stackLength := hStackLength }⟩
+
 theorem forward
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -3208,6 +3360,122 @@ end FunctionPrelude
 namespace FunctionReturn
 
 /--
+Execute the regular-return epilogue for an all-stack function body.
+
+This is the resource-neutral adjacent theorem used when ordinary allocation
+selected no scratch frame for the callee.
+-/
+theorem forward_regular_stack
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live returns : List Locals.Name}
+    {frameBase : Nat}
+    {lowered : Locals.ExprSeq returns.length}
+    {returnCode cleanup : Structured.Code}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {values : List Word}
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase .stack
+        source target)
+    (hReturnsLive :
+      ∀ name, name ∈ returns → name ∈ live)
+    (hLookup :
+      Functions.Source.Store.lookupMany returns source.source.vars =
+        some values)
+    (hLower :
+      AllocationLowering.lowerReturnExprs lowerCtx lowerState returns =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 0 lowered =
+        some returnCode)
+    (hCleanup :
+      localsCtx.cleanupToPreserving? returns.length 0 =
+        some cleanup) :
+    ∃ afterValues final,
+      Structured.ObserverSemantics.Code.run returnCode target =
+          .ok afterValues ∧
+      Structured.ObserverSemantics.Code.run cleanup afterValues =
+          .ok final ∧
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+          { stmts :=
+              Expressions.StmtList.toStructured
+                (Locals.codeStmt returnCode ++ Locals.codeStmt cleanup) }
+          target
+          (Structured.EffectSemantics.Outcome.regular final) ∧
+      final.source.evm.stack = values.reverse ∧
+      source.cursor = final.cursor ∧
+      Compiler.MemoryRelation.MachineRel contract
+        source.source.shared.toMachineState
+        final.source.evm.toMachineState ∧
+      source.source.shared.toState =
+        final.source.evm.toSharedState.toState ∧
+      final.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size := by
+  have hSafe :=
+    AllocationObserverCleanup.ReturnValues.memorySafeEval
+      (contract := contract) (transcript := transcript) hLookup
+  have hScoped :=
+    AllocationObserverCleanup.ReturnValues.returnExprsScoped hReturnsLive
+  have hLowerSeq :=
+    AllocationObserverCleanup.ReturnValues.lowerExprSeq hLower
+  obtain ⟨afterValues, hValuesRun, hValuesRel⟩ :=
+    AllocationObserverExpression.forwardExprSeq
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hSafe hInvariant.compiler hScoped hLowerSeq hCompile hInvariant.state
+  have hValuesLength : values.length = returns.length :=
+    Functions.Source.Store.lookupMany_length hLookup
+  obtain
+      ⟨final, hCleanupRun, hCleanupCursor, hFinalStack,
+        hCleanupShared, _hCleanupReturns⟩ :=
+    AllocationObserverCleanup.Preserving.forward_zero
+      (values := values.reverse)
+      (baseStack := target.source.evm.stack)
+      hCleanup (by simpa [hValuesLength])
+      hInvariant.stackLength hValuesRel.stack
+  have hCleanupMachine :
+      final.source.evm.toMachineState =
+        afterValues.source.evm.toMachineState :=
+    congrArg (fun state => state.toMachineState) hCleanupShared
+  have hCleanupWorld :
+      final.source.evm.toSharedState.toState =
+        afterValues.source.evm.toSharedState.toState :=
+    congrArg EvmYul.SharedState.toState hCleanupShared
+  have hEval :
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+          { stmts :=
+              Expressions.StmtList.toStructured
+                (Locals.codeStmt returnCode ++ Locals.codeStmt cleanup) }
+          target
+          (Structured.EffectSemantics.Outcome.regular final) := by
+    change
+      Structured.ObserverSemantics.Block.Eval targetProgram 3
+        { stmts :=
+            [Structured.Stmt.code returnCode,
+              Structured.Stmt.code cleanup] }
+        target
+        (Structured.EffectSemantics.Outcome.regular final)
+    exact
+      Structured.EffectSemantics.Block.Eval.cons_regular
+        (Structured.EffectSemantics.Stmt.Eval.code hValuesRun)
+        (Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hCleanupRun)
+          Structured.EffectSemantics.Block.Eval.nil)
+  exact
+    ⟨afterValues, final, hValuesRun, hCleanupRun, hEval, hFinalStack,
+      hValuesRel.state.base.cursor.trans hCleanupCursor.symm,
+      by simpa [hCleanupMachine] using hValuesRel.state.base.core.machine,
+      hValuesRel.state.base.core.world.trans hCleanupWorld.symm,
+      by simpa [hCleanupShared] using hValuesRel.state.activeNoWrap⟩
+
+/--
 Execute the compiler-owned regular-return epilogue from a completed function
 body: evaluate the named return values and discard the complete callee layout
 beneath them.
@@ -3356,6 +3624,128 @@ theorem depth_le_protectedBound
     (entryMode : AllocationObserverRelation.ActivationMode) :
     calleeDepth ≤ protectedBound calleeDepth entryMode := by
   cases entryMode <;> simp [protectedBound]
+
+/--
+Compose the four compiler-owned phases of a regularly returning callee without
+adding allocator bookkeeping.
+-/
+theorem compose_eval
+    {transcript : Trace}
+    {targetProgram : Structured.Program}
+    {proc : Structured.Proc}
+    {markerBlock preludeBlock bodyBlock returnBlock : Structured.Block}
+    {targetEntry targetBodyStart targetBodyFinal targetFinal :
+      Structured.ObserverSemantics.State transcript}
+    {markerFuel preludeFuel bodyFuel returnFuel : Nat}
+    (hBodyShape :
+      proc.body.stmts =
+        markerBlock.stmts ++ preludeBlock.stmts ++
+          bodyBlock.stmts ++ returnBlock.stmts)
+    (hMarkers :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram markerFuel markerBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetEntry))
+    (hPrelude :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram preludeFuel preludeBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetBodyStart))
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyFuel bodyBlock targetBodyStart
+        (Structured.EffectSemantics.Outcome.regular targetBodyFinal))
+    (hReturn :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram returnFuel returnBlock targetBodyFinal
+        (Structured.EffectSemantics.Outcome.regular targetFinal)) :
+    ∃ fuel,
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram fuel proc.body targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetFinal) := by
+  rcases markerBlock with ⟨markerStmts⟩
+  rcases preludeBlock with ⟨preludeStmts⟩
+  rcases bodyBlock with ⟨bodyStmts⟩
+  rcases returnBlock with ⟨returnStmts⟩
+  obtain ⟨markerPreludeFuel, hMarkerPrelude⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts) (right := preludeStmts)
+      hMarkers hPrelude
+  obtain ⟨throughBodyFuel, hThroughBody⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts ++ preludeStmts)
+      (right := bodyStmts)
+      hMarkerPrelude hBody
+  obtain ⟨fuel, hEval⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := (markerStmts ++ preludeStmts) ++ bodyStmts)
+      (right := returnStmts)
+      hThroughBody hReturn
+  refine ⟨fuel, ?_⟩
+  cases hProcBody : proc.body with
+  | mk procStmts =>
+      have hProcStmts :
+          procStmts =
+            markerStmts ++ preludeStmts ++ bodyStmts ++ returnStmts := by
+        simpa [hProcBody] using hBodyShape
+      subst procStmts
+      simpa [List.append_assoc] using hEval
+
+/--
+Compose a nonregular callee body with its compiler-owned entry phases; the
+regular return epilogue is unreachable.
+-/
+theorem compose_nonregular_eval
+    {transcript : Trace}
+    {targetProgram : Structured.Program}
+    {proc : Structured.Proc}
+    {markerBlock preludeBlock bodyBlock returnBlock : Structured.Block}
+    {targetEntry targetBodyStart : Structured.ObserverSemantics.State transcript}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome (transcript := transcript)}
+    {markerFuel preludeFuel bodyFuel : Nat}
+    (hBodyShape :
+      proc.body.stmts =
+        markerBlock.stmts ++ preludeBlock.stmts ++
+          bodyBlock.stmts ++ returnBlock.stmts)
+    (hMarkers :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram markerFuel markerBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetEntry))
+    (hPrelude :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram preludeFuel preludeBlock targetEntry
+        (Structured.EffectSemantics.Outcome.regular targetBodyStart))
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram bodyFuel bodyBlock targetBodyStart targetOutcome)
+    (hNonregular : targetOutcome.mode ≠ .regular) :
+    ∃ fuel,
+      Structured.ObserverSemantics.Block.Eval
+        targetProgram fuel proc.body targetEntry targetOutcome := by
+  rcases markerBlock with ⟨markerStmts⟩
+  rcases preludeBlock with ⟨preludeStmts⟩
+  rcases bodyBlock with ⟨bodyStmts⟩
+  rcases returnBlock with ⟨returnStmts⟩
+  obtain ⟨markerPreludeFuel, hMarkerPrelude⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts) (right := preludeStmts)
+      hMarkers hPrelude
+  obtain ⟨throughBodyFuel, hThroughBody⟩ :=
+    Structured.EffectSemantics.Block.Eval.append_regular_exists
+      (left := markerStmts ++ preludeStmts)
+      (right := bodyStmts)
+      hMarkerPrelude hBody
+  have hEval :=
+    Structured.EffectSemantics.Block.Eval.append_nonregular
+      (right := returnStmts) hThroughBody hNonregular
+  refine ⟨throughBodyFuel, ?_⟩
+  cases hProcBody : proc.body with
+  | mk procStmts =>
+      have hProcStmts :
+          procStmts =
+            markerStmts ++ preludeStmts ++ bodyStmts ++ returnStmts := by
+        simpa [hProcBody] using hBodyShape
+      subst procStmts
+      simpa [List.append_assoc] using hEval
 
 /--
 Compose the pass-owned phases of one regular callee body: metadata-only entry
@@ -5145,6 +5535,157 @@ theorem forward_runtime_bounded
 end CallTargets
 
 namespace RegularCall
+
+/--
+Resume an all-stack caller after a regularly returning selected call and run
+the real caller writeback code.
+-/
+theorem resume_and_writeback_stack
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {callerLowerCtx : AllocationLowering.Ctx}
+    {callerLowerState : AllocationLowering.State}
+    {callerLocalsCtx : Locals.Ctx}
+    {callerPlan : Locals.Allocation.Plan}
+    {callerLive : List Locals.Name}
+    {callerFrameBase : Nat}
+    {sourceAfterArgs sourceReturned :
+      Functions.ObserverSemantics.State transcript}
+    {callerTargetBase targetCallInput calleeFinal :
+      Structured.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {name : Structured.Name}
+    {proc : Structured.Proc}
+    {bodyFuel : Nat}
+    {bodyMode : StructuredCall.ReturnMode}
+    {callArgs callerStack returnValues : List Word}
+    {targets : List Locals.Name}
+    {returnStore : Locals.Source.Store}
+    {stores : Structured.Code}
+    (hCallerRel :
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive 0 callerFrameBase .stack
+        sourceAfterArgs callerTargetBase)
+    (hCallerStack :
+      callerTargetBase.source.evm.stack = callerStack)
+    (hLookup :
+      Structured.ProcList.lookup? name targetProgram.procs = some proc)
+    (hCallStack :
+      targetCallInput.source.evm.stack = callArgs ++ callerStack)
+    (hCallArgsLength : callArgs.length = proc.argc)
+    (hBody :
+      Structured.ObserverSemantics.Block.Eval targetProgram bodyFuel proc.body
+        (CalleeEntry.structuredState
+          targetCallInput callArgs callerStack proc.retc)
+        (bodyMode.outcome calleeFinal))
+    (hReturnedStack :
+      calleeFinal.source.evm.stack = returnValues.reverse)
+    (hReturnedLength : returnValues.length = proc.retc)
+    (hSourceCursor : sourceReturned.cursor = calleeFinal.cursor)
+    (hSourceMachine :
+      Compiler.MemoryRelation.MachineRel contract
+        sourceReturned.source.shared.toMachineState
+        calleeFinal.source.evm.toMachineState)
+    (hSourceWorld :
+      sourceReturned.source.shared.toState =
+        calleeFinal.source.evm.toSharedState.toState)
+    (hCalleeActiveNoWrap :
+      calleeFinal.source.evm.activeWords.toNat *
+          MemoryContract.wordBytes <
+        EvmYul.UInt256.size)
+    (hCallerContext :
+      AllocationObserverContext.ActivationExprContext
+        callerLowerCtx callerLowerState callerLocalsCtx
+        callerPlan callerLive .stack)
+    (hCallerWF : callerPlan.WellFormed)
+    (hTargetsLive :
+      ∀ target, target ∈ targets → target ∈ callerLive)
+    (hTargetsNodup : targets.Nodup)
+    (hAssign :
+      Functions.Source.Store.assignMany targets returnValues
+          sourceAfterArgs.source.vars =
+        some returnStore)
+    (hStores :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState
+          targets.reverse targets.length =
+        some stores) :
+    ∃ callFinal targetFinal,
+      Structured.ObserverSemantics.Stmt.Eval
+        targetProgram (bodyFuel + 1) (.call name) targetCallInput
+        (Structured.EffectSemantics.Outcome.regular callFinal) ∧
+      Structured.ObserverSemantics.Code.run stores callFinal =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive 0 callerFrameBase .stack
+        ((Functions.ObserverSemantics.stateModel transcript).withSource
+          sourceReturned
+          { shared := sourceReturned.source.shared
+            vars := returnStore })
+        targetFinal ∧
+      targetFinal.source.evm.stack.length = callerStack.length := by
+  obtain
+      ⟨returned, callFinal, _hPop, hCallEval, hCallCursor,
+        hCallFinalStack, hCallMachine, hCallWorld, _hCallReturns⟩ :=
+    (by
+      cases bodyMode with
+      | regular =>
+        exact
+          StructuredCall.regular hLookup hCallStack hCallArgsLength hBody
+            hReturnedStack (by simpa using hReturnedLength)
+      | leave =>
+        exact
+          StructuredCall.leave hLookup hCallStack hCallArgsLength hBody
+            hReturnedStack (by simpa using hReturnedLength))
+  let callerReturned :=
+    (Functions.ObserverSemantics.stateModel transcript).withSource
+      sourceReturned
+      { shared := sourceReturned.source.shared
+        vars := sourceAfterArgs.source.vars }
+  have hResumed :
+      AllocationObserverRelation.ActivationStateRel
+        contract callerPlan callerLive returnValues.reverse.length
+        callerFrameBase .stack callerReturned callFinal := by
+    apply AllocationObserverRelation.Frame.resume_after_call_stack hCallerRel
+    · rfl
+    · change sourceReturned.cursor = callFinal.cursor
+      exact hSourceCursor.trans hCallCursor.symm
+    · change
+        Compiler.MemoryRelation.MachineRel contract
+          sourceReturned.source.shared.toMachineState
+          callFinal.source.evm.toMachineState
+      simpa [hCallMachine] using hSourceMachine
+    · change
+        sourceReturned.source.shared.toState =
+          callFinal.source.evm.toSharedState.toState
+      simpa [hCallWorld] using hSourceWorld
+    · simpa [hCallerStack] using hCallFinalStack
+    · simpa [hCallMachine] using hCalleeActiveNoWrap
+  have hAssignReverse :
+      Functions.Source.Store.assignMany targets.reverse
+          returnValues.reverse callerReturned.source.vars =
+        some returnStore := by
+    change
+      Functions.Source.Store.assignMany targets.reverse
+          returnValues.reverse sourceAfterArgs.source.vars =
+        some returnStore
+    exact
+      Functions.Source.Store.assignMany_reverse_of_run
+        hAssign hTargetsNodup
+  have hStores' :
+      AllocationLowering.lowerCallTargetsCode?
+          callerLowerCtx callerLowerState targets.reverse
+            returnValues.reverse.length =
+        some stores := by
+    simpa [Functions.Source.Store.assignMany_length hAssign] using hStores
+  obtain ⟨targetFinal, hStoresRun, hFinalRel, hFinalStack⟩ :=
+    CallTargets.forward hCallerContext hCallerWF
+      (fun target hTarget =>
+        hTargetsLive target (by simpa using hTarget))
+      hAssignReverse hStores' hResumed hCallFinalStack
+  refine
+    ⟨callFinal, targetFinal, hCallEval, hStoresRun, ?_, hFinalStack⟩
+  simpa [callerReturned, Locals.Source.State.withVars] using hFinalRel
 
 /--
 Complete a regular Structured call after the callee body has produced its

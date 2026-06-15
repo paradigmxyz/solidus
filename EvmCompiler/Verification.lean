@@ -209,6 +209,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.ActivationExprContext.scratch_of_layout
 #check EvmCompiler.Functions.AllocationObserverContext.FunctionPreludeContext.bodyCompiler
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.initialized_source_facts
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward_stack
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward_stack_invariant
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionPrelude.forward_invariant
 #check EvmCompiler.Functions.AllocationObserverExpression.StackPrimitiveForward
@@ -546,6 +548,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.of_machine_eq
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ProtectedPrefix.of_memory_eq_active_growth
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call
+#check EvmCompiler.Functions.AllocationObserverRelation.Frame.resume_after_call_stack
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
 #check EvmCompiler.Structured.ObserverSemantics.CallStack.popReturn_of_nonhalting_eval
 #check EvmCompiler.Functions.AllocationObserverRelation.Frame.ActivationOwned
@@ -580,8 +583,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_leave
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_eval
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_nonregular_eval
 #check EvmCompiler.Functions.AllocationObserverCall.StructuredCall.leave
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback
+#check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback_stack
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.of_lowering
@@ -721,6 +727,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.ArgList.MemorySafeEval.of_safe_eval
 #check EvmCompiler.Functions.AllocationObserverExpression.forwardExprSeqRuntime_with_effect
 #check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular
+#check EvmCompiler.Functions.AllocationObserverCall.FunctionReturn.forward_regular_stack
 #check EvmCompiler.Functions.AllocationObserverStatement.ExprLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.LetLeaf.forward_of_runtime_invariant
 #check EvmCompiler.Functions.AllocationObserverStatement.AssignLeaf.forward_of_runtime_invariant
