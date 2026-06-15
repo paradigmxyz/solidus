@@ -395,29 +395,19 @@ def outcomeLive
   | .leave => returns
   | .halt _ => regularLive
 
-/--
-Two source contexts agree on the control destinations visible to abrupt
-statement outcomes.
--/
-structure SameControl
-    (before after : Functions.Source.Ctx) : Prop where
-  breakScope : before.breakScope? = after.breakScope?
-  continueScope : before.continueScope? = after.continueScope?
-  leaveScope : before.leaveScope? = after.leaveScope?
+abbrev SameControl := Functions.Source.Ctx.SameControl
 
 namespace SameControl
 
 theorem refl (ctx : Functions.Source.Ctx) : SameControl ctx ctx :=
-  ⟨rfl, rfl, rfl⟩
+  Functions.Source.Ctx.SameControl.refl ctx
 
 theorem trans
     {first second third : Functions.Source.Ctx}
     (hFirst : SameControl first second)
     (hSecond : SameControl second third) :
     SameControl first third :=
-  ⟨hFirst.breakScope.trans hSecond.breakScope,
-    hFirst.continueScope.trans hSecond.continueScope,
-    hFirst.leaveScope.trans hSecond.leaveScope⟩
+  Functions.Source.Ctx.SameControl.trans hFirst hSecond
 
 end SameControl
 

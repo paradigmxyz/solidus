@@ -24,6 +24,24 @@ def ScopeOptionWithin (enabled : Bool)
   else
     scope? = none
 
+namespace ScopeOptionWithin
+
+theorem mono
+    {enabled : Bool}
+    {scope? : Option (List Name)}
+    {before after : List Name}
+    (hWithin : ScopeOptionWithin enabled scope? before)
+    (hSubset : ∀ name, name ∈ before → name ∈ after) :
+    ScopeOptionWithin enabled scope? after := by
+  by_cases hEnabled : enabled = true
+  · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
+    obtain ⟨scope, hScope, hNames⟩ := hWithin
+    exact ⟨scope, hScope, fun name hMem => hSubset name (hNames name hMem)⟩
+  · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
+    exact hWithin
+
+end ScopeOptionWithin
+
 structure ControlContextRel
     (layout : List Name)
     (canBreak canContinue canLeave : Bool)
@@ -34,6 +52,33 @@ structure ControlContextRel
     ScopeOptionWithin canContinue ctx.continueScope? layout
   leaveScope :
     ScopeOptionWithin canLeave ctx.leaveScope? layout
+
+namespace ControlContextRel
+
+theorem transport
+    {beforeLayout afterLayout : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel beforeLayout
+        canBreak canContinue canLeave beforeCtx)
+    (hSubset :
+      ∀ name, name ∈ beforeLayout → name ∈ afterLayout)
+    (hControl : Functions.Source.Ctx.SameControl beforeCtx afterCtx) :
+    ControlContextRel afterLayout
+      canBreak canContinue canLeave afterCtx := by
+  refine
+    { breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · rw [← hControl.breakScope]
+    exact hRel.breakScope.mono hSubset
+  · rw [← hControl.continueScope]
+    exact hRel.continueScope.mono hSubset
+  · rw [← hControl.leaveScope]
+    exact hRel.leaveScope.mono hSubset
+
+end ControlContextRel
 
 structure ScopedStmtResult
     {transcript : Trace}
@@ -60,6 +105,43 @@ structure ScopedStmtResult
     openResult.outcome.mode = .regular →
       ControlContextRel openResult.finalLayout
         canBreak canContinue canLeave openResult.finalCtx
+
+namespace ScopedStmtResult
+
+def ofOpen
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (result :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower initial final entryLayout
+        sourceFinal target ctx)
+    (hLayout :
+      result.outcome.mode = .regular →
+        result.finalLayout =
+          SolcValidation.StmtOutVars entryLayout stmt)
+    (hControl :
+      ControlContextRel entryLayout
+        canBreak canContinue canLeave ctx) :
+    ScopedStmtResult contract codeRel program stmt lower
+      initial final entryLayout sourceFinal target ctx
+      canBreak canContinue canLeave :=
+  { openResult := result
+    regularLayout := hLayout
+    regularControl := fun hRegular =>
+      ControlContextRel.transport hControl
+        (result.retains hRegular) result.control }
+
+end ScopedStmtResult
 
 structure ScopedListResult
     {transcript : Trace}

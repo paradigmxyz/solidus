@@ -1189,6 +1189,7 @@ structure Prepared
     StateRelation.Vars.TargetDomainWithin
       fresh.used finalTarget.source.vars
   scope : StateRelation.Vars.NamesWithin fresh.used finalCtx.scope
+  control : Functions.Source.Ctx.SameControl ctx finalCtx
   varsExtends :
     StateRelation.Vars.TargetExtends
       target.source.vars finalTarget.source.vars
@@ -1221,6 +1222,7 @@ def empty
       rel := hRel
       domain := hDomain
       scope := hScope
+      control := Functions.Source.Ctx.SameControl.refl ctx
       varsExtends := StateRelation.Vars.TargetExtends.refl _ }
 
 def append
@@ -1256,6 +1258,9 @@ def append
       rel := hRight.rel
       domain := hRight.domain
       scope := hRight.scope
+      control :=
+        Functions.Source.Ctx.SameControl.trans
+          hLeft.control hRight.control
       varsExtends :=
         StateRelation.Vars.TargetExtends.trans
           hLeft.varsExtends hRight.varsExtends }
@@ -1319,6 +1324,7 @@ def generated
       rel := hBound.2.1
       domain := hBound.2.2.1
       scope := hBound.2.2.2
+      control := Functions.Source.Ctx.SameControl.scopeUpdate ctx _
       varsExtends :=
         StateRelation.Vars.TargetExtends.trans hBeforeEval hEvalBound }
   have hEmpty :
@@ -1378,6 +1384,7 @@ structure PreparedValue
     StateRelation.Vars.TargetDomainWithin
       fresh.used evalTarget.source.vars
   scope : StateRelation.Vars.NamesWithin fresh.used finalCtx.scope
+  control : Functions.Source.Ctx.SameControl ctx finalCtx
   varsExtends :
     StateRelation.Vars.TargetExtends
       target.source.vars preTarget.source.vars
@@ -1457,6 +1464,7 @@ def evaluated
     rel := hRel
     domain := hDomain
     scope := hScope
+    control := Functions.Source.Ctx.SameControl.refl ctx
     varsExtends := StateRelation.Vars.TargetExtends.refl _ }
 
 noncomputable def direct
@@ -1529,6 +1537,9 @@ def bind
       rel := generated.rel
       domain := generated.domain
       scope := generated.scope
+      control :=
+        Functions.Source.Ctx.SameControl.trans
+          hValue.control generated.control
       varsExtends :=
         StateRelation.Vars.TargetExtends.trans
           hValue.varsExtends generated.varsExtends }
@@ -1575,6 +1586,7 @@ def afterPrepared
       rel := hRel
       domain := hPrepared.domain.congr hVars
       scope := hPrepared.scope
+      control := hPrepared.control
       varsExtends := by
         intro name result hLookup
         exact hPrepared.varsExtends name result hLookup }
@@ -2019,6 +2031,7 @@ def direct
       rel := hRel
       domain := hRest.prepared.domain
       scope := hRest.prepared.scope
+      control := hRest.prepared.control
       varsExtends := hRest.prepared.varsExtends }
   let stableHead :
       StableValue contract transcript prepared.finalTarget lowerHead value :=

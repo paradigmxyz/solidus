@@ -242,6 +242,7 @@ structure ScopedOpenResult
       final.used outcome.state.source.vars
   scope :
     StateRelation.Vars.NamesWithin final.used finalCtx.scope
+  control : Functions.Source.Ctx.SameControl ctx finalCtx
   freshExtends : Fresh.Extends initial final
   retains :
     outcome.mode = .regular →
@@ -308,6 +309,9 @@ def appendRegular
       relation := right.relation
       domain := right.domain
       scope := right.scope
+      control :=
+        Functions.Source.Ctx.SameControl.trans
+          left.control right.control
       freshExtends :=
         Fresh.Extends.trans left.freshExtends right.freshExtends
       retains := fun hRightRegular name hMem =>
@@ -349,6 +353,7 @@ def appendNonregular
       relation := left.relation
       domain := left.domain.mono hSuffixFresh
       scope := left.scope.mono hSuffixFresh
+      control := left.control
       freshExtends :=
         Fresh.Extends.trans left.freshExtends hSuffixFresh
       retains := fun hRegular =>
@@ -398,6 +403,7 @@ def empty
       relation := hOutcomeRel
       domain := hDomain
       scope := hScope
+      control := Functions.Source.Ctx.SameControl.refl ctx
       freshExtends := Fresh.Extends.refl fresh
       retains := fun _hRegular _name hMem => hMem
       layoutWithin := hLayout }

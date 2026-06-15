@@ -61,6 +61,31 @@ def withLoopControl (ctx : Ctx) (breakScope continueScope : List Name) :
 def withLeaveScope (ctx : Ctx) (leaveScope : List Name) : Ctx :=
   { ctx with leaveScope? := some leaveScope }
 
+structure SameControl (before after : Ctx) : Prop where
+  breakScope : before.breakScope? = after.breakScope?
+  continueScope : before.continueScope? = after.continueScope?
+  leaveScope : before.leaveScope? = after.leaveScope?
+
+namespace SameControl
+
+theorem refl (ctx : Ctx) : SameControl ctx ctx :=
+  ⟨rfl, rfl, rfl⟩
+
+theorem trans
+    {first second third : Ctx}
+    (hFirst : SameControl first second)
+    (hSecond : SameControl second third) :
+    SameControl first third :=
+  ⟨hFirst.breakScope.trans hSecond.breakScope,
+    hFirst.continueScope.trans hSecond.continueScope,
+    hFirst.leaveScope.trans hSecond.leaveScope⟩
+
+theorem scopeUpdate (ctx : Ctx) (scope : List Name) :
+    SameControl ctx { ctx with scope := scope } :=
+  ⟨rfl, rfl, rfl⟩
+
+end SameControl
+
 end Ctx
 
 namespace Expr

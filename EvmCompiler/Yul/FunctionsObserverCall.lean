@@ -161,6 +161,7 @@ structure ScopedReturnedCall
       fresh.used finalTarget.source.vars
   scope :
     StateRelation.Vars.NamesWithin fresh.used finalCtx.scope
+  control : Functions.Source.Ctx.SameControl ctx finalCtx
 
 namespace ScopedReturnedCall
 
@@ -366,7 +367,8 @@ private theorem ofReturnedBodyWithWriteback
        domain :=
          argsPrepared.prepared.prepared.domain.assignMany
            hTargetsUsed hAssign
-       scope := argsPrepared.prepared.prepared.scope }⟩
+       scope := argsPrepared.prepared.prepared.scope
+       control := argsPrepared.prepared.prepared.control }⟩
 
 theorem ofReturnedBody
     {contract : MemoryContract.Contract}
@@ -1432,6 +1434,9 @@ def ofReturnedCall
       rel := by simpa [hSourceFinal] using hAfterCallRel
       domain := hFinalDomain
       scope := hFinalScope
+      control :=
+        Functions.Source.Ctx.SameControl.trans
+          argsPrepared.prepared.control zeroPrepared.control
       varsExtends := hVarsExtends :
       FunctionsObserverExpression.Prepared
         contract transcript codeRel program
@@ -1461,6 +1466,7 @@ def ofReturnedCall
       rel := fullPrepared.rel
       domain := fullPrepared.domain
       scope := fullPrepared.scope
+      control := fullPrepared.control
       varsExtends := ?_ }
   · simpa [List.append_assoc] using fullPrepared.run
   · exact hVarsExtends

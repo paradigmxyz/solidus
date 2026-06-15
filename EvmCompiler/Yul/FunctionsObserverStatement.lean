@@ -473,6 +473,9 @@ theorem of_let_none
        relation := hOutcomeRel
        domain := hFinalDomain
        scope := hFinalScope
+       control := by
+         rw [hFinalCtx]
+         exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
        freshExtends := Fresh.Extends.refl before
        retains := fun _hRegular name hMem =>
          List.mem_append_right _ hMem
@@ -597,6 +600,14 @@ theorem of_let_one
     rcases List.mem_cons.mp hMem with hHead | hTail
     · simpa [hHead] using hNameAfter
     · exact hScopedValue.prepared.scope candidate hTail
+  have hFinalControl :
+      Functions.Source.Ctx.SameControl ctx finalCtx := by
+    apply Functions.Source.Ctx.SameControl.trans
+      hScopedValue.prepared.control
+    rw [hFinalCtx]
+    exact
+      Functions.Source.Ctx.SameControl.scopeUpdate
+        hScopedValue.prepared.finalCtx _
   have hOutcomeRel :
       FunctionsObserverOutcome.ScopedOutcomeRel codeRel
         (identName name :: layout) sourceFinal
@@ -617,6 +628,7 @@ theorem of_let_one
        relation := hOutcomeRel
        domain := hFinalDomain
        scope := hFinalScope
+       control := hFinalControl
        freshExtends := hFreshExtends
        retains := fun _hRegular candidate hMem =>
          List.mem_cons_of_mem (identName name) hMem
@@ -755,6 +767,7 @@ theorem of_assign_one
        relation := hOutcomeRel
        domain := hFinalDomain
        scope := hScopedValue.prepared.scope
+       control := hScopedValue.prepared.control
        freshExtends := hFreshExtends
        retains := fun _hRegular _candidate hMem => hMem
        layoutWithin := hLayout.mono hFreshExtends }⟩
@@ -887,6 +900,7 @@ theorem of_assign_call
        relation := hOutcomeRel
        domain := returnedCall.domain
        scope := returnedCall.scope
+       control := returnedCall.control
        freshExtends := hFreshExtends
        retains := fun _hRegular _candidate hMem => hMem
        layoutWithin := hLayout.mono hFreshExtends }⟩
@@ -1077,6 +1091,14 @@ theorem of_let_call
        relation := hOutcomeRel
        domain := returnedCall.domain
        scope := returnedCall.scope
+       control := by
+         have hInitControl :
+             Functions.Source.Ctx.SameControl ctx initCtx := by
+           rw [hInitCtx]
+           exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
+         exact
+           Functions.Source.Ctx.SameControl.trans
+             hInitControl returnedCall.control
        freshExtends := hFreshExtends
        retains := fun _hRegular candidate hMem =>
          List.mem_append_right _ hMem
@@ -1153,6 +1175,7 @@ private theorem of_single_nonregular
        relation := hRelation
        domain := hDomain
        scope := hScope
+       control := Functions.Source.Ctx.SameControl.refl ctx
        freshExtends := Fresh.Extends.refl before
        retains := fun hRegular => False.elim (hNonregular hRegular)
        layoutWithin := hLayout }⟩
