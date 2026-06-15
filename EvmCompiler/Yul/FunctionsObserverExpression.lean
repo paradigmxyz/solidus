@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.Compiler
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.EffectRefinement.Failure
+import EvmCompiler.Functions.EffectSemanticsInversion
 
 namespace EvmCompiler
 namespace Yul
@@ -116,6 +117,93 @@ theorem argListEval_toSeq
                       rw [exprSeqEval_seqCast]
                       simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
                         hHeadEval, hTailEval]
+
+theorem argListEval_of_toSeq
+    {σ : Type}
+    (model : Functions.Source.Effectful.StateModel σ)
+    (prim : Functions.Source.Effectful.PrimitiveSemantics σ)
+    (hPrimitive :
+      ∀ {op : Structured.BasicOp} {state final : σ}
+        {inputs outputs : List Word},
+        prim.eval op state inputs = .ok (final, outputs) →
+          outputs.length =
+            Expressions.Structured.BasicOp.outputs op) :
+    ∀ {exprs : List (Functions.Expr 1)} {results : Nat}
+      {seq : Locals.ExprSeq results}
+      {source final : σ} {values : List Word},
+      EvmCompiler.Yul.Expr.List.toSeq? exprs results = some seq →
+      Locals.Source.Effectful.Expr.ExprSeq.eval
+          model prim seq source =
+        .ok (final, values) →
+      Functions.Source.Effectful.ArgList.eval model prim exprs source =
+        .ok (final, values)
+  | [], results, seq, source, final, values, hSeq, hRun => by
+      obtain ⟨hResults, hSeqEq⟩ :=
+        EvmCompiler.Yul.Expr.List.toSeq?_nil_parts hSeq
+      subst results
+      subst seq
+      simp [EvmCompiler.Yul.Expr.seqCast,
+        Locals.Source.Effectful.Expr.ExprSeq.eval] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      rfl
+  | head :: rest, results, seq, source, final, values, hSeq, hRun => by
+      cases results with
+      | zero =>
+          simp [EvmCompiler.Yul.Expr.List.toSeq?] at hSeq
+      | succ results =>
+          cases hTailSeq :
+              EvmCompiler.Yul.Expr.List.toSeq? rest results with
+          | none =>
+              simp [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+          | some tailSeq =>
+              rw [EvmCompiler.Yul.Expr.List.toSeq?, hTailSeq] at hSeq
+              injection hSeq with hSeq
+              subst seq
+              rw [exprSeqEval_seqCast] at hRun
+              cases hHead :
+                  Functions.Source.Effectful.Expr.eval
+                    model prim head source with
+              | error err =>
+                  simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
+                    hHead] at hRun
+              | ok headResult =>
+                  rcases headResult with ⟨afterHead, headValues⟩
+                  cases hTail :
+                      Locals.Source.Effectful.Expr.ExprSeq.eval
+                        model prim tailSeq afterHead with
+                  | error err =>
+                      simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
+                        hHead, hTail] at hRun
+                  | ok tailResult =>
+                      rcases tailResult with ⟨afterTail, tailValues⟩
+                      simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
+                        hHead, hTail] at hRun
+                      rcases hRun with ⟨rfl, hValues⟩
+                      have hHeadLength :
+                          headValues.length = 1 := by
+                        exact
+                          Functions.Source.Effectful.Expr.eval_outputs_length_of
+                            model prim hPrimitive hHead
+                      cases headValues with
+                      | nil =>
+                          simp at hHeadLength
+                      | cons value remaining =>
+                          cases remaining with
+                          | nil =>
+                              have hTailRun :=
+                                argListEval_of_toSeq
+                                  model prim hPrimitive hTailSeq hTail
+                              have hHeadOne :
+                                  Functions.Source.Effectful.Expr.evalOne
+                                      model prim head source =
+                                    .ok (afterHead, value) :=
+                                Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+                                  model prim hHead
+                              rw [← hValues]
+                              simp [Functions.Source.Effectful.ArgList.eval,
+                                hHeadOne, hTailRun]
+                          | cons second tail =>
+                              simp at hHeadLength
 
 theorem terminalArgs_run_of_argList
     {σ : Type}

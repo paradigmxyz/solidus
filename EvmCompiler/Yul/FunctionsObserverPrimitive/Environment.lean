@@ -538,6 +538,7 @@ theorem safeEnvironmentNullaryBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -553,7 +554,7 @@ theorem safeEnvironmentNullaryBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -562,13 +563,14 @@ theorem safeEnvironmentNullaryBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_environmentNullary
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem safeEnvironmentUnaryBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -584,7 +586,7 @@ theorem safeEnvironmentUnaryBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -593,7 +595,7 @@ theorem safeEnvironmentUnaryBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_environmentUnary
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 end FunctionsObserverPrimitive

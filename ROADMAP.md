@@ -1724,9 +1724,14 @@ corridor.
   continuing primitive family. The expression owner has the first checked
   scoped constructors for literals, visible variables, `gas()`, `msize()`, and
   generic nullary primitives, using an ordinary compiler-owned nullary
-  decomposition and existential source fuel. The current obligation is
-  recursive argument-list and nonnullary primitive reconstruction, followed by
-  function calls, statements, control, loops, and whole-program inversion.
+  decomposition and existential source fuel. Recursive direct-expression
+  backward adequacy is now checked for validated literals, variables, nested
+  compiler-selected primitives, and right-to-left argument lists. Its
+  reversal-invariant syntax fuel bound assigns canonical source fuel without a
+  replay witness, and the primitive dispatcher works at every sufficient
+  positive fuel. The current obligation is generated/bound argument-preamble
+  inversion and function-call expressions, followed by statements, control,
+  loops, and whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

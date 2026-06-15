@@ -312,6 +312,7 @@ theorem safeSharedTernaryCopyBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -330,7 +331,7 @@ theorem safeSharedTernaryCopyBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -339,7 +340,7 @@ theorem safeSharedTernaryCopyBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_sharedTernaryCopy
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem forwardAt_returndatacopy
@@ -597,6 +598,7 @@ theorem safeReturndatacopyBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -608,14 +610,14 @@ theorem safeReturndatacopyBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.Env .RETURNDATACOPY) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_returndatacopy (codeRel := codeRel) 0)
+      (backwardAt_returndatacopy (codeRel := codeRel) fuel)
       hRel hRun)
 
 theorem rawNoObservableFailure_returndatacopy
@@ -911,6 +913,7 @@ theorem safeExtcodecopyBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -922,14 +925,14 @@ theorem safeExtcodecopyBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.Env .EXTCODECOPY) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_extcodecopy (codeRel := codeRel) 0)
+      (backwardAt_extcodecopy (codeRel := codeRel) fuel)
       hRel hRun)
 
 theorem rawNoObservableFailure_extcodecopy

@@ -33,6 +33,7 @@ import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
+import EvmCompiler.Yul.FunctionsObserverExpressionBackward
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.EffectRefinement
@@ -411,7 +412,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.DirectBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directBackwardAt
 #check EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
 #check EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult
@@ -1289,6 +1293,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackwardAt
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.directBackwardAt
 #print axioms EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
 #print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofLiteral

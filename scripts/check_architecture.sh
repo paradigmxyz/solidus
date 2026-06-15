@@ -192,6 +192,7 @@ report_matches \
   EvmCompiler/Yul/CompilerCallDecomposition.lean \
   EvmCompiler/Yul/CompilerStatementDecomposition.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
+  EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -207,6 +208,7 @@ report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -223,6 +225,7 @@ report_matches \
   '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(toObjectsWithObservers\?|compileWithObservers\?|toFunctionsListUncheckedFuel\?|toFunDefsUncheckedFuel\?)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
+  EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \

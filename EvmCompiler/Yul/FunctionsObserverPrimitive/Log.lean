@@ -943,6 +943,7 @@ theorem safeLogBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul}
@@ -956,7 +957,7 @@ theorem safeLogBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -965,7 +966,7 @@ theorem safeLogBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_logFamily
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 end FunctionsObserverPrimitive

@@ -1229,6 +1229,7 @@ theorem safeWorldBinaryWriteBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -1245,7 +1246,7 @@ theorem safeWorldBinaryWriteBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -1254,13 +1255,14 @@ theorem safeWorldBinaryWriteBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_worldBinaryWrite
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem safeWorldNullaryBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -1275,7 +1277,7 @@ theorem safeWorldNullaryBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -1283,13 +1285,14 @@ theorem safeWorldNullaryBackward
       hTerminal, hOp⟩ := hFamily.metadata
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
-      (backwardAt_of_worldNullary (codeRel := codeRel) 0 hFamily)
+      (backwardAt_of_worldNullary (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem safeWorldUnaryReadBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -1304,7 +1307,7 @@ theorem safeWorldUnaryReadBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -1313,13 +1316,14 @@ theorem safeWorldUnaryReadBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_worldUnaryRead
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem safeWorldUnaryAccessBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -1336,7 +1340,7 @@ theorem safeWorldUnaryAccessBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -1345,7 +1349,7 @@ theorem safeWorldUnaryAccessBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_worldUnaryAccess
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 end FunctionsObserverPrimitive

@@ -23,6 +23,7 @@ import EvmCompiler.Functions.AllocationObserverRecursive
 import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
+import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
@@ -64,6 +65,7 @@ import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.FunctionsObserverCompiler
+import EvmCompiler.Yul.FunctionsObserverExpressionBackward
 import EvmCompiler.Yul.ObjectSemantics
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
@@ -94,6 +96,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.PrimitiveMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Functions.Source.Effectful.Expr.eval_prim_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.ArgList.eval_cons_ok_parts
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_outputs_length
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
@@ -229,6 +233,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
 #check EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
 #check EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
@@ -238,6 +243,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofGas
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofMsize
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofNullaryPrimitive
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directFuel
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directArgsFuel
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.DirectBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directBackwardAt
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt

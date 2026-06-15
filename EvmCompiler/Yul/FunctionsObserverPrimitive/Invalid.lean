@@ -93,6 +93,7 @@ theorem safeInvalidBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -104,14 +105,14 @@ theorem safeInvalidBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.System .INVALID) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_invalid (codeRel := codeRel) 0) hRel hRun)
+      (backwardAt_invalid (codeRel := codeRel) fuel) hRel hRun)
 
 end FunctionsObserverPrimitive
 end Yul

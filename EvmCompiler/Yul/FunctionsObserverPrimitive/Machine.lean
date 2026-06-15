@@ -259,6 +259,7 @@ theorem safeMachineBinaryZeroBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -272,7 +273,7 @@ theorem safeMachineBinaryZeroBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -281,7 +282,7 @@ theorem safeMachineBinaryZeroBackward
   simpa using
     (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
       (backwardAt_of_machineBinaryZero
-        (codeRel := codeRel) 0 hFamily)
+        (codeRel := codeRel) fuel hFamily)
       hRel hRun)
 
 theorem forwardAt_mcopy
@@ -511,6 +512,7 @@ theorem safeMcopyBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -522,14 +524,14 @@ theorem safeMcopyBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.StackMemFlow .MCOPY) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_mcopy (codeRel := codeRel) 0) hRel hRun)
+      (backwardAt_mcopy (codeRel := codeRel) fuel) hRel hRun)
 
 theorem rawNoObservableFailureAt_mcopy
     (fuel : Nat) :
@@ -789,6 +791,7 @@ theorem safeMloadBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -800,14 +803,14 @@ theorem safeMloadBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.StackMemFlow .MLOAD) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_mload (codeRel := codeRel) 0) hRel hRun)
+      (backwardAt_mload (codeRel := codeRel) fuel) hRel hRun)
 
 theorem rawNoObservableFailureAt_mload
     (fuel : Nat) :
@@ -1078,6 +1081,7 @@ theorem safeKeccak256Backward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -1089,14 +1093,14 @@ theorem safeKeccak256Backward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.Keccak .KECCAK256) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_keccak256 (codeRel := codeRel) 0) hRel hRun)
+      (backwardAt_keccak256 (codeRel := codeRel) fuel) hRel hRun)
 
 theorem rawNoObservableFailureAt_keccak256
     (fuel : Nat) :
@@ -1296,6 +1300,7 @@ theorem safeReturndatasizeBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -1307,14 +1312,14 @@ theorem safeReturndatasizeBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.Env .RETURNDATASIZE) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_returndatasize (codeRel := codeRel) 0)
+      (backwardAt_returndatasize (codeRel := codeRel) fuel)
       hRel hRun)
 
 theorem rawNoObservableFailure_returndatasize
@@ -1507,6 +1512,7 @@ theorem safePopBackward
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {sourceValues outputs : List Word}
@@ -1518,14 +1524,14 @@ theorem safePopBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source
+          contract transcript).eval (fuel + 2) source
             (.StackMemFlow .POP) sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   simpa using
     (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
-      (backwardAt_pop (codeRel := codeRel) 0) hRel hRun)
+      (backwardAt_pop (codeRel := codeRel) fuel) hRel hRun)
 
 end FunctionsObserverPrimitive
 end Yul

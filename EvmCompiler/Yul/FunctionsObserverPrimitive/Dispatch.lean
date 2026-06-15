@@ -418,7 +418,8 @@ theorem safeCompilerSelected
           exact safeInvalid hRel hRun
       | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
 
-theorem safeCompilerSelectedBackward
+theorem safeCompilerSelectedBackwardAt
+    (fuel : Nat)
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
     {codeRel : StateRelation.CodeRel}
@@ -435,7 +436,7 @@ theorem safeCompilerSelectedBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim sourceValues =
+          contract transcript).eval (fuel + 2) source prim sourceValues =
           .ok (source', outputs) ∧
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
@@ -699,7 +700,7 @@ theorem safeCompilerSelectedBackward
           have hValues : sourceValues = [] := by
             simpa using congrArg List.reverse hReverse
           subst sourceValues
-          simpa using msizeSafeBackward (fuel := 1) hRel hRun
+          simpa using msizeSafeBackward (fuel := fuel + 1) hRel hRun
       | GAS =>
           simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
           subst op
@@ -710,7 +711,7 @@ theorem safeCompilerSelectedBackward
           have hValues : sourceValues = [] := by
             simpa using congrArg List.reverse hReverse
           subst sourceValues
-          simpa using gasSafeBackward (fuel := 1) hRel hRun
+          simpa using gasSafeBackward (fuel := fuel + 1) hRel hRun
       | TLOAD =>
           simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
           subst op
@@ -814,6 +815,33 @@ theorem safeCompilerSelectedBackward
           subst op
           exact safeInvalidBackward hRel hRun
       | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
+
+/--
+The canonical minimum-fuel specialization used by leaf expression proofs.
+-/
+theorem safeCompilerSelectedBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues outputs : List Word}
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    safeCompilerSelectedBackwardAt 0 hTerminal hOp hRel hRun
 
 /--
 A guarded, compiler-selected nonterminal primitive cannot produce a public
