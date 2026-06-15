@@ -531,6 +531,345 @@ mutual
           (Prod.Lex.left _ _ (by omega))
 end
 
+/--
+Successful statement execution never removes names from the open lexical
+context. Statements other than `let` return the incoming context; `let`
+extends it by one binding.
+-/
+theorem Stmt.run_scopeExtends
+    {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {stmt : Stmt} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx fuel stmt source =
+        .ok (outcome, finalCtx)) :
+    Source.Ctx.ScopeExtends ctx finalCtx := by
+  cases stmt with
+  | expr expr =>
+      unfold Stmt.run at hRun
+      cases hExpr : Expr.eval model prim expr source with
+      | error err => simp [hExpr] at hRun
+      | ok result =>
+          rcases result with ⟨final, values⟩
+          have hPair :
+              (Outcome.regular final, ctx) = (outcome, finalCtx) := by
+            simpa [hExpr] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | let_ name value =>
+      unfold Stmt.run at hRun
+      cases hValue : Expr.evalOne model prim value source with
+      | error err => simp [hValue] at hRun
+      | ok result =>
+          rcases result with ⟨afterValue, value'⟩
+          have hPair :
+              (Outcome.regular (model.insert afterValue name value'),
+                  { ctx with scope := name :: ctx.scope }) =
+                (outcome, finalCtx) := by
+            simpa [hValue] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.cons ctx name
+  | assign name value =>
+      unfold Stmt.run at hRun
+      by_cases hContains : (model.vars source).contains name
+      · simp only [hContains, Bool.true_eq, ↓reduceIte] at hRun
+        cases hValue : Expr.evalOne model prim value source with
+        | error err => simp [hValue] at hRun
+        | ok result =>
+            rcases result with ⟨afterValue, value'⟩
+            have hPair :
+                (Outcome.regular
+                    (model.withVars afterValue
+                      ((model.vars afterValue).insert name value')),
+                    ctx) =
+                  (outcome, finalCtx) := by
+              simpa [hValue] using hRun
+            injection hPair with _ hCtx
+            subst finalCtx
+            exact Source.Ctx.ScopeExtends.refl ctx
+      · simp [hContains, Source.invalid, Structured.invalid] at hRun
+  | block body =>
+      unfold Stmt.run at hRun
+      cases hBody :
+          Block.runScoped model prim program ctx body fuel source with
+      | error err => simp [hBody] at hRun
+      | ok bodyOutcome =>
+          have hPair :
+              (bodyOutcome, ctx) = (outcome, finalCtx) := by
+            simpa [hBody] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | if_ cond body =>
+      cases fuel with
+      | zero =>
+          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          unfold Stmt.run at hRun
+          cases hCond : Expr.evalCondition model prim cond source with
+          | error err => simp [hCond] at hRun
+          | ok condResult =>
+              rcases condResult with ⟨afterCond, condTrue⟩
+              cases condTrue with
+              | false =>
+                  have hPair :
+                      (Outcome.regular afterCond, ctx) =
+                        (outcome, finalCtx) := by
+                    simpa [hCond] using hRun
+                  injection hPair with _ hCtx
+                  subst finalCtx
+                  exact Source.Ctx.ScopeExtends.refl ctx
+              | true =>
+                  cases hBody :
+                      Block.runScoped model prim program ctx body fuel
+                        afterCond with
+                  | error err => simp [hCond, hBody] at hRun
+                  | ok bodyOutcome =>
+                      have hPair :
+                          (bodyOutcome, ctx) = (outcome, finalCtx) := by
+                        simpa [hCond, hBody] using hRun
+                      injection hPair with _ hCtx
+                      subst finalCtx
+                      exact Source.Ctx.ScopeExtends.refl ctx
+  | switch scrutinee cases defaultBody =>
+      cases fuel with
+      | zero =>
+          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          unfold Stmt.run at hRun
+          cases hScrutinee :
+              Expr.evalOne model prim scrutinee source with
+          | error err => simp [hScrutinee] at hRun
+          | ok scrutineeResult =>
+              rcases scrutineeResult with ⟨afterScrutinee, value⟩
+              cases hSelected :
+                  Source.Switch.select value cases defaultBody with
+              | none =>
+                  have hPair :
+                      (Outcome.regular afterScrutinee, ctx) =
+                        (outcome, finalCtx) := by
+                    simpa [hScrutinee, hSelected] using hRun
+                  injection hPair with _ hCtx
+                  subst finalCtx
+                  exact Source.Ctx.ScopeExtends.refl ctx
+              | some selected =>
+                  cases hBody :
+                      Block.runScoped model prim program ctx selected fuel
+                        afterScrutinee with
+                  | error err =>
+                      simp [hScrutinee, hSelected, hBody] at hRun
+                  | ok bodyOutcome =>
+                      have hPair :
+                          (bodyOutcome, ctx) = (outcome, finalCtx) := by
+                        simpa [hScrutinee, hSelected, hBody] using hRun
+                      injection hPair with _ hCtx
+                      subst finalCtx
+                      exact Source.Ctx.ScopeExtends.refl ctx
+  | for_ init cond post body =>
+      cases fuel with
+      | zero =>
+          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          unfold Stmt.run at hRun
+          let initBase := ctx.withoutLoopControl
+          cases hInit :
+              Block.runOpen model prim program initBase fuel init source with
+          | error err => simp [initBase, hInit] at hRun
+          | ok initResult =>
+              rcases initResult with ⟨initOutcome, initCtx⟩
+              cases hInitMode : initOutcome.mode with
+              | regular =>
+                  let loopCtx := initCtx
+                  let postBase := initCtx.withoutLoopControl
+                  let bodyBase :=
+                    initCtx.withLoopControl initCtx.scope initCtx.scope
+                  cases hLoop :
+                      Stmt.runForLoop model prim program loopCtx cond
+                        postBase post bodyBase body fuel initOutcome.state with
+                  | error err =>
+                      simp [initBase, hInit, hInitMode, loopCtx,
+                        postBase, bodyBase, hLoop] at hRun
+                  | ok loopOutcome =>
+                      cases hLoopMode : loopOutcome.mode with
+                      | regular =>
+                          have hPair :
+                              (Outcome.regular
+                                  (model.restrictTo ctx.scope
+                                    loopOutcome.state),
+                                  ctx) =
+                                (outcome, finalCtx) := by
+                            simpa [initBase, hInit, hInitMode, loopCtx,
+                              postBase, bodyBase, hLoop, hLoopMode] using hRun
+                          injection hPair with _ hCtx
+                          subst finalCtx
+                          exact Source.Ctx.ScopeExtends.refl ctx
+                      | brk =>
+                          simp [initBase, hInit, hInitMode, loopCtx,
+                            postBase, bodyBase, hLoop, hLoopMode,
+                            Source.invalid, Structured.invalid] at hRun
+                      | cont =>
+                          simp [initBase, hInit, hInitMode, loopCtx,
+                            postBase, bodyBase, hLoop, hLoopMode,
+                            Source.invalid, Structured.invalid] at hRun
+                      | leave =>
+                          have hPair :
+                              (loopOutcome, ctx) = (outcome, finalCtx) := by
+                            simpa [initBase, hInit, hInitMode, loopCtx,
+                              postBase, bodyBase, hLoop, hLoopMode] using hRun
+                          injection hPair with _ hCtx
+                          subst finalCtx
+                          exact Source.Ctx.ScopeExtends.refl ctx
+                      | halt kind =>
+                          have hPair :
+                              (loopOutcome, ctx) = (outcome, finalCtx) := by
+                            simpa [initBase, hInit, hInitMode, loopCtx,
+                              postBase, bodyBase, hLoop, hLoopMode] using hRun
+                          injection hPair with _ hCtx
+                          subst finalCtx
+                          exact Source.Ctx.ScopeExtends.refl ctx
+              | brk =>
+                  simp [initBase, hInit, hInitMode,
+                    Source.invalid, Structured.invalid] at hRun
+              | cont =>
+                  simp [initBase, hInit, hInitMode,
+                    Source.invalid, Structured.invalid] at hRun
+              | leave =>
+                  have hPair :
+                      (initOutcome, ctx) = (outcome, finalCtx) := by
+                    simpa [initBase, hInit, hInitMode] using hRun
+                  injection hPair with _ hCtx
+                  subst finalCtx
+                  exact Source.Ctx.ScopeExtends.refl ctx
+              | halt kind =>
+                  have hPair :
+                      (initOutcome, ctx) = (outcome, finalCtx) := by
+                    simpa [initBase, hInit, hInitMode] using hRun
+                  injection hPair with _ hCtx
+                  subst finalCtx
+                  exact Source.Ctx.ScopeExtends.refl ctx
+  | brk =>
+      unfold Stmt.run at hRun
+      cases hScope : ctx.breakScope? with
+      | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
+      | some scope =>
+          have hPair :
+              (Outcome.brk (model.restrictTo scope source), ctx) =
+                (outcome, finalCtx) := by
+            simpa [hScope] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | cont =>
+      unfold Stmt.run at hRun
+      cases hScope : ctx.continueScope? with
+      | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
+      | some scope =>
+          have hPair :
+              (Outcome.cont (model.restrictTo scope source), ctx) =
+                (outcome, finalCtx) := by
+            simpa [hScope] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | leave =>
+      unfold Stmt.run at hRun
+      cases hScope : ctx.leaveScope? with
+      | none => simp [hScope, Source.invalid, Structured.invalid] at hRun
+      | some scope =>
+          have hPair :
+              (Outcome.leave (model.restrictTo scope source), ctx) =
+                (outcome, finalCtx) := by
+            simpa [hScope] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | call targets functionName args =>
+      cases fuel with
+      | zero =>
+          simp [Stmt.run, Source.invalid, Structured.invalid] at hRun
+      | succ fuel =>
+          unfold Stmt.run at hRun
+          by_cases hTargets : targets.Nodup
+          · simp only [hTargets, Bool.true_eq, ↓reduceIte] at hRun
+            cases hArgs : ArgList.eval model prim args source with
+            | error err => simp [hArgs] at hRun
+            | ok argResult =>
+                rcases argResult with ⟨afterArgs, argValues⟩
+                cases hLookup :
+                    Source.FunList.find? functionName program.functions with
+                | none =>
+                    simp [hArgs, hLookup, Source.invalid,
+                      Structured.invalid] at hRun
+                | some fn =>
+                    cases hBody :
+                        FunDef.runBody model prim program fn argValues fuel
+                          afterArgs with
+                    | error err => simp [hArgs, hLookup, hBody] at hRun
+                    | ok callResult =>
+                        cases callResult with
+                        | returned afterCall returnValues =>
+                            cases hAssign :
+                                Source.Store.assignMany targets returnValues
+                                  (model.vars afterArgs) with
+                            | none =>
+                                simp [hArgs, hLookup, hBody, hAssign,
+                                  Source.invalid, Structured.invalid] at hRun
+                            | some returnStore =>
+                                have hPair :
+                                    (Outcome.regular
+                                        (model.withSource afterCall
+                                          { shared :=
+                                              (model.source afterCall).shared,
+                                            vars := returnStore }),
+                                        ctx) =
+                                      (outcome, finalCtx) := by
+                                  simpa [hArgs, hLookup, hBody, hAssign]
+                                    using hRun
+                                injection hPair with _ hCtx
+                                subst finalCtx
+                                exact Source.Ctx.ScopeExtends.refl ctx
+                        | halted kind haltedState =>
+                            have hPair :
+                                (Outcome.halt kind haltedState, ctx) =
+                                  (outcome, finalCtx) := by
+                              simpa [hArgs, hLookup, hBody] using hRun
+                            injection hPair with _ hCtx
+                            subst finalCtx
+                            exact Source.Ctx.ScopeExtends.refl ctx
+          · simp [hTargets, Source.invalid, Structured.invalid] at hRun
+  | terminal kind =>
+      unfold Stmt.run at hRun
+      cases hTerminal : prim.terminal kind source [] with
+      | error err => simp [hTerminal] at hRun
+      | ok final =>
+          have hPair :
+              (Outcome.halt kind final, ctx) = (outcome, finalCtx) := by
+            simpa [hTerminal] using hRun
+          injection hPair with _ hCtx
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+  | terminalArgs kind args =>
+      unfold Stmt.run at hRun
+      cases hArgs :
+          Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+      | error err => simp [hArgs] at hRun
+      | ok argResult =>
+          rcases argResult with ⟨afterArgs, values⟩
+          cases hTerminal : prim.terminal kind afterArgs values with
+          | error err => simp [hArgs, hTerminal] at hRun
+          | ok final =>
+              have hPair :
+                  (Outcome.halt kind final, ctx) =
+                    (outcome, finalCtx) := by
+                simpa [hArgs, hTerminal] using hRun
+              injection hPair with _ hCtx
+              subst finalCtx
+              exact Source.Ctx.ScopeExtends.refl ctx
+
 set_option maxHeartbeats 1000000 in
 mutual
   /--
@@ -4058,6 +4397,49 @@ theorem runOpen_cons_cases {σ : Type}
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
           · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+
+/--
+Successful open-block execution never removes names from its lexical context.
+Regular heads may extend the context through declarations; abrupt heads return
+the block's incoming context.
+-/
+theorem runOpen_scopeExtends {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) :
+    ∀ {fuel : Nat} {ctx finalCtx : Source.Ctx}
+      {block : Block} {source : σ} {outcome : Outcome σ},
+      Block.runOpen model prim program ctx fuel block source =
+          .ok (outcome, finalCtx) →
+        Source.Ctx.ScopeExtends ctx finalCtx := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro ctx finalCtx block source outcome hRun
+      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ fuel ih =>
+      intro ctx finalCtx block source outcome hRun
+      rcases block with ⟨stmts⟩
+      cases stmts with
+      | nil =>
+          obtain ⟨_hOutcome, hCtx⟩ :=
+            runOpen_nil_ok model prim program hRun
+          subst finalCtx
+          exact Source.Ctx.ScopeExtends.refl ctx
+      | cons stmt rest =>
+          rcases
+              runOpen_cons_cases model prim program hRun with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨middle, middleCtx, hStmt, hRest⟩
+            exact
+              Source.Ctx.ScopeExtends.trans
+                (Stmt.run_scopeExtends model prim program hStmt)
+                (ih hRest)
+          · rcases hNonregular with
+              ⟨headOutcome, headCtx, _hHead, _hMode,
+                _hOutcome, hCtx⟩
+            subst finalCtx
+            exact Source.Ctx.ScopeExtends.refl ctx
 
 /--
 Compose two successful effectful open-block fragments when the first fragment

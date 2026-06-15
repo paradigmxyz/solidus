@@ -1430,6 +1430,26 @@ theorem scoped_restrict_source
       rw [VarStore.lookup_restrict_of_some source scope name hScopeLookup]
       exact hRel name (hSubset name hMem)
 
+theorem scoped_restrict_source_outer
+    {retained outer : List Name}
+    {source scope : EvmYul.Yul.VarStore}
+    {target : Locals.Source.Store}
+    (hRel : ScopedRel retained source target)
+    (hScope : DomainExact outer scope)
+    (hSubset : ∀ name, name ∈ retained → name ∈ outer) :
+    ScopedRel retained
+      (EvmYul.Yul.State.restrictVarStore source scope)
+      target := by
+  intro name hMem
+  have hScopeSome : (scope.lookup name).isSome = true :=
+    (hScope name).mpr (hSubset name hMem)
+  cases hScopeLookup : scope.lookup name with
+  | none =>
+      simp [hScopeLookup] at hScopeSome
+  | some value =>
+      rw [VarStore.lookup_restrict_of_some source scope name hScopeLookup]
+      exact hRel name hMem
+
 theorem domainExact_insert
     {layout : List Name} {source : EvmYul.Yul.VarStore}
     {name : Name} {value : Assembly.Word}
@@ -1982,6 +2002,27 @@ theorem scopedRel_of_scopedExact
     ⟨sourceShared, sourceVars, hSource, hShared, hScoped, _hDomain⟩
   exact ⟨sourceShared, sourceVars, hSource, hShared, hScoped⟩
 
+theorem scopedRel_restrict_source_outer
+    {codeRel : CodeRel} {retained outer : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {target : Locals.Source.State}
+    (hRel :
+      ScopedRel codeRel retained (.Ok shared sourceVars) target)
+    (hScope : Vars.DomainExact outer scopeVars)
+    (hSubset : ∀ name, name ∈ retained → name ∈ outer) :
+    ScopedRel codeRel retained
+      (.Ok shared
+        (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars))
+      target := by
+  rcases hRel with
+    ⟨sourceShared, relatedVars, hSource, hShared, hVars⟩
+  cases hSource
+  exact
+    ⟨shared, EvmYul.Yul.State.restrictVarStore sourceVars scopeVars,
+      rfl, hShared,
+      Vars.scoped_restrict_source_outer hVars hScope hSubset⟩
+
 theorem scopedRel_restrict_target_of_scopedExact
     {codeRel : CodeRel} {retained current : List Name}
     {source : EvmYul.Yul.State} {target : Locals.Source.State}
@@ -2290,6 +2331,47 @@ theorem scopedExact_restrict
       Vars.scoped_restrict (Vars.scoped_of_subset hVars hSubset) hScope,
       Vars.domainExact_restrict hDomain hScope hSubset⟩
 
+/--
+Restrict source and target lexical stores through different scope lists.
+
+The source list is exact, while the target list may additionally retain
+compiler-private temporaries. It is sufficient that every retained
+source-visible name occurs in both the current source layout and the target
+scope.
+-/
+theorem scopedExact_restrict_scopes
+    {codeRel : CodeRel} {retained current targetScope : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {target : Locals.Source.State}
+    (hRel :
+      ScopedExactRel codeRel current (.Ok shared sourceVars) target)
+    (hScope : Vars.DomainExact retained scopeVars)
+    (hSourceSubset : ∀ name, name ∈ retained → name ∈ current)
+    (hTargetSubset : ∀ name, name ∈ retained → name ∈ targetScope) :
+    ScopedExactRel codeRel retained
+      (.Ok shared
+        (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars))
+      (target.restrictTo targetScope) := by
+  rcases hRel with
+    ⟨sourceShared, relatedVars, hSource, hShared, hVars, hDomain⟩
+  cases hSource
+  have hRestricted :
+      Vars.ScopedRel retained
+        (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars)
+        target.vars :=
+    Vars.scoped_restrict_source hVars hScope hSourceSubset
+  refine
+    ⟨shared, EvmYul.Yul.State.restrictVarStore sourceVars scopeVars,
+      rfl, hShared, ?_,
+      Vars.domainExact_restrict hDomain hScope hSourceSubset⟩
+  intro name hMem
+  change
+    (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars).lookup name =
+      Locals.Source.Store.restrictTo targetScope target.vars name
+  rw [Locals.Source.Store.restrictTo_mem (hTargetSubset name hMem)]
+  exact hRestricted name hMem
+
 theorem scopedExact_restrict_source
     {codeRel : CodeRel} {retained current : List Name}
     {shared : EvmYul.SharedState .Yul}
@@ -2528,6 +2610,30 @@ theorem scopedRel_of_scopedExact
     (hRel : ScopedExactRel codeRel layout source target) :
     ScopedRel codeRel layout source target :=
   ⟨hRel.1, Regular.scopedRel_of_scopedExact hRel.2⟩
+
+theorem scopedRel_restrict_source_outer
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {retained outer : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hSource : source.source = .Ok shared sourceVars)
+    (hRel : ScopedRel codeRel retained source target)
+    (hScope : Vars.DomainExact outer scopeVars)
+    (hSubset : ∀ name, name ∈ retained → name ∈ outer) :
+    ScopedRel codeRel retained
+      (source.withSource
+        (.Ok shared
+          (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars)))
+      target := by
+  refine ⟨hRel.1, ?_⟩
+  exact
+    Regular.scopedRel_restrict_source_outer
+      (hRel := by simpa [hSource] using hRel.2)
+      hScope hSubset
 
 theorem scopedRel_restrict_target_of_scopedExact
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
@@ -2932,6 +3038,34 @@ theorem scopedExact_restrict
     Regular.scopedExact_restrict
       (hRel := by simpa [hSource] using hRel.2)
       hScope hSubset
+
+/--
+Replay-indexed lifting of `Regular.scopedExact_restrict_scopes`.
+-/
+theorem scopedExact_restrict_scopes
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {retained current targetScope : List Name}
+    {shared : EvmYul.SharedState .Yul}
+    {sourceVars scopeVars : EvmYul.Yul.VarStore}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hSource : source.source = .Ok shared sourceVars)
+    (hRel : ScopedExactRel codeRel current source target)
+    (hScope : Vars.DomainExact retained scopeVars)
+    (hSourceSubset : ∀ name, name ∈ retained → name ∈ current)
+    (hTargetSubset : ∀ name, name ∈ retained → name ∈ targetScope) :
+    ScopedExactRel codeRel retained
+      (source.withSource
+        (.Ok shared
+          (EvmYul.Yul.State.restrictVarStore sourceVars scopeVars)))
+      (target.withSource (target.source.restrictTo targetScope)) := by
+  refine ⟨hRel.1, ?_⟩
+  exact
+    Regular.scopedExact_restrict_scopes
+      (hRel := by simpa [hSource] using hRel.2)
+      hScope hSourceSubset hTargetSubset
 
 theorem scopedExact_restrict_source
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

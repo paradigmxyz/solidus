@@ -374,6 +374,37 @@ structure Result
       openResult.finalLayout =
         SolcValidation.StmtOutVars entryLayout stmt
 
+private theorem layoutWithinScope_of_run
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {program : Functions.Program}
+    {lower : List Functions.Stmt}
+    {layout : List Name}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx finalCtx : Functions.Source.Ctx}
+    {outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hWithin :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
+    (hRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel { stmts := lower } target =
+          .ok (outcome, finalCtx)) :
+    FunctionsObserverOutcome.LayoutWithinScope layout finalCtx := by
+  rcases hRun with ⟨fuel, hRun⟩
+  have hExtends :=
+    Functions.Source.Effectful.Block.runOpen_scopeExtends
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hRun
+  exact fun name hMem => hExtends name (hWithin name hMem)
+
 theorem of_let_none
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -402,6 +433,8 @@ theorem of_let_none
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hNamesUsed :
       StateRelation.Vars.NamesWithin before.used
         (identNames names))
@@ -504,7 +537,15 @@ theorem of_let_none
              intro name hMem
              rcases List.mem_append.mp hMem with hDeclared | hOuter
              · exact hNamesUsed name hDeclared
-             · exact hLayout name hOuter }
+             · exact hLayout name hOuter
+           layoutScope := by
+             intro _hRegular name hMem
+             rw [hFinalCtx]
+             rcases List.mem_append.mp hMem with hDeclared | hOuter
+             · exact List.mem_append_left _ (by simpa using hDeclared)
+             · exact List.mem_append_right _ (hLayoutScope name hOuter)
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -547,6 +588,8 @@ theorem of_let_one
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hNameUsed : identName name ∈ before.used)
     (hValue :
       FunctionsObserverCall.RecursiveScopedValueForward
@@ -663,7 +706,22 @@ theorem of_let_one
              · simpa [hHead] using hNameAfter
              · exact
                  hFreshExtends candidate
-                   (hLayout candidate hTail) }
+                   (hLayout candidate hTail)
+           layoutScope := by
+             intro _hRegular candidate hMem
+             rw [hFinalCtx]
+             change
+               candidate ∈
+                 identName name :: hScopedValue.prepared.finalCtx.scope
+             rcases List.mem_cons.mp hMem with hHead | hTail
+             · exact List.mem_cons.mpr (Or.inl hHead)
+             · exact
+                 List.mem_cons.mpr
+                   (Or.inr
+                     ((layoutWithinScope_of_run hLayoutScope
+                        hScopedValue.prepared.run) candidate hTail))
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -705,6 +763,8 @@ theorem of_assign_one
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hValue :
       FunctionsObserverCall.RecursiveScopedValueForward
         contract transcript codeRel sourceProgram targetProgram profile
@@ -799,7 +859,11 @@ theorem of_assign_one
            control := hScopedValue.prepared.control
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
-           layoutWithin := hLayout.mono hFreshExtends }
+           layoutWithin := hLayout.mono hFreshExtends
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope ⟨targetFuel, hTargetRun⟩
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -839,6 +903,8 @@ theorem of_expr_primitive
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hExpr :
       FunctionsObserverCall.RecursiveScopedExpressionForward
         contract transcript codeRel sourceProgram targetProgram profile
@@ -977,7 +1043,12 @@ theorem of_expr_primitive
            control := prepared.prepared.control
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
-           layoutWithin := hLayout.mono hFreshExtends }
+           layoutWithin := hLayout.mono hFreshExtends
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope
+               ⟨targetFuel, by simpa using hTargetRun⟩
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -1021,6 +1092,8 @@ theorem of_expr_call
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hExpr :
       FunctionsObserverCall.RecursiveScopedExpressionForward
         contract transcript codeRel sourceProgram targetProgram profile
@@ -1093,7 +1166,11 @@ theorem of_expr_call
            control := returnedCall.control
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
-           layoutWithin := hLayout.mono hFreshExtends }
+           layoutWithin := hLayout.mono hFreshExtends
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope returnedCall.run
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -1139,6 +1216,8 @@ theorem of_assign_call
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hValue :
       FunctionsObserverCall.RecursiveScopedValueForward
         contract transcript codeRel sourceProgram targetProgram profile
@@ -1230,7 +1309,11 @@ theorem of_assign_call
            control := returnedCall.control
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
-           layoutWithin := hLayout.mono hFreshExtends }
+           layoutWithin := hLayout.mono hFreshExtends
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope returnedCall.run
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -1276,6 +1359,8 @@ theorem of_let_call
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
     (hNamesUsed :
       StateRelation.Vars.NamesWithin before.used (identNames names))
     (hValue :
@@ -1441,7 +1526,38 @@ theorem of_let_call
                    (hNamesUsed candidate hDeclared)
              · exact
                  hFreshExtends candidate
-                   (hLayout candidate hOuter) }
+                   (hLayout candidate hOuter)
+           layoutScope := by
+             intro _hRegular candidate hMem
+             have hCallExtends :=
+               Functions.Source.Effectful.Block.runOpen_scopeExtends
+                 (Functions.ObserverSemantics.stateModel transcript)
+                 (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                   contract transcript)
+                 targetProgram.toFunctions
+                 (show
+                   Functions.Source.Effectful.Block.runOpen
+                       (Functions.ObserverSemantics.stateModel transcript)
+                       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                         contract transcript)
+                       targetProgram.toFunctions initCtx callFuel
+                       { stmts :=
+                           preArgs ++
+                             [Functions.Stmt.call
+                               (identNames names) functionName lowerArgs] }
+                       targetDeclared =
+                     .ok
+                       (Functions.Source.Effectful.Outcome.regular
+                         returnedCall.finalTarget,
+                         returnedCall.finalCtx) by
+                   simpa [identNames_eq_self] using hCallRun)
+             apply hCallExtends candidate
+             rw [hInitCtx]
+             rcases List.mem_append.mp hMem with hDeclared | hOuter
+             · exact List.mem_append_left _ (by simpa using hDeclared)
+             · exact List.mem_append_right _ (hLayoutScope candidate hOuter)
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := by
          intro _hRegular
          rfl }⟩
@@ -1481,7 +1597,10 @@ private theorem of_single_nonregular
     (hScope :
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
-      StateRelation.Vars.NamesWithin before.used finalLayout) :
+      StateRelation.Vars.NamesWithin before.used finalLayout)
+    (hExitScope :
+      FunctionsObserverOutcome.ExitScopeRel
+        ctx outcome.mode finalLayout) :
     Nonempty
       { result :
           FunctionsObserverOutcome.ScopedOpenResult
@@ -1517,7 +1636,9 @@ private theorem of_single_nonregular
       control := Functions.Source.Ctx.SameControl.refl ctx
       freshExtends := Fresh.Extends.refl before
       retains := fun hRegular => False.elim (hNonregular hRegular)
-      layoutWithin := hLayout }
+      layoutWithin := hLayout
+      layoutScope := fun hRegular => False.elim (hNonregular hRegular)
+      exitScope := hExitScope }
   exact ⟨⟨result, rfl⟩⟩
 
 theorem of_leave
@@ -1637,6 +1758,8 @@ theorem of_leave
         simpa [targetLeave, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hLeaveUsed
+      (by
+        simpa [FunctionsObserverOutcome.ExitScopeRel] using hLeaveScope)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by
@@ -1760,6 +1883,8 @@ theorem of_break
         simpa [targetBreak, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hBreakUsed
+      (by
+        simpa [FunctionsObserverOutcome.ExitScopeRel] using hBreakScope)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by
@@ -1885,6 +2010,8 @@ theorem of_continue
         simpa [targetContinue, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hContinueUsed
+      (by
+        simpa [FunctionsObserverOutcome.ExitScopeRel] using hContinueScope)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by

@@ -18,6 +18,33 @@ oracle.
 
 abbrev Trace := Assembly.ResourceTrace
 
+def LayoutWithinScope
+    (layout : List Name) (ctx : Functions.Source.Ctx) : Prop :=
+  ∀ name, name ∈ layout → name ∈ ctx.scope
+
+namespace LayoutWithinScope
+
+theorem monoLayout
+    {before after : List Name}
+    {ctx : Functions.Source.Ctx}
+    (hWithin : LayoutWithinScope after ctx)
+    (hSubset : ∀ name, name ∈ before → name ∈ after) :
+    LayoutWithinScope before ctx :=
+  fun name hMem => hWithin name (hSubset name hMem)
+
+end LayoutWithinScope
+
+def ExitScopeRel
+    (ctx : Functions.Source.Ctx)
+    (mode : Locals.Source.Mode)
+    (layout : List Name) : Prop :=
+  match mode with
+  | .regular => True
+  | .brk => ctx.breakScope? = some layout
+  | .cont => ctx.continueScope? = some layout
+  | .leave => ctx.leaveScope? = some layout
+  | .halt _ => False
+
 def ModeRel {σ : Type} (source : EvmYul.Yul.State)
     (target : Functions.Source.Effectful.Outcome σ) : Prop :=
   match source, target.mode with
@@ -209,6 +236,91 @@ theorem leave
       (Functions.Source.Effectful.Outcome.leave_not_regular target
         hRegular).elim
 
+/--
+Close a nonregular source block against an outer lexical store while leaving
+the already handler-restricted target outcome unchanged.
+-/
+theorem restrictNonregularSource
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {retained outer : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {scopeVars : EvmYul.Yul.VarStore}
+    (hRel : ScopedOutcomeRel codeRel retained source target)
+    (hNonregular : target.mode ≠ .regular)
+    (hScope : StateRelation.Vars.DomainExact outer scopeVars)
+    (hSubset : ∀ name, name ∈ retained → name ∈ outer) :
+    ScopedOutcomeRel codeRel retained
+      (source.withSource
+        (source.source.restrictStoreTo scopeVars))
+      target := by
+  obtain ⟨jump, hSource⟩ :=
+    ModeRel.target_nonregular_source_checkpoint hRel.mode hNonregular
+  cases jump with
+  | Continue shared vars =>
+      refine ⟨?_, ?_, ?_⟩
+      · have hModeRel := hRel.mode
+        cases hMode : target.mode <;>
+          simp [ModeRel, hSource, hMode,
+            EvmYul.Yul.State.restrictStoreTo] at hModeRel ⊢
+      · have hRevived :
+            (source.withSource source.source.reviveJump).source =
+              .Ok shared vars := by
+          change source.source.reviveJump = .Ok shared vars
+          rw [hSource]
+          rfl
+        have hRestricted :=
+          StateRelation.Replay.scopedRel_restrict_source_outer
+            (source :=
+              source.withSource source.source.reviveJump)
+            (hSource := hRevived)
+            hRel.state hScope hSubset
+        simpa [hSource, EvmYul.Yul.State.restrictStoreTo] using hRestricted
+      · exact fun hRegular => False.elim (hNonregular hRegular)
+  | Break shared vars =>
+      refine ⟨?_, ?_, ?_⟩
+      · have hModeRel := hRel.mode
+        cases hMode : target.mode <;>
+          simp [ModeRel, hSource, hMode,
+            EvmYul.Yul.State.restrictStoreTo] at hModeRel ⊢
+      · have hRevived :
+            (source.withSource source.source.reviveJump).source =
+              .Ok shared vars := by
+          change source.source.reviveJump = .Ok shared vars
+          rw [hSource]
+          rfl
+        have hRestricted :=
+          StateRelation.Replay.scopedRel_restrict_source_outer
+            (source :=
+              source.withSource source.source.reviveJump)
+            (hSource := hRevived)
+            hRel.state hScope hSubset
+        simpa [hSource, EvmYul.Yul.State.restrictStoreTo] using hRestricted
+      · exact fun hRegular => False.elim (hNonregular hRegular)
+  | Leave shared vars =>
+      refine ⟨?_, ?_, ?_⟩
+      · have hModeRel := hRel.mode
+        cases hMode : target.mode <;>
+          simp [ModeRel, hSource, hMode,
+            EvmYul.Yul.State.restrictStoreTo] at hModeRel ⊢
+      · have hRevived :
+            (source.withSource source.source.reviveJump).source =
+              .Ok shared vars := by
+          change source.source.reviveJump = .Ok shared vars
+          rw [hSource]
+          rfl
+        have hRestricted :=
+          StateRelation.Replay.scopedRel_restrict_source_outer
+            (source :=
+              source.withSource source.source.reviveJump)
+            (hSource := hRevived)
+            hRel.state hScope hSubset
+        simpa [hSource, EvmYul.Yul.State.restrictStoreTo] using hRestricted
+      · exact fun hRegular => False.elim (hNonregular hRegular)
+
 end ScopedOutcomeRel
 
 structure ScopedOpenResult
@@ -249,6 +361,10 @@ structure ScopedOpenResult
       ∀ name, name ∈ entryLayout → name ∈ finalLayout
   layoutWithin :
     StateRelation.Vars.NamesWithin final.used finalLayout
+  layoutScope :
+    outcome.mode = .regular →
+      LayoutWithinScope finalLayout finalCtx
+  exitScope : ExitScopeRel ctx outcome.mode finalLayout
 
 namespace ScopedOpenResult
 
@@ -317,7 +433,18 @@ def appendRegular
       retains := fun hRightRegular name hMem =>
         right.retains hRightRegular name
           (left.retains hRegular name hMem)
-      layoutWithin := right.layoutWithin }
+      layoutWithin := right.layoutWithin
+      layoutScope := right.layoutScope
+      exitScope := by
+        have hExit := right.exitScope
+        cases hMode : right.outcome.mode <;>
+          simp [ExitScopeRel, hMode] at hExit ⊢
+        · rw [left.control.breakScope]
+          exact hExit
+        · rw [left.control.continueScope]
+          exact hExit
+        · rw [left.control.leaveScope]
+          exact hExit }
 
 def appendNonregular
     {transcript : Trace}
@@ -358,7 +485,10 @@ def appendNonregular
         Fresh.Extends.trans left.freshExtends hSuffixFresh
       retains := fun hRegular =>
         False.elim (hNonregular hRegular)
-      layoutWithin := left.layoutWithin.mono hSuffixFresh }
+      layoutWithin := left.layoutWithin.mono hSuffixFresh
+      layoutScope := fun hRegular =>
+        False.elim (hNonregular hRegular)
+      exitScope := left.exitScope }
 
 def empty
     {transcript : Trace}
@@ -378,7 +508,8 @@ def empty
     (hScope :
       StateRelation.Vars.NamesWithin fresh.used ctx.scope)
     (hLayout :
-      StateRelation.Vars.NamesWithin fresh.used layout) :
+      StateRelation.Vars.NamesWithin fresh.used layout)
+    (hLayoutScope : LayoutWithinScope layout ctx) :
     ScopedOpenResult contract codeRel program [] fresh fresh layout
       source target ctx := by
   have hOutcomeRel :
@@ -406,7 +537,10 @@ def empty
       control := Functions.Source.Ctx.SameControl.refl ctx
       freshExtends := Fresh.Extends.refl fresh
       retains := fun _hRegular _name hMem => hMem
-      layoutWithin := hLayout }
+      layoutWithin := hLayout
+      layoutScope := fun _hRegular => hLayoutScope
+      exitScope := by
+        simp [ExitScopeRel] }
 
 end ScopedOpenResult
 

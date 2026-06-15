@@ -12,6 +12,32 @@ they do not define an alternate lowering.
 
 namespace Stmt
 
+theorem toFunctionsListUncheckedFuel?_block_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {body : List AstStmt}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before (.Block body) =
+        some (lower, after)) :
+    ∃ previous lowerBody,
+      fuel = previous + 1 ∧
+      List.toBlockUncheckedFuel? previous before body =
+        some (lowerBody, after) ∧
+      lower = [.block lowerBody] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hBody :
+          List.toBlockUncheckedFuel? previous before body with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hBody] at hLower
+      | some result =>
+          rcases result with ⟨lowerBody, final⟩
+          simp [toFunctionsListUncheckedFuel?, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          exact ⟨previous, lowerBody, rfl, hBody, rfl⟩
+
 theorem toFunctionsListUncheckedFuel?_let_none_parts
     {fuel : Nat} {before after : Fresh.State}
     {names : List EvmYul.Identifier}

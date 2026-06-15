@@ -86,6 +86,27 @@ theorem scopeUpdate (ctx : Ctx) (scope : List Name) :
 
 end SameControl
 
+def ScopeExtends (before after : Ctx) : Prop :=
+  ∀ name, name ∈ before.scope → name ∈ after.scope
+
+namespace ScopeExtends
+
+theorem refl (ctx : Ctx) : ScopeExtends ctx ctx :=
+  fun _name hMem => hMem
+
+theorem trans
+    {first second third : Ctx}
+    (hFirst : ScopeExtends first second)
+    (hSecond : ScopeExtends second third) :
+    ScopeExtends first third :=
+  fun name hMem => hSecond name (hFirst name hMem)
+
+theorem cons (ctx : Ctx) (name : Name) :
+    ScopeExtends ctx { ctx with scope := name :: ctx.scope } :=
+  fun _candidate hMem => List.mem_cons_of_mem name hMem
+
+end ScopeExtends
+
 end Ctx
 
 namespace Expr
