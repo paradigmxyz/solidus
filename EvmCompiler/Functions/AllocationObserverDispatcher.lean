@@ -11306,6 +11306,309 @@ theorem terminalArgsControlledHeadResultStack
                   cases hOutcome)⟩
 
 /--
+Dispatch a regularly returning selected call in the compiler-selected
+stack-only resource mode.
+-/
+theorem callRegularControlledHeadResultStack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {name : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := .call targets name args :: rest }
+        lowerState localsCtx)
+    (hFrameFunctions :
+      AllocationLowering.frameFunctions
+          compilation.recipe compilation.stackSlots =
+        [])
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 2)
+          (.call targets name args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            sourceCtx))
+    (hBoundary :
+      ResourceBoundary cursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hBody :
+      ∀ {selectedFn : Functions.FunDef}
+        {selected :
+          AllocationObserverCall.SelectedCallee.Artifact
+            allocation program expressions name selectedFn}
+        (selectedPrepared :
+          AllocationObserverCall.SelectedCallee.Prepared selected)
+        (hNoFrame : selected.needsFrame = false)
+        {sourceBodyStart :
+          Functions.ObserverSemantics.State transcript}
+        {bodyOutcome :
+          Functions.ObserverSemantics.Outcome
+            (Functions.ObserverSemantics.State transcript)}
+        {bodyCtx' : Functions.Source.Ctx}
+        {targetBodyStart : Structured.ObserverSemantics.State transcript},
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            sourceFuel selectedFn.body sourceBodyStart =
+          .ok (bodyOutcome, bodyCtx') →
+        AllocationObserverContext.ActivationResourceInvariant
+            .stackOnly program.memoryContract allocatorDepth
+            selected.lowerCtx selected.bodyStart selectedPrepared.returnCtx
+            selectedPrepared.plan
+            ((selected.slots.returns.map Prod.fst).reverse ++
+              (selected.slots.params.map Prod.fst).reverse)
+            0 .stack sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            selected.lowerCtx selectedPrepared.bodyFinal
+            selectedPrepared.bodyCtx selectedPrepared.plan
+            selectedFn.returns
+            (Functions.Scope.Block.outEnv
+              ((selected.slots.returns.map Prod.fst).reverse ++
+                (selected.slots.params.map Prod.fst).reverse)
+              selectedFn.body)
+            0 .stack program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            selectedFn.body sourceBodyStart expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured selectedPrepared.bodyCode }
+            targetBodyStart bodyOutcome targetOutcome bodyCtx') :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
+          { stmts := rest } afterState afterLocals,
+        ResourceControlledHeadResult cursor hBoundary afterState afterLocals
+          headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome :=
+            Functions.Source.Effectful.Outcome.regular sourceFinal) := by
+  have hMode : mode = .stack := hBoundary.invariant.owned
+  subst mode
+  obtain
+      ⟨afterState, afterLocals, _lowered, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hResource⟩ :=
+    AllocationObserverForward.Call.regular_stack_of_safe_source
+      compilation hFrameFunctions root.lowerCtxShared hSource hScoped
+      hBoundary.invariant hLower hCompile hBody
+  have hStep :
+      AllocationObserverForward.BodyCursor.StepTransport
+        lowerState afterState localsCtx afterLocals live
+        (.call targets name args) :=
+    AllocationObserverForward.BodyCursor.StepTransport.of_compilers
+      hScoped hLower hCompile
+  have hExact :
+      AllocationObserverForward.BodyCursor.ExactTail cursor tail :=
+    ⟨hPlan, hFinalState, hFinalLocals⟩
+  have hHead :
+      ResourceHeadResult cursor afterState afterLocals headCode tail
+        (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := .stack)
+        (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.regular sourceFinal) :=
+    ResourceHeadResult.ofResource cursor tail hCompiled
+      (.regular hResource
+        (AllocationObserverOutcome.SameControl.refl sourceCtx))
+      hStep hExact
+      (by
+        intro _ localName
+        simpa [Functions.Scope.Stmt.outEnv] using
+          hBoundary.sourceScope localName)
+  exact
+    ⟨afterState, afterLocals, headCode, tail,
+      ResourceControlledHeadResult.of_no_control
+        cursor hBoundary tail hHead
+        (by
+          intro abruptFinal hOutcome
+          cases hOutcome)
+        (by
+          intro abruptFinal hOutcome
+          cases hOutcome)⟩
+
+/--
+Dispatch a halting selected call in the compiler-selected stack-only resource
+mode.
+-/
+theorem callHaltControlledHeadResultStack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {targets : List Functions.Name}
+    {name : Functions.Name}
+    {args : List (Functions.Expr 1)}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {kind : Assembly.HaltKind}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := .call targets name args :: rest }
+        lowerState localsCtx)
+    (hFrameFunctions :
+      AllocationLowering.frameFunctions
+          compilation.recipe compilation.stackSlots =
+        [])
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 2)
+          (.call targets name args) source =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+            sourceCtx))
+    (hBoundary :
+      ResourceBoundary cursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hBody :
+      ∀ {selectedFn : Functions.FunDef}
+        {selected :
+          AllocationObserverCall.SelectedCallee.Artifact
+            allocation program expressions name selectedFn}
+        (selectedPrepared :
+          AllocationObserverCall.SelectedCallee.Prepared selected)
+        (hNoFrame : selected.needsFrame = false)
+        {sourceBodyStart :
+          Functions.ObserverSemantics.State transcript}
+        {bodyCtx' : Functions.Source.Ctx}
+        {targetBodyStart : Structured.ObserverSemantics.State transcript},
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              program.memoryContract transcript)
+            program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            sourceFuel selectedFn.body sourceBodyStart =
+          .ok
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal,
+              bodyCtx') →
+        AllocationObserverContext.ActivationResourceInvariant
+            .stackOnly program.memoryContract allocatorDepth
+            selected.lowerCtx selected.bodyStart selectedPrepared.returnCtx
+            selectedPrepared.plan
+            ((selected.slots.returns.map Prod.fst).reverse ++
+              (selected.slots.params.map Prod.fst).reverse)
+            0 .stack sourceBodyStart targetBodyStart →
+        targetBodyStart.source.returns ≠ [] →
+        ∃ targetOutcome,
+          AllocationObserverOutcome.BlockResourceResult
+            program.memoryContract .stackOnly allocatorDepth transcript
+            selected.lowerCtx selectedPrepared.bodyFinal
+            selectedPrepared.bodyCtx selectedPrepared.plan
+            selectedFn.returns
+            (Functions.Scope.Block.outEnv
+              ((selected.slots.returns.map Prod.fst).reverse ++
+                (selected.slots.params.map Prod.fst).reverse)
+              selectedFn.body)
+            0 .stack program (Functions.Source.Effectful.FunDef.bodyCtx selectedFn)
+            selectedFn.body sourceBodyStart expressions.toStructured
+            { stmts :=
+                Expressions.StmtList.toStructured selectedPrepared.bodyCode }
+            targetBodyStart
+            (Functions.Source.Effectful.Outcome.halt kind sourceFinal)
+            targetOutcome bodyCtx') :
+    ∃ afterState afterLocals headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
+          { stmts := rest } afterState afterLocals,
+        ResourceControlledHeadResult cursor hBoundary afterState afterLocals
+          headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+          (source := source) (target := target)
+          (sourceOutcome :=
+            Functions.Source.Effectful.Outcome.halt kind sourceFinal) := by
+  have hMode : mode = .stack := hBoundary.invariant.owned
+  subst mode
+  obtain
+      ⟨afterState, afterLocals, _lowered, headCode, tail,
+        _hPlanning, hPlan, hFinalState, hFinalLocals,
+        hLower, hCompile, _hLowered, hCompiled, hScoped⟩ :=
+    cursor.cons
+  obtain ⟨targetFinal, hResource⟩ :=
+    AllocationObserverForward.Call.halt_stack_of_safe_source
+      compilation hFrameFunctions root.lowerCtxShared hSource hScoped
+      hBoundary.invariant hLower hCompile hBody
+  have hExact :
+      AllocationObserverForward.BodyCursor.ExactTail cursor tail :=
+    ⟨hPlan, hFinalState, hFinalLocals⟩
+  have hNonregular :
+      (Functions.Source.Effectful.Outcome.halt kind sourceFinal).mode ≠
+        .regular := by
+    simp [Functions.Source.Effectful.Outcome.halt,
+      Locals.Source.Effectful.Outcome.halt]
+  have hHead :
+      ResourceHeadResult cursor afterState afterLocals headCode tail
+        (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (mode := .stack)
+        (sourceCtx := sourceCtx) (finalCtx := sourceCtx)
+        (source := source) (target := target)
+        (sourceOutcome :=
+          Functions.Source.Effectful.Outcome.halt kind sourceFinal) :=
+    ResourceHeadResult.ofNonregular cursor tail hCompiled
+      (.nonregular hResource) hExact hNonregular
+  exact
+    ⟨afterState, afterLocals, headCode, tail,
+      ResourceControlledHeadResult.of_no_control
+        cursor hBoundary tail hHead
+        (by
+          intro abruptFinal hOutcome
+          cases hOutcome)
+        (by
+          intro abruptFinal hOutcome
+          cases hOutcome)⟩
+
+/--
 Transport a resource-indexed dispatcher boundary across one regular
 statement.
 -/

@@ -581,6 +581,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.SelectedCallee.Artifact.prepare
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack
 #check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.scratch
+#check EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack_neutral
+#check EvmCompiler.Functions.AllocationObserverRelation.LeaveStateRel.activeNoWrap
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_leave
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_eval
@@ -590,6 +592,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback_stack
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_without_release
 #check EvmCompiler.Functions.AllocationObserverCall.RegularCall.complete_with_release
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular_stack
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave_stack
+#check EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_halt_stack
+#check EvmCompiler.Functions.AllocationObserverForward.Call.regular_stack_of_selected
+#check EvmCompiler.Functions.AllocationObserverForward.Call.halt_stack_of_selected
+#check EvmCompiler.Functions.AllocationObserverForward.Call.regular_stack_of_safe_source
+#check EvmCompiler.Functions.AllocationObserverForward.Call.halt_stack_of_safe_source
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.callRegularControlledHeadResultStack
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.callHaltControlledHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.of_lowering
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selectedCallee
 #check EvmCompiler.Functions.AllocationObserverForward.Compilation.selected_agrees

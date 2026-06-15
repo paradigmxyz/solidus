@@ -4410,6 +4410,63 @@ end ArgList
 namespace PreparedArguments
 
 /--
+Prepare an all-stack callee call without introducing allocator bookkeeping.
+-/
+theorem stack_neutral
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan} {live : List Locals.Name}
+    {frameBase : Nat}
+    {args : List (Functions.Expr 1)}
+    {lowered : List (Locals.Expr 1)}
+    {code : Structured.Code}
+    {source sourceAfterArgs :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hSafe :
+      AllocationObserverSafety.ArgList.MemorySafeEval
+        contract transcript args source sourceAfterArgs values)
+    (hScoped :
+      ∀ arg, arg ∈ args → Functions.Scope.ExprScoped live arg)
+    (hLower :
+      AllocationLowering.lowerExprList lowerCtx lowerState args =
+        some lowered)
+    (hCompile :
+      Locals.ExprSeq.compileCode localsCtx 0
+          (AllocationLowering.exprSeqOfList lowered) =
+        some code)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx lowerState localsCtx plan live frameBase .stack
+        source target) :
+    ∃ targetAfterArgs callerBase,
+      Structured.ObserverSemantics.Code.run code target =
+          .ok targetAfterArgs ∧
+      AllocationObserverRelation.ActivationExprResultRel
+        contract plan live 0 frameBase args.length .stack
+        sourceAfterArgs target targetAfterArgs values ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract plan live 0 frameBase .stack sourceAfterArgs callerBase ∧
+      targetAfterArgs.source.evm.stack =
+        values.reverse ++ target.source.evm.stack ∧
+      callerBase.source.evm.stack = target.source.evm.stack := by
+  obtain ⟨targetAfterArgs, hRun, hResult⟩ :=
+    ArgList.forward
+      (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+        contract)
+      hSafe hInvariant.compiler hScoped hLower hCompile hInvariant.state
+  let callerBase :=
+    AllocationObserverRelation.StateRel.popTarget
+      target.source.evm.stack targetAfterArgs
+  exact
+    ⟨targetAfterArgs, callerBase, hRun, hResult, hResult.restore_base,
+      hResult.stack, rfl⟩
+
+/--
 Prepare an all-stack callee call from the real source argument evaluation and
 compiled argument code.
 -/

@@ -4240,6 +4240,9 @@ structure LeaveStateRel {transcript : Trace}
     Prop where
   cursor : source.cursor = target.cursor
   shared : SharedRel contract source.source.shared target.source.evm.toSharedState
+  activeNoWrap :
+    target.source.evm.activeWords.toNat * MemoryContract.wordBytes <
+      EvmYul.UInt256.size
   values :
     ∃ returned,
       Functions.Source.Store.lookupMany returns source.source.vars =

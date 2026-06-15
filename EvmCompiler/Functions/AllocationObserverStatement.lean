@@ -5582,7 +5582,7 @@ theorem leave_of_compilers
       functionScope source
   have hLeaveRel :
       LeaveStateRel contract returns sourceFinal targetFinal := by
-    refine ⟨?_, ?_, values, ?_, hFinalStack⟩
+    refine ⟨?_, ?_, ?_, values, ?_, hFinalStack⟩
     · change source.cursor = targetFinal.cursor
       rw [hCleanupCursor]
       exact hReturnRel.state.base.cursor
@@ -5591,6 +5591,7 @@ theorem leave_of_compilers
           targetFinal.source.evm.toSharedState
       rw [hCleanupShared]
       exact hReturnRel.state.base.core.shared
+    · simpa [hCleanupShared] using hReturnRel.state.activeNoWrap
     · exact
         Functions.Source.Store.lookupMany_restrictTo_of_mem
           hReturnsScope hLookup
@@ -5717,7 +5718,7 @@ theorem leave_backward_of_compilers
                       have hLeaveRel :
                           LeaveStateRel contract returns sourceFinal
                             targetFinal := by
-                        refine ⟨?_, ?_, values, ?_, hFinalStack⟩
+                        refine ⟨?_, ?_, ?_, values, ?_, hFinalStack⟩
                         · change source.cursor = targetFinal.cursor
                           rw [hCleanupCursor]
                           exact hReturnRel.state.base.cursor
@@ -5726,6 +5727,8 @@ theorem leave_backward_of_compilers
                               targetFinal.source.evm.toSharedState
                           rw [hCleanupShared]
                           exact hReturnRel.state.base.core.shared
+                        · simpa [hCleanupShared] using
+                            hReturnRel.state.activeNoWrap
                         · exact
                             Functions.Source.Store.lookupMany_restrictTo_of_mem
                               hReturnsScope hLookup

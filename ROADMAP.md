@@ -763,9 +763,12 @@ compiler cleanup through the
   theorem now also consumes guarded no-external-effects semantics, strict
   recursive fuel, return-frame transport, and exact initializer compiler
   artifacts. The stack-only controlled dispatcher now selects all three
-  checked loop outcomes directly from the canonical source run. The remaining
-  recursive proof is no-frame selected calls and the shared stack-only
-  constructor, followed by final cleanup and matching
+  checked loop outcomes directly from the canonical source run. No-frame
+  selected calls now compose all-stack argument preparation, the real selected
+  procedure prelude/body/epilogue, caller restoration and writeback, and
+  terminal short-circuiting through the same resource-indexed dispatcher. The
+  remaining recursive proof is the shared stack-only constructor, followed by
+  final cleanup and matching
   whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
@@ -1437,11 +1440,14 @@ corridor.
   activation exits, and the resource lift occurs at the enclosing statement
   boundary. A single controlled-head theorem now selects initializer exit,
   regular completion, or activation exit from the canonical source run. The
-  Configuration-free caller restoration, all-stack callee prelude and return,
+  configuration-free caller restoration, all-stack callee prelude and return,
   pure callee phase composition, and caller writeback interfaces are checked.
-  The remaining Functions work is composing those interfaces for selected
-  no-frame calls, the shared stack-only recursive constructor, whole-program
-  forward packaging, and matching backward adequacy.
+  Selected no-frame regular and halting calls now reconstruct the ordinary
+  compiler artifact, prove frame absence from the compiler-selected
+  `frameFunctions`, consume the recursive resource body result, and package
+  the outcome in the shared controlled dispatcher. The remaining Functions
+  work is the shared stack-only recursive constructor, whole-program forward
+  packaging, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

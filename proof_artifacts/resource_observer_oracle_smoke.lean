@@ -951,6 +951,17 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_eval
 #print axioms EvmCompiler.Functions.AllocationObserverCall.RegularCallee.compose_nonregular_eval
 #print axioms EvmCompiler.Functions.AllocationObserverCall.RegularCall.resume_and_writeback_stack
+#print axioms EvmCompiler.Functions.AllocationObserverCall.PreparedArguments.stack_neutral
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.LeaveStateRel.activeNoWrap
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_regular_stack
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_leave_stack
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Callee.prepared_halt_stack
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.regular_stack_of_selected
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.halt_stack_of_selected
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.regular_stack_of_safe_source
+#print axioms EvmCompiler.Functions.AllocationObserverForward.Call.halt_stack_of_safe_source
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.callRegularControlledHeadResultStack
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.callHaltControlledHeadResultStack
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay
