@@ -110,6 +110,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.AccountMap.transientStorageValue_eq
 #check EvmCompiler.Yul.StateRelation.World.addAccessedAccount
 #check EvmCompiler.Yul.StateRelation.World.addAccessedStorageKey
+#check EvmCompiler.Yul.StateRelation.World.tstore
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
@@ -128,6 +129,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload

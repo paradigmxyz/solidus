@@ -111,6 +111,40 @@ theorem transientStorageValue_eq
   simp [EvmYul.Account.lookupTransientStorage,
     hRel.transientStorage]
 
+theorem updateTransientStorage
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel codeRel source target)
+    (key value : EvmYul.UInt256) :
+    Rel codeRel
+      (source.updateTransientStorage key value)
+      (target.updateTransientStorage key value) := by
+  by_cases hZero : value == (default : EvmYul.UInt256)
+  all_goals
+    exact
+      { nonce := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.nonce
+        balance := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.balance
+        storage := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.storage
+        code := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.code
+        codeImage := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.codeImage
+        codeBytes := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero] using
+            hRel.codeBytes
+        transientStorage := by
+          simp [EvmYul.Account.updateTransientStorage, hZero,
+            hRel.transientStorage] }
+
 end Account
 
 namespace AccountMap
@@ -274,6 +308,25 @@ theorem transientStorageValue_eq
               targetAccount.lookupTransientStorage key
           exact Account.transientStorageValue_eq hAccount key
 
+theorem insert
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress)
+    {sourceAccount : EvmYul.Account .Yul}
+    {targetAccount : EvmYul.Account .EVM}
+    (hAccount : Account.Rel codeRel sourceAccount targetAccount) :
+    Rel codeRel
+      (source.insert address sourceAccount)
+      (target.insert address targetAccount) := by
+  intro query
+  by_cases hEq : query = address
+  · subst query
+    simp [Batteries.RBMap.find?_insert]
+    exact hAccount
+  · simp [Batteries.RBMap.find?_insert, hEq, hRel query]
+
 end AccountMap
 
 namespace World
@@ -363,6 +416,102 @@ theorem addAccessedStorageKey
       createdAccounts := by
         simpa [EvmYul.State.addAccessedStorageKey] using
           hRel.createdAccounts }
+
+theorem updateAccount
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress)
+    {sourceAccount : EvmYul.Account .Yul}
+    {targetAccount : EvmYul.Account .EVM}
+    (hAccount : Account.Rel codeRel sourceAccount targetAccount) :
+    Rel codeRel
+      (source.updateAccount address sourceAccount)
+      (target.updateAccount address targetAccount) := by
+  exact
+    { accounts := by
+        simpa [EvmYul.State.updateAccount] using
+          AccountMap.insert hRel.accounts address hAccount
+      initialAccounts := by
+        simpa [EvmYul.State.updateAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.transactionReceipts
+      substate := by
+        simpa [EvmYul.State.updateAccount] using hRel.substate
+      executionEnv := by
+        simpa [EvmYul.State.updateAccount] using hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.updateAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.genesisBlockHeader
+      createdAccounts := by
+        simpa [EvmYul.State.updateAccount] using
+          hRel.createdAccounts }
+
+theorem tstore
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (key value : EvmYul.UInt256) :
+    Rel codeRel
+      (source.tstore key value)
+      (target.tstore key value) := by
+  let owner := source.executionEnv.codeOwner
+  have hTargetOwner :
+      target.executionEnv.codeOwner = owner := by
+    simpa [owner] using hRel.executionEnv.codeOwner.symm
+  unfold EvmYul.State.tstore
+  dsimp only
+  rw [hTargetOwner]
+  change
+    Rel codeRel
+      ((source.lookupAccount owner).option source
+        (fun account =>
+          source.updateAccount owner
+            (account.updateTransientStorage key value)))
+      ((target.lookupAccount owner).option target
+        (fun account =>
+          target.updateAccount owner
+            (account.updateTransientStorage key value)))
+  have hLookup := hRel.accounts owner
+  cases hSource : source.lookupAccount owner with
+  | none =>
+      change source.accountMap.find? owner = none at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          simpa [hSource, hTarget] using hRel
+      | some targetAccount =>
+          change
+            target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          simp [StateRelation.OptionRel] at hLookup
+  | some sourceAccount =>
+      change
+        source.accountMap.find? owner = some sourceAccount at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          change target.accountMap.find? owner = none at hTarget
+          rw [hTarget] at hLookup
+          simp [StateRelation.OptionRel] at hLookup
+      | some targetAccount =>
+          change
+            target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          simpa [hSource, hTarget] using
+            updateAccount hRel owner
+              (Account.updateTransientStorage hAccount key value)
 
 end World
 

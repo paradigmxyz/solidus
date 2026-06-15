@@ -546,6 +546,170 @@ theorem safeWorldUnaryAccess
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
       (forwardAt_of_worldUnaryAccess hFamily) hRel hRun
 
+inductive WorldBinaryWrite :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word → Word → EvmYul.State .Yul) →
+      (EvmYul.State .EVM → Word → Word → EvmYul.State .EVM) → Prop where
+  | tstore :
+      WorldBinaryWrite (.StackMemFlow .TSTORE) .tstore
+        EvmYul.State.tstore EvmYul.State.tstore
+
+theorem WorldBinaryWrite.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    Expressions.Structured.BasicOp.inputs op = 2 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.binaryState targetStep) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem WorldBinaryWrite.related
+    {codeRel : StateRelation.CodeRel}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : StateRelation.World.Rel codeRel source target)
+    (key value : Word) :
+    StateRelation.World.Rel codeRel
+      (sourceStep source key value)
+      (targetStep target key value) := by
+  cases hFamily
+  exact StateRelation.World.tstore hRel key value
+
+theorem yul_primCall_succ_eq_of_worldBinaryWrite
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      if source.executionEnv.perm = false then
+        .error .StaticModeViolation
+      else
+        (match EvmYul.Yul.binaryStateOp sourceStep source args with
+        | .ok (state, value?) => .ok (state, value?.toList)
+        | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_worldBinaryWrite
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_worldBinaryWrite hFamily] at hCall
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false =>
+          simp [EvmYul.Yul.State.executionEnv,
+            hPermission] at hCall
+      | true =>
+          simp [EvmYul.Yul.State.executionEnv,
+            hPermission] at hCall
+          cases sourceValues with
+          | nil =>
+              simp [EvmYul.Yul.binaryStateOp] at hCall
+          | cons key rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.binaryStateOp] at hCall
+              | cons value extra =>
+                  cases extra with
+                  | cons head tail =>
+                      simp [EvmYul.Yul.binaryStateOp] at hCall
+                  | nil =>
+                      simp [EvmYul.Yul.binaryStateOp,
+                        EvmYul.Yul.State.setState] at hCall
+                      rcases hCall with ⟨rfl, rfl⟩
+                      let sourceWorld :=
+                        sourceStep sourceShared.toState key value
+                      let targetWorld :=
+                        targetStep target.shared.toState key value
+                      have hWorld :
+                          StateRelation.World.Rel codeRel
+                            sourceWorld targetWorld := by
+                        simpa [sourceWorld, targetWorld] using
+                          hFamily.related hShared.world key value
+                      let targetShared : EvmYul.SharedState .EVM :=
+                        { target.shared with toState := targetWorld }
+                      refine ⟨targetShared, ?_, ?_⟩
+                      · simp [
+                          Locals.Source.PrimitiveSemantics.structured,
+                          hInputs, hStep, Assembly.PrimStep.run,
+                          EvmYul.EVM.binaryStateOp,
+                          EvmYul.EVM.State.replaceStackAndIncrPC,
+                          EvmYul.EVM.State.incrPC,
+                          EvmYul.Stack.pop2, targetShared,
+                          targetWorld, Id.run]
+                      · exact
+                          ⟨{ sourceShared with
+                              toState := sourceWorld },
+                            sourceVars, rfl,
+                            { world := hWorld
+                              machine := by
+                                simpa [targetShared] using
+                                  hShared.machine },
+                            hVars⟩
+
+theorem safeWorldBinaryWrite
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_worldBinaryWrite hFamily) hRel hRun
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

@@ -334,6 +334,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
@@ -1075,6 +1076,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.transientStorageValue_eq
 #print axioms EvmCompiler.Yul.StateRelation.World.addAccessedAccount
 #print axioms EvmCompiler.Yul.StateRelation.World.addAccessedStorageKey
+#print axioms EvmCompiler.Yul.StateRelation.World.tstore
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
@@ -1088,6 +1090,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
