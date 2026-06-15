@@ -832,6 +832,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.rootArtifact
 #print axioms EvmCompiler.Functions.AllocationLowering.MainComponents.runtimeSelection
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.runtimeSelection
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.compilationResourceMode
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceBoundary
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.NonregularStmtRuntimeForward.toResource
@@ -868,7 +869,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.consBlockResult
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.boundary
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.recursiveForward
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceRecursiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.mainResourceRecursiveForward
 #print axioms EvmCompiler.Functions.AllocationObserverOutcome.ControlBinding.DestinationRuntimeInvariant.of_transport
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.brkRuntimeResultExact
 #print axioms EvmCompiler.Functions.AllocationObserverForward.BodyCursor.CoreCursor.contRuntimeResultExact

@@ -770,8 +770,11 @@ compiler cleanup through the
   shared stack-only strong induction now dispatches every statement form,
   composes exact regular tails, preserves abrupt outcomes, and recursively
   enters selected no-frame roots through the resource-indexed function-body
-  boundary. The remaining forward proof is compiler-selected main setup/body/
-  cleanup composition, followed by matching
+  boundary. Main now also has a compiler-selected resource theorem that
+  constructs its artifact/root internally and chooses the checked stack-only
+  or scratch recursion from the ordinary compilation. The remaining forward
+  proof is main source-prelude and target setup/body/cleanup composition,
+  followed by matching
   whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
@@ -1452,7 +1455,10 @@ corridor.
   constructor is now checked over every compiler-owned root using the same
   resource block result, control destinations, exact cursors, and selected
   function-body boundary as scratch recursion. The remaining Functions work
-  is whole-program forward packaging and matching backward adequacy.
+  is whole-program source-prelude/setup/cleanup packaging and matching
+  backward adequacy. The recursive main-body theorem already selects its
+  resource mode directly from the ordinary compilation and accepts no
+  generated artifact premise.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

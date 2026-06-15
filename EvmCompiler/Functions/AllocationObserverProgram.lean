@@ -99,13 +99,12 @@ theorem MainArtifact.runtimeSelection
     artifact.components.RuntimeSelection :=
   artifact.components.runtimeSelection
 
-def MainArtifact.resourceMode
+def compilationResourceMode
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
     {expressions : Expressions.Program}
-    {compilation :
-      AllocationObserverForward.Compilation allocation program expressions}
-    (_artifact : MainArtifact compilation) :
+    (compilation :
+      AllocationObserverForward.Compilation allocation program expressions) :
     AllocationObserverRelation.Frame.ResourceMode :=
   if AllocationLowering.mainNeedsAllocator
       compilation.recipe compilation.stackSlots then
@@ -114,6 +113,16 @@ def MainArtifact.resourceMode
     | some config => .scratch config
   else
     .stackOnly
+
+def MainArtifact.resourceMode
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    (_artifact : MainArtifact compilation) :
+    AllocationObserverRelation.Frame.ResourceMode :=
+  compilationResourceMode compilation
 
 /--
 The semantic resource index is computed from the ordinary compiler artifact,
@@ -149,7 +158,10 @@ theorem MainArtifact.resourceMode_spec
       hFramePrelude =>
       exact
         Or.inl
-          ⟨by simp [MainArtifact.resourceMode, hAllocator],
+          ⟨by
+              simp [MainArtifact.resourceMode,
+                compilationResourceMode,
+                hAllocator],
             hAllocator, hFrame, hFunctions, hAllocatorPrelude,
             hFramePrelude⟩
   | scratch config hConfig hAllocator =>
@@ -157,7 +169,9 @@ theorem MainArtifact.resourceMode_spec
         Or.inr
           ⟨config,
             by
-              simp [MainArtifact.resourceMode, hAllocator, hConfig],
+              simp [MainArtifact.resourceMode,
+                compilationResourceMode,
+                hAllocator, hConfig],
             hConfig, hAllocator⟩
 
 def MainArtifact.plan
@@ -772,6 +786,62 @@ theorem recursiveForward
     (expressions := expressions) (transcript := transcript)
     maxDepth fuelBound hProgramScoped hFuelSafe hDepthBound hConfig
 
+/--
+Instantiate the compiler-selected resource recursion theorem at main.
+
+Stack-only artifacts use the shared stack induction directly. Scratch-backed
+artifacts reuse the existing allocator-aware induction and lift its result into
+the same resource-indexed block interface.
+-/
+theorem resourceRecursiveForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    {prepared : MainPrepared artifact}
+    (mainRoot : MainRoot prepared)
+    {allocatorDepth frameBase maxDepth : Nat}
+    {transcript : Trace}
+    (fuelBound : Nat)
+    (hProgramScoped : program.Scoped)
+    (hFuelSafe : artifact.resourceMode.FuelSafe maxDepth)
+    (hDepthBound : allocatorDepth + fuelBound ≤ maxDepth) :
+    AllocationObserverDispatcher.BodyCursor.ResourceRecursiveBlockForward
+      (root := mainRoot.root) (resource := artifact.resourceMode)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (fuelBound := fuelBound) (transcript := transcript) := by
+  rcases artifact.resourceMode_spec with hStack | hScratch
+  · rcases hStack with
+      ⟨hMode, _hAllocator, _hFrame, hFrameFunctions,
+        _hAllocatorPrelude, _hFramePrelude⟩
+    rw [hMode]
+    exact
+      AllocationObserverRecursive.BodyCursor.stackRecursiveBlockForward
+        fuelBound hProgramScoped hFrameFunctions
+  · rcases hScratch with
+      ⟨config, hMode, hFrameConfig, _hAllocator⟩
+    rw [hMode] at hFuelSafe
+    have hConfig :
+        AllocationSupport.scratchFrameConfig?
+            program.memoryContract compilation.recipe.frameWords =
+          some config := by
+      simpa [AllocationObserverForward.Compilation.frameConfig?] using
+        hFrameConfig
+    have hScratchRecursive :
+        AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward
+          (root := mainRoot.root) (config := config)
+          (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+          (fuelBound := fuelBound) (transcript := transcript) :=
+      mainRoot.recursiveForward fuelBound hProgramScoped hFuelSafe
+        hDepthBound hConfig
+    rw [hMode]
+    intro scope live sourceBlock lowerState localsCtx mode sourceCtx finalCtx
+      source target sourceFuel sourceOutcome cursor hFuel hBoundary hSource
+    exact
+      (hScratchRecursive cursor hFuel hBoundary.toScratch hSource).toResource
+
 end MainRoot
 
 /--
@@ -809,6 +879,40 @@ theorem mainRecursiveForward
     ⟨artifact, prepared, mainRoot,
       mainRoot.recursiveForward fuelBound hProgramScoped hFuelSafe
         hDepthBound hConfig⟩
+
+/--
+Construct the checked compiler-selected recursive main-body theorem without
+accepting generated artifacts or a resource-mode witness at the public
+boundary.
+-/
+theorem mainResourceRecursiveForward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation :
+      AllocationObserverForward.Compilation allocation program expressions)
+    {allocatorDepth frameBase maxDepth : Nat}
+    {transcript : Trace}
+    (fuelBound : Nat)
+    (hProgramScoped : program.Scoped)
+    (hFuelSafe :
+      (compilationResourceMode compilation).FuelSafe maxDepth)
+    (hDepthBound : allocatorDepth + fuelBound ≤ maxDepth) :
+    ∃ artifact : MainArtifact compilation,
+      ∃ prepared : MainPrepared artifact,
+        ∃ mainRoot : MainRoot prepared,
+          AllocationObserverDispatcher.BodyCursor.ResourceRecursiveBlockForward
+            (root := mainRoot.root) (resource := artifact.resourceMode)
+            (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+            (fuelBound := fuelBound) (transcript := transcript) := by
+  obtain ⟨artifact⟩ := MainArtifact.ofCompilation compilation
+  obtain ⟨prepared⟩ := MainPrepared.ofArtifact artifact
+  obtain ⟨mainRoot⟩ := prepared.rootArtifact hProgramScoped
+  exact
+    ⟨artifact, prepared, mainRoot,
+      mainRoot.resourceRecursiveForward fuelBound hProgramScoped
+        (by simpa [MainArtifact.resourceMode] using hFuelSafe)
+        hDepthBound⟩
 
 end AllocationObserverProgram
 end Functions

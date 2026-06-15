@@ -367,6 +367,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forExitHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forControlledHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward.toResource
+#check EvmCompiler.Functions.AllocationObserverProgram.compilationResourceMode
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared
@@ -375,7 +376,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceBoundary
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.boundary
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.recursiveForward
+#check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward
+#check EvmCompiler.Functions.AllocationObserverProgram.mainResourceRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveNonregular
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveScopedRegular
