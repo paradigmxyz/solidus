@@ -230,6 +230,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
+#check EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
+#check EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofLiteral
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofVariable
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofGas
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofMsize
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofNullaryPrimitive
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt

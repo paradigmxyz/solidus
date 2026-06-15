@@ -1720,10 +1720,13 @@ corridor.
   every terminal statement/control failure are now checked. The mutually
   recursive terminal family, compiled dispatcher halt, and canonical
   whole-program terminal packaging are checked without generated evidence or a
-  call oracle. Matching backward adequacy now has checked observer-resource and
-  pure-binary leaves; the current obligation is the remaining primitive
-  families followed by recursive expression, statement, call, loop, and
-  whole-program inversion.
+  call oracle. Matching backward adequacy now covers every compiler-selected
+  continuing primitive family. The expression owner has the first checked
+  scoped constructors for literals, visible variables, `gas()`, `msize()`, and
+  generic nullary primitives, using an ordinary compiler-owned nullary
+  decomposition and existential source fuel. The current obligation is
+  recursive argument-list and nonnullary primitive reconstruction, followed by
+  function calls, statements, control, loops, and whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

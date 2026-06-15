@@ -412,6 +412,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
+#check EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
+#check EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofLiteral
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofVariable
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofGas
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofMsize
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofNullaryPrimitive
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
@@ -1281,6 +1289,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
+#print axioms EvmCompiler.Yul.Expr.List.toSeq?_nil_parts
+#print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_nullaryPrimitive_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofLiteral
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofVariable
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofGas
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofMsize
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofNullaryPrimitive
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.guardedNoObservableFailure_of_raw
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.PureBinary.rawNoObservableFailureAt
