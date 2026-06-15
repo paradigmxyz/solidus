@@ -1431,8 +1431,11 @@ corridor.
   The complete regular stack-only loop head is checked through the neutral
   guarded source-fuel theorem and exact compiler cursors. The matching neutral
   guarded theorem for post-initializer activation exits is checked, including
-  strict recursive fuel and return-frame transport. The remaining Functions
-  work is its stack-only dispatcher adapter, selected no-frame calls, the
+  strict recursive fuel and return-frame transport. Its stack-only dispatcher
+  adapter is also checked: body/post exits are reindexed only after genuine
+  activation exits, and the resource lift occurs at the enclosing statement
+  boundary. The remaining Functions work is integrating all loop heads into
+  the shared stack-only recursive dispatcher, selected no-frame calls, the
   recursive constructor, whole-program forward packaging, and matching
   backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul

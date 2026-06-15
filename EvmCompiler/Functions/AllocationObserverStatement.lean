@@ -6327,6 +6327,49 @@ end NonregularStmtForward
 
 namespace NonregularStmtForward
 
+/--
+Re-index a resource-neutral abrupt statement after an activation exit.
+
+`leave` observes only the ordered return live set, while terminal halts erase
+the allocation plan and live-set indices completely.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {finalMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx stmtCtx : Functions.Source.Ctx}
+    {stmt : Functions.Stmt}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {target : Structured.ObserverSemantics.State transcript}
+    {compiled : List Structured.Stmt}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      NonregularStmtForward contract transcript beforePlan beforeLive
+        frameBase finalMode sourceProgram sourceCtx stmt source targetProgram
+        target compiled sourceOutcome targetOutcome stmtCtx)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    NonregularStmtForward contract transcript afterPlan afterLive
+      frameBase finalMode sourceProgram sourceCtx stmt source targetProgram
+      target compiled sourceOutcome targetOutcome stmtCtx := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode, hRel⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hMode,
+      hRel.transport_of_isExit hExit hLeaveLive⟩
+
 /-- Lift a resource-neutral abrupt statement into stack-only recursion. -/
 theorem toStackResource
     {contract : MemoryContract.Contract}
@@ -6688,6 +6731,47 @@ def ScopedBlockForward
         sourceOutcome targetOutcome
 
 namespace ScopedBlockForward
+
+/--
+Re-index a resource-neutral scoped block after an activation exit.
+-/
+theorem transport_of_isExit
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {beforePlan afterPlan : Locals.Allocation.Plan}
+    {beforeLive afterLive : List Locals.Name}
+    {frameBase : Nat}
+    {beforeMode afterMode : ActivationMode}
+    {sourceProgram : Functions.Program}
+    {sourceCtx : Functions.Source.Ctx}
+    {sourceBlock : Functions.Block}
+    {source : Functions.ObserverSemantics.State transcript}
+    {targetProgram : Structured.Program}
+    {targetBlock : Structured.Block}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hForward :
+      ScopedBlockForward contract transcript beforePlan beforeLive frameBase
+        beforeMode sourceProgram sourceCtx sourceBlock source targetProgram
+        targetBlock target sourceOutcome targetOutcome)
+    (hExit :
+      Functions.Source.Effectful.Outcome.IsExit sourceOutcome)
+    (hLeaveLive :
+      sourceOutcome.mode = .leave → beforeLive = afterLive) :
+    ScopedBlockForward contract transcript afterPlan afterLive frameBase
+      afterMode sourceProgram sourceCtx sourceBlock source targetProgram
+      targetBlock target sourceOutcome targetOutcome := by
+  rcases hForward with
+    ⟨sourceFuel, targetFuel, hSource, hTarget, hRel⟩
+  exact
+    ⟨sourceFuel, targetFuel, hSource, hTarget,
+      (hRel.reframe_of_isExit hExit).transport_of_isExit
+        hExit hLeaveLive⟩
 
 /-- Lift a resource-neutral scoped block into stack-only recursion. -/
 theorem toStackResource

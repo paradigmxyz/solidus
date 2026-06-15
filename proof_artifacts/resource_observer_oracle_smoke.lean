@@ -940,6 +940,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.ForLoop.RegularInvariantForward.of_safe_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtInvariantForward.for_regular_of_safe_source_run
 #print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forRegularHeadResultStack
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.NonregularStmtForward.transport_of_isExit
+#print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.ScopedBlockForward.transport_of_isExit
+#print axioms EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forExitHeadResultStack
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay
