@@ -1089,6 +1089,45 @@ theorem rel_of_scopedExact
 def TargetExtends (before after : Locals.Source.Store) : Prop :=
   ∀ name value, before name = some value → after name = some value
 
+theorem source_eq_of_scoped_targetExtends
+    {layout : List Name}
+    {sourceBefore sourceAfter : EvmYul.Yul.VarStore}
+    {targetBefore targetAfter : Locals.Source.Store}
+    (hBefore : ScopedRel layout sourceBefore targetBefore)
+    (hBeforeDomain : DomainExact layout sourceBefore)
+    (hAfter : ScopedRel layout sourceAfter targetAfter)
+    (hAfterDomain : DomainExact layout sourceAfter)
+    (hExtends : TargetExtends targetBefore targetAfter) :
+    sourceBefore = sourceAfter := by
+  apply Finmap.ext_lookup
+  intro name
+  cases hLookup : sourceBefore.lookup name with
+  | none =>
+      have hNotMem : name ∉ layout := by
+        intro hMem
+        have hSome := (hBeforeDomain name).mpr hMem
+        simp [hLookup] at hSome
+      have hAfterNone :
+          sourceAfter.lookup name = none := by
+        cases hAfterLookup : sourceAfter.lookup name with
+        | none =>
+            rfl
+        | some value =>
+            have hSome : (sourceAfter.lookup name).isSome = true := by
+              simp [hAfterLookup]
+            exact False.elim (hNotMem ((hAfterDomain name).mp hSome))
+      exact hAfterNone.symm
+  | some value =>
+      have hMem : name ∈ layout :=
+        (hBeforeDomain name).mp (by simp [hLookup])
+      have hTargetBefore : targetBefore name = some value := by
+        simpa [hLookup] using (hBefore name hMem).symm
+      have hTargetAfter : targetAfter name = some value :=
+        hExtends name value hTargetBefore
+      have hSourceAfter : sourceAfter.lookup name = some value := by
+        rw [hAfter name hMem, hTargetAfter]
+      exact hSourceAfter.symm
+
 theorem empty :
     Rel (default : EvmYul.Yul.VarStore) Locals.Source.Store.empty := by
   intro name value hLookup
@@ -2002,6 +2041,21 @@ theorem scopedRel_of_scopedExact
     ⟨sourceShared, sourceVars, hSource, hShared, hScoped, _hDomain⟩
   exact ⟨sourceShared, sourceVars, hSource, hShared, hScoped⟩
 
+theorem scopedExact_of_scopedRel
+    {codeRel : CodeRel} {layout : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    (hRel : ScopedRel codeRel layout source target)
+    (hDomain :
+      ∀ sourceShared sourceVars,
+        source = .Ok sourceShared sourceVars →
+          Vars.DomainExact layout sourceVars) :
+    ScopedExactRel codeRel layout source target := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped⟩
+  exact
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped,
+      hDomain sourceShared sourceVars hSource⟩
+
 theorem scopedRel_restrict_source_outer
     {codeRel : CodeRel} {retained outer : List Name}
     {shared : EvmYul.SharedState .Yul}
@@ -2041,6 +2095,26 @@ theorem scopedRel_restrict_target_of_scopedExact
         Locals.Source.Store.restrictTo retained target.vars name
     rw [Locals.Source.Store.restrictTo_mem hMem]
     exact hScoped name (hSubset name hMem)
+
+theorem scopedRel_restrict_target_scope_of_scopedExact
+    {codeRel : CodeRel} {retained current targetScope : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    (hRel : ScopedExactRel codeRel current source target)
+    (hCurrent : ∀ name, name ∈ retained → name ∈ current)
+    (hTarget : ∀ name, name ∈ retained → name ∈ targetScope) :
+    ScopedRel codeRel retained source
+      (target.restrictTo targetScope) := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, _hDomain⟩
+  refine
+    ⟨sourceShared, sourceVars, hSource, ?_, ?_⟩
+  · simpa [Locals.Source.State.restrictTo] using hShared
+  · intro name hMem
+    change
+      sourceVars.lookup name =
+        Locals.Source.Store.restrictTo targetScope target.vars name
+    rw [Locals.Source.Store.restrictTo_mem (hTarget name hMem)]
+    exact hScoped name (hCurrent name hMem)
 
 theorem scopedExact_of_rel
     {codeRel : CodeRel} {layout : List Name}
@@ -2608,8 +2682,23 @@ theorem scopedRel_of_scopedExact
     {target :
       Simulation.ResourceReplay.State Locals.Source.State transcript}
     (hRel : ScopedExactRel codeRel layout source target) :
-    ScopedRel codeRel layout source target :=
+  ScopedRel codeRel layout source target :=
   ⟨hRel.1, Regular.scopedRel_of_scopedExact hRel.2⟩
+
+theorem scopedExact_of_scopedRel
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedRel codeRel layout source target)
+    (hDomain :
+      ∀ sourceShared sourceVars,
+        source.source = .Ok sourceShared sourceVars →
+          Vars.DomainExact layout sourceVars) :
+    ScopedExactRel codeRel layout source target :=
+  ⟨hRel.1, Regular.scopedExact_of_scopedRel hRel.2 hDomain⟩
 
 theorem scopedRel_restrict_source_outer
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
@@ -2649,6 +2738,23 @@ theorem scopedRel_restrict_target_of_scopedExact
   exact
     ⟨hRel.1,
       Regular.scopedRel_restrict_target_of_scopedExact hRel.2 hSubset⟩
+
+theorem scopedRel_restrict_target_scope_of_scopedExact
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {retained current targetScope : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedExactRel codeRel current source target)
+    (hCurrent : ∀ name, name ∈ retained → name ∈ current)
+    (hTarget : ∀ name, name ∈ retained → name ∈ targetScope) :
+    ScopedRel codeRel retained source
+      (target.withSource (target.source.restrictTo targetScope)) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedRel_restrict_target_scope_of_scopedExact
+        hRel.2 hCurrent hTarget⟩
 
 theorem rel_of_scopedExact
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
@@ -2720,6 +2826,32 @@ theorem sourceStoreDomain_of_scopedExact
   rcases hRel.2 with
     ⟨sourceShared, sourceVars, hSource, _hShared, _hScoped, hDomain⟩
   simpa [hSource, EvmYul.Yul.State.store] using hDomain
+
+theorem sourceStore_eq_of_scopedExact_targetExtends
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {sourceBefore sourceAfter :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {targetBefore targetAfter :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hBefore :
+      ScopedExactRel codeRel layout sourceBefore targetBefore)
+    (hAfter :
+      ScopedExactRel codeRel layout sourceAfter targetAfter)
+    (hExtends :
+      Vars.TargetExtends targetBefore.source.vars targetAfter.source.vars) :
+    sourceBefore.source.store = sourceAfter.source.store := by
+  rcases hBefore.2 with
+    ⟨beforeShared, beforeVars, hSourceBefore, _hSharedBefore,
+      hScopedBefore, hDomainBefore⟩
+  rcases hAfter.2 with
+    ⟨afterShared, afterVars, hSourceAfter, _hSharedAfter,
+      hScopedAfter, hDomainAfter⟩
+  have hVars :
+      beforeVars = afterVars :=
+    Vars.source_eq_of_scoped_targetExtends
+      hScopedBefore hDomainBefore hScopedAfter hDomainAfter hExtends
+  simpa [hSourceBefore, hSourceAfter, EvmYul.Yul.State.store] using hVars
 
 theorem scopedExact_initcall
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
@@ -2885,6 +3017,30 @@ theorem scopedExact_restrict_target
       sourceVars.lookup name =
         Locals.Source.Store.restrictTo layout target.source.vars name
     rw [Locals.Source.Store.restrictTo_mem hMem]
+    exact hScoped name hMem
+
+theorem scopedExact_restrict_target_scope
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout targetScope : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hContains : ∀ name, name ∈ layout → name ∈ targetScope) :
+    ScopedExactRel codeRel layout source
+      (target.withSource (target.source.restrictTo targetScope)) := by
+  rcases hRel with
+    ⟨hCursor, sourceShared, sourceVars, hSource,
+      hShared, hScoped, hDomain⟩
+  refine
+    ⟨hCursor, sourceShared, sourceVars, hSource, ?_, ?_, hDomain⟩
+  · simpa [Locals.Source.State.restrictTo] using hShared
+  · intro name hMem
+    change
+      sourceVars.lookup name =
+        Locals.Source.Store.restrictTo targetScope target.source.vars name
+    rw [Locals.Source.Store.restrictTo_mem (hContains name hMem)]
     exact hScoped name hMem
 
 theorem scopedExact_multifill_single_fresh

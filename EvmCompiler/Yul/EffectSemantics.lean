@@ -849,6 +849,543 @@ theorem exec_switch_ok_parts
             ⟨previous, stateAfterScrutinee, value,
               rfl, hScrutinee, hRun⟩
 
+theorem exec_for_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.For cond post body) codeOverride state =
+        .ok final) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      loop model prim previous cond post body codeOverride state =
+        .ok final := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      exact ⟨previous, rfl, by simpa [exec] using hRun⟩
+
+def LoopBodyContinues : EvmYul.Yul.State → Prop
+  | .Ok _ _ => True
+  | .Checkpoint (.Continue _ _) => True
+  | _ => False
+
+def LoopPostRecurs : EvmYul.Yul.State → Prop
+  | .OutOfFuel => False
+  | .Checkpoint (.Leave _ _) => False
+  | _ => True
+
+inductive LoopAfterCondCase
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (fuel : Nat)
+    (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (outer : EvmYul.Yul.State)
+    (afterCond : σ) (condValue : Word) (final : σ) : Prop where
+  | false
+      (hZero : condValue = EvmYul.UInt256.ofNat 0)
+      (hFinal :
+        final =
+          model.withSource afterCond
+            ((model.source afterCond).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | bodyOutOfFuel
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody : σ}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodySource : model.source afterBody = .OutOfFuel)
+      (hFinal :
+        final =
+          model.withSource afterBody
+            ((model.source afterBody).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | bodyBreak
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody : σ} {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodySource :
+        model.source afterBody = .Checkpoint (.Break shared store))
+      (hFinal :
+        final =
+          model.withSource afterBody
+            ((model.source afterBody).reviveJump.overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | bodyLeave
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody : σ} {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodySource :
+        model.source afterBody = .Checkpoint (.Leave shared store))
+      (hFinal :
+        final =
+          model.withSource afterBody
+            ((model.source afterBody).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | postOutOfFuel
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody afterPost : σ}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodyContinues : LoopBodyContinues (model.source afterBody))
+      (hPost :
+        exec model prim fuel (.Block post) codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostSource : model.source afterPost = .OutOfFuel)
+      (hFinal :
+        final =
+          model.withSource afterPost
+            ((model.source afterPost).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | postLeave
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody afterPost : σ}
+      {shared : EvmYul.SharedState .Yul}
+      {store : EvmYul.Yul.VarStore}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodyContinues : LoopBodyContinues (model.source afterBody))
+      (hPost :
+        exec model prim fuel (.Block post) codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostSource :
+        model.source afterPost = .Checkpoint (.Leave shared store))
+      (hFinal :
+        final =
+          model.withSource afterPost
+            ((model.source afterPost).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+  | recurse
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody afterPost afterLoop : σ}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodyContinues : LoopBodyContinues (model.source afterBody))
+      (hPost :
+        exec model prim fuel (.Block post) codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostRecurs : LoopPostRecurs (model.source afterPost))
+      (hLoop :
+        exec model prim fuel (.For cond post body) codeOverride
+            (model.withSource afterPost
+              ((model.source afterPost).overwrite? outer)) =
+          .ok afterLoop)
+      (hFinal :
+        final =
+          model.withSource afterLoop
+            ((model.source afterLoop).overwrite? outer)) :
+      LoopAfterCondCase model prim fuel cond post body codeOverride
+        outer afterCond condValue final
+
+theorem loop_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      loop model prim fuel cond post body codeOverride state =
+        .ok final) :
+    ∃ previous afterCond condValue,
+      fuel = previous + 2 ∧
+      eval model prim previous cond codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk (model.source state))) =
+        .ok (afterCond, condValue) ∧
+      LoopAfterCondCase model prim previous cond post body codeOverride
+        (model.source state) afterCond condValue final := by
+  cases fuel with
+  | zero =>
+      simp [loop, fail] at hRun
+  | succ fuel =>
+      cases fuel with
+      | zero =>
+          simp [loop, fail] at hRun
+      | succ previous =>
+          cases hCond :
+              eval model prim previous cond codeOverride
+                (model.withSource state
+                  (EvmYul.Yul.State.mkOk (model.source state))) with
+          | error failure =>
+              simp [loop, hCond] at hRun
+          | ok condResult =>
+              rcases condResult with ⟨afterCond, condValue⟩
+              simp only [loop, hCond] at hRun
+              by_cases hZero :
+                  condValue = EvmYul.UInt256.ofNat 0
+              · have hZeroLit : condValue = ⟨0⟩ := by
+                  simpa using hZero
+                rw [if_pos hZeroLit] at hRun
+                exact
+                  ⟨previous, afterCond, condValue, by omega, hCond,
+                    .false hZero (Except.ok.inj hRun).symm⟩
+              · have hNonzeroLit : condValue ≠ ⟨0⟩ := by
+                  simpa using hZero
+                rw [if_neg hNonzeroLit] at hRun
+                cases hBody :
+                    exec model prim previous (.Block body) codeOverride
+                      afterCond with
+                | error failure =>
+                    simp [loop, hCond, hZero, hBody] at hRun
+                | ok afterBody =>
+                    rw [hBody] at hRun
+                    simp only at hRun
+                    cases hBodySource : model.source afterBody with
+                    | OutOfFuel =>
+                        simp [loop, hCond, hZero, hBody, hBodySource] at hRun
+                        exact
+                          ⟨previous, afterCond, condValue, by omega, hCond,
+                            .bodyOutOfFuel hZero hBody hBodySource
+                              (by simpa [hBodySource] using hRun.symm)⟩
+                    | Checkpoint jump =>
+                        cases jump with
+                        | Break shared store =>
+                            simp [loop, hCond, hZero, hBody, hBodySource]
+                              at hRun
+                            exact
+                              ⟨previous, afterCond, condValue, by omega,
+                                hCond,
+                                .bodyBreak hZero hBody hBodySource
+                                  (by simpa [hBodySource] using hRun.symm)⟩
+                        | Leave shared store =>
+                            simp [loop, hCond, hZero, hBody, hBodySource]
+                              at hRun
+                            exact
+                              ⟨previous, afterCond, condValue, by omega,
+                                hCond,
+                                .bodyLeave hZero hBody hBodySource
+                                  (by simpa [hBodySource] using hRun.symm)⟩
+                        | Continue shared store =>
+                            rw [hBodySource] at hRun
+                            simp only at hRun
+                            cases hPost :
+                                exec model prim previous (.Block post)
+                                  codeOverride
+                                  (model.withSource afterBody
+                                    (model.source afterBody).reviveJump) with
+                            | error failure =>
+                                have hPost' :
+                                    exec model prim previous (.Block post)
+                                        codeOverride
+                                        (model.withSource afterBody
+                                          (EvmYul.Yul.State.Checkpoint
+                                            (.Continue shared store)).reviveJump) =
+                                      .error failure := by
+                                  simpa [hBodySource] using hPost
+                                rw [hPost'] at hRun
+                                contradiction
+                            | ok afterPost =>
+                                have hPost' :
+                                    exec model prim previous (.Block post)
+                                        codeOverride
+                                        (model.withSource afterBody
+                                          (EvmYul.Yul.State.Checkpoint
+                                            (.Continue shared store)).reviveJump) =
+                                      .ok afterPost := by
+                                  simpa [hBodySource] using hPost
+                                rw [hPost'] at hRun
+                                simp only at hRun
+                                cases hPostSource :
+                                    model.source afterPost with
+                                | OutOfFuel =>
+                                    simp [loop, hCond, hZero, hBody,
+                                      hBodySource, hPost, hPostSource] at hRun
+                                    exact
+                                      ⟨previous, afterCond, condValue,
+                                        by omega, hCond,
+                                        .postOutOfFuel hZero hBody
+                                          (by simp [LoopBodyContinues,
+                                            hBodySource])
+                                          hPost hPostSource
+                                          (by
+                                            simpa [hPostSource] using
+                                              hRun.symm)⟩
+                                | Checkpoint postJump =>
+                                    cases postJump with
+                                    | Leave postShared postStore =>
+                                        simp [loop, hCond, hZero, hBody,
+                                          hBodySource, hPost, hPostSource]
+                                          at hRun
+                                        exact
+                                          ⟨previous, afterCond, condValue,
+                                            by omega, hCond,
+                                            .postLeave hZero hBody
+                                              (by simp [LoopBodyContinues,
+                                                hBodySource])
+                                              hPost hPostSource
+                                              (by
+                                                simpa [hPostSource] using
+                                                  hRun.symm)⟩
+                                    | Continue postShared postStore =>
+                                        rw [hPostSource] at hRun
+                                        simp only at hRun
+                                        cases hLoop :
+                                            exec model prim previous
+                                              (.For cond post body)
+                                              codeOverride
+                                              (model.withSource afterPost
+                                                ((model.source afterPost).overwrite?
+                                                  (model.source state))) with
+                                        | error failure =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            contradiction
+                                        | ok afterLoop =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            simp only at hRun
+                                            exact
+                                              ⟨previous, afterCond, condValue,
+                                                by omega, hCond,
+                                                .recurse hZero hBody
+                                                  (by simp [LoopBodyContinues,
+                                                    hBodySource])
+                                                  hPost
+                                                  (by simp [LoopPostRecurs,
+                                                    hPostSource])
+                                                  hLoop
+                                                  (Except.ok.inj hRun).symm⟩
+                                    | Break postShared postStore =>
+                                        rw [hPostSource] at hRun
+                                        simp only at hRun
+                                        cases hLoop :
+                                            exec model prim previous
+                                              (.For cond post body)
+                                              codeOverride
+                                              (model.withSource afterPost
+                                                ((model.source afterPost).overwrite?
+                                                  (model.source state))) with
+                                        | error failure =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            contradiction
+                                        | ok afterLoop =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            simp only at hRun
+                                            exact
+                                              ⟨previous, afterCond, condValue,
+                                                by omega, hCond,
+                                                .recurse hZero hBody
+                                                  (by simp [LoopBodyContinues,
+                                                    hBodySource])
+                                                  hPost
+                                                  (by simp [LoopPostRecurs,
+                                                    hPostSource])
+                                                  hLoop
+                                                  (Except.ok.inj hRun).symm⟩
+                                | Ok postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error failure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        simp only at hRun
+                                        exact
+                                          ⟨previous, afterCond, condValue,
+                                            by omega, hCond,
+                                            .recurse hZero hBody
+                                              (by simp [LoopBodyContinues,
+                                                hBodySource])
+                                              hPost
+                                              (by simp [LoopPostRecurs,
+                                                hPostSource])
+                                              hLoop
+                                              (Except.ok.inj hRun).symm⟩
+                    | Ok shared store =>
+                        rw [hBodySource] at hRun
+                        simp only at hRun
+                        cases hPost :
+                            exec model prim previous (.Block post)
+                              codeOverride
+                              (model.withSource afterBody
+                                (model.source afterBody).reviveJump) with
+                        | error failure =>
+                            have hPost' :
+                                exec model prim previous (.Block post)
+                                    codeOverride
+                                    (model.withSource afterBody
+                                      (EvmYul.Yul.State.Ok
+                                        shared store).reviveJump) =
+                                  .error failure := by
+                              simpa [hBodySource] using hPost
+                            rw [hPost'] at hRun
+                            contradiction
+                        | ok afterPost =>
+                            have hPost' :
+                                exec model prim previous (.Block post)
+                                    codeOverride
+                                    (model.withSource afterBody
+                                      (EvmYul.Yul.State.Ok
+                                        shared store).reviveJump) =
+                                  .ok afterPost := by
+                              simpa [hBodySource] using hPost
+                            rw [hPost'] at hRun
+                            simp only at hRun
+                            cases hPostSource : model.source afterPost with
+                            | OutOfFuel =>
+                                simp [loop, hCond, hZero, hBody,
+                                  hBodySource, hPost, hPostSource] at hRun
+                                exact
+                                  ⟨previous, afterCond, condValue, by omega,
+                                    hCond,
+                                    .postOutOfFuel hZero hBody
+                                      (by simp [LoopBodyContinues,
+                                        hBodySource])
+                                      hPost hPostSource
+                                      (by
+                                        simpa [hPostSource] using
+                                          hRun.symm)⟩
+                            | Checkpoint postJump =>
+                                cases postJump with
+                                | Leave postShared postStore =>
+                                    simp [loop, hCond, hZero, hBody,
+                                      hBodySource, hPost, hPostSource] at hRun
+                                    exact
+                                      ⟨previous, afterCond, condValue,
+                                        by omega, hCond,
+                                        .postLeave hZero hBody
+                                          (by simp [LoopBodyContinues,
+                                            hBodySource])
+                                          hPost hPostSource
+                                          (by
+                                            simpa [hPostSource] using
+                                              hRun.symm)⟩
+                                | Continue postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error failure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        simp only at hRun
+                                        exact
+                                          ⟨previous, afterCond, condValue,
+                                            by omega, hCond,
+                                            .recurse hZero hBody
+                                              (by simp [LoopBodyContinues,
+                                                hBodySource])
+                                              hPost
+                                              (by simp [LoopPostRecurs,
+                                                hPostSource])
+                                              hLoop
+                                              (Except.ok.inj hRun).symm⟩
+                                | Break postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error failure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        simp only at hRun
+                                        exact
+                                          ⟨previous, afterCond, condValue,
+                                            by omega, hCond,
+                                            .recurse hZero hBody
+                                              (by simp [LoopBodyContinues,
+                                                hBodySource])
+                                              hPost
+                                              (by simp [LoopPostRecurs,
+                                                hPostSource])
+                                              hLoop
+                                              (Except.ok.inj hRun).symm⟩
+                            | Ok postShared postStore =>
+                                rw [hPostSource] at hRun
+                                simp only at hRun
+                                cases hLoop :
+                                    exec model prim previous
+                                      (.For cond post body) codeOverride
+                                      (model.withSource afterPost
+                                        ((model.source afterPost).overwrite?
+                                          (model.source state))) with
+                                | error failure =>
+                                    have hLoop' := hLoop
+                                    simp only [hPostSource] at hLoop'
+                                    rw [hLoop'] at hRun
+                                    contradiction
+                                | ok afterLoop =>
+                                    have hLoop' := hLoop
+                                    simp only [hPostSource] at hLoop'
+                                    rw [hLoop'] at hRun
+                                    simp only at hRun
+                                    exact
+                                      ⟨previous, afterCond, condValue,
+                                        by omega, hCond,
+                                        .recurse hZero hBody
+                                          (by simp [LoopBodyContinues,
+                                            hBodySource])
+                                          hPost
+                                          (by simp [LoopPostRecurs,
+                                            hPostSource])
+                                          hLoop
+                                          (Except.ok.inj hRun).symm⟩
+
 theorem exec_leave_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

@@ -181,6 +181,68 @@ theorem evalCondition_true_of_eval_singleton {σ : Type}
         exact hNonzero
   simpa [hBne] using evalCondition_of_eval_singleton model prim hEval
 
+theorem evalCondition_iszero_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value]))
+    (hIszero :
+      prim.eval .iszero final [value] =
+        .ok (final, [EvmYul.UInt256.isZero value])) :
+    evalCondition model prim
+        (.prim .iszero (Locals.ExprSeq.cons expr .nil)) state =
+      .ok
+        (final,
+          EvmYul.UInt256.isZero value != EvmYul.UInt256.ofNat 0) := by
+  simp [evalCondition, Locals.Source.Effectful.Expr.evalCondition,
+    Locals.Source.Effectful.Expr.evalOne, eval,
+    Locals.Source.Effectful.Expr.eval,
+    Locals.Source.Effectful.Expr.ExprSeq.eval, hEval, hIszero]
+
+theorem evalCondition_iszero_true_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value]))
+    (hIszero :
+      prim.eval .iszero final [value] =
+        .ok (final, [EvmYul.UInt256.isZero value]))
+    (hZero : value = EvmYul.UInt256.ofNat 0) :
+    evalCondition model prim
+        (.prim .iszero (Locals.ExprSeq.cons expr .nil)) state =
+      .ok (final, true) := by
+  subst value
+  simpa using
+    evalCondition_iszero_of_eval_singleton model prim hEval hIszero
+
+theorem evalCondition_iszero_false_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value]))
+    (hIszero :
+      prim.eval .iszero final [value] =
+        .ok (final, [EvmYul.UInt256.isZero value]))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0) :
+    evalCondition model prim
+        (.prim .iszero (Locals.ExprSeq.cons expr .nil)) state =
+      .ok (final, false) := by
+  have hEq0 : EvmYul.UInt256.eq0 value = false := by
+    cases value with
+    | mk value =>
+        simp [EvmYul.UInt256.eq0, EvmYul.instBEqUInt256,
+          EvmYul.instBEqUInt256.beq, EvmYul.UInt256.ofNat, Id.run]
+          at hNonzero ⊢
+        exact hNonzero
+  have hIszeroZero :
+      EvmYul.UInt256.isZero value = EvmYul.UInt256.ofNat 0 := by
+    simp [EvmYul.UInt256.isZero, hEq0, EvmYul.UInt256.fromBool]
+  simpa [hIszeroZero] using
+    evalCondition_iszero_of_eval_singleton model prim hEval hIszero
+
 end Expr
 
 namespace ArgList
@@ -4729,6 +4791,170 @@ theorem runOpen_append_nonregular_exists {σ : Type}
                   simpa [List.cons_append] using
                     runOpen_cons_nonregular model prim program
                       (rest := rest ++ right) hHead hHeadMode⟩
+
+/--
+Execute the compiler-generated Yul loop guard when the source condition is
+zero. The condition preamble runs normally, `iszero` selects the synthetic
+`break`, and the remaining lowered body is unreachable.
+-/
+theorem runScoped_forGuard_break_exists {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {bodyBase condCtx : Source.Ctx}
+    {pre : List Stmt} {cond : Functions.Expr 1}
+    {rest : List Stmt} {source afterPre afterEval : σ}
+    {value : Word} {breakScope : List Name}
+    (hPre :
+      ∃ fuel,
+        Block.runOpen model prim program bodyBase fuel
+            { stmts := pre } source =
+          .ok (Outcome.regular afterPre, condCtx))
+    (hEval :
+      Expr.eval model prim cond afterPre =
+        .ok (afterEval, [value]))
+    (hIszero :
+      prim.eval .iszero afterEval [value] =
+        .ok (afterEval, [EvmYul.UInt256.isZero value]))
+    (hZero : value = EvmYul.UInt256.ofNat 0)
+    (hBreakScope : condCtx.breakScope? = some breakScope) :
+    ∃ fuel,
+      Block.runScoped model prim program bodyBase
+          { stmts :=
+              pre ++
+                .if_
+                  (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                  { stmts := [.brk] } ::
+                rest }
+          fuel source =
+        .ok (Outcome.brk (model.restrictTo breakScope afterEval)) := by
+  have hGuard :
+      Expr.evalCondition model prim
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil)) afterPre =
+        .ok (afterEval, true) :=
+    Expr.evalCondition_iszero_true_of_eval_singleton
+      model prim hEval hIszero hZero
+  have hBreakStmt :
+      Stmt.run model prim program condCtx 1 .brk afterEval =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
+    Stmt.run_brk_of_scope model prim program hBreakScope
+  obtain ⟨breakOpenFuel, hBreakOpen⟩ :=
+    runOpen_singleton_of_run model prim program hBreakStmt
+  have hBreakScoped :
+      Block.runScoped model prim program condCtx
+          { stmts := [.brk] } breakOpenFuel afterEval =
+        .ok (Outcome.brk (model.restrictTo breakScope afterEval)) :=
+    runScoped_nonregular_of_runOpen model prim program hBreakOpen (by simp)
+  have hIfStmt :
+      Stmt.run model prim program condCtx (breakOpenFuel + 1)
+          (.if_
+            (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+            { stmts := [.brk] })
+          afterPre =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
+    Stmt.run_if_true_of_eval model prim program hGuard hBreakScoped
+  have hGuardTail :
+      Block.runOpen model prim program condCtx
+          (breakOpenFuel + 2)
+          { stmts :=
+              .if_
+                  (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                  { stmts := [.brk] } ::
+                rest }
+          afterPre =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
+    runOpen_cons_nonregular model prim program hIfStmt (by simp)
+  obtain ⟨openFuel, hOpen⟩ :=
+    runOpen_append_regular_exists model prim program
+      pre
+      (.if_
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+          { stmts := [.brk] } ::
+        rest)
+      bodyBase condCtx source afterPre
+      (Outcome.brk (model.restrictTo breakScope afterEval))
+      condCtx hPre ⟨breakOpenFuel + 2, hGuardTail⟩
+  exact
+    ⟨openFuel,
+      runScoped_nonregular_of_runOpen model prim program hOpen (by simp)⟩
+
+/--
+Execute the compiler-generated Yul loop guard when the source condition is
+nonzero, then continue with an arbitrary checked body run.
+
+The condition preamble runs normally, `iszero` makes the synthetic `if` a
+regular no-op, and the caller-owned body semantics supplies the remaining
+open-block execution.
+-/
+theorem runOpen_forGuard_body_exists {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {bodyBase condCtx finalCtx : Source.Ctx}
+    {pre : List Stmt} {cond : Functions.Expr 1}
+    {rest : List Stmt} {source afterPre afterEval : σ}
+    {value : Word} {outcome : Outcome σ}
+    (hPre :
+      ∃ fuel,
+        Block.runOpen model prim program bodyBase fuel
+            { stmts := pre } source =
+          .ok (Outcome.regular afterPre, condCtx))
+    (hEval :
+      Expr.eval model prim cond afterPre =
+        .ok (afterEval, [value]))
+    (hIszero :
+      prim.eval .iszero afterEval [value] =
+        .ok (afterEval, [EvmYul.UInt256.isZero value]))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
+    (hBody :
+      ∃ fuel,
+        Block.runOpen model prim program condCtx fuel
+            { stmts := rest } afterEval =
+          .ok (outcome, finalCtx)) :
+    ∃ fuel,
+      Block.runOpen model prim program bodyBase
+          fuel
+          { stmts :=
+              pre ++
+                .if_
+                  (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                  { stmts := [.brk] } ::
+                rest }
+          source =
+        .ok (outcome, finalCtx) := by
+  have hGuard :
+      Expr.evalCondition model prim
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil)) afterPre =
+        .ok (afterEval, false) :=
+    Expr.evalCondition_iszero_false_of_eval_singleton
+      model prim hEval hIszero hNonzero
+  have hIfStmt :
+      Stmt.run model prim program condCtx 1
+          (.if_
+            (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+            { stmts := [.brk] })
+          afterPre =
+        .ok (Outcome.regular afterEval, condCtx) :=
+    Stmt.run_if_false_of_eval model prim program hGuard
+  obtain ⟨ifFuel, hIfOpen⟩ :=
+    runOpen_singleton_of_run model prim program hIfStmt
+  obtain ⟨guardBodyFuel, hGuardBody⟩ :=
+    runOpen_append_regular_exists model prim program
+      [(.if_
+        (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+        { stmts := [.brk] })]
+      rest condCtx condCtx afterPre afterEval outcome finalCtx
+      ⟨ifFuel, hIfOpen⟩ hBody
+  simpa using
+    runOpen_append_regular_exists model prim program
+      pre
+      (.if_
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+          { stmts := [.brk] } ::
+        rest)
+      bodyBase condCtx source afterPre outcome finalCtx
+      hPre ⟨guardBodyFuel, hGuardBody⟩
 
 end Block
 

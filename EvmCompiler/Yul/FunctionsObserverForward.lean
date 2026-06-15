@@ -16,70 +16,160 @@ abbrev Trace := Assembly.ResourceTrace
 abbrev Word := Assembly.Word
 
 def ScopeOptionWithin (enabled : Bool)
-    (scope? : Option (List Name)) (layout : List Name) : Prop :=
+    (sourceScope? targetScope? : Option (List Name))
+    (layout : List Name) : Prop :=
   if enabled then
-    ∃ scope,
-      scope? = some scope ∧
-        ∀ name, name ∈ scope → name ∈ layout
+    ∃ sourceScope targetScope,
+      sourceScope? = some sourceScope ∧
+        targetScope? = some targetScope ∧
+        (∀ name, name ∈ sourceScope → name ∈ layout) ∧
+        ∀ name, name ∈ sourceScope → name ∈ targetScope
   else
-    scope? = none
+    sourceScope? = none ∧ targetScope? = none
 
 namespace ScopeOptionWithin
 
 theorem mono
     {enabled : Bool}
-    {scope? : Option (List Name)}
+    {sourceScope? targetScope? : Option (List Name)}
     {before after : List Name}
-    (hWithin : ScopeOptionWithin enabled scope? before)
+    (hWithin :
+      ScopeOptionWithin enabled sourceScope? targetScope? before)
     (hSubset : ∀ name, name ∈ before → name ∈ after) :
-    ScopeOptionWithin enabled scope? after := by
+    ScopeOptionWithin enabled sourceScope? targetScope? after := by
   by_cases hEnabled : enabled = true
   · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
-    obtain ⟨scope, hScope, hNames⟩ := hWithin
-    exact ⟨scope, hScope, fun name hMem => hSubset name (hNames name hMem)⟩
+    obtain
+      ⟨sourceScope, targetScope, hSource, hTarget,
+        hNames, hTargetNames⟩ := hWithin
+    exact
+      ⟨sourceScope, targetScope, hSource, hTarget,
+        fun name hMem => hSubset name (hNames name hMem),
+        hTargetNames⟩
   · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
     exact hWithin
 
-theorem subset_of_some
+theorem source_subset_of_some
     {enabled : Bool}
-    {scope layout : List Name}
-    (hWithin : ScopeOptionWithin enabled (some scope) layout) :
-    ∀ name, name ∈ scope → name ∈ layout := by
+    {sourceScope targetScope layout : List Name}
+    (hWithin :
+      ScopeOptionWithin enabled (some sourceScope)
+        (some targetScope) layout) :
+    ∀ name, name ∈ sourceScope → name ∈ layout := by
   by_cases hEnabled : enabled = true
   · simp [ScopeOptionWithin, hEnabled] at hWithin
-    exact hWithin
+    exact hWithin.1
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+
+theorem target_contains_of_some
+    {enabled : Bool}
+    {sourceScope targetScope layout : List Name}
+    (hWithin :
+      ScopeOptionWithin enabled (some sourceScope)
+        (some targetScope) layout) :
+    ∀ name, name ∈ sourceScope → name ∈ targetScope := by
+  by_cases hEnabled : enabled = true
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+    exact hWithin.2
   · simp [ScopeOptionWithin, hEnabled] at hWithin
 
 end ScopeOptionWithin
 
 structure ControlContextRel
+    (sourceControl : FunctionsObserverOutcome.SourceControlScopes)
     (layout : List Name)
     (canBreak canContinue canLeave : Bool)
     (ctx : Functions.Source.Ctx) : Prop where
   scope :
     FunctionsObserverOutcome.LayoutWithinScope layout ctx
   breakScope :
-    ScopeOptionWithin canBreak ctx.breakScope? layout
+    ScopeOptionWithin canBreak sourceControl.breakScope?
+      ctx.breakScope? layout
   continueScope :
-    ScopeOptionWithin canContinue ctx.continueScope? layout
+    ScopeOptionWithin canContinue sourceControl.continueScope?
+      ctx.continueScope? layout
   leaveScope :
-    ScopeOptionWithin canLeave ctx.leaveScope? layout
+    ScopeOptionWithin canLeave sourceControl.leaveScope?
+      ctx.leaveScope? layout
 
 namespace ControlContextRel
 
+def forBodySourceControl
+    (layout : List Name)
+    (outer : FunctionsObserverOutcome.SourceControlScopes) :
+    FunctionsObserverOutcome.SourceControlScopes :=
+  { breakScope? := some layout
+    continueScope? := some layout
+    leaveScope? := outer.leaveScope? }
+
+def forPostSourceControl
+    (outer : FunctionsObserverOutcome.SourceControlScopes) :
+    FunctionsObserverOutcome.SourceControlScopes :=
+  { breakScope? := none
+    continueScope? := none
+    leaveScope? := outer.leaveScope? }
+
+theorem forBody
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {layout : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx) :
+    ControlContextRel (forBodySourceControl layout sourceControl) layout
+      true true canLeave
+      (ctx.withLoopControl ctx.scope ctx.scope) := by
+  refine
+    { scope := ?_
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · simpa [Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, Functions.Source.Ctx.withLoopControl] using
+      hRel.leaveScope
+
+theorem forPost
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {layout : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx) :
+    ControlContextRel (forPostSourceControl sourceControl) layout
+      false false canLeave ctx.withoutLoopControl := by
+  refine
+    { scope := ?_
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · simpa [Functions.Source.Ctx.withoutLoopControl] using hRel.scope
+  · simp [forPostSourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withoutLoopControl]
+  · simp [forPostSourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withoutLoopControl]
+  · simpa [forPostSourceControl, Functions.Source.Ctx.withoutLoopControl] using
+      hRel.leaveScope
+
 theorem transport
     {beforeLayout afterLayout : List Name}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {canBreak canContinue canLeave : Bool}
     {beforeCtx afterCtx : Functions.Source.Ctx}
     (hRel :
-      ControlContextRel beforeLayout
+      ControlContextRel sourceControl beforeLayout
         canBreak canContinue canLeave beforeCtx)
     (hSubset :
       ∀ name, name ∈ beforeLayout → name ∈ afterLayout)
     (hControl : Functions.Source.Ctx.SameControl beforeCtx afterCtx)
     (hScope :
       FunctionsObserverOutcome.LayoutWithinScope afterLayout afterCtx) :
-    ControlContextRel afterLayout
+    ControlContextRel sourceControl afterLayout
       canBreak canContinue canLeave afterCtx := by
   refine
     { scope := hScope
@@ -95,13 +185,16 @@ theorem transport
 
 theorem exitSubset
     {layout exitLayout : List Name}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {canBreak canContinue canLeave : Bool}
     {ctx : Functions.Source.Ctx}
     {mode : Locals.Source.Mode}
     (hRel :
-      ControlContextRel layout canBreak canContinue canLeave ctx)
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
     (hExit :
-      FunctionsObserverOutcome.ExitScopeRel ctx mode exitLayout)
+      FunctionsObserverOutcome.ExitScopeRel
+        sourceControl ctx mode exitLayout)
     (hNonregular : mode ≠ .regular) :
     ∀ name, name ∈ exitLayout → name ∈ layout := by
   cases hMode : mode with
@@ -109,18 +202,24 @@ theorem exitSubset
   | brk =>
       simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
       have hWithin := hRel.breakScope
-      rw [hExit] at hWithin
-      exact ScopeOptionWithin.subset_of_some hWithin
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
   | cont =>
       simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
       have hWithin := hRel.continueScope
-      rw [hExit] at hWithin
-      exact ScopeOptionWithin.subset_of_some hWithin
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
   | leave =>
       simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
       have hWithin := hRel.leaveScope
-      rw [hExit] at hWithin
-      exact ScopeOptionWithin.subset_of_some hWithin
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
   | halt kind =>
       simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
 
@@ -138,18 +237,19 @@ structure ScopedStmtResult
     (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
     (target : Functions.ObserverSemantics.State transcript)
     (ctx : Functions.Source.Ctx)
-    (canBreak canContinue canLeave : Bool) where
+    (canBreak canContinue canLeave : Bool)
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes} where
   openResult :
     FunctionsObserverOutcome.ScopedOpenResult
       contract codeRel program lower initial final entryLayout
-      sourceFinal target ctx
+      sourceFinal target ctx (sourceControl := sourceControl)
   regularLayout :
     openResult.outcome.mode = .regular →
       openResult.finalLayout =
         SolcValidation.StmtOutVars entryLayout stmt
   regularControl :
     openResult.outcome.mode = .regular →
-      ControlContextRel openResult.finalLayout
+      ControlContextRel sourceControl openResult.finalLayout
         canBreak canContinue canLeave openResult.finalCtx
 
 namespace ScopedStmtResult
@@ -159,6 +259,7 @@ def ofStatement
     {contract : MemoryContract.Contract}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {stmt : AstStmt}
     {lower : List Functions.Stmt}
     {initial final : Fresh.State}
@@ -170,13 +271,14 @@ def ofStatement
     (result :
       FunctionsObserverStatement.OpenResult.Result
         contract codeRel program stmt lower initial final entryLayout
-        sourceFinal target ctx)
+        sourceFinal target ctx (sourceControl := sourceControl))
     (hControl :
-      ControlContextRel entryLayout
+      ControlContextRel sourceControl entryLayout
         canBreak canContinue canLeave ctx) :
     ScopedStmtResult contract codeRel program stmt lower
       initial final entryLayout sourceFinal target ctx
-      canBreak canContinue canLeave :=
+      canBreak canContinue canLeave
+      (sourceControl := sourceControl) :=
   { openResult := result.openResult
     regularLayout := result.regularLayout
     regularControl := fun hRegular =>
@@ -190,6 +292,7 @@ def ofOpen
     {contract : MemoryContract.Contract}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {stmt : AstStmt}
     {lower : List Functions.Stmt}
     {initial final : Fresh.State}
@@ -201,17 +304,18 @@ def ofOpen
     (result :
       FunctionsObserverOutcome.ScopedOpenResult
         contract codeRel program lower initial final entryLayout
-        sourceFinal target ctx)
+        sourceFinal target ctx (sourceControl := sourceControl))
     (hLayout :
       result.outcome.mode = .regular →
         result.finalLayout =
           SolcValidation.StmtOutVars entryLayout stmt)
     (hControl :
-      ControlContextRel entryLayout
+      ControlContextRel sourceControl entryLayout
         canBreak canContinue canLeave ctx) :
     ScopedStmtResult contract codeRel program stmt lower
       initial final entryLayout sourceFinal target ctx
-      canBreak canContinue canLeave :=
+      canBreak canContinue canLeave
+      (sourceControl := sourceControl) :=
   { openResult := result
     regularLayout := hLayout
     regularControl := fun hRegular =>
@@ -233,19 +337,351 @@ structure ScopedListResult
     (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
     (target : Functions.ObserverSemantics.State transcript)
     (ctx : Functions.Source.Ctx)
-    (canBreak canContinue canLeave : Bool) where
+    (canBreak canContinue canLeave : Bool)
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes} where
   openResult :
     FunctionsObserverOutcome.ScopedOpenResult
       contract codeRel program lower initial final entryLayout
-      sourceFinal target ctx
+      sourceFinal target ctx (sourceControl := sourceControl)
   regularLayout :
     openResult.outcome.mode = .regular →
       openResult.finalLayout =
         SolcValidation.StmtsOutVars entryLayout stmts
   regularControl :
     openResult.outcome.mode = .regular →
-      ControlContextRel openResult.finalLayout
+      ControlContextRel sourceControl openResult.finalLayout
         canBreak canContinue canLeave openResult.finalCtx
+
+structure ClosedListResult
+    {transcript : Trace}
+    (contract : MemoryContract.Contract)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (sourceControl : FunctionsObserverOutcome.SourceControlScopes)
+    (lower : List Functions.Stmt)
+    (initial final : Fresh.State)
+    (entryLayout : List Name)
+    (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) where
+  finalLayout : List Name
+  outcome :
+    Functions.Source.Effectful.Outcome
+      (Functions.ObserverSemantics.State transcript)
+  run :
+    ∃ fuel,
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx { stmts := lower } fuel target =
+        .ok outcome
+  relation :
+    FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+      finalLayout sourceFinal outcome
+  domain :
+    StateRelation.Vars.TargetDomainWithin
+      final.used outcome.state.source.vars
+  freshExtends : Fresh.Extends initial final
+  regularLayout :
+    outcome.mode = .regular → finalLayout = entryLayout
+  layoutWithin :
+    StateRelation.Vars.NamesWithin final.used finalLayout
+  exitScope :
+    FunctionsObserverOutcome.ExitScopeRel
+      sourceControl ctx outcome.mode finalLayout
+
+namespace ScopedListResult
+
+def close
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {stmts : List AstStmt}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceEntry sourceOpen sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (result :
+      ScopedListResult contract codeRel program stmts lower
+        initial final entryLayout sourceOpen target ctx
+        canBreak canContinue canLeave
+        (sourceControl := sourceControl))
+    (hEntryRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        entryLayout sourceEntry target)
+    (hLayout :
+      StateRelation.Vars.NamesWithin initial.used entryLayout)
+    (hControl :
+      ControlContextRel sourceControl entryLayout
+        canBreak canContinue canLeave ctx)
+    (hSourceFinal :
+      sourceFinal =
+        sourceOpen.withSource
+          (sourceOpen.source.restrictStoreTo sourceEntry.source.store)) :
+    Nonempty
+      (ClosedListResult contract codeRel program sourceControl lower
+        initial final entryLayout sourceFinal target ctx) := by
+  obtain
+      ⟨entryShared, entryVars, hSourceEntry,
+        _hShared, _hScoped, hEntryDomain⟩ :=
+    hEntryRel.2
+  by_cases hRegular :
+      result.openResult.outcome.mode = .regular
+  · obtain ⟨bodyShared, bodyVars, hBodySource⟩ :=
+      FunctionsObserverOutcome.ModeRel.target_regular_source_ok
+        result.openResult.relation.mode hRegular
+    have hOutcomeEq :
+        result.openResult.outcome =
+          Functions.Source.Effectful.Outcome.regular
+            result.openResult.outcome.state :=
+      Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+    obtain ⟨bodyFuel, hBodyOpen⟩ := result.openResult.run
+    rw [hOutcomeEq] at hBodyOpen
+    let targetFinal :=
+      result.openResult.outcome.state.withSource
+        (result.openResult.outcome.state.source.restrictTo ctx.scope)
+    have hBodyScoped :
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx { stmts := lower } bodyFuel target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular targetFinal) := by
+      simpa [targetFinal] using
+        Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hBodyOpen
+    have hRevived :
+        sourceOpen.withSource sourceOpen.source.reviveJump =
+          sourceOpen := by
+      rw [hBodySource]
+      change sourceOpen.withSource (.Ok bodyShared bodyVars) = sourceOpen
+      rw [← hBodySource]
+      exact Simulation.ResourceReplay.State.withSource_self sourceOpen
+    have hBodyExact :=
+      result.openResult.relation.exact hRegular
+    rw [hRevived] at hBodyExact
+    have hClosedRel :
+        StateRelation.Replay.ScopedExactRel codeRel entryLayout
+          (sourceOpen.withSource
+            (.Ok bodyShared
+              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)))
+          targetFinal := by
+      simpa [targetFinal] using
+        StateRelation.Replay.scopedExact_restrict_scopes
+          hBodySource hBodyExact hEntryDomain
+          (result.openResult.retains hRegular)
+          hControl.scope
+    have hSourceFinal' :
+        sourceFinal =
+          sourceOpen.withSource
+            (.Ok bodyShared
+              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)) := by
+      rw [hSourceFinal, hBodySource, hSourceEntry]
+      rfl
+    have hOutcomeRel :
+        FunctionsObserverOutcome.ScopedOutcomeRel codeRel entryLayout
+          sourceFinal
+          (Functions.Source.Effectful.Outcome.regular targetFinal) := by
+      rw [hSourceFinal']
+      exact
+        FunctionsObserverOutcome.ScopedOutcomeRel.regular
+          rfl hClosedRel
+    exact
+      ⟨
+        { finalLayout := entryLayout
+          outcome :=
+            Functions.Source.Effectful.Outcome.regular targetFinal
+          run := ⟨bodyFuel, hBodyScoped⟩
+          relation := hOutcomeRel
+          domain := by
+            simpa [targetFinal, Locals.Source.State.restrictTo] using
+              result.openResult.domain.restrictTo
+          freshExtends := result.openResult.freshExtends
+          regularLayout := fun _hResultRegular => rfl
+          layoutWithin := hLayout.mono result.openResult.freshExtends
+          exitScope := by
+            simp [FunctionsObserverOutcome.ExitScopeRel] }⟩
+  · obtain ⟨bodyFuel, hBodyOpen⟩ := result.openResult.run
+    have hBodyScoped :
+        Functions.Source.Effectful.Block.runScoped
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx { stmts := lower } bodyFuel target =
+          .ok result.openResult.outcome :=
+      Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hBodyOpen hRegular
+    have hExitSubset :
+        ∀ name, name ∈ result.openResult.finalLayout →
+          name ∈ entryLayout :=
+      hControl.exitSubset result.openResult.exitScope hRegular
+    have hOutcomeRel :
+        FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+          result.openResult.finalLayout sourceFinal
+          result.openResult.outcome := by
+      rw [hSourceFinal]
+      simpa [hSourceEntry] using
+        FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
+          result.openResult.relation hRegular
+          hEntryDomain hExitSubset
+    exact
+      ⟨
+        { finalLayout := result.openResult.finalLayout
+          outcome := result.openResult.outcome
+          run := ⟨bodyFuel, hBodyScoped⟩
+          relation := hOutcomeRel
+          domain := result.openResult.domain
+          freshExtends := result.openResult.freshExtends
+          regularLayout := fun hResultRegular =>
+            False.elim (hRegular hResultRegular)
+          layoutWithin := result.openResult.layoutWithin
+          exitScope := result.openResult.exitScope }⟩
+
+def prependForGuard
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {body : List AstStmt}
+    {pre : List Functions.Stmt}
+    {cond : Locals.Expr 1}
+    {lowerBody : List Functions.Stmt}
+    {initial condFresh bodyInitial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterCond sourceOpen :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canLeave : Bool}
+    {value : Word}
+    (prepared :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre cond condFresh layout
+        sourceAfterCond target ctx value)
+    (bodyResult :
+      ScopedListResult contract codeRel program body lowerBody
+        bodyInitial final layout sourceOpen prepared.prepared.evalTarget
+        prepared.prepared.finalCtx true true canLeave
+        (sourceControl := sourceControl))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
+    (hFresh : Fresh.Extends initial final) :
+    Nonempty
+      (ScopedListResult contract codeRel program body
+        (pre ++
+          .if_
+              (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+              { stmts := [.brk] } ::
+            lowerBody)
+        initial final layout sourceOpen target ctx true true canLeave
+        (sourceControl := sourceControl)) := by
+  obtain ⟨runFuel, hRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program prepared.prepared.run prepared.prepared.eval
+      (Functions.ObserverSafety.SafeSemantics.eval_iszero
+        prepared.prepared.evalTarget value)
+      hNonzero bodyResult.openResult.run
+  let openResult :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program
+        (pre ++
+          .if_
+              (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+              { stmts := [.brk] } ::
+            lowerBody)
+        initial final layout sourceOpen target ctx
+        (sourceControl := sourceControl) :=
+    { finalLayout := bodyResult.openResult.finalLayout
+      outcome := bodyResult.openResult.outcome
+      finalCtx := bodyResult.openResult.finalCtx
+      run := ⟨runFuel, hRun⟩
+      relation := bodyResult.openResult.relation
+      domain := bodyResult.openResult.domain
+      scope := bodyResult.openResult.scope
+      control :=
+        Functions.Source.Ctx.SameControl.trans
+          prepared.prepared.control bodyResult.openResult.control
+      freshExtends := hFresh
+      retains := bodyResult.openResult.retains
+      layoutWithin := bodyResult.openResult.layoutWithin
+      layoutScope := bodyResult.openResult.layoutScope
+      exitScope :=
+        FunctionsObserverOutcome.ExitScopeRel.transportTarget
+          prepared.prepared.control bodyResult.openResult.exitScope }
+  exact
+    ⟨{ openResult := openResult
+       regularLayout := bodyResult.regularLayout
+       regularControl := bodyResult.regularControl }⟩
+
+def closeForGuardBody
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {body : List AstStmt}
+    {pre : List Functions.Stmt}
+    {cond : Locals.Expr 1}
+    {lowerBody : List Functions.Stmt}
+    {initial condFresh bodyInitial final : Fresh.State}
+    {layout : List Name}
+    {sourceEntry sourceAfterCond sourceOpen sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canLeave : Bool}
+    {value : Word}
+    (prepared :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre cond condFresh layout
+        sourceAfterCond target ctx value)
+    (bodyResult :
+      ScopedListResult contract codeRel program body lowerBody
+        bodyInitial final layout sourceOpen prepared.prepared.evalTarget
+        prepared.prepared.finalCtx true true canLeave
+        (sourceControl := sourceControl))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
+    (hFresh : Fresh.Extends initial final)
+    (hEntryRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout sourceEntry target)
+    (hLayout :
+      StateRelation.Vars.NamesWithin initial.used layout)
+    (hControl :
+      ControlContextRel sourceControl layout true true canLeave ctx)
+    (hSourceFinal :
+      sourceFinal =
+        sourceOpen.withSource
+          (sourceOpen.source.restrictStoreTo sourceEntry.source.store)) :
+    Nonempty
+      (ClosedListResult contract codeRel program sourceControl
+        (pre ++
+          .if_
+              (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+              { stmts := [.brk] } ::
+            lowerBody)
+        initial final layout sourceFinal target ctx) := by
+  obtain ⟨combined⟩ :=
+    prependForGuard prepared bodyResult hNonzero hFresh
+  exact close combined hEntryRel hLayout hControl hSourceFinal
+
+end ScopedListResult
 
 def RecursiveOpenStmtForward
     (contract : MemoryContract.Contract)
@@ -256,6 +692,7 @@ def RecursiveOpenStmtForward
     (profile : SolcValidation.DialectProfile)
     (bound : Nat) : Prop :=
   ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
     {layout : List Name}
     {stmt : AstStmt}
@@ -278,7 +715,8 @@ def RecursiveOpenStmtForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      ControlContextRel layout canBreak canContinue canLeave ctx →
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
@@ -288,7 +726,8 @@ def RecursiveOpenStmtForward
       Nonempty
         (ScopedStmtResult contract codeRel targetProgram.toFunctions
           stmt lower before after layout sourceFinal target ctx
-          canBreak canContinue canLeave)
+          canBreak canContinue canLeave
+          (sourceControl := sourceControl))
 
 def RecursiveOpenListForward
     (contract : MemoryContract.Contract)
@@ -299,6 +738,7 @@ def RecursiveOpenListForward
     (profile : SolcValidation.DialectProfile)
     (bound : Nat) : Prop :=
   ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
     {layout : List Name}
     {stmts : List AstStmt}
@@ -322,7 +762,8 @@ def RecursiveOpenListForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      ControlContextRel layout canBreak canContinue canLeave ctx →
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.execSeq
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
@@ -332,7 +773,8 @@ def RecursiveOpenListForward
       Nonempty
         (ScopedListResult contract codeRel targetProgram.toFunctions
           stmts lower before after layout sourceFinal target ctx
-          canBreak canContinue canLeave)
+          canBreak canContinue canLeave
+          (sourceControl := sourceControl))
 
 inductive CompoundStmt : AstStmt → Prop where
   | block (body : List AstStmt) : CompoundStmt (.Block body)
@@ -353,6 +795,7 @@ def RecursiveOpenCompoundForward
     (profile : SolcValidation.DialectProfile)
     (bound : Nat) : Prop :=
   ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
     {layout : List Name}
     {stmt : AstStmt}
@@ -376,7 +819,8 @@ def RecursiveOpenCompoundForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      ControlContextRel layout canBreak canContinue canLeave ctx →
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (ObserverSafety.SafeSemantics.primitiveSemantics
@@ -386,7 +830,8 @@ def RecursiveOpenCompoundForward
       Nonempty
         (ScopedStmtResult contract codeRel targetProgram.toFunctions
           stmt lower before after layout sourceFinal target ctx
-          canBreak canContinue canLeave)
+          canBreak canContinue canLeave
+          (sourceControl := sourceControl))
 
 namespace RecursiveOpenStmtForward
 
@@ -413,7 +858,7 @@ theorem ofCompound
         sourceProgram targetProgram profile bound) :
     RecursiveOpenStmtForward contract transcript codeRel
       sourceProgram targetProgram profile bound := by
-  intro sourceFuel compilerFuel before after layout stmt lower
+  intro sourceFuel compilerFuel sourceControl before after layout stmt lower
     source sourceFinal target ctx canBreak canContinue canLeave
     hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
   have hValueAt :
@@ -457,6 +902,7 @@ theorem ofCompound
             simpa [Stmt.names] using hNames
           obtain ⟨result⟩ :=
             FunctionsObserverStatement.OpenResult.of_let_none
+              (sourceControl := sourceControl)
               hLower hRel hDomain hScope hLayout hControl.scope
               hNamesUsed hRun
           exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -480,6 +926,7 @@ theorem ofCompound
               exact List.mem_append_left _ hMem
             obtain ⟨result⟩ :=
               FunctionsObserverStatement.OpenResult.of_let_call
+                (sourceControl := sourceControl)
                 hDecomposition hProgramOk hExprOk hLower hRel hDomain
                 hScope hLayout hControl.scope hNamesUsed hValueAt hBodyAt hRun
             exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -504,6 +951,7 @@ theorem ofCompound
             obtain ⟨result⟩ :=
               FunctionsObserverStatement.OpenResult.of_let_one
                 (codeOverride := some sourceProgram.contract)
+                (sourceControl := sourceControl)
                 hNotFunctionCall hExprOk hLower hRel hDomain hScope
                 hLayout hControl.scope hNameUsed hValueAt hRun
             exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -521,6 +969,7 @@ theorem ofCompound
           exact hOk.2
         obtain ⟨result⟩ :=
           FunctionsObserverStatement.OpenResult.of_assign_call
+            (sourceControl := sourceControl)
             hDecomposition hProgramOk hExprOk hLower hRel hDomain
             hScope hLayout hControl.scope hValueAt hBodyAt hRun
         exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -541,6 +990,7 @@ theorem ofCompound
           exact hOk.2
         obtain ⟨result⟩ :=
           FunctionsObserverStatement.OpenResult.of_assign_one
+            (sourceControl := sourceControl)
             hNotFunctionCall hExprOk hLower hRel hDomain hScope hLayout
             hControl.scope hValueAt hRun
         exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -579,6 +1029,7 @@ theorem ofCompound
                 ObserverSafety.SafeSemantics.terminal_none_of_eval_ok hEval
               obtain ⟨result⟩ :=
                 FunctionsObserverStatement.OpenResult.of_expr_primitive
+                  (sourceControl := sourceControl)
                   hNonterminal hExprOk hLower hRel hDomain hScope hLayout
                   hControl.scope hExprAt hRun
               exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -590,6 +1041,7 @@ theorem ofCompound
                 simpa [SolcValidation.StmtOk?] using hOk
               obtain ⟨result⟩ :=
                 FunctionsObserverStatement.OpenResult.of_expr_call
+                  (sourceControl := sourceControl)
                   hDecomposition hProgramOk hExprOk hLower hRel hDomain
                   hScope hLayout hControl.scope hExprAt hBodyAt hRun
               exact ⟨ScopedStmtResult.ofStatement result hControl⟩
@@ -597,32 +1049,47 @@ theorem ofCompound
       have hEnabled : canBreak = true := by
         simpa [SolcValidation.StmtOk?] using hOk
       have hWithin := hControl.breakScope
-      simp [ScopeOptionWithin, hEnabled] at hWithin
-      obtain ⟨breakLayout, hBreakScope, hBreakSubset⟩ := hWithin
+      rw [ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨breakLayout, targetBreakScope,
+            hSourceBreakScope, hBreakScope,
+            hBreakSubset, hBreakTarget⟩ := hWithin
       obtain ⟨result⟩ :=
         FunctionsObserverStatement.OpenResult.of_break
-          hLower hRel hDomain hScope hLayout hBreakScope hBreakSubset hRun
+          (sourceControl := sourceControl)
+          hLower hRel hDomain hScope hLayout
+          hSourceBreakScope hBreakScope hBreakSubset hBreakTarget hRun
       exact ⟨ScopedStmtResult.ofStatement result hControl⟩
   | Continue =>
       have hEnabled : canContinue = true := by
         simpa [SolcValidation.StmtOk?] using hOk
       have hWithin := hControl.continueScope
-      simp [ScopeOptionWithin, hEnabled] at hWithin
-      obtain ⟨continueLayout, hContinueScope, hContinueSubset⟩ := hWithin
+      rw [ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨continueLayout, targetContinueScope,
+            hSourceContinueScope, hContinueScope,
+            hContinueSubset, hContinueTarget⟩ := hWithin
       obtain ⟨result⟩ :=
         FunctionsObserverStatement.OpenResult.of_continue
+          (sourceControl := sourceControl)
           hLower hRel hDomain hScope hLayout
-          hContinueScope hContinueSubset hRun
+          hSourceContinueScope hContinueScope
+          hContinueSubset hContinueTarget hRun
       exact ⟨ScopedStmtResult.ofStatement result hControl⟩
   | Leave =>
       have hEnabled : canLeave = true := by
         simpa [SolcValidation.StmtOk?] using hOk
       have hWithin := hControl.leaveScope
-      simp [ScopeOptionWithin, hEnabled] at hWithin
-      obtain ⟨leaveLayout, hLeaveScope, hLeaveSubset⟩ := hWithin
+      rw [ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨leaveLayout, targetLeaveScope,
+            hSourceLeaveScope, hLeaveScope,
+            hLeaveSubset, hLeaveTarget⟩ := hWithin
       obtain ⟨result⟩ :=
         FunctionsObserverStatement.OpenResult.of_leave
-          hLower hRel hDomain hScope hLayout hLeaveScope hLeaveSubset hRun
+          (sourceControl := sourceControl)
+          hLower hRel hDomain hScope hLayout
+          hSourceLeaveScope hLeaveScope hLeaveSubset hLeaveTarget hRun
       exact ⟨ScopedStmtResult.ofStatement result hControl⟩
 
 end RecursiveOpenStmtForward
@@ -645,7 +1112,7 @@ theorem ofStmt
   intro sourceFuel
   induction sourceFuel using Nat.strong_induction_on with
   | h sourceFuel ih =>
-      intro compilerFuel before after layout stmts lower
+      intro compilerFuel sourceControl before after layout stmts lower
         source sourceFinal target ctx canBreak canContinue canLeave
         hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
       cases stmts with
@@ -665,6 +1132,7 @@ theorem ofStmt
           let result :=
             FunctionsObserverOutcome.ScopedOpenResult.empty
               (contract := contract) (program := targetProgram.toFunctions)
+              (sourceControl := sourceControl)
               hRel hDomain hScope hLayout hControl.scope
           exact
             ⟨{ openResult := result
@@ -887,6 +1355,7 @@ theorem block
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -925,7 +1394,8 @@ theorem block
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      ControlContextRel layout canBreak canContinue canLeave ctx)
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -936,7 +1406,8 @@ theorem block
     Nonempty
       (ScopedStmtResult contract codeRel targetProgram.toFunctions
         (.Block body) lower before after layout sourceFinal target ctx
-        canBreak canContinue canLeave) := by
+        canBreak canContinue canLeave
+        (sourceControl := sourceControl)) := by
   obtain ⟨compilerPrevious, lowerBody, _hCompilerFuel,
       hLowerBody, hLowerStmt⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_block_parts hLower
@@ -967,10 +1438,6 @@ theorem block
       StateRelation.Vars.NamesWithin before.used
         (Stmt.List.names body) := by
     simpa [Stmt.names] using hNames
-  obtain
-      ⟨entryShared, entryVars, hSource,
-        _hShared, _hScoped, hEntryDomain⟩ :=
-    hRel.2
   obtain ⟨bodyResult⟩ :=
     hList (sourceFuel := sourcePrevious)
       (compilerFuel := listCompilerFuel)
@@ -982,215 +1449,69 @@ theorem block
       (canLeave := canLeave)
       (by omega) hBodyOk hBodyNames hLowerList hRel hDomain
       hScope hLayout hControl hBodyRun
-  by_cases hRegular :
-      bodyResult.openResult.outcome.mode = .regular
-  · obtain ⟨bodyShared, bodyVars, hBodySource⟩ :=
-      FunctionsObserverOutcome.ModeRel.target_regular_source_ok
-        bodyResult.openResult.relation.mode hRegular
-    have hOutcomeEq :
-        bodyResult.openResult.outcome =
-          Functions.Source.Effectful.Outcome.regular
-            bodyResult.openResult.outcome.state :=
-      Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
-    obtain ⟨bodyFuel, hBodyOpen⟩ := bodyResult.openResult.run
-    rw [hOutcomeEq] at hBodyOpen
-    let targetFinal :=
-      bodyResult.openResult.outcome.state.withSource
-        (bodyResult.openResult.outcome.state.source.restrictTo ctx.scope)
-    have hBodyScoped :
-        Functions.Source.Effectful.Block.runScoped
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx
-            { stmts := lowerStmts } bodyFuel target =
-          .ok
-            (Functions.Source.Effectful.Outcome.regular targetFinal) := by
-      simpa [targetFinal] using
-        Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+  obtain ⟨closedBody⟩ :=
+    ScopedListResult.close bodyResult hRel hLayout hControl hSourceFinal
+  obtain ⟨bodyFuel, hBodyScoped⟩ := closedBody.run
+  have hTargetStmt :
+      Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          targetProgram.toFunctions hBodyOpen
-    have hTargetStmt :
-        Functions.Source.Effectful.Stmt.run
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx bodyFuel
-            (.block { stmts := lowerStmts }) target =
-          .ok
-            (Functions.Source.Effectful.Outcome.regular targetFinal, ctx) := by
-      unfold Functions.Source.Effectful.Stmt.run
-      rw [hBodyScoped]
-      rfl
-    have hEmpty :
-        Functions.Source.Effectful.Block.runOpen
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx 1 { stmts := [] } targetFinal =
-          .ok
-            (Functions.Source.Effectful.Outcome.regular targetFinal, ctx) := by
-      simpa using
-        Functions.Source.Effectful.Block.runOpen_nil
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          targetProgram.toFunctions ctx 0 targetFinal
-    obtain ⟨targetFuel, hTargetRun⟩ :=
-      Functions.Source.Effectful.Block.runOpen_cons_regular_exists
-        (Functions.ObserverSemantics.stateModel transcript)
-        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript)
-        targetProgram.toFunctions hTargetStmt hEmpty
-    have hRevived :
-        sourceAfterBody.withSource
-            sourceAfterBody.source.reviveJump =
-          sourceAfterBody := by
-      rw [hBodySource]
-      change
-        sourceAfterBody.withSource (.Ok bodyShared bodyVars) =
-          sourceAfterBody
-      rw [← hBodySource]
-      exact
-        Simulation.ResourceReplay.State.withSource_self sourceAfterBody
-    have hBodyExact :=
-      bodyResult.openResult.relation.exact hRegular
-    rw [hRevived] at hBodyExact
-    have hClosedRel :
-        StateRelation.Replay.ScopedExactRel codeRel layout
-          (sourceAfterBody.withSource
-            (.Ok bodyShared
-              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)))
-          targetFinal := by
-      simpa [targetFinal] using
-        StateRelation.Replay.scopedExact_restrict_scopes
-          hBodySource hBodyExact hEntryDomain
-          (bodyResult.openResult.retains hRegular)
-          hControl.scope
-    have hSourceFinal' :
-        sourceFinal =
-          sourceAfterBody.withSource
-            (.Ok bodyShared
-              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)) := by
-      rw [hSourceFinal, hBodySource, hSource]
-      rfl
-    have hOutcomeRel :
-        FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout
-          sourceFinal
-          (Functions.Source.Effectful.Outcome.regular targetFinal) := by
-      rw [hSourceFinal']
-      exact
-        FunctionsObserverOutcome.ScopedOutcomeRel.regular
-          rfl hClosedRel
-    let result :
-        FunctionsObserverOutcome.ScopedOpenResult
-          contract codeRel targetProgram.toFunctions
-          [.block { stmts := lowerStmts }] before after layout
-          sourceFinal target ctx :=
-      { finalLayout := layout
-        outcome := Functions.Source.Effectful.Outcome.regular targetFinal
-        finalCtx := ctx
-        run := ⟨targetFuel, hTargetRun⟩
-        relation := hOutcomeRel
-        domain := by
-          simpa [targetFinal, Locals.Source.State.restrictTo] using
-            bodyResult.openResult.domain.restrictTo
-        scope := hScope.mono bodyResult.openResult.freshExtends
-        control := Functions.Source.Ctx.SameControl.refl ctx
-        freshExtends := bodyResult.openResult.freshExtends
-        retains := fun _hRegular _name hMem => hMem
-        layoutWithin := hLayout.mono bodyResult.openResult.freshExtends
-        layoutScope := fun _hRegular => hControl.scope
-        exitScope := by
-          simp [FunctionsObserverOutcome.ExitScopeRel] }
-    exact
-      ⟨{ openResult := result
-         regularLayout := fun _hResultRegular => rfl
-         regularControl := fun _hResultRegular => hControl }⟩
-  · obtain ⟨bodyFuel, hBodyOpen⟩ := bodyResult.openResult.run
-    have hBodyScoped :
-        Functions.Source.Effectful.Block.runScoped
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx
-            { stmts := lowerStmts } bodyFuel target =
-          .ok bodyResult.openResult.outcome :=
-      Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
-        (Functions.ObserverSemantics.stateModel transcript)
-        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript)
-        targetProgram.toFunctions hBodyOpen hRegular
-    have hTargetStmt :
-        Functions.Source.Effectful.Stmt.run
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx bodyFuel
-            (.block { stmts := lowerStmts }) target =
-          .ok (bodyResult.openResult.outcome, ctx) := by
-      unfold Functions.Source.Effectful.Stmt.run
-      rw [hBodyScoped]
-      rfl
-    have hTargetRun :
-        Functions.Source.Effectful.Block.runOpen
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript)
-            targetProgram.toFunctions ctx (bodyFuel + 1)
-            { stmts := [.block { stmts := lowerStmts }] } target =
-          .ok (bodyResult.openResult.outcome, ctx) :=
-      Functions.Source.Effectful.Block.runOpen_cons_nonregular
-        (Functions.ObserverSemantics.stateModel transcript)
-        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript)
-        targetProgram.toFunctions hTargetStmt hRegular
-    have hExitSubset :
-        ∀ name, name ∈ bodyResult.openResult.finalLayout →
-          name ∈ layout :=
-      hControl.exitSubset bodyResult.openResult.exitScope hRegular
-    have hOutcomeRel :
-        FunctionsObserverOutcome.ScopedOutcomeRel codeRel
-          bodyResult.openResult.finalLayout sourceFinal
-          bodyResult.openResult.outcome := by
-      rw [hSourceFinal]
-      simpa [hSource] using
-        FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
-          bodyResult.openResult.relation hRegular
-          hEntryDomain hExitSubset
-    let result :
-        FunctionsObserverOutcome.ScopedOpenResult
-          contract codeRel targetProgram.toFunctions
-          [.block { stmts := lowerStmts }] before after layout
-          sourceFinal target ctx :=
-      { finalLayout := bodyResult.openResult.finalLayout
-        outcome := bodyResult.openResult.outcome
-        finalCtx := ctx
-        run := ⟨bodyFuel + 1, hTargetRun⟩
-        relation := hOutcomeRel
-        domain := bodyResult.openResult.domain
-        scope := hScope.mono bodyResult.openResult.freshExtends
-        control := Functions.Source.Ctx.SameControl.refl ctx
-        freshExtends := bodyResult.openResult.freshExtends
-        retains := fun hResultRegular =>
-          False.elim (hRegular hResultRegular)
-        layoutWithin := bodyResult.openResult.layoutWithin
-        layoutScope := fun hResultRegular =>
-          False.elim (hRegular hResultRegular)
-        exitScope := bodyResult.openResult.exitScope }
-    exact
-      ⟨{ openResult := result
-         regularLayout := fun hResultRegular =>
-           False.elim (hRegular hResultRegular)
-         regularControl := fun hResultRegular =>
-           False.elim (hRegular hResultRegular) }⟩
+          targetProgram.toFunctions ctx bodyFuel
+          (.block { stmts := lowerStmts }) target =
+        .ok (closedBody.outcome, ctx) := by
+    unfold Functions.Source.Effectful.Stmt.run
+    rw [hBodyScoped]
+    rfl
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_singleton_of_run
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hTargetStmt
+  let result :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel targetProgram.toFunctions
+        [.block { stmts := lowerStmts }] before after layout
+        sourceFinal target ctx (sourceControl := sourceControl) :=
+    { finalLayout := closedBody.finalLayout
+      outcome := closedBody.outcome
+      finalCtx := ctx
+      run := ⟨targetFuel, hTargetRun⟩
+      relation := closedBody.relation
+      domain := closedBody.domain
+      scope := hScope.mono closedBody.freshExtends
+      control := Functions.Source.Ctx.SameControl.refl ctx
+      freshExtends := closedBody.freshExtends
+      retains := by
+        intro hRegular name hMem
+        rw [closedBody.regularLayout hRegular]
+        exact hMem
+      layoutWithin := closedBody.layoutWithin
+      layoutScope := by
+        intro hRegular
+        rw [closedBody.regularLayout hRegular]
+        exact hControl.scope
+      exitScope := closedBody.exitScope }
+  exact
+    ⟨{ openResult := result
+       regularLayout := by
+         intro hRegular
+         simpa [SolcValidation.StmtOutVars] using
+           closedBody.regularLayout hRegular
+       regularControl := by
+         intro hRegular
+         change
+           ControlContextRel sourceControl closedBody.finalLayout
+             canBreak canContinue canLeave ctx
+         rw [closedBody.regularLayout hRegular]
+         exact hControl }⟩
 
 theorem ifThen
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -1234,7 +1555,8 @@ theorem ifThen
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      ControlContextRel layout canBreak canContinue canLeave ctx)
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1245,7 +1567,8 @@ theorem ifThen
     Nonempty
       (ScopedStmtResult contract codeRel targetProgram.toFunctions
         (.If cond body) lower before after layout sourceFinal target ctx
-        canBreak canContinue canLeave) := by
+        canBreak canContinue canLeave
+        (sourceControl := sourceControl)) := by
   obtain
       ⟨compilerPrevious, preCond, lowerCond, middle, lowerBody,
         _hCompilerFuel, hLowerCond, hLowerBody, hLowerStmt⟩ :=
@@ -1306,7 +1629,8 @@ theorem ifThen
     exact fun name hMem =>
       hExtends name (hControl.scope name hMem)
   have hPreparedControl :
-      ControlContextRel layout canBreak canContinue canLeave
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave
         prepared.prepared.finalCtx :=
     ControlContextRel.transport hControl
       (fun _name hMem => hMem)
@@ -1394,7 +1718,8 @@ theorem ifThen
           FunctionsObserverOutcome.ScopedOpenResult
             contract codeRel targetProgram.toFunctions
             (preCond ++ [.if_ lowerCond lowerBody])
-            before after layout sourceAfterCond target ctx :=
+            before after layout sourceAfterCond target ctx
+            (sourceControl := sourceControl) :=
         { finalLayout := layout
           outcome :=
             Functions.Source.Effectful.Outcome.regular
@@ -1566,7 +1891,8 @@ theorem ifThen
           FunctionsObserverOutcome.ScopedOpenResult
             contract codeRel targetProgram.toFunctions
             (preCond ++ [.if_ lowerCond lowerBody])
-            before after layout sourceFinal target ctx :=
+            before after layout sourceFinal target ctx
+            (sourceControl := sourceControl) :=
         { finalLayout := closedBody.openResult.finalLayout
           outcome := closedBody.openResult.outcome
           finalCtx := prepared.prepared.finalCtx
@@ -1582,17 +1908,9 @@ theorem ifThen
             intro hRegular
             rw [closedBody.regularLayout hRegular]
             exact hPreparedLayoutScope
-          exitScope := by
-            have hExit := closedBody.openResult.exitScope
-            cases hMode : closedBody.openResult.outcome.mode <;>
-              simp [FunctionsObserverOutcome.ExitScopeRel, hMode]
-                at hExit ⊢
-            · rw [prepared.prepared.control.breakScope]
-              exact hExit
-            · rw [prepared.prepared.control.continueScope]
-              exact hExit
-            · rw [prepared.prepared.control.leaveScope]
-              exact hExit }
+          exitScope :=
+            FunctionsObserverOutcome.ExitScopeRel.transportTarget
+              prepared.prepared.control closedBody.openResult.exitScope }
       exact
         ⟨{ openResult := result
            regularLayout := by
@@ -1608,6 +1926,7 @@ theorem switch
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -1653,7 +1972,8 @@ theorem switch
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      ControlContextRel layout canBreak canContinue canLeave ctx)
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1665,7 +1985,8 @@ theorem switch
     Nonempty
       (ScopedStmtResult contract codeRel targetProgram.toFunctions
         (.Switch scrutinee cases defaultBody) lower before after layout
-        sourceFinal target ctx canBreak canContinue canLeave) := by
+        sourceFinal target ctx canBreak canContinue canLeave
+        (sourceControl := sourceControl)) := by
   obtain
       ⟨compilerPrevious, preScrutinee, lowerScrutinee,
         afterScrutinee, lowerCases, afterCases, lowerDefault,
@@ -1726,7 +2047,8 @@ theorem switch
     exact fun name hMem =>
       hExtends name (hControl.scope name hMem)
   have hPreparedControl :
-      ControlContextRel layout canBreak canContinue canLeave
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave
         prepared.prepared.finalCtx :=
     ControlContextRel.transport hControl
       (fun _name hMem => hMem)
@@ -1821,7 +2143,8 @@ theorem switch
             contract codeRel targetProgram.toFunctions
             (preScrutinee ++
               [.switch lowerScrutinee lowerCases lowerDefault])
-            before after layout sourceAfterScrutinee target ctx :=
+            before after layout sourceAfterScrutinee target ctx
+            (sourceControl := sourceControl) :=
         { finalLayout := layout
           outcome :=
             Functions.Source.Effectful.Outcome.regular
@@ -1956,7 +2279,8 @@ theorem switch
             contract codeRel targetProgram.toFunctions
             (preScrutinee ++
               [.switch lowerScrutinee lowerCases lowerDefault])
-            before after layout sourceFinal target ctx :=
+            before after layout sourceFinal target ctx
+            (sourceControl := sourceControl) :=
         { finalLayout := closedBody.openResult.finalLayout
           outcome := closedBody.openResult.outcome
           finalCtx := prepared.prepared.finalCtx
@@ -1973,17 +2297,9 @@ theorem switch
             intro hRegular
             rw [closedBody.regularLayout hRegular]
             exact hPreparedLayoutScope
-          exitScope := by
-            have hExit := closedBody.openResult.exitScope
-            cases hMode : closedBody.openResult.outcome.mode <;>
-              simp [FunctionsObserverOutcome.ExitScopeRel, hMode]
-                at hExit ⊢
-            · rw [prepared.prepared.control.breakScope]
-              exact hExit
-            · rw [prepared.prepared.control.continueScope]
-              exact hExit
-            · rw [prepared.prepared.control.leaveScope]
-              exact hExit }
+          exitScope :=
+            FunctionsObserverOutcome.ExitScopeRel.transportTarget
+              prepared.prepared.control closedBody.openResult.exitScope }
       exact
         ⟨{ openResult := result
            regularLayout := by

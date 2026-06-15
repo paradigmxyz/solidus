@@ -364,11 +364,12 @@ structure Result
     (entryLayout : List Name)
     (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
     (target : Functions.ObserverSemantics.State transcript)
-    (ctx : Functions.Source.Ctx) where
+    (ctx : Functions.Source.Ctx)
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes} where
   openResult :
     FunctionsObserverOutcome.ScopedOpenResult
       contract codeRel program lower initial final entryLayout
-      sourceFinal target ctx
+      sourceFinal target ctx (sourceControl := sourceControl)
   regularLayout :
     openResult.outcome.mode = .regular →
       openResult.finalLayout =
@@ -410,6 +411,7 @@ theorem of_let_none
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {compilerFuel sourceFuel : Nat}
     {before after : Fresh.State}
     {layout : List Name}
@@ -448,7 +450,8 @@ theorem of_let_none
         .ok sourceFinal) :
     Nonempty
       (Result contract codeRel program (.Let names none)
-        lower before after layout sourceFinal target ctx) := by
+        lower before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower
   subst lower
@@ -554,6 +557,7 @@ theorem of_let_one
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -606,7 +610,7 @@ theorem of_let_one
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.Let [name] (some expr)) lower before after layout
-        sourceFinal target ctx) := by
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
   obtain ⟨pre, lowerValue, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_one_parts
       hNotFunctionCall hLower
@@ -730,6 +734,7 @@ theorem of_assign_one
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -780,7 +785,7 @@ theorem of_assign_one
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.Assign [name] expr) lower before after layout
-        sourceFinal target ctx) := by
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
   obtain ⟨pre, lowerValue, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_assign_one_parts
       hNotFunctionCall hLower
@@ -872,6 +877,7 @@ theorem of_expr_primitive
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -921,7 +927,8 @@ theorem of_expr_primitive
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.ExprStmtCall (.Call (.inl prim) args))
-        lower before after layout sourceFinal target ctx) := by
+        lower before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
   obtain ⟨pre, lowerExpr, hExprLower, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_expr_primitive_parts
       hNonterminal hLower
@@ -1057,6 +1064,7 @@ theorem of_expr_call
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -1114,7 +1122,8 @@ theorem of_expr_call
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.ExprStmtCall (.Call (.inr functionName) args))
-        lower before after layout sourceFinal target ctx) := by
+        lower before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_expr_call_parts hLower
   subst lower
@@ -1179,6 +1188,7 @@ theorem of_assign_call
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -1238,7 +1248,8 @@ theorem of_assign_call
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.Assign names (.Call (.inr functionName) callArgs))
-        lower before after layout sourceFinal target ctx) := by
+        lower before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_assign_call_parts hLower
   subst lower
@@ -1322,6 +1333,7 @@ theorem of_let_call
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
@@ -1383,7 +1395,8 @@ theorem of_let_call
     Nonempty
       (Result contract codeRel targetProgram.toFunctions
         (.Let names (some (.Call (.inr functionName) callArgs)))
-        lower before after layout sourceFinal target ctx) := by
+        lower before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
   obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_call_parts hLower
   subst lower
@@ -1567,6 +1580,7 @@ private theorem of_single_nonregular
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
     {layout finalLayout : List Name}
     {lower : List Functions.Stmt}
@@ -1600,12 +1614,12 @@ private theorem of_single_nonregular
       StateRelation.Vars.NamesWithin before.used finalLayout)
     (hExitScope :
       FunctionsObserverOutcome.ExitScopeRel
-        ctx outcome.mode finalLayout) :
+        sourceControl ctx outcome.mode finalLayout) :
     Nonempty
       { result :
           FunctionsObserverOutcome.ScopedOpenResult
             contract codeRel program lower before after layout
-            sourceFinal target ctx //
+            sourceFinal target ctx (sourceControl := sourceControl) //
         result.outcome = outcome } := by
   subst lower
   subst after
@@ -1625,7 +1639,7 @@ private theorem of_single_nonregular
   let result :
       FunctionsObserverOutcome.ScopedOpenResult
         contract codeRel program [stmt] before before layout
-        sourceFinal target ctx :=
+        sourceFinal target ctx (sourceControl := sourceControl) :=
     { finalLayout := finalLayout
       outcome := outcome
       finalCtx := ctx
@@ -1646,9 +1660,10 @@ theorem of_leave
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {compilerFuel sourceFuel : Nat}
     {before after : Fresh.State}
-    {layout leaveLayout : List Name}
+    {layout leaveLayout targetLeaveScope : List Name}
     {lower : List Functions.Stmt}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {source sourceFinal :
@@ -1667,9 +1682,13 @@ theorem of_leave
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
-    (hLeaveScope : ctx.leaveScope? = some leaveLayout)
+    (hSourceLeaveScope :
+      sourceControl.leaveScope? = some leaveLayout)
+    (hLeaveScope : ctx.leaveScope? = some targetLeaveScope)
     (hLeaveSubset :
       ∀ name, name ∈ leaveLayout → name ∈ layout)
+    (hLeaveTarget :
+      ∀ name, name ∈ leaveLayout → name ∈ targetLeaveScope)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1679,7 +1698,7 @@ theorem of_leave
         .ok sourceFinal) :
     Nonempty
       (Result contract codeRel program .Leave lower before after layout
-        sourceFinal target ctx) := by
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_leave_parts hLower
   subst lower
@@ -1707,7 +1726,7 @@ theorem of_leave
     rw [hSource]
     rfl
   let targetLeave :=
-    target.withSource (target.source.restrictTo leaveLayout)
+    target.withSource (target.source.restrictTo targetLeaveScope)
   have hTargetStmt :
       Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
@@ -1725,8 +1744,8 @@ theorem of_leave
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel leaveLayout source targetLeave := by
     simpa [targetLeave] using
-      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
-        hRel hLeaveSubset
+      StateRelation.Replay.scopedRel_restrict_target_scope_of_scopedExact
+        hRel hLeaveSubset hLeaveTarget
   have hSourceRestored :
       sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
     rw [hSourceFinal']
@@ -1759,7 +1778,11 @@ theorem of_leave
           hDomain.restrictTo)
       hScope hLeaveUsed
       (by
-        simpa [FunctionsObserverOutcome.ExitScopeRel] using hLeaveScope)
+        simp only [FunctionsObserverOutcome.ExitScopeRel,
+          Functions.Source.Effectful.Outcome.leave_mode]
+        exact
+          ⟨hSourceLeaveScope, targetLeaveScope,
+            hLeaveScope, hLeaveTarget⟩)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by
@@ -1773,9 +1796,10 @@ theorem of_break
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {compilerFuel sourceFuel : Nat}
     {before after : Fresh.State}
-    {layout breakLayout : List Name}
+    {layout breakLayout targetBreakScope : List Name}
     {lower : List Functions.Stmt}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {source sourceFinal :
@@ -1794,9 +1818,13 @@ theorem of_break
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
-    (hBreakScope : ctx.breakScope? = some breakLayout)
+    (hSourceBreakScope :
+      sourceControl.breakScope? = some breakLayout)
+    (hBreakScope : ctx.breakScope? = some targetBreakScope)
     (hBreakSubset :
       ∀ name, name ∈ breakLayout → name ∈ layout)
+    (hBreakTarget :
+      ∀ name, name ∈ breakLayout → name ∈ targetBreakScope)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1806,7 +1834,7 @@ theorem of_break
         .ok sourceFinal) :
     Nonempty
       (Result contract codeRel program .Break lower before after layout
-        sourceFinal target ctx) := by
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_break_parts hLower
   obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
@@ -1832,7 +1860,7 @@ theorem of_break
     rw [hSource]
     rfl
   let targetBreak :=
-    target.withSource (target.source.restrictTo breakLayout)
+    target.withSource (target.source.restrictTo targetBreakScope)
   have hTargetStmt :
       Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
@@ -1850,8 +1878,8 @@ theorem of_break
   have hWeakRel :
       StateRelation.Replay.ScopedRel codeRel breakLayout source targetBreak := by
     simpa [targetBreak] using
-      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
-        hRel hBreakSubset
+      StateRelation.Replay.scopedRel_restrict_target_scope_of_scopedExact
+        hRel hBreakSubset hBreakTarget
   have hSourceRestored :
       sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
     rw [hSourceFinal']
@@ -1884,7 +1912,11 @@ theorem of_break
           hDomain.restrictTo)
       hScope hBreakUsed
       (by
-        simpa [FunctionsObserverOutcome.ExitScopeRel] using hBreakScope)
+        simp only [FunctionsObserverOutcome.ExitScopeRel,
+          Functions.Source.Effectful.Outcome.brk_mode]
+        exact
+          ⟨hSourceBreakScope, targetBreakScope,
+            hBreakScope, hBreakTarget⟩)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by
@@ -1898,9 +1930,10 @@ theorem of_continue
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {compilerFuel sourceFuel : Nat}
     {before after : Fresh.State}
-    {layout continueLayout : List Name}
+    {layout continueLayout targetContinueScope : List Name}
     {lower : List Functions.Stmt}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {source sourceFinal :
@@ -1919,9 +1952,14 @@ theorem of_continue
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
-    (hContinueScope : ctx.continueScope? = some continueLayout)
+    (hSourceContinueScope :
+      sourceControl.continueScope? = some continueLayout)
+    (hContinueScope :
+      ctx.continueScope? = some targetContinueScope)
     (hContinueSubset :
       ∀ name, name ∈ continueLayout → name ∈ layout)
+    (hContinueTarget :
+      ∀ name, name ∈ continueLayout → name ∈ targetContinueScope)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1931,7 +1969,7 @@ theorem of_continue
         .ok sourceFinal) :
     Nonempty
       (Result contract codeRel program .Continue lower before after layout
-        sourceFinal target ctx) := by
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_continue_parts hLower
   obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
@@ -1957,7 +1995,7 @@ theorem of_continue
     rw [hSource]
     rfl
   let targetContinue :=
-    target.withSource (target.source.restrictTo continueLayout)
+    target.withSource (target.source.restrictTo targetContinueScope)
   have hTargetStmt :
       Functions.Source.Effectful.Stmt.run
           (Functions.ObserverSemantics.stateModel transcript)
@@ -1976,8 +2014,8 @@ theorem of_continue
       StateRelation.Replay.ScopedRel codeRel continueLayout
         source targetContinue := by
     simpa [targetContinue] using
-      StateRelation.Replay.scopedRel_restrict_target_of_scopedExact
-        hRel hContinueSubset
+      StateRelation.Replay.scopedRel_restrict_target_scope_of_scopedExact
+        hRel hContinueSubset hContinueTarget
   have hSourceRestored :
       sourceFinal.withSource (.Ok sourceShared sourceVars) = source := by
     rw [hSourceFinal']
@@ -2011,7 +2049,11 @@ theorem of_continue
           hDomain.restrictTo)
       hScope hContinueUsed
       (by
-        simpa [FunctionsObserverOutcome.ExitScopeRel] using hContinueScope)
+        simp only [FunctionsObserverOutcome.ExitScopeRel,
+          Functions.Source.Effectful.Outcome.cont_mode]
+        exact
+          ⟨hSourceContinueScope, targetContinueScope,
+            hContinueScope, hContinueTarget⟩)
   exact
     ⟨{ openResult := result
        regularLayout := fun hRegular => by

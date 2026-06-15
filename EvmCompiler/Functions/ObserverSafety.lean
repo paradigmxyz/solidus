@@ -183,6 +183,31 @@ theorem eval_of_safe
       .ok (final, outputs) := by
   simpa [primitiveSemantics, hSafe] using hEval
 
+theorem eval_iszero
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    (state : Functions.ObserverSemantics.State transcript)
+    (value : Word) :
+    (primitiveSemantics contract transcript).eval
+        .iszero state [value] =
+      .ok (state, [EvmYul.UInt256.isZero value]) := by
+  classical
+  apply eval_of_safe (by trivial)
+  simp [Functions.ObserverSemantics.primitiveSemantics,
+    Locals.ObserverSemantics.primitiveSemantics,
+    Locals.ObserverSemantics.basicOpObserver?,
+    Assembly.ResourceObserver.ofPrimOp?,
+    Structured.BasicOp.toPrimOp,
+    Locals.Source.PrimitiveSemantics.structured,
+    Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+    Assembly.PrimOp.continuingStep?,
+    Expressions.Structured.BasicOp.inputs,
+    Assembly.PrimStep.run, EvmYul.EVM.execUnOp,
+    EvmYul.Stack.pop, EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC, EvmYul.Stack.push,
+    Locals.Source.State.withShared]
+  rfl
+
 theorem terminal_parts
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

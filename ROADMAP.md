@@ -1670,8 +1670,13 @@ corridor.
   `RecursiveOpenStmtForward.ofCompound` is now the checked all-leaf dispatcher:
   declarations, assignments, primitive/user calls, and abrupt control consume
   statement-owned result interfaces with exact regular-flow layouts, while
-  block/if/switch/for delegate to the adjacent compound interface. The next
-  obligation is pass-owned block and compound-control closure.
+  block/if/switch/for delegate to the adjacent compound interface. Generic
+  block, `if`, and first-match/default `switch` preservation are checked.
+  Loop-owned compiler/source decomposition, asymmetric source/target handler
+  scopes, resource-sensitive zero/nonzero guard execution, source-store
+  stability across hidden target extensions, and reusable guarded-body lexical
+  closing are checked. The next obligation is recursive `for` outcome
+  composition, followed by mutual statement/block/function closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

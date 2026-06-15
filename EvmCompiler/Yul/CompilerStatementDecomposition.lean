@@ -363,6 +363,59 @@ theorem toFunctionsListUncheckedFuel?_switch_parts
                           by simpa using hScrutinee, hCases,
                           SwitchDefaultLowering.some hDefault, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_for_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {cond : AstExpr} {post body : List AstStmt}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before (.For cond post body) =
+        some (lower, after)) :
+    ∃ previous preCond lowerCond afterCond lowerPost afterPost lowerBody,
+      fuel = previous + 1 ∧
+      Expr.lower1Unchecked? before cond =
+        some (preCond, lowerCond, afterCond) ∧
+      List.toBlockUncheckedFuel? previous afterCond post =
+        some (lowerPost, afterPost) ∧
+      List.toBlockUncheckedFuel? previous afterPost body =
+        some (lowerBody, after) ∧
+      lower =
+        [.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+          lowerPost
+          { stmts :=
+              preCond ++
+                .if_
+                  (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+                  { stmts := [.brk] } ::
+                lowerBody.stmts }] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hCond : Expr.lower1Unchecked? before cond with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hCond] at hLower
+      | some condResult =>
+          rcases condResult with ⟨preCond, lowerCond, afterCond⟩
+          cases hPost :
+              List.toBlockUncheckedFuel? previous afterCond post with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hCond, hPost] at hLower
+          | some postResult =>
+              rcases postResult with ⟨lowerPost, afterPost⟩
+              cases hBody :
+                  List.toBlockUncheckedFuel? previous afterPost body with
+              | none =>
+                  simp [toFunctionsListUncheckedFuel?, hCond, hPost, hBody]
+                    at hLower
+              | some bodyResult =>
+                  rcases bodyResult with ⟨lowerBody, final⟩
+                  simp [toFunctionsListUncheckedFuel?, hCond, hPost, hBody]
+                    at hLower
+                  rcases hLower with ⟨rfl, rfl⟩
+                  exact
+                    ⟨previous, preCond, lowerCond, afterCond, lowerPost,
+                      afterPost, lowerBody, rfl, rfl, hPost, hBody, rfl⟩
+
 theorem toFunctionsListUncheckedFuel?_let_none_parts
     {fuel : Nat} {before after : Fresh.State}
     {names : List EvmYul.Identifier}

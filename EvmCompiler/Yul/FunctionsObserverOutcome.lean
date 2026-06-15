@@ -18,6 +18,11 @@ oracle.
 
 abbrev Trace := Assembly.ResourceTrace
 
+structure SourceControlScopes where
+  breakScope? : Option (List Name)
+  continueScope? : Option (List Name)
+  leaveScope? : Option (List Name)
+
 def LayoutWithinScope
     (layout : List Name) (ctx : Functions.Source.Ctx) : Prop :=
   ∀ name, name ∈ layout → name ∈ ctx.scope
@@ -35,15 +40,55 @@ theorem monoLayout
 end LayoutWithinScope
 
 def ExitScopeRel
+    (sourceControl : SourceControlScopes)
     (ctx : Functions.Source.Ctx)
     (mode : Locals.Source.Mode)
     (layout : List Name) : Prop :=
   match mode with
   | .regular => True
-  | .brk => ctx.breakScope? = some layout
-  | .cont => ctx.continueScope? = some layout
-  | .leave => ctx.leaveScope? = some layout
+  | .brk =>
+      sourceControl.breakScope? = some layout ∧
+        ∃ targetScope,
+          ctx.breakScope? = some targetScope ∧
+            ∀ name, name ∈ layout → name ∈ targetScope
+  | .cont =>
+      sourceControl.continueScope? = some layout ∧
+        ∃ targetScope,
+          ctx.continueScope? = some targetScope ∧
+            ∀ name, name ∈ layout → name ∈ targetScope
+  | .leave =>
+      sourceControl.leaveScope? = some layout ∧
+        ∃ targetScope,
+          ctx.leaveScope? = some targetScope ∧
+            ∀ name, name ∈ layout → name ∈ targetScope
   | .halt _ => False
+
+namespace ExitScopeRel
+
+theorem transportTarget
+    {sourceControl : SourceControlScopes}
+    {before after : Functions.Source.Ctx}
+    {mode : Locals.Source.Mode}
+    {layout : List Name}
+    (hControl : Functions.Source.Ctx.SameControl before after)
+    (hExit : ExitScopeRel sourceControl after mode layout) :
+    ExitScopeRel sourceControl before mode layout := by
+  cases hMode : mode <;>
+    simp [ExitScopeRel, hMode] at hExit ⊢
+  · obtain ⟨hSource, targetScope, hTarget, hContains⟩ := hExit
+    exact
+      ⟨hSource, targetScope,
+        hControl.breakScope.trans hTarget, hContains⟩
+  · obtain ⟨hSource, targetScope, hTarget, hContains⟩ := hExit
+    exact
+      ⟨hSource, targetScope,
+        hControl.continueScope.trans hTarget, hContains⟩
+  · obtain ⟨hSource, targetScope, hTarget, hContains⟩ := hExit
+    exact
+      ⟨hSource, targetScope,
+        hControl.leaveScope.trans hTarget, hContains⟩
+
+end ExitScopeRel
 
 def ModeRel {σ : Type} (source : EvmYul.Yul.State)
     (target : Functions.Source.Effectful.Outcome σ) : Prop :=
@@ -333,7 +378,8 @@ structure ScopedOpenResult
     (entryLayout : List Name)
     (sourceFinal : ObserverSemantics.SourceReplay.State transcript)
     (target : Functions.ObserverSemantics.State transcript)
-    (ctx : Functions.Source.Ctx) where
+    (ctx : Functions.Source.Ctx)
+    {sourceControl : SourceControlScopes} where
   finalLayout : List Name
   outcome :
     Functions.Source.Effectful.Outcome
@@ -364,7 +410,7 @@ structure ScopedOpenResult
   layoutScope :
     outcome.mode = .regular →
       LayoutWithinScope finalLayout finalCtx
-  exitScope : ExitScopeRel ctx outcome.mode finalLayout
+  exitScope : ExitScopeRel sourceControl ctx outcome.mode finalLayout
 
 namespace ScopedOpenResult
 
@@ -373,6 +419,7 @@ def appendRegular
     {contract : MemoryContract.Contract}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
     {leftLower rightLower : List Functions.Stmt}
     {initial middle final : Fresh.State}
     {entryLayout : List Name}
@@ -382,15 +429,17 @@ def appendRegular
     {ctx : Functions.Source.Ctx}
     (left :
       ScopedOpenResult contract codeRel program leftLower
-        initial middle entryLayout sourceMiddle target ctx)
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
     (hRegular : left.outcome.mode = .regular)
     (right :
       ScopedOpenResult contract codeRel program rightLower
         middle final left.finalLayout sourceFinal
-        left.outcome.state left.finalCtx) :
+        left.outcome.state left.finalCtx
+        (sourceControl := sourceControl)) :
     ScopedOpenResult contract codeRel program
       (leftLower ++ rightLower) initial final entryLayout
-      sourceFinal target ctx := by
+      sourceFinal target ctx (sourceControl := sourceControl) := by
   have hLeftOutcome :
       left.outcome =
         Functions.Source.Effectful.Outcome.regular
@@ -439,18 +488,31 @@ def appendRegular
         have hExit := right.exitScope
         cases hMode : right.outcome.mode <;>
           simp [ExitScopeRel, hMode] at hExit ⊢
-        · rw [left.control.breakScope]
-          exact hExit
-        · rw [left.control.continueScope]
-          exact hExit
-        · rw [left.control.leaveScope]
-          exact hExit }
+        · rcases hExit with
+            ⟨hSource, targetScope, hTarget, hWithin⟩
+          exact
+            ⟨hSource, targetScope,
+              left.control.breakScope.trans hTarget,
+              hWithin⟩
+        · rcases hExit with
+            ⟨hSource, targetScope, hTarget, hWithin⟩
+          exact
+            ⟨hSource, targetScope,
+              left.control.continueScope.trans hTarget,
+              hWithin⟩
+        · rcases hExit with
+            ⟨hSource, targetScope, hTarget, hWithin⟩
+          exact
+            ⟨hSource, targetScope,
+              left.control.leaveScope.trans hTarget,
+              hWithin⟩ }
 
 def appendNonregular
     {transcript : Trace}
     {contract : MemoryContract.Contract}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
     {leftLower rightLower : List Functions.Stmt}
     {initial middle final : Fresh.State}
     {entryLayout : List Name}
@@ -460,12 +522,13 @@ def appendNonregular
     {ctx : Functions.Source.Ctx}
     (left :
       ScopedOpenResult contract codeRel program leftLower
-        initial middle entryLayout sourceFinal target ctx)
+        initial middle entryLayout sourceFinal target ctx
+        (sourceControl := sourceControl))
     (hNonregular : left.outcome.mode ≠ .regular)
     (hSuffixFresh : Fresh.Extends middle final) :
     ScopedOpenResult contract codeRel program
       (leftLower ++ rightLower) initial final entryLayout
-      sourceFinal target ctx := by
+      sourceFinal target ctx (sourceControl := sourceControl) := by
   exact
     { finalLayout := left.finalLayout
       outcome := left.outcome
@@ -495,6 +558,7 @@ def empty
     {contract : MemoryContract.Contract}
     {codeRel : StateRelation.CodeRel}
     {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
     {fresh : Fresh.State}
     {layout : List Name}
     {source : ObserverSemantics.SourceReplay.State transcript}
@@ -511,7 +575,7 @@ def empty
       StateRelation.Vars.NamesWithin fresh.used layout)
     (hLayoutScope : LayoutWithinScope layout ctx) :
     ScopedOpenResult contract codeRel program [] fresh fresh layout
-      source target ctx := by
+      source target ctx (sourceControl := sourceControl) := by
   have hOutcomeRel :
       ScopedOutcomeRel codeRel layout source
         (Functions.Source.Effectful.Outcome.regular target) := by
