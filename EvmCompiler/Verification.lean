@@ -93,6 +93,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists
+#check EvmCompiler.Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
 #check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
@@ -169,6 +170,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering
 #check EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
 #check EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_length_lowerArgs_eq
+#check EvmCompiler.Yul.FunctionList.UncheckedLowering
+#check EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
+#check EvmCompiler.Yul.FunctionList.UncheckedLowering.names
+#check EvmCompiler.Yul.FunctionList.UncheckedLowering.member
+#check EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem
+#check EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
+#check EvmCompiler.Yul.Contract.functionEntries_names_nodup
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

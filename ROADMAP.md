@@ -1562,6 +1562,13 @@ corridor.
   together with lower-argument arity and fresh-state extension facts. The
   semantic proof can therefore induct on the checked compiler derivation
   instead of duplicating the lowering or accepting temporary evidence.
+  Ordinary whole-function lowering now also exposes a threaded
+  `UncheckedLowering` derivation. Finmap source lookup, source-name
+  uniqueness, and that derivation recover the exact compiled `FunDef` selected
+  by canonical Functions lookup, so recursive call preservation does not need
+  a public callee oracle. The next checked boundary composes
+  `UncheckedBoundLowering` with `Prepared` to execute every generated
+  argument-binding preamble before entering that selected callee.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -1135,6 +1135,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.generated
 #print axioms EvmCompiler.Yul.Fresh.fresh?_components
 #print axioms EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+#print axioms EvmCompiler.Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
+#print axioms EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
+#print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.names
+#print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.find_of_mem
+#print axioms EvmCompiler.Yul.Contract.functionEntries_mem_of_lookup
+#print axioms EvmCompiler.Yul.Contract.functionEntries_names_nodup
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

@@ -1002,6 +1002,31 @@ theorem name_eq_of_find?_eq_some
       · apply ih
         simpa [find?, hName] using hFind
 
+theorem find?_eq_some_of_mem_of_names_nodup
+    {functions : List FunDef} {fn : FunDef}
+    (hMem : fn ∈ functions)
+    (hNodup : (functions.map fun entry => entry.name).Nodup) :
+    find? fn.name functions = some fn := by
+  induction functions with
+  | nil =>
+      simp at hMem
+  | cons head rest ih =>
+      simp only [List.mem_cons] at hMem
+      rcases hMem with hEq | hTail
+      · subst head
+        simp [find?]
+      · have hHeadNe : head.name ≠ fn.name := by
+          intro hName
+          have hFnNameMem :
+              fn.name ∈ rest.map fun entry => entry.name :=
+            List.mem_map.mpr ⟨fn, hTail, rfl⟩
+          have hHeadNotMem :
+              head.name ∉ rest.map fun entry => entry.name :=
+            (List.nodup_cons.mp hNodup).1
+          exact hHeadNotMem (by simpa [hName] using hFnNameMem)
+        simp [find?, hHeadNe,
+          ih hTail (List.nodup_cons.mp hNodup).2]
+
 end FunList
 
 mutual

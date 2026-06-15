@@ -2807,6 +2807,26 @@ def toFunDefUncheckedFuel? (fuel : Nat) (state : Fresh.State) (name : Name) :
           body := lowerBody }
       some (lowerFn, state')
 
+theorem toFunDefUncheckedFuel?_name
+    {fuel : Nat} {state state' : Fresh.State}
+    {name : Name} {fn : AstFunctionDefinition}
+    {lower : Functions.FunDef}
+    (hLower :
+      toFunDefUncheckedFuel? fuel state name fn =
+        some (lower, state')) :
+    lower.name = name := by
+  cases fn with
+  | Def params returns body =>
+      cases hBody :
+          Stmt.List.toBlockUncheckedFuel? fuel state body with
+      | none =>
+          simp [toFunDefUncheckedFuel?, hBody] at hLower
+      | some result =>
+          rcases result with ⟨lowerBody, finalState⟩
+          simp [toFunDefUncheckedFuel?, hBody] at hLower
+          rcases hLower with ⟨rfl, rfl⟩
+          rfl
+
 noncomputable def toFunDef? (state : Fresh.State) (name : Name) :
     AstFunctionDefinition → Option (Functions.FunDef × Fresh.State)
   | fn => toFunDefFuel? (fuel fn) state name fn
@@ -2864,6 +2884,159 @@ def toFunDefsUncheckedFuel? (fuel : Nat) :
         FunctionDefinition.toFunDefUncheckedFuel? fuel state name fn
       let (lowerRest, state'') ← toFunDefsUncheckedFuel? fuel state' rest
       some (lowerFn :: lowerRest, state'')
+
+inductive UncheckedLowering (fuel : Nat) :
+    Fresh.State → List (Name × AstFunctionDefinition) →
+      List Functions.FunDef → Fresh.State → Prop where
+  | nil (state : Fresh.State) :
+      UncheckedLowering fuel state [] [] state
+  | cons
+      {state stateHead stateFinal : Fresh.State}
+      {name : Name} {fn : AstFunctionDefinition}
+      {rest : List (Name × AstFunctionDefinition)}
+      {lowerFn : Functions.FunDef} {lowerRest : List Functions.FunDef}
+      (hHead :
+        FunctionDefinition.toFunDefUncheckedFuel?
+            fuel state name fn =
+          some (lowerFn, stateHead))
+      (hRest :
+        UncheckedLowering fuel stateHead rest lowerRest stateFinal) :
+      UncheckedLowering fuel state ((name, fn) :: rest)
+        (lowerFn :: lowerRest) stateFinal
+
+namespace UncheckedLowering
+
+theorem to_toFunDefsUncheckedFuel?
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state') :
+    toFunDefsUncheckedFuel? fuel state functions =
+      some (lower, state') := by
+  induction hLowering with
+  | nil =>
+      rfl
+  | cons hHead _hRest ih =>
+      simp [toFunDefsUncheckedFuel?, hHead, ih]
+
+theorem names
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state') :
+    lower.map (fun fn => fn.name) = functions.map Prod.fst := by
+  induction hLowering with
+  | nil =>
+      rfl
+  | @cons state stateHead stateFinal name fn rest lowerFn lowerRest
+      hHead hRest ih =>
+      cases fn with
+      | Def params returns body =>
+          cases hBody :
+              Stmt.List.toBlockUncheckedFuel? fuel state body with
+          | none =>
+              simp [FunctionDefinition.toFunDefUncheckedFuel?, hBody]
+                at hHead
+          | some bodyResult =>
+              rcases bodyResult with ⟨lowerBody, bodyState⟩
+              simp [FunctionDefinition.toFunDefUncheckedFuel?, hBody]
+                at hHead
+              rcases hHead with ⟨rfl, rfl⟩
+              simp [ih]
+
+theorem member
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state')
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ functions) :
+    ∃ before after lowerFn,
+      lowerFn ∈ lower ∧
+      FunctionDefinition.toFunDefUncheckedFuel?
+          fuel before name fn =
+        some (lowerFn, after) := by
+  induction hLowering with
+  | nil =>
+      simp at hMem
+  | @cons state stateHead stateFinal headName headFn rest
+      lowerHead lowerRest hHead hRest ih =>
+      simp only [List.mem_cons, Prod.mk.injEq] at hMem
+      rcases hMem with hHere | hTail
+      · rcases hHere with ⟨rfl, rfl⟩
+        exact ⟨state, stateHead, lowerHead, by simp, hHead⟩
+      · obtain ⟨before, after, lowerFn, hLowerMem, hLowerFn⟩ :=
+          ih hTail
+        exact
+          ⟨before, after, lowerFn,
+            List.mem_cons_of_mem lowerHead hLowerMem, hLowerFn⟩
+
+theorem find_of_mem
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLowering :
+      UncheckedLowering fuel state functions lower state')
+    (hNames : (functions.map Prod.fst).Nodup)
+    {name : Name} {fn : AstFunctionDefinition}
+    (hMem : (name, fn) ∈ functions) :
+    ∃ before after lowerFn,
+      Functions.Source.FunList.find? name lower = some lowerFn ∧
+      FunctionDefinition.toFunDefUncheckedFuel?
+          fuel before name fn =
+        some (lowerFn, after) := by
+  obtain ⟨before, after, lowerFn, hLowerMem, hLowerFn⟩ :=
+    hLowering.member hMem
+  have hLowerName : lowerFn.name = name :=
+    FunctionDefinition.toFunDefUncheckedFuel?_name hLowerFn
+  have hLowerNames : (lower.map fun entry => entry.name).Nodup := by
+    rw [hLowering.names]
+    exact hNames
+  have hFind :
+      Functions.Source.FunList.find? lowerFn.name lower =
+        some lowerFn :=
+    Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
+      hLowerMem hLowerNames
+  exact ⟨before, after, lowerFn, by simpa [hLowerName] using hFind,
+    hLowerFn⟩
+
+end UncheckedLowering
+
+theorem uncheckedLowering_of_toFunDefsUncheckedFuel?
+    {fuel : Nat} {state state' : Fresh.State}
+    {functions : List (Name × AstFunctionDefinition)}
+    {lower : List Functions.FunDef}
+    (hLower :
+      toFunDefsUncheckedFuel? fuel state functions =
+        some (lower, state')) :
+    UncheckedLowering fuel state functions lower state' := by
+  induction functions generalizing state lower state' with
+  | nil =>
+      simp [toFunDefsUncheckedFuel?] at hLower
+      rcases hLower with ⟨rfl, rfl⟩
+      exact UncheckedLowering.nil state
+  | cons entry rest ih =>
+      rcases entry with ⟨name, fn⟩
+      cases hHead :
+          FunctionDefinition.toFunDefUncheckedFuel?
+            fuel state name fn with
+      | none =>
+          simp [toFunDefsUncheckedFuel?, hHead] at hLower
+      | some headResult =>
+          rcases headResult with ⟨lowerFn, stateHead⟩
+          cases hRest :
+              toFunDefsUncheckedFuel? fuel stateHead rest with
+          | none =>
+              simp [toFunDefsUncheckedFuel?, hHead, hRest] at hLower
+          | some restResult =>
+              rcases restResult with ⟨lowerRest, stateFinal⟩
+              simp [toFunDefsUncheckedFuel?, hHead, hRest] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                UncheckedLowering.cons hHead (ih hRest)
 
 noncomputable def toFunDefs? :
     Fresh.State → List (Name × AstFunctionDefinition) →
@@ -2925,6 +3098,63 @@ noncomputable def functionEntries (contract : AstContract) :
     match contract.functions.lookup name with
     | some fn => some (name, fn)
     | none => none
+
+theorem functionEntries_mem_of_lookup
+    {contract : AstContract} {name : Name}
+    {fn : AstFunctionDefinition}
+    (hLookup : contract.functions.lookup name = some fn) :
+    (name, fn) ∈ functionEntries contract := by
+  unfold functionEntries
+  apply List.mem_filterMap.mpr
+  refine ⟨name, ?_, ?_⟩
+  · have hMem : name ∈ contract.functions :=
+      Finmap.mem_of_lookup_eq_some hLookup
+    simpa [Finmap.mem_keys] using hMem
+  · simp [hLookup]
+
+theorem functionEntries_names_nodup (contract : AstContract) :
+    ((functionEntries contract).map Prod.fst).Nodup := by
+  unfold functionEntries
+  let emit :=
+    fun name =>
+      match contract.functions.lookup name with
+      | some fn => some (name, fn)
+      | none => none
+  have hKeys : contract.functions.keys.toList.Nodup :=
+    contract.functions.keys.nodup_toList
+  change ((contract.functions.keys.toList.filterMap emit).map Prod.fst).Nodup
+  generalize contract.functions.keys.toList = keys at hKeys ⊢
+  induction keys with
+  | nil =>
+      simp
+  | cons head tail ih =>
+      have hNodup := List.nodup_cons.mp hKeys
+      cases hLookup : contract.functions.lookup head with
+      | none =>
+          simp [emit, hLookup]
+          exact ih hNodup.2
+      | some fn =>
+          simp only [List.filterMap_cons, emit, hLookup, Option.toList_some,
+            List.flatMap_cons, List.map_cons, List.map_nil,
+            List.append_nil]
+          apply List.nodup_cons.mpr
+          constructor
+          · intro hHead
+            obtain ⟨entry, hEntryMem, hEntryName⟩ :=
+              List.mem_map.mp hHead
+            obtain ⟨candidate, hCandidateMem, hCandidate⟩ :=
+              List.mem_filterMap.mp hEntryMem
+            cases hCandidateLookup :
+                contract.functions.lookup candidate with
+            | none =>
+                simp [emit, hCandidateLookup] at hCandidate
+            | some candidateFn =>
+                simp [emit, hCandidateLookup] at hCandidate
+                rcases hCandidate with ⟨rfl⟩
+                simp at hEntryName
+                subst candidate
+                exact hNodup.1 hCandidateMem
+          · exact ih hNodup.2
 
 noncomputable def names (contract : AstContract) : List Name :=
   Stmt.names contract.dispatcher ++ FunctionList.names (functionEntries contract)
