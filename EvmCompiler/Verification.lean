@@ -546,6 +546,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.callDispatcher_ok_parts
 #check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_code_of_ok
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_find_owner_of_ok
+#check EvmCompiler.Yul.Source.Effectful.call_succ_of_parts
+#check EvmCompiler.Yul.Source.Effectful.eval_function_of_parts
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero

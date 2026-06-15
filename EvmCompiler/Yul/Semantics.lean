@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.SolcValidation
+import EvmCompiler.Yul.Installation
 import EvmCompiler.Objects.Semantics
 import EvmCompiler.Objects.SourceSemantics
 import EvmYul.Yul.Interpreter
@@ -20,9 +21,7 @@ namespace Program
 def installContract (program : Program) : ReferenceState → ReferenceState
   | .Ok shared store =>
       .Ok
-        { shared with
-          executionEnv :=
-            { shared.executionEnv with code := program.contract } }
+        (Source.Installation.installContract program.contract shared)
         store
   | .OutOfFuel => .OutOfFuel
   | .Checkpoint jump => .Checkpoint jump
@@ -31,11 +30,8 @@ def installContractWithCodeImage (program : Program) (codeImage : ByteArray) :
     ReferenceState → ReferenceState
   | .Ok shared store =>
       .Ok
-        { shared with
-          executionEnv :=
-            { shared.executionEnv with
-              code := program.contract
-              codeBytes := codeImage } }
+        (Source.Installation.installContractWithCodeImage
+          program.contract codeImage shared)
         store
   | .OutOfFuel => .OutOfFuel
   | .Checkpoint jump => .Checkpoint jump

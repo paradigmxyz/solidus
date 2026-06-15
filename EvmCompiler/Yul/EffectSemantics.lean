@@ -585,6 +585,38 @@ theorem call_succ_ok_parts
                     ⟨yulContract, params, returns, body, stateAfterBody,
                       rfl, hFunction, hBody, rfl, rfl⟩
 
+theorem call_succ_of_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {args : List Word}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterBody : σ}
+    {yulContract : EvmYul.Account .Yul}
+    {params returns : List EvmYul.Identifier}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    (hContract :
+      (model.source state).sharedState.accountMap.find?
+          (model.source state).executionEnv.codeOwner =
+        some yulContract)
+    (hFunction :
+      (codeOverride.getD yulContract.code).functions.lookup functionName =
+        some (.Def params returns body))
+    (hBody :
+      exec model prim fuel (.Block body) codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall params returns args))) =
+        .ok stateAfterBody) :
+    call model prim (fuel + 1) args (some functionName)
+        codeOverride state =
+      .ok
+        (model.withSource stateAfterBody
+            (((model.source stateAfterBody).reviveJump.overwrite?
+                (model.source state)).setStore (model.source state)),
+          List.map (model.source stateAfterBody).lookup! returns) := by
+  simp [call, hContract, hFunction, hBody]
+
 theorem callDispatcher_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
@@ -736,6 +768,27 @@ theorem eval_function_ok_parts
                   exact
                     ⟨callFuel, stateAfterArgs, reversedValues,
                       values, rfl, hArgs, hCall, rfl⟩
+
+theorem eval_function_of_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {callFuel : Nat}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs final : σ}
+    {reversedValues returnValues : List Word}
+    (hArgs :
+      evalArgs model prim callFuel args.reverse codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model prim callFuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, returnValues)) :
+    eval model prim (callFuel + 1) (.Call (.inr functionName) args)
+        codeOverride state =
+      .ok (final, returnValues.head!) := by
+  simp [eval, evalValues, hArgs, hCall]
 
 theorem evalArgs_ok_length {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :

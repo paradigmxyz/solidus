@@ -150,7 +150,12 @@ Adjacent boundary status:
   boundary. Static-context permission for storage writes and logs is enforced
   by canonical Functions safety semantics rather than exposed as a public
   caller premise. Recursive expression, statement, control, call, and
-  whole-program inversion remain.
+  whole-program inversion remain. The source installation boundary now
+  installs the program into the active code-owner account as well as the
+  execution environment, preserving existing account state and inserting a
+  default account when absent. Canonical source-semantics constructor lemmas
+  expose successful internal-call and function-expression reconstruction
+  without unfolding the interpreter in compiler-owned proof modules.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

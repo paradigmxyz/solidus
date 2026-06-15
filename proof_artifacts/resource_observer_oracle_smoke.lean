@@ -1527,6 +1527,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.callDispatcher_ok_parts
 #print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_code_of_ok
+#print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_find_owner_of_ok
+#print axioms EvmCompiler.Yul.Source.Effectful.call_succ_of_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.eval_function_of_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero

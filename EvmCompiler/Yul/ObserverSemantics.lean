@@ -1,6 +1,7 @@
 import EvmCompiler.Assembly.Observer
 import EvmCompiler.Simulation.ResourceReplay
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.Installation
 import EvmCompiler.Yul.Primitive
 
 namespace EvmCompiler
@@ -364,9 +365,8 @@ def installContract {transcript : Trace} (program : Yul.Program)
     (match state.source with
     | .Ok shared store =>
         .Ok
-          { shared with
-            executionEnv :=
-              { shared.executionEnv with code := program.contract } }
+          (Yul.Source.Installation.installContract
+            program.contract shared)
           store
     | .OutOfFuel => .OutOfFuel
     | .Checkpoint jump => .Checkpoint jump)
@@ -399,6 +399,36 @@ theorem installContract_code_of_ok
       simp [installContract, hSource] at hOk
       rcases hOk with ⟨hShared, _hVars⟩
       rw [← hShared]
+      exact
+        Yul.Source.Installation.installContract_code
+          program.contract sourceShared
+  | OutOfFuel =>
+      simp [installContract, hSource] at hOk
+  | Checkpoint jump =>
+      simp [installContract, hSource] at hOk
+
+theorem installContract_find_owner_of_ok
+    {transcript : Trace} {program : Yul.Program}
+    {state : State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hOk :
+      (installContract program state).source = .Ok shared vars) :
+    ∃ account,
+      shared.accountMap.find? shared.executionEnv.codeOwner = some account ∧
+        account.code = program.contract := by
+  cases hSource : state.source with
+  | Ok sourceShared sourceVars =>
+      simp [installContract, hSource] at hOk
+      rcases hOk with ⟨hShared, _hVars⟩
+      subst shared
+      refine
+        ⟨{ ((sourceShared.accountMap.find?
+                sourceShared.executionEnv.codeOwner).getD default) with
+            code := program.contract },
+          Yul.Source.Installation.installContract_find_owner
+            program.contract sourceShared,
+          rfl⟩
   | OutOfFuel =>
       simp [installContract, hSource] at hOk
   | Checkpoint jump =>
