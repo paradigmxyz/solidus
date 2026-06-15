@@ -1076,6 +1076,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.codeImage_eq
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.codeSize_eq
+#print axioms EvmCompiler.Yul.StateRelation.AccountMap.dead_eq
+#print axioms EvmCompiler.Yul.StateRelation.AccountMap.codeHash_eq
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.storageValue_eq
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.transientStorageValue_eq
 #print axioms EvmCompiler.Yul.StateRelation.World.addAccessedAccount

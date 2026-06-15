@@ -45,6 +45,31 @@ theorem elim_eq
       | some rightValue' =>
           exact hValue hRel
 
+theorem option_eq
+    {α β γ : Type} {rel : α → β → Prop}
+    {left : Option α} {right : Option β}
+    (hRel : OptionRel rel left right)
+    (defaultValue : γ)
+    (leftValue : α → γ) (rightValue : β → γ)
+    (hValue :
+      ∀ {leftValue' rightValue'},
+        rel leftValue' rightValue' →
+          leftValue leftValue' = rightValue rightValue') :
+    left.option defaultValue leftValue =
+      right.option defaultValue rightValue := by
+  cases left with
+  | none =>
+      cases right with
+      | none => rfl
+      | some rightValue' =>
+          simp [StateRelation.OptionRel] at hRel
+  | some leftValue' =>
+      cases right with
+      | none =>
+          simp [StateRelation.OptionRel] at hRel
+      | some rightValue' =>
+          exact hValue hRel
+
 end OptionRel
 
 namespace ExecutionEnv
@@ -81,6 +106,8 @@ structure Rel (codeRel : CodeRel)
   codeImage : source.codeBytes = target.code
   codeBytes : source.codeBytes = target.codeBytes
   transientStorage : source.tstorage = target.tstorage
+  emptyAccount :
+    source.emptyAccount = target.emptyAccount
 
 theorem codeImage_eq
     {codeRel : CodeRel}
@@ -142,7 +169,10 @@ theorem updateStorage
             hRel.codeBytes
         transientStorage := by
           simpa [EvmYul.Account.updateStorage, hZero] using
-            hRel.transientStorage }
+            hRel.transientStorage
+        emptyAccount := by
+          simpa [EvmYul.Account.updateStorage, hZero,
+            EvmYul.Account.emptyAccount] using hRel.emptyAccount }
 
 theorem updateTransientStorage
     {codeRel : CodeRel}
@@ -176,7 +206,10 @@ theorem updateTransientStorage
             hRel.codeBytes
         transientStorage := by
           simp [EvmYul.Account.updateTransientStorage, hZero,
-            hRel.transientStorage] }
+            hRel.transientStorage]
+        emptyAccount := by
+          simpa [EvmYul.Account.updateTransientStorage, hZero,
+            EvmYul.Account.emptyAccount] using hRel.emptyAccount }
 
 end Account
 
@@ -272,6 +305,41 @@ theorem codeSize_eq
               EvmYul.UInt256.ofNat
                 (EvmYul.State.accountCodeImage targetAccount).size
           rw [Account.codeImage_eq hAccount]
+
+theorem dead_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    EvmYul.State.dead source address =
+      EvmYul.State.dead target address := by
+  unfold EvmYul.State.dead
+  apply OptionRel.option_eq (hRel address)
+  intro sourceAccount targetAccount hAccount
+  exact hAccount.emptyAccount
+
+theorem codeHash_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    (source.find? address).option ⟨0⟩
+        (fun account =>
+          EvmYul.UInt256.ofNat <|
+            EvmYul.fromByteArrayBigEndian
+              (ffi.KEC
+                (EvmYul.State.accountCodeImage account))) =
+      (target.find? address).option ⟨0⟩
+        (fun account =>
+          EvmYul.UInt256.ofNat <|
+            EvmYul.fromByteArrayBigEndian
+              (ffi.KEC
+                (EvmYul.State.accountCodeImage account))) := by
+  apply OptionRel.option_eq (hRel address)
+  intro sourceAccount targetAccount hAccount
+  rw [Account.codeImage_eq hAccount]
 
 theorem storageValue_eq
     {codeRel : CodeRel}

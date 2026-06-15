@@ -1526,13 +1526,12 @@ corridor.
   whole-world equality. The primitive interface has separate exact-arity
   support for permissive imported-Yul handlers, and the state relation
   explicitly equates Yul code images with executable EVM code for
-  `codesize`/`codecopy` families. `extcodehash` remains a theorem-boundary
-  item because imported Yul emptiness tests the code AST while EVM emptiness
-  tests bytecode; that mismatch must be resolved in the canonical relation or
-  semantics, not assumed in the primitive proof. The next boundary is the remaining
-  compiler-selected primitive families and structural expression preservation
-  over this relation, followed by statements, loops, calls, and whole-main
-  composition.
+  `codesize`/`codecopy` families. The account relation now also carries
+  empty-account equivalence, so `extcodehash` preserves both the dead-account
+  zero case and the executable code-image hash case. The next boundary is the
+  compiler-selected primitive dispatcher and structural expression
+  preservation over this relation, followed by statements, loops, calls, and
+  whole-main composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -356,6 +356,9 @@ inductive WorldUnaryAccess :
   | extcodesize :
       WorldUnaryAccess (.Env .EXTCODESIZE) .extcodesize
         EvmYul.State.extCodeSize EvmYul.State.extCodeSize
+  | extcodehash :
+      WorldUnaryAccess (.Env .EXTCODEHASH) .extcodehash
+        EvmYul.State.extCodeHash EvmYul.State.extCodeHash
   | sload :
       WorldUnaryAccess (.StackMemFlow .SLOAD) .sload
         EvmYul.State.sload EvmYul.State.sload
@@ -413,6 +416,25 @@ theorem WorldUnaryAccess.related
           EvmYul.State.lookupAccount, address] using
           StateRelation.AccountMap.codeSize_eq
             hRel.accounts address
+  | extcodehash =>
+      have hDead :
+          EvmYul.State.dead source.accountMap address =
+            EvmYul.State.dead target.accountMap address :=
+        StateRelation.AccountMap.dead_eq hRel.accounts address
+      constructor
+      · by_cases hIsDead :
+            EvmYul.State.dead target.accountMap address = true
+        all_goals
+          simpa [EvmYul.State.extCodeHash, address, hDead,
+            hIsDead] using
+            StateRelation.World.addAccessedAccount hRel address
+      · by_cases hIsDead :
+            EvmYul.State.dead target.accountMap address = true
+        · simp [EvmYul.State.extCodeHash, address, hDead, hIsDead]
+        · simpa [EvmYul.State.extCodeHash,
+            EvmYul.State.lookupAccount, address, hDead, hIsDead] using
+            StateRelation.AccountMap.codeHash_eq
+              hRel.accounts address
   | sload =>
       let owner := source.executionEnv.codeOwner
       have hTargetOwner :
