@@ -757,8 +757,12 @@ compiler cleanup through the
   that compiler selection without fabricating allocator state. The recursive
   result tower and `ResourceRecursiveBlockForward` are now generalized over
   this resource index, and the complete scratch recursion lifts into that API.
-  The remaining recursive proof is the stack-only constructor, followed by
-  final cleanup and matching whole-function/whole-program backward adequacy.
+  The stack-only regular-loop head now composes initializer, guarded loop
+  induction, body/post recursion, cleanup, and break/continue destinations
+  through the same resource-indexed API. The remaining recursive proof is
+  activation-exit loop heads, no-frame selected calls, and the shared
+  stack-only constructor, followed by final cleanup and matching
+  whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1421,9 +1425,11 @@ corridor.
   resource interface and activation-exit transport. Resource-generic loop
   body/post boundaries and regular/abrupt recursive scoped adapters are also
   checked through statement-owned cleanup and canonical control destinations.
-  The remaining Functions work is regular and post-initializer loop head
-  composition, selected calls, the recursive constructor, whole-program
-  forward packaging, and matching backward adequacy.
+  The complete regular stack-only loop head is checked through the neutral
+  guarded source-fuel theorem and exact compiler cursors. The remaining
+  Functions work is post-initializer activation-exit loop heads, selected
+  no-frame calls, the recursive constructor, whole-program forward packaging,
+  and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
