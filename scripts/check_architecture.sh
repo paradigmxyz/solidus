@@ -183,11 +183,19 @@ report_matches \
 report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
+  EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
+  EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+
+report_matches \
+  'The Yul observer boundary must not implement a parallel compiler:' \
+  '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(toObjectsWithObservers\?|compileWithObservers\?|toFunctionsListUncheckedFuel\?|toFunDefsUncheckedFuel\?)' \
+  EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \

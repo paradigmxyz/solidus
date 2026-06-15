@@ -1494,8 +1494,16 @@ corridor.
   induction, and the public `callDispatcher_refines` theorem accepts only the
   primitive refinement interface. Guarded `SafeSemantics.Program.ExactReplay`
   now yields ordinary observer exact replay with the same consumed transcript.
-  The next boundary is adjacent Yul-to-Functions preservation for that guarded
-  source run.
+  Adjacent Yul-to-Functions state ownership is now checked: visible source
+  names use a scoped relation, the imported Yul store carries an exact-domain
+  invariant for declaration/assignment checks, compiler-private target
+  temporaries are hidden, and block scope restoration preserves both
+  invariants. `FunctionsObserverCompiler` derives body/function lowering and
+  the generated Functions program from the ordinary
+  `Program.toObjectsWithObservers?` equation; it does not implement a parallel
+  compiler. The next boundary is generic safe primitive and expression
+  preservation over this relation, followed by statements, loops, calls, and
+  whole-main composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

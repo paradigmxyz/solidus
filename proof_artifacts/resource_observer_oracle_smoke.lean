@@ -1022,6 +1022,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.run_eq_observer_of_ok
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactReplay.observerReplay
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactTerminates.observerTerminates
+#print axioms EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok
+#print axioms EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
+#print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

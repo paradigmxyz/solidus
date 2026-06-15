@@ -1,6 +1,6 @@
 import EvmCompiler.Functions.ObserverSemantics
 import EvmCompiler.Simulation.ObserverPass
-import EvmCompiler.Yul.Compiler
+import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.StateRelation
 

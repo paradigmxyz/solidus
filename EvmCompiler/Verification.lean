@@ -52,6 +52,7 @@ import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.ObjectSemantics
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
@@ -86,6 +87,13 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverContext.classify_let_transition
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.gas
 #check EvmCompiler.Functions.AllocationObserverExpression.PrimitiveForward.msize
+#check EvmCompiler.Yul.StateRelation.Vars.ScopedRel
+#check EvmCompiler.Yul.StateRelation.Vars.DomainExact
+#check EvmCompiler.Yul.StateRelation.Vars.checkDeclaration_ok
+#check EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
+#check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
+#check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate
