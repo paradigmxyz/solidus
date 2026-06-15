@@ -346,6 +346,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLeave
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetNone
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
+#check EvmCompiler.Yul.SolcValidation.StmtsOutVars
+#check EvmCompiler.Yul.SolcValidation.stmtsOk_cons_parts
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopeOptionWithin
+#check EvmCompiler.Yul.FunctionsObserverForward.ControlContextRel
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopedStmtResult
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenStmtForward
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

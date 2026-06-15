@@ -1295,6 +1295,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLeave
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetNone
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
+#print axioms EvmCompiler.Yul.SolcValidation.stmtsOk_cons_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward.ofStmt
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

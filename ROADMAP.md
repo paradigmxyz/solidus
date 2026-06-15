@@ -1659,9 +1659,14 @@ corridor.
   checkpoints, Functions-owned handler-scope restriction, and ordinary direct
   lowering through the same weak abrupt-flow relation as leave. A generic
   single-nonregular assembler owns their common block execution shape without
-  interpreting control in the observer layer. The next obligation is the
-  structural statement-list induction, followed by block and compound-control
-  closure.
+  interpreting control in the observer layer. Source validation now owns the
+  canonical statement-list output-layout fold and cons inversion.
+  `RecursiveOpenListForward.ofStmt` proves the complete structural
+  statement-list induction over the real compiler and source semantics:
+  regular heads recurse through exact layout/control invariants, while abrupt
+  heads absorb the untouched suffix through compiler freshness monotonicity.
+  The next obligation is constructing the all-statement dispatcher, followed
+  by block and compound-control closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

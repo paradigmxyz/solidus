@@ -274,6 +274,11 @@ def StmtOutVars (vars : List Name) : AstStmt → List Name
   | .Let names _value? => identNames names ++ vars
   | _ => vars
 
+def StmtsOutVars : List Name → List AstStmt → List Name
+  | vars, [] => vars
+  | vars, head :: tail =>
+      StmtsOutVars (StmtOutVars vars head) tail
+
 mutual
   def ExprOk? (profile : DialectProfile) (contract : AstContract)
       (vars : List Name) :
@@ -360,6 +365,24 @@ mutual
           CasesOk? profile contract functionNames vars canBreak canContinue
             canLeave rest
 end
+
+theorem stmtsOk_cons_parts
+    {profile : DialectProfile} {contract : AstContract}
+    {functionNames vars : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {head : AstStmt} {tail : List AstStmt}
+    (hOk :
+      StmtsOk? profile contract functionNames vars
+          canBreak canContinue canLeave (head :: tail) =
+        true) :
+    StmtOk? profile contract functionNames vars
+          canBreak canContinue canLeave head =
+        true ∧
+      StmtsOk? profile contract functionNames
+          (StmtOutVars vars head)
+          canBreak canContinue canLeave tail =
+        true := by
+  simpa [StmtsOk?] using hOk
 
 def FunctionOk? (profile : DialectProfile) (contract : AstContract)
     (functionNames : List Name) : AstFunctionDefinition → Bool
