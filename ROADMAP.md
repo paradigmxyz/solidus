@@ -759,10 +759,13 @@ compiler cleanup through the
   this resource index, and the complete scratch recursion lifts into that API.
   The stack-only regular-loop head now composes initializer, guarded loop
   induction, body/post recursion, cleanup, and break/continue destinations
-  through the same resource-indexed API. The remaining recursive proof is
-  activation-exit loop heads, no-frame selected calls, and the shared
-  stack-only constructor, followed by final cleanup and matching
-  whole-function/whole-program backward adequacy.
+  through the same resource-indexed API. The neutral activation-exit loop
+  theorem now also consumes guarded no-external-effects semantics, strict
+  recursive fuel, return-frame transport, and exact initializer compiler
+  artifacts. The remaining recursive proof is its stack-only dispatcher
+  adapter, no-frame selected calls, and the shared stack-only constructor,
+  followed by final cleanup and matching whole-function/whole-program backward
+  adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1426,10 +1429,12 @@ corridor.
   body/post boundaries and regular/abrupt recursive scoped adapters are also
   checked through statement-owned cleanup and canonical control destinations.
   The complete regular stack-only loop head is checked through the neutral
-  guarded source-fuel theorem and exact compiler cursors. The remaining
-  Functions work is post-initializer activation-exit loop heads, selected
-  no-frame calls, the recursive constructor, whole-program forward packaging,
-  and matching backward adequacy.
+  guarded source-fuel theorem and exact compiler cursors. The matching neutral
+  guarded theorem for post-initializer activation exits is checked, including
+  strict recursive fuel and return-frame transport. The remaining Functions
+  work is its stack-only dispatcher adapter, selected no-frame calls, the
+  recursive constructor, whole-program forward packaging, and matching
+  backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

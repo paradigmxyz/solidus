@@ -3458,13 +3458,15 @@ theorem NonregularRuntimeForward.of_safe_source_run
                   hLoopEffect))⟩
 
 /--
-Canonical source-fuel induction for loop exits.
+Canonical guarded source-fuel induction for loop exits.
 
 The theorem is generic over activation `leave` and terminal `halt` outcomes.
 Direct body/post exits are related by the shared outcome-indexed block
-interface; recursive exits descend strictly through a regular post.
+interface; recursive exits descend strictly through a regular post. Every
+recursive callback receives a strict source-fuel decrease and the return-frame
+availability derived from the actual target execution.
 -/
-theorem NonregularForward.of_source_run
+theorem NonregularForward.of_safe_source_run
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {lowerCtx : AllocationLowering.Ctx}
@@ -3494,20 +3496,12 @@ theorem NonregularForward.of_source_run
         some loweredCond)
     (hCompileCond :
       Locals.Expr.compileCode localsCtx 0 loweredCond = some condCode)
-    (hCondSafe :
-      ∀ {conditionSource conditionFinal :
-            Functions.ObserverSemantics.State transcript}
-        {conditionTrue : Bool},
-        Functions.Source.Effectful.Expr.evalCondition
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
-            cond conditionSource =
-          .ok (conditionFinal, conditionTrue) →
-        ∃ value,
-          AllocationObserverSafety.Expr.MemorySafeEval
-              contract transcript cond conditionSource conditionFinal
-              [value] ∧
-            (value != EvmYul.UInt256.ofNat 0) = conditionTrue)
+    (hLoopReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable loopCtx target)
+    (hPostReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable postBase target)
+    (hBodyReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable bodyBase target)
     (hBodyRegular :
       ∀ {bodyFuel : Nat}
         {bodySource bodyFinal :
@@ -3516,9 +3510,12 @@ theorem NonregularForward.of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx lowerState localsCtx plan loopLive
             frameBase mode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable bodyBase bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram bodyBase body bodyFuel bodySource =
           .ok (Functions.Source.Effectful.Outcome.regular bodyFinal) →
         ∃ bodyTargetFinal,
@@ -3534,9 +3531,12 @@ theorem NonregularForward.of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx lowerState localsCtx plan loopLive
             frameBase mode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable bodyBase bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram bodyBase body bodyFuel bodySource =
           .ok (Functions.Source.Effectful.Outcome.cont bodyFinal) →
         ∃ bodyTargetFinal,
@@ -3555,9 +3555,12 @@ theorem NonregularForward.of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx lowerState localsCtx plan loopLive
             frameBase mode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable bodyBase bodyTarget →
+        bodyFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram bodyBase body bodyFuel bodySource =
           .ok bodyOutcome →
         ∃ targetOutcome,
@@ -3573,9 +3576,12 @@ theorem NonregularForward.of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx bodyLowerState bodyLocals plan loopLive
             frameBase mode postSource postTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable postBase postTarget →
+        postFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram postBase post postFuel postSource =
           .ok (Functions.Source.Effectful.Outcome.regular postFinal) →
         ∃ postTargetFinal,
@@ -3594,9 +3600,12 @@ theorem NonregularForward.of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx bodyLowerState bodyLocals plan loopLive
             frameBase mode postSource postTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable postBase postTarget →
+        postFuel < sourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram postBase post postFuel postSource =
           .ok postOutcome →
         ∃ targetOutcome,
@@ -3609,7 +3618,8 @@ theorem NonregularForward.of_source_run
     (hSource :
       Functions.Source.Effectful.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
           sourceProgram loopCtx cond postBase post bodyBase body
           sourceFuel source =
         .ok sourceOutcome)
@@ -3628,21 +3638,31 @@ theorem NonregularForward.of_source_run
       obtain ⟨stepFuel, rfl, hCases⟩ :=
         Functions.Source.Effectful.Stmt.runForLoop_exit_cases
           (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
           sourceProgram hExit hSource
       rcases hCases with
         hBodyCase | hRegularPost | hContinuePost |
         hRegularRecurse | hContinueRecurse
       · obtain ⟨sourceAfterCond, hSourceCond, hSourceBody⟩ := hBodyCase
-        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
         obtain
             ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
           AllocationObserverExpression.Expr.condition_forward
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hBodyFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterCond :=
+          hBodyReturnFrame.transport_target
+            (Structured.ObserverSemantics.Code.runCondition_returns_eq
+              hTargetCond)
         obtain ⟨targetOutcome, hBodyForward⟩ :=
-          hBodyExit hExit hCondInvariant hSourceBody
+          hBodyExit hExit hCondInvariant hBodyFrame
+            (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBody', hTargetBody, hRel⟩
@@ -3662,7 +3682,8 @@ theorem NonregularForward.of_source_run
         | @leave sourceExit targetExit hLeave =>
             refine
               ⟨Structured.EffectSemantics.Outcome.leave targetExit,
-                NonregularForward.body_leave hSourceCond
+                NonregularForward.body_leave
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (by simpa [hValue] using hTargetCond) ?_⟩
             exact
               ⟨bodySourceFuel, bodyTargetFuel,
@@ -3670,7 +3691,8 @@ theorem NonregularForward.of_source_run
         | @halt kind sourceExit targetExit hHalt =>
             refine
               ⟨Structured.EffectSemantics.Outcome.halt kind targetExit,
-                NonregularForward.body_halt hSourceCond
+                NonregularForward.body_halt
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (by simpa [hValue] using hTargetCond) ?_⟩
             exact
               ⟨bodySourceFuel, bodyTargetFuel,
@@ -3679,20 +3701,40 @@ theorem NonregularForward.of_source_run
             ⟨sourceAfterCond, sourceAfterBody,
               hSourceCond, hSourceBody, hSourcePost⟩ :=
           hRegularPost
-        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
         obtain
             ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
           AllocationObserverExpression.Expr.condition_forward
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hBodyFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterCond :=
+          hBodyReturnFrame.transport_target
+            (Structured.ObserverSemantics.Code.runCondition_returns_eq
+              hTargetCond)
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyRegular hCondInvariant hSourceBody
+          hBodyRegular hCondInvariant hBodyFrame
+            (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBody', hTargetBody, hBodyInvariant⟩
+        have hPostFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterBody :=
+          hPostReturnFrame.transport_target
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
         obtain ⟨targetOutcome, hPostForward⟩ :=
-          hPostExit hExit hBodyInvariant hSourcePost
+          hPostExit hExit hBodyInvariant hPostFrame
+            (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePost', hTargetPost, hRel⟩
@@ -3712,7 +3754,8 @@ theorem NonregularForward.of_source_run
         | @leave sourceExit targetExit hLeave =>
             refine
               ⟨Structured.EffectSemantics.Outcome.leave targetExit,
-                NonregularForward.regular_post_leave hSourceCond
+                NonregularForward.regular_post_leave
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (lowerCtx := lowerCtx)
                   (bodyLowerState := bodyLowerState)
                   (bodyLocals := bodyLocals)
@@ -3730,7 +3773,8 @@ theorem NonregularForward.of_source_run
         | @halt kind sourceExit targetExit hHalt =>
             refine
               ⟨Structured.EffectSemantics.Outcome.halt kind targetExit,
-                NonregularForward.regular_post_halt hSourceCond
+                NonregularForward.regular_post_halt
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (lowerCtx := lowerCtx)
                   (bodyLowerState := bodyLowerState)
                   (bodyLocals := bodyLocals)
@@ -3749,20 +3793,40 @@ theorem NonregularForward.of_source_run
             ⟨sourceAfterCond, sourceAfterBody,
               hSourceCond, hSourceBody, hSourcePost⟩ :=
           hContinuePost
-        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
         obtain
             ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
           AllocationObserverExpression.Expr.condition_forward
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hBodyFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterCond :=
+          hBodyReturnFrame.transport_target
+            (Structured.ObserverSemantics.Code.runCondition_returns_eq
+              hTargetCond)
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyContinue hCondInvariant hSourceBody
+          hBodyContinue hCondInvariant hBodyFrame
+            (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBody', hTargetBody, hBodyInvariant⟩
+        have hPostFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterBody :=
+          hPostReturnFrame.transport_target
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
         obtain ⟨targetOutcome, hPostForward⟩ :=
-          hPostExit hExit hBodyInvariant hSourcePost
+          hPostExit hExit hBodyInvariant hPostFrame
+            (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePost', hTargetPost, hRel⟩
@@ -3782,7 +3846,8 @@ theorem NonregularForward.of_source_run
         | @leave sourceExit targetExit hLeave =>
             refine
               ⟨Structured.EffectSemantics.Outcome.leave targetExit,
-                NonregularForward.cont_post_leave hSourceCond
+                NonregularForward.cont_post_leave
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (lowerCtx := lowerCtx)
                   (bodyLowerState := bodyLowerState)
                   (bodyLocals := bodyLocals)
@@ -3800,7 +3865,8 @@ theorem NonregularForward.of_source_run
         | @halt kind sourceExit targetExit hHalt =>
             refine
               ⟨Structured.EffectSemantics.Outcome.halt kind targetExit,
-                NonregularForward.cont_post_halt hSourceCond
+                NonregularForward.cont_post_halt
+                  (by simpa [hValue] using hSafe.evalCondition_eq)
                   (lowerCtx := lowerCtx)
                   (bodyLowerState := bodyLowerState)
                   (bodyLocals := bodyLocals)
@@ -3819,31 +3885,84 @@ theorem NonregularForward.of_source_run
             ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
               hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
           hRegularRecurse
-        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
         obtain
             ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
           AllocationObserverExpression.Expr.condition_forward
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hBodyFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterCond :=
+          hBodyReturnFrame.transport_target
+            (Structured.ObserverSemantics.Code.runCondition_returns_eq
+              hTargetCond)
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyRegular hCondInvariant hSourceBody
+          hBodyRegular hCondInvariant hBodyFrame
+            (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBody', hTargetBody, hBodyInvariant⟩
+        have hPostFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterBody :=
+          hPostReturnFrame.transport_target
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
         obtain ⟨targetAfterPost, hPostForward⟩ :=
-          hPostRegular hBodyInvariant hSourcePost
+          hPostRegular hBodyInvariant hPostFrame
+            (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePost', hTargetPost, hPostInvariant⟩
-        have hRecursive :=
+        have hReturnsAfterPost :
+            targetAfterPost.source.returns = target.source.returns :=
+          (Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hTargetPost
+            (by
+              simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
+        have hLoopFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              loopCtx targetAfterPost :=
+          hLoopReturnFrame.transport_target hReturnsAfterPost
+        have hPostRecursiveFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterPost :=
+          hPostReturnFrame.transport_target hReturnsAfterPost
+        have hBodyRecursiveFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterPost :=
+          hBodyReturnFrame.transport_target hReturnsAfterPost
+        obtain ⟨targetOutcome, hLoopForward⟩ :=
           ih stepFuel (Nat.lt_succ_self stepFuel)
             (source := sourceAfterPost)
             (target := targetAfterPost)
             (sourceOutcome := sourceOutcome)
-            hExit hSourceLoop
-        obtain ⟨targetOutcome, hLoopForward⟩ :=
-          hRecursive hPostInvariant
+            hLoopFrame hPostRecursiveFrame hBodyRecursiveFrame
+            (fun hInv hFrame hFuel hRun =>
+              hBodyRegular hInv hFrame (by omega) hRun)
+            (fun hInv hFrame hFuel hRun =>
+              hBodyContinue hInv hFrame (by omega) hRun)
+            (fun hExitBody hInv hFrame hFuel hRun =>
+              hBodyExit hExitBody hInv hFrame (by omega) hRun)
+            (fun hInv hFrame hFuel hRun =>
+              hPostRegular hInv hFrame (by omega) hRun)
+            (fun hExitPost hInv hFrame hFuel hRun =>
+              hPostExit hExitPost hInv hFrame (by omega) hRun)
+            hExit hSourceLoop hPostInvariant
         rcases hLoopForward with
           ⟨loopSourceFuel, loopTargetFuel,
             hSourceLoop', hTargetLoop, hRel⟩
@@ -3894,7 +4013,9 @@ theorem NonregularForward.of_source_run
             Functions.Source.Effectful.Stmt.runForLoop_regular_post_recurse_of_runs
               (Functions.ObserverSemantics.stateModel transcript)
               (Functions.ObserverSemantics.primitiveSemantics transcript)
-              sourceProgram hSourceCond hSourceBody'' hSourcePost''
+              sourceProgram
+              (by simpa [hValue] using hSafe.evalCondition_eq)
+              hSourceBody'' hSourcePost''
               hSourceLoop'',
             Structured.EffectSemantics.For.Eval.regular_post_regular
               (by simpa [hValue] using hTargetCond)
@@ -3904,31 +4025,84 @@ theorem NonregularForward.of_source_run
             ⟨sourceAfterCond, sourceAfterBody, sourceAfterPost,
               hSourceCond, hSourceBody, hSourcePost, hSourceLoop⟩ :=
           hContinueRecurse
-        obtain ⟨value, hSafe, hValue⟩ := hCondSafe hSourceCond
+        obtain ⟨value, hSafe, hValue⟩ :=
+          AllocationObserverSafety.Expr.MemorySafeEval.of_safe_evalCondition
+            hSourceCond
         obtain
             ⟨targetAfterCond, hTargetCond, hCondInvariant⟩ :=
           AllocationObserverExpression.Expr.condition_forward
             (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
               contract)
             hInvariant hSafe hCondScoped hLowerCond hCompileCond
+        have hBodyFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterCond :=
+          hBodyReturnFrame.transport_target
+            (Structured.ObserverSemantics.Code.runCondition_returns_eq
+              hTargetCond)
         obtain ⟨targetAfterBody, hBodyForward⟩ :=
-          hBodyContinue hCondInvariant hSourceBody
+          hBodyContinue hCondInvariant hBodyFrame
+            (Nat.lt_succ_self stepFuel) hSourceBody
         rcases hBodyForward with
           ⟨bodySourceFuel, bodyTargetFuel,
             hSourceBody', hTargetBody, hBodyInvariant⟩
+        have hPostFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterBody :=
+          hPostReturnFrame.transport_target
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
         obtain ⟨targetAfterPost, hPostForward⟩ :=
-          hPostRegular hBodyInvariant hSourcePost
+          hPostRegular hBodyInvariant hPostFrame
+            (Nat.lt_succ_self stepFuel) hSourcePost
         rcases hPostForward with
           ⟨postSourceFuel, postTargetFuel,
             hSourcePost', hTargetPost, hPostInvariant⟩
-        have hRecursive :=
+        have hReturnsAfterPost :
+            targetAfterPost.source.returns = target.source.returns :=
+          (Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+            hTargetPost
+            (by
+              simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+            ((Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+              hTargetBody
+              (by
+                simp [Structured.ObserverSemantics.Outcome.Nonhalting])).trans
+              (Structured.ObserverSemantics.Code.runCondition_returns_eq
+                hTargetCond))
+        have hLoopFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              loopCtx targetAfterPost :=
+          hLoopReturnFrame.transport_target hReturnsAfterPost
+        have hPostRecursiveFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              postBase targetAfterPost :=
+          hPostReturnFrame.transport_target hReturnsAfterPost
+        have hBodyRecursiveFrame :
+            AllocationObserverOutcome.ReturnFrameAvailable
+              bodyBase targetAfterPost :=
+          hBodyReturnFrame.transport_target hReturnsAfterPost
+        obtain ⟨targetOutcome, hLoopForward⟩ :=
           ih stepFuel (Nat.lt_succ_self stepFuel)
             (source := sourceAfterPost)
             (target := targetAfterPost)
             (sourceOutcome := sourceOutcome)
-            hExit hSourceLoop
-        obtain ⟨targetOutcome, hLoopForward⟩ :=
-          hRecursive hPostInvariant
+            hLoopFrame hPostRecursiveFrame hBodyRecursiveFrame
+            (fun hInv hFrame hFuel hRun =>
+              hBodyRegular hInv hFrame (by omega) hRun)
+            (fun hInv hFrame hFuel hRun =>
+              hBodyContinue hInv hFrame (by omega) hRun)
+            (fun hExitBody hInv hFrame hFuel hRun =>
+              hBodyExit hExitBody hInv hFrame (by omega) hRun)
+            (fun hInv hFrame hFuel hRun =>
+              hPostRegular hInv hFrame (by omega) hRun)
+            (fun hExitPost hInv hFrame hFuel hRun =>
+              hPostExit hExitPost hInv hFrame (by omega) hRun)
+            hExit hSourceLoop hPostInvariant
         rcases hLoopForward with
           ⟨loopSourceFuel, loopTargetFuel,
             hSourceLoop', hTargetLoop, hRel⟩
@@ -3979,7 +4153,9 @@ theorem NonregularForward.of_source_run
             Functions.Source.Effectful.Stmt.runForLoop_cont_post_recurse_of_runs
               (Functions.ObserverSemantics.stateModel transcript)
               (Functions.ObserverSemantics.primitiveSemantics transcript)
-              sourceProgram hSourceCond hSourceBody'' hSourcePost''
+              sourceProgram
+              (by simpa [hValue] using hSafe.evalCondition_eq)
+              hSourceBody'' hSourcePost''
               hSourceLoop'',
             Structured.EffectSemantics.For.Eval.cont_post_regular
               (by simpa [hValue] using hTargetCond)
@@ -6430,7 +6606,7 @@ Recursive loop preservation is discharged internally by source-fuel induction.
 The compiler-emitted outer cleanup is present in the real artifact but is
 unreachable after the nonregular loop outcome.
 -/
-theorem for_exit_of_source_run
+theorem for_exit_of_safe_source_run
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {sourceProgram : Functions.Program}
@@ -6456,11 +6632,14 @@ theorem for_exit_of_source_run
     {target : Structured.ObserverSemantics.State transcript}
     {loopSourceFuel : Nat}
     (hCondScoped : Functions.Scope.ExprScoped loopLive cond)
-    (hLoopSourceScope : loopSourceCtx.scope = loopLive)
+    (hLoopSourceScope :
+      ∀ name, name ∈ loopSourceCtx.scope ↔ name ∈ loopLive)
     (hInvariant :
       AllocationObserverContext.ActivationInvariant
         contract lowerCtx lowerState localsCtx outerPlan outerLive
         frameBase outerMode source target)
+    (hReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable sourceCtx target)
     (hInit :
       ∀ {loweredInit : Locals.Block}
         {loopState : AllocationLowering.State}
@@ -6480,31 +6659,24 @@ theorem for_exit_of_source_run
             loopLive frameBase outerMode loopMode sourceProgram
             sourceCtx.withoutLoopControl init source targetProgram
             { stmts := Expressions.StmtList.toStructured initCode }
-            target sourceAfterInit targetAfterInit loopSourceCtx)
-    (hCondSafe :
-      ∀ {conditionSource conditionFinal :
-            Functions.ObserverSemantics.State transcript}
-        {conditionTrue : Bool},
-        Functions.Source.Effectful.Expr.evalCondition
-            (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
-            cond conditionSource =
-          .ok (conditionFinal, conditionTrue) →
-        ∃ value,
-          AllocationObserverSafety.Expr.MemorySafeEval
-              contract transcript cond conditionSource conditionFinal
-              [value] ∧
-            (value != EvmYul.UInt256.ofNat 0) = conditionTrue)
+            target sourceAfterInit targetAfterInit loopSourceCtx ∧
+          AllocationObserverOutcome.SameControl
+            sourceCtx.withoutLoopControl loopSourceCtx)
     (hBodyRegular :
       ∀ {loopState afterPost afterBody : AllocationLowering.State}
-        {loweredPost loweredBody : Locals.Block}
+        {loweredInit loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource bodyFinal :
           Functions.ObserverSemantics.State transcript}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -6522,9 +6694,15 @@ theorem for_exit_of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx loopState initLocals loopPlan loopLive
             frameBase loopMode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            bodyTarget →
+        bodyFuel < loopSourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram
             (loopSourceCtx.withLoopControl
               loopSourceCtx.scope loopSourceCtx.scope)
@@ -6541,14 +6719,19 @@ theorem for_exit_of_source_run
             bodyTarget bodyFinal bodyTargetFinal)
     (hBodyContinue :
       ∀ {loopState afterPost afterBody : AllocationLowering.State}
-        {loweredPost loweredBody : Locals.Block}
+        {loweredInit loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource bodyFinal :
           Functions.ObserverSemantics.State transcript}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -6566,9 +6749,15 @@ theorem for_exit_of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx loopState initLocals loopPlan loopLive
             frameBase loopMode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            bodyTarget →
+        bodyFuel < loopSourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram
             (loopSourceCtx.withLoopControl
               loopSourceCtx.scope loopSourceCtx.scope)
@@ -6585,9 +6774,9 @@ theorem for_exit_of_source_run
             bodyTarget bodyFinal bodyTargetFinal)
     (hBodyExit :
       ∀ {loopState afterPost afterBody : AllocationLowering.State}
-        {loweredPost loweredBody : Locals.Block}
+        {loweredInit loweredPost loweredBody : Locals.Block}
         {initLocals bodyLocals : Locals.Ctx}
-        {bodyCode : List Expressions.Stmt}
+        {initCode bodyCode : List Expressions.Stmt}
         {compiledBody : Expressions.Block}
         {bodyFuel : Nat}
         {bodySource : Functions.ObserverSemantics.State transcript}
@@ -6595,6 +6784,11 @@ theorem for_exit_of_source_run
           Functions.ObserverSemantics.Outcome
             (Functions.ObserverSemantics.State transcript)}
         {bodyTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -6613,9 +6807,15 @@ theorem for_exit_of_source_run
         AllocationObserverContext.ActivationInvariant
             contract lowerCtx loopState initLocals loopPlan loopLive
             frameBase loopMode bodySource bodyTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable
+            (loopSourceCtx.withLoopControl
+              loopSourceCtx.scope loopSourceCtx.scope)
+            bodyTarget →
+        bodyFuel < loopSourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram
             (loopSourceCtx.withLoopControl
               loopSourceCtx.scope loopSourceCtx.scope)
@@ -6631,14 +6831,19 @@ theorem for_exit_of_source_run
             bodyTarget bodyOutcome targetOutcome)
     (hPostRegular :
       ∀ {loopState afterPost : AllocationLowering.State}
-        {loweredPost : Locals.Block}
+        {loweredInit loweredPost : Locals.Block}
         {initLocals postLocals : Locals.Ctx}
-        {postCode : List Expressions.Stmt}
+        {initCode postCode : List Expressions.Stmt}
         {compiledPost : Expressions.Block}
         {postFuel : Nat}
         {postSource postFinal :
           Functions.ObserverSemantics.State transcript}
         {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -6652,9 +6857,13 @@ theorem for_exit_of_source_run
             contract lowerCtx afterPost
             (initLocals.withLoopControl initLocals.layout.length)
             loopPlan loopLive frameBase loopMode postSource postTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable
+            loopSourceCtx.withoutLoopControl postTarget →
+        postFuel < loopSourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram loopSourceCtx.withoutLoopControl post
             postFuel postSource =
           .ok (Functions.Source.Effectful.Outcome.regular postFinal) →
@@ -6667,9 +6876,9 @@ theorem for_exit_of_source_run
             postFinal postTargetFinal)
     (hPostExit :
       ∀ {loopState afterPost : AllocationLowering.State}
-        {loweredPost : Locals.Block}
+        {loweredInit loweredPost : Locals.Block}
         {initLocals postLocals : Locals.Ctx}
-        {postCode : List Expressions.Stmt}
+        {initCode postCode : List Expressions.Stmt}
         {compiledPost : Expressions.Block}
         {postFuel : Nat}
         {postSource : Functions.ObserverSemantics.State transcript}
@@ -6677,6 +6886,11 @@ theorem for_exit_of_source_run
           Functions.ObserverSemantics.Outcome
             (Functions.ObserverSemantics.State transcript)}
         {postTarget : Structured.ObserverSemantics.State transcript},
+        AllocationLowering.lowerBlockOpen
+            lowerCtx returns lowerState init =
+          some (loweredInit, loopState) →
+        Locals.Block.compileOpen localsCtx.withoutLoopControl loweredInit =
+          some (initCode, initLocals) →
         AllocationLowering.lowerBlockScoped
             lowerCtx returns loopState post =
           some (loweredPost, afterPost) →
@@ -6691,9 +6905,13 @@ theorem for_exit_of_source_run
             contract lowerCtx afterPost
             (initLocals.withLoopControl initLocals.layout.length)
             loopPlan loopLive frameBase loopMode postSource postTarget →
+        AllocationObserverOutcome.ReturnFrameAvailable
+            loopSourceCtx.withoutLoopControl postTarget →
+        postFuel < loopSourceFuel →
         Functions.Source.Effectful.Block.runScoped
             (Functions.ObserverSemantics.stateModel transcript)
-            (Functions.ObserverSemantics.primitiveSemantics transcript)
+            (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
             sourceProgram loopSourceCtx.withoutLoopControl post
             postFuel postSource =
           .ok postOutcome →
@@ -6708,7 +6926,8 @@ theorem for_exit_of_source_run
     (hSourceLoop :
       Functions.Source.Effectful.Stmt.runForLoop
           (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSemantics.primitiveSemantics transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
           sourceProgram loopSourceCtx cond
           loopSourceCtx.withoutLoopControl post
           (loopSourceCtx.withLoopControl
@@ -6748,28 +6967,57 @@ theorem for_exit_of_source_run
         contract lowerCtx lowerState localsCtx.withoutLoopControl
         outerPlan outerLive frameBase outerMode source target :=
     hInvariant.transport_locals_layout rfl
-  obtain ⟨targetAfterInit, hInitForward⟩ :=
+  obtain ⟨targetAfterInit, hInitForward, hInitControl⟩ :=
     hInit hLowerInit hCompileInit hInitialLoopInvariant
   rcases hInitForward with
     ⟨initSourceFuel, initTargetFuel,
       hSourceInit, hTargetInit, hInitInvariant, _hInitMode⟩
+  have hTargetInitReturns :
+      targetAfterInit.source.returns = target.source.returns :=
+    Structured.ObserverSemantics.Block.Eval.returns_eq_of_nonhalting
+      hTargetInit
+      (by simp [Structured.ObserverSemantics.Outcome.Nonhalting])
+  have hLoopReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        loopSourceCtx targetAfterInit :=
+    AllocationObserverOutcome.ReturnFrameAvailable.transport_target
+      (AllocationObserverOutcome.ReturnFrameAvailable.of_sameControl
+        hReturnFrame.withoutLoopControl hInitControl)
+      hTargetInitReturns
+  have hPostReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        loopSourceCtx.withoutLoopControl targetAfterInit :=
+    hLoopReturnFrame.withoutLoopControl
+  have hBodyReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        (loopSourceCtx.withLoopControl
+          loopSourceCtx.scope loopSourceCtx.scope)
+        targetAfterInit :=
+    hLoopReturnFrame.withLoopControl
   obtain ⟨targetOutcome, hLoopForward⟩ :=
-    ForLoop.NonregularForward.of_source_run
-      hCondScoped hLowerCond hCompileCond hCondSafe
-      (fun hInvariant hRun =>
-        hBodyRegular hLowerPost hLowerBody hCompileBody hFinishBody
-          hInvariant hRun)
-      (fun hInvariant hRun =>
-        hBodyContinue hLowerPost hLowerBody hCompileBody hFinishBody
-          hInvariant hRun)
-      (fun hExitBody hInvariant hRun =>
-        hBodyExit hLowerPost hLowerBody hCompileBody hFinishBody
-          hExitBody hInvariant hRun)
-      (fun hInvariant hRun =>
-        hPostRegular hLowerPost hCompilePost hFinishPost hInvariant hRun)
-      (fun hExitPost hInvariant hRun =>
-        hPostExit hLowerPost hCompilePost hFinishPost
-          hExitPost hInvariant hRun)
+    ForLoop.NonregularForward.of_safe_source_run
+      hCondScoped hLowerCond hCompileCond
+      hLoopReturnFrame hPostReturnFrame hBodyReturnFrame
+      (fun hInvariant hFrame hFuel hRun =>
+        hBodyRegular hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
+          hInvariant hFrame hFuel hRun)
+      (fun hInvariant hFrame hFuel hRun =>
+        hBodyContinue hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
+          hInvariant hFrame hFuel hRun)
+      (fun hExitBody hInvariant hFrame hFuel hRun =>
+        hBodyExit hLowerInit hCompileInit
+          hLowerPost hLowerBody hCompileBody hFinishBody
+          hExitBody hInvariant hFrame hFuel hRun)
+      (fun hInvariant hFrame hFuel hRun =>
+        hPostRegular hLowerInit hCompileInit
+          hLowerPost hCompilePost hFinishPost
+          hInvariant hFrame hFuel hRun)
+      (fun hExitPost hInvariant hFrame hFuel hRun =>
+        hPostExit hLowerInit hCompileInit
+          hLowerPost hCompilePost hFinishPost
+          hExitPost hInvariant hFrame hFuel hRun)
       hExit hSourceLoop hInitInvariant
   rcases hLoopForward with
     ⟨loopSourceFuel', loopTargetFuel,
