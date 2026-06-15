@@ -29944,3 +29944,24 @@ Resumed the end-to-end observer proof at the Functions → allocated Locals/Expr
 - 2026-06-15 proof - Added Functions-owned `runOpen_append_two_regular_parts`. An arbitrary successful prefix followed by two required statements now exposes all three concrete runs and proves the second statement executes at least two fuel steps below the enclosing block, supplying the induction measure for generated zero initialization plus internal call.
 - 2026-06-15 validation - The call-backward artifact and strict two-statement inversion passed the 1,249-job verification root, architecture dependency check, aggregate proof gate, changed-file forbidden-marker scan, `git diff --check`, and resource-observer axiom smoke. Both checked theorems use only `propext`, `Classical.choice`, and `Quot.sound`.
 - 2026-06-15 architecture-risk - Concrete recursive call inversion needs independently reconstructed source argument and callee-body runs to share one enclosing Yul fuel. The canonical parameterized semantics currently has no successful-run fuel monotonicity interface, and generic monotonicity is false without a primitive-handler monotonicity contract. Add a semantics-owned primitive `SuccessMonotone` interface and mutual control theorem before closing the call expression; do not replace it with an unbounded callee callback.
+
+## 2026-06-15 compaction-resume
+
+Resumed after checked returned-body backward composition and strict generated-call fuel inversion; current frontier is the canonical primitive-success/fuel-monotonicity interface needed to share source fuel across reconstructed arguments and callees.
+
+## 2026-06-15 15:50 PDT — compaction-resume
+- Resumed after checking canonical Yul success-fuel monotonicity and the closed-world observer primitive instance; current frontier is integrating call-argument reconstruction into the adjacent function-call backward theorem.
+
+## 2026-06-15 16:04 PDT — compaction-resume
+- Resumed after checking the existential-fuel argument boundary and conditional internal-call backward theorem; current frontier is finishing the proof/axiom gates and discharging installed-owner preservation.
+
+## 2026-06-15 16:26 PDT — compaction-resume
+- Resumed the active end-to-end proof at canonical active-code-owner preservation; compiling the lambda-inferred primitive-family proof before lifting it through the shared Yul semantics.
+
+## 2026-06-15 17:02 PDT — compaction-resume
+- Resumed after checking canonical owner preservation and unconditional internal-call backward adequacy; recording and checkpointing that boundary before recursive Yul statement/list/control inversion.
+
+- 2026-06-15 17:02 PDT - proof/yul-owner-preservation - Added pass-owned active-code-owner preservation for every compiler-selected nonexternal primitive and a semantics-owned mutual theorem family for canonical argument, expression, call, dispatcher, statement-sequence, statement, and loop evaluation. The observer-safe specialization derives the property from ordinary memory safety and the concrete resource transcript.
+- 2026-06-15 17:02 PDT - theorem-boundary/yul-call-backward-owner - `boundFunctionBackwardBelow` now takes only the source-facing initial owner-availability fact and derives owner availability after reconstructed argument evaluation. The former higher-order owner-after-arguments premise is deleted; the public adjacent call theorem still exposes no generated evidence, replay certificate, or all-callee oracle.
+- 2026-06-15 17:02 PDT - oracle - Owner-preservation consultation `resp_0729e0692ce275c6006a3086a0df20819986a9af732d866d59` failed with `insufficient_quota`; no oracle advice was incorporated, and the local semantics-owned route checked successfully.
+- 2026-06-15 17:02 PDT - validation/yul-call-backward-owner - Focused owner, observer-safety, and call-backward builds, the full 1,254-job verification root, architecture dependency checks, changed-file proof-marker scan, `git diff --check`, and resource-observer axiom smoke passed. New public theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.

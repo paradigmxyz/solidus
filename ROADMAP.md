@@ -1745,9 +1745,16 @@ corridor.
   prepared-argument artifact aligned to the target run. Bound primitive
   expressions now consume that interface, identify the actual typed argument
   execution, and reconstruct the source primitive through the exhaustive
-  backward dispatcher. The current obligation is to close the strictly
-  smaller recursive expression interface with function-call expressions,
-  followed by statements, control, loops, and whole-program inversion.
+  backward dispatcher. Internal function-call expressions are also checked:
+  concrete target execution reconstructs the compiler-selected callee,
+  reversed source argument evaluation, initialized callee frame, recursively
+  returned body, return-value transfer, and restored caller relation under a
+  strict target-fuel bound. Canonical active-code-owner preservation is proved
+  once for every nonexternal primitive and lifted mutually through the ordinary
+  parameterized Yul evaluator, so the public call theorem no longer accepts an
+  owner-after-arguments certificate. The current obligation is recursive
+  statement/list/block backward adequacy, including compound control and
+  loops, followed by dispatcher/whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

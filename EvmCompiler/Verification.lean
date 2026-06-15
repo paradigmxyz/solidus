@@ -51,6 +51,9 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.EffectSemanticsFuel
+import EvmCompiler.Yul.EffectSemanticsOwner
+import EvmCompiler.Yul.EffectSemanticsOwnerPreservation
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.EndToEnd
@@ -70,6 +73,8 @@ import EvmCompiler.Yul.FunctionsObserverExpressionBackward
 import EvmCompiler.Yul.ObjectSemantics
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
+import EvmCompiler.Yul.PrimitiveFuel
+import EvmCompiler.Yul.PrimitiveOwner
 import EvmCompiler.Yul.StateRelation
 
 /-!
@@ -250,13 +255,30 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.AlignedValueBackward
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.AlignedArgsBackward
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.SomeAlignedValueBackward
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.SomeAlignedArgsBackward
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.RecursiveAlignedValueBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_bounded_parts
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_two_regular_parts
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.RecursiveBodyBackward
+#check EvmCompiler.Yul.FunctionsObserverCallBackward.callArgsBackwardBelow
+#check EvmCompiler.Yul.FunctionsObserverCallBackward.boundFunctionBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
+#check EvmCompiler.Yul.Source.Effectful.StateModel.Lawful
+#check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.PreservesOwner
+#check EvmCompiler.Yul.Source.Effectful.evalArgs_preserves_owner
+#check EvmCompiler.Yul.Source.Effectful.call_preserves_owner
+#check EvmCompiler.Yul.Source.Effectful.exec_preserves_owner
+#check EvmCompiler.Yul.Source.Effectful.loop_preserves_owner
+#check EvmCompiler.Yul.Prim.primCall_preserves_activeOwner_of_nonExternal
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.stateModel_lawful
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics_preservesOwner
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.evalArgs_preservesOwner
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt
@@ -554,6 +576,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_find_owner_of_ok
 #check EvmCompiler.Yul.Source.Effectful.call_succ_of_parts
 #check EvmCompiler.Yul.Source.Effectful.eval_function_of_parts
+#check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.SuccessMonotone
+#check EvmCompiler.Yul.Source.Effectful.evalArgs_mono
+#check EvmCompiler.Yul.Source.Effectful.call_mono
+#check EvmCompiler.Yul.Source.Effectful.exec_mono
+#check EvmCompiler.Yul.Source.Effectful.loop_mono
+#check EvmCompiler.Yul.Prim.primCall_succ_eq_of_nonExternal
+#check EvmCompiler.Simulation.MemorySafety.noExternal_of_primitiveMemorySafe
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics_successMonotone
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero

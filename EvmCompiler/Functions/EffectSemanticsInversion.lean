@@ -357,6 +357,67 @@ theorem runOpen_append_regular_parts {σ : Type}
             rw [← hOutcome]
             rfl
 
+/--
+Split a successful regular block while retaining a target-fuel bound.
+
+The left prefix can be rerun at the enclosing fuel. The right suffix is
+exposed at a fuel no greater than the enclosing fuel, which is the measure
+needed by higher-language backward adequacy proofs.
+-/
+theorem runOpen_append_regular_bounded_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program) :
+    ∀ {left right : List Functions.Stmt}
+      {ctx finalCtx : Source.Ctx} {fuel : Nat}
+      {source final : σ},
+      runOpen model prim program ctx fuel
+          { stmts := left ++ right } source =
+        .ok (Outcome.regular final, finalCtx) →
+      ∃ middle middleCtx rightFuel,
+        runOpen model prim program ctx fuel
+            { stmts := left } source =
+          .ok (Outcome.regular middle, middleCtx) ∧
+        runOpen model prim program middleCtx rightFuel
+            { stmts := right } middle =
+          .ok (Outcome.regular final, finalCtx) ∧
+        rightFuel ≤ fuel := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx finalCtx fuel source final hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ previous =>
+          exact
+            ⟨source, ctx, previous + 1,
+              by simp [runOpen], by simpa using hRun, by omega⟩
+  | cons stmt rest ih =>
+      intro right ctx finalCtx fuel source final hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ previous =>
+          rcases
+              runOpen_cons_cases model prim program hRun with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨afterStmt, stmtCtx, hStmt, hTail⟩
+            obtain
+                ⟨middle, middleCtx, rightFuel,
+                  hRest, hRight, hRightFuel⟩ :=
+              ih hTail
+            refine
+              ⟨middle, middleCtx, rightFuel, ?_, hRight, by omega⟩
+            simpa [runOpen, hStmt, hRest]
+          · rcases hNonregular with
+              ⟨headOutcome, _headCtx, _hHead, hMode,
+                hOutcome, _hCtx⟩
+            exfalso
+            apply hMode
+            rw [← hOutcome]
+            rfl
+
 theorem runOpen_append_two_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program) :
