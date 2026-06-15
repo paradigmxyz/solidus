@@ -1,8 +1,5 @@
-import EvmCompiler.Functions.ObserverSemantics
-import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Yul.FunctionsObserverCompiler
-import EvmCompiler.Yul.ObserverSemantics
-import EvmCompiler.Yul.StateRelation
+import EvmCompiler.Yul.FunctionsObserverPrimitive
 
 namespace EvmCompiler
 namespace Yul
@@ -19,81 +16,8 @@ bytecode details are deliberately absent from this boundary.
 abbrev Trace := Assembly.ResourceTrace
 abbrev Word := Assembly.Word
 
-theorem observerPrim
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
-    {fuel : Nat}
-    {source source' : ObserverSemantics.SourceReplay.State transcript}
-    {target : Functions.ObserverSemantics.State transcript}
-    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
-    {kind : Assembly.ResourceObserver} {values : List Word}
-    (hYulObserver :
-      ObserverSemantics.yulPrimObserver? prim = some kind)
-    (hFunctionsObserver :
-      Functions.ObserverSemantics.basicOpObserver? op = some kind)
-    (hRel : StateRelation.Replay.Rel codeRel source target)
-    (hRun :
-      ObserverSemantics.SourceReplay.primCall fuel.succ source prim [] =
-        .ok (source', values)) :
-    ∃ target' : Functions.ObserverSemantics.State transcript,
-      (Functions.ObserverSemantics.primitiveSemantics transcript).eval
-          op target [] =
-        .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
-  unfold ObserverSemantics.SourceReplay.primCall at hRun
-  rw [hYulObserver] at hRun
-  cases hConsume :
-      Simulation.ResourceReplay.consume? kind source with
-  | none =>
-      simp [hConsume, Yul.Source.Effectful.fail] at hRun
-  | some result =>
-      rcases result with ⟨value, sourceAfter⟩
-      simp [hConsume] at hRun
-      rcases hRun with ⟨hSource, hValues⟩
-      subst source'
-      subst values
-      obtain ⟨targetAfter, hTargetConsume, hCursor, hSourceRel⟩ :=
-        Simulation.ResourceReplay.consume?_rel
-          hRel.1 hRel.2 hConsume
-      refine ⟨targetAfter, ?_, hCursor, hSourceRel⟩
-      exact
-        Functions.ObserverSemantics.primitiveSemantics_eval_observer
-          hFunctionsObserver hTargetConsume
-
-theorem gas
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
-    {fuel : Nat}
-    {source source' : ObserverSemantics.SourceReplay.State transcript}
-    {target : Functions.ObserverSemantics.State transcript}
-    {values : List Word}
-    (hRel : StateRelation.Replay.Rel codeRel source target)
-    (hRun :
-      ObserverSemantics.SourceReplay.primCall fuel.succ source
-          (.StackMemFlow .GAS) [] =
-        .ok (source', values)) :
-    ∃ target' : Functions.ObserverSemantics.State transcript,
-      (Functions.ObserverSemantics.primitiveSemantics transcript).eval
-          .gas target [] =
-        .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
-  observerPrim ObserverSemantics.yulPrimObserver?_gas (by rfl) hRel hRun
-
-theorem msize
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
-    {fuel : Nat}
-    {source source' : ObserverSemantics.SourceReplay.State transcript}
-    {target : Functions.ObserverSemantics.State transcript}
-    {values : List Word}
-    (hRel : StateRelation.Replay.Rel codeRel source target)
-    (hRun :
-      ObserverSemantics.SourceReplay.primCall fuel.succ source
-          (.StackMemFlow .MSIZE) [] =
-        .ok (source', values)) :
-    ∃ target' : Functions.ObserverSemantics.State transcript,
-      (Functions.ObserverSemantics.primitiveSemantics transcript).eval
-          .msize target [] =
-        .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
-  observerPrim ObserverSemantics.yulPrimObserver?_msize (by rfl) hRel hRun
+export FunctionsObserverPrimitive
+  (observerPrim gas msize safeObserverPrim gasSafe msizeSafe)
 
 theorem lowerEvalGas
     {transcript : Trace} {codeRel : StateRelation.CodeRel}
@@ -170,6 +94,92 @@ theorem lowerEvalMsize
       Yul.Source.Effectful.evalValues,
       Yul.Source.Effectful.evalArgs] using hRun
   obtain ⟨target', hTarget, hTargetRel⟩ := msize hRel hPrim
+  refine ⟨target', ?_, hTargetRel⟩
+  simpa [Functions.Source.Effectful.Expr.eval] using hTarget
+
+theorem lowerEvalGasSafe
+    {contract : MemoryContract.Contract}
+    {transcript : Trace} {codeRel : StateRelation.CodeRel}
+    {fuel : Nat} {fresh : Fresh.State}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel.succ.succ
+          (.Call
+            (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) [])
+          codeOverride source =
+        .ok (source', values)) :
+    Expr.lower1Unchecked? fresh
+        (.Call
+          (.inl ((.StackMemFlow .GAS : EvmYul.Operation .Yul))) []) =
+      some ([], (.prim .gas .nil : Functions.Expr 1), fresh) ∧
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (.prim .gas .nil : Functions.Expr 1) target =
+        .ok (target', values) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  refine ⟨Expr.lower1Unchecked?_gas fresh, ?_⟩
+  have hPrim :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.StackMemFlow .GAS) [] =
+        .ok (source', values) := by
+    simpa [Yul.Source.Effectful.evalValues,
+      Yul.Source.Effectful.evalArgs] using hRun
+  obtain ⟨target', hTarget, hTargetRel⟩ := gasSafe hRel hPrim
+  refine ⟨target', ?_, hTargetRel⟩
+  simpa [Functions.Source.Effectful.Expr.eval] using hTarget
+
+theorem lowerEvalMsizeSafe
+    {contract : MemoryContract.Contract}
+    {transcript : Trace} {codeRel : StateRelation.CodeRel}
+    {fuel : Nat} {fresh : Fresh.State}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel.succ.succ
+          (.Call
+            (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) [])
+          codeOverride source =
+        .ok (source', values)) :
+    Expr.lower1Unchecked? fresh
+        (.Call
+          (.inl ((.StackMemFlow .MSIZE : EvmYul.Operation .Yul))) []) =
+      some ([], (.prim .msize .nil : Functions.Expr 1), fresh) ∧
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (.prim .msize .nil : Functions.Expr 1) target =
+        .ok (target', values) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  refine ⟨Expr.lower1Unchecked?_msize fresh, ?_⟩
+  have hPrim :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.StackMemFlow .MSIZE) [] =
+        .ok (source', values) := by
+    simpa [Yul.Source.Effectful.evalValues,
+      Yul.Source.Effectful.evalArgs] using hRun
+  obtain ⟨target', hTarget, hTargetRel⟩ := msizeSafe hRel hPrim
   refine ⟨target', ?_, hTargetRel⟩
   simpa [Functions.Source.Effectful.Expr.eval] using hTarget
 

@@ -140,6 +140,11 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverProgram.lean
 
 report_matches \
+  'Canonical guarded Functions semantics must not depend on allocation or lower-pass proof modules:' \
+  '^import EvmCompiler\.(Functions\.Allocation|Expressions\.ObserverPreservation|Structured\.(Observer|TypedCfg)|TypedCfg|Assembly\.(Preservation|ObserverPreservation|StackShuffle)|Objects|Yul|Public)' \
+  EvmCompiler/Functions/ObserverSafety.lean
+
+report_matches \
   'The recursive Functions observer dispatcher must stay on its adjacent pass boundary:' \
   '^import EvmCompiler\.(TypedCfg|Assembly|Objects|Yul|Public)' \
   EvmCompiler/Functions/AllocationObserverDispatcher.lean \
@@ -184,18 +189,21 @@ report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
   'The Yul observer boundary must not implement a parallel compiler:' \
   '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(toObjectsWithObservers\?|compileWithObservers\?|toFunctionsListUncheckedFuel\?|toFunDefsUncheckedFuel\?)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
@@ -549,6 +557,7 @@ report_matches \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
+  EvmCompiler/Functions/ObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverSafety.lean \
   EvmCompiler/Functions/AllocationObserverPreservation.lean \
   EvmCompiler/Functions/AllocationObserverContext.lean \
@@ -566,6 +575,7 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverProgram.lean \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
   EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \

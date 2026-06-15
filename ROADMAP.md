@@ -1501,9 +1501,14 @@ corridor.
   invariants. `FunctionsObserverCompiler` derives body/function lowering and
   the generated Functions program from the ordinary
   `Program.toObjectsWithObservers?` equation; it does not implement a parallel
-  compiler. The next boundary is generic safe primitive and expression
-  preservation over this relation, followed by statements, loops, calls, and
-  whole-main composition.
+  compiler. Canonical guarded Functions semantics now lives in
+  `Functions.ObserverSafety`; allocation retains only compatibility exports.
+  The adjacent primitive module proves guarded Yul-to-Functions preservation
+  for observer primitives, and the ordinary compiler equations lift those
+  proofs to checked `gas()` and `msize()` expression-lowering leaves. The next
+  boundary is the complete compiler-selected primitive family and structural
+  expression preservation over this relation, followed by statements, loops,
+  calls, and whole-main composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

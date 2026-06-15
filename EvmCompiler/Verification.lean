@@ -24,6 +24,7 @@ import EvmCompiler.Functions.AllocationObserverProgram
 import EvmCompiler.Functions.AllocationObserverCall
 import EvmCompiler.Functions.EffectSemantics
 import EvmCompiler.Functions.ObserverSemantics
+import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Locals.EffectSemantics
 import EvmCompiler.Locals.ObserverSemantics
 import EvmCompiler.Locals.PrimitivePreservation
@@ -51,6 +52,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.ObjectSemantics
@@ -80,6 +82,11 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverRelation.StateRel
 #check EvmCompiler.Functions.AllocationObserverSafety.PrimitiveMemorySafe
 #check EvmCompiler.Functions.AllocationObserverSafety.TerminalMemorySafe
+#check EvmCompiler.Functions.ObserverSafety.PrimitiveMemorySafe
+#check EvmCompiler.Functions.ObserverSafety.TerminalMemorySafe
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.successRefines
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
@@ -94,6 +101,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
+#check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate
@@ -800,6 +812,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.refinementAt
 #check EvmCompiler.Yul.Source.Effectful.callDispatcher_refines
 #check EvmCompiler.Yul.ObserverSafety.PrimitiveSafe
+#check EvmCompiler.Yul.ObserverSafety.primitiveSafe_basicOp
+#check EvmCompiler.Yul.ObserverSafety.primitiveSafe_terminal
+#check EvmCompiler.Yul.ObserverSafety.primitiveSafe_mstore_iff
+#check EvmCompiler.Yul.ObserverSafety.primitiveSafe_return_iff
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_yulHalt_parts

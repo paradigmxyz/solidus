@@ -24,13 +24,64 @@ def PrimitiveSafe (contract : MemoryContract.Contract)
     (values : List Word) : Prop :=
   match Prim.terminal? prim with
   | some kind =>
-      Simulation.MemorySafety.TerminalMemorySafe contract kind values
+      Simulation.MemorySafety.TerminalMemorySafe contract kind values.reverse
   | none =>
       match Prim.toUncheckedBasicOp? prim with
       | some op =>
           Simulation.MemorySafety.PrimitiveMemorySafe
-            contract op machine values
+            contract op machine values.reverse
       | none => False
+
+theorem primitiveSafe_basicOp
+    {contract : MemoryContract.Contract}
+    {prim : EvmYul.Operation .Yul} {machine : EvmYul.MachineState}
+    {values : List Word} {op : Structured.BasicOp}
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op) :
+    PrimitiveSafe contract prim machine values ↔
+      Simulation.MemorySafety.PrimitiveMemorySafe
+        contract op machine values.reverse := by
+  simp [PrimitiveSafe, hTerminal, hOp]
+
+theorem primitiveSafe_terminal
+    {contract : MemoryContract.Contract}
+    {prim : EvmYul.Operation .Yul} {machine : EvmYul.MachineState}
+    {values : List Word} {kind : Assembly.HaltKind}
+    (hTerminal : Prim.terminal? prim = some kind) :
+    PrimitiveSafe contract prim machine values ↔
+      Simulation.MemorySafety.TerminalMemorySafe
+        contract kind values.reverse := by
+  simp [PrimitiveSafe, hTerminal]
+
+theorem primitiveSafe_mstore_iff
+    (contract : MemoryContract.Contract) (machine : EvmYul.MachineState)
+    (address value : Word) :
+    PrimitiveSafe contract
+        (.StackMemFlow .MSTORE : EvmYul.Operation .Yul)
+        machine [address, value] ↔
+      Simulation.MemorySafety.PrimitiveMemorySafe
+        contract .mstore machine [value, address] := by
+  simpa using
+    (primitiveSafe_basicOp
+      (contract := contract) (machine := machine)
+      (values := [address, value]) (op := .mstore)
+      (prim := (.StackMemFlow .MSTORE : EvmYul.Operation .Yul))
+      (by rfl) (by rfl))
+
+theorem primitiveSafe_return_iff
+    (contract : MemoryContract.Contract) (machine : EvmYul.MachineState)
+    (address size : Word) :
+    PrimitiveSafe contract
+        (.System .RETURN : EvmYul.Operation .Yul)
+        machine [address, size] ↔
+      Simulation.MemorySafety.TerminalMemorySafe
+        contract .return [size, address] := by
+  simpa using
+    (primitiveSafe_terminal
+      (contract := contract) (machine := machine)
+      (values := [address, size]) (kind := .return)
+      (prim := (.System .RETURN : EvmYul.Operation .Yul))
+      (by rfl))
 
 @[simp] theorem primitiveSafe_gas
     (contract : MemoryContract.Contract) (machine : EvmYul.MachineState) :
