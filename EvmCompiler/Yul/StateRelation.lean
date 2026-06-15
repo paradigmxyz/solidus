@@ -1064,6 +1064,9 @@ def TargetDomainWithin (used : List Name)
 def NamesWithin (used active : List Name) : Prop :=
   ∀ name, name ∈ active → name ∈ used
 
+def TargetExtends (before after : Locals.Source.Store) : Prop :=
+  ∀ name value, before name = some value → after name = some value
+
 theorem empty :
     Rel (default : EvmYul.Yul.VarStore) Locals.Source.Store.empty := by
   intro name value hLookup
@@ -1175,6 +1178,56 @@ theorem TargetDomainWithin.congr
     TargetDomainWithin used right := by
   subst right
   exact hDomain
+
+theorem TargetDomainWithin.mono
+    {before after : List Name} {target : Locals.Source.Store}
+    (hDomain : TargetDomainWithin before target)
+    (hExtends : ∀ name, name ∈ before → name ∈ after) :
+    TargetDomainWithin after target := by
+  intro name value hLookup
+  exact hExtends name (hDomain name value hLookup)
+
+theorem NamesWithin.mono
+    {before after active : List Name}
+    (hNames : NamesWithin before active)
+    (hExtends : ∀ name, name ∈ before → name ∈ after) :
+    NamesWithin after active := by
+  intro name hActive
+  exact hExtends name (hNames name hActive)
+
+theorem TargetExtends.refl (target : Locals.Source.Store) :
+    TargetExtends target target := by
+  intro name value hLookup
+  exact hLookup
+
+theorem TargetExtends.trans
+    {first second third : Locals.Source.Store}
+    (hFirst : TargetExtends first second)
+    (hSecond : TargetExtends second third) :
+    TargetExtends first third := by
+  intro name value hLookup
+  exact hSecond name value (hFirst name value hLookup)
+
+theorem TargetExtends.congr
+    {before middle after : Locals.Source.Store}
+    (hEq : middle = before)
+    (hAfter : TargetExtends middle after) :
+    TargetExtends before after := by
+  subst middle
+  exact hAfter
+
+theorem TargetExtends.insert_fresh
+    {target : Locals.Source.Store} {name : Name} {value : Assembly.Word}
+    (hFresh : target name = none) :
+    TargetExtends target (Locals.Source.Store.insert target name value) := by
+  intro key result hLookup
+  have hNe : key ≠ name := by
+    intro hEq
+    subst key
+    rw [hFresh] at hLookup
+    contradiction
+  rw [Locals.Source.Store.insert_of_ne hNe]
+  exact hLookup
 
 theorem scoped_insert_hidden
     {layout : List Name} {source : EvmYul.Yul.VarStore}

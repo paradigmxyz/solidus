@@ -394,6 +394,100 @@ mutual
 
 end
 
+theorem evalArgs_append_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ) :
+    ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
+      {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+      {source final : σ} {values : List Word},
+      evalArgs model prim fuel (left ++ right) codeOverride source =
+          .ok (final, values) →
+      ∃ middle leftValues rightValues remainingFuel,
+        fuel = remainingFuel + 2 * left.length ∧
+        evalArgs model prim fuel left codeOverride source =
+          .ok (middle, leftValues) ∧
+        evalArgs model prim remainingFuel right codeOverride middle =
+          .ok (final, rightValues) ∧
+        values = leftValues ++ rightValues
+  | fuel, [], right, codeOverride, source, final, values, hRun => by
+      cases fuel with
+      | zero =>
+          simp [evalArgs, fail] at hRun
+      | succ previous =>
+          refine
+            ⟨source, [], values, previous.succ, by simp, ?_, hRun, by simp⟩
+          simp [evalArgs]
+  | fuel, head :: tail, right, codeOverride, source, final, values, hRun => by
+      cases fuel with
+      | zero =>
+          simp [evalArgs, fail] at hRun
+      | succ previous =>
+          cases hHead :
+              eval model prim previous head codeOverride source with
+          | error failure =>
+              simp [evalArgs, hHead, evalTail] at hRun
+          | ok headResult =>
+              rcases headResult with ⟨afterHead, headValue⟩
+              cases previous with
+              | zero =>
+                  simp [evalArgs, hHead, evalTail, fail] at hRun
+              | succ tailFuel =>
+                  cases hTailRun :
+                      evalArgs model prim tailFuel (tail ++ right)
+                        codeOverride afterHead with
+                  | error failure =>
+                      simp [evalArgs, hHead, evalTail, hTailRun] at hRun
+                  | ok tailResult =>
+                      rcases tailResult with ⟨tailFinal, tailResultValues⟩
+                      simp [evalArgs, hHead, evalTail, hTailRun] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      obtain
+                          ⟨middle, tailValues, rightValues, remainingFuel,
+                            hFuel, hTail, hRight, hValues⟩ :=
+                        evalArgs_append_ok_parts model prim hTailRun
+                      refine
+                        ⟨middle, headValue :: tailValues, rightValues,
+                          remainingFuel, ?_, ?_, hRight, ?_⟩
+                      · simp only [List.length_cons]
+                        omega
+                      · simp [evalArgs, hHead, evalTail, hTail]
+                      · simp [hValues]
+
+theorem evalArgs_singleton_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source final : σ} {values : List Word}
+    (hRun :
+      evalArgs model prim fuel [expr] codeOverride source =
+        .ok (final, values)) :
+    ∃ evalFuel value,
+      fuel = evalFuel + 1 ∧
+      eval model prim evalFuel expr codeOverride source =
+        .ok (final, value) ∧
+      values = [value] := by
+  cases fuel with
+  | zero =>
+      simp [evalArgs, fail] at hRun
+  | succ evalFuel =>
+      cases hEval :
+          eval model prim evalFuel expr codeOverride source with
+      | error failure =>
+          simp [evalArgs, hEval, evalTail] at hRun
+      | ok result =>
+          rcases result with ⟨afterExpr, value⟩
+          cases evalFuel with
+          | zero =>
+              simp [evalArgs, hEval, evalTail, fail] at hRun
+          | succ remainingFuel =>
+              cases remainingFuel with
+              | zero =>
+                  simp [evalArgs, hEval, evalTail, fail] at hRun
+              | succ emptyFuel =>
+                  simp [evalArgs, hEval, evalTail] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  exact
+                    ⟨emptyFuel.succ.succ, value, by omega, hEval, rfl⟩
+
 end Effectful
 end Source
 end Yul

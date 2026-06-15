@@ -1083,6 +1083,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+#print axioms EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
 #print axioms EvmCompiler.Yul.StateRelation.Shared.withMachine
 #print axioms EvmCompiler.Yul.StateRelation.Shared.logOp
 #print axioms EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
@@ -1135,6 +1136,14 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.generated
 #print axioms EvmCompiler.Yul.Fresh.fresh?_components
 #print axioms EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+#print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#print axioms EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
 #print axioms EvmCompiler.Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
 #print axioms EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.names

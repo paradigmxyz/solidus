@@ -82,6 +82,39 @@ theorem decomposition_of_toObjectsWithObservers?
               subst contractLower
               rfl
 
+theorem Decomposition.findFunction
+    {program : Program} {targetProgram : Objects.Program}
+    (hDecomposition : Decomposition program targetProgram)
+    {name : Name} {fn : AstFunctionDefinition}
+    (hLookup : program.contract.functions.lookup name = some fn) :
+    ∃ before after lowerFn,
+      Functions.Source.FunList.find? name
+          targetProgram.toFunctions.functions =
+        some lowerFn ∧
+      FunctionDefinition.toFunDefUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries program.contract))
+          before name fn =
+        some (lowerFn, after) := by
+  rcases hDecomposition with
+    ⟨bodyStmts, afterBody, functions, afterFunctions,
+      hBody, hFunctions, hTarget⟩
+  have hLowering :
+      FunctionList.UncheckedLowering
+        (FunctionList.fuel
+          (Contract.functionEntries program.contract))
+        afterBody (Contract.functionEntries program.contract)
+        functions afterFunctions :=
+    FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
+      hFunctions
+  obtain ⟨before, after, lowerFn, hFind, hLowerFn⟩ :=
+    hLowering.find_of_mem
+      (Contract.functionEntries_names_nodup program.contract)
+      (Contract.functionEntries_mem_of_lookup hLookup)
+  refine ⟨before, after, lowerFn, ?_, hLowerFn⟩
+  rw [hTarget]
+  exact hFind
+
 end FunctionsObserverCompiler
 end Yul
 end EvmCompiler

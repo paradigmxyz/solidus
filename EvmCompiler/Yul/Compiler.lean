@@ -326,6 +326,18 @@ def directPureArgSafeAt? (offset : Nat) (expr : AstExpr) : Bool :=
   pureAliasArgSafe? expr &&
     decide (pendingStackDepth expr + offset < 16)
 
+def deferredBoundArgSafe? : AstExpr → Bool
+  | .Lit _value => true
+  | .Var _name => true
+  | .Call _callee _args => false
+
+theorem Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_pureAlias
+    {prim : EvmYul.Operation .Yul}
+    (hPure : pureAliasPrim? prim = true) :
+    Prim.toUncheckedBasicOp? prim = Prim.toBasicOp? prim := by
+  cases prim <;>
+    simp [pureAliasPrim?, Prim.toUncheckedBasicOp?] at hPure ⊢
+
 mutual
   def lower? (results : Nat) (state : Fresh.State) :
       AstExpr →
@@ -480,10 +492,9 @@ mutual
     | expr :: rest => do
         let (preRest, lowerRest, state') ← List.lowerBound1Unchecked? state rest
         let (preHead, lowerHead, state'') ← lowerUnchecked? 1 state' expr
-        -- Wide EVM calls add stack offset to every direct argument lookup.
-        -- Deep pure expressions can do the same internally, so include their
-        -- worst pending-stack depth in the direct-lowering guard.
-        if directPureArgSafeAt? lowerRest.length expr &&
+        -- Keep a small direct window for stable leaves only. Compound
+        -- expressions are materialized at their Yul evaluation boundary.
+        if deferredBoundArgSafe? expr &&
             lowerRest.length < 4 then
           some (preRest ++ preHead, lowerHead :: lowerRest, state'')
         else
@@ -500,6 +511,99 @@ def lower1Unchecked? (state : Fresh.State) (expr : AstExpr) :
 def lower0Unchecked? (state : Fresh.State) (expr : AstExpr) :
     Option (List Functions.Stmt × Locals.Expr 0 × Fresh.State) :=
   lowerUnchecked? 0 state expr
+
+theorem lower1Unchecked?_direct_parts
+    {offset : Nat} {state state' : Fresh.State}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    (hSafe : directPureArgSafeAt? offset expr = true)
+    (hLower :
+      lower1Unchecked? state expr = some (pre, lower, state')) :
+    pre = [] ∧ state' = state ∧ toLocals? 1 expr = some lower := by
+  cases expr with
+  | Lit value =>
+      simp [directPureArgSafeAt?, pureAliasArgSafe?,
+        lower1Unchecked?, lowerUnchecked?, cast] at hLower
+      rcases hLower with ⟨rfl, rfl, rfl⟩
+      simp [toLocals?, cast]
+  | Var name =>
+      simp [directPureArgSafeAt?, pureAliasArgSafe?,
+        lower1Unchecked?, lowerUnchecked?, cast] at hLower
+      rcases hLower with ⟨rfl, rfl, rfl⟩
+      simp [toLocals?, cast]
+  | Call callee args =>
+      cases callee with
+      | inr functionName =>
+          simp [directPureArgSafeAt?, pureAliasArgSafe?] at hSafe
+      | inl prim =>
+          have hSafeParts :
+              pureAliasArgSafe? (.Call (.inl prim) args) = true ∧
+                decide
+                    (pendingStackDepth (.Call (.inl prim) args) + offset <
+                      16) =
+                  true :=
+            Bool.and_eq_true_iff.mp hSafe
+          have hAliasParts :
+              pureAliasPrim? prim = true ∧
+                List.pureAliasArgsSafe? args = true := by
+            simpa [pureAliasArgSafe?] using hSafeParts.1
+          have hPurePrim : pureAliasPrim? prim = true := by
+            exact hAliasParts.1
+          have hDirect : List.directPureArgsSafe? args = true := by
+            have hPureArgs :
+                List.pureAliasArgsSafe? args = true := by
+              exact hAliasParts.2
+            have hDepth :
+                List.pendingStackDepth args < 16 := by
+              have hBound :
+                  List.pendingStackDepth args + offset < 16 := by
+                simpa [directPureArgSafeAt?, pendingStackDepth,
+                  pureAliasArgSafe?, hPurePrim] using
+                    (of_decide_eq_true hSafeParts.2)
+              omega
+            simp [List.directPureArgsSafe?, hPureArgs, hDepth]
+          have hPrimEq :=
+            Prim.toUncheckedBasicOp?_eq_toBasicOp?_of_pureAlias hPurePrim
+          cases hOp : Prim.toBasicOp? prim with
+          | none =>
+              simp [lower1Unchecked?, lowerUnchecked?, hDirect, hPrimEq,
+                hOp] at hLower
+          | some op =>
+              cases hArgs : List.toLocals1? args with
+              | none =>
+                  simp [lower1Unchecked?, lowerUnchecked?, hDirect, hPrimEq,
+                    hOp, hArgs] at hLower
+              | some lowerArgs =>
+                  cases hSeq :
+                      List.toStackSeq? lowerArgs
+                        (Expressions.Structured.BasicOp.inputs op) with
+                  | none =>
+                      simp [lower1Unchecked?, lowerUnchecked?, hDirect,
+                        hPrimEq, hOp, hArgs, hSeq] at hLower
+                  | some seq =>
+                      by_cases hOutputs :
+                          Expressions.Structured.BasicOp.outputs op = 1
+                      · simp [lower1Unchecked?, lowerUnchecked?, hDirect,
+                          hPrimEq, hOp, hArgs, hSeq, hOutputs] at hLower
+                        rcases hLower with ⟨rfl, rfl, rfl⟩
+                        simp [toLocals?, hOp, hArgs, hSeq, hOutputs]
+                      · simp [lower1Unchecked?, lowerUnchecked?, hDirect,
+                          hPrimEq, hOp, hArgs, hSeq, hOutputs] at hLower
+
+theorem lower1Unchecked?_deferred_parts
+    {state state' : Fresh.State}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    (hSafe : deferredBoundArgSafe? expr = true)
+    (hLower :
+      lower1Unchecked? state expr = some (pre, lower, state')) :
+    pre = [] ∧ state' = state ∧ toLocals? 1 expr = some lower := by
+  apply lower1Unchecked?_direct_parts
+      (offset := 0) (state := state) (state' := state')
+      (expr := expr) (pre := pre) (lower := lower) _ hLower
+  cases expr <;>
+    simp [deferredBoundArgSafe?, directPureArgSafeAt?,
+      pureAliasArgSafe?, pendingStackDepth] at hSafe ⊢
 
 theorem toLocals?_gas (results : Nat) :
     toLocals? results
@@ -1322,7 +1426,7 @@ inductive UncheckedBoundLowering :
         EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
           some (preHead, lowerHead, stateHead))
       (hDirect :
-        directPureArgSafeAt? lowerRest.length expr = true ∧
+        deferredBoundArgSafe? expr = true ∧
           lowerRest.length < 4) :
       UncheckedBoundLowering state (expr :: rest)
         (preRest ++ preHead) (lowerHead :: lowerRest) stateHead
@@ -1338,7 +1442,7 @@ inductive UncheckedBoundLowering :
         EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =
           some (preHead, lowerHead, stateHead))
       (hDirect :
-        ¬(directPureArgSafeAt? lowerRest.length expr = true ∧
+        ¬(deferredBoundArgSafe? expr = true ∧
           lowerRest.length < 4))
       (hFresh : Fresh.fresh? stateHead = some (tmp, stateFresh)) :
       UncheckedBoundLowering state (expr :: rest)
@@ -1439,7 +1543,7 @@ theorem uncheckedBoundLowering_of_lowerBound1Unchecked?
           | some headResult =>
               rcases headResult with ⟨preHead, lowerHead, stateHead⟩
               by_cases hDirect :
-                  directPureArgSafeAt? lowerRest.length expr = true ∧
+                  deferredBoundArgSafe? expr = true ∧
                     lowerRest.length < 4
               · have hHeadLower1 :
                     EvmCompiler.Yul.Expr.lower1Unchecked? stateRest expr =

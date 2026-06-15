@@ -127,6 +127,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+#check EvmCompiler.Yul.FunctionsObserverCompiler.Decomposition.findFunction
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAt
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
@@ -170,6 +171,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.List.UncheckedBoundLowering
 #check EvmCompiler.Yul.Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
 #check EvmCompiler.Yul.Expr.List.lowerBound1Unchecked?_length_lowerArgs_eq
+#check EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
+#check EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#check EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
+#check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering
 #check EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering.names

@@ -1566,9 +1566,17 @@ corridor.
   `UncheckedLowering` derivation. Finmap source lookup, source-name
   uniqueness, and that derivation recover the exact compiled `FunDef` selected
   by canonical Functions lookup, so recursive call preservation does not need
-  a public callee oracle. The next checked boundary composes
-  `UncheckedBoundLowering` with `Prepared` to execute every generated
-  argument-binding preamble before entering that selected callee.
+  a public callee oracle. `PreparedArgs.ofUncheckedLowering` now composes the
+  ordinary `UncheckedBoundLowering` derivation with canonical Yul
+  right-to-left argument inversion and Functions preamble execution. Generated
+  bindings carry target-store extension and exact fresh lookups; the small
+  no-scratch direct window is restricted to stable literal/variable leaves,
+  whose values are checked invariant under later shared effects and fresh
+  target locals. The result executes every generated argument preamble and
+  proves the final Functions argument list returns the source values in call
+  order. The next boundary constructs recursive function-call
+  `PreparedValue`s from the compiler-selected callee and checked body
+  preservation.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
