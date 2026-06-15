@@ -40,7 +40,8 @@ theorem safeCompilerSelected
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   cases prim with
   | StopArith primitive =>
       cases primitive with

@@ -171,7 +171,7 @@ theorem forwardAtArity_of_environmentNullary
             targetResult target.shared.executionEnv := by
         apply hFamily.result_eq
         exact hShared.world.executionEnv
-      refine ⟨target.shared, ?_, ?_⟩
+      refine ⟨target.shared, ?_, ?_, by rfl⟩
       · simp [Locals.Source.PrimitiveSemantics.structured,
           hInputs, hStep, Assembly.PrimStep.run,
           EvmYul.EVM.executionEnvOp,
@@ -209,7 +209,8 @@ theorem safeEnvironmentNullary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -306,7 +307,7 @@ theorem forwardAt_of_environmentUnary
                     targetResult target.shared.executionEnv value := by
                 exact hFamily.result_eq
                   hShared.world.executionEnv value
-              refine ⟨target.shared, ?_, ?_⟩
+              refine ⟨target.shared, ?_, ?_, by rfl⟩
               · simp [Locals.Source.PrimitiveSemantics.structured,
                   hInputs, hStep, Assembly.PrimStep.run,
                   EvmYul.EVM.unaryExecutionEnvOp,
@@ -343,7 +344,8 @@ theorem safeEnvironmentUnary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact

@@ -102,8 +102,12 @@ Adjacent boundary status:
   `RecursiveScopedValueForward` interface. Canonical literal and variable
   evaluation now have source-owned inversions, and the expression pass
   constructs scoped prepared values for both ordinary compiler lowering cases.
-  Constructing the primitive and function-call cases and assembling the full
-  interface by main source-fuel induction, function-call
+  The pass-owned primitive interface now also certifies lexical-store
+  preservation for every compiler-selected family, direct expression
+  induction carries that fact compositionally, and ordinary unchecked
+  `gas()`/`msize()` lowering has checked scoped prepared-value constructors.
+  Constructing generated-argument primitive and function-call cases and
+  assembling the full interface by main source-fuel induction, function-call
   declaration/assignment forms, complete control statements, whole
   functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
@@ -1605,8 +1609,14 @@ corridor.
   conversion is shared by the relation owner, while
   `ScopedPreparedValue.direct`, `ofLiteral`, and `ofVariable` provide the first
   checked constructors of the bounded recursive value interface without
-  duplicating semantics or lowering. Primitive and function-call scoped-value
-  constructors are the next expression obligations.
+  duplicating semantics or lowering. `ForwardAt` and its guarded lift now
+  retain the invariant that successful primitives preserve the imported Yul
+  lexical store; the direct-expression fuel induction composes that invariant
+  through argument evaluation. `ScopedPreparedValue.ofGas` and `ofMsize`
+  therefore reconstruct exact scoped relations from the ordinary unchecked
+  compiler equations and canonical observer semantics. Generated-argument
+  primitive and function-call scoped-value constructors are the next
+  expression obligations.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

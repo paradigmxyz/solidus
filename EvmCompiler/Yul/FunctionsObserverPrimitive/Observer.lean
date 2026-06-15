@@ -34,7 +34,8 @@ theorem observerPrim
       (Functions.ObserverSemantics.primitiveSemantics transcript).eval
           op target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   unfold ObserverSemantics.SourceReplay.primCall at hRun
   rw [hYulObserver] at hRun
   cases hConsume :
@@ -50,10 +51,11 @@ theorem observerPrim
       obtain ⟨targetAfter, hTargetConsume, hCursor, hSourceRel⟩ :=
         Simulation.ResourceReplay.consume?_rel
           hRel.1 hRel.2 hConsume
-      refine ⟨targetAfter, ?_, hCursor, hSourceRel⟩
+      refine ⟨targetAfter, ?_, ⟨hCursor, hSourceRel⟩, ?_⟩
       exact
         Functions.ObserverSemantics.primitiveSemantics_eval_observer
           hFunctionsObserver hTargetConsume
+      rw [Simulation.ResourceReplay.consume?_source hConsume]
 
 theorem gas
     {transcript : Trace} {codeRel : StateRelation.CodeRel}
@@ -70,7 +72,8 @@ theorem gas
       (Functions.ObserverSemantics.primitiveSemantics transcript).eval
           .gas target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   observerPrim ObserverSemantics.yulPrimObserver?_gas (by rfl) hRel hRun
 
 theorem msize
@@ -88,7 +91,8 @@ theorem msize
       (Functions.ObserverSemantics.primitiveSemantics transcript).eval
           .msize target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   observerPrim ObserverSemantics.yulPrimObserver?_msize (by rfl) hRel hRun
 
 theorem safeObserverPrim
@@ -114,10 +118,11 @@ theorem safeObserverPrim
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨hSourceSafe, hSourceRun⟩ :=
     ObserverSafety.SafeSemantics.eval_ok_parts hRun
-  obtain ⟨target', hTargetRun, hFinalRel⟩ :=
+  obtain ⟨target', hTargetRun, hFinalRel, hStore⟩ :=
     observerPrim hYulObserver hFunctionsObserver hRel hSourceRun
   have hSourceMemorySafe :
       Simulation.MemorySafety.PrimitiveMemorySafe contract op
@@ -138,7 +143,7 @@ theorem safeObserverPrim
         target.source.shared.toMachineState []
     rw [← hShared.machine]
     exact hSourceSharedSafe
-  refine ⟨target', ?_, hFinalRel⟩
+  refine ⟨target', ?_, hFinalRel, hStore⟩
   simpa [Functions.ObserverSafety.SafeSemantics.primitiveSemantics,
     hTargetSafe] using hTargetRun
 
@@ -159,7 +164,8 @@ theorem gasSafe
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .gas target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeObserverPrim ObserverSemantics.yulPrimObserver?_gas (by rfl)
     (by rfl) (by rfl) hRel hRun
 
@@ -180,7 +186,8 @@ theorem msizeSafe
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .msize target [] =
         .ok (target', values) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeObserverPrim ObserverSemantics.yulPrimObserver?_msize (by rfl)
     (by rfl) (by rfl) hRel hRun
 

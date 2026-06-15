@@ -54,7 +54,7 @@ theorem lowerEvalGas
       ObserverSemantics.SourceReplay.primitiveSemantics,
       Yul.Source.Effectful.evalValues,
       Yul.Source.Effectful.evalArgs] using hRun
-  obtain ⟨target', hTarget, hTargetRel⟩ := gas hRel hPrim
+  obtain ⟨target', hTarget, hTargetRel, _hStore⟩ := gas hRel hPrim
   refine ⟨target', ?_, hTargetRel⟩
   simpa [Functions.Source.Effectful.Expr.eval] using hTarget
 
@@ -93,7 +93,7 @@ theorem lowerEvalMsize
       ObserverSemantics.SourceReplay.primitiveSemantics,
       Yul.Source.Effectful.evalValues,
       Yul.Source.Effectful.evalArgs] using hRun
-  obtain ⟨target', hTarget, hTargetRel⟩ := msize hRel hPrim
+  obtain ⟨target', hTarget, hTargetRel, _hStore⟩ := msize hRel hPrim
   refine ⟨target', ?_, hTargetRel⟩
   simpa [Functions.Source.Effectful.Expr.eval] using hTarget
 
@@ -136,7 +136,8 @@ theorem lowerEvalGasSafe
         .ok (source', values) := by
     simpa [Yul.Source.Effectful.evalValues,
       Yul.Source.Effectful.evalArgs] using hRun
-  obtain ⟨target', hTarget, hTargetRel⟩ := gasSafe hRel hPrim
+  obtain ⟨target', hTarget, hTargetRel, _hStore⟩ :=
+    gasSafe hRel hPrim
   refine ⟨target', ?_, hTargetRel⟩
   simpa [Functions.Source.Effectful.Expr.eval] using hTarget
 
@@ -179,7 +180,8 @@ theorem lowerEvalMsizeSafe
         .ok (source', values) := by
     simpa [Yul.Source.Effectful.evalValues,
       Yul.Source.Effectful.evalArgs] using hRun
-  obtain ⟨target', hTarget, hTargetRel⟩ := msizeSafe hRel hPrim
+  obtain ⟨target', hTarget, hTargetRel, _hStore⟩ :=
+    msizeSafe hRel hPrim
   refine ⟨target', ?_, hTargetRel⟩
   simpa [Functions.Source.Effectful.Expr.eval] using hTarget
 

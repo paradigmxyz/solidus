@@ -172,7 +172,7 @@ theorem forwardAt_of_pureBinary
   subst sourceValues
   subst source'
   subst outputs
-  refine ⟨target.shared, ?_, ?_⟩
+  refine ⟨target.shared, ?_, ?_, by rfl⟩
   · simpa using functionsPureBinaryOne hFamily target.shared left right
   · simpa [Locals.Source.State.withShared] using
       (show
@@ -200,7 +200,8 @@ theorem safePureBinary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp hFamily.yulObserver hFamily.functionsObserver
     hFamily.nonterminal hFamily.compilerOp
     (forwardAt_of_pureBinary hFamily) hRel hRun
@@ -300,7 +301,7 @@ theorem forwardAt_of_pureUnary
           | nil =>
               simp [EvmYul.Yul.execUnOp] at hCall
               rcases hCall with ⟨rfl, rfl⟩
-              refine ⟨target.shared, ?_, ?_⟩
+              refine ⟨target.shared, ?_, ?_, by rfl⟩
               · obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
                 simp [Locals.Source.PrimitiveSemantics.structured,
                   hInputs, hStep, Assembly.PrimStep.run,
@@ -347,7 +348,7 @@ theorem forwardAt_of_pureTernary
                   | nil =>
                       simp [EvmYul.Yul.execTriOp] at hCall
                       rcases hCall with ⟨rfl, rfl⟩
-                      refine ⟨target.shared, ?_, ?_⟩
+                      refine ⟨target.shared, ?_, ?_, by rfl⟩
                       · obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
                         simp [Locals.Source.PrimitiveSemantics.structured,
                           hInputs, hStep, Assembly.PrimStep.run,
@@ -381,7 +382,8 @@ theorem safePureUnary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -408,7 +410,8 @@ theorem safePureTernary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact

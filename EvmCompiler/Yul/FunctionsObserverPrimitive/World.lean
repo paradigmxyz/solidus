@@ -160,7 +160,7 @@ theorem forwardAtArity_of_worldNullary
           sourceResult sourceShared.toState =
             targetResult target.shared.toState :=
         hFamily.result_eq hShared.world
-      refine ⟨target.shared, ?_, ?_⟩
+      refine ⟨target.shared, ?_, ?_, by rfl⟩
       · simp [Locals.Source.PrimitiveSemantics.structured,
           hInputs, hStep, Assembly.PrimStep.run,
           EvmYul.EVM.stateOp,
@@ -197,7 +197,8 @@ theorem safeWorldNullary
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -301,7 +302,7 @@ theorem forwardAt_of_worldUnaryRead
                   sourceResult sourceShared.toState value =
                     targetResult target.shared.toState value :=
                 hFamily.result_eq hShared.world value
-              refine ⟨target.shared, ?_, ?_⟩
+              refine ⟨target.shared, ?_, ?_, by rfl⟩
               · simp [Locals.Source.PrimitiveSemantics.structured,
                   hInputs, hStep, Assembly.PrimStep.run,
                   EvmYul.EVM.unaryStateOp,
@@ -337,7 +338,8 @@ theorem safeWorldUnaryRead
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -520,7 +522,7 @@ theorem forwardAt_of_worldUnaryAccess
                   hFamily.related hShared.world value
               let targetShared : EvmYul.SharedState .EVM :=
                 { target.shared with toState := targetResult.1 }
-              refine ⟨targetShared, ?_, ?_⟩
+              refine ⟨targetShared, ?_, ?_, by rfl⟩
               · simp [Locals.Source.PrimitiveSemantics.structured,
                   hInputs, hStep, Assembly.PrimStep.run,
                   EvmYul.EVM.unaryStateOp,
@@ -561,7 +563,8 @@ theorem safeWorldUnaryAccess
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -689,7 +692,7 @@ theorem forwardAt_of_worldBinaryWrite
                           hFamily.related hShared.world key value
                       let targetShared : EvmYul.SharedState .EVM :=
                         { target.shared with toState := targetWorld }
-                      refine ⟨targetShared, ?_, ?_⟩
+                      refine ⟨targetShared, ?_, ?_, by rfl⟩
                       · simp [
                           Locals.Source.PrimitiveSemantics.structured,
                           hInputs, hStep, Assembly.PrimStep.run,
@@ -731,7 +734,8 @@ theorem safeWorldBinaryWrite
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact

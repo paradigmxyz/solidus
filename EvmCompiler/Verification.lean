@@ -162,8 +162,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_store
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain_store
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward_targetDomain
 #check EvmCompiler.Yul.FunctionsObserverExpression.bindGenerated
 #check EvmCompiler.Yul.FunctionsObserverExpression.Prepared
@@ -179,6 +181,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.evalValues_lit_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.evalValues_var_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.evalValues_prim_nil_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.eval_function_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.evalArgs_ok_length
 #check EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
@@ -186,7 +189,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_of_rel
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_of_rel_store
 #check EvmCompiler.Yul.StateRelation.Replay.sourceDomain_of_scopedExact
+#check EvmCompiler.Yul.StateRelation.Replay.sourceStoreDomain_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
 #check EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
@@ -198,9 +203,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.evaluated
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.direct
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.evaluated
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofGas
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofMsize
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofLiteral
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofVariable
 #check EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward

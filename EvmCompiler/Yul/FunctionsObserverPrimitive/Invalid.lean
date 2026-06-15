@@ -37,7 +37,8 @@ theorem safeInvalid
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .invalid target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_invalid hRel hRun
 

@@ -1132,8 +1132,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_store
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_targetDomain_store
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward_targetDomain
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.bindGenerated
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.generated
@@ -1144,6 +1146,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_lit_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_var_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_prim_nil_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.eval_function_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_ok_length
 #print axioms EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
@@ -1151,7 +1154,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
 #print axioms EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_of_rel
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_of_rel_store
 #print axioms EvmCompiler.Yul.StateRelation.Replay.sourceDomain_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.sourceStoreDomain_of_scopedExact
 #print axioms EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
 #print axioms EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
@@ -1163,8 +1168,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.evaluated
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.direct
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.evaluated
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofGas
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofMsize
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofLiteral
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofVariable
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward

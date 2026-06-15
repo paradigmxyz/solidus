@@ -28,7 +28,8 @@ def ForwardAt (codeRel : StateRelation.CodeRel) (fuel : Nat)
           op target.shared sourceValues.reverse =
         .ok (targetShared, outputs) ∧
       StateRelation.Regular.Rel codeRel source'
-        (target.withShared targetShared)
+        (target.withShared targetShared) ∧
+      source'.store = source.store
 
 def ForwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
     (prim : EvmYul.Operation .Yul) (op : Structured.BasicOp) : Prop :=
@@ -44,7 +45,8 @@ def ForwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
           op target.shared sourceValues.reverse =
         .ok (targetShared, outputs) ∧
       StateRelation.Regular.Rel codeRel source'
-        (target.withShared targetShared)
+        (target.withShared targetShared) ∧
+      source'.store = source.store
 
 theorem ForwardAt.withArity
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
@@ -83,7 +85,8 @@ private theorem safeBasicOp_of_raw
                 op target.source.shared sourceValues.reverse =
               .ok (targetShared, rawOutputs) ∧
             StateRelation.Regular.Rel codeRel sourceAfter
-              (target.source.withShared targetShared))
+              (target.source.withShared targetShared) ∧
+            sourceAfter.store = source.source.store)
     (hRun :
       (ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval fuel.succ source prim sourceValues =
@@ -92,7 +95,8 @@ private theorem safeBasicOp_of_raw
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨hSourceSafe, hSourceRun⟩ :=
     ObserverSafety.SafeSemantics.eval_ok_parts hRun
   have hSourceMemorySafe :
@@ -114,7 +118,7 @@ private theorem safeBasicOp_of_raw
       rcases hSourceEq with ⟨hSourceEq, hOutputs⟩
       subst source'
       subst outputs
-      obtain ⟨targetShared, hTargetRaw, hFinalRegular⟩ :=
+      obtain ⟨targetShared, hTargetRaw, hFinalRegular, hStore⟩ :=
         hRawForward hRaw
       have hTargetSafe :
           Functions.ObserverSafety.PrimitiveMemorySafe contract op
@@ -126,14 +130,14 @@ private theorem safeBasicOp_of_raw
         exact hSourceMemorySafe
       let target' : Functions.ObserverSemantics.State transcript :=
         target.withSource (target.source.withShared targetShared)
-      refine ⟨target', ?_, hRel.1, ?_⟩
+      refine ⟨target', ?_, ⟨hRel.1, hFinalRegular⟩, ?_⟩
       · have hTargetObserver :=
           Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
             hFunctionsObserver hTargetRaw
         exact
           Functions.ObserverSafety.SafeSemantics.eval_of_safe
             hTargetSafe (by simpa [target'] using hTargetObserver)
-      · exact hFinalRegular
+      · simpa using hStore
 
 /--
 Lift an adjacent raw primitive proof to the canonical guarded Yul and
@@ -164,7 +168,8 @@ theorem safeBasicOp
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   apply safeBasicOp_of_raw hYulObserver hFunctionsObserver
     hTerminal hOp hRel _ hRun
   intro sourceAfter rawOutputs hRaw
@@ -197,7 +202,8 @@ theorem safeBasicOpArity
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   apply safeBasicOp_of_raw hYulObserver hFunctionsObserver
     hTerminal hOp hRel _ hRun
   intro sourceAfter rawOutputs hRaw

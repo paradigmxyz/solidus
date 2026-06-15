@@ -86,7 +86,7 @@ theorem forwardAtArity_log0
                       let targetShared :=
                         EvmYul.SharedState.logOp
                           address size #[] target.shared
-                      refine ⟨targetShared, ?_, ?_⟩
+                      refine ⟨targetShared, ?_, ?_, by rfl⟩
                       · simp [
                           Locals.Source.PrimitiveSemantics.structured,
                           hInputs, hStep, Assembly.PrimStep.run,
@@ -169,7 +169,7 @@ theorem forwardAtArity_log1
                           let targetShared :=
                             EvmYul.SharedState.logOp
                               address size #[topic0] target.shared
-                          refine ⟨targetShared, ?_, ?_⟩
+                          refine ⟨targetShared, ?_, ?_, by rfl⟩
                           · simp [
                               Locals.Source.PrimitiveSemantics.structured,
                               hInputs, hStep, Assembly.PrimStep.run,
@@ -258,7 +258,7 @@ theorem forwardAtArity_log2
                                 EvmYul.SharedState.logOp
                                   address size #[topic0, topic1]
                                   target.shared
-                              refine ⟨targetShared, ?_, ?_⟩
+                              refine ⟨targetShared, ?_, ?_, by rfl⟩
                               · simp [
                                   Locals.Source.PrimitiveSemantics.structured,
                                   hInputs, hStep, Assembly.PrimStep.run,
@@ -355,7 +355,7 @@ theorem forwardAtArity_log3
                                       address size
                                       #[topic0, topic1, topic2]
                                       target.shared
-                                  refine ⟨targetShared, ?_, ?_⟩
+                                  refine ⟨targetShared, ?_, ?_, by rfl⟩
                                   · simp [
                                       Locals.Source.PrimitiveSemantics.structured,
                                       hInputs, hStep,
@@ -460,7 +460,7 @@ theorem forwardAtArity_log4
                                           address size
                                           #[topic0, topic1, topic2, topic3]
                                           target.shared
-                                      refine ⟨targetShared, ?_, ?_⟩
+                                      refine ⟨targetShared, ?_, ?_, by rfl⟩
                                       · simp [
                                           Locals.Source.PrimitiveSemantics.structured,
                                           hInputs, hStep,
@@ -516,7 +516,8 @@ theorem safeLog
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨hInputs, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact

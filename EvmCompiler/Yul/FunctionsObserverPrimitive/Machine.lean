@@ -82,7 +82,7 @@ theorem forwardAt_of_machineBinaryZero
                   let targetShared : EvmYul.SharedState .EVM :=
                     { target.shared with
                       toMachineState := targetMachine }
-                  refine ⟨targetShared, ?_, ?_⟩
+                  refine ⟨targetShared, ?_, ?_, by rfl⟩
                   · obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
                     simp [Locals.Source.PrimitiveSemantics.structured,
                       hInputs, hStep,
@@ -121,7 +121,8 @@ theorem safeMachineBinaryZero
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -185,7 +186,7 @@ theorem forwardAt_mcopy
                       let targetShared : EvmYul.SharedState .EVM :=
                         { target.shared with
                           toMachineState := targetMachine }
-                      refine ⟨targetShared, ?_, ?_⟩
+                      refine ⟨targetShared, ?_, ?_, by rfl⟩
                       · simp [Locals.Source.PrimitiveSemantics.structured,
                           Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
                           Expressions.Structured.BasicOp.inputs,
@@ -222,7 +223,8 @@ theorem safeMcopy
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .mcopy target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_mcopy hRel hRun
 
@@ -272,7 +274,7 @@ theorem forwardAt_mload
               let targetShared : EvmYul.SharedState .EVM :=
                 { target.shared with
                   toMachineState := targetResult.2 }
-              refine ⟨targetShared, ?_, ?_⟩
+              refine ⟨targetShared, ?_, ?_, by rfl⟩
               · simp [Locals.Source.PrimitiveSemantics.structured,
                   Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
                   Structured.BasicOp.toPrimOp,
@@ -312,7 +314,8 @@ theorem safeMload
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .mload target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_mload hRel hRun
 
@@ -366,7 +369,7 @@ theorem forwardAt_keccak256
                   let targetShared : EvmYul.SharedState .EVM :=
                     { target.shared with
                       toMachineState := targetResult.2 }
-                  refine ⟨targetShared, ?_, ?_⟩
+                  refine ⟨targetShared, ?_, ?_, by rfl⟩
                   · simp [Locals.Source.PrimitiveSemantics.structured,
                       Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
                       Structured.BasicOp.toPrimOp,
@@ -408,7 +411,8 @@ theorem safeKeccak256
           contract transcript).eval .keccak256 target
           sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_keccak256 hRel hRun
 
@@ -446,7 +450,7 @@ theorem forwardAtArity_returndatasize
             EvmYul.MachineState.returndatasize
               target.shared.toMachineState :=
         congrArg EvmYul.MachineState.returndatasize hShared.machine
-      refine ⟨target.shared, ?_, ?_⟩
+      refine ⟨target.shared, ?_, ?_, by rfl⟩
       · simp [Locals.Source.PrimitiveSemantics.structured,
           Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
           Expressions.Structured.BasicOp.inputs,
@@ -483,7 +487,8 @@ theorem safeReturndatasize
           contract transcript).eval .returndatasize target
           sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAtArity_returndatasize hArity hRel hRun
 
@@ -518,7 +523,7 @@ theorem forwardAtArity_pop
         rfl
       rw [hDispatch] at hCall
       rcases hCall with ⟨rfl, rfl⟩
-      refine ⟨target.shared, ?_, ?_⟩
+      refine ⟨target.shared, ?_, ?_, by rfl⟩
       · simp [Locals.Source.PrimitiveSemantics.structured,
           Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
           Expressions.Structured.BasicOp.inputs,
@@ -551,7 +556,8 @@ theorem safePop
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval .pop target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAtArity_pop hArity hRel hRun
 

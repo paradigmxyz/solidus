@@ -131,7 +131,7 @@ theorem forwardAt_of_sharedTernaryCopy
                       let targetShared :=
                         targetCopy target.shared
                           destination readStart size
-                      refine ⟨targetShared, ?_, ?_⟩
+                      refine ⟨targetShared, ?_, ?_, by rfl⟩
                       · simp [Locals.Source.PrimitiveSemantics.structured,
                           hInputs, hStep, Assembly.PrimStep.run,
                           EvmYul.EVM.ternaryCopyOp,
@@ -171,7 +171,8 @@ theorem safeSharedTernaryCopy
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
           contract transcript).eval op target sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' := by
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store := by
   obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
       hTerminal, hOp⟩ := hFamily.metadata
   exact
@@ -247,7 +248,7 @@ theorem forwardAt_returndatacopy
                         let targetShared : EvmYul.SharedState .EVM :=
                           { target.shared with
                             toMachineState := targetMachine }
-                        refine ⟨targetShared, ?_, ?_⟩
+                        refine ⟨targetShared, ?_, ?_, by rfl⟩
                         · simp [
                             Locals.Source.PrimitiveSemantics.structured,
                             Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
@@ -286,7 +287,8 @@ theorem safeReturndatacopy
           contract transcript).eval .returndatacopy target
           sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_returndatacopy hRel hRun
 
@@ -365,7 +367,7 @@ theorem forwardAt_extcodecopy
                             EvmYul.SharedState.extCodeCopy'
                               target.shared account destination
                                 readStart size
-                          refine ⟨targetShared, ?_, ?_⟩
+                          refine ⟨targetShared, ?_, ?_, by rfl⟩
                           · simp [
                               Locals.Source.PrimitiveSemantics.structured,
                               Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
@@ -405,7 +407,8 @@ theorem safeExtcodecopy
           contract transcript).eval .extcodecopy target
           sourceValues.reverse =
         .ok (target', outputs) ∧
-      StateRelation.Replay.Rel codeRel source' target' :=
+      StateRelation.Replay.Rel codeRel source' target' ∧
+      source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_extcodecopy hRel hRun
 
