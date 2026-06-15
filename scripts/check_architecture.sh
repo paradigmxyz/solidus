@@ -189,6 +189,7 @@ report_matches \
   'The Yul observer boundary must target Functions directly, not lower compiler passes:' \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
+  EvmCompiler/Yul/CompilerCallDecomposition.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \

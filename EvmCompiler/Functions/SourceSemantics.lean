@@ -158,6 +158,41 @@ def assignMany : List Name → List Word → Store → Option Store
         none
   | _, _, _ => none
 
+theorem assignMany_exists_of_length_of_contains :
+    ∀ {names : List Name} {values : List Word} {store : Store},
+      values.length = names.length →
+      (∀ name, name ∈ names → store.contains name = true) →
+      ∃ final, assignMany names values store = some final
+  | [], [], store, _hLength, _hContains =>
+      ⟨store, rfl⟩
+  | [], _value :: _values, _store, hLength, _hContains => by
+      simp at hLength
+  | _name :: _names, [], _store, hLength, _hContains => by
+      simp at hLength
+  | name :: names, value :: values, store, hLength, hContains => by
+      simp at hLength
+      have hHead : store.contains name = true :=
+        hContains name (by simp)
+      have hTailContains :
+          ∀ candidate, candidate ∈ names →
+            (Locals.Source.Store.insert store name value).contains
+                candidate =
+              true := by
+        intro candidate hMem
+        by_cases hEq : candidate = name
+        · subst candidate
+          simp [Locals.Source.Store.contains,
+            Locals.Source.Store.insert]
+        · simpa [Locals.Source.Store.contains,
+            Locals.Source.Store.insert, hEq] using
+              hContains candidate (by simp [hMem])
+      obtain ⟨final, hFinal⟩ :=
+        assignMany_exists_of_length_of_contains
+          hLength hTailContains
+      exact
+        ⟨final, by
+          simp [assignMany, hHead, hFinal]⟩
+
 theorem insertMany_zero_eq_initReturns
     (returns : List Name) (store : Store) :
     insertMany returns (returns.map fun _name => zero) store =

@@ -1634,10 +1634,18 @@ corridor.
   and complete function lists. Selected-callee decomposition transports the
   contract's initial reservation to the exact pre-body state and proves every
   compiled return/parameter name is reserved there; Functions semantics proves
-  the corresponding initialized entry store has no other names. The next
-  obligation is the recursive body dispatcher, using those compiler-owned
-  domain and scope facts for direct call-valued declarations, assignments, and
-  then the remaining statement/control forms.
+  the corresponding initialized entry store has no other names. Source
+  validation now supplies the selected function's complete body check at the
+  private recursive boundary. Multi-name assignment writeback and exact
+  caller-domain restoration are relation-owned, while
+  `CompilerCallDecomposition` exposes ordinary direct-call assignment lowering
+  without observer-specific compilation. The first direct call-valued
+  assignment body, including zero-, one-, and multi-result callees, is checked
+  through `ScopedReturnedCall.ofFunctionCall`,
+  `ReturnedBody.of_assign_call`, and
+  `RecursiveBodyForward.ofAssignCall`. The next obligation is the matching
+  direct call-valued declaration path and then the generic recursive
+  body/control dispatcher.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

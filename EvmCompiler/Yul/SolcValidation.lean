@@ -550,6 +550,72 @@ theorem programOkWith_function_signature_nodup
     functionOk_signature_nodup
       (functionEntriesOk_functionOk_of_mem hEntries hMem)
 
+theorem programOkWith_functionOk
+    {profile : DialectProfile} {program : Program}
+    {functionName : Name}
+    {params returns : List EvmYul.Identifier} {body : List AstStmt}
+    (hProgram : ProgramOkWith? profile program = true)
+    (hLookup :
+      program.contract.functions.lookup functionName =
+        some (.Def params returns body)) :
+    FunctionOk? profile program.contract
+        ((Contract.functionEntries program.contract).map Prod.fst)
+        (.Def params returns body) =
+      true := by
+  let entries := Contract.functionEntries program.contract
+  let functionNames := entries.map Prod.fst
+  have hContract :
+      ContractOkWithEntries? profile program.contract entries = true := by
+    simpa [ProgramOkWith?, ContractOkWith?, entries]
+      using hProgram
+  have hEntries :
+      FunctionEntriesOk? profile program.contract functionNames entries =
+        true := by
+    simp [ContractOkWithEntries?, functionNames] at hContract
+    exact hContract.2.2
+  have hMem :
+      (functionName, .Def params returns body) ∈ entries :=
+    Contract.functionEntries_mem_of_lookup hLookup
+  simpa [entries, functionNames] using
+    functionEntriesOk_functionOk_of_mem hEntries hMem
+
+theorem programOkWith_function_bodyOk
+    {profile : DialectProfile} {program : Program}
+    {functionName : Name}
+    {params returns : List EvmYul.Identifier} {body : List AstStmt}
+    (hProgram : ProgramOkWith? profile program = true)
+    (hLookup :
+      program.contract.functions.lookup functionName =
+        some (.Def params returns body)) :
+    StmtsOk? profile program.contract
+        ((Contract.functionEntries program.contract).map Prod.fst)
+        (identNames returns ++ identNames params) false false true body =
+      true := by
+  have hOk := programOkWith_functionOk hProgram hLookup
+  simp [FunctionOk?] at hOk
+  exact hOk.2.2.2
+
+theorem programOkWith_functionCall_partsN
+    {profile : DialectProfile} {program : Program}
+    {vars : List Name} {expected : Nat}
+    {functionName : Name} {args : List AstExpr}
+    {params returns : List EvmYul.Identifier} {body : List AstStmt}
+    (hProgram : ProgramOkWith? profile program = true)
+    (hExpr :
+      ExprOk? profile program.contract vars expected
+          (.Call (.inr functionName) args) =
+        true)
+    (hLookup :
+      program.contract.functions.lookup functionName =
+        some (.Def params returns body)) :
+    expected = returns.length ∧
+      args.length = params.length ∧
+      (identNames returns ++ identNames params).Nodup := by
+  exact
+    ⟨(exprOk_functionCall_parts hExpr hLookup).1,
+      (exprOk_functionCall_parts hExpr hLookup).2,
+      programOkWith_function_signature_nodup hProgram hLookup⟩
+
 theorem programOkWith_functionCall_parts
     {profile : DialectProfile} {program : Program}
     {vars : List Name} {functionName : Name} {args : List AstExpr}
@@ -566,8 +632,8 @@ theorem programOkWith_functionCall_parts
       (identNames returns ++ identNames params).Nodup ∧
       ∃ returnName, returns = [returnName] := by
   exact
-    ⟨(exprOk_functionCall_parts hExpr hLookup).2,
-      programOkWith_function_signature_nodup hProgram hLookup,
+    ⟨(programOkWith_functionCall_partsN hProgram hExpr hLookup).2.1,
+      (programOkWith_functionCall_partsN hProgram hExpr hLookup).2.2,
       returns_singleton_of_exprOk_functionCall hExpr hLookup⟩
 
 end SolcValidation

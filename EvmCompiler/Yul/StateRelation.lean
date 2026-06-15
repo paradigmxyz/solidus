@@ -1206,6 +1206,37 @@ theorem TargetDomainWithin.insert_visible
   · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
     exact hDomain key result hLookup
 
+theorem TargetDomainWithin.assignMany
+    {used : List Name} :
+    ∀ {names : List Name} {values : List Assembly.Word}
+      {target finalTarget : Locals.Source.Store},
+      TargetDomainWithin used target →
+      (∀ name, name ∈ names → name ∈ used) →
+      Functions.Source.Store.assignMany names values target =
+        some finalTarget →
+      TargetDomainWithin used finalTarget
+  | [], [], target, finalTarget, hDomain, _hUsed, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+      subst finalTarget
+      exact hDomain
+  | [], _value :: _values, _target, _finalTarget,
+      _hDomain, _hUsed, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | _name :: _names, [], _target, _finalTarget,
+      _hDomain, _hUsed, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | name :: names, value :: values, target, finalTarget,
+      hDomain, hUsed, hAssign => by
+      unfold Functions.Source.Store.assignMany at hAssign
+      by_cases hContains : target.contains name
+      · simp [hContains] at hAssign
+        apply
+          TargetDomainWithin.assignMany
+            (hDomain.insert_visible (hUsed name (by simp)))
+            (fun candidate hMem => hUsed candidate (by simp [hMem]))
+            hAssign
+      · simp [hContains] at hAssign
+
 theorem TargetDomainWithin.congr
     {used : List Name} {left right : Locals.Source.Store}
     (hDomain : TargetDomainWithin used left)
@@ -1525,6 +1556,65 @@ theorem scopedExact_multifill_insertMany
           scoped_cons_insert hTailScoped hHeadFresh
       · simpa [List.cons_append] using
           domainExact_insert hTailDomain
+
+theorem scopedExact_multifill_assignMany
+    {shared : EvmYul.SharedState .Yul} :
+    ∀ {names : List Name} {values : List Assembly.Word}
+      {layout : List Name}
+      {source : EvmYul.Yul.VarStore}
+      {target finalTarget : Locals.Source.Store},
+      ScopedRel layout source target →
+      DomainExact layout source →
+      names.Nodup →
+      (∀ name, name ∈ names → name ∈ layout) →
+      Functions.Source.Store.assignMany names values target =
+        some finalTarget →
+      ∃ finalSource,
+        (EvmYul.Yul.State.Ok shared source).multifill names values =
+          EvmYul.Yul.State.Ok shared finalSource ∧
+        ScopedRel layout finalSource finalTarget ∧
+        DomainExact layout finalSource
+  | [], [], layout, source, target, finalTarget,
+      hScoped, hDomain, _hNodup, _hVisible, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+      subst finalTarget
+      exact
+        ⟨source, by simp [EvmYul.Yul.State.multifill],
+          hScoped, hDomain⟩
+  | [], _value :: _values, _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hVisible, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | _name :: _names, [], _layout, _source, _target, _finalTarget,
+      _hScoped, _hDomain, _hNodup, _hVisible, hAssign => by
+      simp [Functions.Source.Store.assignMany] at hAssign
+  | name :: names, value :: values, layout, source, target, finalTarget,
+      hScoped, hDomain, hNodup, hVisible, hAssign => by
+      have hParts := List.nodup_cons.mp hNodup
+      unfold Functions.Source.Store.assignMany at hAssign
+      by_cases hContains : target.contains name
+      · simp [hContains] at hAssign
+        obtain ⟨tailTarget, hTailAssign, hFinalTarget⟩ :=
+          Functions.Source.Store.assignMany_remove_insert_of_not_mem
+            hAssign hParts.1
+        have hTailVisible :
+            ∀ candidate, candidate ∈ names → candidate ∈ layout := by
+          intro candidate hMem
+          exact hVisible candidate (by simp [hMem])
+        obtain
+            ⟨tailSource, hTailSource, hTailScoped, hTailDomain⟩ :=
+          scopedExact_multifill_assignMany
+            hScoped hDomain hParts.2 hTailVisible hTailAssign
+        subst finalTarget
+        refine
+          ⟨tailSource.insert name value, ?_, ?_, ?_⟩
+        · simpa [EvmYul.Yul.State.multifill] using
+            congrArg (fun state => state.insert name value) hTailSource
+        · exact
+            scoped_insert_visible hTailScoped
+        · exact
+            domainExact_insert_visible hTailDomain
+              (hVisible name (by simp))
+      · simp [hContains] at hAssign
 
 theorem firstDuplicate?_none_of_nodup
     (names : List Name) (hNoDup : names.Nodup) :
@@ -1940,6 +2030,30 @@ theorem scopedExact_multifill_single_visible
       Vars.domainExact_insert_visible hDomain hMem⟩
   simp [EvmYul.Yul.State.multifill, EvmYul.Yul.State.insert]
 
+theorem scopedExact_multifill_assignMany
+    {codeRel : CodeRel} {layout names : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hVisible : ∀ name, name ∈ names → name ∈ layout)
+    (hAssign :
+      Functions.Source.Store.assignMany names values target.vars =
+        some finalVars) :
+    ScopedExactRel codeRel layout
+      (source.multifill names values)
+      { shared := target.shared, vars := finalVars } := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, hDomain⟩
+  subst source
+  obtain ⟨finalSource, hFinalSource, hFinalScoped, hFinalDomain⟩ :=
+    Vars.scopedExact_multifill_assignMany
+      (shared := sourceShared) hScoped hDomain hNoDup hVisible hAssign
+  exact
+    ⟨sourceShared, finalSource, hFinalSource, hShared,
+      hFinalScoped, hFinalDomain⟩
+
 theorem scopedExact_zeroFill_insertMany
     {codeRel : CodeRel} {layout names : List Name}
     {source : EvmYul.Yul.State} {target : Locals.Source.State}
@@ -2045,6 +2159,30 @@ theorem restore_call
   subst callerSource
   refine
     ⟨bodyShared, callerVars, ?_, hBodyShared, hCallerVars⟩
+  simp [hBodySource, EvmYul.Yul.State.overwrite?,
+    EvmYul.Yul.State.setStore]
+
+theorem scopedExact_restore_call
+    {codeRel : CodeRel} {callerLayout bodyLayout : List Name}
+    {callerSource bodySource : EvmYul.Yul.State}
+    {callerTarget bodyTarget : Locals.Source.State}
+    (hCaller :
+      ScopedExactRel codeRel callerLayout callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel bodyLayout bodySource.reviveJump bodyTarget) :
+    ScopedExactRel codeRel callerLayout
+      ((bodySource.reviveJump.overwrite? callerSource).setStore callerSource)
+      { shared := bodyTarget.shared, vars := callerTarget.vars } := by
+  rcases hCaller with
+    ⟨callerShared, callerVars, hCallerSource, _hCallerShared,
+      hCallerVars, hCallerDomain⟩
+  rcases hBody with
+    ⟨bodyShared, bodyVars, hBodySource, hBodyShared,
+      _hBodyVars, _hBodyDomain⟩
+  subst callerSource
+  refine
+    ⟨bodyShared, callerVars, ?_, hBodyShared,
+      hCallerVars, hCallerDomain⟩
   simp [hBodySource, EvmYul.Yul.State.overwrite?,
     EvmYul.Yul.State.setStore]
 
@@ -2333,6 +2471,29 @@ theorem restore_call
     ⟨hBody.1,
       Regular.restore_call hCaller.2 hBody.2⟩
 
+theorem scopedExact_restore_call
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {callerLayout bodyLayout : List Name}
+    {callerSource bodySource :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {callerTarget bodyTarget :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hCaller :
+      ScopedExactRel codeRel callerLayout callerSource callerTarget)
+    (hBody :
+      ScopedExactRel codeRel bodyLayout
+        (bodySource.withSource bodySource.source.reviveJump) bodyTarget) :
+    ScopedExactRel codeRel callerLayout
+      (bodySource.withSource
+        ((bodySource.source.reviveJump.overwrite?
+          callerSource.source).setStore callerSource.source))
+      (bodyTarget.withSource
+        { shared := bodyTarget.source.shared,
+          vars := callerTarget.source.vars }) := by
+  exact
+    ⟨hBody.1,
+      Regular.scopedExact_restore_call hCaller.2 hBody.2⟩
+
 theorem restore_call_lookup
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
     {layout : List Name}
@@ -2434,6 +2595,30 @@ theorem scopedExact_multifill_single_visible
   exact
     ⟨hRel.1,
       Regular.scopedExact_multifill_single_visible hRel.2 name value hMem⟩
+
+theorem scopedExact_multifill_assignMany
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout names : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    {values : List Assembly.Word}
+    {finalVars : Locals.Source.Store}
+    (hRel : ScopedExactRel codeRel layout source target)
+    (hNoDup : names.Nodup)
+    (hVisible : ∀ name, name ∈ names → name ∈ layout)
+    (hAssign :
+      Functions.Source.Store.assignMany names values target.source.vars =
+        some finalVars) :
+    ScopedExactRel codeRel layout
+      (source.withSource (source.source.multifill names values))
+      (target.withSource
+        { shared := target.source.shared, vars := finalVars }) := by
+  exact
+    ⟨hRel.1,
+      Regular.scopedExact_multifill_assignMany
+        hRel.2 hNoDup hVisible hAssign⟩
 
 theorem scopedExact_zeroFill_insertMany
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

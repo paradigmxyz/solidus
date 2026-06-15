@@ -52,6 +52,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
+import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverStatement
@@ -293,6 +294,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_none
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_one
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
+#check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts
+#check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
+#check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofAssignCall
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
