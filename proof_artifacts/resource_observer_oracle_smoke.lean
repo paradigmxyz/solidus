@@ -346,6 +346,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Yul.EndToEnd.State.InitialRel
@@ -1109,6 +1110,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

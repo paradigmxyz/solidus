@@ -92,9 +92,10 @@ Ownership rules now enforced by `scripts/check_architecture.sh`:
 
 Adjacent boundary status:
 
-- [ ] Yul -> Functions: gas/msize primitive, expression, and let-statement
-  leaves are checked in the pass-owned module; complete expression,
-  statement, function, and program forward/backward theorems remain.
+- [ ] Yul -> Functions: all compiler-selected continuing primitives, plus
+  gas/msize expression and let-statement leaves, are checked in pass-owned
+  modules; complete structural expression, statement, function, and program
+  forward/backward theorems remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1503,7 +1504,7 @@ corridor.
   `Program.toObjectsWithObservers?` equation; it does not implement a parallel
   compiler. Canonical guarded Functions semantics now lives in
   `Functions.ObserverSafety`; allocation retains only compatibility exports.
-  The adjacent primitive module proves guarded Yul-to-Functions preservation
+  The adjacent primitive modules prove guarded Yul-to-Functions preservation
   for observer primitives, and the ordinary compiler equations lift those
   proofs to checked `gas()` and `msize()` expression-lowering leaves.
   Pass-owned semantic classifiers now cover pure binary/unary/ternary
@@ -1528,10 +1529,15 @@ corridor.
   explicitly equates Yul code images with executable EVM code for
   `codesize`/`codecopy` families. The account relation now also carries
   empty-account equivalence, so `extcodehash` preserves both the dead-account
-  zero case and the executable code-image hash case. The next boundary is the
-  compiler-selected primitive dispatcher and structural expression
-  preservation over this relation, followed by statements, loops, calls, and
-  whole-main composition.
+  zero case and the executable code-image hash case. The pass-owned
+  `safeCompilerSelected` dispatcher now composes those family theorems for
+  every successful nonterminal primitive selected by the ordinary compiler.
+  External call/create cases are eliminated internally from the shared closed
+  memory contract, and terminal primitives remain owned by statement/outcome
+  preservation. Observer-specific gas/msize proofs live in the adjacent
+  `FunctionsObserverPrimitive.Observer` module rather than in the aggregate
+  import. The next boundary is structural expression preservation over this
+  relation, followed by statements, loops, calls, and whole-main composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
