@@ -147,6 +147,62 @@ theorem eval_ok_parts
   · exact ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
   · simp [primitiveSemantics, hSafe, Yul.Source.Effectful.fail] at hEval
 
+private theorem step_error_of_terminal
+    {prim : EvmYul.Operation .Yul} {kind : Assembly.HaltKind}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (source : EvmYul.Yul.State) (values : List Word) :
+    ∃ err,
+      (EvmYul.step (τ := .Yul) prim (arg := none)) source values =
+        .error err := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [Prim.terminal?] at hTerminal
+  all_goals
+    cases values with
+    | nil => exact ⟨_, rfl⟩
+    | cons first rest =>
+        cases rest with
+        | nil => exact ⟨_, rfl⟩
+        | cons second rest =>
+            cases rest with
+            | nil => exact ⟨_, rfl⟩
+            | cons third rest => exact ⟨_, rfl⟩
+
+theorem terminal_none_of_eval_ok
+    {contract : MemoryContract.Contract} {transcript : Trace}
+    {fuel : Nat} {state final : State transcript}
+    {prim : EvmYul.Operation .Yul} {values outputs : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).eval
+          fuel state prim values =
+        .ok (final, outputs)) :
+    Prim.terminal? prim = none := by
+  cases hTerminal : Prim.terminal? prim with
+  | none => rfl
+  | some kind =>
+      obtain ⟨err, hStep⟩ :=
+        step_error_of_terminal hTerminal state.source values
+      obtain ⟨_hSafe, hRun⟩ := eval_ok_parts hEval
+      cases prim <;> rename_i primitive <;> cases primitive <;>
+        simp [Prim.terminal?] at hTerminal ⊢
+      all_goals
+        cases fuel with
+        | zero =>
+            simp [ObserverSemantics.SourceReplay.primCall,
+              Yul.Source.Effectful.fail] at hRun
+        | succ previous =>
+            simp only [ObserverSemantics.SourceReplay.primCall,
+              ObserverSemantics.yulPrimObserver?,
+              Prim.toUncheckedBasicOp?, Prim.toBasicOp?,
+              EvmYul.Yul.primCall.eq_def] at hRun
+            cases previous with
+            | zero =>
+                simp [Yul.Source.Effectful.fail] at hRun
+            | succ previous =>
+                by_cases hPerm :
+                    state.source.executionEnv.perm = false <;>
+                  simp [hStep, hPerm, Yul.Source.Effectful.fail] at hRun <;>
+                  cases hRun
+
 theorem eval_yulHalt_parts
     {contract : MemoryContract.Contract} {transcript : Trace}
     {fuel : Nat} {state failureState : State transcript}

@@ -892,9 +892,13 @@ theorem of_expr_primitive
           (Functions.Source.Effectful.Outcome.regular
             prepared.prepared.evalTarget,
             prepared.prepared.finalCtx) := by
-    simp [Functions.Source.Effectful.Block.runOpen,
-      Functions.Source.Effectful.Outcome.regular,
-      Locals.Source.Effectful.Outcome.regular]
+    simpa using
+      Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions prepared.prepared.finalCtx 0
+        prepared.prepared.evalTarget
   obtain ⟨exprFuel, hExprBlock⟩ :=
     Functions.Source.Effectful.Block.runOpen_cons_regular_exists
       (Functions.ObserverSemantics.stateModel transcript)
