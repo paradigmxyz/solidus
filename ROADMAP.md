@@ -135,8 +135,13 @@ Adjacent boundary status:
   and generated-binding primitives plus compiler-selected internal calls is
   checked, as are non-call singleton declaration and assignment failures.
   Call-valued declarations/assignments, terminal primitive statements,
-  conditionals, switch, loops, dispatcher/finish composition, and adjacent
-  backward adequacy remain.
+  conditionals, switch, and every loop failure position are checked.
+  `RecursiveTerminalFamily.ofCompiler` closes the terminal expression, body,
+  statement, list, compound, and loop interfaces by source-fuel induction.
+  `compileProgramForward` now reaches the real compiled Functions whole-program
+  runner for regular completion, `STOP`, `RETURN`, `REVERT`, and
+  `SELFDESTRUCT`, including canonical `callDispatcher`/`finish` packaging.
+  Adjacent backward adequacy remains.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1703,9 +1708,11 @@ corridor.
   nonterminal primitive cannot produce an observable `YulHalt` or `Revert`;
   malformed arities, static rejection, exhausted replay, and excluded external
   operations are discharged internally. Recursive terminal expressions plus
-  non-call singleton declaration and assignment failures are now checked. The
-  current obligation is compound terminal control, remaining call/terminal
-  leaves, whole-program terminal composition, and matching backward adequacy.
+  every terminal statement/control failure are now checked. The mutually
+  recursive terminal family, compiled dispatcher halt, and canonical
+  whole-program terminal packaging are checked without generated evidence or a
+  call oracle. The current Yul boundary obligation is matching backward
+  adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

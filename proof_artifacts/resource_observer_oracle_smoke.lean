@@ -1414,6 +1414,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForward
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramRegularForward
+#print axioms EvmCompiler.Yul.Source.Effectful.callDispatcher_observable_error_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalLoopForward.ofCompiler
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalCompoundForward.ofComponents
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.ofCompiler
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.dispatcherForward
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherTerminalForward
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramForward
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

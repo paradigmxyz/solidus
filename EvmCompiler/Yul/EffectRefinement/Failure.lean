@@ -387,6 +387,45 @@ theorem call_observable_error_parts
                       | ok stateAfterBody =>
                           simp [call, hContract, hFunction, hBody] at hRun
 
+theorem callDispatcher_observable_error_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      callDispatcher model prim fuel codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      exec model prim previous
+          (.Block [(model.source state).executionEnv.code.dispatcher])
+          codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall [] [] []))) =
+        .error failure := by
+  cases fuel with
+  | zero =>
+      simp [callDispatcher, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases hBody :
+          exec model prim previous
+            (.Block [(model.source state).executionEnv.code.dispatcher])
+            codeOverride
+            (model.withSource state
+              (EvmYul.Yul.State.mkOk
+                ((model.source state).initcall [] [] []))) with
+      | error bodyFailure =>
+          simp [callDispatcher, hBody] at hRun
+          subst failure
+          exact ⟨previous, rfl, hBody⟩
+      | ok stateAfterBody =>
+          simp [callDispatcher, hBody] at hRun
+
 theorem exec_expr_primitive_observable_error_evalValues
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)
@@ -485,6 +524,643 @@ theorem exec_assign_observable_error_evalValues
           exact ⟨previous, rfl, hEval⟩
       | ok result =>
           simp [exec, hCheck, multifill, hEval] at hRun
+
+theorem exec_let_none_observable_error_false
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hRun :
+      exec model primSemantics fuel (.Let names none)
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    False := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      simp [exec, hCheck] at hRun
+
+theorem exec_continue_observable_error_false
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel .Continue codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    False := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      simp [exec] at hRun
+
+theorem exec_break_observable_error_false
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel .Break codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    False := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      simp [exec] at hRun
+
+theorem exec_leave_observable_error_false
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel .Leave codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    False := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      simp [exec] at hRun
+
+theorem exec_if_observable_error_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel (.If cond body)
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      ((eval model primSemantics previous cond codeOverride state =
+          .error failure) ∨
+        ∃ stateAfterCond condValue,
+          eval model primSemantics previous cond codeOverride state =
+            .ok (stateAfterCond, condValue) ∧
+          condValue ≠ ⟨0⟩ ∧
+          exec model primSemantics previous (.Block body)
+              codeOverride stateAfterCond =
+            .error failure) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases hCond :
+          eval model primSemantics previous cond codeOverride state with
+      | error condFailure =>
+          simp [exec, hCond] at hRun
+          subst failure
+          exact ⟨previous, rfl, Or.inl hCond⟩
+      | ok condResult =>
+          rcases condResult with ⟨stateAfterCond, condValue⟩
+          by_cases hNonzero : condValue ≠ ⟨0⟩
+          · cases hBody :
+                exec model primSemantics previous (.Block body)
+                  codeOverride stateAfterCond with
+            | error bodyFailure =>
+                simp [exec, hCond, hNonzero, hBody] at hRun
+                subst failure
+                exact
+                  ⟨previous, rfl, Or.inr
+                    ⟨stateAfterCond, condValue,
+                      hCond, hNonzero, hBody⟩⟩
+            | ok stateAfterBody =>
+                simp [exec, hCond, hNonzero, hBody] at hRun
+          · have hZero :
+                condValue = ⟨0⟩ :=
+              Decidable.not_not.mp hNonzero
+            simp [exec, hCond, hZero] at hRun
+
+theorem exec_switch_observable_error_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {cases : List (Word × List EvmYul.Yul.Ast.Stmt)}
+    {defaultBody : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel
+          (.Switch cond cases defaultBody)
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      ((eval model primSemantics previous cond codeOverride state =
+          .error failure) ∨
+        ∃ stateAfterCond condValue,
+          eval model primSemantics previous cond codeOverride state =
+            .ok (stateAfterCond, condValue) ∧
+          exec model primSemantics previous
+              (.Block
+                (EvmYul.Yul.selectSwitchCase
+                  condValue defaultBody cases))
+              codeOverride stateAfterCond =
+            .error failure) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases hCond :
+          eval model primSemantics previous cond codeOverride state with
+      | error condFailure =>
+          simp [exec, hCond] at hRun
+          subst failure
+          exact ⟨previous, rfl, Or.inl hCond⟩
+      | ok condResult =>
+          rcases condResult with ⟨stateAfterCond, condValue⟩
+          cases hBody :
+              exec model primSemantics previous
+                (.Block
+                  (EvmYul.Yul.selectSwitchCase
+                    condValue defaultBody cases))
+                codeOverride stateAfterCond with
+          | error bodyFailure =>
+              simp [exec, hCond, hBody] at hRun
+              subst failure
+              exact
+                ⟨previous, rfl, Or.inr
+                  ⟨stateAfterCond, condValue, hCond, hBody⟩⟩
+          | ok stateAfterBody =>
+              simp [exec, hCond, hBody] at hRun
+
+theorem exec_block_nil_observable_error_false
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel (.Block [])
+          codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    False := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ previous =>
+      cases previous with
+      | zero =>
+          simp [exec, execSeq, fail] at hRun
+          rw [← hRun] at hObservable
+          simp [Exception.Observable] at hObservable
+      | succ rest =>
+          simp [exec, execSeq] at hRun
+
+inductive LoopObservableErrorCase
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) (fuel : Nat)
+    (cond : EvmYul.Yul.Ast.Expr)
+    (post body : List EvmYul.Yul.Ast.Stmt)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (outer : EvmYul.Yul.State)
+    (afterCond : σ) (condValue : Word) (failure : Failure σ) : Prop where
+  | body
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .error failure) :
+      LoopObservableErrorCase model prim fuel cond post body codeOverride
+        outer afterCond condValue failure
+  | post
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody : σ}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodyContinues : LoopBodyContinues (model.source afterBody))
+      (hPost :
+        exec model prim fuel (.Block post) codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .error failure) :
+      LoopObservableErrorCase model prim fuel cond post body codeOverride
+        outer afterCond condValue failure
+  | recurse
+      (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+      {afterBody afterPost : σ}
+      (hBody :
+        exec model prim fuel (.Block body) codeOverride afterCond =
+          .ok afterBody)
+      (hBodyContinues : LoopBodyContinues (model.source afterBody))
+      (hPost :
+        exec model prim fuel (.Block post) codeOverride
+            (model.withSource afterBody
+              (model.source afterBody).reviveJump) =
+          .ok afterPost)
+      (hPostRecurs : LoopPostRecurs (model.source afterPost))
+      (hLoop :
+        exec model prim fuel (.For cond post body) codeOverride
+            (model.withSource afterPost
+              ((model.source afterPost).overwrite? outer)) =
+          .error failure) :
+      LoopObservableErrorCase model prim fuel cond post body codeOverride
+        outer afterCond condValue failure
+
+theorem loop_observable_error_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      loop model prim fuel cond post body codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ previous,
+      fuel = previous + 2 ∧
+      ((eval model prim previous cond codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk (model.source state))) =
+          .error failure) ∨
+        ∃ afterCond condValue,
+          eval model prim previous cond codeOverride
+              (model.withSource state
+                (EvmYul.Yul.State.mkOk (model.source state))) =
+            .ok (afterCond, condValue) ∧
+          LoopObservableErrorCase model prim previous cond post body
+            codeOverride (model.source state) afterCond condValue failure) := by
+  cases fuel with
+  | zero =>
+      simp [loop, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ first =>
+      cases first with
+      | zero =>
+          simp [loop, fail] at hRun
+          rw [← hRun] at hObservable
+          simp [Exception.Observable] at hObservable
+      | succ previous =>
+          cases hCond :
+              eval model prim previous cond codeOverride
+                (model.withSource state
+                  (EvmYul.Yul.State.mkOk (model.source state))) with
+          | error condFailure =>
+              simp [loop, hCond] at hRun
+              subst failure
+              exact ⟨previous, by omega, Or.inl hCond⟩
+          | ok condResult =>
+              rcases condResult with ⟨afterCond, condValue⟩
+              by_cases hZero :
+                  condValue = EvmYul.UInt256.ofNat 0
+              · have hZeroLit : condValue = ⟨0⟩ := by
+                  simpa using hZero
+                simp [loop, hCond, hZeroLit] at hRun
+              · have hNonzeroLit : condValue ≠ ⟨0⟩ := by
+                  simpa using hZero
+                cases hBody :
+                    exec model prim previous (.Block body) codeOverride
+                      afterCond with
+                | error bodyFailure =>
+                    simp [loop, hCond, hNonzeroLit, hBody] at hRun
+                    subst failure
+                    exact
+                      ⟨previous, by omega, Or.inr
+                        ⟨afterCond, condValue, hCond,
+                          .body hZero hBody⟩⟩
+                | ok afterBody =>
+                    simp only [loop, hCond, if_neg hNonzeroLit, hBody] at hRun
+                    cases hBodySource : model.source afterBody with
+                    | OutOfFuel =>
+                        rw [hBodySource] at hRun
+                        contradiction
+                    | Checkpoint jump =>
+                        cases jump with
+                        | Break shared store =>
+                            rw [hBodySource] at hRun
+                            contradiction
+                        | Leave shared store =>
+                            rw [hBodySource] at hRun
+                            contradiction
+                        | Continue shared store =>
+                            rw [hBodySource] at hRun
+                            simp only at hRun
+                            cases hPost :
+                                exec model prim previous (.Block post)
+                                  codeOverride
+                                  (model.withSource afterBody
+                                    (model.source afterBody).reviveJump) with
+                            | error postFailure =>
+                                have hPost' := hPost
+                                simp only [hBodySource] at hPost'
+                                rw [hPost'] at hRun
+                                have hFailure :
+                                    postFailure = failure :=
+                                  Except.error.inj hRun
+                                subst failure
+                                exact
+                                  ⟨previous, by omega, Or.inr
+                                    ⟨afterCond, condValue, hCond,
+                                      .post hZero hBody
+                                        (by simp [LoopBodyContinues,
+                                          hBodySource])
+                                        hPost⟩⟩
+                            | ok afterPost =>
+                                have hPost' := hPost
+                                simp only [hBodySource] at hPost'
+                                rw [hPost'] at hRun
+                                simp only at hRun
+                                cases hPostSource :
+                                    model.source afterPost with
+                                | OutOfFuel =>
+                                    rw [hPostSource] at hRun
+                                    contradiction
+                                | Checkpoint postJump =>
+                                    cases postJump with
+                                    | Leave postShared postStore =>
+                                        rw [hPostSource] at hRun
+                                        contradiction
+                                    | Continue postShared postStore =>
+                                        rw [hPostSource] at hRun
+                                        simp only at hRun
+                                        cases hLoop :
+                                            exec model prim previous
+                                              (.For cond post body)
+                                              codeOverride
+                                              (model.withSource afterPost
+                                                ((model.source afterPost).overwrite?
+                                                  (model.source state))) with
+                                        | error loopFailure =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            have hFailure :
+                                                loopFailure = failure :=
+                                              Except.error.inj hRun
+                                            subst failure
+                                            exact
+                                              ⟨previous, by omega, Or.inr
+                                                ⟨afterCond, condValue, hCond,
+                                                  .recurse hZero hBody
+                                                    (by simp
+                                                      [LoopBodyContinues,
+                                                        hBodySource])
+                                                    hPost
+                                                    (by simp [LoopPostRecurs,
+                                                      hPostSource])
+                                                    hLoop⟩⟩
+                                        | ok afterLoop =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            contradiction
+                                    | Break postShared postStore =>
+                                        rw [hPostSource] at hRun
+                                        simp only at hRun
+                                        cases hLoop :
+                                            exec model prim previous
+                                              (.For cond post body)
+                                              codeOverride
+                                              (model.withSource afterPost
+                                                ((model.source afterPost).overwrite?
+                                                  (model.source state))) with
+                                        | error loopFailure =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            have hFailure :
+                                                loopFailure = failure :=
+                                              Except.error.inj hRun
+                                            subst failure
+                                            exact
+                                              ⟨previous, by omega, Or.inr
+                                                ⟨afterCond, condValue, hCond,
+                                                  .recurse hZero hBody
+                                                    (by simp
+                                                      [LoopBodyContinues,
+                                                        hBodySource])
+                                                    hPost
+                                                    (by simp [LoopPostRecurs,
+                                                      hPostSource])
+                                                    hLoop⟩⟩
+                                        | ok afterLoop =>
+                                            have hLoop' := hLoop
+                                            simp only [hPostSource] at hLoop'
+                                            rw [hLoop'] at hRun
+                                            contradiction
+                                | Ok postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error loopFailure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        have hFailure :
+                                            loopFailure = failure :=
+                                          Except.error.inj hRun
+                                        subst failure
+                                        exact
+                                          ⟨previous, by omega, Or.inr
+                                            ⟨afterCond, condValue, hCond,
+                                              .recurse hZero hBody
+                                                (by simp [LoopBodyContinues,
+                                                  hBodySource])
+                                                hPost
+                                                (by simp [LoopPostRecurs,
+                                                  hPostSource])
+                                                hLoop⟩⟩
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                    | Ok shared store =>
+                        rw [hBodySource] at hRun
+                        simp only at hRun
+                        cases hPost :
+                            exec model prim previous (.Block post)
+                              codeOverride
+                              (model.withSource afterBody
+                                (model.source afterBody).reviveJump) with
+                        | error postFailure =>
+                            have hPost' := hPost
+                            simp only [hBodySource] at hPost'
+                            rw [hPost'] at hRun
+                            have hFailure :
+                                postFailure = failure :=
+                              Except.error.inj hRun
+                            subst failure
+                            exact
+                              ⟨previous, by omega, Or.inr
+                                ⟨afterCond, condValue, hCond,
+                                  .post hZero hBody
+                                    (by simp [LoopBodyContinues, hBodySource])
+                                    hPost⟩⟩
+                        | ok afterPost =>
+                            have hPost' := hPost
+                            simp only [hBodySource] at hPost'
+                            rw [hPost'] at hRun
+                            simp only at hRun
+                            cases hPostSource : model.source afterPost with
+                            | OutOfFuel =>
+                                rw [hPostSource] at hRun
+                                contradiction
+                            | Checkpoint postJump =>
+                                cases postJump with
+                                | Leave postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    contradiction
+                                | Continue postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error loopFailure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        have hFailure :
+                                            loopFailure = failure :=
+                                          Except.error.inj hRun
+                                        subst failure
+                                        exact
+                                          ⟨previous, by omega, Or.inr
+                                            ⟨afterCond, condValue, hCond,
+                                              .recurse hZero hBody
+                                                (by simp [LoopBodyContinues,
+                                                  hBodySource])
+                                                hPost
+                                                (by simp [LoopPostRecurs,
+                                                  hPostSource])
+                                                hLoop⟩⟩
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                                | Break postShared postStore =>
+                                    rw [hPostSource] at hRun
+                                    simp only at hRun
+                                    cases hLoop :
+                                        exec model prim previous
+                                          (.For cond post body) codeOverride
+                                          (model.withSource afterPost
+                                            ((model.source afterPost).overwrite?
+                                              (model.source state))) with
+                                    | error loopFailure =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        have hFailure :
+                                            loopFailure = failure :=
+                                          Except.error.inj hRun
+                                        subst failure
+                                        exact
+                                          ⟨previous, by omega, Or.inr
+                                            ⟨afterCond, condValue, hCond,
+                                              .recurse hZero hBody
+                                                (by simp [LoopBodyContinues,
+                                                  hBodySource])
+                                                hPost
+                                                (by simp [LoopPostRecurs,
+                                                  hPostSource])
+                                                hLoop⟩⟩
+                                    | ok afterLoop =>
+                                        have hLoop' := hLoop
+                                        simp only [hPostSource] at hLoop'
+                                        rw [hLoop'] at hRun
+                                        contradiction
+                            | Ok postShared postStore =>
+                                rw [hPostSource] at hRun
+                                simp only at hRun
+                                cases hLoop :
+                                    exec model prim previous
+                                      (.For cond post body) codeOverride
+                                      (model.withSource afterPost
+                                        ((model.source afterPost).overwrite?
+                                          (model.source state))) with
+                                | error loopFailure =>
+                                    have hLoop' := hLoop
+                                    simp only [hPostSource] at hLoop'
+                                    rw [hLoop'] at hRun
+                                    have hFailure :
+                                        loopFailure = failure :=
+                                      Except.error.inj hRun
+                                    subst failure
+                                    exact
+                                      ⟨previous, by omega, Or.inr
+                                        ⟨afterCond, condValue, hCond,
+                                          .recurse hZero hBody
+                                            (by simp [LoopBodyContinues,
+                                              hBodySource])
+                                            hPost
+                                            (by simp [LoopPostRecurs,
+                                              hPostSource])
+                                            hLoop⟩⟩
+                                | ok afterLoop =>
+                                    have hLoop' := hLoop
+                                    simp only [hPostSource] at hLoop'
+                                    rw [hLoop'] at hRun
+                                    contradiction
+
+theorem exec_for_observable_error_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {post body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model prim fuel (.For cond post body) codeOverride state =
+        .error failure)
+    (hObservable : Exception.Observable failure.exception) :
+    ∃ loopFuel,
+      fuel = loopFuel + 1 ∧
+      loop model prim loopFuel cond post body codeOverride state =
+        .error failure := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      rw [← hRun] at hObservable
+      simp [Exception.Observable] at hObservable
+  | succ loopFuel =>
+      exact ⟨loopFuel, rfl, by simpa [exec] using hRun⟩
 
 end Effectful
 end Source

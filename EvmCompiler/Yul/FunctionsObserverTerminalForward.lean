@@ -221,6 +221,133 @@ def RecursiveTerminalExpressionForward
         (FunctionsObserverTerminal.StatementResult
           contract codeRel targetProgram.toFunctions pre failure target ctx)
 
+def RecursiveTerminalCompoundForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool},
+    FunctionsObserverForward.CompoundStmt stmt →
+      sourceFuel < bound →
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave stmt =
+        true →
+      StateRelation.Vars.NamesWithin before.used (Stmt.names stmt) →
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before stmt =
+        some (lower, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      StateRelation.Vars.NamesWithin before.used layout →
+      FunctionsObserverForward.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel stmt (some sourceProgram.contract) source =
+        .error failure →
+      Yul.Source.Effectful.Exception.Observable failure.exception →
+      Nonempty
+        (FunctionsObserverTerminal.StatementResult
+          contract codeRel targetProgram.toFunctions lower
+          failure target ctx)
+
+def RecursiveTerminalLoopForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after afterCond afterPost : Fresh.State}
+    {layout : List Name}
+    {cond : AstExpr}
+    {post body : List AstStmt}
+    {preCond : List Functions.Stmt}
+    {lowerCond : Locals.Expr 1}
+    {lowerPost lowerBody : Functions.Block}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool},
+    sourceFuel < bound →
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout 1 cond =
+        true →
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout false false canLeave post =
+        true →
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout true true canLeave body =
+        true →
+      StateRelation.Vars.NamesWithin before.used
+          (Expr.names cond) →
+      StateRelation.Vars.NamesWithin before.used
+          (Stmt.List.names post) →
+      StateRelation.Vars.NamesWithin before.used
+          (Stmt.List.names body) →
+      Expr.lower1Unchecked? before cond =
+        some (preCond, lowerCond, afterCond) →
+      Stmt.List.toBlockUncheckedFuel?
+          compilerFuel afterCond post =
+        some (lowerPost, afterPost) →
+      Stmt.List.toBlockUncheckedFuel?
+          compilerFuel afterPost body =
+        some (lowerBody, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      StateRelation.Vars.NamesWithin before.used layout →
+      FunctionsObserverForward.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source =
+        .error failure →
+      Yul.Source.Effectful.Exception.Observable failure.exception →
+      Nonempty
+        (FunctionsObserverTerminal.ForLoopResult
+          contract codeRel targetProgram.toFunctions lowerPost
+          { stmts :=
+              preCond ++
+                .if_
+                  (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+                  { stmts := [.brk] } ::
+                lowerBody.stmts }
+          failure target ctx)
+
 theorem terminalArgsOfUncheckedLowering
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -591,6 +718,180 @@ theorem selectedBodyOfCallFailure
   exact
     ⟨fn, paramStore, hFind,
       by simpa [hParams] using hParamStore, ⟨bodyResult⟩⟩
+
+theorem terminalCallOfUncheckedLowering
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound expected fuel : Nat}
+    {before after : Fresh.State}
+    {layout targets : List Name}
+    {functionName : Name} {args : List AstExpr}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout expected
+          (.Call (.inr functionName) args) =
+        true)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering before args
+        preArgs lowerArgs after)
+    (hTargets : targets.Nodup)
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram
+        profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalBody :
+      RecursiveTerminalBodyForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hFuel : fuel < bound)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inr functionName) args)
+          (some sourceProgram.contract) source =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      (FunctionsObserverTerminal.StatementResult
+        contract codeRel targetProgram.toFunctions
+        (preArgs ++
+          [Functions.Stmt.call targets functionName lowerArgs])
+        failure target ctx) := by
+  obtain ⟨callFuel, hSourceFuel, hFailureCase⟩ :=
+    Yul.Source.Effectful.evalValues_function_observable_error_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun hObservable
+  have hLookupExists :
+      ∃ params returns body,
+        sourceProgram.contract.functions.lookup functionName =
+          some (.Def params returns body) := by
+    cases hLookup :
+        sourceProgram.contract.functions.lookup functionName with
+    | none =>
+        simp [SolcValidation.ExprOk?,
+          SolcValidation.lookupFunction?, hLookup] at hExprOk
+    | some fn =>
+        cases fn with
+        | Def params returns body =>
+            exact ⟨params, returns, body, rfl⟩
+  rcases hLookupExists with
+    ⟨lookupParams, lookupReturns, lookupBody, hLookup⟩
+  have hArgsOk :
+      SolcValidation.ExprsOk? profile sourceProgram.contract layout args =
+        true :=
+    SolcValidation.exprsOk_of_exprOk_functionCall hExprOk hLookup
+  rcases hFailureCase with hArgsFailure | hCallFailure
+  · have hArgsTerminal :
+        Nonempty
+          (FunctionsObserverTerminal.StatementResult
+            contract codeRel targetProgram.toFunctions
+            preArgs failure target ctx) := by
+      cases hArgsLowering with
+      | empty =>
+          cases callFuel with
+          | zero =>
+              simp [Yul.Source.Effectful.evalArgs,
+                Yul.Source.Effectful.fail] at hArgsFailure
+              rw [← hArgsFailure] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable]
+                at hObservable
+          | succ previous =>
+              simp [Yul.Source.Effectful.evalArgs] at hArgsFailure
+      | bound hNonempty hLowering =>
+          exact
+            terminalArgsOfUncheckedLowering hLowering
+              (fun candidate hMem =>
+                SolcValidation.exprOk_of_exprsOk_of_mem
+                  hArgsOk hMem)
+              (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+                  hArgScope hArgRun =>
+                hRegularExpr (by omega) hArgOk hArgLower hArgRel
+                  hArgDomain hArgScope hArgRun)
+              (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+                  hArgScope hArgRun hArgObservable =>
+                hTerminalExpr (by omega) hArgOk hArgLower hArgRel
+                  hArgDomain hArgScope hArgRun hArgObservable)
+              hRel hDomain hScope hArgsFailure hObservable
+    obtain ⟨argsResult⟩ := hArgsTerminal
+    exact
+      ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
+        argsResult
+        [Functions.Stmt.call targets functionName lowerArgs]⟩
+  · rcases hCallFailure with
+      ⟨sourceAfterArgs, reversedValues, hArgsRun, hCallRun⟩
+    have hPreparedArgs :
+        Nonempty
+          (FunctionsObserverExpression.ScopedPreparedArgs
+            contract transcript codeRel targetProgram.toFunctions
+            preArgs lowerArgs after layout sourceAfterArgs target ctx
+            reversedValues.reverse) := by
+      cases hArgsLowering with
+      | empty =>
+          cases callFuel with
+          | zero =>
+              simp [Yul.Source.Effectful.evalArgs,
+                Yul.Source.Effectful.fail] at hArgsRun
+          | succ previous =>
+              simp [Yul.Source.Effectful.evalArgs] at hArgsRun
+              rcases hArgsRun with ⟨rfl, rfl⟩
+              exact
+                ⟨FunctionsObserverExpression.PreparedArgs.empty
+                    (StateRelation.Replay.rel_of_scopedExact hRel)
+                    hDomain hScope,
+                  hRel⟩
+      | bound hNonempty hLowering =>
+          exact
+            FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
+              hLowering
+              (fun candidate hMem =>
+                SolcValidation.exprOk_of_exprsOk_of_mem
+                  hArgsOk hMem)
+              (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+                  hArgScope hArgRun =>
+                hRegularExpr (by omega) hArgOk hArgLower hArgRel
+                  hArgDomain hArgScope hArgRun)
+              hRel hDomain hScope hArgsRun
+    obtain ⟨preparedArgs⟩ := hPreparedArgs
+    obtain ⟨fn, paramStore, hFind, hParamStore, bodyResult⟩ :=
+      selectedBodyOfCallFailure
+        hDecomposition hProgramOk hExprOk hTerminalBody
+        (by omega) hArgsRun hCallRun
+        (StateRelation.Replay.rel_of_scopedExact preparedArgs.relation)
+        hObservable
+    obtain ⟨bodyResult⟩ := bodyResult
+    exact
+      FunctionsObserverCallTerminal.statementOfPreparedArgs
+        preparedArgs hTargets hFind hParamStore bodyResult
 
 theorem terminalPrimitiveOfLowering
     {contract : MemoryContract.Contract}
@@ -1521,6 +1822,111 @@ theorem primitive
     ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
       preResult [Functions.Stmt.expr lowerExpr]⟩
 
+theorem terminalPrimitive
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram
+        profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    ∀ {sourceFuel compilerFuel : Nat}
+      {before after : Fresh.State}
+      {layout : List Name}
+      {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+      {kind : Assembly.HaltKind}
+      {lower : List Functions.Stmt}
+      {source :
+        ObserverSemantics.SourceReplay.State transcript}
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)}
+      {target : Functions.ObserverSemantics.State transcript}
+      {ctx : Functions.Source.Ctx},
+      sourceFuel < bound + 1 →
+        Prim.terminal? prim = some kind →
+        SolcValidation.StmtOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            layout false false false
+            (.ExprStmtCall (.Call (.inl prim) args)) =
+          true →
+        Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+            (.ExprStmtCall (.Call (.inl prim) args)) =
+          some (lower, after) →
+        StateRelation.Replay.ScopedExactRel codeRel layout source target →
+        StateRelation.Vars.TargetDomainWithin
+          before.used target.source.vars →
+        StateRelation.Vars.NamesWithin before.used ctx.scope →
+        Yul.Source.Effectful.exec
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceFuel
+            (.ExprStmtCall (.Call (.inl prim) args))
+            (some sourceProgram.contract) source =
+          .error failure →
+        Yul.Source.Effectful.Exception.Observable failure.exception →
+        Nonempty
+          (FunctionsObserverTerminal.StatementResult
+            contract codeRel targetProgram.toFunctions
+            lower failure target ctx) := by
+  intro sourceFuel compilerFuel before after layout prim args kind lower
+    source failure target ctx hFuel hTerminal hStmtOk hLower hRel
+    hDomain hScope hRun hObservable
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 0
+          (.Call (.inl prim) args) =
+        true := by
+    simpa [SolcValidation.StmtOk?] using hStmtOk
+  have hArgsOk :
+      SolcValidation.ExprsOk? profile sourceProgram.contract layout args =
+        true :=
+    SolcValidation.exprsOk_of_exprOk_primitive hExprOk
+  rcases
+      FunctionsObserverTerminal.statementClassify
+        hTerminal hLower
+        (fun candidate hMem =>
+          SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk hMem)
+        (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+            hArgScope hArgRun =>
+          hRegularExpr (by omega) hArgOk hArgLower hArgRel
+            hArgDomain hArgScope hArgRun)
+        hRel hDomain hScope hRun hObservable with
+    hArgsFailure | hResult
+  · rcases hArgsFailure with
+      ⟨argsFuel, hSourceFuel, hArgsRun⟩
+    obtain ⟨preArgs, lowerArgs, seq,
+        hLowerArgs, hSeq, hLowerStmts⟩ :=
+      Stmt.toFunctionsListUncheckedFuel?_expr_terminal_parts
+        hTerminal hLower
+    subst lower
+    obtain ⟨argsResult⟩ :=
+      terminalArgsOfUncheckedLowering
+        (Expr.List.uncheckedBoundLowering_of_lowerBound1Unchecked?
+          hLowerArgs)
+        (fun candidate hMem =>
+          SolcValidation.exprOk_of_exprsOk_of_mem hArgsOk hMem)
+        (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+            hArgScope hArgRun =>
+          hRegularExpr (by omega) hArgOk hArgLower hArgRel
+            hArgDomain hArgScope hArgRun)
+        (fun hArgFuel hArgOk hArgLower hArgRel hArgDomain
+            hArgScope hArgRun hArgObservable =>
+          hTerminalExpr (by omega) hArgOk hArgLower hArgRel
+            hArgDomain hArgScope hArgRun hArgObservable)
+        hRel hDomain hScope hArgsRun hObservable
+    exact
+      ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
+        argsResult [Functions.Stmt.terminalArgs kind seq]⟩
+  · exact hResult
+
 theorem letOne
     {contract : MemoryContract.Contract}
     {transcript : Trace}
@@ -1728,6 +2134,269 @@ theorem assignOne
   exact
     ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
       preResult [Functions.Stmt.assign (identName name) lowerValue]⟩
+
+theorem letCall
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram
+        profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalBody :
+      RecursiveTerminalBodyForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    ∀ {sourceFuel compilerFuel : Nat}
+      {before after : Fresh.State}
+      {layout : List Name}
+      {names : List EvmYul.Identifier}
+      {functionName : Name} {args : List AstExpr}
+      {lower : List Functions.Stmt}
+      {source :
+        ObserverSemantics.SourceReplay.State transcript}
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)}
+      {target : Functions.ObserverSemantics.State transcript}
+      {ctx : Functions.Source.Ctx}
+      {canBreak canContinue canLeave : Bool},
+      sourceFuel < bound + 1 →
+        SolcValidation.StmtOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            layout canBreak canContinue canLeave
+            (.Let names (some (.Call (.inr functionName) args))) =
+          true →
+        StateRelation.Vars.NamesWithin before.used (identNames names) →
+        Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+            (.Let names (some (.Call (.inr functionName) args))) =
+          some (lower, after) →
+        StateRelation.Replay.ScopedExactRel codeRel layout source target →
+        StateRelation.Vars.TargetDomainWithin
+          before.used target.source.vars →
+        StateRelation.Vars.NamesWithin before.used ctx.scope →
+        Yul.Source.Effectful.exec
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceFuel
+            (.Let names (some (.Call (.inr functionName) args)))
+            (some sourceProgram.contract) source =
+          .error failure →
+        Yul.Source.Effectful.Exception.Observable failure.exception →
+        Nonempty
+          (FunctionsObserverTerminal.StatementResult
+            contract codeRel targetProgram.toFunctions
+            lower failure target ctx) := by
+  intro sourceFuel compilerFuel before after layout names functionName args
+    lower source failure target ctx canBreak canContinue canLeave
+    hFuel hStmtOk hNamesUsed hLower hRel hDomain hScope hRun hObservable
+  obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_let_call_parts hLower
+  subst lower
+  have hOkParts := hStmtOk
+  simp [SolcValidation.StmtOk?, SolcValidation.bindableList?,
+    SolcValidation.nonemptyNames?, SolcValidation.bindingNames?,
+    SolcValidation.namesNodup?, SolcValidation.namesFresh?]
+    at hOkParts
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout
+          names.length (.Call (.inr functionName) args) =
+        true :=
+    hOkParts.2
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, hSourceDomain⟩ :=
+    hRel.2
+  have hCheck :
+      EvmYul.Yul.checkDeclaration source.source names = .ok () := by
+    rw [hSource]
+    apply StateRelation.Vars.checkDeclaration_ok hSourceDomain
+    · simpa [identNames_eq_self] using hOkParts.1.2.2.1
+    · intro candidate hMem
+      exact
+        (hOkParts.1.2.2.2 candidate
+          (by simpa [identNames_eq_self] using hMem)).2
+  obtain ⟨hTargetsNodup, hTargetsFresh⟩ :=
+    StateRelation.Vars.checkDeclaration_ok_parts
+      hSourceDomain (by simpa [hSource] using hCheck)
+  obtain
+      ⟨evalFuel, hSourceFuel, hEvalValues⟩ :=
+    Yul.Source.Effectful.exec_let_some_observable_error_evalValues
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hCheck hRun hObservable
+  obtain
+      ⟨initFuel, initVars, initCtx,
+        hInsert, hInitRun, hInitCtx⟩ :=
+    FunctionsObserverStatement.InitNames.run
+      (contract := contract) (program := targetProgram.toFunctions)
+      (identNames names) target ctx
+  let targetDeclared :=
+    target.withSource
+      { shared := target.source.shared, vars := initVars }
+  have hDeclaredRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        source targetDeclared := by
+    simpa [targetDeclared] using
+      StateRelation.Replay.scopedExact_insertMany_hidden
+        hRel
+        (by simpa [identNames_eq_self] using hTargetsFresh)
+        hInsert
+  have hDeclaredDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used targetDeclared.source.vars := by
+    simpa [targetDeclared] using
+      hDomain.insertMany hNamesUsed hInsert
+  have hDeclaredScope :
+      StateRelation.Vars.NamesWithin before.used initCtx.scope := by
+    rw [hInitCtx]
+    intro candidate hMem
+    rcases List.mem_append.mp hMem with hDeclared | hOuter
+    · exact hNamesUsed candidate (by simpa using hDeclared)
+    · exact hScope candidate hOuter
+  obtain ⟨callResult⟩ :=
+    terminalCallOfUncheckedLowering
+      (targets := identNames names)
+      hDecomposition hProgramOk hExprOk hArgsLowering
+      (by simpa [identNames_eq_self] using hTargetsNodup)
+      hRegularExpr hTerminalExpr hTerminalBody
+      (by omega) hDeclaredRel hDeclaredDomain hDeclaredScope
+      hEvalValues hObservable
+  let result :=
+    FunctionsObserverTerminal.StatementResult.prependRegularRun
+      (leftLower := Stmt.initNames (identNames names))
+      (rightLower :=
+        preArgs ++
+          [Functions.Stmt.call
+            (identNames names) functionName lowerArgs])
+      (target := target) (middleTarget := targetDeclared)
+      (ctx := ctx) (middleCtx := initCtx)
+      (contract := contract) (codeRel := codeRel)
+      (program := targetProgram.toFunctions)
+      (failure := failure)
+      ⟨initFuel, by simpa [targetDeclared] using hInitRun⟩
+      callResult
+  exact ⟨by simpa [result, List.append_assoc] using result⟩
+
+theorem assignCall
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram
+        profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalBody :
+      RecursiveTerminalBodyForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    ∀ {sourceFuel compilerFuel : Nat}
+      {before after : Fresh.State}
+      {layout : List Name}
+      {names : List EvmYul.Identifier}
+      {functionName : Name} {args : List AstExpr}
+      {lower : List Functions.Stmt}
+      {source :
+        ObserverSemantics.SourceReplay.State transcript}
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)}
+      {target : Functions.ObserverSemantics.State transcript}
+      {ctx : Functions.Source.Ctx}
+      {canBreak canContinue canLeave : Bool},
+      sourceFuel < bound + 1 →
+        SolcValidation.StmtOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            layout canBreak canContinue canLeave
+            (.Assign names (.Call (.inr functionName) args)) =
+          true →
+        Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+            (.Assign names (.Call (.inr functionName) args)) =
+          some (lower, after) →
+        StateRelation.Replay.ScopedExactRel codeRel layout source target →
+        StateRelation.Vars.TargetDomainWithin
+          before.used target.source.vars →
+        StateRelation.Vars.NamesWithin before.used ctx.scope →
+        Yul.Source.Effectful.exec
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            sourceFuel
+            (.Assign names (.Call (.inr functionName) args))
+            (some sourceProgram.contract) source =
+          .error failure →
+        Yul.Source.Effectful.Exception.Observable failure.exception →
+        Nonempty
+          (FunctionsObserverTerminal.StatementResult
+            contract codeRel targetProgram.toFunctions
+            lower failure target ctx) := by
+  intro sourceFuel compilerFuel before after layout names functionName args
+    lower source failure target ctx canBreak canContinue canLeave
+    hFuel hStmtOk hLower hRel hDomain hScope hRun hObservable
+  obtain ⟨preArgs, lowerArgs, hArgsLowering, hLowerStmts⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_assign_call_parts hLower
+  subst lower
+  have hOkParts := hStmtOk
+  simp [SolcValidation.StmtOk?, SolcValidation.assignableList?,
+    SolcValidation.nonemptyNames?, SolcValidation.namesNodup?,
+    SolcValidation.namesIn?] at hOkParts
+  have hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout
+          names.length (.Call (.inr functionName) args) =
+        true :=
+    hOkParts.2
+  obtain
+      ⟨sourceShared, sourceVars, hSource,
+        _hShared, _hScoped, hSourceDomain⟩ :=
+    hRel.2
+  have hCheck :
+      EvmYul.Yul.checkAssignment source.source names = .ok () := by
+    rw [hSource]
+    apply StateRelation.Vars.checkAssignment_ok hSourceDomain
+    · simpa [identNames_eq_self] using hOkParts.1.2.1
+    · intro candidate hMem
+      exact
+        hOkParts.1.2.2 candidate
+          (by simpa [identNames_eq_self] using hMem)
+  obtain ⟨hTargetsNodup, _hTargetsVisible⟩ :=
+    StateRelation.Vars.checkAssignment_ok_parts
+      hSourceDomain (by simpa [hSource] using hCheck)
+  obtain
+      ⟨evalFuel, hSourceFuel, hEvalValues⟩ :=
+    Yul.Source.Effectful.exec_assign_observable_error_evalValues
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hCheck hRun hObservable
+  exact
+    terminalCallOfUncheckedLowering
+      (targets := identNames names)
+      hDecomposition hProgramOk hExprOk hArgsLowering
+      (by simpa [identNames_eq_self] using hTargetsNodup)
+      hRegularExpr hTerminalExpr hTerminalBody
+      (by omega) hRel hDomain hScope hEvalValues hObservable
 
 theorem functionCall
     {contract : MemoryContract.Contract}
@@ -2012,7 +2681,1885 @@ theorem block
     exact
       ⟨FunctionsObserverTerminal.StatementResult.block bodyResult⟩
 
+theorem ofCompound
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalBody :
+      RecursiveTerminalBodyForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hCompound :
+      RecursiveTerminalCompoundForward contract transcript codeRel
+        sourceProgram targetProgram profile (bound + 1)) :
+    RecursiveTerminalStmtForward contract transcript codeRel
+      sourceProgram targetProgram profile (bound + 1) := by
+  intro sourceFuel compilerFuel sourceControl before after layout stmt lower
+    source failure target ctx canBreak canContinue canLeave
+    hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+    hRun hObservable
+  cases stmt with
+  | Block body =>
+      exact
+        hCompound (.block body) hFuel hOk hNames hLower hRel hDomain
+          hScope hLayout hControl hRun hObservable
+  | Switch scrutinee cases defaultBody =>
+      exact
+        hCompound (.switch scrutinee cases defaultBody)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+  | For cond post body =>
+      exact
+        hCompound (.forLoop cond post body)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+  | If cond body =>
+      exact
+        hCompound (.ifThen cond body)
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+  | Let names value? =>
+      cases value? with
+      | none =>
+          have hOkParts := hOk
+          simp [SolcValidation.StmtOk?, SolcValidation.bindableList?,
+            SolcValidation.nonemptyNames?,
+            SolcValidation.bindingNames?,
+            SolcValidation.namesNodup?,
+            SolcValidation.namesFresh?] at hOkParts
+          obtain
+              ⟨sourceShared, sourceVars, hSource,
+                _hShared, _hScoped, hSourceDomain⟩ :=
+            hRel.2
+          have hCheck :
+              EvmYul.Yul.checkDeclaration source.source names =
+                .ok () := by
+            rw [hSource]
+            apply StateRelation.Vars.checkDeclaration_ok hSourceDomain
+            · simpa [identNames_eq_self] using hOkParts.2.2.1
+            · intro candidate hMem
+              exact
+                (hOkParts.2.2.2 candidate
+                  (by simpa [identNames_eq_self] using hMem)).2
+          exact
+            (Yul.Source.Effectful.exec_let_none_observable_error_false
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              hCheck hRun hObservable).elim
+      | some value =>
+          by_cases hFunctionCall :
+              ∃ functionName functionArgs,
+                value = .Call (.inr functionName) functionArgs
+          · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+            have hNamesUsed :
+                StateRelation.Vars.NamesWithin before.used
+                  (identNames names) := by
+              intro candidate hMem
+              apply hNames candidate
+              exact List.mem_append_left _ hMem
+            exact
+              letCall hDecomposition hProgramOk hRegularExpr
+                hTerminalExpr hTerminalBody hFuel hOk hNamesUsed hLower
+                hRel hDomain hScope hRun hObservable
+          · have hNotFunctionCall :
+                ∀ functionName functionArgs,
+                  value ≠ .Call (.inr functionName) functionArgs := by
+              intro functionName functionArgs hEq
+              exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+            obtain ⟨name, hNamesEq⟩ :=
+              Stmt.toFunctionsListUncheckedFuel?_let_noncall_singleton
+                hNotFunctionCall hLower
+            subst names
+            exact
+              letOne hTerminalExpr hFuel hNotFunctionCall hOk hLower
+                hRel hDomain hScope hRun hObservable
+  | Assign names value =>
+      by_cases hFunctionCall :
+          ∃ functionName functionArgs,
+            value = .Call (.inr functionName) functionArgs
+      · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+        exact
+          assignCall hDecomposition hProgramOk hRegularExpr
+            hTerminalExpr hTerminalBody hFuel hOk hLower hRel hDomain
+            hScope hRun hObservable
+      · have hNotFunctionCall :
+            ∀ functionName functionArgs,
+              value ≠ .Call (.inr functionName) functionArgs := by
+          intro functionName functionArgs hEq
+          exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+        obtain ⟨name, hNamesEq⟩ :=
+          Stmt.toFunctionsListUncheckedFuel?_assign_noncall_singleton
+            hNotFunctionCall hLower
+        subst names
+        exact
+          assignOne hTerminalExpr hFuel hNotFunctionCall hOk hLower
+            hRel hDomain hScope hRun hObservable
+  | ExprStmtCall value =>
+      cases value with
+      | Lit literal =>
+          simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+      | Var name =>
+          simp [SolcValidation.StmtOk?, SolcValidation.ExprOk?] at hOk
+      | Call callee args =>
+          cases callee with
+          | inl prim =>
+              have hLeafOk :
+                  SolcValidation.StmtOk? profile sourceProgram.contract
+                      ((Contract.functionEntries
+                        sourceProgram.contract).map Prod.fst)
+                      layout false false false
+                      (.ExprStmtCall (.Call (.inl prim) args)) =
+                    true := by
+                simpa [SolcValidation.StmtOk?] using hOk
+              cases hTerminal : Prim.terminal? prim with
+              | none =>
+                  exact
+                    primitive hRegularExpr hTerminalExpr
+                      hFuel hTerminal hLeafOk hLower hRel hDomain hScope
+                      hRun hObservable
+              | some kind =>
+                  exact
+                    terminalPrimitive hRegularExpr hTerminalExpr
+                      hFuel hTerminal hLeafOk hLower hRel hDomain hScope
+                      hRun hObservable
+          | inr functionName =>
+              have hLeafOk :
+                  SolcValidation.StmtOk? profile sourceProgram.contract
+                      ((Contract.functionEntries
+                        sourceProgram.contract).map Prod.fst)
+                      layout false false false
+                      (.ExprStmtCall
+                        (.Call (.inr functionName) args)) =
+                    true := by
+                simpa [SolcValidation.StmtOk?] using hOk
+              exact
+                functionCall hDecomposition hProgramOk hRegularExpr
+                  hTerminalExpr hTerminalBody hFuel hLeafOk hLower hRel
+                  hDomain hScope hRun hObservable
+  | Break =>
+      exact
+        (Yul.Source.Effectful.exec_break_observable_error_false
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun hObservable).elim
+  | Continue =>
+      exact
+        (Yul.Source.Effectful.exec_continue_observable_error_false
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun hObservable).elim
+  | Leave =>
+      exact
+        (Yul.Source.Effectful.exec_leave_observable_error_false
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun hObservable).elim
+
 end RecursiveTerminalStmtForward
+
+namespace RecursiveTerminalLoopForward
+
+theorem ofCompiler
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hRegularList :
+      FunctionsObserverForward.RecursiveOpenListForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalList :
+      RecursiveTerminalListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    RecursiveTerminalLoopForward contract transcript codeRel
+      sourceProgram targetProgram profile (bound + 1) := by
+  intro sourceFuel
+  induction sourceFuel using Nat.strong_induction_on with
+  | h sourceFuel ih =>
+      intro compilerFuel sourceControl before after afterCond afterPost
+        layout cond post body preCond lowerCond lowerPost lowerBody
+        source failure target ctx canBreak canContinue canLeave
+        hFuel hCondOk hPostOk hBodyOk hCondNames hPostNames hBodyNames
+        hLowerCond hLowerPost hLowerBody hRel hDomain hScope hLayout
+        hControl hRun hObservable
+      obtain ⟨loopFuel, hSourceFuel, hLoopRun⟩ :=
+        Yul.Source.Effectful.exec_for_observable_error_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun hObservable
+      obtain ⟨iterationFuel, hLoopFuel, hFailureCase⟩ :=
+        Yul.Source.Effectful.loop_observable_error_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hLoopRun hObservable
+      obtain
+          ⟨sourceShared, sourceVars, hSource,
+            _hShared, _hScoped, _hSourceDomain⟩ :=
+        hRel.2
+      have hConditionInput :
+          source.withSource
+              (EvmYul.Yul.State.mkOk source.source) =
+            source := by
+        rw [hSource]
+        change source.withSource (.Ok sourceShared sourceVars) = source
+        rw [← hSource]
+        exact Simulation.ResourceReplay.State.withSource_self source
+      have hCondFresh : Fresh.Extends before afterCond :=
+        Expr.lower1Unchecked?_stateExtends hLowerCond
+      have hPostFresh : Fresh.Extends afterCond afterPost :=
+        Stmt.List.toBlockUncheckedFuel?_stateExtends hLowerPost
+      have hBodyFresh : Fresh.Extends afterPost after :=
+        Stmt.List.toBlockUncheckedFuel?_stateExtends hLowerBody
+      have hFresh : Fresh.Extends before after :=
+        Fresh.Extends.trans hCondFresh
+          (Fresh.Extends.trans hPostFresh hBodyFresh)
+      have hLayoutAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used layout :=
+        hLayout.mono hCondFresh
+      have hLayoutAfterPost :
+          StateRelation.Vars.NamesWithin afterPost.used layout :=
+        hLayout.mono (Fresh.Extends.trans hCondFresh hPostFresh)
+      have hPostNamesAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used
+            (Stmt.List.names post) :=
+        hPostNames.mono hCondFresh
+      have hBodyNamesAfterPost :
+          StateRelation.Vars.NamesWithin afterPost.used
+            (Stmt.List.names body) :=
+        hBodyNames.mono (Fresh.Extends.trans hCondFresh hPostFresh)
+      have hScopeAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used ctx.scope :=
+        hScope.mono hCondFresh
+      have hBodyBaseScope :
+          StateRelation.Vars.NamesWithin before.used
+            (ctx.withLoopControl ctx.scope ctx.scope).scope := by
+        simpa [Functions.Source.Ctx.withLoopControl] using hScope
+      have hBodyControl :
+          FunctionsObserverForward.ControlContextRel
+            (FunctionsObserverForward.ControlContextRel.forBodySourceControl
+              layout sourceControl)
+            layout true true canLeave
+            (ctx.withLoopControl ctx.scope ctx.scope) :=
+        FunctionsObserverForward.ControlContextRel.forBody hControl
+      have hPostControl :
+          FunctionsObserverForward.ControlContextRel
+            (FunctionsObserverForward.ControlContextRel.forPostSourceControl
+              sourceControl)
+            layout false false canLeave ctx.withoutLoopControl :=
+        FunctionsObserverForward.ControlContextRel.forPost hControl
+      rcases hFailureCase with hCondFailure | hAfterCond
+      · have hCondFailure' :
+            Yul.Source.Effectful.eval
+                (ObserverSemantics.SourceReplay.stateModel transcript)
+                (ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                iterationFuel cond (some sourceProgram.contract) source =
+              .error failure := by
+          simpa [ObserverSemantics.SourceReplay.stateModel,
+            hConditionInput] using hCondFailure
+        obtain ⟨condResult⟩ :=
+          hTerminalExpr (by omega) hCondOk hLowerCond hRel hDomain
+            hBodyBaseScope hCondFailure' hObservable
+        let guardedBody :=
+          FunctionsObserverTerminal.StatementResult.appendUnreachable
+            condResult
+            (.if_
+                (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+                { stmts := [.brk] } ::
+              lowerBody.stmts)
+        exact
+          FunctionsObserverTerminal.ForLoopResult.ofBody
+            (ctx := ctx) (post := lowerPost)
+            (body :=
+              { stmts :=
+                  preCond ++
+                    .if_
+                      (.prim .iszero
+                        (Locals.ExprSeq.cons lowerCond .nil))
+                      { stmts := [.brk] } ::
+                    lowerBody.stmts })
+            guardedBody
+      · rcases hAfterCond with
+          ⟨sourceAfterCond, condValue, hCondRun, hLoopCase⟩
+        have hCondRun' :
+            Yul.Source.Effectful.eval
+                (ObserverSemantics.SourceReplay.stateModel transcript)
+                (ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                iterationFuel cond (some sourceProgram.contract) source =
+              .ok (sourceAfterCond, condValue) := by
+          simpa [ObserverSemantics.SourceReplay.stateModel,
+            hConditionInput] using hCondRun
+        obtain ⟨values, hCondValues, hCondHead⟩ :=
+          Yul.Source.Effectful.eval_ok_parts
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hCondRun'
+        obtain ⟨value, hValues, preparedNonempty⟩ :=
+          hValue (exprFuel := iterationFuel)
+            (before := before) (after := afterCond)
+            (layout := layout) (expr := cond)
+            (pre := preCond) (lower := lowerCond)
+            (source := source) (source' := sourceAfterCond)
+            (target := target)
+            (ctx := ctx.withLoopControl ctx.scope ctx.scope)
+            (values := values)
+            (by omega) hCondOk hLowerCond hRel hDomain
+            hBodyBaseScope hCondValues
+        obtain ⟨prepared⟩ := preparedNonempty
+        have hCondValue : condValue = value := by
+          rw [hValues] at hCondHead
+          simpa using hCondHead
+        subst value
+        have hPreparedLayoutScope :
+            FunctionsObserverOutcome.LayoutWithinScope
+              layout prepared.prepared.finalCtx := by
+          obtain ⟨preFuel, hPreRun⟩ := prepared.prepared.run
+          have hExtends :=
+            Functions.Source.Effectful.Block.runOpen_scopeExtends
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions hPreRun
+          exact fun name hMem =>
+            hExtends name (hBodyControl.scope name hMem)
+        have hPreparedControl :
+            FunctionsObserverForward.ControlContextRel
+              (FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                layout sourceControl)
+              layout true true canLeave prepared.prepared.finalCtx :=
+          FunctionsObserverForward.ControlContextRel.transport hBodyControl
+            (fun _name hMem => hMem)
+            prepared.prepared.control hPreparedLayoutScope
+        cases hLoopCase with
+        | body hNonzero hBodyFailure =>
+            obtain ⟨listCompilerFuel, lowerBodyStmts, _hBlockFuel,
+                hLowerBodyList, hLowerBodyEq⟩ :=
+              Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+            subst lowerBody
+            rcases
+                Yul.Source.Effectful.exec_block_error_parts
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  hBodyFailure with hOuter | hBodyParts
+            · rcases hOuter with ⟨rfl, hFailure⟩
+              rw [← hFailure] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable]
+                at hObservable
+            · rcases hBodyParts with
+                ⟨bodyFuel, hBodyFuel, hBodyListRun⟩
+              obtain ⟨bodyResult⟩ :=
+                hTerminalList
+                  (sourceFuel := bodyFuel)
+                  (compilerFuel := listCompilerFuel)
+                  (sourceControl :=
+                    FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                      layout sourceControl)
+                  (before := afterPost) (after := after)
+                  (layout := layout) (stmts := body)
+                  (lower := lowerBodyStmts)
+                  (source := sourceAfterCond) (failure := failure)
+                  (target := prepared.prepared.evalTarget)
+                  (ctx := prepared.prepared.finalCtx)
+                  (canBreak := true) (canContinue := true)
+                  (canLeave := canLeave)
+                  (by omega) hBodyOk hBodyNamesAfterPost
+                  hLowerBodyList prepared.relation
+                  (prepared.prepared.domain.mono hPostFresh)
+                  (prepared.prepared.scope.mono hPostFresh)
+                  hLayoutAfterPost hPreparedControl
+                  hBodyListRun hObservable
+              obtain ⟨guardFuel, hGuardRun⟩ :=
+                Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  targetProgram.toFunctions prepared.prepared.run
+                  prepared.prepared.eval
+                  (Functions.ObserverSafety.SafeSemantics.eval_iszero
+                    prepared.prepared.evalTarget condValue)
+                  hNonzero bodyResult.run
+              let guardedBody :
+                  FunctionsObserverTerminal.StatementResult
+                    contract codeRel targetProgram.toFunctions
+                    (preCond ++
+                      .if_
+                          (.prim .iszero
+                            (Locals.ExprSeq.cons lowerCond .nil))
+                          { stmts := [.brk] } ::
+                        lowerBodyStmts)
+                    failure target
+                    (ctx.withLoopControl ctx.scope ctx.scope) :=
+                { kind := bodyResult.kind
+                  finalTarget := bodyResult.finalTarget
+                  finalCtx := bodyResult.finalCtx
+                  run := ⟨guardFuel, hGuardRun⟩
+                  relation := bodyResult.relation }
+              exact
+                FunctionsObserverTerminal.ForLoopResult.ofBody
+                  (ctx := ctx) (post := lowerPost)
+                  (body :=
+                    { stmts :=
+                        preCond ++
+                          .if_
+                            (.prim .iszero
+                              (Locals.ExprSeq.cons lowerCond .nil))
+                            { stmts := [.brk] } ::
+                          lowerBodyStmts })
+                  guardedBody
+        | post hNonzero hBody hBodyContinues hPostFailure =>
+            rename_i sourceAfterBody
+            obtain ⟨closedBody⟩ :=
+              FunctionsObserverForward.RecursiveOpenCompoundForward.closeGuardedBody
+                (sourceControl :=
+                  FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                    layout sourceControl)
+                hRegularList prepared (by omega) hBodyOk
+                hBodyNamesAfterPost hLowerBody hPostFresh hFresh
+                hLayout hLayoutAfterPost hBodyControl hNonzero hBody
+            obtain ⟨bodyResult⟩ :=
+              FunctionsObserverForward.ClosedListResult.continuingBody
+                closedBody hBodyContinues rfl
+            obtain ⟨listCompilerFuel, lowerPostStmts, _hBlockFuel,
+                hLowerPostList, hLowerPostEq⟩ :=
+              Stmt.List.toBlockUncheckedFuel?_parts hLowerPost
+            subst lowerPost
+            rcases
+                Yul.Source.Effectful.exec_block_error_parts
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  hPostFailure with hOuter | hPostParts
+            · rcases hOuter with ⟨rfl, hFailure⟩
+              rw [← hFailure] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable]
+                at hObservable
+            · rcases hPostParts with
+                ⟨postFuel, hPostFuel, hPostListRun⟩
+              obtain ⟨postResult⟩ :=
+                hTerminalList
+                  (sourceFuel := postFuel)
+                  (compilerFuel := listCompilerFuel)
+                  (sourceControl :=
+                    FunctionsObserverForward.ControlContextRel.forPostSourceControl
+                      sourceControl)
+                  (before := afterCond) (after := afterPost)
+                  (layout := layout) (stmts := post)
+                  (lower := lowerPostStmts)
+                  (source :=
+                    sourceAfterBody.withSource
+                      sourceAfterBody.source.reviveJump)
+                  (failure := failure)
+                  (target := bodyResult.outcome.state)
+                  (ctx := ctx.withoutLoopControl)
+                  (canBreak := false) (canContinue := false)
+                  (canLeave := canLeave)
+                  (by omega) hPostOk hPostNamesAfterCond
+                  hLowerPostList bodyResult.relation
+                  (bodyResult.targetDomain
+                    (by
+                      simpa [Functions.Source.Ctx.withLoopControl] using
+                        hScopeAfterCond))
+                  (by
+                    simpa [Functions.Source.Ctx.withoutLoopControl] using
+                      hScopeAfterCond)
+                  hLayoutAfterCond hPostControl
+                  hPostListRun hObservable
+              obtain ⟨bodyTargetFuel, hBodyTarget⟩ := bodyResult.run
+              obtain ⟨postTargetFuel, hPostOpen⟩ := postResult.run
+              have hPostScoped :
+                  Functions.Source.Effectful.Block.runScoped
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions ctx.withoutLoopControl
+                      { stmts := lowerPostStmts } postTargetFuel
+                      bodyResult.outcome.state =
+                    .ok
+                      (Functions.Source.Effectful.Outcome.halt
+                        postResult.kind postResult.finalTarget) :=
+                Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  targetProgram.toFunctions hPostOpen (by simp)
+              let commonFuel := max bodyTargetFuel postTargetFuel
+              have hBodyTarget' :
+                  Functions.Source.Effectful.Block.runScoped
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions
+                      (ctx.withLoopControl ctx.scope ctx.scope)
+                      { stmts :=
+                          preCond ++
+                            .if_
+                              (.prim .iszero
+                                (Locals.ExprSeq.cons lowerCond .nil))
+                              { stmts := [.brk] } ::
+                            lowerBody.stmts }
+                      commonFuel target =
+                    .ok bodyResult.outcome :=
+                Functions.Source.Effectful.Block.runScoped_mono
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  targetProgram.toFunctions
+                  (Nat.le_max_left _ _) hBodyTarget
+              have hPostScoped' :
+                  Functions.Source.Effectful.Block.runScoped
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions ctx.withoutLoopControl
+                      { stmts := lowerPostStmts } commonFuel
+                      bodyResult.outcome.state =
+                    .ok
+                      (Functions.Source.Effectful.Outcome.halt
+                        postResult.kind postResult.finalTarget) :=
+                Functions.Source.Effectful.Block.runScoped_mono
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  targetProgram.toFunctions
+                  (Nat.le_max_right _ _) hPostScoped
+              have hLoopTarget :
+                  Functions.Source.Effectful.Stmt.runForLoop
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions ctx.withoutLoopControl
+                      (.lit (EvmYul.UInt256.ofNat 1))
+                      ctx.withoutLoopControl
+                      { stmts := lowerPostStmts }
+                      (ctx.withLoopControl ctx.scope ctx.scope)
+                      { stmts :=
+                          preCond ++
+                            .if_
+                              (.prim .iszero
+                                (Locals.ExprSeq.cons lowerCond .nil))
+                              { stmts := [.brk] } ::
+                            lowerBody.stmts }
+                      (commonFuel + 1) target =
+                    .ok
+                      (Functions.Source.Effectful.Outcome.halt
+                        postResult.kind postResult.finalTarget) := by
+                rcases bodyResult.mode with hRegular | hContinue
+                · have hBodyEq :
+                      bodyResult.outcome =
+                        Functions.Source.Effectful.Outcome.regular
+                          bodyResult.outcome.state :=
+                    Functions.Source.Effectful.Outcome.eq_regular_of_mode
+                      hRegular
+                  rw [hBodyEq] at hBodyTarget'
+                  exact
+                    Functions.Source.Effectful.Stmt.runForLoop_regular_post_halt_of_runs
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions
+                      (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                        target)
+                      hBodyTarget' hPostScoped'
+                · have hBodyEq :
+                      bodyResult.outcome =
+                        Functions.Source.Effectful.Outcome.cont
+                          bodyResult.outcome.state :=
+                    Functions.Source.Effectful.Outcome.eq_cont_of_mode
+                      hContinue
+                  rw [hBodyEq] at hBodyTarget'
+                  exact
+                    Functions.Source.Effectful.Stmt.runForLoop_cont_post_halt_of_runs
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions
+                      (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                        target)
+                      hBodyTarget' hPostScoped'
+              exact
+                ⟨
+                  { kind := postResult.kind
+                    finalTarget := postResult.finalTarget
+                    run := ⟨commonFuel + 1, hLoopTarget⟩
+                    relation := postResult.relation }⟩
+        | recurse hNonzero hBody hBodyContinues hPost hPostRecurs
+            hRecursive =>
+            rename_i sourceAfterBody sourceAfterPost
+            obtain ⟨closedBody⟩ :=
+              FunctionsObserverForward.RecursiveOpenCompoundForward.closeGuardedBody
+                (sourceControl :=
+                  FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                    layout sourceControl)
+                hRegularList prepared (by omega) hBodyOk
+                hBodyNamesAfterPost hLowerBody hPostFresh hFresh
+                hLayout hLayoutAfterPost hBodyControl hNonzero hBody
+            obtain ⟨bodyResult⟩ :=
+              FunctionsObserverForward.ClosedListResult.continuingBody
+                closedBody hBodyContinues rfl
+            obtain ⟨closedPost⟩ :=
+              FunctionsObserverForward.RecursiveOpenCompoundForward.closeLoopPost
+                (sourceControl :=
+                  FunctionsObserverForward.ControlContextRel.forPostSourceControl
+                    sourceControl)
+                hRegularList bodyResult (by omega) hPostOk
+                hPostNamesAfterCond hLowerPost hBodyFresh
+                (by
+                  simpa [Functions.Source.Ctx.withLoopControl] using
+                    hScopeAfterCond)
+                (by
+                  simpa [Functions.Source.Ctx.withoutLoopControl] using
+                    hScopeAfterCond)
+                hLayoutAfterCond hPostControl hPost
+            cases hSourcePost : sourceAfterPost.source with
+            | OutOfFuel =>
+                change
+                  Yul.Source.Effectful.LoopPostRecurs
+                    sourceAfterPost.source at hPostRecurs
+                rw [hSourcePost] at hPostRecurs
+                simp [Yul.Source.Effectful.LoopPostRecurs] at hPostRecurs
+            | Checkpoint jump =>
+                cases jump with
+                | Leave shared store =>
+                    change
+                      Yul.Source.Effectful.LoopPostRecurs
+                        sourceAfterPost.source at hPostRecurs
+                    rw [hSourcePost] at hPostRecurs
+                    simp [Yul.Source.Effectful.LoopPostRecurs] at hPostRecurs
+                | Break shared store =>
+                    have hMode :
+                        closedPost.outcome.mode = .brk := by
+                      have hModeRel := closedPost.relation.mode
+                      rw [hSourcePost] at hModeRel
+                      exact
+                        FunctionsObserverOutcome.ModeRel.source_break_target_brk
+                          hModeRel
+                    have hExit := closedPost.exitScope
+                    simp [FunctionsObserverOutcome.ExitScopeRel,
+                      FunctionsObserverForward.ControlContextRel.forPostSourceControl,
+                      hMode] at hExit
+                | Continue shared store =>
+                    have hMode :
+                        closedPost.outcome.mode = .cont := by
+                      have hModeRel := closedPost.relation.mode
+                      rw [hSourcePost] at hModeRel
+                      exact
+                        FunctionsObserverOutcome.ModeRel.source_continue_target_cont
+                          hModeRel
+                    have hExit := closedPost.exitScope
+                    simp [FunctionsObserverOutcome.ExitScopeRel,
+                      FunctionsObserverForward.ControlContextRel.forPostSourceControl,
+                      hMode] at hExit
+            | Ok postShared postStore =>
+                rcases lowerPost with ⟨lowerPostStmts⟩
+                have hPostMode :
+                    closedPost.outcome.mode = .regular := by
+                  have hModeRel := closedPost.relation.mode
+                  rw [hSourcePost] at hModeRel
+                  exact
+                    FunctionsObserverOutcome.ModeRel.source_ok_target_regular
+                      hModeRel
+                have hPostRel :
+                    StateRelation.Replay.ScopedExactRel codeRel layout
+                      sourceAfterPost closedPost.outcome.state := by
+                  have hExact := closedPost.relation.exact hPostMode
+                  have hLayoutEq :=
+                    closedPost.regularLayout hPostMode
+                  have hRevived :
+                      sourceAfterPost.withSource
+                          sourceAfterPost.source.reviveJump =
+                        sourceAfterPost := by
+                    rw [hSourcePost]
+                    change
+                      sourceAfterPost.withSource
+                          (.Ok postShared postStore) =
+                        sourceAfterPost
+                    rw [← hSourcePost]
+                    exact
+                      Simulation.ResourceReplay.State.withSource_self
+                        sourceAfterPost
+                  rw [hRevived] at hExact
+                  simpa [hLayoutEq] using hExact
+                have hPostDomain :
+                    StateRelation.Vars.TargetDomainWithin before.used
+                      closedPost.outcome.state.source.vars := by
+                  have hRestricted := closedPost.targetRestriction
+                  simp [FunctionsObserverOutcome.ScopedTargetRestriction,
+                    hPostMode] at hRestricted
+                  exact
+                    hRestricted.domain
+                      (by
+                        simpa [Functions.Source.Ctx.withoutLoopControl] using
+                          hScope)
+                have hRecursiveInput :
+                    sourceAfterPost.withSource
+                        (sourceAfterPost.source.overwrite? source.source) =
+                      sourceAfterPost := by
+                  rw [hSourcePost, hSource]
+                  change
+                    sourceAfterPost.withSource
+                        (.Ok postShared postStore) =
+                      sourceAfterPost
+                  rw [← hSourcePost]
+                  exact
+                    Simulation.ResourceReplay.State.withSource_self
+                      sourceAfterPost
+                have hRecursive' :
+                    Yul.Source.Effectful.exec
+                        (ObserverSemantics.SourceReplay.stateModel transcript)
+                        (ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        iterationFuel (.For cond post body)
+                        (some sourceProgram.contract) sourceAfterPost =
+                      .error failure := by
+                  simpa [ObserverSemantics.SourceReplay.stateModel,
+                    hRecursiveInput] using hRecursive
+                obtain ⟨recursive⟩ :=
+                  ih iterationFuel (by omega)
+                    (compilerFuel := compilerFuel)
+                    (sourceControl := sourceControl)
+                    (before := before) (after := after)
+                    (afterCond := afterCond) (afterPost := afterPost)
+                    (layout := layout) (cond := cond)
+                    (post := post) (body := body)
+                    (preCond := preCond) (lowerCond := lowerCond)
+                    (lowerPost := { stmts := lowerPostStmts })
+                    (lowerBody := lowerBody)
+                    (source := sourceAfterPost) (failure := failure)
+                    (target := closedPost.outcome.state) (ctx := ctx)
+                    (canBreak := canBreak)
+                    (canContinue := canContinue) (canLeave := canLeave)
+                    (by omega) hCondOk hPostOk hBodyOk hCondNames
+                    hPostNames hBodyNames hLowerCond hLowerPost hLowerBody
+                    hPostRel hPostDomain hScope hLayout hControl
+                    hRecursive' hObservable
+                obtain ⟨bodyTargetFuel, hBodyTarget⟩ := bodyResult.run
+                obtain ⟨postTargetFuel, hPostTarget⟩ := closedPost.run
+                obtain ⟨recursiveFuel, hRecursiveTarget⟩ := recursive.run
+                have hPostEq :
+                    closedPost.outcome =
+                  Functions.Source.Effectful.Outcome.regular
+                        closedPost.outcome.state :=
+                  Functions.Source.Effectful.Outcome.eq_regular_of_mode
+                    hPostMode
+                rw [hPostEq] at hPostTarget
+                let commonFuel :=
+                  max bodyTargetFuel (max postTargetFuel recursiveFuel)
+                have hBodyTarget' :
+                    Functions.Source.Effectful.Block.runScoped
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions
+                        (ctx.withLoopControl ctx.scope ctx.scope)
+                        { stmts :=
+                            preCond ++
+                              .if_
+                                (.prim .iszero
+                                  (Locals.ExprSeq.cons lowerCond .nil))
+                                { stmts := [.brk] } ::
+                              lowerBody.stmts }
+                        commonFuel target =
+                      .ok bodyResult.outcome :=
+                  Functions.Source.Effectful.Block.runScoped_mono
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    targetProgram.toFunctions
+                    (Nat.le_max_left _ _) hBodyTarget
+                have hPostTarget' :
+                    Functions.Source.Effectful.Block.runScoped
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions ctx.withoutLoopControl
+                        { stmts := lowerPostStmts } commonFuel
+                        bodyResult.outcome.state =
+                      .ok
+                        (Functions.Source.Effectful.Outcome.regular
+                          closedPost.outcome.state) :=
+                  by
+                    have hPostMono :=
+                      Functions.Source.Effectful.Block.runScoped_mono
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions
+                        (fuel := postTargetFuel) (fuel' := commonFuel)
+                        (ctx := ctx.withoutLoopControl)
+                        (block := { stmts := lowerPostStmts })
+                        (state := bodyResult.outcome.state)
+                        (outcome :=
+                          Functions.Source.Effectful.Outcome.regular
+                            closedPost.outcome.state)
+                        (Nat.le_trans (Nat.le_max_left _ _)
+                          (Nat.le_max_right _ _))
+                        hPostTarget
+                    exact hPostMono
+                have hRecursiveEta :
+                    Functions.Source.Effectful.Stmt.runForLoop
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions ctx.withoutLoopControl
+                        (.lit (EvmYul.UInt256.ofNat 1))
+                        ctx.withoutLoopControl
+                        { stmts := lowerPostStmts }
+                        (ctx.withLoopControl ctx.scope ctx.scope)
+                        { stmts :=
+                            preCond ++
+                              .if_
+                                (.prim .iszero
+                                  (Locals.ExprSeq.cons lowerCond .nil))
+                                { stmts := [.brk] } ::
+                              lowerBody.stmts }
+                        recursiveFuel closedPost.outcome.state =
+                      .ok
+                        (Functions.Source.Effectful.Outcome.halt
+                          recursive.kind recursive.finalTarget) := by
+                  exact hRecursiveTarget
+                have hRecursiveTarget' :
+                    Functions.Source.Effectful.Stmt.runForLoop
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions ctx.withoutLoopControl
+                        (.lit (EvmYul.UInt256.ofNat 1))
+                        ctx.withoutLoopControl
+                        { stmts := lowerPostStmts }
+                        (ctx.withLoopControl ctx.scope ctx.scope)
+                        { stmts :=
+                            preCond ++
+                              .if_
+                                (.prim .iszero
+                                  (Locals.ExprSeq.cons lowerCond .nil))
+                                { stmts := [.brk] } ::
+                              lowerBody.stmts }
+                        commonFuel closedPost.outcome.state =
+                      .ok
+                        (Functions.Source.Effectful.Outcome.halt
+                          recursive.kind recursive.finalTarget) :=
+                  Functions.Source.Effectful.Stmt.runForLoop_mono
+                    (Functions.ObserverSemantics.stateModel transcript)
+                    (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                      contract transcript)
+                    targetProgram.toFunctions
+                    (fuel := recursiveFuel) (fuel' := commonFuel)
+                    (Nat.le_trans (Nat.le_max_right _ _)
+                      (Nat.le_max_right _ _))
+                    hRecursiveEta
+                have hLoopTarget :
+                    Functions.Source.Effectful.Stmt.runForLoop
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions ctx.withoutLoopControl
+                        (.lit (EvmYul.UInt256.ofNat 1))
+                        ctx.withoutLoopControl
+                        { stmts := lowerPostStmts }
+                        (ctx.withLoopControl ctx.scope ctx.scope)
+                        { stmts :=
+                            preCond ++
+                              .if_
+                                (.prim .iszero
+                                  (Locals.ExprSeq.cons lowerCond .nil))
+                                { stmts := [.brk] } ::
+                              lowerBody.stmts }
+                        (commonFuel + 1) target =
+                      .ok
+                        (Functions.Source.Effectful.Outcome.halt
+                          recursive.kind recursive.finalTarget) := by
+                  rcases bodyResult.mode with hRegular | hContinue
+                  · have hBodyEq :
+                        bodyResult.outcome =
+                          Functions.Source.Effectful.Outcome.regular
+                            bodyResult.outcome.state :=
+                      Functions.Source.Effectful.Outcome.eq_regular_of_mode
+                        hRegular
+                    rw [hBodyEq] at hBodyTarget'
+                    exact
+                      Functions.Source.Effectful.Stmt.runForLoop_regular_post_recurse_of_runs
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions
+                        (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                          target)
+                        hBodyTarget' hPostTarget' hRecursiveTarget'
+                  · have hBodyEq :
+                        bodyResult.outcome =
+                          Functions.Source.Effectful.Outcome.cont
+                            bodyResult.outcome.state :=
+                      Functions.Source.Effectful.Outcome.eq_cont_of_mode
+                        hContinue
+                    rw [hBodyEq] at hBodyTarget'
+                    exact
+                      Functions.Source.Effectful.Stmt.runForLoop_cont_post_recurse_of_runs
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                          contract transcript)
+                        targetProgram.toFunctions
+                        (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                          target)
+                        hBodyTarget' hPostTarget' hRecursiveTarget'
+                exact
+                  ⟨
+                    { kind := recursive.kind
+                      finalTarget := recursive.finalTarget
+                      run :=
+                        ⟨commonFuel + 1, hLoopTarget⟩
+                      relation := recursive.relation }⟩
+
+end RecursiveTerminalLoopForward
+
+namespace RecursiveTerminalCompoundForward
+
+theorem ifThen
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {cond : AstExpr}
+    {body : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalList :
+      RecursiveTerminalListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hFuel : sourceFuel < bound + 1)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave (.If cond body) =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.names (.If cond body)))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.If cond body) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverForward.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.If cond body)
+          (some sourceProgram.contract) source =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      (FunctionsObserverTerminal.StatementResult
+        contract codeRel targetProgram.toFunctions lower
+        failure target ctx) := by
+  obtain
+      ⟨compilerPrevious, preCond, lowerCond, middle, lowerBody,
+        _hCompilerFuel, hLowerCond, hLowerBody, hLowerStmt⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_if_parts hLower
+  subst lower
+  obtain ⟨sourcePrevious, hSourceFuel, hFailureCase⟩ :=
+    Yul.Source.Effectful.exec_if_observable_error_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun hObservable
+  have hOkParts :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 cond =
+          true ∧
+        SolcValidation.StmtsOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            layout canBreak canContinue canLeave body =
+          true := by
+    simpa [SolcValidation.StmtOk?] using hOk
+  have hCondFresh : Fresh.Extends before middle :=
+    Expr.lower1Unchecked?_stateExtends hLowerCond
+  have hBodyNamesBefore :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names body) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  have hBodyNamesMiddle :
+      StateRelation.Vars.NamesWithin middle.used
+        (Stmt.List.names body) :=
+    hBodyNamesBefore.mono hCondFresh
+  have hLayoutMiddle :
+      StateRelation.Vars.NamesWithin middle.used layout :=
+    hLayout.mono hCondFresh
+  rcases hFailureCase with hCondFailure | hBodyFailure
+  · obtain ⟨condResult⟩ :=
+      hTerminalExpr (by omega) hOkParts.1 hLowerCond hRel hDomain
+        hScope hCondFailure hObservable
+    exact
+      ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
+        condResult [.if_ lowerCond lowerBody]⟩
+  · rcases hBodyFailure with
+      ⟨sourceAfterCond, condValue,
+        hCondRun, hNonzero, hBodyRun⟩
+    obtain ⟨prepared⟩ :=
+      hRegularExpr (exprFuel := sourcePrevious)
+        (before := before) (after := middle)
+        (layout := layout) (expr := cond)
+        (pre := preCond) (lower := lowerCond)
+        (source := source) (source' := sourceAfterCond)
+        (target := target) (ctx := ctx) (value := condValue)
+        (by omega) hOkParts.1 hLowerCond hRel hDomain hScope hCondRun
+    obtain ⟨preFuel, hPreRun⟩ := prepared.prepared.run
+    have hPreparedLayoutScope :
+        FunctionsObserverOutcome.LayoutWithinScope
+          layout prepared.prepared.finalCtx := by
+      have hExtends :=
+        Functions.Source.Effectful.Block.runOpen_scopeExtends
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hPreRun
+      exact fun name hMem =>
+        hExtends name (hControl.scope name hMem)
+    have hPreparedControl :
+        FunctionsObserverForward.ControlContextRel sourceControl layout
+          canBreak canContinue canLeave
+          prepared.prepared.finalCtx :=
+      FunctionsObserverForward.ControlContextRel.transport hControl
+        (fun _name hMem => hMem)
+        prepared.prepared.control hPreparedLayoutScope
+    have hCondTrue :
+        Functions.Source.Effectful.Expr.evalCondition
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            lowerCond prepared.prepared.preTarget =
+          .ok (prepared.prepared.evalTarget, true) :=
+      Functions.Source.Effectful.Expr.evalCondition_true_of_eval_singleton
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        prepared.prepared.eval hNonzero
+    have hBlockOk :
+        SolcValidation.StmtOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            layout canBreak canContinue canLeave (.Block body) =
+          true := by
+      simpa [SolcValidation.StmtOk?] using hOkParts.2
+    have hBlockNames :
+        StateRelation.Vars.NamesWithin middle.used
+          (Stmt.names (.Block body)) := by
+      simpa [Stmt.names] using hBodyNamesMiddle
+    have hBlockLower :
+        Stmt.toFunctionsListUncheckedFuel? (compilerPrevious + 1)
+            middle (.Block body) =
+          some ([.block lowerBody], after) :=
+      Stmt.toFunctionsListUncheckedFuel?_block_of_toBlock hLowerBody
+    obtain ⟨bodyResult⟩ :=
+      RecursiveTerminalStmtForward.block hTerminalList
+        (sourceFuel := sourcePrevious)
+        (compilerFuel := compilerPrevious + 1)
+        (sourceControl := sourceControl)
+        (before := middle) (after := after)
+        (layout := layout) (body := body)
+        (lower := [.block lowerBody])
+        (source := sourceAfterCond) (failure := failure)
+        (target := prepared.prepared.evalTarget)
+        (ctx := prepared.prepared.finalCtx)
+        (canBreak := canBreak) (canContinue := canContinue)
+        (canLeave := canLeave)
+        (by omega) hBlockOk hBlockNames hBlockLower
+        prepared.relation prepared.prepared.domain
+        prepared.prepared.scope hLayoutMiddle hPreparedControl
+        hBodyRun hObservable
+    obtain ⟨bodyFuel, hBodyScoped, hBodyCtx⟩ :=
+      Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions bodyResult.run
+    have hIfStmt :
+        Functions.Source.Effectful.Stmt.run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            targetProgram.toFunctions prepared.prepared.finalCtx
+            (bodyFuel + 1) (.if_ lowerCond lowerBody)
+            prepared.prepared.preTarget =
+          .ok
+            (Functions.Source.Effectful.Outcome.halt
+              bodyResult.kind bodyResult.finalTarget,
+              prepared.prepared.finalCtx) :=
+      Functions.Source.Effectful.Stmt.run_if_true_of_eval
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions hCondTrue hBodyScoped
+    have hIfRun :=
+      Functions.Source.Effectful.Block.runOpen_singleton_of_run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions hIfStmt
+    let ifResult :
+        FunctionsObserverTerminal.StatementResult
+          contract codeRel targetProgram.toFunctions
+          [.if_ lowerCond lowerBody] failure
+          prepared.prepared.preTarget prepared.prepared.finalCtx :=
+      { kind := bodyResult.kind
+        finalTarget := bodyResult.finalTarget
+        finalCtx := prepared.prepared.finalCtx
+        run := hIfRun
+        relation := bodyResult.relation }
+    exact
+      ⟨FunctionsObserverTerminal.StatementResult.prependRegularRun
+        prepared.prepared.run ifResult⟩
+
+theorem switch
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {scrutinee : AstExpr}
+    {cases : List (Word × List AstStmt)}
+    {defaultBody : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalList :
+      RecursiveTerminalListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hFuel : sourceFuel < bound + 1)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave
+          (.Switch scrutinee cases defaultBody) =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.names (.Switch scrutinee cases defaultBody)))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Switch scrutinee cases defaultBody) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverForward.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Switch scrutinee cases defaultBody)
+          (some sourceProgram.contract) source =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      (FunctionsObserverTerminal.StatementResult
+        contract codeRel targetProgram.toFunctions lower
+        failure target ctx) := by
+  obtain
+      ⟨compilerPrevious, preScrutinee, lowerScrutinee,
+        afterScrutinee, lowerCases, afterCases, lowerDefault,
+        _hCompilerFuel, hLowerScrutinee, hLowerCases,
+        hLowerDefault, hLowerStmt⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_switch_parts hLower
+  subst lower
+  obtain ⟨sourcePrevious, hSourceFuel, hFailureCase⟩ :=
+    Yul.Source.Effectful.exec_switch_observable_error_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun hObservable
+  have hOkParts := hOk
+  simp [SolcValidation.StmtOk?] at hOkParts
+  rcases hFailureCase with hScrutineeFailure | hSelectedFailure
+  · obtain ⟨scrutineeResult⟩ :=
+      hTerminalExpr (by omega) hOkParts.1 hLowerScrutinee hRel
+        hDomain hScope hScrutineeFailure hObservable
+    exact
+      ⟨FunctionsObserverTerminal.StatementResult.appendUnreachable
+        scrutineeResult
+        [.switch lowerScrutinee lowerCases lowerDefault]⟩
+  · rcases hSelectedFailure with
+      ⟨sourceAfterScrutinee, value,
+        hScrutineeRun, hSelectedRun⟩
+    have hScrutineeFresh : Fresh.Extends before afterScrutinee :=
+      Expr.lower1Unchecked?_stateExtends hLowerScrutinee
+    have hSelection :=
+      Stmt.SwitchSelectionLowering.of_compilers
+        (value := value) hLowerCases hLowerDefault
+    obtain ⟨prepared⟩ :=
+      hRegularExpr (exprFuel := sourcePrevious)
+        (before := before) (after := afterScrutinee)
+        (layout := layout) (expr := scrutinee)
+        (pre := preScrutinee) (lower := lowerScrutinee)
+        (source := source) (source' := sourceAfterScrutinee)
+        (target := target) (ctx := ctx) (value := value)
+        (by omega) hOkParts.1 hLowerScrutinee hRel hDomain hScope
+        hScrutineeRun
+    obtain ⟨preFuel, hPreRun⟩ := prepared.prepared.run
+    have hEvalOne :
+        Functions.Source.Effectful.Expr.evalOne
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            lowerScrutinee prepared.prepared.preTarget =
+          .ok (prepared.prepared.evalTarget, value) :=
+      Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        prepared.prepared.eval
+    have hPreparedLayoutScope :
+        FunctionsObserverOutcome.LayoutWithinScope
+          layout prepared.prepared.finalCtx := by
+      have hExtends :=
+        Functions.Source.Effectful.Block.runOpen_scopeExtends
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions hPreRun
+      exact fun name hMem =>
+        hExtends name (hControl.scope name hMem)
+    have hPreparedControl :
+        FunctionsObserverForward.ControlContextRel sourceControl layout
+          canBreak canContinue canLeave
+          prepared.prepared.finalCtx :=
+      FunctionsObserverForward.ControlContextRel.transport hControl
+        (fun _name hMem => hMem)
+        prepared.prepared.control hPreparedLayoutScope
+    cases hSelection with
+    | none hSourceSelection hTargetSelection hSelectionFresh =>
+        rw [hSourceSelection] at hSelectedRun
+        exact
+          (Yul.Source.Effectful.exec_block_nil_observable_error_false
+            (ObserverSemantics.SourceReplay.stateModel transcript)
+            (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            hSelectedRun hObservable).elim
+    | some hSourceSelection hTargetSelection hSelectedLower
+        hBeforeSelected hAfterSelected =>
+        rename_i selectedBody selectedLowerBody selectedCompilerFuel
+          selectedBefore selectedAfter
+        rw [hSourceSelection] at hSelectedRun
+        have hSelectedOk :
+            SolcValidation.StmtsOk? profile sourceProgram.contract
+                ((Contract.functionEntries
+                  sourceProgram.contract).map Prod.fst)
+                layout canBreak canContinue canLeave selectedBody =
+              true := by
+          rw [← hSourceSelection]
+          exact
+            Stmt.stmtsOk_selectSwitchCase (value := value)
+              hOkParts.2.2.1 hOkParts.2.2.2
+        have hSelectedNamesBefore :
+            StateRelation.Vars.NamesWithin before.used
+              (Stmt.List.names selectedBody) := by
+          intro name hMem
+          have hCanonical :
+              name ∈
+                Stmt.List.names
+                  (EvmYul.Yul.selectSwitchCase
+                    value defaultBody cases) := by
+            rw [hSourceSelection]
+            exact hMem
+          exact hNames name (by
+            simpa [Stmt.names] using
+              List.mem_append_right (Expr.names scrutinee)
+                (Stmt.selectedSwitchNames name hCanonical))
+        have hSelectedFresh :
+            Fresh.Extends before selectedBefore :=
+          Fresh.Extends.trans hScrutineeFresh hBeforeSelected
+        have hSelectedNames :
+            StateRelation.Vars.NamesWithin selectedBefore.used
+              (Stmt.List.names selectedBody) :=
+          hSelectedNamesBefore.mono hSelectedFresh
+        have hSelectedLayout :
+            StateRelation.Vars.NamesWithin selectedBefore.used layout :=
+          hLayout.mono hSelectedFresh
+        have hBlockOk :
+            SolcValidation.StmtOk? profile sourceProgram.contract
+                ((Contract.functionEntries
+                  sourceProgram.contract).map Prod.fst)
+                layout canBreak canContinue canLeave
+                (.Block selectedBody) =
+              true := by
+          simpa [SolcValidation.StmtOk?] using hSelectedOk
+        have hBlockNames :
+            StateRelation.Vars.NamesWithin selectedBefore.used
+              (Stmt.names (.Block selectedBody)) := by
+          simpa [Stmt.names] using hSelectedNames
+        have hBlockLower :=
+          Stmt.toFunctionsListUncheckedFuel?_block_of_toBlock hSelectedLower
+        obtain ⟨bodyResult⟩ :=
+          RecursiveTerminalStmtForward.block hTerminalList
+            (sourceFuel := sourcePrevious)
+            (compilerFuel := selectedCompilerFuel + 1)
+            (sourceControl := sourceControl)
+            (before := selectedBefore) (after := selectedAfter)
+            (layout := layout) (body := selectedBody)
+            (lower := [.block selectedLowerBody])
+            (source := sourceAfterScrutinee) (failure := failure)
+            (target := prepared.prepared.evalTarget)
+            (ctx := prepared.prepared.finalCtx)
+            (canBreak := canBreak) (canContinue := canContinue)
+            (canLeave := canLeave)
+            (by omega) hBlockOk hBlockNames hBlockLower
+            prepared.relation
+            (prepared.prepared.domain.mono hBeforeSelected)
+            (prepared.prepared.scope.mono hBeforeSelected)
+            hSelectedLayout hPreparedControl hSelectedRun hObservable
+        obtain ⟨bodyFuel, hBodyScoped, hBodyCtx⟩ :=
+          Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            targetProgram.toFunctions bodyResult.run
+        have hSwitchStmt :
+            Functions.Source.Effectful.Stmt.run
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                targetProgram.toFunctions prepared.prepared.finalCtx
+                (bodyFuel + 1)
+                (.switch lowerScrutinee lowerCases lowerDefault)
+                prepared.prepared.preTarget =
+              .ok
+                (Functions.Source.Effectful.Outcome.halt
+                  bodyResult.kind bodyResult.finalTarget,
+                  prepared.prepared.finalCtx) :=
+          Functions.Source.Effectful.Stmt.run_switch_some_of_eval
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            targetProgram.toFunctions hEvalOne hTargetSelection hBodyScoped
+        have hSwitchRun :=
+          Functions.Source.Effectful.Block.runOpen_singleton_of_run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            targetProgram.toFunctions hSwitchStmt
+        let switchResult :
+            FunctionsObserverTerminal.StatementResult
+              contract codeRel targetProgram.toFunctions
+              [.switch lowerScrutinee lowerCases lowerDefault]
+              failure prepared.prepared.preTarget
+              prepared.prepared.finalCtx :=
+          { kind := bodyResult.kind
+            finalTarget := bodyResult.finalTarget
+            finalCtx := prepared.prepared.finalCtx
+            run := hSwitchRun
+            relation := bodyResult.relation }
+        exact
+          ⟨FunctionsObserverTerminal.StatementResult.prependRegularRun
+            prepared.prepared.run switchResult⟩
+
+theorem forLoop
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {cond : AstExpr}
+    {post body : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hLoop :
+      RecursiveTerminalLoopForward contract transcript codeRel
+        sourceProgram targetProgram profile (bound + 1))
+    (hFuel : sourceFuel < bound + 1)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave (.For cond post body) =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.names (.For cond post body)))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.For cond post body) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverForward.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    Nonempty
+      (FunctionsObserverTerminal.StatementResult
+        contract codeRel targetProgram.toFunctions lower
+        failure target ctx) := by
+  obtain
+      ⟨compilerPrevious, preCond, lowerCond, afterCond,
+        lowerPost, afterPost, lowerBody, _hCompilerFuel,
+        hLowerCond, hLowerPost, hLowerBody, hLowerStmt⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_for_parts hLower
+  subst lower
+  have hOkParts := hOk
+  simp [SolcValidation.StmtOk?] at hOkParts
+  have hCondNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Expr.names cond) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  have hPostNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names post) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  have hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names body) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  obtain ⟨loopResult⟩ :=
+    hLoop
+      (sourceFuel := sourceFuel) (compilerFuel := compilerPrevious)
+      (sourceControl := sourceControl)
+      (before := before) (after := after)
+      (afterCond := afterCond) (afterPost := afterPost)
+      (layout := layout) (cond := cond) (post := post) (body := body)
+      (preCond := preCond) (lowerCond := lowerCond)
+      (lowerPost := lowerPost) (lowerBody := lowerBody)
+      (source := source) (failure := failure)
+      (target := target) (ctx := ctx)
+      (canBreak := canBreak) (canContinue := canContinue)
+      (canLeave := canLeave)
+      hFuel hOkParts.1 hOkParts.2.1 hOkParts.2.2
+      hCondNames hPostNames hBodyNames hLowerCond hLowerPost hLowerBody
+      hRel hDomain hScope hLayout hControl hRun hObservable
+  exact
+    FunctionsObserverTerminal.StatementResult.ofForLoop
+      loopResult.run loopResult.relation
+
+theorem ofComponents
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hRegularExpr :
+      FunctionsObserverCall.RecursiveScopedExpressionForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hTerminalExpr :
+      RecursiveTerminalExpressionForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hTerminalList :
+      RecursiveTerminalListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hLoop :
+      RecursiveTerminalLoopForward contract transcript codeRel
+        sourceProgram targetProgram profile (bound + 1)) :
+    RecursiveTerminalCompoundForward contract transcript codeRel
+      sourceProgram targetProgram profile (bound + 1) := by
+  intro sourceFuel compilerFuel sourceControl before after layout stmt lower
+    source failure target ctx canBreak canContinue canLeave
+    hCompound hFuel hOk hNames hLower hRel hDomain hScope hLayout
+    hControl hRun hObservable
+  cases hCompound with
+  | block body =>
+      exact
+        RecursiveTerminalStmtForward.block hTerminalList
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+  | switch scrutinee cases defaultBody =>
+      exact
+        switch hRegularExpr hTerminalExpr hTerminalList
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+  | forLoop cond post body =>
+      exact
+        forLoop hLoop hFuel hOk hNames hLower hRel hDomain hScope
+          hLayout hControl hRun hObservable
+  | ifThen cond body =>
+      exact
+        ifThen hRegularExpr hTerminalExpr hTerminalList
+          hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl
+          hRun hObservable
+
+end RecursiveTerminalCompoundForward
+
+structure RecursiveTerminalFamily
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop where
+  expression :
+    RecursiveTerminalExpressionForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  body :
+    RecursiveTerminalBodyForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  stmt :
+    RecursiveTerminalStmtForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  list :
+    RecursiveTerminalListForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  compound :
+    RecursiveTerminalCompoundForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  loop :
+    RecursiveTerminalLoopForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+
+namespace RecursiveTerminalFamily
+
+theorem ofCompiler
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true) :
+    ∀ bound,
+      RecursiveTerminalFamily contract transcript codeRel
+        sourceProgram targetProgram profile bound := by
+  intro bound
+  induction bound with
+  | zero =>
+      refine
+        { expression := ?_
+          body := ?_
+          stmt := ?_
+          list := ?_
+          compound := ?_
+          loop := ?_ }
+      · simp [RecursiveTerminalExpressionForward]
+      · simp [RecursiveTerminalBodyForward]
+      · simp [RecursiveTerminalStmtForward]
+      · simp [RecursiveTerminalListForward]
+      · simp [RecursiveTerminalCompoundForward]
+      · simp [RecursiveTerminalLoopForward]
+  | succ bound ih =>
+      have regular :
+          FunctionsObserverForward.RecursiveForwardFamily
+            contract transcript codeRel sourceProgram targetProgram
+            profile bound :=
+        FunctionsObserverForward.RecursiveForwardFamily.ofCompiler
+          (contract := contract) (transcript := transcript)
+          (codeRel := codeRel) hDecomposition hProgramOk bound
+      have hLoop :
+          RecursiveTerminalLoopForward contract transcript codeRel
+            sourceProgram targetProgram profile (bound + 1) :=
+        RecursiveTerminalLoopForward.ofCompiler
+          regular.value regular.list ih.expression ih.list
+      have hCompound :
+          RecursiveTerminalCompoundForward contract transcript codeRel
+            sourceProgram targetProgram profile (bound + 1) :=
+        RecursiveTerminalCompoundForward.ofComponents
+          (FunctionsObserverCall.RecursiveScopedValueForward.expression
+            regular.value)
+          ih.expression ih.list hLoop
+      exact
+        { expression :=
+            RecursiveTerminalExpressionForward.ofComponents
+              hDecomposition hProgramOk
+              (FunctionsObserverCall.RecursiveScopedValueForward.expression
+                regular.value)
+              ih.expression ih.body
+          body := RecursiveTerminalBodyForward.ofList ih.list
+          stmt :=
+            RecursiveTerminalStmtForward.ofCompound
+              hDecomposition hProgramOk
+              (FunctionsObserverCall.RecursiveScopedValueForward.expression
+                regular.value)
+              ih.expression ih.body hCompound
+          list :=
+            RecursiveTerminalListForward.ofStmt
+              regular.stmt ih.stmt ih.list
+          compound := hCompound
+          loop := hLoop }
+
+theorem dispatcherForward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {sourceEntry :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel [] sourceEntry target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        (Fresh.initial
+          (Contract.names sourceProgram.contract)).used
+        target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) sourceEntry =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    ∃ targetFuel outcome,
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetFuel targetProgram.toFunctions target =
+        .ok outcome ∧
+      FunctionsObserverOutcome.TerminalFailureRel codeRel failure outcome := by
+  have hCompiler := hDecomposition
+  obtain
+      ⟨bodyStmts, afterBody, functions, afterFunctions,
+        hLowerBody, _hLowerFunctions, hTargetProgram⟩ :=
+    hDecomposition
+  rcases
+      Yul.Source.Effectful.exec_block_error_parts
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        hRun with hOuter | hBodyFailure
+  · rcases hOuter with ⟨rfl, hFailure⟩
+    rw [← hFailure] at hObservable
+    simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  · rcases hBodyFailure with
+      ⟨listSourceFuel, _hSourceFuel, hListRun⟩
+    have hLowerList :
+        Stmt.List.toFunctionsUncheckedFuel?
+            (Stmt.fuel sourceProgram.contract.dispatcher + 1)
+            (Fresh.initial (Contract.names sourceProgram.contract))
+            [sourceProgram.contract.dispatcher] =
+          some (bodyStmts, afterBody) :=
+      Stmt.List.toFunctionsUncheckedFuel?_singleton_of_stmt
+        (by
+          cases sourceProgram.contract.dispatcher <;>
+            simp [Stmt.fuel])
+        hLowerBody
+    have hDispatcherOk :
+        SolcValidation.StmtOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            [] false false false sourceProgram.contract.dispatcher =
+          true := by
+      have hParts := hProgramOk
+      simp [SolcValidation.ProgramOkWith?,
+        SolcValidation.ContractOkWith?,
+        SolcValidation.ContractOkWithEntries?] at hParts
+      exact hParts.2.1
+    have hListOk :
+        SolcValidation.StmtsOk? profile sourceProgram.contract
+            ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+            [] false false false
+            [sourceProgram.contract.dispatcher] =
+          true := by
+      simpa [SolcValidation.StmtsOk?,
+        SolcValidation.StmtOutVars] using hDispatcherOk
+    let initial :=
+      Fresh.initial (Contract.names sourceProgram.contract)
+    have hNames :
+        StateRelation.Vars.NamesWithin initial.used
+          (Stmt.List.names [sourceProgram.contract.dispatcher]) := by
+      intro name hMem
+      change name ∈ Contract.names sourceProgram.contract
+      have hDispatcherName :
+          name ∈ Stmt.names sourceProgram.contract.dispatcher := by
+        simpa [Stmt.List.names] using hMem
+      simpa [Contract.names] using
+        List.mem_append_left
+          (FunctionList.names
+            (Contract.functionEntries sourceProgram.contract))
+          hDispatcherName
+    let sourceControl : FunctionsObserverOutcome.SourceControlScopes :=
+      { breakScope? := none
+        continueScope? := none
+        leaveScope? := none }
+    have hControl :
+        FunctionsObserverForward.ControlContextRel sourceControl []
+          false false false Functions.Source.Ctx.initial := by
+      refine
+        { scope := ?_
+          breakScope := ?_
+          continueScope := ?_
+          leaveScope := ?_ }
+      · simp [FunctionsObserverOutcome.LayoutWithinScope]
+      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+          Functions.Source.Ctx.initial]
+      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+          Functions.Source.Ctx.initial]
+      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+          Functions.Source.Ctx.initial]
+    have hFamily :=
+      ofCompiler
+        (contract := contract) (transcript := transcript)
+        (codeRel := codeRel) (profile := profile)
+        hCompiler hProgramOk (listSourceFuel + 1)
+    obtain ⟨result⟩ :=
+      hFamily.list
+        (sourceFuel := listSourceFuel)
+        (compilerFuel := Stmt.fuel sourceProgram.contract.dispatcher + 1)
+        (sourceControl := sourceControl)
+        (before := initial) (after := afterBody)
+        (layout := []) (stmts := [sourceProgram.contract.dispatcher])
+        (lower := bodyStmts)
+        (source := sourceEntry) (failure := failure)
+        (target := target) (ctx := Functions.Source.Ctx.initial)
+        (canBreak := false) (canContinue := false) (canLeave := false)
+        (by omega) hListOk hNames hLowerList hRel hDomain
+        (by
+          intro name hMem
+          simp [Functions.Source.Ctx.initial] at hMem)
+        (by
+          intro name hMem
+          simp at hMem)
+        hControl hListRun hObservable
+    obtain ⟨targetFuel, hTargetOpen⟩ := result.run
+    have hTargetScoped :=
+      Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions hTargetOpen (by simp)
+    refine
+      ⟨targetFuel,
+        Functions.Source.Effectful.Outcome.halt
+          result.kind result.finalTarget, ?_, result.relation⟩
+    have hBodyEq :
+        targetProgram.toFunctions.body = { stmts := bodyStmts } :=
+      congrArg (fun program => program.body) hTargetProgram
+    unfold Functions.Source.Effectful.Program.runState
+    rw [hBodyEq]
+    exact hTargetScoped
+
+end RecursiveTerminalFamily
 
 end FunctionsObserverTerminalForward
 end Yul

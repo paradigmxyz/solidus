@@ -1,4 +1,5 @@
 import EvmCompiler.Yul.Compiler
+import EvmCompiler.Yul.SolcValidation
 import EvmYul.Yul.Interpreter
 
 namespace EvmCompiler
@@ -692,6 +693,71 @@ theorem toFunctionsListUncheckedFuel?_assign_noncall_singleton
                   | inl prim => cases hLower
                   | inr functionName =>
                       exact (hNotFunctionCall functionName args rfl).elim
+
+theorem selectedSwitchNames
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)} :
+    ∀ name,
+      name ∈
+          List.names
+            (EvmYul.Yul.selectSwitchCase value defaultBody cases) →
+        name ∈
+          CaseList.names cases ++ List.names defaultBody := by
+  induction cases with
+  | nil =>
+      intro name hMem
+      simpa [EvmYul.Yul.selectSwitchCase, CaseList.names] using hMem
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      intro name hMem
+      by_cases hMatch : caseValue = value
+      · have hBodyMem : name ∈ List.names body := by
+          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem
+        simpa [CaseList.names, List.append_assoc] using
+          List.mem_append_left
+            (CaseList.names rest ++ List.names defaultBody)
+            hBodyMem
+      · have hTail := ih name (by
+          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem)
+        simpa [CaseList.names, List.append_assoc] using
+          List.mem_append_right (List.names body) hTail
+
+theorem stmtsOk_selectSwitchCase
+    {profile : SolcValidation.DialectProfile}
+    {contract : AstContract}
+    {functionNames vars : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {value : Word} {defaultBody : List AstStmt}
+    {cases : List (Word × List AstStmt)}
+    (hCases :
+      SolcValidation.CasesOk? profile contract functionNames vars
+          canBreak canContinue canLeave cases =
+        true)
+    (hDefault :
+      SolcValidation.StmtsOk? profile contract functionNames vars
+          canBreak canContinue canLeave defaultBody =
+        true) :
+    SolcValidation.StmtsOk? profile contract functionNames vars
+        canBreak canContinue canLeave
+        (EvmYul.Yul.selectSwitchCase value defaultBody cases) =
+      true := by
+  induction cases with
+  | nil =>
+      simpa [EvmYul.Yul.selectSwitchCase] using hDefault
+  | cons head rest ih =>
+      rcases head with ⟨caseValue, body⟩
+      have hParts :
+          SolcValidation.StmtsOk? profile contract functionNames vars
+                canBreak canContinue canLeave body =
+              true ∧
+            SolcValidation.CasesOk? profile contract functionNames vars
+                canBreak canContinue canLeave rest =
+              true := by
+        simpa [SolcValidation.CasesOk?] using hCases
+      by_cases hMatch : caseValue = value
+      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hParts.1
+      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using
+          ih hParts.2
 
 end Stmt
 end Yul

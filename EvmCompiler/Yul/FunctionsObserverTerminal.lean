@@ -903,7 +903,141 @@ structure StatementResult
     FunctionsObserverOutcome.TerminalFailureRel codeRel failure
       (Functions.Source.Effectful.Outcome.halt kind finalTarget)
 
+structure ForLoopResult
+    {transcript : Trace}
+    (contract : MemoryContract.Contract)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (post body : Functions.Block)
+    (failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript))
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) where
+  kind : Assembly.HaltKind
+  finalTarget : Functions.ObserverSemantics.State transcript
+  run :
+    ∃ fuel,
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope)
+          body fuel target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            kind finalTarget)
+  relation :
+    FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+      (Functions.Source.Effectful.Outcome.halt kind finalTarget)
+
+namespace ForLoopResult
+
+def ofBody
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {post body : Functions.Block}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (bodyResult :
+      StatementResult contract codeRel program body.stmts failure target
+        (ctx.withLoopControl ctx.scope ctx.scope)) :
+    Nonempty
+      (ForLoopResult contract codeRel program post body
+        failure target ctx) := by
+  rcases body with ⟨bodyStmts⟩
+  obtain ⟨bodyFuel, hBodyOpen⟩ := bodyResult.run
+  have hBodyScoped :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program (ctx.withLoopControl ctx.scope ctx.scope)
+          { stmts := bodyStmts } bodyFuel target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            bodyResult.kind bodyResult.finalTarget) :=
+    by
+      simpa using
+        Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hBodyOpen (by simp)
+  have hOuterCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (.lit (EvmYul.UInt256.ofNat 1)) target =
+        .ok (target, true) :=
+    Functions.ObserverSafety.SafeSemantics.evalCondition_one target
+  exact
+    ⟨
+      { kind := bodyResult.kind
+        finalTarget := bodyResult.finalTarget
+        run :=
+          ⟨bodyFuel + 1,
+            Functions.Source.Effectful.Stmt.runForLoop_body_halt_of_runs
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              program hOuterCond hBodyScoped⟩
+        relation := bodyResult.relation }⟩
+
+end ForLoopResult
+
 namespace StatementResult
+
+def prependRegularRun
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {leftLower rightLower : List Functions.Stmt}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target middleTarget :
+      Functions.ObserverSemantics.State transcript}
+    {ctx middleCtx : Functions.Source.Ctx}
+    (left :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel { stmts := leftLower } target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular middleTarget,
+              middleCtx))
+    (right :
+      StatementResult contract codeRel program rightLower failure
+        middleTarget middleCtx) :
+    StatementResult contract codeRel program
+      (leftLower ++ rightLower) failure target ctx := by
+  exact
+    { kind := right.kind
+      finalTarget := right.finalTarget
+      finalCtx := right.finalCtx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program leftLower rightLower ctx middleCtx target middleTarget
+          (Functions.Source.Effectful.Outcome.halt
+            right.kind right.finalTarget)
+          right.finalCtx left right.run
+      relation := right.relation }
 
 def prependPrepared
     {contract : MemoryContract.Contract}
@@ -1065,6 +1199,114 @@ def block
             contract transcript)
           program body.run (by simp)
       relation := body.relation }
+
+def ofForLoop
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {post body : Functions.Block}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target finalTarget :
+      Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {kind : Assembly.HaltKind}
+    (hLoop :
+      ∃ fuel,
+        Functions.Source.Effectful.Stmt.runForLoop
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx.withoutLoopControl
+            (.lit (EvmYul.UInt256.ofNat 1))
+            ctx.withoutLoopControl post
+            (ctx.withLoopControl ctx.scope ctx.scope)
+            body fuel target =
+          .ok
+            (Functions.Source.Effectful.Outcome.halt
+              kind finalTarget))
+    (hRelation :
+      FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+        (Functions.Source.Effectful.Outcome.halt kind finalTarget)) :
+    Nonempty
+      (StatementResult contract codeRel program
+        [.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+          post body]
+        failure target ctx) := by
+  obtain ⟨loopFuel, hLoopRun⟩ := hLoop
+  let commonFuel := max 1 loopFuel
+  have hInit :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl commonFuel
+          { stmts := [] } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular target,
+            ctx.withoutLoopControl) :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel])
+      (Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx.withoutLoopControl 0 target)
+  have hLoopRun' :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope)
+          body commonFuel target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            kind finalTarget) :=
+    Functions.Source.Effectful.Stmt.runForLoop_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel]) hLoopRun
+  have hStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (commonFuel + 1)
+          (.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+            post body)
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            kind finalTarget,
+            ctx) := by
+    simpa [Functions.Source.Ctx.withoutLoopControl,
+      Functions.Source.Ctx.withLoopControl] using
+      Functions.Source.Effectful.Stmt.run_for_halt_of_runs
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hInit hLoopRun'
+  exact
+    ⟨
+      { kind := kind
+        finalTarget := finalTarget
+        finalCtx := ctx
+        run :=
+          Functions.Source.Effectful.Block.runOpen_singleton_of_run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program hStmt
+        relation := hRelation }⟩
 
 end StatementResult
 

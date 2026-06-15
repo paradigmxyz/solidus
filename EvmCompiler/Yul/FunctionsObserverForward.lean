@@ -2586,7 +2586,7 @@ end RecursiveOpenListForward
 
 namespace RecursiveOpenCompoundForward
 
-private theorem closeGuardedBody
+theorem closeGuardedBody
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -2706,7 +2706,7 @@ private theorem closeGuardedBody
         prepared.relation)
       hLayout hControl hSourceAfterBody
 
-private theorem closeLoopPost
+theorem closeLoopPost
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -3243,73 +3243,6 @@ theorem scopedLoop
               exact
                 ScopedLoopResult.ofRecurse bodyResult closedPost
                   hSourcePost recursive hSourceFinal
-
-private theorem stmtsOk_selectSwitchCase
-    {profile : SolcValidation.DialectProfile}
-    {contract : AstContract}
-    {functionNames vars : List Name}
-    {canBreak canContinue canLeave : Bool}
-    {value : Word} {defaultBody : List AstStmt}
-    {cases : List (Word × List AstStmt)}
-    (hCases :
-      SolcValidation.CasesOk? profile contract functionNames vars
-          canBreak canContinue canLeave cases =
-        true)
-    (hDefault :
-      SolcValidation.StmtsOk? profile contract functionNames vars
-          canBreak canContinue canLeave defaultBody =
-        true) :
-    SolcValidation.StmtsOk? profile contract functionNames vars
-        canBreak canContinue canLeave
-        (EvmYul.Yul.selectSwitchCase value defaultBody cases) =
-      true := by
-  induction cases with
-  | nil =>
-      simpa [EvmYul.Yul.selectSwitchCase] using hDefault
-  | cons head rest ih =>
-      rcases head with ⟨caseValue, body⟩
-      have hParts :
-          SolcValidation.StmtsOk? profile contract functionNames vars
-                canBreak canContinue canLeave body =
-              true ∧
-            SolcValidation.CasesOk? profile contract functionNames vars
-                canBreak canContinue canLeave rest =
-              true := by
-        simpa [SolcValidation.CasesOk?] using hCases
-      by_cases hMatch : caseValue = value
-      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hParts.1
-      · simpa [EvmYul.Yul.selectSwitchCase, hMatch] using
-          ih hParts.2
-
-private theorem selectedSwitchNames
-    {value : Word} {defaultBody : List AstStmt}
-    {cases : List (Word × List AstStmt)} :
-    ∀ name,
-      name ∈
-          Stmt.List.names
-            (EvmYul.Yul.selectSwitchCase value defaultBody cases) →
-        name ∈
-          Stmt.CaseList.names cases ++ Stmt.List.names defaultBody := by
-  induction cases with
-  | nil =>
-      intro name hMem
-      simpa [EvmYul.Yul.selectSwitchCase, Stmt.CaseList.names] using hMem
-  | cons head rest ih =>
-      rcases head with ⟨caseValue, body⟩
-      intro name hMem
-      by_cases hMatch : caseValue = value
-      · have hBodyMem : name ∈ Stmt.List.names body := by
-          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem
-        exact
-          by
-            simpa [Stmt.CaseList.names, List.append_assoc] using
-              List.mem_append_left
-                (Stmt.CaseList.names rest ++ Stmt.List.names defaultBody)
-                hBodyMem
-      · have hTail := ih name (by
-          simpa [EvmYul.Yul.selectSwitchCase, hMatch] using hMem)
-        simpa [Stmt.CaseList.names, List.append_assoc] using
-          List.mem_append_right (Stmt.List.names body) hTail
 
 theorem block
     {contract : MemoryContract.Contract}
@@ -4163,7 +4096,7 @@ theorem switch
         by
           rw [← hSourceSelection]
           exact
-            stmtsOk_selectSwitchCase (value := value)
+            Stmt.stmtsOk_selectSwitchCase (value := value)
               hOkParts.2.2.1 hOkParts.2.2.2
       have hSelectedNamesBefore :
           StateRelation.Vars.NamesWithin before.used
@@ -4178,7 +4111,7 @@ theorem switch
         exact hNames name (by
           simpa [Stmt.names] using
             List.mem_append_right (Expr.names scrutinee)
-              (selectedSwitchNames name hCanonical))
+              (Stmt.selectedSwitchNames name hCanonical))
       have hSelectedFresh :
           Fresh.Extends before selectedBefore :=
         Fresh.Extends.trans hScrutineeFresh hBeforeSelected
