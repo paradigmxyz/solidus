@@ -116,6 +116,43 @@ theorem argListEval_toSeq
                       simp [Locals.Source.Effectful.Expr.ExprSeq.eval,
                         hHeadEval, hTailEval]
 
+theorem terminalArgs_run_of_argList
+    {σ : Type}
+    (model : Functions.Source.Effectful.StateModel σ)
+    (prim : Functions.Source.Effectful.PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Functions.Source.Ctx}
+    {kind : Assembly.HaltKind}
+    {exprs : List (Functions.Expr 1)}
+    {seq : Locals.ExprSeq kind.argCount}
+    {source afterArgs final : σ}
+    {values : List Word}
+    (hSeq :
+      EvmCompiler.Yul.Expr.List.toStackSeq? exprs kind.argCount =
+        some seq)
+    (hArgs :
+      Functions.Source.Effectful.ArgList.eval
+          model prim exprs.reverse source =
+        .ok (afterArgs, values))
+    (hTerminal :
+      prim.terminal kind afterArgs values = .ok final) :
+    Functions.Source.Effectful.Stmt.run
+        model prim program ctx 0 (.terminalArgs kind seq) source =
+      .ok
+        (Functions.Source.Effectful.Outcome.halt kind final, ctx) := by
+  have hSeq' :
+      EvmCompiler.Yul.Expr.List.toSeq? exprs.reverse kind.argCount =
+        some seq := by
+    simpa [EvmCompiler.Yul.Expr.List.toStackSeq?] using hSeq
+  have hTargetArgs :
+      Locals.Source.Effectful.Expr.ExprSeq.eval
+          model prim seq source =
+        .ok (afterArgs, values) :=
+    argListEval_toSeq model prim hSeq' hArgs
+  unfold Functions.Source.Effectful.Stmt.run
+  simp only [hTargetArgs, Bind.bind, Except.bind]
+  rw [hTerminal]
+
 theorem exprEval_cast
     {σ : Type}
     (model : Functions.Source.Effectful.StateModel σ)

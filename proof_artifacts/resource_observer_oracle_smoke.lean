@@ -33,6 +33,7 @@ import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
+import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
@@ -354,7 +355,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
+#check EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
+#check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult
+#check EvmCompiler.Yul.FunctionsObserverTerminal.statementAfterArgs
+#check EvmCompiler.Yul.FunctionsObserverTerminal.statementClassify
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
@@ -1144,6 +1151,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.statementAfterArgs
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.statementClassify
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_store
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
@@ -1322,16 +1334,23 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveForwardFamily.ofCompiler
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveForwardFamily.dispatcherForward
 #print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_for_parts
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_expr_terminal_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_for_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.loop_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.callDispatcher_ok_parts
+#print axioms EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_code_of_ok
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.evalCondition_one
 #print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_iszero_of_eval_singleton
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runScoped_forGuard_break_exists
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_terminalArgs_ok_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForward
+#print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramRegularForward
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

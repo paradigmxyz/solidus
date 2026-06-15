@@ -900,6 +900,529 @@ theorem logOp
 
 end Shared
 
+namespace TerminalMachine
+
+structure Rel (source target : EvmYul.MachineState) : Prop where
+  gasAvailable : source.gasAvailable = target.gasAvailable
+  activeWords : source.activeWords = target.activeWords
+  memory : source.memory = target.memory
+  output : source.H_return = target.H_return
+
+theorem of_eq {source target : EvmYul.MachineState}
+    (hEq : source = target) :
+    Rel source target := by
+  subst target
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+end TerminalMachine
+
+namespace TerminalAccount
+
+/--
+Account agreement after execution has terminated.
+
+The source AST code and the derived `emptyAccount` predicate are intentionally
+absent. Neither can be observed after a terminal outcome, and both can cease to
+follow an arbitrary source-code/bytecode relation when `SELFDESTRUCT`
+materializes or zeroes an account. The executable code image and every concrete
+account field remain related.
+-/
+structure Rel
+    (source : EvmYul.Account .Yul)
+    (target : EvmYul.Account .EVM) : Prop where
+  nonce : source.nonce = target.nonce
+  balance : source.balance = target.balance
+  storage : source.storage = target.storage
+  codeImage : source.codeBytes = target.code
+  codeBytes : source.codeBytes = target.codeBytes
+  transientStorage : source.tstorage = target.tstorage
+
+theorem of_account
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Account.Rel codeRel source target) :
+    Rel source target :=
+  ⟨hRel.nonce, hRel.balance, hRel.storage, hRel.codeImage,
+    hRel.codeBytes, hRel.transientStorage⟩
+
+theorem withBalance
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel source target)
+    (balance : EvmYul.UInt256) :
+    Rel
+      { source with balance := balance }
+      { target with balance := balance } := by
+  exact
+    { nonce := by simpa using hRel.nonce
+      balance := rfl
+      storage := by simpa using hRel.storage
+      codeImage := by simpa using hRel.codeImage
+      codeBytes := by simpa using hRel.codeBytes
+      transientStorage := by simpa using hRel.transientStorage }
+
+theorem defaultWithBalance (balance : EvmYul.UInt256) :
+    Rel
+      ({ (default : EvmYul.Account .Yul) with balance := balance })
+      ({ (default : EvmYul.Account .EVM) with balance := balance }) := by
+  constructor <;> rfl
+
+end TerminalAccount
+
+namespace TerminalAccountMap
+
+def Rel
+    (source : EvmYul.AccountMap .Yul)
+    (target : EvmYul.AccountMap .EVM) : Prop :=
+  ∀ address,
+    OptionRel TerminalAccount.Rel
+      (source.find? address) (target.find? address)
+
+theorem of_accountMap
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : AccountMap.Rel codeRel source target) :
+    Rel source target := by
+  intro address
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none => trivial
+      | some targetAccount =>
+          simp [OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          exact TerminalAccount.of_account hLookup
+
+theorem insert
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel source target)
+    (address : EvmYul.AccountAddress)
+    {sourceAccount : EvmYul.Account .Yul}
+    {targetAccount : EvmYul.Account .EVM}
+    (hAccount : TerminalAccount.Rel sourceAccount targetAccount) :
+    Rel
+      (source.insert address sourceAccount)
+      (target.insert address targetAccount) := by
+  intro query
+  by_cases hEq : query = address
+  · subst query
+    simp [Batteries.RBMap.find?_insert]
+    exact hAccount
+  · simp [Batteries.RBMap.find?_insert, hEq, hRel query]
+
+theorem selfdestructAccountMap
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : AccountMap.Rel codeRel source target)
+    (owner recipient : EvmYul.AccountAddress)
+    (created : Bool) :
+    Rel
+      (EvmYul.selfdestructAccountMap source owner recipient created)
+      (EvmYul.selfdestructAccountMap target owner recipient created) := by
+  have hTerminal : Rel source target := of_accountMap hRel
+  unfold EvmYul.selfdestructAccountMap
+  cases hSourceOwner : source.find? owner with
+  | none =>
+      have hOwner := hRel owner
+      rw [hSourceOwner] at hOwner
+      cases hTargetOwner : target.find? owner with
+      | none =>
+          simp [hSourceOwner, hTargetOwner]
+          exact hTerminal
+      | some targetOwner =>
+          simp [OptionRel, hTargetOwner] at hOwner
+  | some sourceOwner =>
+      have hOwner := hRel owner
+      rw [hSourceOwner] at hOwner
+      cases hTargetOwner : target.find? owner with
+      | none =>
+          simp [OptionRel, hTargetOwner] at hOwner
+      | some targetOwner =>
+          rw [hTargetOwner] at hOwner
+          have hOwnerTerminal :
+              TerminalAccount.Rel sourceOwner targetOwner :=
+            TerminalAccount.of_account hOwner
+          cases hSourceRecipient : source.find? recipient with
+          | none =>
+              have hRecipient := hRel recipient
+              rw [hSourceRecipient] at hRecipient
+              cases hTargetRecipient : target.find? recipient with
+              | none =>
+                  simp only
+                  rw [hOwner.balance]
+                  by_cases hZero :
+                      (targetOwner.balance ==
+                        (default : EvmYul.UInt256)) = true
+                  · have hZero' :
+                        (targetOwner.balance ==
+                          (⟨0⟩ : EvmYul.UInt256)) = true := by
+                        simpa using hZero
+                    simp only [hZero', if_true]
+                    exact hTerminal
+                  · have hZero' :
+                        ¬(targetOwner.balance ==
+                          (⟨0⟩ : EvmYul.UInt256)) = true := by
+                        simpa using hZero
+                    simp only [hZero', if_false]
+                    exact
+                      insert
+                        (insert hTerminal recipient
+                          (TerminalAccount.defaultWithBalance
+                            targetOwner.balance))
+                        owner
+                        (TerminalAccount.withBalance hOwnerTerminal
+                          (default : EvmYul.UInt256))
+              | some targetRecipient =>
+                  simp [OptionRel, hTargetRecipient] at hRecipient
+          | some sourceRecipient =>
+              have hRecipient := hRel recipient
+              rw [hSourceRecipient] at hRecipient
+              cases hTargetRecipient : target.find? recipient with
+              | none =>
+                  simp [OptionRel, hTargetRecipient] at hRecipient
+              | some targetRecipient =>
+                  rw [hTargetRecipient] at hRecipient
+                  have hRecipientTerminal :
+                      TerminalAccount.Rel sourceRecipient targetRecipient :=
+                    TerminalAccount.of_account hRecipient
+                  simp only
+                  rw [hOwner.balance, hRecipient.balance]
+                  by_cases hDistinct : recipient ≠ owner
+                  · simp [hDistinct]
+                    exact
+                      insert
+                        (insert hTerminal recipient
+                          (TerminalAccount.withBalance hRecipientTerminal
+                            (targetRecipient.balance +
+                              targetOwner.balance)))
+                        owner
+                        (TerminalAccount.withBalance hOwnerTerminal
+                          (default : EvmYul.UInt256))
+                  · simp [hDistinct]
+                    by_cases hCreated : created = true
+                    · simp [hCreated]
+                      exact
+                        insert
+                          (insert hTerminal recipient
+                            (TerminalAccount.withBalance hRecipientTerminal
+                              (default : EvmYul.UInt256)))
+                          owner
+                          (TerminalAccount.withBalance hOwnerTerminal
+                            (default : EvmYul.UInt256))
+                    · have hCreatedFalse : created = false := by
+                        cases created <;> simp_all
+                      simp [hCreatedFalse]
+                      exact hTerminal
+
+end TerminalAccountMap
+
+namespace TerminalWorld
+
+structure Rel (codeRel : CodeRel)
+    (source : EvmYul.State .Yul)
+    (target : EvmYul.State .EVM) : Prop where
+  accounts : TerminalAccountMap.Rel source.accountMap target.accountMap
+  initialAccounts : source.σ₀ = target.σ₀
+  totalGasUsedInBlock :
+    source.totalGasUsedInBlock = target.totalGasUsedInBlock
+  transactionReceipts :
+    source.transactionReceipts = target.transactionReceipts
+  substate : source.substate = target.substate
+  executionEnv :
+    ExecutionEnv.Rel codeRel source.executionEnv target.executionEnv
+  blocks : source.blocks = target.blocks
+  genesisBlockHeader :
+    source.genesisBlockHeader = target.genesisBlockHeader
+  createdAccounts : source.createdAccounts = target.createdAccounts
+
+theorem of_world
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : World.Rel codeRel source target) :
+    Rel codeRel source target :=
+  { accounts := TerminalAccountMap.of_accountMap hRel.accounts
+    initialAccounts := hRel.initialAccounts
+    totalGasUsedInBlock := hRel.totalGasUsedInBlock
+    transactionReceipts := hRel.transactionReceipts
+    substate := hRel.substate
+    executionEnv := hRel.executionEnv
+    blocks := hRel.blocks
+    genesisBlockHeader := hRel.genesisBlockHeader
+    createdAccounts := hRel.createdAccounts }
+
+end TerminalWorld
+
+namespace TerminalShared
+
+structure Rel (codeRel : CodeRel)
+    (source : EvmYul.SharedState .Yul)
+    (target : EvmYul.SharedState .EVM) : Prop where
+  world : TerminalWorld.Rel codeRel source.toState target.toState
+  machine :
+    TerminalMachine.Rel source.toMachineState target.toMachineState
+
+theorem of_shared
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Shared.Rel codeRel source target) :
+    Rel codeRel source target :=
+  ⟨TerminalWorld.of_world hRel.world,
+    TerminalMachine.of_eq hRel.machine⟩
+
+theorem stop
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Shared.Rel codeRel source target) :
+    Rel codeRel
+      { source with H_return := ByteArray.empty }
+      { target with
+          returnData := ByteArray.empty
+          H_return := ByteArray.empty } := by
+  refine ⟨TerminalWorld.of_world hRel.world, ?_⟩
+  exact
+    { gasAvailable := by simpa using congrArg (·.gasAvailable) hRel.machine
+      activeWords := by simpa using congrArg (·.activeWords) hRel.machine
+      memory := by simpa using congrArg (·.memory) hRel.machine
+      output := rfl }
+
+theorem evmReturn
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Shared.Rel codeRel source target)
+    (address size : EvmYul.UInt256) :
+    Rel codeRel
+      { source with
+          toMachineState :=
+            source.toMachineState.evmReturn address size }
+      { target with
+          toMachineState :=
+            target.toMachineState.evmReturn address size } := by
+  refine ⟨TerminalWorld.of_world hRel.world, ?_⟩
+  exact
+    TerminalMachine.of_eq
+      (congrArg
+        (fun machine => machine.evmReturn address size)
+        hRel.machine)
+
+theorem evmRevert
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Shared.Rel codeRel source target)
+    (address size : EvmYul.UInt256) :
+    Rel codeRel
+      { source with
+          toMachineState :=
+            source.toMachineState.evmRevert address size }
+      { target with
+          toMachineState :=
+            target.toMachineState.evmRevert address size } := by
+  refine ⟨TerminalWorld.of_world hRel.world, ?_⟩
+  exact
+    TerminalMachine.of_eq
+      (congrArg
+        (fun machine => machine.evmRevert address size)
+        hRel.machine)
+
+theorem selfdestruct
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Shared.Rel codeRel source target)
+    (vars : EvmYul.Yul.VarStore)
+    (recipient : EvmYul.UInt256) :
+    Rel codeRel
+      (EvmYul.Yul.selfdestructState
+        (.Ok source vars) recipient).sharedState
+      (EvmYul.EVM.selfdestructState
+        { toSharedState := target
+          pc := EvmYul.UInt256.ofNat 0
+          stack := [recipient]
+          execLength := 0 }
+        recipient []).toSharedState := by
+  let owner := source.executionEnv.codeOwner
+  let recipientAddress := EvmYul.AccountAddress.ofUInt256 recipient
+  have hOwner :
+      owner = target.executionEnv.codeOwner := by
+    exact hRel.world.executionEnv.codeOwner
+  have hCreated :
+      source.createdAccounts.contains owner =
+        target.createdAccounts.contains
+          target.executionEnv.codeOwner := by
+    rw [hOwner, hRel.world.createdAccounts]
+  have hOwnerTarget :
+      target.executionEnv.codeOwner = owner :=
+    hOwner.symm
+  have hAccountsTarget :
+      target.createdAccounts = source.createdAccounts :=
+    hRel.world.createdAccounts.symm
+  refine ⟨?_, ?_⟩
+  · exact
+      { accounts := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState, owner, recipientAddress,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            hOwnerTarget, hAccountsTarget] using
+            TerminalAccountMap.selfdestructAccountMap
+              hRel.world.accounts owner recipientAddress
+                (source.createdAccounts.contains owner)
+        initialAccounts := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.initialAccounts
+        totalGasUsedInBlock := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.totalGasUsedInBlock
+        transactionReceipts := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.transactionReceipts
+        substate := by
+          simp [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState, owner, recipientAddress,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            hOwnerTarget, hAccountsTarget, hRel.world.substate]
+        executionEnv := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.executionEnv
+        blocks := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using hRel.world.blocks
+        genesisBlockHeader := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.genesisBlockHeader
+        createdAccounts := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState] using
+            hRel.world.createdAccounts }
+  · exact
+      { gasAvailable := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            EvmYul.MachineState.setHReturn] using
+            congrArg (·.gasAvailable) hRel.machine
+        activeWords := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            EvmYul.MachineState.setHReturn] using
+            congrArg (·.activeWords) hRel.machine
+        memory := by
+          simpa [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            EvmYul.MachineState.setHReturn] using
+            congrArg (·.memory) hRel.machine
+        output := by
+          simp [EvmYul.Yul.selfdestructState,
+            EvmYul.EVM.selfdestructState,
+            EvmYul.Yul.State.setState,
+            EvmYul.Yul.State.setMachineState,
+            EvmYul.Yul.State.sharedState,
+            EvmYul.Yul.State.toState,
+            EvmYul.Yul.State.executionEnv,
+            EvmYul.Yul.State.toMachineState,
+            EvmYul.EVM.State.replaceStackAndIncrPC,
+            EvmYul.EVM.State.incrPC,
+            EvmYul.MachineState.setHReturn] }
+
+end TerminalShared
+
 namespace VarStore
 
 private theorem lookup_fold_erase_preserve_of_notMem

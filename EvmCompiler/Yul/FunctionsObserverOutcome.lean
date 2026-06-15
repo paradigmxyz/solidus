@@ -18,6 +18,252 @@ oracle.
 
 abbrev Trace := Assembly.ResourceTrace
 
+inductive ProgramInputRel
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript) : Prop where
+  | intro :
+      source.cursor = target.cursor →
+      ∀ (sourceShared : EvmYul.SharedState .Yul)
+        (sourceVars : EvmYul.Yul.VarStore),
+        source.source = .Ok sourceShared sourceVars →
+        StateRelation.Shared.Rel codeRel sourceShared target.source.shared →
+        target.source.vars = Locals.Source.Store.empty →
+        ProgramInputRel codeRel source target
+
+namespace ProgramInputRel
+
+theorem dispatcherEntry
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel : ProgramInputRel codeRel source target) :
+    StateRelation.Replay.ScopedExactRel codeRel []
+      (source.withSource
+        (EvmYul.Yul.State.mkOk
+          (source.source.initcall [] [] [])))
+      target := by
+  rcases hRel with
+    ⟨hCursor, sourceShared, sourceVars, hSource, hShared, hTargetVars⟩
+  refine
+    ⟨hCursor, sourceShared, default, ?_, hShared, ?_,
+      StateRelation.Vars.domainExact_empty⟩
+  · rw [hSource]
+    rfl
+  · rw [hTargetVars]
+    exact StateRelation.Vars.scoped_empty
+
+theorem targetDomainWithin
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel : ProgramInputRel codeRel source target)
+    (used : List Name) :
+    StateRelation.Vars.TargetDomainWithin used target.source.vars := by
+  rcases hRel with
+    ⟨_hCursor, sourceShared, sourceVars, hSource, hShared, hTargetVars⟩
+  intro name value hLookup
+  rw [hTargetVars] at hLookup
+  simp [Locals.Source.Store.empty] at hLookup
+
+end ProgramInputRel
+
+inductive ProgramStateRel
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript) : Prop where
+  | intro :
+      source.cursor = target.cursor →
+      ∀ (sourceShared : EvmYul.SharedState .Yul)
+        (sourceVars : EvmYul.Yul.VarStore),
+        source.source = .Ok sourceShared sourceVars →
+        StateRelation.Shared.Rel codeRel sourceShared target.source.shared →
+        ProgramStateRel codeRel source target
+
+namespace ProgramStateRel
+
+theorem restoreDispatcher
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {caller body :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetEntry targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    (hCaller : ProgramInputRel codeRel caller targetEntry)
+    (hBody :
+      StateRelation.Replay.ScopedExactRel codeRel []
+        (body.withSource body.source.reviveJump) targetFinal) :
+    ProgramStateRel codeRel
+      (body.withSource
+        ((body.source.reviveJump.overwrite? caller.source).setStore
+          caller.source))
+      targetFinal := by
+  rcases hCaller with
+    ⟨_hCallerCursor, callerShared, callerVars, hCallerSource,
+      _hCallerShared, _hTargetVars⟩
+  rcases hBody.2 with
+    ⟨bodyShared, bodyVars, hBodySource, hBodyShared,
+      _hBodyVars, _hBodyDomain⟩
+  have hRevive :
+      body.source.reviveJump = .Ok bodyShared bodyVars := by
+    simpa using hBodySource
+  refine ⟨hBody.1, bodyShared, callerVars, ?_, hBodyShared⟩
+  rw [hCallerSource, hRevive]
+  rfl
+
+end ProgramStateRel
+
+def ProgramTerminalStateRel
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript) : Prop :=
+  source.cursor = target.cursor ∧
+    ∃ sourceShared sourceVars,
+      source.source = .Ok sourceShared sourceVars ∧
+        StateRelation.TerminalShared.Rel codeRel
+          sourceShared target.source.shared
+
+inductive ProgramOutcomeRel
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    : ObserverSemantics.SourceReplay.Result transcript →
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript) → Prop where
+  | regular
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state : ProgramStateRel codeRel source target) :
+      ProgramOutcomeRel codeRel
+        (.regular source)
+        (Functions.Source.Effectful.Outcome.regular target)
+  | stop
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state : ProgramTerminalStateRel codeRel source target) :
+      ProgramOutcomeRel codeRel
+        (.yulHalt source value)
+        (Functions.Source.Effectful.Outcome.halt .stop target)
+  | return
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state : ProgramTerminalStateRel codeRel source target) :
+      ProgramOutcomeRel codeRel
+        (.yulHalt source value)
+        (Functions.Source.Effectful.Outcome.halt .return target)
+  | selfdestruct
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state : ProgramTerminalStateRel codeRel source target) :
+      ProgramOutcomeRel codeRel
+        (.yulHalt source value)
+        (Functions.Source.Effectful.Outcome.halt .selfdestruct target)
+  | revert
+      {source : ObserverSemantics.SourceReplay.State transcript}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state : ProgramTerminalStateRel codeRel source target) :
+      ProgramOutcomeRel codeRel
+        (.revert source)
+        (Functions.Source.Effectful.Outcome.halt .revert target)
+
+inductive TerminalFailureRel
+    {transcript : Trace}
+    (codeRel : StateRelation.CodeRel)
+    : Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript) →
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript) → Prop where
+  | stop
+      {failureState :
+        ObserverSemantics.SourceReplay.State transcript}
+      {source : EvmYul.Yul.State}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state :
+        ProgramTerminalStateRel codeRel
+          (failureState.withSource source) target) :
+      TerminalFailureRel codeRel
+        { exception := .YulHalt source value
+          state := failureState }
+        (Functions.Source.Effectful.Outcome.halt .stop target)
+  | return
+      {failureState :
+        ObserverSemantics.SourceReplay.State transcript}
+      {source : EvmYul.Yul.State}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state :
+        ProgramTerminalStateRel codeRel
+          (failureState.withSource source) target) :
+      TerminalFailureRel codeRel
+        { exception := .YulHalt source value
+          state := failureState }
+        (Functions.Source.Effectful.Outcome.halt .return target)
+  | selfdestruct
+      {failureState :
+        ObserverSemantics.SourceReplay.State transcript}
+      {source : EvmYul.Yul.State}
+      {value : Word}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state :
+        ProgramTerminalStateRel codeRel
+          (failureState.withSource source) target) :
+      TerminalFailureRel codeRel
+        { exception := .YulHalt source value
+          state := failureState }
+        (Functions.Source.Effectful.Outcome.halt .selfdestruct target)
+  | revert
+      {failureState :
+        ObserverSemantics.SourceReplay.State transcript}
+      {source : EvmYul.Yul.State}
+      {target : Functions.ObserverSemantics.State transcript}
+      (state :
+        ProgramTerminalStateRel codeRel
+          (failureState.withSource source) target) :
+      TerminalFailureRel codeRel
+        { exception := .Revert source
+          state := failureState }
+        (Functions.Source.Effectful.Outcome.halt .revert target)
+
+namespace TerminalFailureRel
+
+theorem program
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hRel : TerminalFailureRel codeRel failure target) :
+    ∃ sourceResult,
+      ObserverSemantics.SourceReplay.Program.finish (.error failure) =
+        .ok sourceResult ∧
+      ProgramOutcomeRel codeRel sourceResult target := by
+  cases hRel with
+  | stop state =>
+      exact
+        ⟨.yulHalt _ _, rfl, ProgramOutcomeRel.stop state⟩
+  | «return» state =>
+      exact
+        ⟨.yulHalt _ _, rfl, ProgramOutcomeRel.return state⟩
+  | selfdestruct state =>
+      exact
+        ⟨.yulHalt _ _, rfl, ProgramOutcomeRel.selfdestruct state⟩
+  | revert state =>
+      exact
+        ⟨.revert _, rfl, ProgramOutcomeRel.revert state⟩
+
+end TerminalFailureRel
+
 structure SourceControlScopes where
   breakScope? : Option (List Name)
   continueScope? : Option (List Name)

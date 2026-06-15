@@ -32,6 +32,22 @@ def TerminalMemorySafe (contract : MemoryContract.Contract)
     (kind : Assembly.HaltKind) (values : List Word) : Prop :=
   Simulation.MemorySafety.TerminalMemorySafe contract kind values
 
+def TerminalPermitted
+    {transcript : Assembly.ResourceTrace}
+    (kind : Assembly.HaltKind)
+    (state : Functions.ObserverSemantics.State transcript) : Prop :=
+  kind = .selfdestruct →
+    state.source.shared.executionEnv.perm = true
+
+def TerminalSafe
+    {transcript : Assembly.ResourceTrace}
+    (contract : MemoryContract.Contract)
+    (kind : Assembly.HaltKind)
+    (state : Functions.ObserverSemantics.State transcript)
+    (values : List Word) : Prop :=
+  TerminalMemorySafe contract kind values ∧
+    TerminalPermitted kind state
+
 @[simp] theorem regionAllowed_unrestricted (address size : Nat) :
     RegionAllowed MemoryContract.unrestricted address size :=
   Simulation.MemorySafety.regionAllowed_unrestricted address size
@@ -91,7 +107,7 @@ noncomputable def primitiveSemantics
         else
           Functions.Source.invalid
       terminal := fun kind state values =>
-        if TerminalMemorySafe contract kind values then
+        if TerminalSafe contract kind state values then
           (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
             kind state values
         else
@@ -239,11 +255,42 @@ theorem terminal_parts
           kind state values =
         .ok final := by
   classical
-  by_cases hSafe : TerminalMemorySafe contract kind values
+  by_cases hSafe : TerminalSafe contract kind state values
   · exact
-      ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
+      ⟨hSafe.1, by simpa [primitiveSemantics, hSafe] using hEval⟩
   · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
       Structured.invalid] at hEval
+
+theorem terminal_permitted_parts
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {kind : Assembly.HaltKind}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).terminal kind state values =
+        .ok final) :
+    TerminalPermitted kind state := by
+  classical
+  by_cases hSafe : TerminalSafe contract kind state values
+  · exact hSafe.2
+  · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
+      Structured.invalid] at hEval
+
+theorem terminal_of_safe
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {kind : Assembly.HaltKind}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values : List Word}
+    (hSafe : TerminalSafe contract kind state values)
+    (hEval :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).terminal
+          kind state values =
+        .ok final) :
+    (primitiveSemantics contract transcript).terminal kind state values =
+      .ok final := by
+  simpa [primitiveSemantics, hSafe] using hEval
 
 theorem successRefines
     (contract : MemoryContract.Contract)

@@ -2012,6 +2012,43 @@ theorem run_terminalArgs_mode {σ : Type}
           have hEq := (Except.ok.inj hRun).symm
           exact congrArg (fun result => result.1.mode) hEq
 
+theorem run_terminalArgs_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {kind : Assembly.HaltKind}
+    {args : Locals.ExprSeq kind.argCount}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx fuel
+          (.terminalArgs kind args) source =
+        .ok (outcome, finalCtx)) :
+    ∃ stateAfterArgs values final,
+      Locals.Source.Effectful.Expr.ExprSeq.eval
+          model prim args source =
+        .ok (stateAfterArgs, values) ∧
+      prim.terminal kind stateAfterArgs values = .ok final ∧
+      outcome = Outcome.halt kind final ∧
+      finalCtx = ctx := by
+  unfold Stmt.run at hRun
+  cases hArgs :
+      Locals.Source.Effectful.Expr.ExprSeq.eval model prim args source with
+  | error err =>
+      simp [hArgs] at hRun
+  | ok result =>
+      rcases result with ⟨stateAfterArgs, values⟩
+      simp only [hArgs, Bind.bind, Except.bind] at hRun
+      cases hTerminal : prim.terminal kind stateAfterArgs values with
+      | error err =>
+          simp [hTerminal] at hRun
+      | ok final =>
+          simp only [hTerminal] at hRun
+          have hEq := Except.ok.inj hRun
+          exact
+            ⟨stateAfterArgs, values, final, rfl, hTerminal,
+              (congrArg Prod.fst hEq).symm,
+              (congrArg Prod.snd hEq).symm⟩
+
 /--
 A successful call statement either returns regularly or propagates a terminal
 callee outcome. Its source context is unchanged in both cases.

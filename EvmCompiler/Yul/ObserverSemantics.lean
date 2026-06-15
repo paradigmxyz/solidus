@@ -386,6 +386,24 @@ def installContract {transcript : Trace} (program : Yul.Program)
     (state : State transcript) :
     (installContract program state).remaining = state.remaining := rfl
 
+theorem installContract_code_of_ok
+    {transcript : Trace} {program : Yul.Program}
+    {state : State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hOk :
+      (installContract program state).source = .Ok shared vars) :
+    shared.executionEnv.code = program.contract := by
+  cases hSource : state.source with
+  | Ok sourceShared sourceVars =>
+      simp [installContract, hSource] at hOk
+      rcases hOk with ⟨hShared, _hVars⟩
+      rw [← hShared]
+  | OutOfFuel =>
+      simp [installContract, hSource] at hOk
+  | Checkpoint jump =>
+      simp [installContract, hSource] at hOk
+
 def finish {transcript : Trace} :
     Yul.Source.Effectful.Result (State transcript) (State transcript × List Word) →
       Except EvmYul.Yul.Exception (Result transcript)

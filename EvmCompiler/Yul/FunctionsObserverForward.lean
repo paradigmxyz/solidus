@@ -4979,6 +4979,7 @@ theorem dispatcherForward
             contract transcript)
           targetFuel targetProgram.toFunctions target =
         .ok outcome ∧
+      outcome.mode = .regular ∧
       FunctionsObserverOutcome.ScopedOutcomeRel codeRel
         [] sourceFinal outcome := by
   have hCompiler := hDecomposition
@@ -5088,9 +5089,9 @@ theorem dispatcherForward
         simp at hMem)
       hControl hSourceFinal
   obtain ⟨targetFuel, hTargetRun⟩ := closed.run
-  have hFinalLayout : closed.finalLayout = [] := by
+  have hOutcomeRegular : closed.outcome.mode = .regular := by
     cases hMode : closed.outcome.mode with
-    | regular => exact closed.regularLayout hMode
+    | regular => rfl
     | brk =>
         have hExit := closed.exitScope
         simp [FunctionsObserverOutcome.ExitScopeRel, hMode,
@@ -5106,8 +5107,10 @@ theorem dispatcherForward
     | halt kind =>
         have hExit := closed.exitScope
         simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
+  have hFinalLayout : closed.finalLayout = [] :=
+    closed.regularLayout hOutcomeRegular
   refine
-    ⟨targetFuel, closed.outcome, ?_,
+    ⟨targetFuel, closed.outcome, ?_, hOutcomeRegular,
       by simpa [hFinalLayout] using closed.relation⟩
   have hBodyEq :
       targetProgram.toFunctions.body = { stmts := bodyStmts } :=

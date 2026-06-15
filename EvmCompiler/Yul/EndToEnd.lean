@@ -35,6 +35,13 @@ def InitialRel (codeRel : StateRelation.CodeRel)
       (transcript := ([] : Trace)) { source := source }).source
     target
 
+def TerminalRel (codeRel : StateRelation.CodeRel)
+    (source : EvmYul.Yul.State) (target : Assembly.EVMState) : Prop :=
+  ∃ shared vars,
+    source = .Ok shared vars ∧
+      StateRelation.TerminalShared.Rel codeRel
+        shared target.toSharedState
+
 end State
 
 namespace Result
@@ -51,13 +58,13 @@ def Rel {transcript : Trace} (codeRel : StateRelation.CodeRel) :
   | .yulHalt source _value, .running _ => False
   | .yulHalt source _value, .halted halt =>
       IsSuccessfulHalt halt ∧
-        State.Rel codeRel source.source halt.state ∧
+        State.TerminalRel codeRel source.source halt.state ∧
         halt.output =
           source.source.sharedState.toMachineState.H_return
   | .revert source, .running _ => False
   | .revert source, .halted halt =>
       halt.kind = .revert ∧
-        State.Rel codeRel source.source halt.state ∧
+        State.TerminalRel codeRel source.source halt.state ∧
         halt.output =
           source.source.sharedState.toMachineState.H_return
 

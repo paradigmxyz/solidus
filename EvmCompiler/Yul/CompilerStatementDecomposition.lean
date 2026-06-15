@@ -580,6 +580,44 @@ theorem toFunctionsListUncheckedFuel?_expr_primitive_parts
           rcases hLower with ⟨rfl, rfl⟩
           exact ⟨pre, lowerExpr, rfl, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_expr_terminal_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {kind : Assembly.HaltKind}
+    {lower : List Functions.Stmt}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before
+          (.ExprStmtCall (.Call (.inl prim) args)) =
+        some (lower, after)) :
+    ∃ preArgs lowerArgs seq,
+      Expr.List.lowerBound1Unchecked? before args =
+        some (preArgs, lowerArgs, after) ∧
+      Expr.List.toStackSeq? lowerArgs kind.argCount = some seq ∧
+      lower =
+        preArgs ++ [Functions.Stmt.terminalArgs kind seq] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ fuel =>
+      simp only [toFunctionsListUncheckedFuel?] at hLower
+      rw [hTerminal] at hLower
+      cases hArgs :
+          Expr.List.lowerBound1Unchecked? before args with
+      | none =>
+          simp [hArgs] at hLower
+      | some result =>
+          rcases result with ⟨preArgs, lowerArgs, final⟩
+          simp only [hArgs, Bind.bind, Option.bind] at hLower
+          cases hSeq :
+              Expr.List.toStackSeq? lowerArgs kind.argCount with
+          | none =>
+              simp [hSeq] at hLower
+          | some seq =>
+              simp [hSeq] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact ⟨preArgs, lowerArgs, seq, rfl, hSeq, rfl⟩
+
 theorem toFunctionsListUncheckedFuel?_let_noncall_singleton
     {fuel : Nat} {before after : Fresh.State}
     {names : List EvmYul.Identifier} {expr : AstExpr}

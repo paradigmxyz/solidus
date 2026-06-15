@@ -585,6 +585,47 @@ theorem call_succ_ok_parts
                     ⟨yulContract, params, returns, body, stateAfterBody,
                       rfl, hFunction, hBody, rfl, rfl⟩
 
+theorem callDispatcher_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      callDispatcher model prim fuel codeOverride state =
+        .ok (final, values)) :
+    ∃ previous stateAfterBody,
+      fuel = previous + 1 ∧
+      exec model prim previous
+          (.Block [(model.source state).executionEnv.code.dispatcher])
+          codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall [] [] []))) =
+        .ok stateAfterBody ∧
+      final =
+        model.withSource stateAfterBody
+          (((model.source stateAfterBody).reviveJump.overwrite?
+              (model.source state)).setStore (model.source state)) ∧
+      values = [] := by
+  cases fuel with
+  | zero =>
+      simp [callDispatcher, fail] at hRun
+  | succ previous =>
+      cases hBody :
+          exec model prim previous
+            (.Block [(model.source state).executionEnv.code.dispatcher])
+            codeOverride
+            (model.withSource state
+              (EvmYul.Yul.State.mkOk
+                ((model.source state).initcall [] [] []))) with
+      | error failure =>
+          simp [callDispatcher, hBody] at hRun
+      | ok stateAfterBody =>
+          simp [callDispatcher, hBody] at hRun
+          rcases hRun with ⟨rfl, rfl⟩
+          exact ⟨previous, stateAfterBody, rfl, hBody, rfl, rfl⟩
+
 theorem evalValues_function_ok_length
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
@@ -1611,6 +1652,59 @@ theorem exec_expr_primitive_ok_parts
               exact
                 ⟨previous, stateAfterPrim, values, rfl,
                   by simp [evalValues, hArgs, hPrim], hRun.symm⟩
+
+theorem exec_expr_primitive_error_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel
+          (.ExprStmtCall (.Call (.inl prim) args))
+          codeOverride state =
+        .error failure) :
+    (fuel = 0 ∧
+      { exception := EvmYul.Yul.Exception.OutOfFuel
+        state := state } = failure) ∨
+    ∃ previous,
+      fuel = previous + 1 ∧
+        ((evalArgs model primSemantics previous args.reverse
+              codeOverride state =
+            .error failure) ∨
+          ∃ stateAfterArgs reversedValues,
+            evalArgs model primSemantics previous args.reverse
+                codeOverride state =
+              .ok (stateAfterArgs, reversedValues) ∧
+            primSemantics.eval previous stateAfterArgs prim
+                reversedValues.reverse =
+              .error failure) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      exact Or.inl ⟨rfl, hRun⟩
+  | succ previous =>
+      refine Or.inr ⟨previous, by omega, ?_⟩
+      cases hArgs :
+          evalArgs model primSemantics previous args.reverse
+            codeOverride state with
+      | error argsFailure =>
+          simp [exec, hArgs] at hRun
+          subst failure
+          exact Or.inl rfl
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          cases hPrim :
+              primSemantics.eval previous stateAfterArgs prim
+                reversedValues.reverse with
+          | error primFailure =>
+              simp [exec, hArgs, hPrim, multifill] at hRun
+              subst failure
+              exact Or.inr
+                ⟨stateAfterArgs, reversedValues, rfl, hPrim⟩
+          | ok result =>
+              simp [exec, hArgs, hPrim, multifill] at hRun
 
 theorem exec_expr_function_ok_parts
     {σ : Type} (model : StateModel σ)

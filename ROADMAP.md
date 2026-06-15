@@ -122,8 +122,12 @@ Adjacent boundary status:
   and every `for` outcome are checked. `RecursiveForwardFamily.ofCompiler`
   closes bodies, values, statements, lists, and compound control by source-fuel
   induction, and `compileDispatcherForward` reaches the real compiled Functions
-  whole-program runner without public generated evidence. Canonical Yul
-  `callDispatcher`/`finish` packaging and adjacent backward adequacy remain.
+  whole-program runner without public generated evidence. Canonical regular
+  Yul `callDispatcher`/`finish` packaging is checked by
+  `compileProgramRegularForward`. The four terminal primitive families and
+  compiler-driven terminal statement classification are also checked.
+  Recursive terminal propagation through arguments, control, calls,
+  dispatcher/finish, and adjacent backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1679,9 +1683,12 @@ corridor.
   scopes, resource-sensitive zero/nonzero guard execution, source-store
   stability across hidden target extensions, and reusable guarded-body lexical
   closing are checked. The zero-condition loop outcome is checked end to end
-  through the generated body break and canonical Functions loop result. The
-  next obligation is nonzero body/post and recursive `for` outcome composition,
-  followed by mutual statement/block/function closure.
+  through the generated body break and canonical Functions loop result.
+  Nonzero body/post outcomes, recursive `for`, mutual
+  statement/block/function closure, dispatcher execution, and regular
+  `callDispatcher`/`finish` composition are checked. The current obligation is
+  recursive terminal-outcome propagation and whole-program terminal
+  composition, followed by matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
