@@ -334,8 +334,16 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Expr.UncheckedCallArgsLowering.stateExtends
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_let_call_parts
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_assign_call_parts
+#check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_expr_call_parts
+#check EvmCompiler.Yul.Expr.UncheckedPrimitiveLowering
+#check EvmCompiler.Yul.Expr.uncheckedPrimitiveLowering_of_lowerUnchecked?
+#check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_expr_function_ok_parts
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedExpression
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedExpression.ofPrimitive
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCall
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedReturnedCall.ofFunctionCallFresh
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_expr_primitive
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_let_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
