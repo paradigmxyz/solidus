@@ -1013,7 +1013,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_primitive_succ_refines
 #print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_succ_refines
 #print axioms EvmCompiler.Yul.Source.Effectful.eval_refines_of_evalValues
+#print axioms EvmCompiler.Yul.Source.Effectful.call_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_switch_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.loop_succ_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.refinementAt
+#print axioms EvmCompiler.Yul.Source.Effectful.callDispatcher_refines
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.observableRefines
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.run_eq_observer_of_ok
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactReplay.observerReplay
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactTerminates.observerTerminates
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

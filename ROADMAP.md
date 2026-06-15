@@ -1488,9 +1488,14 @@ corridor.
   `YulHalt`, and `Revert`, while `Result.Refines` supplies outcome-sensitive
   `map`, `bind`, and `multifill` composition. Construct-owned expression
   combinators now cover argument sequencing, primitive and function calls,
-  variables, literals, and single-value projection. Recursive call,
-  statement-sequence, branch, and loop theorems must consume these interfaces
-  horizontally; the final fuel driver must only assemble those checked pieces.
+  variables, literals, and single-value projection. Separate call/sequence,
+  statement, and loop modules now own their canonical control refinements.
+  `refinementAt` assembles those checked pieces by strong source-fuel
+  induction, and the public `callDispatcher_refines` theorem accepts only the
+  primitive refinement interface. Guarded `SafeSemantics.Program.ExactReplay`
+  now yields ordinary observer exact replay with the same consumed transcript.
+  The next boundary is adjacent Yul-to-Functions preservation for that guarded
+  source run.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

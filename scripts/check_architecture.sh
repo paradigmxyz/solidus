@@ -193,12 +193,38 @@ report_matches \
 report_matches \
   'Yul effect refinement must remain semantic-only and adjacent to canonical Yul semantics:' \
   '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Assembly|Objects|Public)' \
-  EvmCompiler/Yul/EffectRefinement.lean
+  EvmCompiler/Yul/EffectRefinement.lean \
+  EvmCompiler/Yul/EffectRefinement
 
 report_matches \
   'Yul effect refinement must not define a compiler or duplicate the canonical control evaluator:' \
   '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(evalTail|evalArgs|evalValues|eval|call|callDispatcher|execSeq|exec|loop|.*compile.*|.*lower.*|.*emit.*|.*assemble.*)[[:space:]:=]' \
-  EvmCompiler/Yul/EffectRefinement.lean
+  EvmCompiler/Yul/EffectRefinement.lean \
+  EvmCompiler/Yul/EffectRefinement
+
+call_dispatcher_refines_signature="$(
+  sed -n '/^theorem callDispatcher_refines/,/ :=/p' \
+    EvmCompiler/Yul/EffectRefinement/Recursive.lean
+)"
+if [[ -z "$call_dispatcher_refines_signature" ]]; then
+  printf 'Missing public canonical Yul control-refinement theorem: callDispatcher_refines\n\n' >&2
+  failed=1
+else
+  if printf '%s\n' "$call_dispatcher_refines_signature" |
+      rg -q '(RefinementAt|Replay|Certificate|Oracle|Evidence)'; then
+    printf '%s\n%s\n\n' \
+      'The public canonical Yul refinement theorem must construct its recursive proof package internally:' \
+      "$call_dispatcher_refines_signature" >&2
+    failed=1
+  fi
+  if ! printf '%s\n' "$call_dispatcher_refines_signature" |
+      rg -q 'ObservableRefines'; then
+    printf '%s\n\n' \
+      'The public canonical Yul refinement theorem must consume the primitive refinement interface.' \
+      >&2
+    failed=1
+  fi
+fi
 
 report_matches \
   'Retired vertical observer namespaces must not remain in checked Lean artifacts:' \
