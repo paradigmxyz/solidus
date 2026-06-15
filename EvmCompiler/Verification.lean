@@ -86,6 +86,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_outputs_length
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.successRefines
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
@@ -146,6 +147,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
+#check EvmCompiler.Yul.FunctionsObserverExpression.directAt
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
+#check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

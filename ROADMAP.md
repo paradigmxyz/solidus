@@ -93,9 +93,10 @@ Ownership rules now enforced by `scripts/check_architecture.sh`:
 Adjacent boundary status:
 
 - [ ] Yul -> Functions: all compiler-selected continuing primitives, plus
-  gas/msize expression and let-statement leaves, are checked in pass-owned
-  modules; complete structural expression, statement, function, and program
-  forward/backward theorems remain.
+  direct expressions/argument lists and gas/msize expression and let-statement
+  leaves, are checked in pass-owned modules; generated argument-binding
+  preambles, function-call expressions, complete statements/functions/programs,
+  and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1536,8 +1537,15 @@ corridor.
   memory contract, and terminal primitives remain owned by statement/outcome
   preservation. Observer-specific gas/msize proofs live in the adjacent
   `FunctionsObserverPrimitive.Observer` module rather than in the aggregate
-  import. The next boundary is structural expression preservation over this
-  relation, followed by statements, loops, calls, and whole-main composition.
+  import. `FunctionsObserverExpression.directAt` now constructs a strong
+  source-fuel induction package for ordinary direct expressions and argument
+  lists. Public `toLocals_forward` and `toLocalsArgs_forward` consume only the
+  ordinary compiler equations, guarded source run, and state relation; they
+  preserve effects, values, and declared output arity without a call oracle.
+  The next expression boundary is `lowerBound1Unchecked?`: execute generated
+  argument-binding preambles, preserve hidden temporary ownership, and compose
+  function-call expressions. Statements, loops, calls, and whole-main
+  composition follow.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

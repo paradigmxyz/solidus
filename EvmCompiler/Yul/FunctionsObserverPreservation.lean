@@ -1,5 +1,5 @@
 import EvmCompiler.Yul.FunctionsObserverCompiler
-import EvmCompiler.Yul.FunctionsObserverPrimitive
+import EvmCompiler.Yul.FunctionsObserverExpression
 
 namespace EvmCompiler
 namespace Yul

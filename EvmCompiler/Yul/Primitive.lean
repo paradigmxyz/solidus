@@ -110,6 +110,21 @@ def terminal? : EvmYul.Operation .Yul → Option Assembly.HaltKind
   | .System .SELFDESTRUCT => some .selfdestruct
   | _ => none
 
+theorem toBasicOp?_some_terminal_none
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hOp : toBasicOp? prim = some op) :
+    terminal? prim = none := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [toBasicOp?, terminal?] at hOp ⊢
+
+theorem toUncheckedBasicOp?_of_toBasicOp?
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hOp : toBasicOp? prim = some op) :
+    toUncheckedBasicOp? prim = some op := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [toBasicOp?, toUncheckedBasicOp?] at hOp ⊢ <;>
+    assumption
+
 end Prim
 end Yul
 end EvmCompiler

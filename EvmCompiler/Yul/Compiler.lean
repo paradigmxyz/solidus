@@ -136,6 +136,78 @@ mutual
         some (head :: tail)
 end
 
+theorem List.toLocals1?_append
+    {left right : List AstExpr}
+    {lowerLeft lowerRight : List (Locals.Expr 1)}
+    (hLeft : List.toLocals1? left = some lowerLeft)
+    (hRight : List.toLocals1? right = some lowerRight) :
+    List.toLocals1? (left ++ right) =
+      some (lowerLeft ++ lowerRight) := by
+  induction left generalizing lowerLeft with
+  | nil =>
+      simp [List.toLocals1?] at hLeft
+      subst lowerLeft
+      simpa using hRight
+  | cons head tail ih =>
+      cases hHead : toLocals? 1 head with
+      | none =>
+          simp [List.toLocals1?, hHead] at hLeft
+      | some lowerHead =>
+          cases hTail : List.toLocals1? tail with
+          | none =>
+              simp [List.toLocals1?, hHead, hTail] at hLeft
+          | some lowerTail =>
+              simp [List.toLocals1?, hHead, hTail] at hLeft
+              rcases hLeft with ⟨rfl⟩
+              simp [List.toLocals1?, hHead,
+                ih hTail]
+
+theorem List.toLocals1?_reverse
+    {exprs : List AstExpr} {lower : List (Locals.Expr 1)}
+    (hLower : List.toLocals1? exprs = some lower) :
+    List.toLocals1? exprs.reverse = some lower.reverse := by
+  induction exprs generalizing lower with
+  | nil =>
+      simp [List.toLocals1?] at hLower
+      subst lower
+      rfl
+  | cons head tail ih =>
+      cases hHead : toLocals? 1 head with
+      | none =>
+          simp [List.toLocals1?, hHead] at hLower
+      | some lowerHead =>
+          cases hTail : List.toLocals1? tail with
+          | none =>
+              simp [List.toLocals1?, hHead, hTail] at hLower
+          | some lowerTail =>
+              simp [List.toLocals1?, hHead, hTail] at hLower
+              rcases hLower with ⟨rfl⟩
+              simpa using
+                List.toLocals1?_append
+                  (ih hTail)
+                  (show
+                    List.toLocals1? [head] = some [lowerHead] by
+                    simp [List.toLocals1?, hHead])
+
+theorem List.toSeq?_length
+    {exprs : List (Locals.Expr 1)} {results : Nat}
+    {seq : Locals.ExprSeq results}
+    (hSeq : List.toSeq? exprs results = some seq) :
+    exprs.length = results := by
+  induction exprs generalizing results with
+  | nil =>
+      cases results <;> simp [List.toSeq?] at hSeq ⊢
+  | cons head tail ih =>
+      cases results with
+      | zero =>
+          simp [List.toSeq?] at hSeq
+      | succ results =>
+          cases hTail : List.toSeq? tail results with
+          | none =>
+              simp [List.toSeq?, hTail] at hSeq
+          | some lowerTail =>
+              simpa [List.toSeq?] using congrArg Nat.succ (ih hTail)
+
 mutual
   def directCallArgSafe? : AstExpr → Bool
     | .Lit _value => true

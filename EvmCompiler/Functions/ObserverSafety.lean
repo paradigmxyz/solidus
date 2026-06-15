@@ -1,4 +1,5 @@
 import EvmCompiler.Functions.ObserverSemantics
+import EvmCompiler.Locals.PrimitivePreservation
 import EvmCompiler.Simulation.MemorySafety
 
 namespace EvmCompiler
@@ -118,6 +119,52 @@ theorem eval_parts
       ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
   · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
       Structured.invalid] at hEval
+
+theorem eval_outputs_length
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {op : Structured.BasicOp}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values outputs : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).eval op state values =
+        .ok (final, outputs)) :
+    outputs.length = Expressions.Structured.BasicOp.outputs op := by
+  obtain ⟨_hSafe, hRun⟩ := eval_parts hEval
+  unfold Functions.ObserverSemantics.primitiveSemantics at hRun
+  unfold Locals.ObserverSemantics.primitiveSemantics at hRun
+  cases hObserver : Locals.ObserverSemantics.basicOpObserver? op with
+  | none =>
+      cases hPrimitive :
+          Locals.Source.PrimitiveSemantics.structured.eval op
+            state.source.shared values with
+      | error err =>
+          simp [hObserver, hPrimitive] at hRun
+      | ok result =>
+          rcases result with ⟨shared, results⟩
+          simp [hObserver, hPrimitive] at hRun
+          rcases hRun with ⟨rfl, rfl⟩
+          exact
+            Locals.Source.PrimitiveSemantics.structured_eval_length
+              hPrimitive
+  | some kind =>
+      cases values with
+      | nil =>
+          cases hConsume :
+              Simulation.ResourceReplay.consume? kind state with
+          | none =>
+              simp [hObserver, hConsume, Structured.invalid] at hRun
+          | some result =>
+              rcases result with ⟨value, consumed⟩
+              simp [hObserver, hConsume] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              cases op <;>
+                simp [Locals.ObserverSemantics.basicOpObserver?,
+                  Assembly.ResourceObserver.ofPrimOp?,
+                  Structured.BasicOp.toPrimOp,
+                  Expressions.Structured.BasicOp.outputs] at hObserver ⊢
+      | cons head tail =>
+          simp [hObserver, Structured.invalid] at hRun
 
 theorem eval_of_safe
     {contract : MemoryContract.Contract}
