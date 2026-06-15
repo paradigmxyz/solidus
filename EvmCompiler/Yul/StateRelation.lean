@@ -791,6 +791,45 @@ theorem withMachine
     { world := by simpa using hRel.world
       machine := by simpa using hMachine }
 
+theorem logOp
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Rel codeRel source target)
+    (address size : EvmYul.UInt256)
+    (topics : Array EvmYul.UInt256) :
+    Rel codeRel
+      (EvmYul.SharedState.logOp address size topics source)
+      (EvmYul.SharedState.logOp address size topics target) := by
+  constructor
+  · exact
+      { accounts := by
+          simpa [EvmYul.SharedState.logOp] using hRel.world.accounts
+        initialAccounts := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.initialAccounts
+        totalGasUsedInBlock := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.totalGasUsedInBlock
+        transactionReceipts := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.transactionReceipts
+        substate := by
+          simp [EvmYul.SharedState.logOp, hRel.world.substate,
+            hRel.world.executionEnv.codeOwner, hRel.machine]
+        executionEnv := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.executionEnv
+        blocks := by
+          simpa [EvmYul.SharedState.logOp] using hRel.world.blocks
+        genesisBlockHeader := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.genesisBlockHeader
+        createdAccounts := by
+          simpa [EvmYul.SharedState.logOp] using
+            hRel.world.createdAccounts }
+  · simp [EvmYul.SharedState.logOp, hRel.machine]
+
 end Shared
 
 namespace VarStore

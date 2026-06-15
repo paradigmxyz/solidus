@@ -103,6 +103,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #check EvmCompiler.Yul.StateRelation.Shared.withMachine
+#check EvmCompiler.Yul.StateRelation.Shared.logOp
 #check EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
 #check EvmCompiler.Yul.StateRelation.AccountMap.codeImage_eq
 #check EvmCompiler.Yul.StateRelation.AccountMap.codeSize_eq
@@ -131,6 +132,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
