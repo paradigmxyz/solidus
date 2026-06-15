@@ -1481,8 +1481,13 @@ corridor.
   `Yul.ObserverSafety` specializes the canonical parameterized Yul semantics
   with the same contract at the primitive handler. This adds no Yul control
   interpreter and exposes no compiler artifact; the next proof obligation is
-  observable-result refinement from the guarded Yul handler to ordinary
-  observer replay, followed by adjacent Yul-to-Functions composition.
+  control-level observable-result refinement from the guarded Yul handler to
+  ordinary observer replay, followed by adjacent Yul-to-Functions composition.
+  The stable leaf interface is now checked:
+  `PrimitiveSemantics.ObservableRefines` covers ordinary success,
+  `YulHalt`, and `Revert`, while `Result.Refines` supplies outcome-sensitive
+  `map`, `bind`, and `multifill` composition. Recursive expression, call,
+  sequence, and loop theorems must consume this interface horizontally.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

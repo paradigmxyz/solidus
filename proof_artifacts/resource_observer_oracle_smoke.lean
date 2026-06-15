@@ -25,6 +25,7 @@ import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
 import EvmCompiler.Yul.StateRelation
@@ -1006,6 +1007,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_yulHalt_parts
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_revert_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.Result.Refines.bind
+#print axioms EvmCompiler.Yul.Source.Effectful.multifill_refines
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.observableRefines
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

@@ -49,6 +49,7 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
 import EvmCompiler.Yul.EffectSemantics
+import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.ObjectSemantics
@@ -775,11 +776,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.eval_parts
 #check EvmCompiler.Functions.AllocationObserverSafety.SafeSemantics.terminal_parts
 #check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.runWith
+#check EvmCompiler.Yul.Source.Effectful.Result.Refines
+#check EvmCompiler.Yul.Source.Effectful.Result.Refines.bind
+#check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.ObservableRefines
 #check EvmCompiler.Yul.ObserverSafety.PrimitiveSafe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_yulHalt_parts
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_revert_parts
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.observableRefines
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactReplay
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.Program.ExactTerminates
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval

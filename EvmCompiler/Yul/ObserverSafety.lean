@@ -1,4 +1,5 @@
 import EvmCompiler.Simulation.MemorySafety
+import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
 
 namespace EvmCompiler
@@ -144,6 +145,27 @@ theorem eval_revert_parts
         state.source.sharedState.toMachineState values
   · exact ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
   · simp [primitiveSemantics, hSafe, Yul.Source.Effectful.fail] at hEval
+
+theorem observableRefines
+    (contract : MemoryContract.Contract) (transcript : Trace) :
+    (primitiveSemantics contract transcript).ObservableRefines
+      (ObserverSemantics.SourceReplay.primitiveSemantics transcript) := by
+  constructor
+  intro fuel state prim values result hObservable hEval
+  cases result with
+  | ok result =>
+      rcases result with ⟨final, outputs⟩
+      exact (eval_ok_parts hEval).2
+  | error failure =>
+      rcases failure with ⟨exception, failureState⟩
+      cases exception with
+      | YulHalt source value =>
+          exact (eval_yulHalt_parts hEval).2
+      | Revert source =>
+          exact (eval_revert_parts hEval).2
+      | _ =>
+          simp [Yul.Source.Effectful.Result.Observable,
+            Yul.Source.Effectful.Exception.Observable] at hObservable
 
 namespace Program
 
