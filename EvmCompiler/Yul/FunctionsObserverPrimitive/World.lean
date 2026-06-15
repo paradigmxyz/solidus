@@ -550,6 +550,9 @@ inductive WorldBinaryWrite :
     EvmYul.Operation .Yul → Structured.BasicOp →
       (EvmYul.State .Yul → Word → Word → EvmYul.State .Yul) →
       (EvmYul.State .EVM → Word → Word → EvmYul.State .EVM) → Prop where
+  | sstore :
+      WorldBinaryWrite (.StackMemFlow .SSTORE) .sstore
+        EvmYul.State.sstore EvmYul.State.sstore
   | tstore :
       WorldBinaryWrite (.StackMemFlow .TSTORE) .tstore
         EvmYul.State.tstore EvmYul.State.tstore
@@ -585,8 +588,11 @@ theorem WorldBinaryWrite.related
     StateRelation.World.Rel codeRel
       (sourceStep source key value)
       (targetStep target key value) := by
-  cases hFamily
-  exact StateRelation.World.tstore hRel key value
+  cases hFamily with
+  | sstore =>
+      exact StateRelation.World.sstore hRel key value
+  | tstore =>
+      exact StateRelation.World.tstore hRel key value
 
 theorem yul_primCall_succ_eq_of_worldBinaryWrite
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}

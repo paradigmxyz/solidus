@@ -1514,8 +1514,9 @@ corridor.
   `returndatacopy`, `extcodecopy`, `balance`, and `extcodesize`.
   The same unary access family also covers `sload` and `tload`, with storage,
   transient-storage, and warm-key facts supplied by the state relation.
-  Binary world-write preservation now covers `tstore`, including its
-  static-mode rejection and related account-map update.
+  Binary world-write preservation now covers `sstore` and `tstore`, including
+  static-mode rejection, persistent/transient account-map updates,
+  warm-storage bookkeeping, and `sstore` refund accounting.
   `selfbalance` is derived through related account maps rather than a
   whole-world equality. The primitive interface has separate exact-arity
   support for permissive imported-Yul handlers, and the state relation

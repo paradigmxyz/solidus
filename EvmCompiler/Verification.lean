@@ -110,6 +110,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.AccountMap.transientStorageValue_eq
 #check EvmCompiler.Yul.StateRelation.World.addAccessedAccount
 #check EvmCompiler.Yul.StateRelation.World.addAccessedStorageKey
+#check EvmCompiler.Yul.StateRelation.World.sstore
 #check EvmCompiler.Yul.StateRelation.World.tstore
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq

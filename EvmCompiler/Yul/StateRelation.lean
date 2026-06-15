@@ -111,6 +111,39 @@ theorem transientStorageValue_eq
   simp [EvmYul.Account.lookupTransientStorage,
     hRel.transientStorage]
 
+theorem updateStorage
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel codeRel source target)
+    (key value : EvmYul.UInt256) :
+    Rel codeRel
+      (source.updateStorage key value)
+      (target.updateStorage key value) := by
+  by_cases hZero : value == (default : EvmYul.UInt256)
+  all_goals
+    exact
+      { nonce := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.nonce
+        balance := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.balance
+        storage := by
+          simp [EvmYul.Account.updateStorage, hZero, hRel.storage]
+        code := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.code
+        codeImage := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.codeImage
+        codeBytes := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.codeBytes
+        transientStorage := by
+          simpa [EvmYul.Account.updateStorage, hZero] using
+            hRel.transientStorage }
+
 theorem updateTransientStorage
     {codeRel : CodeRel}
     {source : EvmYul.Account .Yul}
@@ -308,6 +341,39 @@ theorem transientStorageValue_eq
               targetAccount.lookupTransientStorage key
           exact Account.transientStorageValue_eq hAccount key
 
+theorem findStorageValue_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) :
+    (source.find! address).storage.findD key ⟨0⟩ =
+      (target.find! address).storage.findD key ⟨0⟩ := by
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [Batteries.RBMap.find!, hSource, hTarget]
+          rfl
+      | some targetAccount =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          simpa [Batteries.RBMap.find!, hSource, hTarget,
+            EvmYul.Account.lookupStorage] using
+            Account.storageValue_eq hAccount key
+
 theorem insert
     {codeRel : CodeRel}
     {source : EvmYul.AccountMap .Yul}
@@ -453,6 +519,194 @@ theorem updateAccount
       createdAccounts := by
         simpa [EvmYul.State.updateAccount] using
           hRel.createdAccounts }
+
+theorem withRefundBalance
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (refundBalance : EvmYul.UInt256) :
+    Rel codeRel
+      { source with substate.refundBalance := refundBalance }
+      { target with substate.refundBalance := refundBalance } := by
+  exact
+    { accounts := by simpa using hRel.accounts
+      initialAccounts := by simpa using hRel.initialAccounts
+      totalGasUsedInBlock := by simpa using hRel.totalGasUsedInBlock
+      transactionReceipts := by simpa using hRel.transactionReceipts
+      substate := by simp [hRel.substate]
+      executionEnv := by simpa using hRel.executionEnv
+      blocks := by simpa using hRel.blocks
+      genesisBlockHeader := by simpa using hRel.genesisBlockHeader
+      createdAccounts := by simpa using hRel.createdAccounts }
+
+private def currentStorageValue {τ}
+    (state : EvmYul.State τ)
+    (owner : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) : EvmYul.UInt256 :=
+  (state.accountMap.find! owner).1.storage.findD key ⟨0⟩
+
+private def initialStorageValue {τ}
+    (state : EvmYul.State τ)
+    (owner : EvmYul.AccountAddress)
+    (key : EvmYul.UInt256) : EvmYul.UInt256 :=
+  (state.σ₀.find? owner).option ⟨0⟩
+    (fun account => account.storage.findD key ⟨0⟩)
+
+private def sstoreRefundBalance
+    (initial current new refundBalance : EvmYul.UInt256) :
+    EvmYul.UInt256 :=
+  let dirtyClear : ℤ :=
+    if initial ≠ .ofNat 0 && current = .ofNat 0 then
+      -GasConstants.Rsclear
+    else if initial ≠ .ofNat 0 && new = .ofNat 0 then
+      GasConstants.Rsclear
+    else 0
+  let dirtyReset : ℤ :=
+    if initial = new && initial = .ofNat 0 then
+      GasConstants.Gsset - GasConstants.Gwarmaccess
+    else if initial = new && initial ≠ .ofNat 0 then
+      GasConstants.Gsreset - GasConstants.Gwarmaccess
+    else 0
+  let refundDelta : ℤ :=
+    if current ≠ new && initial = current && new = .ofNat 0 then
+      GasConstants.Rsclear
+    else if current ≠ new && initial ≠ current then
+      dirtyClear + dirtyReset
+    else 0
+  match refundDelta with
+  | .ofNat n => refundBalance + .ofNat n
+  | .negSucc n => refundBalance - .ofNat n - ⟨1⟩
+
+private theorem sstore_eq {τ}
+    (state : EvmYul.State τ)
+    (key value : EvmYul.UInt256) :
+    state.sstore key value =
+      let owner := state.executionEnv.codeOwner
+      state.lookupAccount owner |>.option state fun account =>
+        let state' :=
+          state.setAccount owner (account.updateStorage key value)
+            |>.addAccessedStorageKey (owner, key)
+        { state' with
+          substate.refundBalance :=
+            sstoreRefundBalance
+              (initialStorageValue state owner key)
+              (currentStorageValue state owner key)
+              value state.substate.refundBalance } := by
+  unfold EvmYul.State.sstore
+  dsimp only
+  congr 1
+  funext account
+  congr 1
+  simp [sstoreRefundBalance, initialStorageValue,
+    currentStorageValue]
+  have hStorage :
+      (state.accountMap.find!
+          state.executionEnv.codeOwner).1.storage =
+        (state.accountMap.find!
+          state.executionEnv.codeOwner).storage := by
+    rfl
+  rw [hStorage]
+  cases hInitial :
+      state.σ₀.find? state.executionEnv.codeOwner <;>
+    simp [hInitial, Option.option] <;>
+    rfl
+
+theorem sstore
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (key value : EvmYul.UInt256) :
+    Rel codeRel
+      (source.sstore key value)
+      (target.sstore key value) := by
+  let owner := source.executionEnv.codeOwner
+  have hTargetOwner :
+      target.executionEnv.codeOwner = owner := by
+    simpa [owner] using hRel.executionEnv.codeOwner.symm
+  have hCurrent :
+      currentStorageValue source owner key =
+        currentStorageValue target owner key := by
+    simpa [currentStorageValue] using
+      AccountMap.findStorageValue_eq hRel.accounts owner key
+  have hInitial :
+      initialStorageValue source owner key =
+        initialStorageValue target owner key := by
+    simp [initialStorageValue, hRel.initialAccounts]
+  have hRefund :
+      source.substate.refundBalance =
+        target.substate.refundBalance := by
+    simpa using congrArg EvmYul.Substate.refundBalance hRel.substate
+  rw [sstore_eq, sstore_eq]
+  rw [hTargetOwner]
+  let newRefund : EvmYul.UInt256 :=
+    sstoreRefundBalance
+      (initialStorageValue source owner key)
+      (currentStorageValue source owner key)
+      value source.substate.refundBalance
+  have hNewRefund :
+      newRefund =
+        sstoreRefundBalance
+          (initialStorageValue target owner key)
+          (currentStorageValue target owner key)
+          value target.substate.refundBalance := by
+    simp [newRefund, hInitial, hCurrent, hRefund]
+  change
+    Rel codeRel
+      ((source.lookupAccount owner).option source
+        (fun account =>
+          { (source.setAccount owner
+                (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance := newRefund }))
+      ((target.lookupAccount owner).option target
+        (fun account =>
+          { (target.setAccount owner
+                (account.updateStorage key value)
+              |>.addAccessedStorageKey (owner, key)) with
+            substate.refundBalance :=
+              sstoreRefundBalance
+                (initialStorageValue target owner key)
+                (currentStorageValue target owner key)
+                value target.substate.refundBalance }))
+  rw [← hNewRefund]
+  have hLookup := hRel.accounts owner
+  cases hSource : source.lookupAccount owner with
+  | none =>
+      change source.accountMap.find? owner = none at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          simpa [hSource, hTarget] using hRel
+      | some targetAccount =>
+          change
+            target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          simp [StateRelation.OptionRel] at hLookup
+  | some sourceAccount =>
+      change
+        source.accountMap.find? owner = some sourceAccount at hSource
+      rw [hSource] at hLookup
+      cases hTarget : target.lookupAccount owner with
+      | none =>
+          change target.accountMap.find? owner = none at hTarget
+          rw [hTarget] at hLookup
+          simp [StateRelation.OptionRel] at hLookup
+      | some targetAccount =>
+          change
+            target.accountMap.find? owner = some targetAccount at hTarget
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          simpa [hSource, hTarget, EvmYul.State.setAccount] using
+            withRefundBalance
+              (addAccessedStorageKey
+                (updateAccount hRel owner
+                  (Account.updateStorage hAccount key value))
+                (owner, key))
+              newRefund
 
 theorem tstore
     {codeRel : CodeRel}
