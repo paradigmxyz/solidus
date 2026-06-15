@@ -749,9 +749,13 @@ compiler cleanup through the
   real compiler equation and ordinary program scoping. The no-variable source
   prelude and compiler-selected allocator/main-frame setup are now checked
   adjacent boundaries; `MainSetup.forward` produces the exact resource
-  invariant consumed by recursive main-body preservation. The immediate
-  remaining work is source-run decomposition, recursive body composition, and
-  compiler-owned cleanup. `MainComponents.RuntimeSelection`
+  invariant consumed by recursive main-body preservation.
+  `SourcePrelude.splitOpen`, `AllocationObserverCleanup.Plain.run_exact`, and
+  `MainPrepared.forwardOpen` now compose the canonical source run through the
+  real prelude, compiler-selected setup, recursive body, and final cleanup.
+  Public `mainForward` accepts the ordinary lowering equation and constructs
+  all proof-oriented compilation artifacts internally.
+  `MainComponents.RuntimeSelection`
   now proves from successful ordinary lowering that the program is either
   stack-only, with no frame-using functions and empty allocator/frame preludes,
   or scratch-backed by the exact concrete configuration consumed by the
@@ -775,9 +779,8 @@ compiler cleanup through the
   enters selected no-frame roots through the resource-indexed function-body
   boundary. Main now also has a compiler-selected resource theorem that
   constructs its artifact/root internally and chooses the checked stack-only
-  or scratch recursion from the ordinary compilation. The remaining forward
-  proof is main source-prelude and target setup/body/cleanup composition,
-  followed by matching
+  or scratch recursion from the ordinary compilation. Whole-main forward
+  preservation is checked; matching
   whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
@@ -1457,13 +1460,15 @@ corridor.
   the outcome in the shared controlled dispatcher. The stack-only recursive
   constructor is now checked over every compiler-owned root using the same
   resource block result, control destinations, exact cursors, and selected
-  function-body boundary as scratch recursion. The remaining Functions work
-  is whole-program setup/cleanup packaging and matching backward adequacy.
+  function-body boundary as scratch recursion. Whole-program setup, recursive
+  body execution, cleanup, and outcome packaging are now checked by
+  `MainPrepared.forwardOpen` and public `mainForward`. The remaining Functions
+  work is matching backward adequacy.
   The no-variable source prelude is now checked through the ordinary
   allocation expression lowerer, Locals compiler, safe source evaluator, and
-  Structured block semantics. The recursive main-body theorem already selects
-  its resource mode directly from the ordinary compilation and accepts no
-  generated artifact premise.
+  Structured block semantics. The public whole-main theorem selects its
+  resource mode directly from the allocation plan and source program, consumes
+  the ordinary lowering equation, and accepts no generated artifact premise.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

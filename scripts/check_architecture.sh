@@ -146,6 +146,35 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverRecursive.lean \
   EvmCompiler/Functions/AllocationObserverProgram.lean
 
+main_forward_signature="$(
+  sed -n '/^theorem mainForward/,/ := by$/p' \
+    EvmCompiler/Functions/AllocationObserverProgram.lean
+)"
+if [[ -z "$main_forward_signature" ]]; then
+  printf 'Missing public Functions whole-main observer theorem: mainForward\n\n' >&2
+  failed=1
+else
+  main_forward_leaks="$(
+    printf '%s\n' "$main_forward_signature" |
+      rg -n \
+        '(MainArtifact|MainPrepared|MainRoot|AllocationObserverForward\.Compilation|Certificate|Replay|CallOracle|Evidence|bodyCode|cleanupCode)' \
+        2>/dev/null || true
+  )"
+  if [[ -n "$main_forward_leaks" ]]; then
+    printf '%s\n%s\n\n' \
+      'The public Functions whole-main theorem must not accept generated proof or code evidence:' \
+      "$main_forward_leaks" >&2
+    failed=1
+  fi
+  if ! printf '%s\n' "$main_forward_signature" |
+      rg -q 'AllocationLowering\.lowerExpressionsFromAllocation\?'; then
+    printf '%s\n\n' \
+      'The public Functions whole-main theorem must consume the ordinary allocation lowering equation.' \
+      >&2
+    failed=1
+  fi
+fi
+
 report_matches \
   'The allocation loop boundary must not publicly expose a whole-loop proof callback:' \
   '^[[:space:]]*theorem[[:space:]]+for_regular_of_components' \

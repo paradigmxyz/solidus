@@ -687,6 +687,46 @@ the requested target depth.
 This is the stack-balance fact needed to rebuild the complete activation
 invariant after lexical-scope cleanup.
 -/
+theorem run_exact
+    {transcript : Trace}
+    {localsCtx : Locals.Ctx}
+    {targetDepth : Nat}
+    {target : Structured.ObserverSemantics.State transcript}
+    {cleanup : Structured.Code}
+    (hStackLength :
+      target.source.evm.stack.length = localsCtx.layout.length)
+    (hCleanup :
+      localsCtx.cleanupTo? targetDepth = some cleanup) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run cleanup target =
+          .ok targetFinal ∧
+        targetFinal.source.evm.stack.length = targetDepth ∧
+        targetFinal.source.evm.toMachineState =
+          target.source.evm.toMachineState ∧
+        targetFinal.cursor = target.cursor ∧
+        targetFinal.source.evm.toSharedState =
+          target.source.evm.toSharedState := by
+  obtain ⟨hDepth, hCleanupCode⟩ :=
+    cleanupTo?_shape hCleanup
+  have hBound :
+      localsCtx.layout.length - targetDepth ≤
+        target.source.evm.stack.length := by
+    omega
+  obtain
+      ⟨targetFinal, hRun, hCursor, hFinalStack,
+        hShared, _hReturns⟩ :=
+    AllocationObserverPreservation.ObserverCode.run_replicate_pop
+      (localsCtx.layout.length - targetDepth) hBound
+  refine ⟨targetFinal, ?_, ?_, ?_, hCursor, hShared⟩
+  · simpa [hCleanupCode] using hRun
+  · rw [hFinalStack, List.length_drop, hStackLength]
+    omega
+  · exact congrArg EvmYul.SharedState.toMachineState hShared
+
+/--
+Plain cleanup additionally reconstructs the requested surviving activation
+when its allocation transition retains a valid runtime representation.
+-/
 theorem forward_exact
     {transcript : Trace}
     {contract : MemoryContract.Contract}

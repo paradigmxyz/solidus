@@ -375,9 +375,18 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationLowering.MainComponents.compileFrame_of_scratch
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.scoped_of_compileNoVar
 #check EvmCompiler.Functions.AllocationObserverProgram.SourcePrelude.forward
+#check EvmCompiler.Functions.AllocationObserverProgram.SourcePrelude.splitOpen
+#check EvmCompiler.Functions.AllocationObserverCleanup.Plain.run_exact
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorInit_forward
 #check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_empty_forward
+#check EvmCompiler.Functions.AllocationObserverProgram.InitialRel
+#check EvmCompiler.Functions.AllocationObserverProgram.FinalStateRel
+#check EvmCompiler.Functions.AllocationObserverProgram.OutcomeRel
+#check EvmCompiler.Functions.AllocationObserverProgram.selectedResourceMode
+#check EvmCompiler.Functions.AllocationObserverProgram.selectedResourceMode_eq_compilation
 #check EvmCompiler.Functions.AllocationObserverProgram.mainSetupDepth
+#check EvmCompiler.Functions.AllocationObserverProgram.selectedMainSetupDepth
+#check EvmCompiler.Functions.AllocationObserverProgram.selectedMainSetupDepth_eq_compilation
 #check EvmCompiler.Functions.AllocationObserverProgram.MainSetup.forward
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
@@ -388,6 +397,8 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.boundary
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.recursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceRecursiveForward
+#check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.forwardOpen
+#check EvmCompiler.Functions.AllocationObserverProgram.mainForward
 #check EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.mainResourceRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
