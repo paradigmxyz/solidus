@@ -175,6 +175,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
+#check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.guardedNoObservableFailure_of_raw
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.PureBinary.rawNoObservableFailureAt
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.WorldBinaryWrite.rawNoObservableFailureAt
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.rawNoObservableFailure
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverNoObservableFailure
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected_noObservableFailure
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts

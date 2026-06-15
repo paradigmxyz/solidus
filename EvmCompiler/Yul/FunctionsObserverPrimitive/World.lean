@@ -133,6 +133,27 @@ theorem yul_primCall_succ_eq_of_worldNullary
     unfold EvmYul.step <;>
     rfl
 
+theorem WorldNullary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldNullary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.stateOp] at hRun
+      | cons head tail =>
+          simp [EvmYul.Yul.stateOp] at hRun
+
 theorem forwardAtArity_of_worldNullary
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -269,6 +290,36 @@ theorem yul_primCall_succ_eq_of_worldUnaryRead
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem WorldUnaryRead.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily :
+      WorldUnaryRead prim op sourceResult targetResult) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldUnaryRead hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.unaryStateOp] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons value extra =>
+          cases extra with
+          | nil =>
+              simp [EvmYul.Yul.unaryStateOp] at hRun
+          | cons head tail =>
+              simp [EvmYul.Yul.unaryStateOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem forwardAt_of_worldUnaryRead
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
@@ -480,6 +531,38 @@ theorem yul_primCall_succ_eq_of_worldUnaryAccess
     unfold EvmYul.step <;>
     rfl
 
+theorem WorldUnaryAccess.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily :
+      WorldUnaryAccess prim op sourceStep targetStep) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldUnaryAccess hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.unaryStateOp] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons value extra =>
+          cases extra with
+          | nil =>
+              simp [EvmYul.Yul.unaryStateOp] at hRun
+          | cons head tail =>
+              simp [EvmYul.Yul.unaryStateOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem forwardAt_of_worldUnaryAccess
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -639,6 +722,51 @@ theorem yul_primCall_succ_eq_of_worldBinaryWrite
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem WorldBinaryWrite.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily :
+      WorldBinaryWrite prim op sourceStep targetStep) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldBinaryWrite hFamily] at hRun
+      cases hPermission : source.executionEnv.perm with
+      | false =>
+          simp [hPermission] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | true =>
+          simp [hPermission] at hRun
+          cases values with
+          | nil =>
+              simp [EvmYul.Yul.binaryStateOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons key rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.binaryStateOp] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+              | cons value extra =>
+                  cases extra with
+                  | nil =>
+                      simp [EvmYul.Yul.binaryStateOp] at hRun
+                  | cons head tail =>
+                      simp [EvmYul.Yul.binaryStateOp] at hRun
+                      rw [← hRun] at hObservable
+                      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem forwardAt_of_worldBinaryWrite
     {codeRel : StateRelation.CodeRel} {fuel : Nat}

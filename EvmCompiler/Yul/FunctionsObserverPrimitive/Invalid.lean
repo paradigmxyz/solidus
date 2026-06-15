@@ -19,6 +19,36 @@ theorem forwardAt_invalid
           Except.ok (source', outputs) at hCall
       cases hCall
 
+theorem rawNoObservableFailure_invalid
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {values : List Word} {exception : EvmYul.Yul.Exception}
+    (hRun :
+      EvmYul.Yul.primCall fuel (.Ok sourceShared sourceVars)
+          (.System .INVALID) values =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ
+              (.Ok sourceShared sourceVars)
+              (.System .INVALID) values =
+            .error .InvalidInstruction := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      injection hRun with hRun
+      rw [← hRun] at hObservable
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem safeInvalid
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

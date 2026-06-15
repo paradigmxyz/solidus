@@ -1695,10 +1695,13 @@ corridor.
   `callDispatcher`/`finish` composition are checked. Observable terminal
   failures now propagate structurally through argument lowering and
   compiler-selected internal function calls, including generated result
-  initialization whose writeback is proved unreachable. The current obligation
-  is the nonterminal primitive failure classifier, recursive terminal control
-  propagation, and whole-program terminal composition, followed by matching
-  backward adequacy.
+  initialization whose writeback is proved unreachable. A pass-owned
+  semantic-family classifier now proves that every safe compiler-selected
+  nonterminal primitive cannot produce an observable `YulHalt` or `Revert`;
+  malformed arities, static rejection, exhausted replay, and excluded external
+  operations are discharged internally. The current obligation is recursive
+  terminal expression/control propagation and whole-program terminal
+  composition, followed by matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

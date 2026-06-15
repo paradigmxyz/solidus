@@ -8,6 +8,42 @@ namespace FunctionsObserverPrimitive
 
 abbrev Word := Assembly.Word
 
+theorem list_eq_four_of_length_eq
+    {α : Type} {values : List α} (hLength : values.length = 4) :
+    ∃ first second third fourth,
+      values = [first, second, third, fourth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 3 := by simpa using hLength
+      obtain ⟨second, third, fourth, rfl⟩ :=
+        List.length_eq_three.mp hRest
+      exact ⟨first, second, third, fourth, rfl⟩
+
+theorem list_eq_five_of_length_eq
+    {α : Type} {values : List α} (hLength : values.length = 5) :
+    ∃ first second third fourth fifth,
+      values = [first, second, third, fourth, fifth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 4 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, rfl⟩ :=
+        list_eq_four_of_length_eq hRest
+      exact ⟨first, second, third, fourth, fifth, rfl⟩
+
+theorem list_eq_six_of_length_eq
+    {α : Type} {values : List α} (hLength : values.length = 6) :
+    ∃ first second third fourth fifth sixth,
+      values = [first, second, third, fourth, fifth, sixth] := by
+  cases values with
+  | nil => simp at hLength
+  | cons first rest =>
+      have hRest : rest.length = 5 := by simpa using hLength
+      obtain ⟨second, third, fourth, fifth, sixth, rfl⟩ :=
+        list_eq_five_of_length_eq hRest
+      exact ⟨first, second, third, fourth, fifth, sixth, rfl⟩
+
 /--
 The semantic obligation for one ordinary compiler-selected Yul primitive.
 
@@ -47,6 +83,90 @@ def ForwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
       StateRelation.Regular.Rel codeRel source'
         (target.withShared targetShared) ∧
       source'.store = source.store
+
+def RawNoObservableFailureAt (fuel : Nat)
+    (prim : EvmYul.Operation .Yul) : Prop :=
+  ∀ {source : EvmYul.Yul.State} {values : List Word}
+    {exception : EvmYul.Yul.Exception},
+    EvmYul.Yul.primCall fuel source prim values =
+        .error exception →
+      ¬Yul.Source.Effectful.Exception.Observable exception
+
+theorem guardedNoObservableFailure_of_raw
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {fuel : Nat}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {prim : EvmYul.Operation .Yul} {sourceValues : List Word}
+    (hObserver : ObserverSemantics.yulPrimObserver? prim = none)
+    (hRaw :
+      ∀ {rawException : EvmYul.Yul.Exception},
+        EvmYul.Yul.primCall fuel source.source prim sourceValues =
+            .error rawException →
+          ¬Yul.Source.Effectful.Exception.Observable rawException)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    False := by
+  rcases failure with ⟨exception, failureState⟩
+  cases exception with
+  | YulHalt sourceFinal value =>
+      obtain ⟨_hSafe, hSourceRun⟩ :=
+        ObserverSafety.SafeSemantics.eval_yulHalt_parts hRun
+      cases hRawRun :
+          EvmYul.Yul.primCall fuel source.source prim sourceValues with
+      | ok result =>
+          simp [ObserverSemantics.SourceReplay.primCall,
+            hObserver, hRawRun] at hSourceRun
+      | error rawException =>
+          have hExceptionEq :=
+            congrArg
+              (fun result =>
+                match result with
+                | .ok _ => none
+                | .error rawFailure =>
+                    some rawFailure.exception)
+              hSourceRun
+          simp [ObserverSemantics.SourceReplay.primCall,
+            hObserver, hRawRun, Yul.Source.Effectful.fail] at hExceptionEq
+          subst rawException
+          have hExceptionObservable :
+              Yul.Source.Effectful.Exception.Observable
+                (.YulHalt sourceFinal value) := by simp
+          exact hRaw hRawRun hExceptionObservable
+  | Revert sourceFinal =>
+      obtain ⟨_hSafe, hSourceRun⟩ :=
+        ObserverSafety.SafeSemantics.eval_revert_parts hRun
+      cases hRawRun :
+          EvmYul.Yul.primCall fuel source.source prim sourceValues with
+      | ok result =>
+          simp [ObserverSemantics.SourceReplay.primCall,
+            hObserver, hRawRun] at hSourceRun
+      | error rawException =>
+          have hExceptionEq :=
+            congrArg
+              (fun result =>
+                match result with
+                | .ok _ => none
+                | .error rawFailure =>
+                    some rawFailure.exception)
+              hSourceRun
+          simp [ObserverSemantics.SourceReplay.primCall,
+            hObserver, hRawRun, Yul.Source.Effectful.fail] at hExceptionEq
+          subst rawException
+          have hExceptionObservable :
+              Yul.Source.Effectful.Exception.Observable
+                (.Revert sourceFinal) := by simp
+          exact hRaw hRawRun hExceptionObservable
+  | _ =>
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem ForwardAt.withArity
     {codeRel : StateRelation.CodeRel} {fuel : Nat}

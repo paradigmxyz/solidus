@@ -71,6 +71,39 @@ theorem yul_primCall_succ_eq_of_pureBinary
     unfold EvmYul.step <;>
     rfl
 
+theorem PureBinary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {f : EvmYul.Primop.Binary}
+    (hFamily : PureBinary prim op f) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_pureBinary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.execBinOp] at hRun
+          subst exception
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons left rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.execBinOp] at hRun
+              subst exception
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons right extra =>
+              cases extra with
+              | nil =>
+                  simp [EvmYul.Yul.execBinOp] at hRun
+              | cons head tail =>
+                  simp [EvmYul.Yul.execBinOp] at hRun
+                  subst exception
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem yulPureBinaryOneAt
     {fuel : Nat} {prim : EvmYul.Operation .Yul}
     {op : Structured.BasicOp} {f : EvmYul.Primop.Binary}
@@ -249,6 +282,72 @@ theorem yul_primCall_succ_eq_of_pureTernary
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem PureUnary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {f : EvmYul.Primop.Unary}
+    (hFamily : PureUnary prim op f) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_pureUnary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.execUnOp] at hRun
+          subst exception
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons value extra =>
+          cases extra with
+          | nil =>
+              simp [EvmYul.Yul.execUnOp] at hRun
+          | cons head tail =>
+              simp [EvmYul.Yul.execUnOp] at hRun
+              subst exception
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
+theorem PureTernary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {f : EvmYul.Primop.Ternary}
+    (hFamily : PureTernary prim op f) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_pureTernary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.execTriOp] at hRun
+          subst exception
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons first rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.execTriOp] at hRun
+              subst exception
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons second rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.execTriOp] at hRun
+                  subst exception
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+              | cons third extra =>
+                  cases extra with
+                  | nil =>
+                      simp [EvmYul.Yul.execTriOp] at hRun
+                  | cons head tail =>
+                      simp [EvmYul.Yul.execTriOp] at hRun
+                      subst exception
+                      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem PureUnary.metadata
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}

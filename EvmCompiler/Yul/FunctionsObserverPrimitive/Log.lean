@@ -23,6 +23,123 @@ theorem LogFamily.metadata
       Prim.toUncheckedBasicOp? prim = some op := by
   cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
+private theorem rawNoObservableFailure_log_succ
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {prim : EvmYul.Operation .Yul} {values : List Word}
+    {result : EvmYul.Yul.State × List Word}
+    {exception : EvmYul.Yul.Exception}
+    (hDispatch :
+      EvmYul.Yul.primCall fuel.succ
+          (.Ok sourceShared sourceVars) prim values =
+        if sourceShared.executionEnv.perm = false then
+          .error .StaticModeViolation
+        else
+          .ok result)
+    (hRun :
+      EvmYul.Yul.primCall fuel.succ
+          (.Ok sourceShared sourceVars) prim values =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  rw [hDispatch] at hRun
+  cases hPermission : sourceShared.executionEnv.perm with
+  | false =>
+      simp [hPermission] at hRun
+      rw [← hRun] at hObservable
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | true =>
+      simp [hPermission] at hRun
+
+theorem LogFamily.rawNoObservableFailure
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {values : List Word} {exception : EvmYul.Yul.Exception}
+    (hFamily : LogFamily prim op arity)
+    (hArity : values.length = arity)
+    (hRun :
+      EvmYul.Yul.primCall fuel (.Ok sourceShared sourceVars)
+          prim values =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  cases fuel with
+  | zero =>
+      intro hObservable
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      cases hFamily with
+      | log0 =>
+          obtain ⟨address, size, rfl⟩ :=
+            List.length_eq_two.mp hArity
+          apply rawNoObservableFailure_log_succ
+            (result :=
+              (.Ok
+                (EvmYul.SharedState.logOp
+                  address size #[] sourceShared)
+                sourceVars,
+                [])) _ hRun
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          rfl
+      | log1 =>
+          obtain ⟨address, size, topic0, rfl⟩ :=
+            List.length_eq_three.mp hArity
+          apply rawNoObservableFailure_log_succ
+            (result :=
+              (.Ok
+                (EvmYul.SharedState.logOp
+                  address size #[topic0] sourceShared)
+                sourceVars,
+                [])) _ hRun
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          rfl
+      | log2 =>
+          obtain ⟨address, size, topic0, topic1, rfl⟩ :=
+            list_eq_four_of_length_eq hArity
+          apply rawNoObservableFailure_log_succ
+            (result :=
+              (.Ok
+                (EvmYul.SharedState.logOp
+                  address size #[topic0, topic1] sourceShared)
+                sourceVars,
+                [])) _ hRun
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          rfl
+      | log3 =>
+          obtain ⟨address, size, topic0, topic1, topic2, rfl⟩ :=
+            list_eq_five_of_length_eq hArity
+          apply rawNoObservableFailure_log_succ
+            (result :=
+              (.Ok
+                (EvmYul.SharedState.logOp
+                  address size #[topic0, topic1, topic2] sourceShared)
+                sourceVars,
+                [])) _ hRun
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          rfl
+      | log4 =>
+          obtain
+              ⟨address, size, topic0, topic1, topic2, topic3, rfl⟩ :=
+            list_eq_six_of_length_eq hArity
+          apply rawNoObservableFailure_log_succ
+            (result :=
+              (.Ok
+                (EvmYul.SharedState.logOp address size
+                  #[topic0, topic1, topic2, topic3] sourceShared)
+                sourceVars,
+                [])) _ hRun
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          rfl
+
 theorem forwardAtArity_log0
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
     ForwardAtArity codeRel fuel (.Log .LOG0) .log0 := by

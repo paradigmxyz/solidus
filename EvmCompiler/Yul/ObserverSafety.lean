@@ -253,6 +253,53 @@ theorem eval_revert_parts
   · exact ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
   · simp [primitiveSemantics, hSafe, Yul.Source.Effectful.fail] at hEval
 
+theorem eval_observable_error_safe
+    {contract : MemoryContract.Contract} {transcript : Trace}
+    {fuel : Nat} {state : State transcript}
+    {failure : Yul.Source.Effectful.Failure (State transcript)}
+    {prim : EvmYul.Operation .Yul} {values : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).eval
+          fuel state prim values =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    PrimitiveSafe contract prim
+      state.source.sharedState.toMachineState values := by
+  rcases failure with ⟨exception, failureState⟩
+  cases exception with
+  | YulHalt source value =>
+      exact (eval_yulHalt_parts hEval).1
+  | Revert source =>
+      exact (eval_revert_parts hEval).1
+  | _ =>
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
+theorem eval_observable_error_parts
+    {contract : MemoryContract.Contract} {transcript : Trace}
+    {fuel : Nat} {state : State transcript}
+    {failure : Yul.Source.Effectful.Failure (State transcript)}
+    {prim : EvmYul.Operation .Yul} {values : List Word}
+    (hEval :
+      (primitiveSemantics contract transcript).eval
+          fuel state prim values =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    PrimitiveSafe contract prim
+        state.source.sharedState.toMachineState values ∧
+      ObserverSemantics.SourceReplay.primCall
+          fuel state prim values =
+        .error failure := by
+  rcases failure with ⟨exception, failureState⟩
+  cases exception with
+  | YulHalt source value =>
+      exact eval_yulHalt_parts hEval
+  | Revert source =>
+      exact eval_revert_parts hEval
+  | _ =>
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem observableRefines
     (contract : MemoryContract.Contract) (transcript : Trace) :
     (primitiveSemantics contract transcript).ObservableRefines

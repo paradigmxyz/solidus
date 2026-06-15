@@ -418,6 +418,537 @@ theorem safeCompilerSelected
           exact safeInvalid hRel hRun
       | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
 
+/--
+A guarded, compiler-selected nonterminal primitive cannot produce a public
+terminal Yul exception. Malformed arguments, static-mode rejection, depleted
+observer replay, and other interpreter failures remain non-observable.
+-/
+theorem safeCompilerSelected_noObservableFailure
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues : List Word}
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hArity :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs op)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel source prim sourceValues =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    False := by
+  obtain ⟨hSourceSafe, hSourceRun⟩ :=
+    ObserverSafety.SafeSemantics.eval_observable_error_parts
+      hRun hObservable
+  cases fuel with
+  | zero =>
+      have hResultObservable :
+          Yul.Source.Effectful.Result.Observable
+            (ObserverSemantics.SourceReplay.primCall
+              0 source prim sourceValues) := by
+        rw [hSourceRun]
+        exact hObservable
+      simpa [ObserverSemantics.SourceReplay.primCall,
+        Yul.Source.Effectful.Result.Observable,
+        Yul.Source.Effectful.fail] using hResultObservable
+  | succ previous =>
+      have hRawLift
+          (hObserver :
+            ObserverSemantics.yulPrimObserver? prim = none)
+          (hRaw :
+            ∀ {rawException : EvmYul.Yul.Exception},
+              EvmYul.Yul.primCall previous source.source
+                  prim sourceValues =
+                .error rawException →
+              ¬Yul.Source.Effectful.Exception.Observable
+                rawException) :
+          False :=
+        guardedNoObservableFailure_of_raw
+          hObserver hRaw hRun hObservable
+      rcases hRel.2 with
+        ⟨sourceShared, sourceVars, hSource, _hShared, _hVars⟩
+      cases prim with
+      | StopArith primitive =>
+          cases primitive with
+          | STOP => simp [Prim.terminal?] at hTerminal
+          | ADD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .add)
+          | MUL =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .mul)
+          | SUB =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .sub)
+          | DIV =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .div)
+          | SDIV =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .sdiv)
+          | MOD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .mod)
+          | SMOD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .smod)
+          | ADDMOD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureTernary.rawNoObservableFailureAt .addmod)
+          | MULMOD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureTernary.rawNoObservableFailureAt .mulmod)
+          | EXP =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .exp)
+          | SIGNEXTEND =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .signextend)
+      | CompBit primitive =>
+          cases primitive with
+          | LT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .lt)
+          | GT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .gt)
+          | SLT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .slt)
+          | SGT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .sgt)
+          | EQ =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .eq)
+          | ISZERO =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureUnary.rawNoObservableFailureAt .iszero)
+          | AND =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .and)
+          | OR =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .or)
+          | XOR =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .xor)
+          | NOT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureUnary.rawNoObservableFailureAt .not)
+          | BYTE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .byte)
+          | SHL =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .shl)
+          | SHR =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .shr)
+          | SAR =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (PureBinary.rawNoObservableFailureAt .sar)
+      | Keccak primitive =>
+          cases primitive with
+          | KECCAK256 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (rawNoObservableFailureAt_keccak256 previous)
+      | Env primitive =>
+          cases primitive with
+          | ADDRESS =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .address)
+          | BALANCE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryAccess.rawNoObservableFailureAt .balance)
+          | ORIGIN =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .origin)
+          | CALLER =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .caller)
+          | CALLVALUE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .callvalue)
+          | CALLDATALOAD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryRead.rawNoObservableFailureAt .calldataload)
+          | CALLDATASIZE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .calldatasize)
+          | CALLDATACOPY =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (SharedTernaryCopy.rawNoObservableFailureAt .calldatacopy)
+          | GASPRICE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .gasprice)
+          | CODESIZE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .codesize)
+          | CODECOPY =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (SharedTernaryCopy.rawNoObservableFailureAt .codecopy)
+          | EXTCODESIZE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryAccess.rawNoObservableFailureAt .extcodesize)
+          | EXTCODECOPY =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              obtain ⟨account, destination, readStart, size, hValues⟩ :=
+                list_eq_four_of_length_eq (by simpa using hArity)
+              subst sourceValues
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact rawNoObservableFailure_extcodecopy hRaw
+          | RETURNDATASIZE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hValues : sourceValues = [] := by
+                apply List.eq_nil_of_length_eq_zero
+                simpa [Expressions.Structured.BasicOp.inputs] using hArity
+              subst sourceValues
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              exact rawNoObservableFailure_returndatasize hRaw
+          | RETURNDATACOPY =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              obtain ⟨destination, readStart, size, hValues⟩ :=
+                List.length_eq_three.mp (by simpa using hArity)
+              subst sourceValues
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact rawNoObservableFailure_returndatacopy hRaw
+          | EXTCODEHASH =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryAccess.rawNoObservableFailureAt .extcodehash)
+      | Block primitive =>
+          cases primitive with
+          | BLOCKHASH =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryRead.rawNoObservableFailureAt .blockhash)
+          | COINBASE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .coinbase)
+          | TIMESTAMP =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .timestamp)
+          | NUMBER =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .number)
+          | PREVRANDAO =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .prevrandao)
+          | GASLIMIT =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .gaslimit)
+          | CHAINID =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .chainid)
+          | SELFBALANCE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldNullary.rawNoObservableFailureAt .selfbalance)
+          | BASEFEE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .basefee)
+          | BLOBHASH =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentUnary.rawNoObservableFailureAt .blobhash)
+          | BLOBBASEFEE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (EnvironmentNullary.rawNoObservableFailureAt .blobbasefee)
+      | StackMemFlow primitive =>
+          cases primitive with
+          | POP =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              obtain ⟨value, hValues⟩ :=
+                List.length_eq_one_iff.mp (by simpa using hArity)
+              subst sourceValues
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              exact rawNoObservableFailure_pop hRaw
+          | MLOAD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (rawNoObservableFailureAt_mload previous)
+          | MSTORE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (MachineBinaryZero.rawNoObservableFailureAt .mstore)
+          | SLOAD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryAccess.rawNoObservableFailureAt .sload)
+          | SSTORE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldBinaryWrite.rawNoObservableFailureAt .sstore)
+          | MSTORE8 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (MachineBinaryZero.rawNoObservableFailureAt .mstore8)
+          | MSIZE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hValues : sourceValues = [] := by
+                apply List.eq_nil_of_length_eq_zero
+                simpa [Expressions.Structured.BasicOp.inputs] using hArity
+              subst sourceValues
+              exact safeObserverNoObservableFailure
+                ObserverSemantics.yulPrimObserver?_msize
+                hRun hObservable
+          | GAS =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hValues : sourceValues = [] := by
+                apply List.eq_nil_of_length_eq_zero
+                simpa [Expressions.Structured.BasicOp.inputs] using hArity
+              subst sourceValues
+              exact safeObserverNoObservableFailure
+                ObserverSemantics.yulPrimObserver?_gas
+                hRun hObservable
+          | TLOAD =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldUnaryAccess.rawNoObservableFailureAt .tload)
+          | TSTORE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (WorldBinaryWrite.rawNoObservableFailureAt .tstore)
+          | MCOPY =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              exact hRawLift (by rfl)
+                (rawNoObservableFailureAt_mcopy previous)
+      | Log primitive =>
+          cases primitive with
+          | LOG0 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact LogFamily.rawNoObservableFailure .log0
+                (by simpa using hArity) hRaw
+          | LOG1 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact LogFamily.rawNoObservableFailure .log1
+                (by simpa using hArity) hRaw
+          | LOG2 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact LogFamily.rawNoObservableFailure .log2
+                (by simpa using hArity) hRaw
+          | LOG3 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact LogFamily.rawNoObservableFailure .log3
+                (by simpa using hArity) hRaw
+          | LOG4 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact LogFamily.rawNoObservableFailure .log4
+                (by simpa using hArity) hRaw
+      | System primitive =>
+          cases primitive with
+          | CREATE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.create)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | CALL =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.call)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | CALLCODE =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.callcode)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | RETURN => simp [Prim.terminal?] at hTerminal
+          | DELEGATECALL =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.delegatecall)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | CREATE2 =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.create2)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | STATICCALL =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              have hImpossible :=
+                (ObserverSafety.primitiveSafe_basicOp
+                  (op := Structured.BasicOp.staticcall)
+                  (by rfl) (by rfl)).mp hSourceSafe
+              simpa only [Simulation.MemorySafety.PrimitiveMemorySafe] using
+                hImpossible
+          | REVERT => simp [Prim.terminal?] at hTerminal
+          | INVALID =>
+              simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+              subst op
+              apply hRawLift (by rfl)
+              intro rawException hRaw
+              rw [hSource] at hRaw
+              exact rawNoObservableFailure_invalid hRaw
+          | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

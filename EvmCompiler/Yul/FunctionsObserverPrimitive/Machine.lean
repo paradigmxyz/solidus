@@ -43,6 +43,41 @@ theorem yul_primCall_succ_eq_of_machineBinaryZero
     unfold EvmYul.step <;>
     rfl
 
+theorem MachineBinaryZero.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word →
+      EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_machineBinaryZero hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.binaryMachineStateOp] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons first rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.binaryMachineStateOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons second extra =>
+              cases extra with
+              | nil =>
+                  simp [EvmYul.Yul.binaryMachineStateOp] at hRun
+              | cons head tail =>
+                  simp [EvmYul.Yul.binaryMachineStateOp] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem forwardAt_of_machineBinaryZero
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -228,6 +263,54 @@ theorem safeMcopy
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_mcopy hRel hRun
 
+theorem rawNoObservableFailureAt_mcopy
+    (fuel : Nat) :
+    RawNoObservableFailureAt fuel (.StackMemFlow .MCOPY) := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ source
+              (.StackMemFlow .MCOPY) values =
+            (match
+              EvmYul.Yul.ternaryMachineStateOp
+                EvmYul.MachineState.mcopy source values with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.ternaryMachineStateOp] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.ternaryMachineStateOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.ternaryMachineStateOp] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+              | cons size extra =>
+                  cases extra with
+                  | nil =>
+                      simp [EvmYul.Yul.ternaryMachineStateOp] at hRun
+                  | cons head tail =>
+                      simp [EvmYul.Yul.ternaryMachineStateOp] at hRun
+                      rw [← hRun] at hObservable
+                      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem forwardAt_mload
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
     ForwardAt codeRel fuel (.StackMemFlow .MLOAD) .mload := by
@@ -318,6 +401,48 @@ theorem safeMload
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_mload hRel hRun
+
+theorem rawNoObservableFailureAt_mload
+    (fuel : Nat) :
+    RawNoObservableFailureAt fuel (.StackMemFlow .MLOAD) := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ source
+              (.StackMemFlow .MLOAD) values =
+            (match
+              EvmYul.step (τ := .Yul) (.StackMemFlow .MLOAD)
+                (arg := none) source values with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        rfl
+      rw [hDispatch] at hRun
+      unfold EvmYul.step at hRun
+      cases values with
+      | nil =>
+          simp [Id.run] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons address rest =>
+          cases rest with
+          | nil =>
+              simp [Id.run] at hRun
+          | cons next tail =>
+              cases tail with
+              | nil =>
+                  simp [Id.run] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+              | cons head extra =>
+                  simp [Id.run] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem forwardAt_keccak256
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
@@ -416,6 +541,47 @@ theorem safeKeccak256
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_keccak256 hRel hRun
 
+theorem rawNoObservableFailureAt_keccak256
+    (fuel : Nat) :
+    RawNoObservableFailureAt fuel (.Keccak .KECCAK256) := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ source
+              (.Keccak .KECCAK256) values =
+            (match EvmYul.Yul.binaryMachineStateOp'
+              EvmYul.MachineState.keccak256 source values with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.binaryMachineStateOp'] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons address rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.binaryMachineStateOp'] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons size extra =>
+              cases extra with
+              | nil =>
+                  simp [EvmYul.Yul.binaryMachineStateOp'] at hRun
+              | cons head tail =>
+                  simp [EvmYul.Yul.binaryMachineStateOp'] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem forwardAtArity_returndatasize
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
     ForwardAtArity codeRel fuel
@@ -492,6 +658,34 @@ theorem safeReturndatasize
   safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAtArity_returndatasize hArity hRel hRun
 
+theorem rawNoObservableFailure_returndatasize
+    {fuel : Nat} {source : EvmYul.Yul.State}
+    {exception : EvmYul.Yul.Exception}
+    (hRun :
+      EvmYul.Yul.primCall fuel source
+          (.Env .RETURNDATASIZE) [] =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ source
+              (.Env .RETURNDATASIZE) [] =
+            .ok
+              (source,
+                [EvmYul.MachineState.returndatasize
+                  source.toMachineState]) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      cases hRun
+
 theorem forwardAtArity_pop
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
     ForwardAtArity codeRel fuel (.StackMemFlow .POP) .pop := by
@@ -535,6 +729,31 @@ theorem forwardAtArity_pop
             StateRelation.Regular.Rel codeRel
               (.Ok sourceShared sourceVars) target from
             ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+
+theorem rawNoObservableFailure_pop
+    {fuel : Nat} {source : EvmYul.Yul.State} {value : Word}
+    {exception : EvmYul.Yul.Exception}
+    (hRun :
+      EvmYul.Yul.primCall fuel source
+          (.StackMemFlow .POP) [value] =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ source
+              (.StackMemFlow .POP) [value] =
+            .ok (source, []) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      cases hRun
 
 theorem safePop
     {contract : MemoryContract.Contract}

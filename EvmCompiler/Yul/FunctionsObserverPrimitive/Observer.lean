@@ -147,6 +147,45 @@ theorem safeObserverPrim
   simpa [Functions.ObserverSafety.SafeSemantics.primitiveSemantics,
     hTargetSafe] using hTargetRun
 
+theorem safeObserverNoObservableFailure
+    {contract : MemoryContract.Contract}
+    {transcript : Trace} {fuel : Nat}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {prim : EvmYul.Operation .Yul}
+    {kind : Assembly.ResourceObserver}
+    (hYulObserver :
+      ObserverSemantics.yulPrimObserver? prim = some kind)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim [] =
+        .error failure)
+    (hObservable :
+      Yul.Source.Effectful.Exception.Observable failure.exception) :
+    False := by
+  rcases failure with ⟨exception, failureState⟩
+  cases exception with
+  | YulHalt sourceFinal value =>
+      obtain ⟨_hSafe, hSourceRun⟩ :=
+        ObserverSafety.SafeSemantics.eval_yulHalt_parts hRun
+      unfold ObserverSemantics.SourceReplay.primCall at hSourceRun
+      rw [hYulObserver] at hSourceRun
+      cases hConsume :
+          Simulation.ResourceReplay.consume? kind source <;>
+        simp [hConsume, Yul.Source.Effectful.fail] at hSourceRun
+  | Revert sourceFinal =>
+      obtain ⟨_hSafe, hSourceRun⟩ :=
+        ObserverSafety.SafeSemantics.eval_revert_parts hRun
+      unfold ObserverSemantics.SourceReplay.primCall at hSourceRun
+      rw [hYulObserver] at hSourceRun
+      cases hConsume :
+          Simulation.ResourceReplay.consume? kind source <;>
+        simp [hConsume, Yul.Source.Effectful.fail] at hSourceRun
+  | _ =>
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem gasSafe
     {contract : MemoryContract.Contract}
     {transcript : Trace} {codeRel : StateRelation.CodeRel}

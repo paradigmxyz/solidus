@@ -142,6 +142,28 @@ theorem yul_primCall_succ_eq_of_environmentNullary
     unfold EvmYul.step <;>
     rfl
 
+theorem EnvironmentNullary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word}
+    (hFamily :
+      EnvironmentNullary prim op sourceResult targetResult) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_environmentNullary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.executionEnvOp] at hRun
+      | cons head tail =>
+          simp [EvmYul.Yul.executionEnvOp] at hRun
+
 theorem forwardAtArity_of_environmentNullary
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -273,6 +295,36 @@ theorem yul_primCall_succ_eq_of_environmentUnary
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem EnvironmentUnary.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_environmentUnary hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.unaryExecutionEnvOp] at hRun
+          subst exception
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons value extra =>
+          cases extra with
+          | nil =>
+              simp [EvmYul.Yul.unaryExecutionEnvOp] at hRun
+          | cons head tail =>
+              simp [EvmYul.Yul.unaryExecutionEnvOp] at hRun
+              subst exception
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 theorem forwardAt_of_environmentUnary
     {codeRel : StateRelation.CodeRel} {fuel : Nat}

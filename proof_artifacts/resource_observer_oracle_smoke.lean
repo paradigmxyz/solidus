@@ -1167,6 +1167,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.guardedNoObservableFailure_of_raw
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.PureBinary.rawNoObservableFailureAt
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.WorldBinaryWrite.rawNoObservableFailureAt
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.rawNoObservableFailure
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverNoObservableFailure
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected_noObservableFailure
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts

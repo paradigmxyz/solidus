@@ -88,6 +88,51 @@ theorem yul_primCall_succ_eq_of_sharedTernaryCopy
     unfold EvmYul.step <;>
     rfl
 
+theorem SharedTernaryCopy.rawNoObservableFailureAt
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    RawNoObservableFailureAt fuel prim := by
+  intro source values exception hRun hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_sharedTernaryCopy hFamily] at hRun
+      cases values with
+      | nil =>
+          simp [EvmYul.Yul.ternaryCopyOp] at hRun
+          rw [← hRun] at hObservable
+          simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.ternaryCopyOp] at hRun
+              rw [← hRun] at hObservable
+              simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.ternaryCopyOp] at hRun
+                  rw [← hRun] at hObservable
+                  simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+              | cons size extra =>
+                  cases extra with
+                  | nil =>
+                      simp [EvmYul.Yul.ternaryCopyOp] at hRun
+                  | cons head tail =>
+                      simp [EvmYul.Yul.ternaryCopyOp] at hRun
+                      rw [← hRun] at hObservable
+                      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+
 theorem forwardAt_of_sharedTernaryCopy
     {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -292,6 +337,50 @@ theorem safeReturndatacopy
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_returndatacopy hRel hRun
 
+theorem rawNoObservableFailure_returndatacopy
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {destination readStart size : Word}
+    {exception : EvmYul.Yul.Exception}
+    (hRun :
+      EvmYul.Yul.primCall fuel (.Ok sourceShared sourceVars)
+          (.Env .RETURNDATACOPY)
+          [destination, readStart, size] =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ
+              (.Ok sourceShared sourceVars)
+              (.Env .RETURNDATACOPY)
+              [destination, readStart, size] =
+            (match
+              EvmYul.step (τ := .Yul) (.Env .RETURNDATACOPY)
+                (arg := none) (.Ok sourceShared sourceVars)
+                [destination, readStart, size] with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        rfl
+      rw [hDispatch] at hRun
+      unfold EvmYul.step at hRun
+      by_cases hInvalid :
+          sourceShared.returnData.size <
+            readStart.toNat + size.toNat
+      · simp [Id.run, EvmYul.Yul.State.toSharedState,
+          hInvalid] at hRun
+        rw [← hRun] at hObservable
+        simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+      · simp [Id.run, EvmYul.Yul.State.toSharedState,
+          hInvalid] at hRun
+
 theorem extCodeCopy_related
     {codeRel : StateRelation.CodeRel}
     {source : EvmYul.SharedState .Yul}
@@ -411,6 +500,42 @@ theorem safeExtcodecopy
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_extcodecopy hRel hRun
+
+theorem rawNoObservableFailure_extcodecopy
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {account destination readStart size : Word}
+    {exception : EvmYul.Yul.Exception}
+    (hRun :
+      EvmYul.Yul.primCall fuel (.Ok sourceShared sourceVars)
+          (.Env .EXTCODECOPY)
+          [account, destination, readStart, size] =
+        .error exception) :
+    ¬Yul.Source.Effectful.Exception.Observable exception := by
+  intro hObservable
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+      subst exception
+      simp [Yul.Source.Effectful.Exception.Observable] at hObservable
+  | succ previous =>
+      have hDispatch :
+          EvmYul.Yul.primCall previous.succ
+              (.Ok sourceShared sourceVars)
+              (.Env .EXTCODECOPY)
+              [account, destination, readStart, size] =
+            (match EvmYul.Yul.quaternaryCopyOp
+              EvmYul.SharedState.extCodeCopy'
+              (.Ok sourceShared sourceVars)
+              [account, destination, readStart, size] with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hRun
+      simp [EvmYul.Yul.quaternaryCopyOp] at hRun
 
 end FunctionsObserverPrimitive
 end Yul

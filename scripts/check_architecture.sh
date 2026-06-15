@@ -604,6 +604,7 @@ report_matches \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/EffectRefinement/Failure.lean \
+  EvmCompiler/Yul/ObserverSafety.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
