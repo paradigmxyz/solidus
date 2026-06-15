@@ -290,6 +290,125 @@ theorem safeReturndatacopy
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_returndatacopy hRel hRun
 
+theorem extCodeCopy_related
+    {codeRel : StateRelation.CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : StateRelation.Shared.Rel codeRel source target)
+    (account destination readStart size : Word) :
+    StateRelation.Shared.Rel codeRel
+      (EvmYul.SharedState.extCodeCopy'
+        source account destination readStart size)
+      (EvmYul.SharedState.extCodeCopy'
+        target account destination readStart size) := by
+  let address := EvmYul.AccountAddress.ofUInt256 account
+  have hCode :=
+    StateRelation.AccountMap.codeImage_eq
+      hRel.world.accounts address
+  constructor
+  · simpa [EvmYul.SharedState.extCodeCopy',
+      EvmYul.State.addAccessedAccount, address] using
+      StateRelation.World.addAccessedAccount hRel.world address
+  · simp [EvmYul.SharedState.extCodeCopy',
+      EvmYul.State.lookupAccount, address,
+      hRel.machine, hCode]
+
+theorem forwardAt_extcodecopy
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAt codeRel fuel
+      (.Env .EXTCODECOPY) .extcodecopy := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.Env .EXTCODECOPY) sourceValues =
+            (match EvmYul.Yul.quaternaryCopyOp
+              EvmYul.SharedState.extCodeCopy'
+              (.Ok sourceShared sourceVars) sourceValues with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.quaternaryCopyOp] at hCall
+      | cons account rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.quaternaryCopyOp] at hCall
+          | cons destination rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.quaternaryCopyOp] at hCall
+              | cons readStart rest =>
+                  cases rest with
+                  | nil =>
+                      simp [EvmYul.Yul.quaternaryCopyOp] at hCall
+                  | cons size extra =>
+                      cases extra with
+                      | cons head tail =>
+                          simp [EvmYul.Yul.quaternaryCopyOp] at hCall
+                      | nil =>
+                          simp [EvmYul.Yul.quaternaryCopyOp,
+                            EvmYul.Yul.State.setSharedState] at hCall
+                          rcases hCall with ⟨rfl, rfl⟩
+                          let targetShared :=
+                            EvmYul.SharedState.extCodeCopy'
+                              target.shared account destination
+                                readStart size
+                          refine ⟨targetShared, ?_, ?_⟩
+                          · simp [
+                              Locals.Source.PrimitiveSemantics.structured,
+                              Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                              Structured.BasicOp.toPrimOp,
+                              Assembly.PrimOp.continuingStep?,
+                              Expressions.Structured.BasicOp.inputs,
+                              Assembly.PrimStep.run,
+                              EvmYul.EVM.quaternaryCopyOp,
+                              EvmYul.EVM.State.replaceStackAndIncrPC,
+                              EvmYul.EVM.State.incrPC,
+                              EvmYul.Stack.pop4, targetShared, Id.run]
+                          · exact
+                              ⟨EvmYul.SharedState.extCodeCopy'
+                                  sourceShared account destination
+                                    readStart size,
+                                sourceVars, rfl,
+                                extCodeCopy_related hShared account
+                                  destination readStart size,
+                                hVars⟩
+
+theorem safeExtcodecopy
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.Env .EXTCODECOPY) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .extcodecopy target
+          sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAt_extcodecopy hRel hRun
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

@@ -325,6 +325,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
@@ -332,6 +333,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
@@ -1066,10 +1068,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
 #print axioms EvmCompiler.Yul.StateRelation.Shared.withMachine
+#print axioms EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
+#print axioms EvmCompiler.Yul.StateRelation.AccountMap.codeImage_eq
+#print axioms EvmCompiler.Yul.StateRelation.AccountMap.codeSize_eq
+#print axioms EvmCompiler.Yul.StateRelation.World.addAccessedAccount
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
@@ -1077,6 +1084,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload

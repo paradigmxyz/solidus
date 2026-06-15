@@ -344,6 +344,178 @@ theorem safeWorldUnaryRead
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
       (forwardAt_of_worldUnaryRead hFamily) hRel hRun
 
+inductive WorldUnaryAccess :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word →
+        EvmYul.State .Yul × Word) →
+      (EvmYul.State .EVM → Word →
+        EvmYul.State .EVM × Word) → Prop where
+  | balance :
+      WorldUnaryAccess (.Env .BALANCE) .balance
+        EvmYul.State.balance EvmYul.State.balance
+  | extcodesize :
+      WorldUnaryAccess (.Env .EXTCODESIZE) .extcodesize
+        EvmYul.State.extCodeSize EvmYul.State.extCodeSize
+
+theorem WorldUnaryAccess.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep) :
+    Expressions.Structured.BasicOp.inputs op = 1 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.unaryState targetStep) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem WorldUnaryAccess.related
+    {codeRel : StateRelation.CodeRel}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep)
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : StateRelation.World.Rel codeRel source target)
+    (value : Word) :
+    StateRelation.World.Rel codeRel
+        (sourceStep source value).1
+        (targetStep target value).1 ∧
+      (sourceStep source value).2 =
+        (targetStep target value).2 := by
+  let address := EvmYul.AccountAddress.ofUInt256 value
+  cases hFamily with
+  | balance =>
+      constructor
+      · simpa [EvmYul.State.balance, address] using
+          StateRelation.World.addAccessedAccount hRel address
+      · simpa [EvmYul.State.balance, address] using
+          StateRelation.AccountMap.balance_eq
+            hRel.accounts address
+  | extcodesize =>
+      constructor
+      · simpa [EvmYul.State.extCodeSize, address] using
+          StateRelation.World.addAccessedAccount hRel address
+      · simpa [EvmYul.State.extCodeSize,
+          EvmYul.State.lookupAccount, address] using
+          StateRelation.AccountMap.codeSize_eq
+            hRel.accounts address
+
+theorem yul_primCall_succ_eq_of_worldUnaryAccess
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      (match EvmYul.Yul.unaryStateOp sourceStep source args with
+      | .ok (state, value?) => .ok (state, value?.toList)
+      | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_worldUnaryAccess
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_worldUnaryAccess hFamily] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.unaryStateOp] at hCall
+      | cons value rest =>
+          cases rest with
+          | cons next tail =>
+              simp [EvmYul.Yul.unaryStateOp] at hCall
+          | nil =>
+              simp [EvmYul.Yul.unaryStateOp,
+                EvmYul.Yul.State.setSharedState] at hCall
+              rcases hCall with ⟨rfl, rfl⟩
+              let sourceResult :=
+                sourceStep sourceShared.toState value
+              let targetResult :=
+                targetStep target.shared.toState value
+              have hResult :
+                  StateRelation.World.Rel codeRel
+                      sourceResult.1 targetResult.1 ∧
+                    sourceResult.2 = targetResult.2 := by
+                simpa [sourceResult, targetResult] using
+                  hFamily.related hShared.world value
+              let targetShared : EvmYul.SharedState .EVM :=
+                { target.shared with toState := targetResult.1 }
+              refine ⟨targetShared, ?_, ?_⟩
+              · simp [Locals.Source.PrimitiveSemantics.structured,
+                  hInputs, hStep, Assembly.PrimStep.run,
+                  EvmYul.EVM.unaryStateOp,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC, EvmYul.Stack.pop,
+                  EvmYul.Stack.push, sourceResult, targetResult,
+                  targetShared, Id.run, hResult.2] <;>
+                simpa [sourceResult, targetResult] using hResult.2.symm
+              · exact
+                  ⟨{ sourceShared with
+                      toState := sourceResult.1 },
+                    sourceVars, rfl,
+                    { world := hResult.1
+                      machine := by
+                        simpa [targetShared] using hShared.machine },
+                    hVars⟩
+
+theorem safeWorldUnaryAccess
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_worldUnaryAccess hFamily) hRel hRun
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

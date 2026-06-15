@@ -103,6 +103,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.ScopedExactRel
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #check EvmCompiler.Yul.StateRelation.Shared.withMachine
+#check EvmCompiler.Yul.StateRelation.AccountMap.balance_eq
+#check EvmCompiler.Yul.StateRelation.AccountMap.codeImage_eq
+#check EvmCompiler.Yul.StateRelation.AccountMap.codeSize_eq
+#check EvmCompiler.Yul.StateRelation.World.addAccessedAccount
 #check EvmCompiler.Yul.StateRelation.Regular.machine_eq
 #check EvmCompiler.Yul.StateRelation.Replay.machine_eq
 #check EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
@@ -112,6 +116,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
@@ -119,6 +124,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload

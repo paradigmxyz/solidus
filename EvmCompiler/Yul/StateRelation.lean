@@ -18,6 +18,35 @@ def OptionRel {α β : Type} (rel : α → β → Prop) :
   | some left, some right => rel left right
   | _, _ => False
 
+namespace OptionRel
+
+theorem elim_eq
+    {α β γ : Type} {rel : α → β → Prop}
+    {left : Option α} {right : Option β}
+    (hRel : OptionRel rel left right)
+    (defaultValue : γ)
+    (leftValue : α → γ) (rightValue : β → γ)
+    (hValue :
+      ∀ {leftValue' rightValue'},
+        rel leftValue' rightValue' →
+          leftValue leftValue' = rightValue rightValue') :
+    left.elim defaultValue leftValue =
+      right.elim defaultValue rightValue := by
+  cases left with
+  | none =>
+      cases right with
+      | none => rfl
+      | some rightValue' =>
+          simp [StateRelation.OptionRel] at hRel
+  | some leftValue' =>
+      cases right with
+      | none =>
+          simp [StateRelation.OptionRel] at hRel
+      | some rightValue' =>
+          exact hValue hRel
+
+end OptionRel
+
 namespace ExecutionEnv
 
 structure Rel (codeRel : CodeRel)
@@ -53,6 +82,15 @@ structure Rel (codeRel : CodeRel)
   codeBytes : source.codeBytes = target.codeBytes
   transientStorage : source.tstorage = target.tstorage
 
+theorem codeImage_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.Account .Yul}
+    {target : EvmYul.Account .EVM}
+    (hRel : Rel codeRel source target) :
+    EvmYul.State.accountCodeImage source =
+      EvmYul.State.accountCodeImage target := by
+  simpa [EvmYul.State.accountCodeImage] using hRel.codeImage
+
 end Account
 
 namespace AccountMap
@@ -63,6 +101,90 @@ def Rel (codeRel : CodeRel)
   ∀ address,
     OptionRel (Account.Rel codeRel)
       (source.find? address) (target.find? address)
+
+theorem balance_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    (source.find? address).elim ⟨0⟩ (·.balance) =
+      (target.find? address).elim ⟨0⟩ (·.balance) := by
+  apply OptionRel.elim_eq (hRel address)
+  intro sourceAccount targetAccount hAccount
+  exact hAccount.balance
+
+theorem codeImage_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    (source.find? address).option ByteArray.empty
+        EvmYul.State.accountCodeImage =
+      (target.find? address).option ByteArray.empty
+        EvmYul.State.accountCodeImage := by
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          rfl
+      | some targetAccount =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          change
+            EvmYul.State.accountCodeImage sourceAccount =
+              EvmYul.State.accountCodeImage targetAccount
+          exact Account.codeImage_eq hAccount
+
+theorem codeSize_eq
+    {codeRel : CodeRel}
+    {source : EvmYul.AccountMap .Yul}
+    {target : EvmYul.AccountMap .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    (source.find? address).option ⟨0⟩
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.State.accountCodeImage) =
+      (target.find? address).option ⟨0⟩
+        (EvmYul.UInt256.ofNat ∘ ByteArray.size ∘
+          EvmYul.State.accountCodeImage) := by
+  have hLookup := hRel address
+  cases hSource : source.find? address with
+  | none =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          rfl
+      | some targetAccount =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+  | some sourceAccount =>
+      rw [hSource] at hLookup
+      cases hTarget : target.find? address with
+      | none =>
+          simp [StateRelation.OptionRel, hTarget] at hLookup
+      | some targetAccount =>
+          rw [hTarget] at hLookup
+          have hAccount :
+              Account.Rel codeRel sourceAccount targetAccount := by
+            simpa [StateRelation.OptionRel] using hLookup
+          change
+            EvmYul.UInt256.ofNat
+                (EvmYul.State.accountCodeImage sourceAccount).size =
+              EvmYul.UInt256.ofNat
+                (EvmYul.State.accountCodeImage targetAccount).size
+          rw [Account.codeImage_eq hAccount]
 
 end AccountMap
 
@@ -84,6 +206,40 @@ structure Rel (codeRel : CodeRel)
   genesisBlockHeader :
     source.genesisBlockHeader = target.genesisBlockHeader
   createdAccounts : source.createdAccounts = target.createdAccounts
+
+theorem addAccessedAccount
+    {codeRel : CodeRel}
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : Rel codeRel source target)
+    (address : EvmYul.AccountAddress) :
+    Rel codeRel
+      (source.addAccessedAccount address)
+      (target.addAccessedAccount address) := by
+  exact
+    { accounts := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.accounts
+      initialAccounts := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.initialAccounts
+      totalGasUsedInBlock := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.totalGasUsedInBlock
+      transactionReceipts := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.transactionReceipts
+      substate := by
+        simp [EvmYul.State.addAccessedAccount, hRel.substate]
+      executionEnv := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.executionEnv
+      blocks := by
+        simpa [EvmYul.State.addAccessedAccount] using hRel.blocks
+      genesisBlockHeader := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.genesisBlockHeader
+      createdAccounts := by
+        simpa [EvmYul.State.addAccessedAccount] using
+          hRel.createdAccounts }
 
 end World
 
