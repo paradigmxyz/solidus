@@ -9822,6 +9822,132 @@ theorem forExitHeadResultStack
         (.nonregular hResource) hExact hExit.not_regular⟩
 
 /--
+Dispatch every successful stack-only `for` run through the three adjacent
+loop-head theorems.
+
+This wrapper owns only the canonical source-run case split. Initializer exit,
+regular completion, and post-initializer activation exit remain proved by
+their dedicated pass-owned theorems above.
+-/
+theorem forControlledHeadResultStack
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {init : Functions.Block}
+    {cond : Functions.Expr 1}
+    {post body : Functions.Block}
+    {rest : List Functions.Stmt}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {allocatorDepth frameBase sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        { stmts := .for_ init cond post body :: rest }
+        lowerState localsCtx)
+    (hSource :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx (sourceFuel + 1)
+          (.for_ init cond post body) source =
+        .ok (sourceOutcome, finalCtx))
+    (hBoundary :
+      ResourceBoundary cursor (resource := .stackOnly)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := sourceFuel + 1)
+        (transcript := transcript)) :
+    ∃ afterState headCode,
+      ∃ tail :
+        AllocationObserverForward.BodyCursor.CoreCursor root scope live
+          { stmts := rest } afterState localsCtx,
+        ResourceControlledHeadResult cursor hBoundary afterState localsCtx
+          headCode tail
+          (resource := .stackOnly) (allocatorDepth := allocatorDepth)
+          (frameBase := frameBase) (mode := mode)
+          (sourceCtx := sourceCtx) (finalCtx := finalCtx)
+          (source := source) (target := target)
+          (sourceOutcome := sourceOutcome) := by
+  rcases
+      Functions.Source.Effectful.Stmt.run_for_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with hRegular | hExit
+  · rcases hRegular with
+      ⟨sourceAfterInit, initCtx, sourceLoopFinal, hInit, hLoop,
+        hOutcome, hFinal⟩
+    subst sourceOutcome
+    subst finalCtx
+    obtain ⟨afterState, headCode, tail, hHead⟩ :=
+      forRegularHeadResultStack cursor hBoundary hRecursive hInit hLoop
+    exact
+      ⟨afterState, headCode, tail,
+        ResourceControlledHeadResult.of_no_control
+          cursor hBoundary tail hHead
+          (by
+            intro sourceFinal hAbrupt
+            have hMode :=
+              congrArg Locals.Source.Effectful.Outcome.mode hAbrupt
+            contradiction)
+          (by
+            intro sourceFinal hAbrupt
+            have hMode :=
+              congrArg Locals.Source.Effectful.Outcome.mode hAbrupt
+            contradiction)⟩
+  · rcases hExit with hLoopExit | hInitExit
+    · rcases hLoopExit with
+        ⟨sourceAfterInit, initCtx, hInit, hLoop, hIsExit, hFinal⟩
+      subst finalCtx
+      obtain ⟨afterState, headCode, tail, hHead⟩ :=
+        forExitHeadResultStack cursor hBoundary hRecursive
+          hInit hLoop hIsExit
+      exact
+        ⟨afterState, headCode, tail,
+          ResourceControlledHeadResult.of_no_control
+            cursor hBoundary tail hHead
+            (by
+              intro sourceFinal hAbrupt
+              exact hIsExit.ne_brk sourceFinal hAbrupt)
+            (by
+              intro sourceFinal hAbrupt
+              exact hIsExit.ne_cont sourceFinal hAbrupt)⟩
+    · rcases hInitExit with ⟨initCtx, hInit, hIsExit, hFinal⟩
+      subst finalCtx
+      obtain ⟨afterState, headCode, tail, hHead⟩ :=
+        forInitExitHeadResultStack cursor hBoundary hRecursive
+          hInit hIsExit
+      exact
+        ⟨afterState, headCode, tail,
+          ResourceControlledHeadResult.of_no_control
+            cursor hBoundary tail hHead
+            (by
+              intro sourceFinal hAbrupt
+              exact hIsExit.ne_brk sourceFinal hAbrupt)
+            (by
+              intro sourceFinal hAbrupt
+              exact hIsExit.ne_cont sourceFinal hAbrupt)⟩
+
+/--
 Dispatch a lexical block in a compiler-selected stack-only activation while
 retaining exact recursive control destinations.
 -/

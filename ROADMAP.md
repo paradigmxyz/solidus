@@ -762,10 +762,11 @@ compiler cleanup through the
   through the same resource-indexed API. The neutral activation-exit loop
   theorem now also consumes guarded no-external-effects semantics, strict
   recursive fuel, return-frame transport, and exact initializer compiler
-  artifacts. The remaining recursive proof is its stack-only dispatcher
-  adapter, no-frame selected calls, and the shared stack-only constructor,
-  followed by final cleanup and matching whole-function/whole-program backward
-  adequacy.
+  artifacts. The stack-only controlled dispatcher now selects all three
+  checked loop outcomes directly from the canonical source run. The remaining
+  recursive proof is no-frame selected calls and the shared stack-only
+  constructor, followed by final cleanup and matching
+  whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
 `StackGuardAudit`, `Legacy`, the direct Structured-to-Assembly compiler, and
@@ -1434,8 +1435,9 @@ corridor.
   strict recursive fuel and return-frame transport. Its stack-only dispatcher
   adapter is also checked: body/post exits are reindexed only after genuine
   activation exits, and the resource lift occurs at the enclosing statement
-  boundary. The remaining Functions work is integrating all loop heads into
-  the shared stack-only recursive dispatcher, selected no-frame calls, the
+  boundary. A single controlled-head theorem now selects initializer exit,
+  regular completion, or activation exit from the canonical source run. The
+  remaining Functions work is selected no-frame calls, the shared stack-only
   recursive constructor, whole-program forward packaging, and matching
   backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul

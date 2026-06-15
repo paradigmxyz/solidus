@@ -363,6 +363,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forInitExitHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forRegularHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forExitHeadResultStack
+#check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.ResourceBoundary.forControlledHeadResultStack
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward.toResource
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
