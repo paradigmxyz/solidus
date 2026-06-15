@@ -110,6 +110,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary

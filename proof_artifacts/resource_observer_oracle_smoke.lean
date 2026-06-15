@@ -323,6 +323,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
@@ -1066,6 +1068,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Shared.withMachine
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary

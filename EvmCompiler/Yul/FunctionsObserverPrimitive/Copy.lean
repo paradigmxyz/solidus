@@ -1,0 +1,295 @@
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Core
+
+namespace EvmCompiler
+namespace Yul
+namespace FunctionsObserverPrimitive
+
+inductive SharedTernaryCopy :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul) →
+      (EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM) → Prop where
+  | calldatacopy :
+      SharedTernaryCopy (.Env .CALLDATACOPY) .calldatacopy
+        EvmYul.SharedState.calldatacopy
+        EvmYul.SharedState.calldatacopy
+  | codecopy :
+      SharedTernaryCopy (.Env .CODECOPY) .codecopy
+        EvmYul.SharedState.codeBytesCopy
+        EvmYul.SharedState.codeCopy
+
+theorem SharedTernaryCopy.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    Expressions.Structured.BasicOp.inputs op = 3 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.ternaryCopy targetCopy) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem SharedTernaryCopy.related
+    {codeRel : StateRelation.CodeRel}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : StateRelation.Shared.Rel codeRel source target)
+    (destination readStart size : Word) :
+    StateRelation.Shared.Rel codeRel
+      (sourceCopy source destination readStart size)
+      (targetCopy target destination readStart size) := by
+  cases hFamily with
+  | calldatacopy =>
+      constructor
+      · simpa [EvmYul.SharedState.calldatacopy] using hRel.world
+      · simp [EvmYul.SharedState.calldatacopy,
+          hRel.machine, hRel.world.executionEnv.calldata]
+  | codecopy =>
+      constructor
+      · simpa [EvmYul.SharedState.codeBytesCopy,
+          EvmYul.SharedState.codeCopy] using hRel.world
+      · simp [EvmYul.SharedState.codeBytesCopy,
+          EvmYul.SharedState.codeCopy, hRel.machine,
+          hRel.world.executionEnv.codeImage]
+
+theorem yul_primCall_succ_eq_of_sharedTernaryCopy
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      (match EvmYul.Yul.ternaryCopyOp sourceCopy source args with
+      | .ok (state, value?) => .ok (state, value?.toList)
+      | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_sharedTernaryCopy
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_sharedTernaryCopy hFamily] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.ternaryCopyOp] at hCall
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.ternaryCopyOp] at hCall
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.ternaryCopyOp] at hCall
+              | cons size extra =>
+                  cases extra with
+                  | cons head tail =>
+                      simp [EvmYul.Yul.ternaryCopyOp] at hCall
+                  | nil =>
+                      simp [EvmYul.Yul.ternaryCopyOp,
+                        EvmYul.Yul.State.setSharedState] at hCall
+                      rcases hCall with ⟨rfl, rfl⟩
+                      let targetShared :=
+                        targetCopy target.shared
+                          destination readStart size
+                      refine ⟨targetShared, ?_, ?_⟩
+                      · simp [Locals.Source.PrimitiveSemantics.structured,
+                          hInputs, hStep, Assembly.PrimStep.run,
+                          EvmYul.EVM.ternaryCopyOp,
+                          EvmYul.EVM.State.replaceStackAndIncrPC,
+                          EvmYul.EVM.State.incrPC,
+                          EvmYul.Stack.pop3, targetShared, Id.run]
+                      · exact
+                          ⟨sourceCopy sourceShared
+                              destination readStart size,
+                            sourceVars, rfl,
+                            hFamily.related hShared
+                              destination readStart size,
+                            hVars⟩
+
+theorem safeSharedTernaryCopy
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    {sourceValues outputs : List Word}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_sharedTernaryCopy hFamily) hRel hRun
+
+theorem forwardAt_returndatacopy
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAt codeRel fuel
+      (.Env .RETURNDATACOPY) .returndatacopy := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.Env .RETURNDATACOPY) sourceValues =
+            (match
+              EvmYul.step (τ := .Yul) (.Env .RETURNDATACOPY)
+                (arg := none)
+                (.Ok sourceShared sourceVars) sourceValues with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        rfl
+      rw [hDispatch] at hCall
+      unfold EvmYul.step at hCall
+      cases sourceValues with
+      | nil =>
+          simp [Id.run] at hCall
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [Id.run] at hCall
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [Id.run] at hCall
+              | cons size extra =>
+                  cases extra with
+                  | cons head tail =>
+                      simp [Id.run] at hCall
+                  | nil =>
+                      by_cases hInvalid :
+                          sourceShared.returnData.size <
+                            readStart.toNat + size.toNat
+                      · simp [Id.run,
+                          EvmYul.Yul.State.toSharedState,
+                          hInvalid] at hCall
+                      · simp [Id.run, hInvalid,
+                          EvmYul.Yul.State.toSharedState,
+                          EvmYul.Yul.State.setMachineState] at hCall
+                        rcases hCall with ⟨rfl, rfl⟩
+                        let sourceMachine :=
+                          sourceShared.toMachineState.returndatacopy
+                            destination readStart size
+                        let targetMachine :=
+                          target.shared.toMachineState.returndatacopy
+                            destination readStart size
+                        have hMachine :
+                            sourceMachine = targetMachine := by
+                          simp [sourceMachine, targetMachine,
+                            hShared.machine]
+                        have hTargetValid :
+                            ¬ target.shared.returnData.size <
+                              readStart.toNat + size.toNat := by
+                          simpa [hShared.machine] using hInvalid
+                        let targetShared : EvmYul.SharedState .EVM :=
+                          { target.shared with
+                            toMachineState := targetMachine }
+                        refine ⟨targetShared, ?_, ?_⟩
+                        · simp [
+                            Locals.Source.PrimitiveSemantics.structured,
+                            Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                            Structured.BasicOp.toPrimOp,
+                            Assembly.PrimOp.continuingStep?,
+                            Expressions.Structured.BasicOp.inputs,
+                            Assembly.PrimStep.run,
+                            EvmYul.Stack.pop3,
+                            EvmYul.EVM.State.replaceStackAndIncrPC,
+                            EvmYul.EVM.State.incrPC, Id.run,
+                            hTargetValid, targetShared, targetMachine]
+                        · exact
+                            ⟨{ sourceShared with
+                                toMachineState := sourceMachine },
+                              sourceVars, rfl,
+                              StateRelation.Shared.withMachine hShared
+                                sourceMachine targetMachine hMachine,
+                              hVars⟩
+
+theorem safeReturndatacopy
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.Env .RETURNDATACOPY) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .returndatacopy target
+          sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAt_returndatacopy hRel hRun
+
+end FunctionsObserverPrimitive
+end Yul
+end EvmCompiler

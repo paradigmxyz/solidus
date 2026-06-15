@@ -1510,10 +1510,11 @@ corridor.
   operations, execution-environment/header nullaries and unary `blobhash`,
   world-state nullaries, read-only `calldataload`/`blockhash`,
   `returndatasize`, `pop`, `mload`, `mstore`, `mstore8`, `mcopy`, and
-  `keccak256`. `selfbalance` is derived through related account maps rather
-  than a whole-world equality. The primitive interface has separate exact-arity
-  support for permissive imported-Yul handlers, and the state relation
-  explicitly equates Yul code images with executable EVM code for
+  `keccak256`, plus `calldatacopy`, `codecopy`, and successful
+  `returndatacopy`. `selfbalance` is derived through related account maps
+  rather than a whole-world equality. The primitive interface has separate
+  exact-arity support for permissive imported-Yul handlers, and the state
+  relation explicitly equates Yul code images with executable EVM code for
   `codesize`/`codecopy` families. The next boundary is the remaining
   compiler-selected primitive families and structural expression preservation
   over this relation, followed by statements, loops, calls, and whole-main
