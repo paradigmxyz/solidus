@@ -2121,6 +2121,29 @@ theorem scopedExact_insert_hidden
   exact
     ⟨hRel.1, Regular.scopedExact_insert_hidden hRel.2 hHidden⟩
 
+theorem scopedExact_restrict_target
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedExactRel codeRel layout source target) :
+    ScopedExactRel codeRel layout source
+      (target.withSource (target.source.restrictTo layout)) := by
+  rcases hRel with
+    ⟨hCursor, sourceShared, sourceVars, hSource,
+      hShared, hScoped, hDomain⟩
+  refine
+    ⟨hCursor, sourceShared, sourceVars, hSource, ?_, ?_, hDomain⟩
+  · simpa [Locals.Source.State.restrictTo] using hShared
+  · intro name hMem
+    change
+      sourceVars.lookup name =
+        Locals.Source.Store.restrictTo layout target.source.vars name
+    rw [Locals.Source.Store.restrictTo_mem hMem]
+    exact hScoped name hMem
+
 theorem scopedExact_multifill_single_fresh
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
     {layout : List Name}

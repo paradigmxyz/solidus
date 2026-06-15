@@ -1568,7 +1568,8 @@ theorem ofUncheckedLowering
           ObserverSemantics.SourceReplay.State transcript}
         {exprTarget : Functions.ObserverSemantics.State transcript}
         {exprCtx : Functions.Source.Ctx} {value : Word},
-        EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
+        exprFuel < fuel →
+          EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
             some (exprPre, lower, after) →
           StateRelation.Replay.Rel codeRel exprSource exprTarget →
           StateRelation.Vars.TargetDomainWithin
@@ -1612,20 +1613,20 @@ theorem ofUncheckedLowering
       rw [List.reverse_cons] at hRun
       obtain
           ⟨middle, restReversed, headValues, headFuel,
-            _hFuel, hRestRun, hHeadRun, hValues⟩ :=
+            hFuel, hRestRun, hHeadRun, hValues⟩ :=
         Yul.Source.Effectful.evalArgs_append_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           hRun
-      obtain ⟨exprFuel, value, _hExprFuel, hHeadEval, hHeadValues⟩ :=
+      obtain ⟨exprFuel, value, hExprFuel, hHeadEval, hHeadValues⟩ :=
         Yul.Source.Effectful.evalArgs_singleton_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           hHeadRun
       obtain ⟨restPrepared⟩ :=
-        ih hRel hDomain hScope hRestRun
+        ih hExpr hRel hDomain hScope hRestRun
       have hSourceEq : source' = middle :=
         deferredSourceEval_state_eq hDirect.1 hHeadEval
       subst source'
@@ -1658,22 +1659,22 @@ theorem ofUncheckedLowering
       rw [List.reverse_cons] at hRun
       obtain
           ⟨middle, restReversed, headValues, headFuel,
-            _hFuel, hRestRun, hHeadRun, hValues⟩ :=
+            hFuel, hRestRun, hHeadRun, hValues⟩ :=
         Yul.Source.Effectful.evalArgs_append_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           hRun
-      obtain ⟨exprFuel, value, _hExprFuel, hHeadEval, hHeadValues⟩ :=
+      obtain ⟨exprFuel, value, hExprFuel, hHeadEval, hHeadValues⟩ :=
         Yul.Source.Effectful.evalArgs_singleton_ok_parts
           (ObserverSemantics.SourceReplay.stateModel transcript)
           (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           hHeadRun
       obtain ⟨restPrepared⟩ :=
-        ih hRel hDomain hScope hRestRun
+        ih hExpr hRel hDomain hScope hRestRun
       obtain ⟨headPrepared⟩ :=
-        hExpr hHead restPrepared.prepared.rel
+        hExpr (by omega) hHead restPrepared.prepared.rel
           restPrepared.prepared.domain restPrepared.prepared.scope
           hHeadEval
       let result :=

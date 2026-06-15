@@ -576,6 +576,28 @@ theorem exec_block_ok_parts
           subst final
           exact ⟨previous, stateAfterBody, rfl, hBody, rfl⟩
 
+theorem exec_leave_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel .Leave codeOverride state =
+        .ok final) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      final =
+        model.withSource state
+          (EvmYul.Yul.State.setLeave (model.source state)) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      simp [exec] at hRun
+      subst final
+      exact ⟨previous, rfl, rfl⟩
+
 theorem execSeq_nil_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

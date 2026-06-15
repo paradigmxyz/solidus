@@ -1329,6 +1329,16 @@ theorem run_leave_mode {σ : Type}
       have hEq := (Except.ok.inj hRun).symm
       exact congrArg (fun result => result.1.mode) hEq
 
+theorem run_leave_of_scope {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state : σ}
+    {scope : List Name}
+    (hScope : ctx.leaveScope? = some scope) :
+    Stmt.run model prim program ctx fuel .leave state =
+      .ok (Outcome.leave (model.restrictTo scope state), ctx) := by
+  simp [Stmt.run, hScope]
+
 /--
 A successful plain terminal statement has the requested halt mode.
 -/

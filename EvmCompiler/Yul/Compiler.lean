@@ -2648,6 +2648,33 @@ theorem List.toFunctionsUncheckedFuel?_cons_parts
                 ⟨previous, lowerStmt, middle, lowerRest,
                   rfl, hStmt, hRest, rfl⟩
 
+theorem List.toBlockUncheckedFuel?_singleton_leave_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {lower : Functions.Block}
+    (hLower :
+      List.toBlockUncheckedFuel? fuel state [.Leave] =
+        some (lower, final)) :
+    lower = { stmts := [.leave] } ∧ final = state := by
+  obtain ⟨previous, lowerStmts, _hFuel, hList, hBlock⟩ :=
+    List.toBlockUncheckedFuel?_parts hLower
+  obtain
+      ⟨stmtFuel, lowerStmt, middle, lowerRest,
+        _hPrevious, hStmt, hRest, hStmts⟩ :=
+    List.toFunctionsUncheckedFuel?_cons_parts hList
+  cases stmtFuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hStmt
+  | succ remaining =>
+      simp [toFunctionsListUncheckedFuel?] at hStmt
+      rcases hStmt with ⟨rfl, rfl⟩
+      obtain ⟨_restFuel, _hRestFuel, hLowerRest, hFinal⟩ :=
+        List.toFunctionsUncheckedFuel?_nil_parts hRest
+      subst lowerRest
+      subst final
+      constructor
+      · simpa [hStmts] using hBlock
+      · rfl
+
 theorem toFunctionsListUncheckedFuel?_let_gas
     (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
     toFunctionsListUncheckedFuel? fuel.succ state

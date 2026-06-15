@@ -184,6 +184,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
 #check EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
 #check EvmCompiler.Yul.StateRelation.Replay.restore_call
+#check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_target
 #check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
@@ -209,10 +210,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.SolcValidation.programOkWith_function_signature_nodup
 #check EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
 #check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
+#check EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_leave_parts
 #check EvmCompiler.Yul.Stmt.List.toFunctionsUncheckedFuel?_cons_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_leave_of_scope
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_empty
+#check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_leave
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

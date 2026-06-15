@@ -128,14 +128,16 @@ def RecursiveExpressionForward
     (transcript : Trace)
     (codeRel : StateRelation.CodeRel)
     (sourceProgram : Yul.Program)
-    (targetProgram : Objects.Program) : Prop :=
+    (targetProgram : Objects.Program)
+    (bound : Nat) : Prop :=
   ∀ {exprFuel : Nat} {before after : Fresh.State}
     {expr : AstExpr} {pre : List Functions.Stmt}
     {lower : Locals.Expr 1}
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {value : Word},
-    Expr.lower1Unchecked? before expr = some (pre, lower, after) →
+    exprFuel < bound →
+      Expr.lower1Unchecked? before expr = some (pre, lower, after) →
       StateRelation.Replay.Rel codeRel source target →
       StateRelation.Vars.TargetDomainWithin
         before.used target.source.vars →
@@ -156,7 +158,8 @@ def RecursiveBodyForward
     (transcript : Trace)
     (codeRel : StateRelation.CodeRel)
     (sourceProgram : Yul.Program)
-    (targetProgram : Objects.Program) : Prop :=
+    (targetProgram : Objects.Program)
+    (bound : Nat) : Prop :=
   ∀ {sourceFuel : Nat} {before after : Fresh.State}
     {params returns : List EvmYul.Identifier}
     {body : List AstStmt} {fn : Functions.FunDef}
@@ -164,7 +167,8 @@ def RecursiveBodyForward
     {sourceCaller sourceAfterBody :
       ObserverSemantics.SourceReplay.State transcript}
     {targetCaller : Functions.ObserverSemantics.State transcript},
-    Stmt.List.toBlockUncheckedFuel?
+    sourceFuel < bound →
+      Stmt.List.toBlockUncheckedFuel?
         (FunctionList.fuel
           (Contract.functionEntries sourceProgram.contract))
         before body =
@@ -580,10 +584,10 @@ theorem ofFunctionCall
         true)
     (hExpr :
       RecursiveExpressionForward
-        contract transcript codeRel sourceProgram targetProgram)
+        contract transcript codeRel sourceProgram targetProgram fuel)
     (hBody :
       RecursiveBodyForward
-        contract transcript codeRel sourceProgram targetProgram)
+        contract transcript codeRel sourceProgram targetProgram fuel)
     (hRel : StateRelation.Replay.Rel codeRel source target)
     (hDomain :
       StateRelation.Vars.TargetDomainWithin
@@ -653,7 +657,11 @@ theorem ofFunctionCall
         | bound hNonempty hArgsLowering =>
             exact
               FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
-                hArgsLowering hExpr hRel hDomain hScope hArgsRun
+                hArgsLowering
+                (fun hLt hExprLower hExprRel hExprDomain hExprScope hExprRun =>
+                  hExpr (by omega) hExprLower hExprRel hExprDomain
+                    hExprScope hExprRun)
+                hRel hDomain hScope hArgsRun
       obtain ⟨preparedArgs⟩ := hPreparedArgs
       obtain
           ⟨before, after, fn, hFind, _hName, hParams, hFnReturns,
@@ -733,7 +741,7 @@ theorem ofFunctionCall
             hCallerRel hSignature' hParamStore'
         simpa [hParams', hFnReturns'] using hEntryBase
       obtain ⟨targetBodyFuel, returnedBodyNonempty⟩ :=
-        hBody hLowerBody hParams hFnReturns
+        hBody (by omega) hLowerBody hParams hFnReturns
           (by simpa [hParams] using hParamStore)
           hEntry hBodyRun
       obtain ⟨returnedBody⟩ := returnedBodyNonempty

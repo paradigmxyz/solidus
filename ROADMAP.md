@@ -95,8 +95,9 @@ Adjacent boundary status:
 - [ ] Yul -> Functions: all compiler-selected continuing primitives, plus
   direct expressions/argument lists and gas/msize expression and let-statement
   leaves, are checked in pass-owned modules; generated argument-binding
-  preambles, function-call expressions, complete statements/functions/programs,
-  and backward adequacy remain.
+  preambles, function-call expressions, and the empty/`leave` function-body
+  cases are checked. Complete regular/control statements, whole
+  functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
