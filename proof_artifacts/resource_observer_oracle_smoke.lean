@@ -970,6 +970,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.controlledHeadResultStack
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.stackRecursiveProgramForward
 #print axioms EvmCompiler.Functions.AllocationObserverRecursive.BodyCursor.stackRecursiveBlockForward
+#print axioms EvmCompiler.Functions.AllocationLowering.compileNoVarExprCode?_of_lowerExpr
+#print axioms EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.scoped_of_compileNoVar
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.SourcePrelude.forward
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

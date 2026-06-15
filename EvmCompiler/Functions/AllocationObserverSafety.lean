@@ -853,6 +853,77 @@ theorem ArgList.MemorySafeEval.values_length
       simp [ih]
 
 mutual
+  /--
+  A safely evaluated expression accepted by the no-variable prelude compiler
+  is a genuine source expression scoped by the empty environment.
+
+  The helper accepts embedded code syntactically, but the canonical source
+  evaluator has no successful embedded-code case. This theorem records that
+  distinction once in the safety owner.
+  -/
+  theorem Expr.MemorySafeEval.scoped_of_compileNoVar
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {expr : Functions.Expr results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word} {code : Structured.Code}
+      (hEval :
+        Expr.MemorySafeEval contract transcript expr source final values)
+      (hCompile :
+        AllocationSupport.compileNoVarExprCode? expr = some code) :
+      Functions.Scope.ExprScoped [] expr := by
+    cases hEval with
+    | lit =>
+        trivial
+    | var hValue =>
+        simp [AllocationSupport.compileNoVarExprCode?] at hCompile
+    | @prim op args source afterArgs final values outputs
+        hArgs hMemory hPrim =>
+        cases hArgsCode :
+            AllocationSupport.compileNoVarExprSeqCode? args with
+        | none =>
+            simp [AllocationSupport.compileNoVarExprCode?, hArgsCode]
+              at hCompile
+        | some argsCode =>
+            exact
+              ExprSeq.MemorySafeEval.scoped_of_compileNoVar hArgs hArgsCode
+
+  theorem ExprSeq.MemorySafeEval.scoped_of_compileNoVar
+      {contract : MemoryContract.Contract}
+      {transcript : Assembly.ResourceTrace}
+      {results : Nat} {exprs : Locals.ExprSeq results}
+      {source final : Functions.ObserverSemantics.State transcript}
+      {values : List Word} {code : Structured.Code}
+      (hEval :
+        ExprSeq.MemorySafeEval contract transcript exprs source final values)
+      (hCompile :
+        AllocationSupport.compileNoVarExprSeqCode? exprs = some code) :
+      Functions.Scope.ExprSeqScoped [] exprs := by
+    cases hEval with
+    | nil =>
+        trivial
+    | @cons left right head tail source afterHead final
+        headValues tailValues hHead hTail =>
+        cases hHeadCode :
+            AllocationSupport.compileNoVarExprCode? head with
+        | none =>
+            simp [AllocationSupport.compileNoVarExprSeqCode?, hHeadCode]
+              at hCompile
+        | some headCode =>
+            cases hTailCode :
+                AllocationSupport.compileNoVarExprSeqCode? tail with
+            | none =>
+                simp [AllocationSupport.compileNoVarExprSeqCode?,
+                  hHeadCode, hTailCode] at hCompile
+            | some tailCode =>
+                exact
+                  ⟨Expr.MemorySafeEval.scoped_of_compileNoVar
+                      hHead hHeadCode,
+                    ExprSeq.MemorySafeEval.scoped_of_compileNoVar
+                      hTail hTailCode⟩
+end
+
+mutual
   theorem Expr.MemorySafeEval.vars_eq
       {contract : MemoryContract.Contract}
       {transcript : Assembly.ResourceTrace}

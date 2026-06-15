@@ -17,6 +17,208 @@ private theorem block_eq_of_stmts_eq
   cases right
   simp_all
 
+namespace SourcePrelude
+
+/--
+Forward preservation for the compiler-owned no-variable source prelude.
+
+The proof consumes the ordinary allocation expression lowerer and Locals
+compiler through `compileNoVarExprCode?_of_lowerExpr`. It does not execute the
+prelude compiler as a separate semantics.
+-/
+theorem forward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {sourcePrefix : List Functions.Stmt}
+    {loweredPrefix : List Locals.Stmt}
+    (hPrelude :
+      AllocationLowering.PreludeLowered sourcePrefix loweredPrefix)
+    {compiledPrefix : List Expressions.Stmt}
+    {finalLocals : Locals.Ctx}
+    {lowerCtx : AllocationLowering.Ctx}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {plan : Locals.Allocation.Plan}
+    {frameBase : Nat}
+    {transcript : Trace}
+    {sourceCtx finalSourceCtx : Functions.Source.Ctx}
+    {sourceFuel : Nat}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hCompile :
+      Locals.Block.compileOpen localsCtx { stmts := loweredPrefix } =
+        some (compiledPrefix, finalLocals))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel { stmts := sourcePrefix } source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalSourceCtx))
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        program.memoryContract lowerCtx lowerState localsCtx plan []
+        frameBase .stack source target) :
+    ∃ targetFinal targetFuel,
+      finalLocals = localsCtx ∧
+        finalSourceCtx = sourceCtx ∧
+        Structured.ObserverSemantics.Block.Eval
+          expressions.toStructured targetFuel
+          { stmts :=
+              Expressions.StmtList.toStructured compiledPrefix }
+          target
+          (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+        AllocationObserverContext.ActivationInvariant
+          program.memoryContract lowerCtx lowerState localsCtx plan []
+          frameBase .stack sourceFinal targetFinal := by
+  induction hPrelude generalizing compiledPrefix finalLocals sourceFuel
+      source sourceFinal target finalSourceCtx with
+  | nil =>
+      have hCompiled :
+          ([], localsCtx) = (compiledPrefix, finalLocals) := by
+        simpa [Locals.Block.compileOpen] using hCompile
+      have hCompiledPrefix := congrArg Prod.fst hCompiled
+      have hFinalLocals := congrArg Prod.snd hCompiled
+      simp only [Prod.fst] at hCompiledPrefix
+      simp only [Prod.snd] at hFinalLocals
+      subst compiledPrefix
+      subst finalLocals
+      cases sourceFuel with
+      | zero =>
+          simp [Functions.Source.Effectful.Block.runOpen,
+            Functions.Source.invalid, Structured.invalid] at hSource
+      | succ fuel =>
+          have hSourcePair :
+              (Functions.Source.Effectful.Outcome.regular source,
+                  sourceCtx) =
+                (Functions.Source.Effectful.Outcome.regular sourceFinal,
+                  finalSourceCtx) := by
+            simpa [Functions.Source.Effectful.Block.runOpen] using hSource
+          cases hSourcePair
+          exact
+            ⟨target, 1, rfl, rfl,
+              Structured.EffectSemantics.Block.Eval.nil, hInvariant⟩
+  | @cons stmt rest code lowered head tail ih =>
+      cases stmt with
+      | expr expr =>
+          have hNoVar :
+              AllocationSupport.compileNoVarExprCode? expr = some code := by
+            cases hActual :
+                AllocationSupport.compileNoVarExprCode? expr with
+            | none =>
+                simp [AllocationSupport.compilePreludeStmt?, hActual] at head
+            | some actual =>
+                have hCode : actual = code := by
+                  simpa [AllocationSupport.compilePreludeStmt?, hActual] using
+                    head
+                subst actual
+                rfl
+          cases hTailCompile :
+              Locals.Block.compileOpen localsCtx
+                { stmts := lowered } with
+          | none =>
+              simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+                Locals.Expr.compileCode, Locals.codeStmt,
+                hTailCompile] at hCompile
+          | some tailResult =>
+              rcases tailResult with ⟨compiledTail, tailLocals⟩
+              have hCompiled :
+                  (Expressions.Stmt.code code :: compiledTail,
+                      tailLocals) =
+                    (compiledPrefix, finalLocals) := by
+                simpa [Locals.Block.compileOpen, Locals.Stmt.compile,
+                  Locals.Expr.compileCode, Locals.codeStmt,
+                  hTailCompile] using hCompile
+              have hCompiledPrefix := congrArg Prod.fst hCompiled
+              have hFinalLocals := congrArg Prod.snd hCompiled
+              simp only [Prod.fst] at hCompiledPrefix
+              simp only [Prod.snd] at hFinalLocals
+              subst compiledPrefix
+              subst finalLocals
+              cases sourceFuel with
+              | zero =>
+                  simp [Functions.Source.Effectful.Block.runOpen,
+                    Functions.Source.invalid, Structured.invalid] at hSource
+              | succ fuel =>
+                  cases hEval :
+                      Functions.Source.Effectful.Expr.eval
+                        (Functions.ObserverSemantics.stateModel transcript)
+                        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+                          program.memoryContract transcript)
+                        expr source with
+                  | error err =>
+                      simp [Functions.Source.Effectful.Block.runOpen,
+                        Functions.Source.Effectful.Stmt.run, hEval] at hSource
+                  | ok evalResult =>
+                      rcases evalResult with ⟨sourceHead, values⟩
+                      have hTailSource :
+                          Functions.Source.Effectful.Block.runOpen
+                              (Functions.ObserverSemantics.stateModel
+                                transcript)
+                              (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+                                program.memoryContract transcript)
+                              program sourceCtx fuel
+                              { stmts := rest } sourceHead =
+                            .ok
+                              (Functions.Source.Effectful.Outcome.regular
+                                sourceFinal,
+                                finalSourceCtx) := by
+                        simpa [Functions.Source.Effectful.Block.runOpen,
+                          Functions.Source.Effectful.Stmt.run, hEval] using
+                          hSource
+                      have hSafe :
+                          AllocationObserverSafety.Expr.MemorySafeEval
+                            program.memoryContract transcript expr source
+                              sourceHead values :=
+                        AllocationObserverSafety.Expr.MemorySafeEval.of_safe_eval
+                          hEval
+                      have hScoped :
+                          Functions.Scope.ExprScoped [] expr :=
+                        hSafe.scoped_of_compileNoVar hNoVar
+                      obtain ⟨loweredExpr, hLowerExpr, hCompileExpr⟩ :=
+                        AllocationLowering.compileNoVarExprCode?_of_lowerExpr
+                          hNoVar lowerCtx lowerState localsCtx 0
+                      obtain ⟨targetHead, hTargetHead, hHeadResult⟩ :=
+                        AllocationObserverExpression.forwardExpr
+                          (AllocationObserverPrimitive.canonicalActivationPrimitiveForward
+                            program.memoryContract)
+                          hSafe hInvariant.compiler hScoped hLowerExpr
+                          hCompileExpr hInvariant.state
+                      have hHeadInvariant :
+                          AllocationObserverContext.ActivationInvariant
+                            program.memoryContract lowerCtx lowerState
+                            localsCtx plan [] frameBase .stack
+                            sourceHead targetHead :=
+                        AllocationObserverExpression.Expr.invariant_zero
+                          hInvariant hSafe hHeadResult
+                      obtain
+                          ⟨targetFinal, targetFuel, hTailLocals,
+                            hTailCtx, hTargetTail, hFinalInvariant⟩ :=
+                        ih hTailCompile hTailSource hHeadInvariant
+                      subst tailLocals
+                      subst finalSourceCtx
+                      exact
+                        ⟨targetFinal, targetFuel + 1, rfl, rfl,
+                          Structured.EffectSemantics.Block.Eval.cons_regular
+                            (Structured.EffectSemantics.Stmt.Eval.code
+                              hTargetHead)
+                            hTargetTail,
+                          hFinalInvariant⟩
+      | let_ name value | assign name value | block block
+      | if_ cond block | switch scrutinee cases defaultBody
+      | for_ init cond post loopBody | brk | cont | leave
+      | call targets functionName args | terminal kind
+      | terminalArgs kind args =>
+          simp [AllocationSupport.compilePreludeStmt?] at head
+
+end SourcePrelude
+
 /--
 Compiler-owned artifact for the distinguished Functions main body.
 

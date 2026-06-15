@@ -1455,9 +1455,11 @@ corridor.
   constructor is now checked over every compiler-owned root using the same
   resource block result, control destinations, exact cursors, and selected
   function-body boundary as scratch recursion. The remaining Functions work
-  is whole-program source-prelude/setup/cleanup packaging and matching
-  backward adequacy. The recursive main-body theorem already selects its
-  resource mode directly from the ordinary compilation and accepts no
+  is whole-program setup/cleanup packaging and matching backward adequacy.
+  The no-variable source prelude is now checked through the ordinary
+  allocation expression lowerer, Locals compiler, safe source evaluator, and
+  Structured block semantics. The recursive main-body theorem already selects
+  its resource mode directly from the ordinary compilation and accepts no
   generated artifact premise.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.

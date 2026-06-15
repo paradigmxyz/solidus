@@ -306,6 +306,103 @@ def splitPrelude : List Stmt → List Locals.Stmt × List Stmt
             tail)
       | _ => ([], stmt :: rest)
 
+mutual
+  /--
+  The no-variable prelude compiler is extensionally the ordinary allocation
+  expression lowerer followed by the Locals compiler.
+
+  This theorem keeps the prelude optimization inside the allocation pass:
+  later semantic proofs consume the same lowered expression interface as every
+  other Functions expression instead of interpreting prelude code specially.
+  -/
+  theorem compileNoVarExprCode?_of_lowerExpr
+      {results : Nat} {expr : Functions.Expr results}
+      {code : Structured.Code}
+      (hCompile :
+        AllocationSupport.compileNoVarExprCode? expr = some code)
+      (lowerCtx : Ctx) (lowerState : State)
+      (localsCtx : Locals.Ctx) (offset : Nat) :
+      ∃ lowered : Locals.Expr results,
+        lowerExpr lowerCtx lowerState expr = some lowered ∧
+          Locals.Expr.compileCode localsCtx offset lowered = some code := by
+    cases expr with
+    | lit value =>
+        have hCode : code = [.push value] := by
+          simpa [AllocationSupport.compileNoVarExprCode?] using hCompile.symm
+        subst code
+        exact ⟨.lit value, rfl, rfl⟩
+    | var name =>
+        simp [AllocationSupport.compileNoVarExprCode?] at hCompile
+    | code embedded =>
+        have hCode : code = embedded := by
+          simpa [AllocationSupport.compileNoVarExprCode?] using hCompile.symm
+        subst code
+        exact ⟨.code embedded, rfl, rfl⟩
+    | prim op args =>
+        cases hArgs :
+            AllocationSupport.compileNoVarExprSeqCode? args with
+        | none =>
+            simp [AllocationSupport.compileNoVarExprCode?, hArgs] at hCompile
+        | some argsCode =>
+            have hCode : code = argsCode ++ [.op op] := by
+              simpa [AllocationSupport.compileNoVarExprCode?, hArgs] using
+                hCompile.symm
+            subst code
+            obtain ⟨loweredArgs, hLowerArgs, hCompileArgs⟩ :=
+              compileNoVarExprSeqCode?_of_lowerExprSeq hArgs
+                lowerCtx lowerState localsCtx offset
+            exact
+              ⟨.prim op loweredArgs,
+                by simp [lowerExpr, hLowerArgs],
+                by simp [Locals.Expr.compileCode, hCompileArgs]⟩
+
+  theorem compileNoVarExprSeqCode?_of_lowerExprSeq
+      {results : Nat} {exprs : Locals.ExprSeq results}
+      {code : Structured.Code}
+      (hCompile :
+        AllocationSupport.compileNoVarExprSeqCode? exprs = some code)
+      (lowerCtx : Ctx) (lowerState : State)
+      (localsCtx : Locals.Ctx) (offset : Nat) :
+      ∃ lowered : Locals.ExprSeq results,
+        lowerExprSeq lowerCtx lowerState exprs = some lowered ∧
+          Locals.ExprSeq.compileCode localsCtx offset lowered = some code := by
+    cases exprs with
+    | nil =>
+        have hCode : code = [] := by
+          simpa [AllocationSupport.compileNoVarExprSeqCode?] using
+            hCompile.symm
+        subst code
+        exact ⟨.nil, rfl, rfl⟩
+    | @cons left right head tail =>
+        cases hHead :
+            AllocationSupport.compileNoVarExprCode? head with
+        | none =>
+            simp [AllocationSupport.compileNoVarExprSeqCode?, hHead] at hCompile
+        | some headCode =>
+            cases hTail :
+                AllocationSupport.compileNoVarExprSeqCode? tail with
+            | none =>
+                simp [AllocationSupport.compileNoVarExprSeqCode?,
+                  hHead, hTail] at hCompile
+            | some tailCode =>
+                have hCode : code = headCode ++ tailCode := by
+                  simpa [AllocationSupport.compileNoVarExprSeqCode?,
+                    hHead, hTail] using hCompile.symm
+                subst code
+                obtain ⟨loweredHead, hLowerHead, hCompileHead⟩ :=
+                  compileNoVarExprCode?_of_lowerExpr hHead
+                    lowerCtx lowerState localsCtx offset
+                obtain ⟨loweredTail, hLowerTail, hCompileTail⟩ :=
+                  compileNoVarExprSeqCode?_of_lowerExprSeq hTail
+                    lowerCtx lowerState localsCtx (offset + left)
+                exact
+                  ⟨.cons loweredHead loweredTail,
+                    by simp [lowerExprSeq, hLowerHead, hLowerTail],
+                    by
+                      simp [Locals.ExprSeq.compileCode, hCompileHead,
+                        hCompileTail]⟩
+end
+
 /--
 The exact source prefix preserved by `splitPrelude`.
 
