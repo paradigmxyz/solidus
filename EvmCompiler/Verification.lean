@@ -357,11 +357,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_assign_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_call
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_call
-#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetCall
-#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofAssignCall
-#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofEmpty
-#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLeave
-#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofLetNone
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveBodyForward.ofList
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #check EvmCompiler.Yul.SolcValidation.StmtsOutVars
 #check EvmCompiler.Yul.SolcValidation.stmtsOk_cons_parts
@@ -397,7 +393,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.block
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.ifThen
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.switch
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.forLoop
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.scopedLoop
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveForwardFamily.ofCompiler
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveForwardFamily.dispatcherForward
 #check EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_for_parts
+#check EvmCompiler.Yul.Stmt.List.toFunctionsUncheckedFuel?_singleton_of_stmt
 #check EvmCompiler.Yul.Source.Effectful.exec_for_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero
@@ -406,6 +407,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
+#check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate

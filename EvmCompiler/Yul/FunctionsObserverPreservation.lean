@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpression
+import EvmCompiler.Yul.FunctionsObserverForward
 
 namespace EvmCompiler
 namespace Yul
@@ -376,6 +377,52 @@ theorem lowerExecLetMsize
           Functions.ObserverSemantics.stmt_run_let_msize
             targetProgram ctx targetFuel (identName name) hTargetConsume)
         hDecl hRel hConsume⟩
+
+theorem compileDispatcherForward
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {sourceEntry sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Program.toObjectsWithObservers? sourceProgram =
+        some targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel [] sourceEntry target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        (Fresh.initial
+          (Contract.names sourceProgram.contract)).used
+        target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          sourceFuel
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) sourceEntry =
+        .ok sourceFinal) :
+    ∃ targetFuel outcome,
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          targetFuel targetProgram.toFunctions target =
+        .ok outcome ∧
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        [] sourceFinal outcome :=
+  FunctionsObserverForward.RecursiveForwardFamily.dispatcherForward
+    (contract := sourceProgram.memoryContract)
+    (FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+      hLower)
+    hProgramOk hRel hDomain hRun
 
 end FunctionsObserverPreservation
 end Yul

@@ -82,6 +82,30 @@ theorem eq_regular_of_mode {σ : Type} {outcome : Outcome σ}
   subst mode
   rfl
 
+theorem eq_brk_of_mode {σ : Type} {outcome : Outcome σ}
+    (hMode : outcome.mode = .brk) :
+    outcome = brk outcome.state := by
+  rcases outcome with ⟨state, mode⟩
+  change mode = .brk at hMode
+  subst mode
+  rfl
+
+theorem eq_cont_of_mode {σ : Type} {outcome : Outcome σ}
+    (hMode : outcome.mode = .cont) :
+    outcome = cont outcome.state := by
+  rcases outcome with ⟨state, mode⟩
+  change mode = .cont at hMode
+  subst mode
+  rfl
+
+theorem eq_leave_of_mode {σ : Type} {outcome : Outcome σ}
+    (hMode : outcome.mode = .leave) :
+    outcome = leave outcome.state := by
+  rcases outcome with ⟨state, mode⟩
+  change mode = .leave at hMode
+  subst mode
+  rfl
+
 theorem IsExit.not_regular {σ : Type} {outcome : Outcome σ}
     (hExit : IsExit outcome) :
     outcome.mode ≠ .regular := by
@@ -2669,6 +2693,113 @@ theorem runForLoop_cont_post_halt_of_runs {σ : Type}
   simp [Stmt.runForLoop, hCond, hBody, hPost, Outcome.cont,
     Locals.Source.Effectful.Outcome.cont, Outcome.halt,
     Locals.Source.Effectful.Outcome.halt]
+
+/--
+Every successful canonical loop result is either regular or exits the current
+activation. Loop-local break and continue outcomes are consumed internally.
+-/
+theorem runForLoop_regular_or_exit {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {loopCtx : Source.Ctx} {cond : Functions.Expr 1}
+    {postBase : Source.Ctx} {post : Functions.Block}
+    {bodyBase : Source.Ctx} {body : Functions.Block} :
+    ∀ {fuel : Nat} {source : σ} {outcome : Outcome σ},
+      Stmt.runForLoop model prim program loopCtx cond postBase post
+          bodyBase body fuel source =
+        .ok outcome →
+      outcome.mode = .regular ∨ outcome.IsExit := by
+  intro fuel
+  induction fuel with
+  | zero =>
+      intro source outcome hRun
+      simp [Stmt.runForLoop, Source.invalid, Structured.invalid] at hRun
+  | succ fuel ih =>
+      intro source outcome hRun
+      rw [Stmt.runForLoop] at hRun
+      cases hCond : Expr.evalCondition model prim cond source with
+      | error err =>
+          simp [hCond] at hRun
+      | ok condResult =>
+          rcases condResult with ⟨afterCond, condTrue⟩
+          cases condTrue with
+          | false =>
+              simp [hCond] at hRun
+              subst outcome
+              exact .inl rfl
+          | true =>
+              cases hBody :
+                  Block.runScoped model prim program bodyBase body fuel
+                    afterCond with
+              | error err =>
+                  simp [hCond, hBody] at hRun
+              | ok bodyOutcome =>
+                  rcases bodyOutcome with ⟨afterBody, bodyMode⟩
+                  cases bodyMode with
+                  | regular =>
+                      cases hPost :
+                          Block.runScoped model prim program postBase post
+                            fuel afterBody with
+                      | error err =>
+                          simp [hCond, hBody, hPost] at hRun
+                      | ok postOutcome =>
+                          rcases postOutcome with ⟨afterPost, postMode⟩
+                          cases postMode with
+                          | regular =>
+                              simp [hCond, hBody, hPost] at hRun
+                              exact ih hRun
+                          | brk =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | cont =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | leave =>
+                              simp [hCond, hBody, hPost] at hRun
+                              subst outcome
+                              exact .inr (by simp [Outcome.IsExit])
+                          | halt kind =>
+                              simp [hCond, hBody, hPost] at hRun
+                              subst outcome
+                              exact .inr (by simp [Outcome.IsExit])
+                  | brk =>
+                      simp [hCond, hBody] at hRun
+                      subst outcome
+                      exact .inl rfl
+                  | cont =>
+                      cases hPost :
+                          Block.runScoped model prim program postBase post
+                            fuel afterBody with
+                      | error err =>
+                          simp [hCond, hBody, hPost] at hRun
+                      | ok postOutcome =>
+                          rcases postOutcome with ⟨afterPost, postMode⟩
+                          cases postMode with
+                          | regular =>
+                              simp [hCond, hBody, hPost] at hRun
+                              exact ih hRun
+                          | brk =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | cont =>
+                              simp [hCond, hBody, hPost, Source.invalid,
+                                Structured.invalid] at hRun
+                          | leave =>
+                              simp [hCond, hBody, hPost] at hRun
+                              subst outcome
+                              exact .inr (by simp [Outcome.IsExit])
+                          | halt kind =>
+                              simp [hCond, hBody, hPost] at hRun
+                              subst outcome
+                              exact .inr (by simp [Outcome.IsExit])
+                  | leave =>
+                      simp [hCond, hBody] at hRun
+                      subst outcome
+                      exact .inr (by simp [Outcome.IsExit])
+                  | halt kind =>
+                      simp [hCond, hBody] at hRun
+                      subst outcome
+                      exact .inr (by simp [Outcome.IsExit])
 
 /--
 Inversion for a canonical regular loop execution.

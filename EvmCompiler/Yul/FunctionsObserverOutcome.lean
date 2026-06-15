@@ -27,6 +27,266 @@ def LayoutWithinScope
     (layout : List Name) (ctx : Functions.Source.Ctx) : Prop :=
   ∀ name, name ∈ layout → name ∈ ctx.scope
 
+def TargetRestrictedTo
+    {transcript : Trace}
+    (scope : List Name)
+    (target : Functions.ObserverSemantics.State transcript) : Prop :=
+  ∃ before : Functions.ObserverSemantics.State transcript,
+    target =
+      before.withSource (before.source.restrictTo scope)
+
+def AbruptTargetRestriction
+    {transcript : Trace}
+    (ctx : Functions.Source.Ctx)
+    (outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)) : Prop :=
+  match outcome.mode with
+  | .regular => True
+  | .brk =>
+      ∃ scope,
+        ctx.breakScope? = some scope ∧
+          TargetRestrictedTo scope outcome.state
+  | .cont =>
+      ∃ scope,
+        ctx.continueScope? = some scope ∧
+          TargetRestrictedTo scope outcome.state
+  | .leave =>
+      ∃ scope,
+        ctx.leaveScope? = some scope ∧
+          TargetRestrictedTo scope outcome.state
+  | .halt _ => True
+
+def ScopedTargetRestriction
+    {transcript : Trace}
+    (ctx : Functions.Source.Ctx)
+    (outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)) : Prop :=
+  match outcome.mode with
+  | .regular => TargetRestrictedTo ctx.scope outcome.state
+  | .brk | .cont | .leave | .halt _ =>
+      AbruptTargetRestriction ctx outcome
+
+theorem TargetRestrictedTo.domain
+    {transcript : Trace}
+    {scope used : List Name}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRestricted : TargetRestrictedTo scope target)
+    (hScope : StateRelation.Vars.NamesWithin used scope) :
+    StateRelation.Vars.TargetDomainWithin used target.source.vars := by
+  rcases hRestricted with ⟨before, rfl⟩
+  intro name value hLookup
+  simp only [Simulation.ResourceReplay.State.withSource_source,
+    Locals.Source.State.restrictTo] at hLookup
+  by_cases hMem : name ∈ scope
+  · exact hScope name hMem
+  · rw [Locals.Source.Store.restrictTo_not_mem hMem] at hLookup
+    contradiction
+
+theorem AbruptTargetRestriction.transport
+    {transcript : Trace}
+    {before after : Functions.Source.Ctx}
+    {outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hControl : Functions.Source.Ctx.SameControl before after)
+    (hRestricted : AbruptTargetRestriction after outcome) :
+    AbruptTargetRestriction before outcome := by
+  cases hMode : outcome.mode <;>
+    simp [AbruptTargetRestriction, hMode] at hRestricted ⊢
+  · obtain ⟨scope, hScope, hState⟩ := hRestricted
+    exact ⟨scope, hControl.breakScope.trans hScope, hState⟩
+  · obtain ⟨scope, hScope, hState⟩ := hRestricted
+    exact ⟨scope, hControl.continueScope.trans hScope, hState⟩
+  · obtain ⟨scope, hScope, hState⟩ := hRestricted
+    exact ⟨scope, hControl.leaveScope.trans hScope, hState⟩
+
+def SourceDefined
+    {transcript : Trace}
+    (layout : List Name)
+    (source : ObserverSemantics.SourceReplay.State transcript) : Prop :=
+  ∀ name, name ∈ layout →
+    (source.source.reviveJump.lookup? name).isSome = true
+
+def SourceWithin
+    {transcript : Trace}
+    (layout : List Name)
+    (source : ObserverSemantics.SourceReplay.State transcript) : Prop :=
+  ∀ name, (source.source.reviveJump.lookup? name).isSome = true →
+    name ∈ layout
+
+theorem SourceDefined.of_scopedExact
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {layout : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target) :
+    SourceDefined layout source := by
+  rcases hRel.2 with
+    ⟨sourceShared, sourceVars, hSource,
+      _hShared, _hScoped, hDomain⟩
+  intro name hMem
+  rw [hSource]
+  exact (hDomain name).mpr hMem
+
+theorem SourceWithin.of_scopedExact
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {layout : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target) :
+    SourceWithin layout source := by
+  rcases hRel.2 with
+    ⟨sourceShared, sourceVars, hSource,
+      _hShared, _hScoped, hDomain⟩
+  intro name hSome
+  rw [hSource] at hSome
+  exact (hDomain name).mp hSome
+
+theorem SourceDefined.restrictStoreTo
+    {transcript : Trace}
+    {retained outer : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {scope : EvmYul.Yul.VarStore}
+    (hDefined : SourceDefined retained source)
+    (hScope : StateRelation.Vars.DomainExact outer scope)
+    (hSubset : ∀ name, name ∈ retained → name ∈ outer) :
+    SourceDefined retained
+      (source.withSource (source.source.restrictStoreTo scope)) := by
+  rcases source with ⟨source, cursor⟩
+  intro name hMem
+  have hScopeSome : (scope.lookup name).isSome = true :=
+    (hScope name).mpr (hSubset name hMem)
+  cases hScopeLookup : scope.lookup name with
+  | none =>
+      simp [hScopeLookup] at hScopeSome
+  | some scopeValue =>
+      have hSourceSome := hDefined name hMem
+      cases hSource : source with
+      | Ok shared vars =>
+          simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+            EvmYul.Yul.State.restrictStoreTo,
+            EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.lookup?]
+          rw [StateRelation.VarStore.lookup_restrict_of_some
+            vars scope name hScopeLookup]
+          simpa [SourceDefined, hSource,
+            EvmYul.Yul.State.reviveJump,
+            EvmYul.Yul.State.lookup?] using hSourceSome
+      | OutOfFuel =>
+          simpa [SourceDefined, hSource,
+            EvmYul.Yul.State.restrictStoreTo,
+            EvmYul.Yul.State.reviveJump,
+            EvmYul.Yul.State.lookup?] using hSourceSome
+      | Checkpoint jump =>
+          cases jump with
+          | Continue shared vars =>
+              simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+                EvmYul.Yul.State.restrictStoreTo,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?]
+              rw [StateRelation.VarStore.lookup_restrict_of_some
+                vars scope name hScopeLookup]
+              simpa [SourceDefined, hSource,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?] using hSourceSome
+          | Break shared vars =>
+              simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+                EvmYul.Yul.State.restrictStoreTo,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?]
+              rw [StateRelation.VarStore.lookup_restrict_of_some
+                vars scope name hScopeLookup]
+              simpa [SourceDefined, hSource,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?] using hSourceSome
+          | Leave shared vars =>
+              simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+                EvmYul.Yul.State.restrictStoreTo,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?]
+              rw [StateRelation.VarStore.lookup_restrict_of_some
+                vars scope name hScopeLookup]
+              simpa [SourceDefined, hSource,
+                EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+                EvmYul.Yul.State.lookup?] using hSourceSome
+
+theorem SourceWithin.restrictStoreTo
+    {transcript : Trace}
+    {outer : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {scope : EvmYul.Yul.VarStore}
+    (hScope : StateRelation.Vars.DomainExact outer scope) :
+    SourceWithin outer
+      (source.withSource (source.source.restrictStoreTo scope)) := by
+  rcases source with ⟨source, cursor⟩
+  intro name hSome
+  by_contra hNotMem
+  have hScopeNone : scope.lookup name = none :=
+    StateRelation.Vars.domainExact_isNone_of_not_mem hScope hNotMem
+  cases source with
+  | Ok shared vars =>
+      simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+        EvmYul.Yul.State.restrictStoreTo,
+        EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.lookup?] at hSome
+      rw [StateRelation.VarStore.lookup_restrict_of_none
+        vars scope name hScopeNone] at hSome
+      simp at hSome
+  | OutOfFuel =>
+      simp [ObserverSemantics.SourceReplay.State.withSource,
+        EvmYul.Yul.State.restrictStoreTo,
+        EvmYul.Yul.State.reviveJump,
+        EvmYul.Yul.State.lookup?] at hSome
+  | Checkpoint jump =>
+      cases jump with
+      | Continue shared vars =>
+          simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+            EvmYul.Yul.State.restrictStoreTo,
+            EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+            EvmYul.Yul.State.lookup?] at hSome
+          rw [StateRelation.VarStore.lookup_restrict_of_none
+            vars scope name hScopeNone] at hSome
+          simp at hSome
+      | Break shared vars =>
+          simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+            EvmYul.Yul.State.restrictStoreTo,
+            EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+            EvmYul.Yul.State.lookup?] at hSome
+          rw [StateRelation.VarStore.lookup_restrict_of_none
+            vars scope name hScopeNone] at hSome
+          simp at hSome
+      | Leave shared vars =>
+          simp only [ObserverSemantics.SourceReplay.State.withSource_source,
+            EvmYul.Yul.State.restrictStoreTo,
+            EvmYul.Yul.State.reviveJump, EvmYul.Yul.State.revive,
+            EvmYul.Yul.State.lookup?] at hSome
+          rw [StateRelation.VarStore.lookup_restrict_of_none
+            vars scope name hScopeNone] at hSome
+          simp at hSome
+
+theorem sourceDomainExact_of_source
+    {transcript : Trace}
+    {layout : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (hDefined : SourceDefined layout source)
+    (hWithin : SourceWithin layout source)
+    (hSource : source.source.reviveJump = .Ok shared store) :
+    StateRelation.Vars.DomainExact layout store := by
+  intro name
+  constructor
+  · intro hSome
+    apply hWithin name
+    simpa [hSource] using hSome
+  · intro hMem
+    have hSome := hDefined name hMem
+    simpa [hSource] using hSome
+
 namespace LayoutWithinScope
 
 theorem monoLayout
@@ -145,6 +405,33 @@ theorem source_ok_target_regular
     {target : Functions.Source.Effectful.Outcome σ}
     (hMode : ModeRel (.Ok shared vars) target) :
     target.mode = .regular := by
+  cases hTarget : target.mode <;>
+    simp [ModeRel, hTarget] at hMode ⊢
+
+theorem source_break_target_brk
+    {σ : Type} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {target : Functions.Source.Effectful.Outcome σ}
+    (hMode : ModeRel (.Checkpoint (.Break shared vars)) target) :
+    target.mode = .brk := by
+  cases hTarget : target.mode <;>
+    simp [ModeRel, hTarget] at hMode ⊢
+
+theorem source_continue_target_cont
+    {σ : Type} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {target : Functions.Source.Effectful.Outcome σ}
+    (hMode : ModeRel (.Checkpoint (.Continue shared vars)) target) :
+    target.mode = .cont := by
+  cases hTarget : target.mode <;>
+    simp [ModeRel, hTarget] at hMode ⊢
+
+theorem source_leave_target_leave
+    {σ : Type} {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    {target : Functions.Source.Effectful.Outcome σ}
+    (hMode : ModeRel (.Checkpoint (.Leave shared vars)) target) :
+    target.mode = .leave := by
   cases hTarget : target.mode <;>
     simp [ModeRel, hTarget] at hMode ⊢
 
@@ -407,6 +694,8 @@ structure ScopedOpenResult
       ∀ name, name ∈ entryLayout → name ∈ finalLayout
   layoutWithin :
     StateRelation.Vars.NamesWithin final.used finalLayout
+  sourceDefined : SourceDefined finalLayout sourceFinal
+  abruptTargetRestriction : AbruptTargetRestriction ctx outcome
   layoutScope :
     outcome.mode = .regular →
       LayoutWithinScope finalLayout finalCtx
@@ -483,6 +772,10 @@ def appendRegular
         right.retains hRightRegular name
           (left.retains hRegular name hMem)
       layoutWithin := right.layoutWithin
+      sourceDefined := right.sourceDefined
+      abruptTargetRestriction :=
+        AbruptTargetRestriction.transport left.control
+          right.abruptTargetRestriction
       layoutScope := right.layoutScope
       exitScope := by
         have hExit := right.exitScope
@@ -549,6 +842,8 @@ def appendNonregular
       retains := fun hRegular =>
         False.elim (hNonregular hRegular)
       layoutWithin := left.layoutWithin.mono hSuffixFresh
+      sourceDefined := left.sourceDefined
+      abruptTargetRestriction := left.abruptTargetRestriction
       layoutScope := fun hRegular =>
         False.elim (hNonregular hRegular)
       exitScope := left.exitScope }
@@ -602,6 +897,9 @@ def empty
       freshExtends := Fresh.Extends.refl fresh
       retains := fun _hRegular _name hMem => hMem
       layoutWithin := hLayout
+      sourceDefined := SourceDefined.of_scopedExact hRel
+      abruptTargetRestriction := by
+        simp [AbruptTargetRestriction]
       layoutScope := fun _hRegular => hLayoutScope
       exitScope := by
         simp [ExitScopeRel] }

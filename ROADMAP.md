@@ -1,6 +1,6 @@
 # Verified EVM Compiler Architecture Migration
 
-Last updated: 2026-06-14 PDT.
+Last updated: 2026-06-15 PDT.
 
 ## Objective
 
@@ -118,9 +118,12 @@ Adjacent boundary status:
   unvalidated expression callback has been deleted; only the strictly
   smaller-fuel body interface remains. The exhaustive leaf dispatcher,
   structural statement-list composition, generic lexical block theorem, both
-  paths of generic `if` preservation, and canonical first-match/default
-  `switch` preservation are checked. Loop, mutual body/control closure, whole
-  functions/programs, and backward adequacy remain.
+  paths of generic `if` preservation, canonical first-match/default `switch`,
+  and every `for` outcome are checked. `RecursiveForwardFamily.ofCompiler`
+  closes bodies, values, statements, lists, and compound control by source-fuel
+  induction, and `compileDispatcherForward` reaches the real compiled Functions
+  whole-program runner without public generated evidence. Canonical Yul
+  `callDispatcher`/`finish` packaging and adjacent backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

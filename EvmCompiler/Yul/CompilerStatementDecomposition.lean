@@ -416,6 +416,21 @@ theorem toFunctionsListUncheckedFuel?_for_parts
                     ⟨previous, preCond, lowerCond, afterCond, lowerPost,
                       afterPost, lowerBody, rfl, rfl, hPost, hBody, rfl⟩
 
+theorem List.toFunctionsUncheckedFuel?_singleton_of_stmt
+    {fuel : Nat} {before after : Fresh.State}
+    {stmt : AstStmt} {lower : List Functions.Stmt}
+    (hPositive : 0 < fuel)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? fuel before stmt =
+        some (lower, after)) :
+    Stmt.List.toFunctionsUncheckedFuel? (fuel + 1) before [stmt] =
+      some (lower, after) := by
+  cases fuel with
+  | zero =>
+      omega
+  | succ previous =>
+      simp [Stmt.List.toFunctionsUncheckedFuel?, hLower]
+
 theorem toFunctionsListUncheckedFuel?_let_none_parts
     {fuel : Nat} {before after : Fresh.State}
     {names : List EvmYul.Identifier}

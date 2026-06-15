@@ -541,6 +541,11 @@ theorem of_let_none
              rcases List.mem_append.mp hMem with hDeclared | hOuter
              · exact hNamesUsed name hDeclared
              · exact hLayout name hOuter
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               hFinalRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := by
              intro _hRegular name hMem
              rw [hFinalCtx]
@@ -711,6 +716,14 @@ theorem of_let_one
              · exact
                  hFreshExtends candidate
                    (hLayout candidate hTail)
+           sourceDefined :=
+             by
+               rw [hSourceFinal']
+               exact
+                 FunctionsObserverOutcome.SourceDefined.of_scopedExact
+                   hDeclaredRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := by
              intro _hRegular candidate hMem
              rw [hFinalCtx]
@@ -865,6 +878,14 @@ theorem of_assign_one
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
            layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined :=
+             by
+               rw [hSourceFinal']
+               exact
+                 FunctionsObserverOutcome.SourceDefined.of_scopedExact
+                   hAssignedRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := fun _hRegular =>
              layoutWithinScope_of_run hLayoutScope ⟨targetFuel, hTargetRun⟩
            exitScope := by
@@ -1051,6 +1072,11 @@ theorem of_expr_primitive
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
            layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               prepared.relation
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := fun _hRegular =>
              layoutWithinScope_of_run hLayoutScope
                ⟨targetFuel, by simpa using hTargetRun⟩
@@ -1176,6 +1202,11 @@ theorem of_expr_call
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
            layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               returnedCall.relation
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := fun _hRegular =>
              layoutWithinScope_of_run hLayoutScope returnedCall.run
            exitScope := by
@@ -1321,6 +1352,11 @@ theorem of_assign_call
            freshExtends := hFreshExtends
            retains := fun _hRegular _candidate hMem => hMem
            layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               returnedCall.relation
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := fun _hRegular =>
              layoutWithinScope_of_run hLayoutScope returnedCall.run
            exitScope := by
@@ -1540,6 +1576,11 @@ theorem of_let_call
              · exact
                  hFreshExtends candidate
                    (hLayout candidate hOuter)
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               returnedCall.relation
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
            layoutScope := by
              intro _hRegular candidate hMem
              have hCallExtends :=
@@ -1612,6 +1653,10 @@ private theorem of_single_nonregular
       StateRelation.Vars.NamesWithin before.used ctx.scope)
     (hLayout :
       StateRelation.Vars.NamesWithin before.used finalLayout)
+    (hSourceDefined :
+      FunctionsObserverOutcome.SourceDefined finalLayout sourceFinal)
+    (hTargetRestriction :
+      FunctionsObserverOutcome.AbruptTargetRestriction ctx outcome)
     (hExitScope :
       FunctionsObserverOutcome.ExitScopeRel
         sourceControl ctx outcome.mode finalLayout) :
@@ -1651,6 +1696,8 @@ private theorem of_single_nonregular
       freshExtends := Fresh.Extends.refl before
       retains := fun hRegular => False.elim (hNonregular hRegular)
       layoutWithin := hLayout
+      sourceDefined := hSourceDefined
+      abruptTargetRestriction := hTargetRestriction
       layoutScope := fun hRegular => False.elim (hNonregular hRegular)
       exitScope := hExitScope }
   exact ⟨⟨result, rfl⟩⟩
@@ -1711,7 +1758,7 @@ theorem of_leave
       hRun
   obtain
       ⟨sourceShared, sourceVars, hSource,
-        _hShared, _hScoped, _hSourceDomain⟩ :=
+        _hShared, _hScoped, hSourceDomain⟩ :=
     hRel.2
   let sourceLeave :=
     source.withSource (EvmYul.Yul.State.setLeave source.source)
@@ -1777,6 +1824,18 @@ theorem of_leave
         simpa [targetLeave, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hLeaveUsed
+      (by
+        intro name hMem
+        rw [hSourceFinal']
+        rw [hSourceLeave]
+        change (sourceVars.lookup name).isSome = true
+        exact (hSourceDomain name).mpr (hLeaveSubset name hMem))
+      (by
+        simp only [FunctionsObserverOutcome.AbruptTargetRestriction,
+          Functions.Source.Effectful.Outcome.leave_mode]
+        exact
+          ⟨targetLeaveScope, hLeaveScope, target,
+            by rfl⟩)
       (by
         simp only [FunctionsObserverOutcome.ExitScopeRel,
           Functions.Source.Effectful.Outcome.leave_mode]
@@ -1845,7 +1904,7 @@ theorem of_break
       hRun
   obtain
       ⟨sourceShared, sourceVars, hSource,
-        _hShared, _hScoped, _hSourceDomain⟩ :=
+        _hShared, _hScoped, hSourceDomain⟩ :=
     hRel.2
   let sourceBreak :=
     source.withSource (EvmYul.Yul.State.setBreak source.source)
@@ -1911,6 +1970,18 @@ theorem of_break
         simpa [targetBreak, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hBreakUsed
+      (by
+        intro name hMem
+        rw [hSourceFinal']
+        rw [hSourceBreak]
+        change (sourceVars.lookup name).isSome = true
+        exact (hSourceDomain name).mpr (hBreakSubset name hMem))
+      (by
+        simp only [FunctionsObserverOutcome.AbruptTargetRestriction,
+          Functions.Source.Effectful.Outcome.brk_mode]
+        exact
+          ⟨targetBreakScope, hBreakScope, target,
+            by rfl⟩)
       (by
         simp only [FunctionsObserverOutcome.ExitScopeRel,
           Functions.Source.Effectful.Outcome.brk_mode]
@@ -1980,7 +2051,7 @@ theorem of_continue
       hRun
   obtain
       ⟨sourceShared, sourceVars, hSource,
-        _hShared, _hScoped, _hSourceDomain⟩ :=
+        _hShared, _hScoped, hSourceDomain⟩ :=
     hRel.2
   let sourceContinue :=
     source.withSource (EvmYul.Yul.State.setContinue source.source)
@@ -2048,6 +2119,18 @@ theorem of_continue
         simpa [targetContinue, Locals.Source.State.restrictTo] using
           hDomain.restrictTo)
       hScope hContinueUsed
+      (by
+        intro name hMem
+        rw [hSourceFinal']
+        rw [hSourceContinue]
+        change (sourceVars.lookup name).isSome = true
+        exact (hSourceDomain name).mpr (hContinueSubset name hMem))
+      (by
+        simp only [FunctionsObserverOutcome.AbruptTargetRestriction,
+          Functions.Source.Effectful.Outcome.cont_mode]
+        exact
+          ⟨targetContinueScope, hContinueScope, target,
+            by rfl⟩)
       (by
         simp only [FunctionsObserverOutcome.ExitScopeRel,
           Functions.Source.Effectful.Outcome.cont_mode]

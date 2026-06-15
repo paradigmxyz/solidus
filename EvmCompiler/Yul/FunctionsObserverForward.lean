@@ -387,6 +387,12 @@ structure ClosedListResult
     outcome.mode = .regular → finalLayout = entryLayout
   layoutWithin :
     StateRelation.Vars.NamesWithin final.used finalLayout
+  sourceDefined :
+    FunctionsObserverOutcome.SourceDefined finalLayout sourceFinal
+  sourceWithin :
+    FunctionsObserverOutcome.SourceWithin entryLayout sourceFinal
+  targetRestriction :
+    FunctionsObserverOutcome.ScopedTargetRestriction ctx outcome
   exitScope :
     FunctionsObserverOutcome.ExitScopeRel
       sourceControl ctx outcome.mode finalLayout
@@ -429,9 +435,49 @@ structure ScopedLoopResult
     outcome.mode = .regular → finalLayout = layout
   layoutWithin :
     StateRelation.Vars.NamesWithin final.used finalLayout
+  sourceDefined :
+    FunctionsObserverOutcome.SourceDefined finalLayout sourceFinal
+  sourceWithin :
+    FunctionsObserverOutcome.SourceWithin layout sourceFinal
+  abruptTargetRestriction :
+    FunctionsObserverOutcome.AbruptTargetRestriction loopCtx outcome
   exitScope :
     FunctionsObserverOutcome.ExitScopeRel
       sourceControl loopCtx outcome.mode finalLayout
+
+structure ContinuingBodyResult
+    {transcript : Trace}
+    (contract : MemoryContract.Contract)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (lower : List Functions.Stmt)
+    (final : Fresh.State)
+    (layout : List Name)
+    (sourceAfterBody : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (bodyBase : Functions.Source.Ctx) where
+  outcome :
+    Functions.Source.Effectful.Outcome
+      (Functions.ObserverSemantics.State transcript)
+  run :
+    ∃ fuel,
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program bodyBase { stmts := lower } fuel target =
+        .ok outcome
+  relation :
+    StateRelation.Replay.ScopedExactRel codeRel layout
+      (sourceAfterBody.withSource sourceAfterBody.source.reviveJump)
+      outcome.state
+  mode : outcome.mode = .regular ∨ outcome.mode = .cont
+  domain :
+    StateRelation.Vars.TargetDomainWithin
+      final.used outcome.state.source.vars
+  targetRestricted :
+    FunctionsObserverOutcome.TargetRestrictedTo
+      bodyBase.scope outcome.state
 
 namespace ScopedListResult
 
@@ -455,9 +501,9 @@ def close
         initial final entryLayout sourceOpen target ctx
         canBreak canContinue canLeave
         (sourceControl := sourceControl))
-    (hEntryRel :
-      StateRelation.Replay.ScopedExactRel codeRel
-        entryLayout sourceEntry target)
+    (hEntryDomain :
+      StateRelation.Vars.DomainExact entryLayout
+        sourceEntry.source.store)
     (hLayout :
       StateRelation.Vars.NamesWithin initial.used entryLayout)
     (hControl :
@@ -470,10 +516,6 @@ def close
     Nonempty
       (ClosedListResult contract codeRel program sourceControl lower
         initial final entryLayout sourceFinal target ctx) := by
-  obtain
-      ⟨entryShared, entryVars, hSourceEntry,
-        _hShared, _hScoped, hEntryDomain⟩ :=
-    hEntryRel.2
   by_cases hRegular :
       result.openResult.outcome.mode = .regular
   · obtain ⟨bodyShared, bodyVars, hBodySource⟩ :=
@@ -517,7 +559,8 @@ def close
         StateRelation.Replay.ScopedExactRel codeRel entryLayout
           (sourceOpen.withSource
             (.Ok bodyShared
-              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)))
+              (EvmYul.Yul.State.restrictVarStore
+                bodyVars sourceEntry.source.store)))
           targetFinal := by
       simpa [targetFinal] using
         StateRelation.Replay.scopedExact_restrict_scopes
@@ -528,8 +571,9 @@ def close
         sourceFinal =
           sourceOpen.withSource
             (.Ok bodyShared
-              (EvmYul.Yul.State.restrictVarStore bodyVars entryVars)) := by
-      rw [hSourceFinal, hBodySource, hSourceEntry]
+              (EvmYul.Yul.State.restrictVarStore
+                bodyVars sourceEntry.source.store)) := by
+      rw [hSourceFinal, hBodySource]
       rfl
     have hOutcomeRel :
         FunctionsObserverOutcome.ScopedOutcomeRel codeRel entryLayout
@@ -552,6 +596,20 @@ def close
           freshExtends := result.openResult.freshExtends
           regularLayout := fun _hResultRegular => rfl
           layoutWithin := hLayout.mono result.openResult.freshExtends
+          sourceDefined := by
+            rw [hSourceFinal']
+            exact
+              FunctionsObserverOutcome.SourceDefined.of_scopedExact
+                hClosedRel
+          sourceWithin := by
+            rw [hSourceFinal']
+            exact
+              FunctionsObserverOutcome.SourceWithin.of_scopedExact
+                hClosedRel
+          targetRestriction := by
+            simp only [FunctionsObserverOutcome.ScopedTargetRestriction,
+              Functions.Source.Effectful.Outcome.regular_mode]
+            exact ⟨result.openResult.outcome.state, rfl⟩
           exitScope := by
             simp [FunctionsObserverOutcome.ExitScopeRel] }⟩
   · obtain ⟨bodyFuel, hBodyOpen⟩ := result.openResult.run
@@ -576,10 +634,9 @@ def close
           result.openResult.finalLayout sourceFinal
           result.openResult.outcome := by
       rw [hSourceFinal]
-      simpa [hSourceEntry] using
+      exact
         FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
-          result.openResult.relation hRegular
-          hEntryDomain hExitSubset
+          result.openResult.relation hRegular hEntryDomain hExitSubset
     exact
       ⟨
         { finalLayout := result.openResult.finalLayout
@@ -591,6 +648,24 @@ def close
           regularLayout := fun hResultRegular =>
             False.elim (hRegular hResultRegular)
           layoutWithin := result.openResult.layoutWithin
+          sourceDefined := by
+            rw [hSourceFinal]
+            exact
+              FunctionsObserverOutcome.SourceDefined.restrictStoreTo
+                result.openResult.sourceDefined hEntryDomain hExitSubset
+          sourceWithin := by
+            rw [hSourceFinal]
+            exact
+              FunctionsObserverOutcome.SourceWithin.restrictStoreTo
+                (source := sourceOpen) hEntryDomain
+          targetRestriction := by
+            cases hMode : result.openResult.outcome.mode with
+            | regular =>
+                exact (hRegular hMode).elim
+            | brk | cont | leave | halt =>
+                simpa [FunctionsObserverOutcome.ScopedTargetRestriction,
+                  hMode] using
+                  result.openResult.abruptTargetRestriction
           exitScope := result.openResult.exitScope }⟩
 
 def prependForGuard
@@ -663,6 +738,11 @@ def prependForGuard
       freshExtends := hFresh
       retains := bodyResult.openResult.retains
       layoutWithin := bodyResult.openResult.layoutWithin
+      sourceDefined := bodyResult.openResult.sourceDefined
+      abruptTargetRestriction :=
+        FunctionsObserverOutcome.AbruptTargetRestriction.transport
+          prepared.prepared.control
+          bodyResult.openResult.abruptTargetRestriction
       layoutScope := bodyResult.openResult.layoutScope
       exitScope :=
         FunctionsObserverOutcome.ExitScopeRel.transportTarget
@@ -701,8 +781,9 @@ def closeForGuardBody
         (sourceControl := sourceControl))
     (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
     (hFresh : Fresh.Extends initial final)
-    (hEntryRel :
-      StateRelation.Replay.ScopedExactRel codeRel layout sourceEntry target)
+    (hEntryDomain :
+      StateRelation.Vars.DomainExact layout
+        sourceEntry.source.store)
     (hLayout :
       StateRelation.Vars.NamesWithin initial.used layout)
     (hControl :
@@ -721,9 +802,190 @@ def closeForGuardBody
         initial final layout sourceFinal target ctx) := by
   obtain ⟨combined⟩ :=
     prependForGuard prepared bodyResult hNonzero hFresh
-  exact close combined hEntryRel hLayout hControl hSourceFinal
+  exact close combined hEntryDomain hLayout hControl hSourceFinal
 
 end ScopedListResult
+
+namespace ClosedListResult
+
+def monoFresh
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (closed :
+      ClosedListResult contract codeRel program sourceControl lower
+        initial middle entryLayout sourceFinal target ctx)
+    (hExtends : Fresh.Extends middle final) :
+    ClosedListResult contract codeRel program sourceControl lower
+      initial final entryLayout sourceFinal target ctx :=
+  { finalLayout := closed.finalLayout
+    outcome := closed.outcome
+    run := closed.run
+    relation := closed.relation
+    domain := closed.domain.mono hExtends
+    freshExtends := Fresh.Extends.trans closed.freshExtends hExtends
+    regularLayout := closed.regularLayout
+    layoutWithin := closed.layoutWithin.mono hExtends
+    sourceDefined := closed.sourceDefined
+    sourceWithin := closed.sourceWithin
+    targetRestriction := closed.targetRestriction
+    exitScope := closed.exitScope }
+
+theorem sourceDomainAtEntry
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (closed :
+      ClosedListResult contract codeRel program sourceControl lower
+        initial final entryLayout sourceFinal target ctx)
+    (hFinalLayout : closed.finalLayout = entryLayout)
+    (hSource : sourceFinal.source.reviveJump = .Ok shared store) :
+    StateRelation.Vars.DomainExact entryLayout store := by
+  apply
+    FunctionsObserverOutcome.sourceDomainExact_of_source
+      (source := sourceFinal)
+  · simpa [hFinalLayout] using closed.sourceDefined
+  · exact closed.sourceWithin
+  · exact hSource
+
+def continuingBody
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterBody : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {bodyBase : Functions.Source.Ctx}
+    (closedBody :
+      ClosedListResult contract codeRel program
+        (ControlContextRel.forBodySourceControl layout sourceControl)
+        lower initial final layout sourceAfterBody target bodyBase)
+    (hContinues :
+      Yul.Source.Effectful.LoopBodyContinues sourceAfterBody.source)
+    (hContinueScope :
+      bodyBase.continueScope? = some bodyBase.scope) :
+    Nonempty
+      (ContinuingBodyResult contract codeRel program lower final layout
+        sourceAfterBody target bodyBase) := by
+  cases hSource : sourceAfterBody.source with
+  | OutOfFuel =>
+      simp [Yul.Source.Effectful.LoopBodyContinues, hSource] at hContinues
+  | Ok shared store =>
+      have hMode :
+          closedBody.outcome.mode = .regular := by
+        have hModeRel := closedBody.relation.mode
+        rw [hSource] at hModeRel
+        exact
+          FunctionsObserverOutcome.ModeRel.source_ok_target_regular
+            hModeRel
+      exact
+        ⟨
+          { outcome := closedBody.outcome
+            run := closedBody.run
+            relation := by
+              have hExact := closedBody.relation.exact hMode
+              have hLayout := closedBody.regularLayout hMode
+              simpa [hLayout] using hExact
+            mode := .inl hMode
+            domain := closedBody.domain
+            targetRestricted := by
+              simpa [FunctionsObserverOutcome.ScopedTargetRestriction,
+                hMode] using closedBody.targetRestriction }⟩
+  | Checkpoint jump =>
+      cases jump with
+      | Break shared store =>
+          simp [Yul.Source.Effectful.LoopBodyContinues, hSource] at hContinues
+      | Leave shared store =>
+          simp [Yul.Source.Effectful.LoopBodyContinues, hSource] at hContinues
+      | Continue shared store =>
+          have hMode :
+              closedBody.outcome.mode = .cont := by
+            have hModeRel := closedBody.relation.mode
+            rw [hSource] at hModeRel
+            exact
+              FunctionsObserverOutcome.ModeRel.source_continue_target_cont
+                hModeRel
+          have hExit := closedBody.exitScope
+          simp [FunctionsObserverOutcome.ExitScopeRel,
+            ControlContextRel.forBodySourceControl, hMode] at hExit
+          have hState := closedBody.relation.state
+          rw [← hExit.1] at hState
+          have hDomain' :
+              StateRelation.Vars.DomainExact layout store := by
+            apply
+              sourceDomainAtEntry closedBody hExit.1.symm
+            rw [hSource]
+            rfl
+          exact
+            ⟨
+              { outcome := closedBody.outcome
+                run := closedBody.run
+                relation :=
+                  StateRelation.Replay.scopedExact_of_scopedRel hState
+                    (by
+                      intro sourceShared sourceVars hSource'
+                      rw [hSource] at hSource'
+                      cases hSource'
+                      exact hDomain')
+                mode := .inr hMode
+                domain := closedBody.domain
+                targetRestricted := by
+                  have hRestricted := closedBody.targetRestriction
+                  simp [FunctionsObserverOutcome.ScopedTargetRestriction,
+                    FunctionsObserverOutcome.AbruptTargetRestriction,
+                    hMode] at hRestricted
+                  obtain ⟨scope, hScope, hState⟩ := hRestricted
+                  rw [hContinueScope] at hScope
+                  cases hScope
+                  exact hState }⟩
+
+end ClosedListResult
+
+namespace ContinuingBodyResult
+
+theorem targetDomain
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {lower : List Functions.Stmt}
+    {final : Fresh.State}
+    {layout used : List Name}
+    {sourceAfterBody : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {bodyBase : Functions.Source.Ctx}
+    (bodyResult :
+      ContinuingBodyResult contract codeRel program lower final layout
+        sourceAfterBody target bodyBase)
+    (hScope :
+      StateRelation.Vars.NamesWithin used bodyBase.scope) :
+    StateRelation.Vars.TargetDomainWithin used
+      bodyResult.outcome.state.source.vars :=
+  bodyResult.targetRestricted.domain hScope
+
+end ContinuingBodyResult
 
 namespace ScopedLoopResult
 
@@ -854,8 +1116,795 @@ def ofFalse
             (prepared.prepared.domain.mono hFresh).restrictTo
         regularLayout := fun _hRegular => rfl
         layoutWithin := hLayout
+        sourceDefined := by
+          rw [hSourceFinal]
+          exact
+            FunctionsObserverOutcome.SourceDefined.of_scopedExact
+              hFinalRel
+        sourceWithin := by
+          rw [hSourceFinal]
+          exact
+            FunctionsObserverOutcome.SourceWithin.of_scopedExact
+              hFinalRel
+        abruptTargetRestriction := by
+          simp [FunctionsObserverOutcome.AbruptTargetRestriction]
         exitScope := by
           simp [FunctionsObserverOutcome.ExitScopeRel] }⟩
+
+def ofBodyBreak
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {cond : Locals.Expr 1}
+    {postBase : Functions.Source.Ctx}
+    {post : Functions.Block}
+    {bodyBase loopCtx : Functions.Source.Ctx}
+    {lowerBody : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (closedBody :
+      ClosedListResult contract codeRel program
+        (ControlContextRel.forBodySourceControl layout sourceControl)
+        lowerBody initial final layout sourceAfterBody target bodyBase)
+    (hSourceBody :
+      sourceAfterBody.source = .Checkpoint (.Break shared store))
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource sourceAfterBody.source.reviveJump)
+    (hCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          cond target =
+        .ok (target, true)) :
+    Nonempty
+      (ScopedLoopResult contract codeRel program sourceControl cond
+        postBase post bodyBase { stmts := lowerBody }
+        final layout sourceFinal target loopCtx) := by
+  have hMode :
+      closedBody.outcome.mode = .brk := by
+    have hModeRel := closedBody.relation.mode
+    rw [hSourceBody] at hModeRel
+    exact
+      FunctionsObserverOutcome.ModeRel.source_break_target_brk
+        hModeRel
+  have hOutcomeEq :
+      closedBody.outcome =
+        Functions.Source.Effectful.Outcome.brk closedBody.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_brk_of_mode hMode
+  obtain ⟨bodyFuel, hBody⟩ := closedBody.run
+  rw [hOutcomeEq] at hBody
+  have hLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program loopCtx cond postBase post bodyBase
+          { stmts := lowerBody }
+          (bodyFuel + 1) target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            closedBody.outcome.state) :=
+    Functions.Source.Effectful.Stmt.runForLoop_body_brk_of_runs
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hCond hBody
+  have hExact :
+      StateRelation.Replay.ScopedExactRel codeRel layout sourceFinal
+        closedBody.outcome.state := by
+    rw [hSourceFinal]
+    have hExit := closedBody.exitScope
+    simp [FunctionsObserverOutcome.ExitScopeRel,
+      ControlContextRel.forBodySourceControl, hMode] at hExit
+    have hState := closedBody.relation.state
+    rw [← hExit.1] at hState
+    apply
+      StateRelation.Replay.scopedExact_of_scopedRel
+        hState
+    intro sourceShared sourceVars hSource
+    rw [hSourceBody] at hSource
+    cases hSource
+    apply
+      ClosedListResult.sourceDomainAtEntry closedBody hExit.1.symm
+    rw [hSourceBody]
+    rfl
+  have hSourceFinalOk :
+      sourceFinal.source = .Ok shared store := by
+    rw [hSourceFinal, hSourceBody]
+    rfl
+  have hRelation :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout sourceFinal
+        (Functions.Source.Effectful.Outcome.regular
+          closedBody.outcome.state) :=
+    FunctionsObserverOutcome.ScopedOutcomeRel.regular
+      hSourceFinalOk hExact
+  exact
+    ⟨
+      { finalLayout := layout
+        outcome :=
+          Functions.Source.Effectful.Outcome.regular
+            closedBody.outcome.state
+        run := ⟨bodyFuel + 1, hLoop⟩
+        relation := hRelation
+        domain := closedBody.domain
+        regularLayout := fun _hRegular => rfl
+        layoutWithin := by
+          have hExit := closedBody.exitScope
+          simp [FunctionsObserverOutcome.ExitScopeRel,
+            ControlContextRel.forBodySourceControl, hMode] at hExit
+          simpa [← hExit.1] using closedBody.layoutWithin
+        sourceDefined :=
+          FunctionsObserverOutcome.SourceDefined.of_scopedExact hExact
+        sourceWithin :=
+          FunctionsObserverOutcome.SourceWithin.of_scopedExact hExact
+        abruptTargetRestriction := by
+          simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+        exitScope := by
+          simp [FunctionsObserverOutcome.ExitScopeRel] }⟩
+
+def ofBodyLeave
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {cond : Locals.Expr 1}
+    {postBase : Functions.Source.Ctx}
+    {post : Functions.Block}
+    {bodyBase loopCtx : Functions.Source.Ctx}
+    {lowerBody : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (closedBody :
+      ClosedListResult contract codeRel program
+        (ControlContextRel.forBodySourceControl layout sourceControl)
+        lowerBody initial final layout sourceAfterBody target bodyBase)
+    (hSourceBody :
+      sourceAfterBody.source = .Checkpoint (.Leave shared store))
+    (hSourceFinal : sourceFinal = sourceAfterBody)
+    (hLeaveScope : bodyBase.leaveScope? = loopCtx.leaveScope?)
+    (hCond :
+      Functions.Source.Effectful.Expr.evalCondition
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          cond target =
+        .ok (target, true)) :
+    Nonempty
+      (ScopedLoopResult contract codeRel program sourceControl cond
+        postBase post bodyBase { stmts := lowerBody }
+        final layout sourceFinal target loopCtx) := by
+  have hMode :
+      closedBody.outcome.mode = .leave := by
+    have hModeRel := closedBody.relation.mode
+    rw [hSourceBody] at hModeRel
+    exact
+      FunctionsObserverOutcome.ModeRel.source_leave_target_leave
+        hModeRel
+  have hOutcomeEq :
+      closedBody.outcome =
+        Functions.Source.Effectful.Outcome.leave closedBody.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_leave_of_mode hMode
+  obtain ⟨bodyFuel, hBody⟩ := closedBody.run
+  rw [hOutcomeEq] at hBody
+  have hLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program loopCtx cond postBase post bodyBase
+          { stmts := lowerBody }
+          (bodyFuel + 1) target =
+        .ok
+          (Functions.Source.Effectful.Outcome.leave
+            closedBody.outcome.state) :=
+    Functions.Source.Effectful.Stmt.runForLoop_body_leave_of_runs
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hCond hBody
+  exact
+    ⟨
+      { finalLayout := closedBody.finalLayout
+        outcome :=
+          Functions.Source.Effectful.Outcome.leave
+            closedBody.outcome.state
+        run := ⟨bodyFuel + 1, hLoop⟩
+        relation := by
+          rw [hSourceFinal, ← hOutcomeEq]
+          exact closedBody.relation
+        domain := closedBody.domain
+        regularLayout := by
+          intro hRegular
+          simp at hRegular
+        layoutWithin := closedBody.layoutWithin
+        sourceDefined := by
+          rw [hSourceFinal]
+          exact closedBody.sourceDefined
+        sourceWithin := by
+          rw [hSourceFinal]
+          exact closedBody.sourceWithin
+        abruptTargetRestriction := by
+          have hRestricted := closedBody.targetRestriction
+          simp [FunctionsObserverOutcome.ScopedTargetRestriction,
+            FunctionsObserverOutcome.AbruptTargetRestriction, hMode]
+            at hRestricted ⊢
+          obtain ⟨scope, hScope, hState⟩ := hRestricted
+          exact
+            ⟨scope, by rw [← hLeaveScope]; exact hScope, hState⟩
+        exitScope := by
+          have hExit := closedBody.exitScope
+          simp [FunctionsObserverOutcome.ExitScopeRel,
+            ControlContextRel.forBodySourceControl, hMode]
+            at hExit ⊢
+          rw [← hLeaveScope]
+          exact hExit }⟩
+
+def ofPostLeave
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {postBase : Functions.Source.Ctx}
+    {lowerPost lowerBody : List Functions.Stmt}
+    {bodyBase loopCtx : Functions.Source.Ctx}
+    {bodyFinal postInitial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterBody sourceAfterPost sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (bodyResult :
+      ContinuingBodyResult contract codeRel program lowerBody bodyFinal layout
+        sourceAfterBody target bodyBase)
+    (closedPost :
+      ClosedListResult contract codeRel program
+        (ControlContextRel.forPostSourceControl sourceControl)
+        lowerPost postInitial final layout sourceAfterPost
+        bodyResult.outcome.state postBase)
+    (hSourcePost :
+      sourceAfterPost.source = .Checkpoint (.Leave shared store))
+    (hSourceFinal : sourceFinal = sourceAfterPost)
+    (hLeaveScope : postBase.leaveScope? = loopCtx.leaveScope?) :
+    Nonempty
+      (ScopedLoopResult contract codeRel program sourceControl
+        (.lit (EvmYul.UInt256.ofNat 1))
+        postBase { stmts := lowerPost } bodyBase { stmts := lowerBody }
+        final layout sourceFinal target loopCtx) := by
+  have hPostMode :
+      closedPost.outcome.mode = .leave := by
+    have hModeRel := closedPost.relation.mode
+    rw [hSourcePost] at hModeRel
+    exact
+      FunctionsObserverOutcome.ModeRel.source_leave_target_leave hModeRel
+  have hPostEq :
+      closedPost.outcome =
+        Functions.Source.Effectful.Outcome.leave closedPost.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_leave_of_mode hPostMode
+  obtain ⟨bodyFuel, hBody⟩ := bodyResult.run
+  obtain ⟨postFuel, hPost⟩ := closedPost.run
+  rw [hPostEq] at hPost
+  let loopFuel := max bodyFuel postFuel
+  have hBody' :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program bodyBase { stmts := lowerBody } loopFuel target =
+        .ok bodyResult.outcome :=
+    Functions.Source.Effectful.Block.runScoped_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (Nat.le_max_left _ _) hBody
+  have hPost' :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program postBase { stmts := lowerPost } loopFuel
+          bodyResult.outcome.state =
+        .ok
+          (Functions.Source.Effectful.Outcome.leave
+            closedPost.outcome.state) :=
+    Functions.Source.Effectful.Block.runScoped_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (Nat.le_max_right _ _) hPost
+  have hLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program loopCtx (.lit (EvmYul.UInt256.ofNat 1))
+          postBase { stmts := lowerPost }
+          bodyBase { stmts := lowerBody } (loopFuel + 1) target =
+        .ok
+          (Functions.Source.Effectful.Outcome.leave
+            closedPost.outcome.state) := by
+    rcases bodyResult.mode with hRegular | hContinue
+    · have hBodyEq :
+          bodyResult.outcome =
+            Functions.Source.Effectful.Outcome.regular
+              bodyResult.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+      rw [hBodyEq] at hBody'
+      exact
+        Functions.Source.Effectful.Stmt.runForLoop_regular_post_leave_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program
+          (by
+            exact
+              Functions.ObserverSafety.SafeSemantics.evalCondition_one target)
+          hBody' hPost'
+    · have hBodyEq :
+          bodyResult.outcome =
+            Functions.Source.Effectful.Outcome.cont
+              bodyResult.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_cont_of_mode hContinue
+      rw [hBodyEq] at hBody'
+      exact
+        Functions.Source.Effectful.Stmt.runForLoop_cont_post_leave_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program
+          (by
+            exact
+              Functions.ObserverSafety.SafeSemantics.evalCondition_one target)
+          hBody' hPost'
+  exact
+    ⟨
+      { finalLayout := closedPost.finalLayout
+        outcome :=
+          Functions.Source.Effectful.Outcome.leave
+            closedPost.outcome.state
+        run := ⟨loopFuel + 1, hLoop⟩
+        relation := by
+          rw [hSourceFinal, ← hPostEq]
+          exact closedPost.relation
+        domain := closedPost.domain
+        regularLayout := by
+          intro hRegular
+          simp at hRegular
+        layoutWithin := closedPost.layoutWithin
+        sourceDefined := by
+          rw [hSourceFinal]
+          exact closedPost.sourceDefined
+        sourceWithin := by
+          rw [hSourceFinal]
+          exact closedPost.sourceWithin
+        abruptTargetRestriction := by
+          have hRestricted := closedPost.targetRestriction
+          simp [FunctionsObserverOutcome.ScopedTargetRestriction,
+            FunctionsObserverOutcome.AbruptTargetRestriction, hPostMode]
+            at hRestricted ⊢
+          obtain ⟨scope, hScope, hState⟩ := hRestricted
+          exact
+            ⟨scope, by rw [← hLeaveScope]; exact hScope, hState⟩
+        exitScope := by
+          have hExit := closedPost.exitScope
+          simp [FunctionsObserverOutcome.ExitScopeRel,
+            ControlContextRel.forPostSourceControl, hPostMode]
+            at hExit ⊢
+          rw [← hLeaveScope]
+          exact hExit }⟩
+
+def ofRecurse
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {postBase : Functions.Source.Ctx}
+    {lowerPost lowerBody : List Functions.Stmt}
+    {bodyBase loopCtx : Functions.Source.Ctx}
+    {bodyFinal postInitial final : Fresh.State}
+    {layout : List Name}
+    {sourceAfterBody sourceAfterPost sourceAfterLoop sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {shared : EvmYul.SharedState .Yul}
+    {store : EvmYul.Yul.VarStore}
+    (bodyResult :
+      ContinuingBodyResult contract codeRel program lowerBody bodyFinal layout
+        sourceAfterBody target bodyBase)
+    (closedPost :
+      ClosedListResult contract codeRel program
+        (ControlContextRel.forPostSourceControl sourceControl)
+        lowerPost postInitial final layout sourceAfterPost
+        bodyResult.outcome.state postBase)
+    (hSourcePost : sourceAfterPost.source = .Ok shared store)
+    (recursive :
+      ScopedLoopResult contract codeRel program sourceControl
+        (.lit (EvmYul.UInt256.ofNat 1))
+        postBase { stmts := lowerPost } bodyBase { stmts := lowerBody }
+        final layout sourceAfterLoop closedPost.outcome.state loopCtx)
+    (hSourceFinal : sourceFinal = sourceAfterLoop) :
+    Nonempty
+      (ScopedLoopResult contract codeRel program sourceControl
+        (.lit (EvmYul.UInt256.ofNat 1))
+        postBase { stmts := lowerPost } bodyBase { stmts := lowerBody }
+        final layout sourceFinal target loopCtx) := by
+  have hPostMode :
+      closedPost.outcome.mode = .regular := by
+    have hModeRel := closedPost.relation.mode
+    rw [hSourcePost] at hModeRel
+    exact
+      FunctionsObserverOutcome.ModeRel.source_ok_target_regular hModeRel
+  have hPostEq :
+      closedPost.outcome =
+        Functions.Source.Effectful.Outcome.regular
+          closedPost.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_regular_of_mode hPostMode
+  obtain ⟨bodyFuel, hBody⟩ := bodyResult.run
+  obtain ⟨postFuel, hPost⟩ := closedPost.run
+  obtain ⟨recursiveFuel, hRecursive⟩ := recursive.run
+  rw [hPostEq] at hPost
+  let loopFuel := max bodyFuel (max postFuel recursiveFuel)
+  have hBody' :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program bodyBase { stmts := lowerBody } loopFuel target =
+        .ok bodyResult.outcome :=
+    Functions.Source.Effectful.Block.runScoped_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [loopFuel]) hBody
+  have hPost' :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program postBase { stmts := lowerPost } loopFuel
+          bodyResult.outcome.state =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            closedPost.outcome.state) :=
+    Functions.Source.Effectful.Block.runScoped_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [loopFuel]) hPost
+  have hRecursive' :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program loopCtx (.lit (EvmYul.UInt256.ofNat 1))
+          postBase { stmts := lowerPost }
+          bodyBase { stmts := lowerBody } loopFuel
+          closedPost.outcome.state =
+        .ok recursive.outcome :=
+    Functions.Source.Effectful.Stmt.runForLoop_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [loopFuel]) hRecursive
+  have hLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program loopCtx (.lit (EvmYul.UInt256.ofNat 1))
+          postBase { stmts := lowerPost }
+          bodyBase { stmts := lowerBody } (loopFuel + 1) target =
+        .ok recursive.outcome := by
+    rcases bodyResult.mode with hRegular | hContinue
+    · have hBodyEq :
+          bodyResult.outcome =
+            Functions.Source.Effectful.Outcome.regular
+              bodyResult.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+      rw [hBodyEq] at hBody'
+      exact
+        Functions.Source.Effectful.Stmt.runForLoop_regular_post_recurse_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program
+          (Functions.ObserverSafety.SafeSemantics.evalCondition_one target)
+          hBody' hPost' hRecursive'
+    · have hBodyEq :
+          bodyResult.outcome =
+            Functions.Source.Effectful.Outcome.cont
+              bodyResult.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_cont_of_mode hContinue
+      rw [hBodyEq] at hBody'
+      exact
+        Functions.Source.Effectful.Stmt.runForLoop_cont_post_recurse_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program
+          (Functions.ObserverSafety.SafeSemantics.evalCondition_one target)
+          hBody' hPost' hRecursive'
+  exact
+    ⟨
+      { finalLayout := recursive.finalLayout
+        outcome := recursive.outcome
+        run := ⟨loopFuel + 1, hLoop⟩
+        relation := by
+          rw [hSourceFinal]
+          exact recursive.relation
+        domain := recursive.domain
+        regularLayout := recursive.regularLayout
+        layoutWithin := recursive.layoutWithin
+        sourceDefined := by
+          rw [hSourceFinal]
+          exact recursive.sourceDefined
+        sourceWithin := by
+          rw [hSourceFinal]
+          exact recursive.sourceWithin
+        abruptTargetRestriction := recursive.abruptTargetRestriction
+        exitScope := recursive.exitScope }⟩
+
+def toOpen
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {post body : Functions.Block}
+    {initial final : Fresh.State}
+    {layout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (loop :
+      ScopedLoopResult contract codeRel program sourceControl
+        (.lit (EvmYul.UInt256.ofNat 1))
+        ctx.withoutLoopControl post
+        (ctx.withLoopControl ctx.scope ctx.scope) body
+        final layout sourceFinal target ctx.withoutLoopControl)
+    (hFresh : Fresh.Extends initial final)
+    (hScope : StateRelation.Vars.NamesWithin final.used ctx.scope)
+    (hControl :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx) :
+    Nonempty
+      ({ result :
+          FunctionsObserverOutcome.ScopedOpenResult
+            contract codeRel program
+            [.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+              post body]
+            initial final layout sourceFinal target ctx
+            (sourceControl := sourceControl) //
+          result.outcome.mode = .regular →
+            result.finalLayout = layout }) := by
+  obtain ⟨loopFuel, hLoop⟩ := loop.run
+  let commonFuel := max 1 loopFuel
+  have hInit :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl commonFuel { stmts := [] } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular target,
+            ctx.withoutLoopControl) :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel])
+      (Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx.withoutLoopControl 0 target)
+  have hLoop' :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope)
+          body commonFuel target =
+        .ok loop.outcome :=
+    Functions.Source.Effectful.Stmt.runForLoop_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel]) hLoop
+  rcases
+      Functions.Source.Effectful.Stmt.runForLoop_regular_or_exit
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hLoop' with hRegular | hExit
+  · have hLoopEq :
+        loop.outcome =
+          Functions.Source.Effectful.Outcome.regular loop.outcome.state :=
+      Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+    have hLoopRegular := hLoop'
+    rw [hLoopEq] at hLoopRegular
+    let targetFinal :=
+      loop.outcome.state.withSource
+        (loop.outcome.state.source.restrictTo ctx.scope)
+    have hStmt :
+        Functions.Source.Effectful.Stmt.run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx (commonFuel + 1)
+            (.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+              post body) target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular targetFinal, ctx) := by
+      simpa [targetFinal] using
+        Functions.Source.Effectful.Stmt.run_for_regular_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hInit hLoopRegular
+    obtain ⟨runFuel, hRun⟩ :=
+      Functions.Source.Effectful.Block.runOpen_singleton_of_run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hStmt
+    obtain ⟨sourceShared, sourceVars, hSource⟩ :=
+      FunctionsObserverOutcome.ModeRel.target_regular_source_ok
+        loop.relation.mode hRegular
+    have hLayoutEq := loop.regularLayout hRegular
+    have hExact :
+        StateRelation.Replay.ScopedExactRel codeRel loop.finalLayout
+          sourceFinal targetFinal := by
+      have hLoopExact := loop.relation.exact hRegular
+      have hRevived :
+          sourceFinal.withSource sourceFinal.source.reviveJump =
+            sourceFinal := by
+        rw [hSource]
+        change sourceFinal.withSource (.Ok sourceShared sourceVars) =
+          sourceFinal
+        rw [← hSource]
+        exact
+          Simulation.ResourceReplay.State.withSource_self sourceFinal
+      rw [hRevived] at hLoopExact
+      simpa [targetFinal] using
+        StateRelation.Replay.scopedExact_restrict_target_scope
+          hLoopExact
+          (by
+            intro name hMem
+            exact hControl.scope name (by simpa [hLayoutEq] using hMem))
+    exact
+      ⟨⟨
+        { finalLayout := loop.finalLayout
+          outcome :=
+            Functions.Source.Effectful.Outcome.regular targetFinal
+          finalCtx := ctx
+          run := ⟨runFuel, hRun⟩
+          relation :=
+            FunctionsObserverOutcome.ScopedOutcomeRel.regular
+              hSource hExact
+          domain := by
+            simpa [targetFinal, Locals.Source.State.restrictTo] using
+              loop.domain.restrictTo
+          scope := hScope
+          control := Functions.Source.Ctx.SameControl.refl ctx
+          freshExtends := hFresh
+          retains := by
+            intro _hResultRegular name hMem
+            simpa [hLayoutEq] using hMem
+          layoutWithin := loop.layoutWithin
+          sourceDefined :=
+            FunctionsObserverOutcome.SourceDefined.of_scopedExact hExact
+          abruptTargetRestriction := by
+            simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+          layoutScope := by
+            intro _hResultRegular name hMem
+            exact hControl.scope name (by simpa [hLayoutEq] using hMem)
+          exitScope := by
+            simp [FunctionsObserverOutcome.ExitScopeRel] },
+        fun _hResultRegular => hLayoutEq⟩⟩
+  · have hStmt :
+        Functions.Source.Effectful.Stmt.run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx (commonFuel + 1)
+            (.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+              post body) target =
+          .ok (loop.outcome, ctx) :=
+      Functions.Source.Effectful.Stmt.run_for_exit_of_runs
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hExit hInit hLoop'
+    obtain ⟨runFuel, hRun⟩ :=
+      Functions.Source.Effectful.Block.runOpen_singleton_of_run
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hStmt
+    exact
+      ⟨⟨
+        { finalLayout := loop.finalLayout
+          outcome := loop.outcome
+          finalCtx := ctx
+          run := ⟨runFuel, hRun⟩
+          relation := loop.relation
+          domain := loop.domain
+          scope := hScope
+          control := Functions.Source.Ctx.SameControl.refl ctx
+          freshExtends := hFresh
+          retains := by
+            intro hResultRegular
+            exact (hExit.not_regular hResultRegular).elim
+          layoutWithin := loop.layoutWithin
+          sourceDefined := loop.sourceDefined
+          abruptTargetRestriction := by
+            cases hMode : loop.outcome.mode with
+            | regular =>
+                exact (hExit.not_regular hMode).elim
+            | brk =>
+                exact
+                  (hExit.ne_brk loop.outcome.state
+                    (Functions.Source.Effectful.Outcome.eq_brk_of_mode
+                      hMode)).elim
+            | cont =>
+                exact
+                  (hExit.ne_cont loop.outcome.state
+                    (Functions.Source.Effectful.Outcome.eq_cont_of_mode
+                      hMode)).elim
+            | leave =>
+                simpa [FunctionsObserverOutcome.AbruptTargetRestriction,
+                  hMode, Functions.Source.Ctx.withoutLoopControl] using
+                  loop.abruptTargetRestriction
+            | halt kind =>
+                simp [FunctionsObserverOutcome.AbruptTargetRestriction,
+                  hMode]
+          layoutScope := by
+            intro hResultRegular
+            exact (hExit.not_regular hResultRegular).elim
+          exitScope := by
+            cases hMode : loop.outcome.mode with
+            | regular =>
+                exact (hExit.not_regular hMode).elim
+            | brk =>
+                exact
+                  (hExit.ne_brk loop.outcome.state
+                    (Functions.Source.Effectful.Outcome.eq_brk_of_mode
+                      hMode)).elim
+            | cont =>
+                exact
+                  (hExit.ne_cont loop.outcome.state
+                    (Functions.Source.Effectful.Outcome.eq_cont_of_mode
+                      hMode)).elim
+            | leave =>
+                simpa [FunctionsObserverOutcome.ExitScopeRel, hMode,
+                  Functions.Source.Ctx.withoutLoopControl] using
+                  loop.exitScope
+            | halt kind =>
+                simpa [FunctionsObserverOutcome.ExitScopeRel, hMode] using
+                  loop.exitScope },
+        fun hResultRegular => (hExit.not_regular hResultRegular).elim⟩⟩
 
 end ScopedLoopResult
 
@@ -952,6 +2001,83 @@ def RecursiveOpenListForward
           canBreak canContinue canLeave
           (sourceControl := sourceControl))
 
+def RecursiveScopedLoopForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {sourceFuel compilerFuel : Nat}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after afterCond afterPost : Fresh.State}
+    {layout : List Name}
+    {cond : AstExpr}
+    {post body : List AstStmt}
+    {preCond : List Functions.Stmt}
+    {lowerCond : Locals.Expr 1}
+    {lowerPost lowerBody : Functions.Block}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool},
+    sourceFuel < bound →
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          layout 1 cond =
+        true →
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout false false canLeave post =
+        true →
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout true true canLeave body =
+        true →
+      StateRelation.Vars.NamesWithin before.used
+          (Expr.names cond) →
+      StateRelation.Vars.NamesWithin before.used
+          (Stmt.List.names post) →
+      StateRelation.Vars.NamesWithin before.used
+          (Stmt.List.names body) →
+      Expr.lower1Unchecked? before cond =
+        some (preCond, lowerCond, afterCond) →
+      Stmt.List.toBlockUncheckedFuel?
+          compilerFuel
+          afterCond post =
+        some (lowerPost, afterPost) →
+      Stmt.List.toBlockUncheckedFuel?
+          compilerFuel
+          afterPost body =
+        some (lowerBody, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      StateRelation.Vars.NamesWithin before.used layout →
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx →
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source =
+        .ok sourceFinal →
+      Nonempty
+        (ScopedLoopResult contract codeRel targetProgram.toFunctions
+          sourceControl (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl lowerPost
+          (ctx.withLoopControl ctx.scope ctx.scope)
+          { stmts :=
+              preCond ++
+                .if_
+                  (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+                  { stmts := [.brk] } ::
+                lowerBody.stmts }
+          after layout sourceFinal target ctx.withoutLoopControl)
+
 inductive CompoundStmt : AstStmt → Prop where
   | block (body : List AstStmt) : CompoundStmt (.Block body)
   | switch (scrutinee : AstExpr)
@@ -1031,9 +2157,9 @@ theorem ofCompound
         contract transcript codeRel sourceProgram targetProgram profile bound)
     (hCompound :
       RecursiveOpenCompoundForward contract transcript codeRel
-        sourceProgram targetProgram profile bound) :
+        sourceProgram targetProgram profile (bound + 1)) :
     RecursiveOpenStmtForward contract transcript codeRel
-      sourceProgram targetProgram profile bound := by
+      sourceProgram targetProgram profile (bound + 1) := by
   intro sourceFuel compilerFuel sourceControl before after layout stmt lower
     source sourceFinal target ctx canBreak canContinue canLeave
     hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
@@ -1041,7 +2167,7 @@ theorem ofCompound
       FunctionsObserverCall.RecursiveScopedValueForward
         contract transcript codeRel sourceProgram targetProgram profile
         sourceFuel :=
-    hValue.mono (Nat.le_of_lt hFuel)
+    hValue.mono (by omega)
   have hExprAt :
       FunctionsObserverCall.RecursiveScopedExpressionForward
         contract transcript codeRel sourceProgram targetProgram profile
@@ -1051,7 +2177,7 @@ theorem ofCompound
       FunctionsObserverCall.RecursiveBodyForward
         contract transcript codeRel sourceProgram targetProgram profile
         sourceFuel :=
-    hBody.mono (Nat.le_of_lt hFuel)
+    hBody.mono (by omega)
   cases stmt with
   | Block body =>
       exact
@@ -1284,7 +2410,7 @@ theorem ofStmt
       RecursiveOpenStmtForward contract transcript codeRel
         sourceProgram targetProgram profile bound) :
     RecursiveOpenListForward contract transcript codeRel
-      sourceProgram targetProgram profile bound := by
+      sourceProgram targetProgram profile (bound + 1) := by
   intro sourceFuel
   induction sourceFuel using Nat.strong_induction_on with
   | h sourceFuel ih =>
@@ -1409,7 +2535,7 @@ theorem ofStmt
                 (ctx := headResult.openResult.finalCtx)
                 (canBreak := canBreak)
                 (canContinue := canContinue) (canLeave := canLeave)
-                hPreviousBound hTailOk' hTailNames hLowerTail hHeadRel
+                (by omega) hTailOk' hTailNames hLowerTail hHeadRel
                 headResult.openResult.domain
                 headResult.openResult.scope
                 headResult.openResult.layoutWithin
@@ -1459,6 +2585,664 @@ theorem ofStmt
 end RecursiveOpenListForward
 
 namespace RecursiveOpenCompoundForward
+
+private theorem closeGuardedBody
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {initial condFresh bodyInitial final : Fresh.State}
+    {layout : List Name}
+    {body : List AstStmt}
+    {preCond : List Functions.Stmt}
+    {lowerCond : Locals.Expr 1}
+    {lowerBody : Functions.Block}
+    {sourceAfterCond sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {bodyBase : Functions.Source.Ctx}
+    {canLeave : Bool}
+    {value : Word}
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (prepared :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel targetProgram.toFunctions
+        preCond lowerCond condFresh layout sourceAfterCond
+        target bodyBase value)
+    (hFuel : sourceFuel < bound)
+    (hBodyOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout true true canLeave body =
+        true)
+    (hBodyNames :
+      StateRelation.Vars.NamesWithin bodyInitial.used
+        (Stmt.List.names body))
+    (hLowerBody :
+      Stmt.List.toBlockUncheckedFuel? compilerFuel bodyInitial body =
+        some (lowerBody, final))
+    (hBodyInitial : Fresh.Extends condFresh bodyInitial)
+    (hFresh : Fresh.Extends initial final)
+    (hLayout :
+      StateRelation.Vars.NamesWithin initial.used layout)
+    (hLayoutBodyInitial :
+      StateRelation.Vars.NamesWithin bodyInitial.used layout)
+    (hControl :
+      ControlContextRel sourceControl layout true true canLeave bodyBase)
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
+    (hBodyRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block body) (some sourceProgram.contract)
+          sourceAfterCond =
+        .ok sourceAfterBody) :
+    Nonempty
+      (ClosedListResult contract codeRel targetProgram.toFunctions
+        sourceControl
+        (preCond ++
+          .if_
+              (.prim .iszero (Locals.ExprSeq.cons lowerCond .nil))
+              { stmts := [.brk] } ::
+            lowerBody.stmts)
+        initial final layout sourceAfterBody target bodyBase) := by
+  obtain ⟨listCompilerFuel, lowerBodyStmts, _hBlockFuel,
+      hLowerBodyList, hLowerBodyEq⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerBody
+  subst lowerBody
+  obtain ⟨listSourceFuel, sourceOpen, _hSourceFuel,
+      hBodyListRun, hSourceAfterBody⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hBodyRun
+  have hPreparedLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope
+        layout prepared.prepared.finalCtx := by
+    obtain ⟨preFuel, hPreRun⟩ := prepared.prepared.run
+    have hExtends :=
+      Functions.Source.Effectful.Block.runOpen_scopeExtends
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram.toFunctions hPreRun
+    exact fun name hMem =>
+      hExtends name (hControl.scope name hMem)
+  have hPreparedControl :
+      ControlContextRel sourceControl layout true true canLeave
+        prepared.prepared.finalCtx :=
+    ControlContextRel.transport hControl
+      (fun _name hMem => hMem)
+      prepared.prepared.control hPreparedLayoutScope
+  obtain ⟨bodyResult⟩ :=
+    hList (sourceFuel := listSourceFuel)
+      (compilerFuel := listCompilerFuel)
+      (before := bodyInitial) (after := final)
+      (layout := layout) (stmts := body)
+      (lower := lowerBodyStmts)
+      (source := sourceAfterCond) (sourceFinal := sourceOpen)
+      (target := prepared.prepared.evalTarget)
+      (ctx := prepared.prepared.finalCtx)
+      (canBreak := true) (canContinue := true)
+      (canLeave := canLeave)
+      (by omega) hBodyOk hBodyNames hLowerBodyList
+      prepared.relation
+      (prepared.prepared.domain.mono hBodyInitial)
+      (prepared.prepared.scope.mono hBodyInitial)
+      hLayoutBodyInitial
+      hPreparedControl hBodyListRun
+  exact
+    ScopedListResult.closeForGuardBody prepared bodyResult hNonzero
+      hFresh
+      (StateRelation.Replay.sourceStoreDomain_of_scopedExact
+        prepared.relation)
+      hLayout hControl hSourceAfterBody
+
+private theorem closeLoopPost
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {bodyFinal postInitial postFinal final : Fresh.State}
+    {layout : List Name}
+    {post : List AstStmt}
+    {lowerBody : List Functions.Stmt}
+    {lowerPost : Functions.Block}
+    {sourceAfterBody sourceAfterPost :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {bodyBase postBase : Functions.Source.Ctx}
+    {canLeave : Bool}
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (bodyResult :
+      ContinuingBodyResult contract codeRel targetProgram.toFunctions
+        lowerBody bodyFinal layout sourceAfterBody target bodyBase)
+    (hFuel : sourceFuel < bound)
+    (hPostOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout false false canLeave post =
+        true)
+    (hPostNames :
+      StateRelation.Vars.NamesWithin postInitial.used
+        (Stmt.List.names post))
+    (hLowerPost :
+      Stmt.List.toBlockUncheckedFuel? compilerFuel postInitial post =
+        some (lowerPost, postFinal))
+    (hFinalFresh : Fresh.Extends postFinal final)
+    (hBodyScope :
+      StateRelation.Vars.NamesWithin postInitial.used bodyBase.scope)
+    (hPostScope :
+      StateRelation.Vars.NamesWithin postInitial.used postBase.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin postInitial.used layout)
+    (hControl :
+      ControlContextRel sourceControl layout false false canLeave postBase)
+    (hPostRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block post) (some sourceProgram.contract)
+          (sourceAfterBody.withSource sourceAfterBody.source.reviveJump) =
+        .ok sourceAfterPost) :
+    Nonempty
+      (ClosedListResult contract codeRel targetProgram.toFunctions
+        sourceControl lowerPost.stmts postInitial final layout
+        sourceAfterPost bodyResult.outcome.state postBase) := by
+  obtain ⟨listCompilerFuel, lowerPostStmts, _hBlockFuel,
+      hLowerPostList, hLowerPostEq⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLowerPost
+  subst lowerPost
+  obtain ⟨listSourceFuel, sourceOpen, _hSourceFuel,
+      hPostListRun, hSourceAfterPost⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hPostRun
+  obtain ⟨postResult⟩ :=
+    hList (sourceFuel := listSourceFuel)
+      (compilerFuel := listCompilerFuel)
+      (before := postInitial) (after := postFinal)
+      (layout := layout) (stmts := post)
+      (lower := lowerPostStmts)
+      (source :=
+        sourceAfterBody.withSource sourceAfterBody.source.reviveJump)
+      (sourceFinal := sourceOpen)
+      (target := bodyResult.outcome.state)
+      (ctx := postBase)
+      (canBreak := false) (canContinue := false)
+      (canLeave := canLeave)
+      (by omega) hPostOk hPostNames hLowerPostList
+      bodyResult.relation
+      (bodyResult.targetDomain hBodyScope)
+      hPostScope hLayout hControl hPostListRun
+  obtain ⟨closed⟩ :=
+    ScopedListResult.close postResult
+      (StateRelation.Replay.sourceStoreDomain_of_scopedExact
+        bodyResult.relation)
+      hLayout hControl hSourceAfterPost
+  exact ⟨closed.monoFresh hFinalFresh⟩
+
+theorem scopedLoop
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    RecursiveScopedLoopForward contract transcript codeRel
+      sourceProgram targetProgram profile (bound + 1) := by
+  intro sourceFuel
+  induction sourceFuel using Nat.strong_induction_on with
+  | h sourceFuel ih =>
+      intro compilerFuel sourceControl before after afterCond afterPost
+        layout cond post body preCond lowerCond lowerPost lowerBody
+        source sourceFinal target ctx canBreak canContinue canLeave
+        hFuel hCondOk hPostOk hBodyOk hCondNames hPostNames hBodyNames
+        hLowerCond hLowerPost hLowerBody hRel hDomain hScope hLayout
+        hControl hRun
+      obtain ⟨forFuel, hSourceFuel, hLoopRun⟩ :=
+        Yul.Source.Effectful.exec_for_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hRun
+      obtain ⟨iterationFuel, sourceAfterCond, condValue,
+          hForFuel, hCondRun, hLoopCase⟩ :=
+        Yul.Source.Effectful.loop_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hLoopRun
+      obtain
+          ⟨sourceShared, sourceVars, hSource,
+            _hShared, _hScoped, _hSourceDomain⟩ :=
+        hRel.2
+      have hConditionInput :
+          source.withSource
+              (EvmYul.Yul.State.mkOk source.source) =
+            source := by
+        rw [hSource]
+        change source.withSource (.Ok sourceShared sourceVars) = source
+        rw [← hSource]
+        exact Simulation.ResourceReplay.State.withSource_self source
+      have hCondRun' :
+          Yul.Source.Effectful.eval
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              iterationFuel cond (some sourceProgram.contract) source =
+            .ok (sourceAfterCond, condValue) := by
+        simpa [ObserverSemantics.SourceReplay.stateModel,
+          hConditionInput] using hCondRun
+      obtain ⟨values, hCondValues, hCondHead⟩ :=
+        Yul.Source.Effectful.eval_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          hCondRun'
+      have hBodyBaseScope :
+          StateRelation.Vars.NamesWithin before.used
+            (ctx.withLoopControl ctx.scope ctx.scope).scope := by
+        simpa [Functions.Source.Ctx.withLoopControl] using hScope
+      obtain ⟨value, hValues, preparedNonempty⟩ :=
+        hValue (exprFuel := iterationFuel)
+          (before := before) (after := afterCond)
+          (layout := layout) (expr := cond)
+          (pre := preCond) (lower := lowerCond)
+          (source := source) (source' := sourceAfterCond)
+          (target := target)
+          (ctx := ctx.withLoopControl ctx.scope ctx.scope)
+          (values := values)
+          (by omega) hCondOk hLowerCond hRel hDomain
+          hBodyBaseScope hCondValues
+      obtain ⟨prepared⟩ := preparedNonempty
+      have hCondValue : condValue = value := by
+        rw [hValues] at hCondHead
+        simpa using hCondHead
+      subst value
+      have hCondFresh : Fresh.Extends before afterCond :=
+        Expr.lower1Unchecked?_stateExtends hLowerCond
+      have hPostFresh : Fresh.Extends afterCond afterPost :=
+        Stmt.List.toBlockUncheckedFuel?_stateExtends hLowerPost
+      have hBodyFresh : Fresh.Extends afterPost after :=
+        Stmt.List.toBlockUncheckedFuel?_stateExtends hLowerBody
+      have hFresh : Fresh.Extends before after :=
+        Fresh.Extends.trans hCondFresh
+          (Fresh.Extends.trans hPostFresh hBodyFresh)
+      have hBodyInitial : Fresh.Extends afterCond afterPost :=
+        hPostFresh
+      have hLayoutAfterPost :
+          StateRelation.Vars.NamesWithin afterPost.used layout :=
+        hLayout.mono (Fresh.Extends.trans hCondFresh hPostFresh)
+      have hBodyNamesAfterPost :
+          StateRelation.Vars.NamesWithin afterPost.used
+            (Stmt.List.names body) :=
+        hBodyNames.mono (Fresh.Extends.trans hCondFresh hPostFresh)
+      have hPostNamesAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used
+            (Stmt.List.names post) :=
+        hPostNames.mono hCondFresh
+      have hLayoutAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used layout :=
+        hLayout.mono hCondFresh
+      have hScopeAfterCond :
+          StateRelation.Vars.NamesWithin afterCond.used ctx.scope :=
+        hScope.mono hCondFresh
+      have hBodyControl :
+          ControlContextRel
+            (ControlContextRel.forBodySourceControl layout sourceControl)
+            layout true true canLeave
+            (ctx.withLoopControl ctx.scope ctx.scope) :=
+        ControlContextRel.forBody hControl
+      have hPostControl :
+          ControlContextRel
+            (ControlContextRel.forPostSourceControl sourceControl)
+            layout false false canLeave ctx.withoutLoopControl :=
+        ControlContextRel.forPost hControl
+      cases hLoopCase with
+      | false hZero hFinal =>
+          have hSourceFinal : sourceFinal = sourceAfterCond := by
+            rw [hFinal]
+            change
+              sourceAfterCond.withSource
+                  (sourceAfterCond.source.overwrite? source.source) =
+                sourceAfterCond
+            rw [hSource]
+            change
+              sourceAfterCond.withSource sourceAfterCond.source =
+                sourceAfterCond
+            exact
+              Simulation.ResourceReplay.State.withSource_self
+                sourceAfterCond
+          exact
+            ScopedLoopResult.ofFalse prepared hZero
+              (Fresh.Extends.trans hPostFresh hBodyFresh)
+              (hLayout.mono hFresh)
+              (by
+                simpa [Functions.Source.Ctx.withoutLoopControl] using
+                  hControl.scope)
+              rfl hSourceFinal
+      | bodyOutOfFuel hNonzero hBody hBodySource hFinal =>
+          rename_i afterBody
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          change afterBody.source = .OutOfFuel at hBodySource
+          have hImpossible := closedBody.relation.mode
+          rw [hBodySource] at hImpossible
+          simp [FunctionsObserverOutcome.ModeRel] at hImpossible
+      | bodyBreak hNonzero hBody hBodySource hFinal =>
+          rename_i afterBody shared store
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          have hSourceFinal :
+              sourceFinal =
+                afterBody.withSource
+                  afterBody.source.reviveJump := by
+            rw [hFinal]
+            change
+              afterBody.withSource
+                  (afterBody.source.reviveJump.overwrite? source.source) =
+                afterBody.withSource afterBody.source.reviveJump
+            rw [hSource]
+            rfl
+          change
+            afterBody.source = .Checkpoint (.Break shared store)
+            at hBodySource
+          exact
+            ScopedLoopResult.ofBodyBreak closedBody hBodySource
+              hSourceFinal
+              (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                target)
+      | bodyLeave hNonzero hBody hBodySource hFinal =>
+          rename_i afterBody shared store
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          have hSourceFinal : sourceFinal = afterBody := by
+            rw [hFinal]
+            change
+              afterBody.withSource
+                  (afterBody.source.overwrite? source.source) =
+                afterBody
+            rw [hSource]
+            exact
+              Simulation.ResourceReplay.State.withSource_self
+                afterBody
+          change
+            afterBody.source = .Checkpoint (.Leave shared store)
+            at hBodySource
+          exact
+            ScopedLoopResult.ofBodyLeave closedBody hBodySource
+              hSourceFinal rfl
+              (Functions.ObserverSafety.SafeSemantics.evalCondition_one
+                target)
+      | postOutOfFuel hNonzero hBody hBodyContinues hPost
+          hPostSource hFinal =>
+          rename_i afterBody afterPost
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          obtain ⟨bodyResult⟩ :=
+            ClosedListResult.continuingBody closedBody hBodyContinues rfl
+          obtain ⟨closedPost⟩ :=
+            closeLoopPost
+              (sourceControl :=
+                ControlContextRel.forPostSourceControl sourceControl)
+              hList bodyResult (by omega) hPostOk hPostNamesAfterCond
+              hLowerPost hBodyFresh
+              (by
+                simpa [Functions.Source.Ctx.withLoopControl] using
+                  hScopeAfterCond)
+              (by
+                simpa [Functions.Source.Ctx.withoutLoopControl] using
+                  hScopeAfterCond)
+              hLayoutAfterCond hPostControl hPost
+          change afterPost.source = .OutOfFuel at hPostSource
+          have hImpossible := closedPost.relation.mode
+          rw [hPostSource] at hImpossible
+          simp [FunctionsObserverOutcome.ModeRel] at hImpossible
+      | postLeave hNonzero hBody hBodyContinues hPost
+          hPostSource hFinal =>
+          rename_i afterBody afterPost shared store
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          obtain ⟨bodyResult⟩ :=
+            ClosedListResult.continuingBody closedBody hBodyContinues rfl
+          obtain ⟨closedPost⟩ :=
+            closeLoopPost
+              (sourceControl :=
+                ControlContextRel.forPostSourceControl sourceControl)
+              hList bodyResult (by omega) hPostOk hPostNamesAfterCond
+              hLowerPost hBodyFresh
+              (by
+                simpa [Functions.Source.Ctx.withLoopControl] using
+                  hScopeAfterCond)
+              (by
+                simpa [Functions.Source.Ctx.withoutLoopControl] using
+                  hScopeAfterCond)
+              hLayoutAfterCond hPostControl hPost
+          have hSourceFinal : sourceFinal = afterPost := by
+            rw [hFinal]
+            change
+              afterPost.withSource
+                  (afterPost.source.overwrite? source.source) =
+                afterPost
+            rw [hSource]
+            exact
+              Simulation.ResourceReplay.State.withSource_self
+                afterPost
+          change
+            afterPost.source = .Checkpoint (.Leave shared store)
+            at hPostSource
+          cases lowerPost
+          exact
+            ScopedLoopResult.ofPostLeave bodyResult closedPost
+              hPostSource hSourceFinal rfl
+      | recurse hNonzero hBody hBodyContinues hPost hPostRecurs
+          hRecursive hFinal =>
+          rename_i afterBody sourceAfterPost afterLoop
+          obtain ⟨closedBody⟩ :=
+            closeGuardedBody
+              (sourceControl :=
+                ControlContextRel.forBodySourceControl layout sourceControl)
+              hList prepared (by omega) hBodyOk hBodyNamesAfterPost
+              hLowerBody hBodyInitial hFresh hLayout hLayoutAfterPost
+              hBodyControl hNonzero hBody
+          obtain ⟨bodyResult⟩ :=
+            ClosedListResult.continuingBody closedBody hBodyContinues rfl
+          obtain ⟨closedPost⟩ :=
+            closeLoopPost
+              (sourceControl :=
+                ControlContextRel.forPostSourceControl sourceControl)
+              hList bodyResult (by omega) hPostOk hPostNamesAfterCond
+              hLowerPost hBodyFresh
+              (by
+                simpa [Functions.Source.Ctx.withLoopControl] using
+                  hScopeAfterCond)
+              (by
+                simpa [Functions.Source.Ctx.withoutLoopControl] using
+                  hScopeAfterCond)
+              hLayoutAfterCond hPostControl hPost
+          cases hSourcePost : sourceAfterPost.source with
+          | OutOfFuel =>
+              change
+                Yul.Source.Effectful.LoopPostRecurs sourceAfterPost.source
+                at hPostRecurs
+              rw [hSourcePost] at hPostRecurs
+              simp [Yul.Source.Effectful.LoopPostRecurs] at hPostRecurs
+          | Checkpoint jump =>
+              cases jump with
+              | Leave shared store =>
+                  change
+                    Yul.Source.Effectful.LoopPostRecurs sourceAfterPost.source
+                    at hPostRecurs
+                  rw [hSourcePost] at hPostRecurs
+                  simp [Yul.Source.Effectful.LoopPostRecurs]
+                    at hPostRecurs
+              | Break shared store =>
+                  have hMode :
+                      closedPost.outcome.mode = .brk := by
+                    have hModeRel := closedPost.relation.mode
+                    rw [hSourcePost] at hModeRel
+                    exact
+                      FunctionsObserverOutcome.ModeRel.source_break_target_brk
+                        hModeRel
+                  have hExit := closedPost.exitScope
+                  simp [FunctionsObserverOutcome.ExitScopeRel,
+                    ControlContextRel.forPostSourceControl, hMode] at hExit
+              | Continue shared store =>
+                  have hMode :
+                      closedPost.outcome.mode = .cont := by
+                    have hModeRel := closedPost.relation.mode
+                    rw [hSourcePost] at hModeRel
+                    exact
+                      FunctionsObserverOutcome.ModeRel.source_continue_target_cont
+                        hModeRel
+                  have hExit := closedPost.exitScope
+                  simp [FunctionsObserverOutcome.ExitScopeRel,
+                    ControlContextRel.forPostSourceControl, hMode] at hExit
+          | Ok postShared postStore =>
+              have hPostMode :
+                  closedPost.outcome.mode = .regular := by
+                have hModeRel := closedPost.relation.mode
+                rw [hSourcePost] at hModeRel
+                exact
+                  FunctionsObserverOutcome.ModeRel.source_ok_target_regular
+                    hModeRel
+              have hPostRel :
+                  StateRelation.Replay.ScopedExactRel codeRel layout
+                    sourceAfterPost closedPost.outcome.state := by
+                have hExact := closedPost.relation.exact hPostMode
+                have hLayoutEq := closedPost.regularLayout hPostMode
+                have hRevived :
+                    sourceAfterPost.withSource
+                        sourceAfterPost.source.reviveJump =
+                      sourceAfterPost := by
+                  rw [hSourcePost]
+                  change
+                    sourceAfterPost.withSource
+                        (.Ok postShared postStore) =
+                      sourceAfterPost
+                  rw [← hSourcePost]
+                  exact
+                    Simulation.ResourceReplay.State.withSource_self
+                      sourceAfterPost
+                rw [hRevived] at hExact
+                simpa [hLayoutEq] using hExact
+              have hPostDomain :
+                  StateRelation.Vars.TargetDomainWithin before.used
+                    closedPost.outcome.state.source.vars := by
+                have hRestricted := closedPost.targetRestriction
+                simp [FunctionsObserverOutcome.ScopedTargetRestriction,
+                  hPostMode] at hRestricted
+                exact
+                  hRestricted.domain
+                    (by
+                      simpa [Functions.Source.Ctx.withoutLoopControl] using
+                        hScope)
+              have hRecursiveInput :
+                  sourceAfterPost.withSource
+                      (sourceAfterPost.source.overwrite? source.source) =
+                    sourceAfterPost := by
+                rw [hSourcePost, hSource]
+                change
+                  sourceAfterPost.withSource
+                      (.Ok postShared postStore) =
+                    sourceAfterPost
+                rw [← hSourcePost]
+                exact
+                  Simulation.ResourceReplay.State.withSource_self
+                    sourceAfterPost
+              have hRecursive' :
+                  Yul.Source.Effectful.exec
+                      (ObserverSemantics.SourceReplay.stateModel transcript)
+                      (ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      iterationFuel (.For cond post body)
+                      (some sourceProgram.contract) sourceAfterPost =
+                    .ok afterLoop := by
+                simpa [ObserverSemantics.SourceReplay.stateModel,
+                  hRecursiveInput] using hRecursive
+              obtain ⟨recursive⟩ :=
+                ih iterationFuel (by omega)
+                  (compilerFuel := compilerFuel)
+                  (sourceControl := sourceControl)
+                  (before := before) (after := after)
+                  (afterCond := afterCond) (afterPost := afterPost)
+                  (layout := layout) (cond := cond)
+                  (post := post) (body := body)
+                  (preCond := preCond) (lowerCond := lowerCond)
+                  (lowerPost := lowerPost) (lowerBody := lowerBody)
+                  (source := sourceAfterPost)
+                  (sourceFinal := afterLoop)
+                  (target := closedPost.outcome.state)
+                  (ctx := ctx)
+                  (canBreak := canBreak)
+                  (canContinue := canContinue) (canLeave := canLeave)
+                  (by omega) hCondOk hPostOk hBodyOk hCondNames
+                  hPostNames hBodyNames hLowerCond hLowerPost hLowerBody
+                  hPostRel hPostDomain hScope hLayout hControl hRecursive'
+              have hSourceFinal : sourceFinal = afterLoop := by
+                rw [hFinal]
+                change
+                  afterLoop.withSource
+                      (afterLoop.source.overwrite? source.source) =
+                    afterLoop
+                rw [hSource]
+                exact
+                  Simulation.ResourceReplay.State.withSource_self
+                    afterLoop
+              cases lowerPost
+              exact
+                ScopedLoopResult.ofRecurse bodyResult closedPost
+                  hSourcePost recursive hSourceFinal
 
 private theorem stmtsOk_selectSwitchCase
     {profile : SolcValidation.DialectProfile}
@@ -1548,7 +3332,7 @@ theorem block
     (hList :
       RecursiveOpenListForward contract transcript codeRel
         sourceProgram targetProgram profile bound)
-    (hFuel : sourceFuel < bound)
+    (hFuel : sourceFuel < bound + 1)
     (hOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
@@ -1626,7 +3410,9 @@ theorem block
       (by omega) hBodyOk hBodyNames hLowerList hRel hDomain
       hScope hLayout hControl hBodyRun
   obtain ⟨closedBody⟩ :=
-    ScopedListResult.close bodyResult hRel hLayout hControl hSourceFinal
+    ScopedListResult.close bodyResult
+      (StateRelation.Replay.sourceStoreDomain_of_scopedExact hRel)
+      hLayout hControl hSourceFinal
   obtain ⟨bodyFuel, hBodyScoped⟩ := closedBody.run
   have hTargetStmt :
       Functions.Source.Effectful.Stmt.run
@@ -1664,6 +3450,14 @@ theorem block
         rw [closedBody.regularLayout hRegular]
         exact hMem
       layoutWithin := closedBody.layoutWithin
+      sourceDefined := closedBody.sourceDefined
+      abruptTargetRestriction := by
+        cases hMode : closedBody.outcome.mode with
+        | regular =>
+            simp [FunctionsObserverOutcome.AbruptTargetRestriction, hMode]
+        | brk | cont | leave | halt =>
+            simpa [FunctionsObserverOutcome.ScopedTargetRestriction,
+              hMode] using closedBody.targetRestriction
       layoutScope := by
         intro hRegular
         rw [closedBody.regularLayout hRegular]
@@ -1708,7 +3502,7 @@ theorem ifThen
     (hList :
       RecursiveOpenListForward contract transcript codeRel
         sourceProgram targetProgram profile bound)
-    (hFuel : sourceFuel < bound)
+    (hFuel : sourceFuel < bound + 1)
     (hOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
@@ -1909,6 +3703,11 @@ theorem ifThen
           freshExtends := hFresh
           retains := fun _hRegular _name hMem => hMem
           layoutWithin := hLayout.mono hFresh
+          sourceDefined :=
+            FunctionsObserverOutcome.SourceDefined.of_scopedExact
+              prepared.relation
+          abruptTargetRestriction := by
+            simp [FunctionsObserverOutcome.AbruptTargetRestriction]
           layoutScope := fun _hRegular => hPreparedLayoutScope
           exitScope := by
             simp [FunctionsObserverOutcome.ExitScopeRel] }
@@ -2080,6 +3879,11 @@ theorem ifThen
           freshExtends := hFresh
           retains := closedBody.openResult.retains
           layoutWithin := closedBody.openResult.layoutWithin
+          sourceDefined := closedBody.openResult.sourceDefined
+          abruptTargetRestriction :=
+            FunctionsObserverOutcome.AbruptTargetRestriction.transport
+              prepared.prepared.control
+              closedBody.openResult.abruptTargetRestriction
           layoutScope := by
             intro hRegular
             rw [closedBody.regularLayout hRegular]
@@ -2124,7 +3928,7 @@ theorem switch
     (hList :
       RecursiveOpenListForward contract transcript codeRel
         sourceProgram targetProgram profile bound)
-    (hFuel : sourceFuel < bound)
+    (hFuel : sourceFuel < bound + 1)
     (hOk :
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
@@ -2334,6 +4138,11 @@ theorem switch
           freshExtends := hFresh
           retains := fun _hRegular _name hMem => hMem
           layoutWithin := hLayout.mono hFresh
+          sourceDefined :=
+            FunctionsObserverOutcome.SourceDefined.of_scopedExact
+              prepared.relation
+          abruptTargetRestriction := by
+            simp [FunctionsObserverOutcome.AbruptTargetRestriction]
           layoutScope := fun _hRegular => hPreparedLayoutScope
           exitScope := by
             simp [FunctionsObserverOutcome.ExitScopeRel] }
@@ -2469,6 +4278,11 @@ theorem switch
           retains := closedBody.openResult.retains
           layoutWithin :=
             closedBody.openResult.layoutWithin.mono hAfterSelected
+          sourceDefined := closedBody.openResult.sourceDefined
+          abruptTargetRestriction :=
+            FunctionsObserverOutcome.AbruptTargetRestriction.transport
+              prepared.prepared.control
+              closedBody.openResult.abruptTargetRestriction
           layoutScope := by
             intro hRegular
             rw [closedBody.regularLayout hRegular]
@@ -2487,213 +4301,161 @@ theorem switch
              rw [closedBody.regularLayout hRegular]
              exact hPreparedControl }⟩
 
+theorem forLoop
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound sourceFuel compilerFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {cond : AstExpr}
+    {post body : List AstStmt}
+    {lower : List Functions.Stmt}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound)
+    (hFuel : sourceFuel < bound + 1)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave (.For cond post body) =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.names (.For cond post body)))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.For cond post body) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.For cond post body)
+          (some sourceProgram.contract) source =
+        .ok sourceFinal) :
+    Nonempty
+      (ScopedStmtResult contract codeRel targetProgram.toFunctions
+        (.For cond post body) lower before after layout sourceFinal target ctx
+        canBreak canContinue canLeave
+        (sourceControl := sourceControl)) := by
+  have hFresh : Fresh.Extends before after :=
+    Stmt.toFunctionsListUncheckedFuel?_stateExtends hLower
+  obtain
+      ⟨compilerPrevious, preCond, lowerCond, afterCond,
+        lowerPost, afterPost, lowerBody, _hCompilerFuel,
+        hLowerCond, hLowerPost, hLowerBody, hLowerStmt⟩ :=
+    Stmt.toFunctionsListUncheckedFuel?_for_parts hLower
+  subst lower
+  have hOkParts := hOk
+  simp [SolcValidation.StmtOk?] at hOkParts
+  have hCondNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Expr.names cond) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  have hPostNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names post) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  have hBodyNames :
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names body) := by
+    intro name hMem
+    exact hNames name (by simp [Stmt.names, hMem])
+  obtain ⟨loop⟩ :=
+    scopedLoop hValue hList
+      (sourceFuel := sourceFuel) (compilerFuel := compilerPrevious)
+      (sourceControl := sourceControl)
+      (before := before) (after := after)
+      (afterCond := afterCond) (afterPost := afterPost)
+      (layout := layout) (cond := cond) (post := post) (body := body)
+      (preCond := preCond) (lowerCond := lowerCond)
+      (lowerPost := lowerPost) (lowerBody := lowerBody)
+      (source := source) (sourceFinal := sourceFinal)
+      (target := target) (ctx := ctx)
+      (canBreak := canBreak) (canContinue := canContinue)
+      (canLeave := canLeave)
+      hFuel hOkParts.1 hOkParts.2.1 hOkParts.2.2
+      hCondNames hPostNames hBodyNames hLowerCond hLowerPost hLowerBody
+      hRel hDomain hScope hLayout hControl hRun
+  obtain ⟨opened⟩ :=
+    ScopedLoopResult.toOpen loop hFresh (hScope.mono hFresh) hControl
+  exact
+    ⟨ScopedStmtResult.ofOpen
+      (stmt := .For cond post body) opened.1
+      (by
+        intro hRegular
+        simpa [SolcValidation.StmtOutVars] using opened.2 hRegular)
+      hControl⟩
+
+theorem ofComponents
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hValue :
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    RecursiveOpenCompoundForward contract transcript codeRel
+      sourceProgram targetProgram profile (bound + 1) := by
+  intro sourceFuel compilerFuel sourceControl before after layout stmt lower
+    source sourceFinal target ctx canBreak canContinue canLeave
+    hCompound hFuel hOk hNames hLower hRel hDomain hScope hLayout
+    hControl hRun
+  cases hCompound with
+  | block body =>
+      exact
+        block hList hFuel hOk hNames hLower hRel hDomain hScope hLayout
+          hControl hRun
+  | switch scrutinee cases defaultBody =>
+      exact
+        switch hValue.expression hList hFuel hOk hNames hLower hRel
+          hDomain hScope hLayout hControl hRun
+  | forLoop cond post body =>
+      exact
+        forLoop hValue hList hFuel hOk hNames hLower hRel hDomain
+          hScope hLayout hControl hRun
+  | ifThen cond body =>
+      exact
+        ifThen hValue.expression hList hFuel hOk hNames hLower hRel
+          hDomain hScope hLayout hControl hRun
+
 end RecursiveOpenCompoundForward
 
 namespace RecursiveBodyForward
-
-theorem ofEmpty
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns : List EvmYul.Identifier}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before [] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (_hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names []))
-    (_hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true [] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel (.Block [])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) :=
-  FunctionsObserverStatement.ReturnedBody.of_empty
-    hLower hParams hReturns hParamStore hEntry hRun
-
-theorem ofLeave
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns : List EvmYul.Identifier}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before [.Leave] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (_hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names [.Leave]))
-    (_hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true [.Leave] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel (.Block [.Leave])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) :=
-  FunctionsObserverStatement.ReturnedBody.of_leave
-    hLower hParams hReturns hParamStore hEntry hRun
-
-theorem ofLetNone
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns names : List EvmYul.Identifier}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before [.Let names none] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (_hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names [.Let names none]))
-    (_hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true [.Let names none] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel (.Block [.Let names none])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) :=
-  FunctionsObserverStatement.ReturnedBody.of_let_none
-    hLower hParams hReturns hParamStore hEntry hRun
 
 theorem entryTargetDomain
     {before : Fresh.State} {fn : Functions.FunDef}
@@ -2722,393 +4484,253 @@ theorem bodyScope
       (Functions.Source.Effectful.FunDef.bodyCtx fn).scope := by
   simpa [Functions.Source.Effectful.FunDef.bodyCtx] using hReserved
 
-theorem ofLetOne
+theorem ofList
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns : List EvmYul.Identifier}
-    {name : EvmYul.Identifier}
-    {expr : AstExpr}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hNotFunctionCall :
-      ∀ functionName functionArgs,
-        expr ≠ .Call (.inr functionName) functionArgs)
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before [.Let [name] (some expr)] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names [.Let [name] (some expr)]))
-    (hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true
-          [.Let [name] (some expr)] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hValue :
-      FunctionsObserverCall.RecursiveScopedValueForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel (.Block [.Let [name] (some expr)])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) := by
-  have hExprOk :
-      SolcValidation.ExprOk? profile sourceProgram.contract
-          (fn.returns ++ fn.params) 1 expr =
-        true := by
-    simp [SolcValidation.StmtsOk?, SolcValidation.StmtOk?] at hBodyOk
-    exact hBodyOk.2
-  apply
-    FunctionsObserverStatement.ReturnedBody.of_let_one
-      hNotFunctionCall hExprOk hLower hParams hReturns hParamStore
-      hEntry
-  · simpa using entryTargetDomain hParamStore hReserved
-  · exact bodyScope hReserved
-  · exact hValue
-  · exact hRun
-
-theorem ofAssignOne
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns : List EvmYul.Identifier}
-    {name : EvmYul.Identifier}
-    {expr : AstExpr}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hNotFunctionCall :
-      ∀ functionName functionArgs,
-        expr ≠ .Call (.inr functionName) functionArgs)
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before [.Assign [name] expr] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names [.Assign [name] expr]))
-    (hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true
-          [.Assign [name] expr] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hValue :
-      FunctionsObserverCall.RecursiveScopedValueForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel (.Block [.Assign [name] expr])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) := by
-  have hExprOk :
-      SolcValidation.ExprOk? profile sourceProgram.contract
-          (fn.returns ++ fn.params) 1 expr =
-        true := by
-    simp [SolcValidation.StmtsOk?, SolcValidation.StmtOk?] at hBodyOk
-    exact hBodyOk.2
-  apply
-    FunctionsObserverStatement.ReturnedBody.of_assign_one
-      hNotFunctionCall hExprOk hLower hParams hReturns hParamStore
-      hEntry
-  · simpa using entryTargetDomain hParamStore hReserved
-  · exact bodyScope hReserved
-  · exact hValue
-  · exact hRun
-
-theorem ofAssignCall
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns names : List EvmYul.Identifier}
-    {functionName : Name}
-    {callArgs : List AstExpr}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hDecomposition :
-      FunctionsObserverCompiler.Decomposition
-        sourceProgram targetProgram)
-    (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before
-          [.Assign names (.Call (.inr functionName) callArgs)] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (_hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names
-          [.Assign names (.Call (.inr functionName) callArgs)]))
-    (hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true
-          [.Assign names (.Call (.inr functionName) callArgs)] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hValue :
-      FunctionsObserverCall.RecursiveScopedValueForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hBody :
-      FunctionsObserverCall.RecursiveBodyForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel
-          (.Block
-            [.Assign names
-              (.Call (.inr functionName) callArgs)])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) := by
-  obtain ⟨preArgs, lowerArgs, hArgsLowering, hFnBody⟩ :=
-    Stmt.List.toBlockUncheckedFuel?_singleton_assign_call_parts hLower
-  have hExprOk :
-      SolcValidation.ExprOk? profile sourceProgram.contract
-          (fn.returns ++ fn.params) names.length
-          (.Call (.inr functionName) callArgs) =
-        true := by
-    simp [SolcValidation.StmtsOk?, SolcValidation.StmtOk?] at hBodyOk
-    exact hBodyOk.2
-  exact
-    FunctionsObserverStatement.ReturnedBody.of_assign_call
-      hDecomposition hArgsLowering hFnBody hExprOk hProgramOk
-      hParams hReturns hParamStore hEntry
-      (by simpa using entryTargetDomain hParamStore hReserved)
-      (bodyScope hReserved)
-      (FunctionsObserverCall.RecursiveScopedValueForward.expression hValue)
-      hBody hRun
-
-theorem ofLetCall
-    {contract : MemoryContract.Contract}
-    {transcript : Trace}
-    {codeRel : StateRelation.CodeRel}
-    {sourceProgram : Yul.Program}
-    {targetProgram : Objects.Program}
-    {profile : SolcValidation.DialectProfile}
-    {sourceFuel : Nat}
-    {before after : Fresh.State}
-    {params returns names : List EvmYul.Identifier}
-    {functionName : Name}
-    {callArgs : List AstExpr}
-    {fn : Functions.FunDef}
-    {args : List Word}
-    {paramStore : Locals.Source.Store}
-    {sourceCaller sourceAfterBody :
-      ObserverSemantics.SourceReplay.State transcript}
-    {targetCaller : Functions.ObserverSemantics.State transcript}
-    (hDecomposition :
-      FunctionsObserverCompiler.Decomposition
-        sourceProgram targetProgram)
-    (hProgramOk :
-      SolcValidation.ProgramOkWith? profile sourceProgram = true)
-    (hLower :
-      Stmt.List.toBlockUncheckedFuel?
-          (FunctionList.fuel
-            (Contract.functionEntries sourceProgram.contract))
-          before
-          [.Let names (some (.Call (.inr functionName) callArgs))] =
-        some (fn.body, after))
-    (hParams : fn.params = identNames params)
-    (hReturns : fn.returns = identNames returns)
-    (hParamStore :
-      Functions.Source.Store.insertMany fn.params args
-          Locals.Source.Store.empty =
-        some paramStore)
-    (hReserved :
-      StateRelation.Vars.NamesWithin before.used
-        (fn.returns ++ fn.params))
-    (hBodyNames :
-      StateRelation.Vars.NamesWithin before.used
-        (Stmt.List.names
-          [.Let names (some (.Call (.inr functionName) callArgs))]))
-    (hBodyOk :
-      SolcValidation.StmtsOk? profile sourceProgram.contract
-          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
-          (fn.returns ++ fn.params) false false true
-          [.Let names (some (.Call (.inr functionName) callArgs))] =
-        true)
-    (hEntry :
-      StateRelation.Replay.ScopedExactRel codeRel
-        (fn.returns ++ fn.params)
-        (sourceCaller.withSource
-          (EvmYul.Yul.State.mkOk
-            (sourceCaller.source.initcall params returns args)))
-        (targetCaller.withSource
-          { shared := targetCaller.source.shared,
-            vars :=
-              Functions.Source.Store.initReturns fn.returns paramStore }))
-    (hValue :
-      FunctionsObserverCall.RecursiveScopedValueForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hBody :
-      FunctionsObserverCall.RecursiveBodyForward
-        contract transcript codeRel sourceProgram targetProgram profile
-        sourceFuel)
-    (hRun :
-      Yul.Source.Effectful.exec
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          sourceFuel
-          (.Block
-            [.Let names
-              (some (.Call (.inr functionName) callArgs))])
-          (some sourceProgram.contract)
-          (sourceCaller.withSource
-            (EvmYul.Yul.State.mkOk
-              (sourceCaller.source.initcall params returns args))) =
-        .ok sourceAfterBody) :
-    ∃ targetFuel,
-      Nonempty
-        (FunctionsObserverCall.ReturnedBody
-          contract transcript codeRel targetProgram.toFunctions
-          fn args targetFuel sourceAfterBody targetCaller) := by
-  obtain ⟨preArgs, lowerArgs, hArgsLowering, hFnBody⟩ :=
-    Stmt.List.toBlockUncheckedFuel?_singleton_let_call_parts hLower
-  have hExprOk :
-      SolcValidation.ExprOk? profile sourceProgram.contract
-          (fn.returns ++ fn.params) names.length
-          (.Call (.inr functionName) callArgs) =
-        true := by
-    simp [SolcValidation.StmtsOk?, SolcValidation.StmtOk?] at hBodyOk
-    exact hBodyOk.2
-  exact
-    FunctionsObserverStatement.ReturnedBody.of_let_call
-      hDecomposition hArgsLowering hFnBody hExprOk hProgramOk
-      hParams hReturns hParamStore hEntry
-      (by simpa using entryTargetDomain hParamStore hReserved)
-      (bodyScope hReserved) hBodyNames
-      (FunctionsObserverCall.RecursiveScopedValueForward.expression hValue)
-      hBody hRun
+    {bound : Nat}
+    (hList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    FunctionsObserverCall.RecursiveBodyForward
+      contract transcript codeRel sourceProgram targetProgram profile
+        (bound + 1) := by
+  intro sourceFuel before after params returns body fn args paramStore
+    sourceCaller sourceAfterBody targetCaller hFuel hLower hParams
+    hReturns hParamStore hReserved hBodyNames hBodyOk hEntry hRun
+  let layout := fn.returns ++ fn.params
+  let sourceEntry :=
+    sourceCaller.withSource
+      (EvmYul.Yul.State.mkOk
+        (sourceCaller.source.initcall params returns args))
+  let targetEntry :=
+    targetCaller.withSource
+      { shared := targetCaller.source.shared,
+        vars :=
+          Functions.Source.Store.initReturns fn.returns paramStore }
+  obtain
+      ⟨entryShared, entryVars, hEntrySource,
+        _hEntryShared, _hEntryVars, hEntryDomain⟩ :=
+    hEntry.2
+  change StateRelation.Vars.DomainExact layout entryVars at hEntryDomain
+  change StateRelation.Vars.NamesWithin before.used layout at hReserved
+  have hEntryStore : sourceEntry.source.store = entryVars := by
+    rw [hEntrySource]
+    rfl
+  have hEntryDomainStore :
+      StateRelation.Vars.DomainExact layout sourceEntry.source.store := by
+    rw [hEntryStore]
+    exact hEntryDomain
+  obtain ⟨listCompilerFuel, lower, _hCompilerFuel,
+      hLowerList, hFnBody⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLower
+  obtain ⟨listSourceFuel, sourceOpen, _hSourceFuel,
+      hListRun, hSourceAfterBody⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  let sourceControl : FunctionsObserverOutcome.SourceControlScopes :=
+    { breakScope? := none
+      continueScope? := none
+      leaveScope? := some layout }
+  have hControl :
+      ControlContextRel sourceControl layout false false true
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+    refine
+      { scope := ?_
+        breakScope := ?_
+        continueScope := ?_
+        leaveScope := ?_ }
+    · simp [layout, Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope,
+        FunctionsObserverOutcome.LayoutWithinScope]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope,
+        layout]
+  obtain ⟨result⟩ :=
+    hList (sourceFuel := listSourceFuel)
+      (compilerFuel := listCompilerFuel)
+      (sourceControl := sourceControl)
+      (before := before) (after := after)
+      (layout := layout) (stmts := body) (lower := lower)
+      (source := sourceEntry) (sourceFinal := sourceOpen)
+      (target := targetEntry)
+      (ctx := Functions.Source.Effectful.FunDef.bodyCtx fn)
+      (canBreak := false) (canContinue := false) (canLeave := true)
+      (by omega) hBodyOk hBodyNames hLowerList hEntry
+      (by
+        simpa [targetEntry] using
+          entryTargetDomain hParamStore hReserved)
+      (bodyScope hReserved) hReserved hControl hListRun
+  obtain ⟨targetFuel, hTargetRun⟩ := result.openResult.run
+  have hMode :
+      result.openResult.outcome.mode = .regular ∨
+        result.openResult.outcome.mode = .leave := by
+    cases hOutcomeMode : result.openResult.outcome.mode with
+    | regular => exact Or.inl rfl
+    | brk =>
+        have hExit := result.openResult.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hOutcomeMode,
+          sourceControl] at hExit
+    | cont =>
+        have hExit := result.openResult.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hOutcomeMode,
+          sourceControl] at hExit
+    | leave => exact Or.inr rfl
+    | halt kind =>
+        have hExit := result.openResult.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hOutcomeMode] at hExit
+  have hFinalRelation :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        (sourceAfterBody.withSource sourceAfterBody.source.reviveJump)
+        result.openResult.outcome.state := by
+    rcases hMode with hRegular | hLeave
+    · obtain ⟨sourceShared, sourceVars, hSourceOpen⟩ :=
+        FunctionsObserverOutcome.ModeRel.target_regular_source_ok
+          result.openResult.relation.mode hRegular
+      have hRestricted :
+          StateRelation.Replay.ScopedExactRel codeRel layout
+            (sourceOpen.withSource
+              (.Ok sourceShared
+                (EvmYul.Yul.State.restrictVarStore
+                  sourceVars entryVars)))
+            result.openResult.outcome.state := by
+        have hExact := result.openResult.relation.exact hRegular
+        have hRevived :
+            sourceOpen.withSource sourceOpen.source.reviveJump =
+              sourceOpen := by
+          rw [hSourceOpen]
+          change
+            sourceOpen.withSource (.Ok sourceShared sourceVars) =
+              sourceOpen
+          rw [← hSourceOpen]
+          exact Simulation.ResourceReplay.State.withSource_self sourceOpen
+        have hExact' := hExact
+        rw [hRevived] at hExact'
+        exact
+          StateRelation.Replay.scopedExact_restrict_source
+            hSourceOpen
+            hExact'
+            hEntryDomain
+            (result.openResult.retains hRegular)
+      have hFinalRevivedEq :
+          sourceAfterBody.withSource
+              sourceAfterBody.source.reviveJump =
+            sourceOpen.withSource
+              (.Ok sourceShared
+                (EvmYul.Yul.State.restrictVarStore
+                  sourceVars entryVars)) := by
+        rw [hSourceAfterBody]
+        change
+          (sourceOpen.withSource
+              (sourceOpen.source.restrictStoreTo
+                sourceEntry.source.store)).withSource
+              (sourceOpen.source.restrictStoreTo
+                sourceEntry.source.store).reviveJump =
+            _
+        rw [hEntryStore, hSourceOpen]
+        rfl
+      rw [hFinalRevivedEq]
+      exact hRestricted
+    · have hExit := result.openResult.exitScope
+      have hFinalLayout : result.openResult.finalLayout = layout := by
+        simp [FunctionsObserverOutcome.ExitScopeRel, hLeave,
+          sourceControl] at hExit
+        exact hExit.1.symm
+      have hModeRel := result.openResult.relation.mode
+      cases hSourceOpen : sourceOpen.source with
+      | OutOfFuel =>
+          rw [hSourceOpen] at hModeRel
+          simp [FunctionsObserverOutcome.ModeRel, hLeave] at hModeRel
+      | Ok shared vars =>
+          rw [hSourceOpen] at hModeRel
+          simp [FunctionsObserverOutcome.ModeRel, hLeave] at hModeRel
+      | Checkpoint jump =>
+          cases jump with
+          | Break shared vars =>
+              rw [hSourceOpen] at hModeRel
+              simp [FunctionsObserverOutcome.ModeRel, hLeave] at hModeRel
+          | Continue shared vars =>
+              rw [hSourceOpen] at hModeRel
+              simp [FunctionsObserverOutcome.ModeRel, hLeave] at hModeRel
+          | Leave shared vars =>
+              have hRevived :
+                  (sourceOpen.withSource
+                      sourceOpen.source.reviveJump).source =
+                    .Ok shared vars := by
+                rw [hSourceOpen]
+                rfl
+              have hScoped := result.openResult.relation.state
+              rw [hFinalLayout] at hScoped
+              have hRestricted :=
+                StateRelation.Replay.scopedRel_restrict_source_outer
+                  hRevived hScoped hEntryDomain
+                  (fun _name hMem => hMem)
+              have hDefined :
+                  FunctionsObserverOutcome.SourceDefined layout
+                    sourceAfterBody := by
+                rw [hSourceAfterBody]
+                have hOpenDefined := result.openResult.sourceDefined
+                rw [hFinalLayout] at hOpenDefined
+                exact
+                  FunctionsObserverOutcome.SourceDefined.restrictStoreTo
+                    hOpenDefined
+                    hEntryDomainStore (fun _name hMem => hMem)
+              have hWithin :
+                  FunctionsObserverOutcome.SourceWithin layout
+                    sourceAfterBody := by
+                rw [hSourceAfterBody]
+                exact
+                  FunctionsObserverOutcome.SourceWithin.restrictStoreTo
+                    (source := sourceOpen) hEntryDomainStore
+              have hFinalRevivedEq :
+                  sourceAfterBody.withSource
+                      sourceAfterBody.source.reviveJump =
+                    (sourceOpen.withSource
+                        sourceOpen.source.reviveJump).withSource
+                      (.Ok shared
+                        (EvmYul.Yul.State.restrictVarStore
+                          vars entryVars)) := by
+                rw [hSourceAfterBody]
+                change
+                  (sourceOpen.withSource
+                      (sourceOpen.source.restrictStoreTo
+                        sourceEntry.source.store)).withSource
+                      (sourceOpen.source.restrictStoreTo
+                        sourceEntry.source.store).reviveJump =
+                    _
+                rw [hEntryStore, hSourceOpen]
+                rfl
+              rw [hFinalRevivedEq]
+              apply StateRelation.Replay.scopedExact_of_scopedRel hRestricted
+              intro finalShared finalVars hFinalSource
+              apply
+                FunctionsObserverOutcome.sourceDomainExact_of_source
+                  hDefined hWithin
+              exact
+                (congrArg
+                    (fun state =>
+                      state.source)
+                    hFinalRevivedEq).trans hFinalSource
+  refine
+    ⟨targetFuel,
+      ⟨paramStore, result.openResult.outcome,
+        result.openResult.finalCtx, hParamStore, ?_, hMode,
+        hFinalRelation⟩⟩
+  rw [hFnBody]
+  simpa [targetEntry] using hTargetRun
 
 end RecursiveBodyForward
 
@@ -3132,7 +4754,7 @@ theorem ofBody
         bound) :
     FunctionsObserverCall.RecursiveScopedValueForward
       contract transcript codeRel sourceProgram targetProgram profile
-      bound := by
+      (bound + 1) := by
   intro exprFuel
   induction exprFuel using Nat.strong_induction_on with
   | h exprFuel ih =>
@@ -3247,6 +4869,254 @@ theorem ofBody
                               simp at hLength
 
 end RecursiveScopedValueForward
+
+structure RecursiveForwardFamily
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop where
+  body :
+    FunctionsObserverCall.RecursiveBodyForward
+      contract transcript codeRel sourceProgram targetProgram profile bound
+  value :
+    FunctionsObserverCall.RecursiveScopedValueForward
+      contract transcript codeRel sourceProgram targetProgram profile bound
+  stmt :
+    RecursiveOpenStmtForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  list :
+    RecursiveOpenListForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+  compound :
+    RecursiveOpenCompoundForward contract transcript codeRel
+      sourceProgram targetProgram profile bound
+
+namespace RecursiveForwardFamily
+
+theorem ofCompiler
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true) :
+    ∀ bound,
+      RecursiveForwardFamily contract transcript codeRel
+        sourceProgram targetProgram profile bound := by
+  intro bound
+  induction bound with
+  | zero =>
+      refine
+        { body := ?_
+          value := ?_
+          stmt := ?_
+          list := ?_
+          compound := ?_ }
+      · simp [FunctionsObserverCall.RecursiveBodyForward]
+      · simp [FunctionsObserverCall.RecursiveScopedValueForward]
+      · simp [RecursiveOpenStmtForward]
+      · simp [RecursiveOpenListForward]
+      · simp [RecursiveOpenCompoundForward]
+  | succ bound ih =>
+      have hCompound :
+          RecursiveOpenCompoundForward contract transcript codeRel
+            sourceProgram targetProgram profile (bound + 1) :=
+        RecursiveOpenCompoundForward.ofComponents
+          (bound := bound) ih.value ih.list
+      exact
+        { body := RecursiveBodyForward.ofList ih.list
+          value :=
+            RecursiveScopedValueForward.ofBody
+              hDecomposition hProgramOk ih.body
+          stmt :=
+            RecursiveOpenStmtForward.ofCompound
+              hDecomposition hProgramOk ih.value ih.body hCompound
+          list := RecursiveOpenListForward.ofStmt ih.stmt
+          compound := hCompound }
+
+theorem dispatcherForward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {sourceEntry sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel [] sourceEntry target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        (Fresh.initial
+          (Contract.names sourceProgram.contract)).used
+        target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) sourceEntry =
+        .ok sourceFinal) :
+    ∃ targetFuel outcome,
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetFuel targetProgram.toFunctions target =
+        .ok outcome ∧
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        [] sourceFinal outcome := by
+  have hCompiler := hDecomposition
+  obtain
+      ⟨bodyStmts, afterBody, functions, afterFunctions,
+        hLowerBody, _hLowerFunctions, hTargetProgram⟩ :=
+    hDecomposition
+  obtain ⟨listSourceFuel, sourceOpen, _hSourceFuel,
+      hListRun, hSourceFinal⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  have hLowerList :
+      Stmt.List.toFunctionsUncheckedFuel?
+          (Stmt.fuel sourceProgram.contract.dispatcher + 1)
+          (Fresh.initial (Contract.names sourceProgram.contract))
+          [sourceProgram.contract.dispatcher] =
+        some (bodyStmts, afterBody) :=
+    Stmt.List.toFunctionsUncheckedFuel?_singleton_of_stmt
+      (by
+        cases sourceProgram.contract.dispatcher <;>
+          simp [Stmt.fuel])
+      hLowerBody
+  have hDispatcherOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          [] false false false sourceProgram.contract.dispatcher =
+        true := by
+    have hParts := hProgramOk
+    simp [SolcValidation.ProgramOkWith?,
+      SolcValidation.ContractOkWith?,
+      SolcValidation.ContractOkWithEntries?] at hParts
+    exact hParts.2.1
+  have hListOk :
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          [] false false false
+          [sourceProgram.contract.dispatcher] =
+        true := by
+    simpa [SolcValidation.StmtsOk?,
+      SolcValidation.StmtOutVars] using hDispatcherOk
+  let initial :=
+    Fresh.initial (Contract.names sourceProgram.contract)
+  have hNames :
+      StateRelation.Vars.NamesWithin initial.used
+        (Stmt.List.names [sourceProgram.contract.dispatcher]) := by
+    intro name hMem
+    change name ∈ Contract.names sourceProgram.contract
+    have hDispatcherName :
+        name ∈ Stmt.names sourceProgram.contract.dispatcher := by
+      simpa [Stmt.List.names] using hMem
+    simpa [Contract.names] using
+      List.mem_append_left
+        (FunctionList.names
+          (Contract.functionEntries sourceProgram.contract))
+        hDispatcherName
+  let sourceControl : FunctionsObserverOutcome.SourceControlScopes :=
+    { breakScope? := none
+      continueScope? := none
+      leaveScope? := none }
+  have hControl :
+      ControlContextRel sourceControl [] false false false
+        Functions.Source.Ctx.initial := by
+    refine
+      { scope := ?_
+        breakScope := ?_
+        continueScope := ?_
+        leaveScope := ?_ }
+    · simp [FunctionsObserverOutcome.LayoutWithinScope]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Ctx.initial]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Ctx.initial]
+    · simp [sourceControl, ScopeOptionWithin,
+        Functions.Source.Ctx.initial]
+  have hFamily :=
+    ofCompiler
+      (contract := contract) (transcript := transcript)
+      (codeRel := codeRel) (profile := profile)
+      hCompiler hProgramOk (listSourceFuel + 1)
+  obtain ⟨openResult⟩ :=
+    hFamily.list
+      (sourceFuel := listSourceFuel)
+      (compilerFuel := Stmt.fuel sourceProgram.contract.dispatcher + 1)
+      (sourceControl := sourceControl)
+      (before := initial) (after := afterBody)
+      (layout := []) (stmts := [sourceProgram.contract.dispatcher])
+      (lower := bodyStmts)
+      (source := sourceEntry) (sourceFinal := sourceOpen)
+      (target := target) (ctx := Functions.Source.Ctx.initial)
+      (canBreak := false) (canContinue := false) (canLeave := false)
+      (by omega) hListOk hNames hLowerList hRel hDomain
+      (by
+        intro name hMem
+        simp [Functions.Source.Ctx.initial] at hMem)
+      (by
+        intro name hMem
+        simp at hMem)
+      hControl hListRun
+  obtain ⟨closed⟩ :=
+    ScopedListResult.close openResult
+      (StateRelation.Replay.sourceStoreDomain_of_scopedExact hRel)
+      (by
+        intro name hMem
+        simp at hMem)
+      hControl hSourceFinal
+  obtain ⟨targetFuel, hTargetRun⟩ := closed.run
+  have hFinalLayout : closed.finalLayout = [] := by
+    cases hMode : closed.outcome.mode with
+    | regular => exact closed.regularLayout hMode
+    | brk =>
+        have hExit := closed.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hMode,
+          sourceControl] at hExit
+    | cont =>
+        have hExit := closed.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hMode,
+          sourceControl] at hExit
+    | leave =>
+        have hExit := closed.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hMode,
+          sourceControl] at hExit
+    | halt kind =>
+        have hExit := closed.exitScope
+        simp [FunctionsObserverOutcome.ExitScopeRel, hMode] at hExit
+  refine
+    ⟨targetFuel, closed.outcome, ?_,
+      by simpa [hFinalLayout] using closed.relation⟩
+  have hBodyEq :
+      targetProgram.toFunctions.body = { stmts := bodyStmts } :=
+    congrArg (fun program => program.body) hTargetProgram
+  unfold Functions.Source.Effectful.Program.runState
+  rw [hBodyEq]
+  exact hTargetRun
+
+end RecursiveForwardFamily
 
 end FunctionsObserverForward
 end Yul
