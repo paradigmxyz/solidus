@@ -1302,6 +1302,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_scopes
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.block
+#print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_if_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_if_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.ifThen
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

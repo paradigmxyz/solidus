@@ -139,6 +139,48 @@ theorem evalOne_of_eval_singleton {σ : Type}
       .ok (final, value) := by
   simp [evalOne, Locals.Source.Effectful.Expr.evalOne, hEval]
 
+theorem evalCondition_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value])) :
+    evalCondition model prim expr state =
+      .ok (final, value != EvmYul.UInt256.ofNat 0) := by
+  simp [evalCondition, Locals.Source.Effectful.Expr.evalCondition,
+    Locals.Source.Effectful.Expr.evalOne, hEval]
+
+theorem evalCondition_false_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value]))
+    (hZero : value = EvmYul.UInt256.ofNat 0) :
+    evalCondition model prim expr state =
+      .ok (final, false) := by
+  subst value
+  simpa using evalCondition_of_eval_singleton model prim hEval
+
+theorem evalCondition_true_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value]))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0) :
+    evalCondition model prim expr state =
+      .ok (final, true) := by
+  have hBne :
+      (value != EvmYul.UInt256.ofNat 0) = true := by
+    cases value with
+    | mk value =>
+        simp [bne, EvmYul.instBEqUInt256,
+          EvmYul.instBEqUInt256.beq,
+          EvmYul.UInt256.ofNat, Id.run] at hNonzero ⊢
+        exact hNonzero
+  simpa [hBne] using evalCondition_of_eval_singleton model prim hEval
+
 end Expr
 
 namespace ArgList
@@ -4397,6 +4439,76 @@ theorem runOpen_cons_cases {σ : Type}
           refine ⟨headOutcome, headCtx, rfl, ?_, ?_⟩
           · simp [hMode]
           · simpa [Block.runOpen, hHead, hMode] using hRun.symm
+
+/--
+Expose the scoped body execution represented by a successful singleton
+`block` statement. This is the semantic-owner bridge used by adjacent source
+passes whose own control construct lowers to a Functions scoped body.
+-/
+theorem runScoped_of_runOpen_singleton_block {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx : Source.Ctx} {body : Block} {source : σ}
+    {outcome : Outcome σ} {finalCtx : Source.Ctx}
+    (hRun :
+      ∃ fuel,
+        Block.runOpen model prim program ctx fuel
+            { stmts := [.block body] } source =
+          .ok (outcome, finalCtx)) :
+    ∃ fuel,
+      Block.runScoped model prim program ctx body fuel source =
+        .ok outcome ∧
+      finalCtx = ctx := by
+  obtain ⟨fuel, hRun⟩ := hRun
+  cases fuel with
+  | zero =>
+      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ fuel =>
+      rcases runOpen_cons_cases model prim program hRun with
+        hRegular | hNonregular
+      · obtain ⟨middle, middleCtx, hStmt, hTail⟩ := hRegular
+        have hStmtParts :
+            Block.runScoped model prim program ctx body fuel source =
+                .ok (Outcome.regular middle) ∧
+              middleCtx = ctx := by
+          unfold Stmt.run at hStmt
+          cases hBody :
+              Block.runScoped model prim program ctx body fuel source with
+          | error err =>
+              simp [hBody] at hStmt
+          | ok bodyOutcome =>
+              have hPair :
+                  (bodyOutcome, ctx) =
+                    (Outcome.regular middle, middleCtx) := by
+                simpa [hBody] using hStmt
+              injection hPair with hOutcome hStmtCtx
+              exact
+                ⟨by simpa [hOutcome] using hBody, hStmtCtx.symm⟩
+        obtain ⟨hOutcome, hTailCtx⟩ :=
+          runOpen_nil_ok model prim program hTail
+        rw [hOutcome]
+        exact
+          ⟨fuel, hStmtParts.1,
+            hTailCtx.trans hStmtParts.2⟩
+      · obtain
+          ⟨headOutcome, headCtx, hStmt, _hMode,
+            hOutcome, hCtx⟩ := hNonregular
+        have hScoped :
+            Block.runScoped model prim program ctx body fuel source =
+              .ok headOutcome := by
+          unfold Stmt.run at hStmt
+          cases hBody :
+              Block.runScoped model prim program ctx body fuel source with
+          | error err =>
+              simp [hBody] at hStmt
+          | ok bodyOutcome =>
+              have hPair :
+                  (bodyOutcome, ctx) = (headOutcome, headCtx) := by
+                simpa [hBody] using hStmt
+              injection hPair with hOutcome _hCtx
+              simpa [hOutcome] using hBody
+        rw [hOutcome]
+        exact ⟨fuel, hScoped, hCtx⟩
 
 /--
 Successful open-block execution never removes names from its lexical context.

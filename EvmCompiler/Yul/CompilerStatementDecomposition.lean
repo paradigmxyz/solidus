@@ -38,6 +38,51 @@ theorem toFunctionsListUncheckedFuel?_block_parts
           rcases hLower with ⟨rfl, rfl⟩
           exact ⟨previous, lowerBody, rfl, hBody, rfl⟩
 
+theorem toFunctionsListUncheckedFuel?_block_of_toBlock
+    {fuel : Nat} {before after : Fresh.State}
+    {body : List AstStmt} {lowerBody : Functions.Block}
+    (hLower :
+      List.toBlockUncheckedFuel? fuel before body =
+        some (lowerBody, after)) :
+    toFunctionsListUncheckedFuel? (fuel + 1) before (.Block body) =
+      some ([.block lowerBody], after) := by
+  simp [toFunctionsListUncheckedFuel?, hLower]
+
+theorem toFunctionsListUncheckedFuel?_if_parts
+    {fuel : Nat} {before after : Fresh.State}
+    {cond : AstExpr} {body : List AstStmt}
+    {lower : List Functions.Stmt}
+    (hLower :
+      toFunctionsListUncheckedFuel? fuel before (.If cond body) =
+        some (lower, after)) :
+    ∃ previous preCond lowerCond middle lowerBody,
+      fuel = previous + 1 ∧
+      Expr.lower1Unchecked? before cond =
+        some (preCond, lowerCond, middle) ∧
+      List.toBlockUncheckedFuel? previous middle body =
+        some (lowerBody, after) ∧
+      lower = preCond ++ [.if_ lowerCond lowerBody] := by
+  cases fuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hLower
+  | succ previous =>
+      cases hCond : Expr.lower1Unchecked? before cond with
+      | none =>
+          simp [toFunctionsListUncheckedFuel?, hCond] at hLower
+      | some condResult =>
+          rcases condResult with ⟨preCond, lowerCond, middle⟩
+          cases hBody :
+              List.toBlockUncheckedFuel? previous middle body with
+          | none =>
+              simp [toFunctionsListUncheckedFuel?, hCond, hBody] at hLower
+          | some bodyResult =>
+              rcases bodyResult with ⟨lowerBody, final⟩
+              simp [toFunctionsListUncheckedFuel?, hCond, hBody] at hLower
+              rcases hLower with ⟨rfl, rfl⟩
+              exact
+                ⟨previous, preCond, lowerCond, middle, lowerBody,
+                  rfl, by simpa using hCond, by simpa using hBody, rfl⟩
+
 theorem toFunctionsListUncheckedFuel?_let_none_parts
     {fuel : Nat} {before after : Fresh.State}
     {names : List EvmYul.Identifier}

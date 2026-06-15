@@ -383,6 +383,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ExitScopeRel
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.block
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.ifThen
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

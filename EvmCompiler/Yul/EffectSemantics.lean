@@ -770,6 +770,49 @@ theorem exec_block_ok_parts
           subst final
           exact ⟨previous, stateAfterBody, rfl, hBody, rfl⟩
 
+theorem exec_if_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.If cond body) codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterCond condValue,
+      fuel = previous + 1 ∧
+      eval model prim previous cond codeOverride state =
+        .ok (stateAfterCond, condValue) ∧
+      ((condValue ≠ EvmYul.UInt256.ofNat 0 ∧
+          exec model prim previous (.Block body) codeOverride
+              stateAfterCond =
+            .ok final) ∨
+        (condValue = EvmYul.UInt256.ofNat 0 ∧
+          final = stateAfterCond)) := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hCond :
+          eval model prim previous cond codeOverride state with
+      | error failure =>
+          simp [exec, hCond] at hRun
+      | ok condResult =>
+          rcases condResult with ⟨stateAfterCond, condValue⟩
+          simp only [exec, hCond] at hRun
+          split at hRun
+          · rename_i hTrue
+            exact
+              ⟨previous, stateAfterCond, condValue, rfl, hCond,
+                Or.inl ⟨hTrue, hRun⟩⟩
+          · rename_i hFalse
+            have hZero : condValue = EvmYul.UInt256.ofNat 0 :=
+              Classical.not_not.mp hFalse
+            exact
+              ⟨previous, stateAfterCond, condValue, rfl, hCond,
+                Or.inr ⟨hZero, (Except.ok.inj hRun).symm⟩⟩
+
 theorem exec_leave_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

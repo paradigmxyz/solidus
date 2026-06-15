@@ -116,9 +116,10 @@ Adjacent boundary status:
   `FunctionsObserverForward.RecursiveScopedValueForward.ofBody` now assembles
   every expression constructor by strong source-fuel induction. The former
   unvalidated expression callback has been deleted; only the strictly
-  smaller-fuel body interface remains. Function-call
-  declaration/assignment forms, complete body/control induction, whole
-  functions/programs, and backward adequacy remain.
+  smaller-fuel body interface remains. The exhaustive leaf dispatcher,
+  structural statement-list composition, generic lexical block theorem, and
+  both paths of generic `if` preservation are checked. Switch, loop, mutual
+  body/control closure, whole functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
