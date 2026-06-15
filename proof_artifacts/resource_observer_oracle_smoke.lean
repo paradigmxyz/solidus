@@ -34,6 +34,7 @@ import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverTerminal
+import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
@@ -356,12 +357,26 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
+#check EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
 #check EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult
+#check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
+#check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
+#check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.block
 #check EvmCompiler.Yul.FunctionsObserverTerminal.statementAfterArgs
 #check EvmCompiler.Yul.FunctionsObserverTerminal.statementClassify
+#check EvmCompiler.Yul.FunctionsObserverCallTerminal.BodyResult
+#check EvmCompiler.Yul.FunctionsObserverCallTerminal.BodyResult.ofStatement
+#check EvmCompiler.Yul.FunctionsObserverCallTerminal.statementOfPreparedArgs
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalListForward
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalBodyForward
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalListForward.ofStmt
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward.block
+#check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalBodyForward.ofList
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
@@ -1152,10 +1167,20 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.block
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.statementAfterArgs
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.statementClassify
+#print axioms EvmCompiler.Yul.FunctionsObserverCallTerminal.BodyResult.ofStatement
+#print axioms EvmCompiler.Yul.FunctionsObserverCallTerminal.statementOfPreparedArgs
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalListForward.ofStmt
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward.block
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalBodyForward.ofList
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward_store
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.toLocalsArgs_forward
@@ -1347,6 +1372,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runScoped_forGuard_break_exists
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_terminalArgs_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.FunDef.runBody_halted_of_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.call_halted_of_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_singleton_block_of_runOpen_nonregular
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherForward

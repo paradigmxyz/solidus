@@ -125,8 +125,14 @@ Adjacent boundary status:
   whole-program runner without public generated evidence. Canonical regular
   Yul `callDispatcher`/`finish` packaging is checked by
   `compileProgramRegularForward`. The four terminal primitive families and
-  compiler-driven terminal statement classification are also checked.
-  Recursive terminal propagation through arguments, control, calls,
+  compiler-driven terminal statement classification are also checked. The
+  terminal sibling family now propagates an observable source failure through
+  arbitrary statement-list position and lexical blocks while reusing the
+  regular family for successful prefixes. Compiler-owned function bodies have
+  a block-indexed terminal result, and canonical Functions `runBody`/call
+  semantics lift it through a halting call without return lookup, writeback, or
+  caller restoration. Recursive terminal propagation through argument
+  evaluation, conditionals, switch, loops, source call selection,
   dispatcher/finish, and adjacent backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now

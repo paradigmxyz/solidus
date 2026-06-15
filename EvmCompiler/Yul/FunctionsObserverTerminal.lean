@@ -903,6 +903,132 @@ structure StatementResult
     FunctionsObserverOutcome.TerminalFailureRel codeRel failure
       (Functions.Source.Effectful.Outcome.halt kind finalTarget)
 
+namespace StatementResult
+
+def prependRegular
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program leftLower initial middle
+        entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (right :
+      StatementResult contract codeRel program rightLower failure
+        left.outcome.state left.finalCtx) :
+    StatementResult contract codeRel program
+      (leftLower ++ rightLower) failure target ctx := by
+  have hLeftOutcome :
+      left.outcome =
+        Functions.Source.Effectful.Outcome.regular
+          left.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+  have hLeftRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel { stmts := leftLower } target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular
+              left.outcome.state,
+              left.finalCtx) := by
+    rcases left.run with ⟨fuel, hRun⟩
+    rw [hLeftOutcome] at hRun
+    exact ⟨fuel, hRun⟩
+  exact
+    { kind := right.kind
+      finalTarget := right.finalTarget
+      finalCtx := right.finalCtx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program leftLower rightLower ctx left.finalCtx target
+          left.outcome.state
+          (Functions.Source.Effectful.Outcome.halt
+            right.kind right.finalTarget)
+          right.finalCtx hLeftRun right.run
+      relation := right.relation }
+
+def appendUnreachable
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {leftLower : List Functions.Stmt}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      StatementResult contract codeRel program leftLower
+        failure target ctx)
+    (rightLower : List Functions.Stmt) :
+    StatementResult contract codeRel program
+      (leftLower ++ rightLower) failure target ctx := by
+  exact
+    { kind := left.kind
+      finalTarget := left.finalTarget
+      finalCtx := left.finalCtx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_append_nonregular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program leftLower rightLower ctx target
+          (Functions.Source.Effectful.Outcome.halt
+            left.kind left.finalTarget)
+          left.finalCtx left.run (by simp)
+      relation := left.relation }
+
+def block
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {lower : List Functions.Stmt}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (body :
+      StatementResult contract codeRel program lower
+        failure target ctx) :
+    StatementResult contract codeRel program
+      [.block { stmts := lower }] failure target ctx := by
+  exact
+    { kind := body.kind
+      finalTarget := body.finalTarget
+      finalCtx := ctx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_singleton_block_of_runOpen_nonregular
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program body.run (by simp)
+      relation := body.relation }
+
+end StatementResult
+
 /--
 Terminal statement preservation once all source arguments have evaluated
 regularly. The compiler-owned argument preamble and stack sequence are executed

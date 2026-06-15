@@ -1706,6 +1706,99 @@ theorem exec_expr_primitive_error_parts
           | ok result =>
               simp [exec, hArgs, hPrim, multifill] at hRun
 
+theorem exec_block_error_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      exec model primSemantics fuel (.Block body)
+          codeOverride state =
+        .error failure) :
+    (fuel = 0 ∧
+      { exception := EvmYul.Yul.Exception.OutOfFuel
+        state := state } = failure) ∨
+    ∃ previous,
+      fuel = previous + 1 ∧
+        execSeq model primSemantics previous body
+            codeOverride state =
+          .error failure := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+      exact Or.inl ⟨rfl, hRun⟩
+  | succ previous =>
+      cases hBody :
+          execSeq model primSemantics previous body
+            codeOverride state with
+      | error bodyFailure =>
+          simp [exec, hBody] at hRun
+          subst failure
+          exact Or.inr ⟨previous, rfl, hBody⟩
+      | ok stateAfterBody =>
+          simp [exec, hBody] at hRun
+
+theorem execSeq_cons_error_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {head : EvmYul.Yul.Ast.Stmt}
+    {tail : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    (hRun :
+      execSeq model primSemantics fuel (head :: tail)
+          codeOverride state =
+        .error failure) :
+    (fuel = 0 ∧
+      { exception := EvmYul.Yul.Exception.OutOfFuel
+        state := state } = failure) ∨
+    ∃ previous,
+      fuel = previous + 1 ∧
+        ((exec model primSemantics previous head
+              codeOverride state =
+            .error failure) ∨
+          ∃ stateAfterHead shared vars,
+            exec model primSemantics previous head
+                codeOverride state =
+              .ok stateAfterHead ∧
+            model.source stateAfterHead = .Ok shared vars ∧
+            execSeq model primSemantics previous tail
+                codeOverride stateAfterHead =
+              .error failure) := by
+  cases fuel with
+  | zero =>
+      simp [execSeq, fail] at hRun
+      exact Or.inl ⟨rfl, hRun⟩
+  | succ previous =>
+      cases hHead :
+          exec model primSemantics previous head
+            codeOverride state with
+      | error headFailure =>
+          simp [execSeq, hHead] at hRun
+          subst failure
+          exact Or.inr ⟨previous, rfl, Or.inl hHead⟩
+      | ok stateAfterHead =>
+          cases hSource : model.source stateAfterHead with
+          | Ok shared vars =>
+              cases hTail :
+                  execSeq model primSemantics previous tail
+                    codeOverride stateAfterHead with
+              | error tailFailure =>
+                  simp [execSeq, hHead, hSource, hTail] at hRun
+                  subst failure
+                  exact
+                    Or.inr
+                      ⟨previous, rfl, Or.inr
+                        ⟨stateAfterHead, shared, vars,
+                          hHead, hSource, hTail⟩⟩
+              | ok stateAfterTail =>
+                  simp [execSeq, hHead, hSource, hTail] at hRun
+          | OutOfFuel =>
+              simp [execSeq, hHead, hSource] at hRun
+          | Checkpoint jump =>
+              simp [execSeq, hHead, hSource] at hRun
+
 theorem exec_expr_function_ok_parts
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)

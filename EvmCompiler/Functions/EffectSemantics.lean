@@ -1746,6 +1746,43 @@ theorem runBody_returned_of_parts {σ : Type}
   · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
   · simp [FunDef.runBody, hParams, hBody', hMode, hReturns', hState]
 
+/--
+Construct a canonical halting function-body result from the actual parameter
+initialization and open body execution. Return lookup and caller restoration
+are unreachable after a halt.
+-/
+theorem runBody_halted_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {fn : Functions.FunDef} {args : List Word}
+    {fuel : Nat} {state haltedState : σ}
+    {kind : Assembly.HaltKind}
+    {paramStore : Source.Store} {bodyCtx' : Source.Ctx}
+    (hParams :
+      Source.Store.insertMany fn.params args Locals.Source.Store.empty =
+        some paramStore)
+    (hBody :
+      Block.runOpen model prim program (bodyCtx fn) fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (Outcome.halt kind haltedState, bodyCtx')) :
+    FunDef.runBody model prim program fn args (fuel + 1) state =
+      .ok (CallResult.halted kind haltedState) := by
+  have hBody' :
+      Block.runOpen model prim program
+          { Source.Ctx.withLeaveScope Source.Ctx.initial
+              (fn.returns ++ fn.params) with
+            scope := fn.returns ++ fn.params }
+          fuel fn.body
+          (model.withSource state
+            { shared := (model.source state).shared,
+              vars := Source.Store.initReturns fn.returns paramStore }) =
+        .ok (Outcome.halt kind haltedState, bodyCtx') := by
+    simpa [bodyCtx] using hBody
+  simp [FunDef.runBody, hParams, hBody', Outcome.halt,
+    Locals.Source.Effectful.Outcome.halt]
+
 theorem runBody_halted_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program)
@@ -2271,6 +2308,34 @@ theorem call_regular_body_parts {σ : Type}
       returnValues, returnStore, paramStore, bodyOutcome, bodyCtx',
       hTargets, hArgs, hFind, hParams, hBody, hMode, hReturns,
       hState, hAssign, hFinal⟩
+
+/--
+Construct a canonical halting call statement from successful argument
+evaluation, compiler-selected function lookup, and a halting function body.
+Target assignment and caller-local restoration are unreachable after a halt.
+-/
+theorem call_halted_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat}
+    {targets : List Name} {functionName : Name}
+    {args : List (Functions.Expr 1)}
+    {source stateAfterArgs haltedState : σ}
+    {argValues : List Word} {fn : Functions.FunDef}
+    {kind : Assembly.HaltKind}
+    (hTargets : targets.Nodup)
+    (hArgs :
+      ArgList.eval model prim args source =
+        .ok (stateAfterArgs, argValues))
+    (hFind :
+      Source.FunList.find? functionName program.functions = some fn)
+    (hBody :
+      FunDef.runBody model prim program fn argValues fuel stateAfterArgs =
+        .ok (CallResult.halted kind haltedState)) :
+    Stmt.run model prim program ctx (fuel + 1)
+        (.call targets functionName args) source =
+      .ok (Outcome.halt kind haltedState, ctx) := by
+  simp [Stmt.run, hTargets, hArgs, hFind, hBody, Outcome.halt]
 
 theorem call_halted_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -4903,6 +4968,39 @@ theorem runOpen_singleton_of_run {σ : Type}
   · exact
       ⟨stmtFuel + 1,
         runOpen_cons_nonregular model prim program hRun hRegular⟩
+
+/--
+Lift a nonregular open body through the canonical scoped `block` statement and
+then through a singleton open block. The enclosing lexical scope performs no
+restriction on abrupt outcomes.
+-/
+theorem runOpen_singleton_block_of_runOpen_nonregular {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx finalCtx : Source.Ctx}
+    {body : Block} {source : σ} {outcome : Outcome σ}
+    (hBody :
+      ∃ fuel,
+        Block.runOpen model prim program ctx fuel body source =
+          .ok (outcome, finalCtx))
+    (hMode : outcome.mode ≠ .regular) :
+    ∃ fuel,
+      Block.runOpen model prim program ctx fuel
+          { stmts := [.block body] } source =
+        .ok (outcome, ctx) := by
+  obtain ⟨bodyFuel, hBody⟩ := hBody
+  have hScoped :
+      Block.runScoped model prim program ctx body bodyFuel source =
+        .ok outcome :=
+    runScoped_nonregular_of_runOpen model prim program hBody hMode
+  have hStmt :
+      Stmt.run model prim program ctx bodyFuel (.block body) source =
+        .ok (outcome, ctx) := by
+    unfold Stmt.run
+    rw [hScoped]
+    rfl
+  exact
+    runOpen_singleton_of_run model prim program hStmt
 
 theorem runOpen_append_nonregular_exists {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)

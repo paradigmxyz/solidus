@@ -2,6 +2,7 @@ import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpression
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverTerminal
+import EvmCompiler.Yul.FunctionsObserverTerminalForward
 
 namespace EvmCompiler
 namespace Yul
