@@ -910,6 +910,7 @@ theorem of_let_one
     {codeRel : StateRelation.CodeRel}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
     {sourceFuel : Nat}
     {before after : Fresh.State}
     {params returns : List EvmYul.Identifier}
@@ -924,6 +925,10 @@ theorem of_let_one
     (hNotFunctionCall :
       ∀ functionName functionArgs,
         expr ≠ .Call (.inr functionName) functionArgs)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          (fn.returns ++ fn.params) 1 expr =
+        true)
     (hLower :
       Stmt.List.toBlockUncheckedFuel?
           (FunctionList.fuel
@@ -957,9 +962,9 @@ theorem of_let_one
       StateRelation.Vars.NamesWithin before.used
         (Functions.Source.Effectful.FunDef.bodyCtx fn).scope)
     (hValue :
-      FunctionsObserverExpression.RecursiveScopedValueForward
-        contract transcript codeRel (some sourceProgram.contract)
-        targetProgram.toFunctions sourceFuel)
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1030,7 +1035,7 @@ theorem of_let_one
         hEntryDomain hCheckEntry
     exact hParts.2 (identName name) (by simp [identName])
   obtain ⟨value, hValues, hScopedValueNonempty⟩ :=
-    hValue (by omega) hExprLower hEntry
+    hValue (by omega) hExprOk hExprLower hEntry
       (by simpa [targetEntry] using hTargetDomain)
       hTargetScope hEvalValues
   obtain ⟨hScopedValue⟩ := hScopedValueNonempty
@@ -1124,6 +1129,7 @@ theorem of_assign_one
     {codeRel : StateRelation.CodeRel}
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
     {sourceFuel : Nat}
     {before after : Fresh.State}
     {params returns : List EvmYul.Identifier}
@@ -1138,6 +1144,10 @@ theorem of_assign_one
     (hNotFunctionCall :
       ∀ functionName functionArgs,
         expr ≠ .Call (.inr functionName) functionArgs)
+    (hExprOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract
+          (fn.returns ++ fn.params) 1 expr =
+        true)
     (hLower :
       Stmt.List.toBlockUncheckedFuel?
           (FunctionList.fuel
@@ -1171,9 +1181,9 @@ theorem of_assign_one
       StateRelation.Vars.NamesWithin before.used
         (Functions.Source.Effectful.FunDef.bodyCtx fn).scope)
     (hValue :
-      FunctionsObserverExpression.RecursiveScopedValueForward
-        contract transcript codeRel (some sourceProgram.contract)
-        targetProgram.toFunctions sourceFuel)
+      FunctionsObserverCall.RecursiveScopedValueForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        sourceFuel)
     (hRun :
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1244,7 +1254,7 @@ theorem of_assign_one
         hEntryDomain hCheckEntry
     exact hParts.2 (identName name) (by simp [identName])
   obtain ⟨value, hValues, hScopedValueNonempty⟩ :=
-    hValue (by omega) hExprLower hEntry
+    hValue (by omega) hExprOk hExprLower hEntry
       (by simpa [targetEntry] using hTargetDomain)
       hTargetScope hEvalValues
   obtain ⟨hScopedValue⟩ := hScopedValueNonempty

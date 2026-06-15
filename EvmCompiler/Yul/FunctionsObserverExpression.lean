@@ -1402,39 +1402,6 @@ structure ScopedPreparedValue
     StateRelation.Replay.ScopedExactRel codeRel layout
       source prepared.evalTarget
 
-def RecursiveScopedValueForward
-    (contract : MemoryContract.Contract)
-    (transcript : Assembly.ResourceTrace)
-    (codeRel : StateRelation.CodeRel)
-    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
-    (program : Functions.Program)
-    (bound : Nat) : Prop :=
-  ∀ {exprFuel : Nat} {before after : Fresh.State}
-    {layout : List Name}
-    {expr : AstExpr} {pre : List Functions.Stmt}
-    {lower : Locals.Expr 1}
-    {source source' : ObserverSemantics.SourceReplay.State transcript}
-    {target : Functions.ObserverSemantics.State transcript}
-    {ctx : Functions.Source.Ctx} {values : List Word},
-    exprFuel < bound →
-      EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
-        some (pre, lower, after) →
-      StateRelation.Replay.ScopedExactRel codeRel layout source target →
-      StateRelation.Vars.TargetDomainWithin
-        before.used target.source.vars →
-      StateRelation.Vars.NamesWithin before.used ctx.scope →
-      Yul.Source.Effectful.evalValues
-          (ObserverSemantics.SourceReplay.stateModel transcript)
-          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          exprFuel expr codeOverride source =
-        .ok (source', values) →
-      ∃ value,
-        values = [value] ∧
-          Nonempty
-            (ScopedPreparedValue contract transcript codeRel program
-              pre lower after layout source' target ctx value)
-
 structure BoundValue
     (contract : MemoryContract.Contract)
     (transcript : Assembly.ResourceTrace)
@@ -2631,11 +2598,13 @@ noncomputable def ofBoundPrimitive
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {values : List Word}
+    {Eligible : AstExpr → Prop}
     (hBound : EvmCompiler.Yul.Expr.List.directPureArgsSafe? args = false)
     (hLower :
       EvmCompiler.Yul.Expr.lower1Unchecked? before
           (.Call (.inl prim) args) =
         some (pre, lower, after))
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
     (hExpr :
       ∀ {exprFuel : Nat} {exprBefore exprAfter : Fresh.State}
         {expr : AstExpr} {exprPre : List Functions.Stmt}
@@ -2645,6 +2614,7 @@ noncomputable def ofBoundPrimitive
         {exprTarget : Functions.ObserverSemantics.State transcript}
         {exprCtx : Functions.Source.Ctx} {value : Word},
         exprFuel < fuel →
+          Eligible expr →
           EvmCompiler.Yul.Expr.lower1Unchecked? exprBefore expr =
             some (exprPre, exprLower, exprAfter) →
           StateRelation.Replay.ScopedExactRel codeRel layout
@@ -2702,10 +2672,10 @@ noncomputable def ofBoundPrimitive
       | succ primFuel =>
           obtain ⟨argsPrepared⟩ :=
             ScopedPreparedArgs.ofUncheckedLowering hArgs
-              (fun _expr _hMem => True.intro)
-              (fun hExprFuel _hEligible hExprLower hExprRel hExprDomain
+              hEligible
+              (fun hExprFuel hExprEligible hExprLower hExprRel hExprDomain
                   hExprScope hExprRun =>
-                hExpr (by omega) hExprLower hExprRel hExprDomain
+                hExpr (by omega) hExprEligible hExprLower hExprRel hExprDomain
                   hExprScope hExprRun)
               hRel hDomain hScope hArgsRun
           let targetAfterArgs :=
@@ -2819,10 +2789,12 @@ noncomputable def ofPrimitive
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {values : List Word}
+    {Eligible : AstExpr → Prop}
     (hLower :
       EvmCompiler.Yul.Expr.lower1Unchecked? before
           (.Call (.inl prim) args) =
         some (pre, lower, after))
+    (hEligible : ∀ expr, expr ∈ args → Eligible expr)
     (hExpr :
       ∀ {exprFuel : Nat} {exprBefore exprAfter : Fresh.State}
         {expr : AstExpr} {exprPre : List Functions.Stmt}
@@ -2832,6 +2804,7 @@ noncomputable def ofPrimitive
         {exprTarget : Functions.ObserverSemantics.State transcript}
         {exprCtx : Functions.Source.Ctx} {value : Word},
         exprFuel < fuel →
+          Eligible expr →
           EvmCompiler.Yul.Expr.lower1Unchecked? exprBefore expr =
             some (exprPre, exprLower, exprAfter) →
           StateRelation.Replay.ScopedExactRel codeRel layout
@@ -2870,7 +2843,8 @@ noncomputable def ofPrimitive
       EvmCompiler.Yul.Expr.List.directPureArgsSafe? args with
   | false =>
       exact
-        ofBoundPrimitive hDirect hLower hExpr hRel hDomain hScope hRun
+        ofBoundPrimitive hDirect hLower hEligible hExpr
+          hRel hDomain hScope hRun
   | true =>
       exact
         ofDirectPrimitive hDirect hLower hRel hDomain hScope hRun

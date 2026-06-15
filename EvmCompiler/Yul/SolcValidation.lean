@@ -424,6 +424,18 @@ theorem exprOk_functionCall_parts
   simp [ExprOk?, lookupFunction?, hLookup] at hOk
   exact ⟨hOk.1, hOk.2.1⟩
 
+theorem exprsOk_of_exprOk_primitive
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} {expected : Nat}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    (hOk :
+      ExprOk? profile contract vars expected
+          (.Call (.inl prim) args) =
+        true) :
+    ExprsOk? profile contract vars args = true := by
+  simp [ExprOk?] at hOk
+  exact hOk.2.2.2
+
 theorem exprsOk_of_exprOk_functionCall
     {profile : DialectProfile} {contract : AstContract}
     {vars : List Name} {expected : Nat}

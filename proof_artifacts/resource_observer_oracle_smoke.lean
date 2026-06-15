@@ -28,6 +28,7 @@ import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverStatement
+import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.ObserverSemantics
@@ -1181,7 +1182,6 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofMsize
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofLiteral
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofVariable
-#print axioms EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
@@ -1199,6 +1199,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
 #print axioms EvmCompiler.Yul.FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall
+#print axioms EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedValueForward.expression
 #print axioms EvmCompiler.Yul.SolcValidation.programOkWith_functionCall_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_parts
 #print axioms EvmCompiler.Yul.Stmt.List.toBlockUncheckedFuel?_singleton_leave_parts
@@ -1208,6 +1209,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_let_none_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_ok_length
+#print axioms EvmCompiler.Yul.Source.Effectful.eval_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.eval_of_evalValues_singleton
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_let_some_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_assign_ok_parts
@@ -1226,6 +1230,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_none
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_one
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal

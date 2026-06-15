@@ -132,14 +132,14 @@ def RecursiveScopedExpressionForward
     (profile : SolcValidation.DialectProfile)
     (bound : Nat) : Prop :=
   ∀ {exprFuel : Nat} {before after : Fresh.State}
-    {vars layout : List Name}
+    {layout : List Name}
     {expr : AstExpr} {pre : List Functions.Stmt}
     {lower : Locals.Expr 1}
     {source source' : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx} {value : Word},
     exprFuel < bound →
-      SolcValidation.ExprOk? profile sourceProgram.contract vars 1 expr =
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr =
         true →
       Expr.lower1Unchecked? before expr = some (pre, lower, after) →
       StateRelation.Replay.ScopedExactRel codeRel layout source target →
@@ -156,6 +156,74 @@ def RecursiveScopedExpressionForward
         (FunctionsObserverExpression.ScopedPreparedValue
           contract transcript codeRel targetProgram.toFunctions
           pre lower after layout source' target ctx value)
+
+def RecursiveScopedValueForward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {exprFuel : Nat} {before after : Fresh.State}
+    {layout : List Name}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word},
+    exprFuel < bound →
+      SolcValidation.ExprOk? profile sourceProgram.contract layout 1 expr =
+        true →
+      Expr.lower1Unchecked? before expr = some (pre, lower, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          exprFuel expr (some sourceProgram.contract) source =
+        .ok (source', values) →
+      ∃ value,
+        values = [value] ∧
+          Nonempty
+            (FunctionsObserverExpression.ScopedPreparedValue
+              contract transcript codeRel targetProgram.toFunctions
+              pre lower after layout source' target ctx value)
+
+namespace RecursiveScopedValueForward
+
+theorem expression
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hValue :
+      RecursiveScopedValueForward contract transcript codeRel
+        sourceProgram targetProgram profile bound) :
+    RecursiveScopedExpressionForward contract transcript codeRel
+      sourceProgram targetProgram profile bound := by
+  intro exprFuel before after layout expr pre lower source source'
+    target ctx value hFuel hOk hLower hRel hDomain hScope hRun
+  obtain ⟨values, hValues, hHead⟩ :=
+    Yul.Source.Effectful.eval_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain ⟨result, hSingleton, hPrepared⟩ :=
+    hValue hFuel hOk hLower hRel hDomain hScope hValues
+  rw [hSingleton] at hHead
+  simp at hHead
+  subst value
+  exact hPrepared
+
+end RecursiveScopedValueForward
 
 def RecursiveBodyForward
     (contract : MemoryContract.Contract)

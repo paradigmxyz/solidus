@@ -53,6 +53,7 @@ import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
@@ -217,7 +218,6 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofMsize
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofLiteral
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofVariable
-#check EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedArgs
@@ -239,10 +239,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody
 #check EvmCompiler.Yul.FunctionsObserverCall.ReturnedBody.compose
 #check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedExpressionForward
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedValueForward
+#check EvmCompiler.Yul.FunctionsObserverCall.RecursiveScopedValueForward.expression
 #check EvmCompiler.Yul.FunctionsObserverCall.RecursiveBodyForward
 #check EvmCompiler.Yul.FunctionsObserverCall.PreparedValue.ofReturnedCall
 #check EvmCompiler.Yul.FunctionsObserverCall.ScopedPreparedValue.ofFunctionCall
 #check EvmCompiler.Yul.SolcValidation.exprOk_functionCall_parts
+#check EvmCompiler.Yul.SolcValidation.exprsOk_of_exprOk_primitive
 #check EvmCompiler.Yul.SolcValidation.exprsOk_of_exprOk_functionCall
 #check EvmCompiler.Yul.SolcValidation.exprOk_of_exprsOk_of_mem
 #check EvmCompiler.Yul.SolcValidation.programOkWith_function_signature_nodup
@@ -257,6 +260,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_leave_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_let_none_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.evalValues_function_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.evalValues_function_ok_length
+#check EvmCompiler.Yul.Source.Effectful.eval_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.eval_of_evalValues_singleton
 #check EvmCompiler.Yul.Source.Effectful.exec_let_some_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_assign_ok_parts
@@ -275,6 +281,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_none
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_let_one
 #check EvmCompiler.Yul.FunctionsObserverStatement.ReturnedBody.of_assign_one
+#check EvmCompiler.Yul.FunctionsObserverForward.RecursiveScopedValueForward.ofBody
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalMsizeSafe
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate

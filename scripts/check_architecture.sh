@@ -192,6 +192,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
+  EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
@@ -202,6 +203,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
+  EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
@@ -213,6 +215,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
+  EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
@@ -588,6 +591,7 @@ report_matches \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
+  EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/TypedCfg \

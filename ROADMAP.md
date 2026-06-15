@@ -113,9 +113,12 @@ Adjacent boundary status:
   The scoped function-call case is also checked: source validation supplies
   argument eligibility, the ordinary call lowering selects the callee, and
   the returned-body relation restores the caller's exact lexical domain.
-  Assembling these constructors by main source-fuel induction,
-  function-call declaration/assignment forms, complete control statements,
-  whole functions/programs, and backward adequacy remain.
+  `FunctionsObserverForward.RecursiveScopedValueForward.ofBody` now assembles
+  every expression constructor by strong source-fuel induction. The former
+  unvalidated expression callback has been deleted; only the strictly
+  smaller-fuel body interface remains. Function-call
+  declaration/assignment forms, complete body/control induction, whole
+  functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1622,8 +1625,12 @@ corridor.
   through argument evaluation. `ScopedPreparedValue.ofGas` and `ofMsize`
   therefore reconstruct exact scoped relations from the ordinary unchecked
   compiler equations and canonical observer semantics. Generated-argument
-  primitive and function-call scoped-value constructors are now checked; the
-  remaining expression obligation is their exhaustive fuel-bounded dispatcher.
+  primitive and function-call scoped-value constructors feed one checked
+  exhaustive fuel-bounded dispatcher. `FunctionsObserverCall` owns the stable
+  validated expression/value/body interfaces, statement constructors consume
+  that single interface, and `FunctionsObserverForward` owns only their
+  source-fuel composition. The next obligation is the recursive body
+  dispatcher, beginning with direct call-valued declarations and assignments.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

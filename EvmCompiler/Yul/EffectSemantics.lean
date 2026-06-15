@@ -495,6 +495,40 @@ theorem evalValues_primitive_ok_parts
             ⟨callFuel, stateAfterArgs, reversedValues, by omega,
               hArgs, by simpa [evalValues, hArgs] using hRun⟩
 
+theorem evalValues_function_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model primSemantics fuel
+          (.Call (.inr functionName) args) codeOverride state =
+        .ok (final, values)) :
+    ∃ callFuel stateAfterArgs reversedValues,
+      fuel = callFuel + 1 ∧
+      evalArgs model primSemantics callFuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues) ∧
+      call model primSemantics callFuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, values) := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ callFuel =>
+      cases hArgs :
+          evalArgs model primSemantics callFuel args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [evalValues, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          exact
+            ⟨callFuel, stateAfterArgs, reversedValues, by omega,
+              hArgs, by simpa [evalValues, hArgs] using hRun⟩
+
 theorem call_succ_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
@@ -550,6 +584,65 @@ theorem call_succ_ok_parts
                   exact
                     ⟨yulContract, params, returns, body, stateAfterBody,
                       rfl, hFunction, hBody, rfl, rfl⟩
+
+theorem evalValues_function_ok_length
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {contract : EvmYul.Yul.Ast.YulContract}
+    {params returns : List EvmYul.Identifier}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    {state final : σ} {values : List Word}
+    (hLookup :
+      contract.functions.lookup functionName =
+        some (.Def params returns body))
+    (hRun :
+      evalValues model prim fuel (.Call (.inr functionName) args)
+          (some contract) state =
+        .ok (final, values)) :
+    values.length = returns.length := by
+  obtain
+      ⟨callFuel, stateAfterArgs, reversedValues,
+        _hFuel, _hArgs, hCall⟩ :=
+    evalValues_function_ok_parts model prim hRun
+  cases callFuel with
+  | zero =>
+      simp [call, fail] at hCall
+  | succ bodyFuel =>
+      obtain
+          ⟨_accountContract, callParams, callReturns, callBody,
+            _stateAfterBody, _hAccount, hFunction, _hBody,
+            _hFinal, hValues⟩ :=
+        call_succ_ok_parts model prim hCall
+      simp at hFunction
+      rw [hLookup] at hFunction
+      cases hFunction
+      simpa using congrArg List.length hValues
+
+theorem eval_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {value : Word}
+    (hRun :
+      eval model prim fuel expr codeOverride state =
+        .ok (final, value)) :
+    ∃ values,
+      evalValues model prim fuel expr codeOverride state =
+        .ok (final, values) ∧
+      value = values.head! := by
+  unfold eval at hRun
+  cases hValues :
+      evalValues model prim fuel expr codeOverride state with
+  | error failure =>
+      simp [hValues] at hRun
+  | ok result =>
+      rcases result with ⟨stateAfterEval, values⟩
+      simp [hValues] at hRun
+      rcases hRun with ⟨rfl, rfl⟩
+      exact ⟨values, rfl, rfl⟩
 
 theorem eval_function_ok_parts
     {σ : Type} (model : StateModel σ)
