@@ -188,6 +188,157 @@ theorem statementOfPreparedArgs
       argsPrepared.prepared.prepared.finalCtx,
       hFullRun, body.relation⟩
 
+theorem expressionOfPreparedArgs
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName tmp : Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {argsFresh finalFresh : Fresh.State}
+    {layout : List Name}
+    {argValues : List Word}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {sourceAfterArgs :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {paramStore : Locals.Source.Store}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs argsFresh
+        layout sourceAfterArgs target ctx argValues)
+    (hFresh : Fresh.fresh? argsFresh = some (tmp, finalFresh))
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (hParams :
+      Functions.Source.Store.insertMany fn.params argValues
+          Locals.Source.Store.empty =
+        some paramStore)
+    (body :
+      BodyResult contract codeRel program fn.body failure
+        ((argsPrepared.prepared.prepared.finalTarget.withSource
+          (argsPrepared.prepared.prepared.finalTarget.source.insert
+            tmp Functions.Source.zero)).withSource
+          { shared :=
+              argsPrepared.prepared.prepared.finalTarget.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns
+                fn.returns paramStore })
+        (Functions.Source.Effectful.FunDef.bodyCtx fn)) :
+    Nonempty
+      (FunctionsObserverTerminal.StatementResult
+        contract codeRel program
+        (preArgs ++
+          [Functions.Stmt.let_ tmp (.lit Functions.Source.zero),
+            Functions.Stmt.call [tmp] functionName lowerArgs])
+        failure target ctx) := by
+  let targetAfterArgs := argsPrepared.prepared.prepared.finalTarget
+  have hZeroEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          (.lit Functions.Source.zero : Locals.Expr 1) targetAfterArgs =
+        .ok (targetAfterArgs, [Functions.Source.zero]) := by
+    rfl
+  let zeroPrepared :=
+    FunctionsObserverExpression.Prepared.generated
+      (contract := contract) (transcript := transcript)
+      (codeRel := codeRel) (program := program)
+      (ctx := argsPrepared.prepared.prepared.finalCtx)
+      hFresh hZeroEval argsPrepared.prepared.prepared.rel
+      argsPrepared.prepared.prepared.domain
+      argsPrepared.prepared.prepared.scope
+  have hArgsEval :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lowerArgs zeroPrepared.finalTarget =
+        .ok (zeroPrepared.finalTarget, argValues) := by
+    apply argsPrepared.prepared.stable
+    exact
+      StateRelation.Vars.TargetExtends.trans
+        (StateRelation.Vars.TargetExtends.refl _)
+        zeroPrepared.varsExtends
+  obtain ⟨bodyFuel, hBodyRun⟩ := body.run
+  have hRunBody :
+      Functions.Source.Effectful.FunDef.runBody
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program fn argValues (bodyFuel + 1) zeroPrepared.finalTarget =
+        .ok
+          (Functions.Source.Effectful.CallResult.halted
+            body.kind body.finalTarget) := by
+    apply
+      Functions.Source.Effectful.FunDef.runBody_halted_of_parts
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hParams
+    simpa [zeroPrepared, targetAfterArgs] using hBodyRun
+  have hCallStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program zeroPrepared.finalCtx (bodyFuel + 2)
+          (.call [tmp] functionName lowerArgs) zeroPrepared.finalTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            body.kind body.finalTarget,
+            zeroPrepared.finalCtx) := by
+    apply
+      Functions.Source.Effectful.Stmt.call_halted_of_parts
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program (by simp) hArgsEval hFind
+    simpa [Nat.add_assoc] using hRunBody
+  have hCallBlock :=
+    Functions.Source.Effectful.Block.runOpen_singleton_of_run
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hCallStmt
+  have hSuffixRun :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program
+      [Functions.Stmt.let_ tmp (.lit Functions.Source.zero)]
+      [Functions.Stmt.call [tmp] functionName lowerArgs]
+      argsPrepared.prepared.prepared.finalCtx zeroPrepared.finalCtx
+      targetAfterArgs zeroPrepared.finalTarget
+      (Functions.Source.Effectful.Outcome.halt
+        body.kind body.finalTarget)
+      zeroPrepared.finalCtx zeroPrepared.run hCallBlock
+  have hFullRun :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program preArgs
+      [Functions.Stmt.let_ tmp (.lit Functions.Source.zero),
+        Functions.Stmt.call [tmp] functionName lowerArgs]
+      ctx argsPrepared.prepared.prepared.finalCtx target targetAfterArgs
+      (Functions.Source.Effectful.Outcome.halt
+        body.kind body.finalTarget)
+      zeroPrepared.finalCtx
+      argsPrepared.prepared.prepared.run
+      (by simpa using hSuffixRun)
+  exact
+    ⟨body.kind, body.finalTarget, zeroPrepared.finalCtx,
+      hFullRun, body.relation⟩
+
 end FunctionsObserverCallTerminal
 end Yul
 end EvmCompiler

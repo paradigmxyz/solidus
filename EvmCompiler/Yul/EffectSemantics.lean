@@ -1981,6 +1981,78 @@ theorem evalArgs_append_ok_parts {σ : Type}
                       · simp [evalArgs, hHead, evalTail, hTail]
                       · simp [hValues]
 
+theorem evalArgs_append_error_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ) :
+    ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
+      {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+      {source : σ} {failure : Failure σ},
+      evalArgs model prim fuel (left ++ right) codeOverride source =
+          .error failure →
+      (evalArgs model prim fuel left codeOverride source =
+          .error failure) ∨
+        ∃ middle leftValues remainingFuel,
+          fuel = remainingFuel + 2 * left.length ∧
+          evalArgs model prim fuel left codeOverride source =
+            .ok (middle, leftValues) ∧
+          evalArgs model prim remainingFuel right codeOverride middle =
+            .error failure
+  | fuel, [], right, codeOverride, source, failure, hRun => by
+      cases fuel with
+      | zero =>
+          left
+          simpa [evalArgs, fail] using hRun
+      | succ previous =>
+          right
+          exact
+            ⟨source, [], previous + 1, by simp,
+              by simp [evalArgs], hRun⟩
+  | fuel, head :: tail, right, codeOverride, source, failure, hRun => by
+      cases fuel with
+      | zero =>
+          left
+          simpa [evalArgs, fail] using hRun
+      | succ previous =>
+          cases hHead :
+              eval model prim previous head codeOverride source with
+          | error headFailure =>
+              simp [evalArgs, hHead, evalTail] at hRun
+              subst failure
+              left
+              simp [evalArgs, hHead, evalTail]
+          | ok headResult =>
+              rcases headResult with ⟨afterHead, headValue⟩
+              cases previous with
+              | zero =>
+                  simp [evalArgs, hHead, evalTail, fail] at hRun
+                  subst failure
+                  left
+                  simp [evalArgs, hHead, evalTail, fail]
+              | succ tailFuel =>
+                  cases hTailRun :
+                      evalArgs model prim tailFuel (tail ++ right)
+                        codeOverride afterHead with
+                  | error tailFailure =>
+                      simp [evalArgs, hHead, evalTail, hTailRun] at hRun
+                      subst failure
+                      rcases
+                          evalArgs_append_error_parts
+                            model prim hTailRun with
+                        hTailError | hRightError
+                      · left
+                        simp [evalArgs, hHead, evalTail, hTailError]
+                      · rcases hRightError with
+                          ⟨middle, tailValues, remainingFuel,
+                            hFuel, hTail, hRight⟩
+                        right
+                        refine
+                          ⟨middle, headValue :: tailValues,
+                            remainingFuel, ?_, ?_, hRight⟩
+                        · simp only [List.length_cons]
+                          omega
+                        · simp [evalArgs, hHead, evalTail, hTail]
+                  | ok tailResult =>
+                      simp [evalArgs, hHead, evalTail, hTailRun] at hRun
+
 theorem evalArgs_singleton_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     {fuel : Nat} {expr : EvmYul.Yul.Ast.Expr}

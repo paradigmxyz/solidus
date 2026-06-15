@@ -1692,9 +1692,13 @@ corridor.
   through the generated body break and canonical Functions loop result.
   Nonzero body/post outcomes, recursive `for`, mutual
   statement/block/function closure, dispatcher execution, and regular
-  `callDispatcher`/`finish` composition are checked. The current obligation is
-  recursive terminal-outcome propagation and whole-program terminal
-  composition, followed by matching backward adequacy.
+  `callDispatcher`/`finish` composition are checked. Observable terminal
+  failures now propagate structurally through argument lowering and
+  compiler-selected internal function calls, including generated result
+  initialization whose writeback is proved unreachable. The current obligation
+  is the nonterminal primitive failure classifier, recursive terminal control
+  propagation, and whole-program terminal composition, followed by matching
+  backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

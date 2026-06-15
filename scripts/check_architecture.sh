@@ -603,6 +603,7 @@ report_matches \
   EvmCompiler/Functions/AllocationObserverProgram.lean \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
+  EvmCompiler/Yul/EffectRefinement/Failure.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \

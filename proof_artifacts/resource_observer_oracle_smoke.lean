@@ -36,6 +36,7 @@ import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.EffectRefinement
+import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.ObserverSemantics
 import EvmCompiler.Yul.ObserverSafety
 import EvmCompiler.Yul.StateRelation
@@ -1169,8 +1170,17 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_observable_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_observable_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.eval_observable_error
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_primitive_observable_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_observable_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_function_observable_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.call_observable_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependPrepared
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.block
@@ -1178,6 +1188,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.statementClassify
 #print axioms EvmCompiler.Yul.FunctionsObserverCallTerminal.BodyResult.ofStatement
 #print axioms EvmCompiler.Yul.FunctionsObserverCallTerminal.statementOfPreparedArgs
+#print axioms EvmCompiler.Yul.FunctionsObserverCallTerminal.expressionOfPreparedArgs
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.terminalArgsOfUncheckedLowering
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.selectedBodyOfCallFailure
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalExpressionForward.ofFunctionCall
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward.functionCall
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalListForward.ofStmt
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward.block
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalBodyForward.ofList

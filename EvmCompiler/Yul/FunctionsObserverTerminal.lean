@@ -905,6 +905,45 @@ structure StatementResult
 
 namespace StatementResult
 
+def prependPrepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {leftLower rightLower : List Functions.Stmt}
+    {middleFresh : Fresh.State}
+    {sourceMiddle :
+      ObserverSemantics.SourceReplay.State transcript}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      FunctionsObserverExpression.Prepared
+        contract transcript codeRel program leftLower middleFresh
+        sourceMiddle target ctx)
+    (right :
+      StatementResult contract codeRel program rightLower failure
+        left.finalTarget left.finalCtx) :
+    StatementResult contract codeRel program
+      (leftLower ++ rightLower) failure target ctx := by
+  exact
+    { kind := right.kind
+      finalTarget := right.finalTarget
+      finalCtx := right.finalCtx
+      run :=
+        Functions.Source.Effectful.Block.runOpen_append_regular_exists
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program leftLower rightLower ctx left.finalCtx target
+          left.finalTarget
+          (Functions.Source.Effectful.Outcome.halt
+            right.kind right.finalTarget)
+          right.finalCtx left.run right.run
+      relation := right.relation }
+
 def prependRegular
     {contract : MemoryContract.Contract}
     {transcript : Trace}
