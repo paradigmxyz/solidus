@@ -330,8 +330,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAt
+#check EvmCompiler.Functions.ObserverSafety.PrimitivePermitted
+#check EvmCompiler.Functions.ObserverSafety.primitivePermitted_of_observer
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_parts
+#check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_values_eq_nil
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver_parts
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_observer_values_eq_nil
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.BackwardAt
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.BackwardAtArity
@@ -339,33 +343,75 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_sharedTernaryCopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopyBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_returndatacopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopyBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_extcodecopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopyBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureBinary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureUnary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureTernary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_environmentNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_environmentUnary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullaryBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldUnaryRead
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryReadBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldUnaryAccess
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccessBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.WorldBinaryWrite.targetPermitted_of_run
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldBinaryWrite
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWriteBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.targetPermitted_of_run
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.sourceRun_of_arity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_logFamily
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeLogBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalid
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_invalid
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalidBackward
 #check EvmCompiler.Yul.StateRelation.World.sstore
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_machineBinaryZero
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZeroBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_mcopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopyBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_mload
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMloadBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_keccak256
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256Backward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_returndatasize
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasizeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_pop
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePopBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
@@ -1158,38 +1204,83 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
+#print axioms EvmCompiler.Functions.ObserverSafety.primitivePermitted_of_observer
 #print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_parts
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_values_eq_nil
 #print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver_parts
+#print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_observer_values_eq_nil
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_sharedTernaryCopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeSharedTernaryCopyBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_returndatacopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatacopyBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_extcodecopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeExtcodecopyBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureBinary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureUnary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_pureTernary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_environmentNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_environmentUnary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentUnaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullaryBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryRead
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldUnaryRead
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryReadBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccess
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldUnaryAccess
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldUnaryAccessBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWrite
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.WorldBinaryWrite.targetPermitted_of_run
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_worldBinaryWrite
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldBinaryWriteBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeLog
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.targetPermitted_of_run
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.LogFamily.sourceRun_of_arity
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_logFamily
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeLogBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalid
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_invalid
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeInvalidBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_of_machineBinaryZero
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZeroBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_mcopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopyBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_mload
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMloadBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_keccak256
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256Backward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_returndatasize
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasizeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.backwardAt_pop
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePopBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafeBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackward
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.guardedNoObservableFailure_of_raw
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.PureBinary.rawNoObservableFailureAt

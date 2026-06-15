@@ -231,6 +231,23 @@ theorem primitiveSemantics_eval_observer_parts
       rcases hEval with ⟨rfl, rfl⟩
       exact ⟨value, rfl, by simpa [hConsume]⟩
 
+theorem primitiveSemantics_eval_observer_values_eq_nil
+    {transcript : Trace} {op : Structured.BasicOp}
+    {kind : Assembly.ResourceObserver}
+    {state final : State transcript} {values outputs : List Assembly.Word}
+    (hObserver : basicOpObserver? op = some kind)
+    (hEval :
+      (primitiveSemantics transcript).eval op state values =
+        .ok (final, outputs)) :
+    values = [] := by
+  unfold primitiveSemantics at hEval
+  unfold Locals.ObserverSemantics.primitiveSemantics at hEval
+  simp only [basicOpObserver?, hObserver] at hEval
+  cases values with
+  | nil => rfl
+  | cons head tail =>
+      simp [Structured.invalid] at hEval
+
 theorem primitiveSemantics_eval_nonObserver
     {transcript : Trace} {op : Structured.BasicOp}
     {state : State transcript} {values outputs : List Assembly.Word}

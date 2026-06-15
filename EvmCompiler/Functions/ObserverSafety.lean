@@ -28,6 +28,27 @@ def PrimitiveMemorySafe (contract : MemoryContract.Contract)
     (values : List Word) : Prop :=
   Simulation.MemorySafety.PrimitiveMemorySafe contract op machine values
 
+@[simp] def PrimitivePermitted
+    (op : Structured.BasicOp)
+    (shared : EvmYul.SharedState .EVM) : Prop :=
+  match op with
+  | .sstore | .tstore
+  | .log0 | .log1 | .log2 | .log3 | .log4 =>
+      shared.executionEnv.perm = true
+  | _ => True
+
+theorem primitivePermitted_of_observer
+    {op : Structured.BasicOp} {kind : Assembly.ResourceObserver}
+    {shared : EvmYul.SharedState .EVM}
+    (hObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = some kind) :
+    PrimitivePermitted op shared := by
+  cases op <;>
+    simp [Functions.ObserverSemantics.basicOpObserver?,
+      Locals.ObserverSemantics.basicOpObserver?,
+      Assembly.ResourceObserver.ofPrimOp?,
+      Structured.BasicOp.toPrimOp, PrimitivePermitted] at hObserver ⊢
+
 def TerminalMemorySafe (contract : MemoryContract.Contract)
     (kind : Assembly.HaltKind) (values : List Word) : Prop :=
   Simulation.MemorySafety.TerminalMemorySafe contract kind values
@@ -101,7 +122,8 @@ noncomputable def primitiveSemantics
   exact
     { eval := fun op state values =>
         if PrimitiveMemorySafe contract op
-            state.source.shared.toMachineState values then
+              state.source.shared.toMachineState values ∧
+            PrimitivePermitted op state.source.shared then
           (Functions.ObserverSemantics.primitiveSemantics transcript).eval
             op state values
         else
@@ -124,17 +146,22 @@ theorem eval_parts
         .ok (final, outputs)) :
     PrimitiveMemorySafe contract op
         state.source.shared.toMachineState values ∧
+      PrimitivePermitted op state.source.shared ∧
       (Functions.ObserverSemantics.primitiveSemantics transcript).eval
           op state values =
         .ok (final, outputs) := by
   classical
   by_cases hSafe :
       PrimitiveMemorySafe contract op
-        state.source.shared.toMachineState values
+          state.source.shared.toMachineState values ∧
+        PrimitivePermitted op state.source.shared
   · exact
-      ⟨hSafe, by simpa [primitiveSemantics, hSafe] using hEval⟩
-  · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
-      Structured.invalid] at hEval
+      ⟨hSafe.1, hSafe.2,
+        by
+          simpa only [primitiveSemantics, if_pos hSafe] using hEval⟩
+  · simp only [primitiveSemantics, if_neg hSafe,
+      Functions.Source.invalid, Structured.invalid] at hEval
+    cases hEval
 
 theorem eval_outputs_length
     {contract : MemoryContract.Contract}
@@ -146,7 +173,7 @@ theorem eval_outputs_length
       (primitiveSemantics contract transcript).eval op state values =
         .ok (final, outputs)) :
     outputs.length = Expressions.Structured.BasicOp.outputs op := by
-  obtain ⟨_hSafe, hRun⟩ := eval_parts hEval
+  obtain ⟨_hSafe, _hPermitted, hRun⟩ := eval_parts hEval
   unfold Functions.ObserverSemantics.primitiveSemantics at hRun
   unfold Locals.ObserverSemantics.primitiveSemantics at hRun
   cases hObserver : Locals.ObserverSemantics.basicOpObserver? op with
@@ -182,6 +209,22 @@ theorem eval_outputs_length
       | cons head tail =>
           simp [hObserver, Structured.invalid] at hRun
 
+theorem eval_observer_values_eq_nil
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {op : Structured.BasicOp}
+    {kind : Assembly.ResourceObserver}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values outputs : List Word}
+    (hObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = some kind)
+    (hEval :
+      (primitiveSemantics contract transcript).eval op state values =
+        .ok (final, outputs)) :
+    values = [] :=
+  Functions.ObserverSemantics.primitiveSemantics_eval_observer_values_eq_nil
+    hObserver (eval_parts hEval).2.2
+
 theorem eval_of_safe
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -191,13 +234,20 @@ theorem eval_of_safe
     (hSafe :
       PrimitiveMemorySafe contract op
         state.source.shared.toMachineState values)
+    (hPermitted :
+      PrimitivePermitted op state.source.shared)
     (hEval :
       (Functions.ObserverSemantics.primitiveSemantics transcript).eval
           op state values =
         .ok (final, outputs)) :
     (primitiveSemantics contract transcript).eval op state values =
       .ok (final, outputs) := by
-  simpa [primitiveSemantics, hSafe] using hEval
+  have hGuard :
+      PrimitiveMemorySafe contract op
+          state.source.shared.toMachineState values ∧
+        PrimitivePermitted op state.source.shared :=
+    ⟨hSafe, hPermitted⟩
+  simpa only [primitiveSemantics, if_pos hGuard] using hEval
 
 theorem eval_iszero
     {contract : MemoryContract.Contract}
@@ -208,7 +258,7 @@ theorem eval_iszero
         .iszero state [value] =
       .ok (state, [EvmYul.UInt256.isZero value]) := by
   classical
-  apply eval_of_safe (by trivial)
+  apply eval_of_safe (by trivial) (by trivial)
   simp [Functions.ObserverSemantics.primitiveSemantics,
     Locals.ObserverSemantics.primitiveSemantics,
     Locals.ObserverSemantics.basicOpObserver?,
@@ -299,7 +349,7 @@ theorem successRefines
       (Functions.ObserverSemantics.primitiveSemantics transcript) := by
   constructor
   · intro op state values final outputs hEval
-    exact (eval_parts hEval).2
+    exact (eval_parts hEval).2.2
   · intro kind state values final hEval
     exact (terminal_parts hEval).2
 

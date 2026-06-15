@@ -195,7 +195,7 @@ mutual
             simp only [hArgs, Bind.bind, Except.bind] at hEval
             have hArgsSafe :=
               ExprSeq.MemorySafeEval.of_safe_eval hArgs
-            obtain ⟨hMemory, hPrim⟩ :=
+            obtain ⟨hMemory, _hPermitted, hPrim⟩ :=
               SafeSemantics.eval_parts hEval
             exact .prim hArgsSafe hMemory hPrim
 

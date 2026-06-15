@@ -143,13 +143,19 @@ theorem safeObserverPrim
         target.source.shared.toMachineState []
     rw [← hShared.machine]
     exact hSourceSharedSafe
+  have hTargetPermitted :
+      Functions.ObserverSafety.PrimitivePermitted
+        op target.source.shared :=
+    Functions.ObserverSafety.primitivePermitted_of_observer
+      hFunctionsObserver
   refine ⟨target', ?_, hFinalRel, hStore⟩
-  simpa [Functions.ObserverSafety.SafeSemantics.primitiveSemantics,
-    hTargetSafe] using hTargetRun
+  exact
+    Functions.ObserverSafety.SafeSemantics.eval_of_safe
+      hTargetSafe hTargetPermitted hTargetRun
 
 theorem safeObserverPrimBackward
     {contract : MemoryContract.Contract}
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
+    {transcript : Trace} {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -168,11 +174,12 @@ theorem safeObserverPrimBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 1 source prim [] =
+          contract transcript).eval fuel.succ source prim [] =
           .ok (source', outputs) ∧
-        StateRelation.Replay.Rel codeRel source' target' := by
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
   classical
-  obtain ⟨_hTargetSafe, hTargetRun⟩ :=
+  obtain ⟨_hTargetSafe, _hTargetPermitted, hTargetRun⟩ :=
     Functions.ObserverSafety.SafeSemantics.eval_parts hRun
   obtain ⟨value, hOutputs, hTargetConsume⟩ :=
     Functions.ObserverSemantics.primitiveSemantics_eval_observer_parts
@@ -183,14 +190,16 @@ theorem safeObserverPrimBackward
         StateRelation.Regular.Rel codeRel sourceState targetState)
       hRel.1.symm hRel.2 hTargetConsume
   have hSourceRaw :
-      ObserverSemantics.SourceReplay.primCall 1 source prim [] =
+      ObserverSemantics.SourceReplay.primCall fuel.succ source prim [] =
         .ok (source', [value]) := by
     simp [ObserverSemantics.SourceReplay.primCall,
       hYulObserver, hSourceConsume]
-  refine ⟨source', ?_, ⟨hCursor.symm, hState⟩⟩
-  rw [hOutputs]
-  simpa [ObserverSafety.SafeSemantics.primitiveSemantics,
-    hSourceSafe] using hSourceRaw
+  refine ⟨source', ?_, ⟨hCursor.symm, hState⟩, ?_⟩
+  · rw [hOutputs]
+    simpa [ObserverSafety.SafeSemantics.primitiveSemantics,
+      hSourceSafe] using hSourceRaw
+  · exact congrArg (fun state => state.store)
+      (Simulation.ResourceReplay.consume?_source hSourceConsume)
 
 theorem safeObserverNoObservableFailure
     {contract : MemoryContract.Contract}
@@ -277,7 +286,7 @@ theorem msizeSafe
 
 theorem gasSafeBackward
     {contract : MemoryContract.Contract}
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
+    {transcript : Trace} {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {outputs : List Word}
@@ -288,10 +297,11 @@ theorem gasSafeBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 1 source
+          contract transcript).eval fuel.succ source
           (.StackMemFlow .GAS) [] =
           .ok (source', outputs) ∧
-        StateRelation.Replay.Rel codeRel source' target' :=
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store :=
   safeObserverPrimBackward
     ObserverSemantics.yulPrimObserver?_gas (by rfl)
     (ObserverSafety.primitiveSafe_gas contract
@@ -300,7 +310,7 @@ theorem gasSafeBackward
 
 theorem msizeSafeBackward
     {contract : MemoryContract.Contract}
-    {transcript : Trace} {codeRel : StateRelation.CodeRel}
+    {transcript : Trace} {codeRel : StateRelation.CodeRel} {fuel : Nat}
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target target' : Functions.ObserverSemantics.State transcript}
     {outputs : List Word}
@@ -311,10 +321,11 @@ theorem msizeSafeBackward
         .ok (target', outputs)) :
     ∃ source' : ObserverSemantics.SourceReplay.State transcript,
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 1 source
+          contract transcript).eval fuel.succ source
           (.StackMemFlow .MSIZE) [] =
           .ok (source', outputs) ∧
-        StateRelation.Replay.Rel codeRel source' target' :=
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store :=
   safeObserverPrimBackward
     ObserverSemantics.yulPrimObserver?_msize (by rfl)
     (ObserverSafety.primitiveSafe_msize contract

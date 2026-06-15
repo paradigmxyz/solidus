@@ -191,6 +191,89 @@ theorem forwardAt_of_sharedTernaryCopy
                               destination readStart size,
                             hVars⟩
 
+theorem backwardAt_of_sharedTernaryCopy
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | cons destination rest =>
+      cases rest with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            hInputs, Structured.invalid] at hRun
+      | cons readStart rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                hInputs, Structured.invalid] at hRun
+          | cons size extra =>
+              cases extra with
+              | cons head tail =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    hInputs, Structured.invalid] at hRun
+              | nil =>
+                  let sourceAfter :=
+                    sourceCopy sourceShared destination readStart size
+                  let targetAfter :=
+                    targetCopy target.shared destination readStart size
+                  have hExpected :
+                      Locals.Source.PrimitiveSemantics.structured.eval
+                          op target.shared
+                          [size, readStart, destination] =
+                        .ok (targetAfter, []) := by
+                    simp [Locals.Source.PrimitiveSemantics.structured,
+                      hInputs, hStep, Assembly.PrimStep.run,
+                      EvmYul.EVM.ternaryCopyOp,
+                      EvmYul.EVM.State.replaceStackAndIncrPC,
+                      EvmYul.EVM.State.incrPC,
+                      EvmYul.Stack.pop3, targetAfter, Id.run]
+                  have hRun' :
+                      Locals.Source.PrimitiveSemantics.structured.eval
+                          op target.shared
+                          [size, readStart, destination] =
+                        .ok (targetShared, outputs) := by
+                    simpa using hRun
+                  rw [hExpected] at hRun'
+                  have hPair := Except.ok.inj hRun'
+                  have hSharedEq := congrArg Prod.fst hPair
+                  have hOutputsEq := congrArg Prod.snd hPair
+                  change targetAfter = targetShared at hSharedEq
+                  change [] = outputs at hOutputsEq
+                  subst targetShared
+                  subst outputs
+                  refine
+                    ⟨.Ok sourceAfter sourceVars, ?_, ?_, rfl⟩
+                  · rw [yul_primCall_succ_eq_of_sharedTernaryCopy hFamily]
+                    change
+                      Except.ok
+                          (EvmYul.Yul.State.Ok sourceAfter sourceVars,
+                            []) =
+                        Except.ok
+                          (EvmYul.Yul.State.Ok sourceAfter sourceVars,
+                            [])
+                    rfl
+                  · exact
+                      ⟨sourceAfter, sourceVars, rfl,
+                        hFamily.related hShared
+                          destination readStart size,
+                        hVars⟩
+
 theorem safeSharedTernaryCopy
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -222,7 +305,42 @@ theorem safeSharedTernaryCopy
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_sharedTernaryCopy hFamily) hRel hRun
+
+theorem safeSharedTernaryCopyBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceCopy :
+      EvmYul.SharedState .Yul → Word → Word → Word →
+        EvmYul.SharedState .Yul}
+    {targetCopy :
+      EvmYul.SharedState .EVM → Word → Word → Word →
+        EvmYul.SharedState .EVM}
+    {sourceValues outputs : List Word}
+    (hFamily : SharedTernaryCopy prim op sourceCopy targetCopy)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_sharedTernaryCopy
+        (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
 
 theorem forwardAt_returndatacopy
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
@@ -313,6 +431,143 @@ theorem forwardAt_returndatacopy
                                 sourceMachine targetMachine hMachine,
                               hVars⟩
 
+theorem backwardAt_returndatacopy
+    {codeRel : StateRelation.CodeRel} (fuel : Nat) :
+    BackwardAt codeRel (fuel + 1)
+      (.Env .RETURNDATACOPY) .returndatacopy := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?,
+        Expressions.Structured.BasicOp.inputs,
+        Structured.invalid] at hRun
+  | cons destination rest =>
+      cases rest with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+            Structured.BasicOp.toPrimOp,
+            Assembly.PrimOp.continuingStep?,
+            Expressions.Structured.BasicOp.inputs,
+            Structured.invalid] at hRun
+      | cons readStart rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                Structured.BasicOp.toPrimOp,
+                Assembly.PrimOp.continuingStep?,
+                Expressions.Structured.BasicOp.inputs,
+                Structured.invalid] at hRun
+          | cons size extra =>
+              cases extra with
+              | cons head tail =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                    Structured.BasicOp.toPrimOp,
+                    Assembly.PrimOp.continuingStep?,
+                    Expressions.Structured.BasicOp.inputs,
+                    Structured.invalid] at hRun
+              | nil =>
+                  by_cases hTargetInvalid :
+                      target.shared.returnData.size <
+                        readStart.toNat + size.toNat
+                  · simp [Locals.Source.PrimitiveSemantics.structured,
+                      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                      Structured.BasicOp.toPrimOp,
+                      Assembly.PrimOp.continuingStep?,
+                      Expressions.Structured.BasicOp.inputs,
+                      Assembly.PrimStep.run, EvmYul.Stack.pop3,
+                      Id.run, hTargetInvalid] at hRun
+                  · have hSourceValid :
+                        ¬ sourceShared.returnData.size <
+                          readStart.toNat + size.toNat := by
+                      simpa [hShared.machine] using hTargetInvalid
+                    let sourceMachine :=
+                      sourceShared.toMachineState.returndatacopy
+                        destination readStart size
+                    let targetMachine :=
+                      target.shared.toMachineState.returndatacopy
+                        destination readStart size
+                    have hMachine : sourceMachine = targetMachine := by
+                      simp [sourceMachine, targetMachine, hShared.machine]
+                    let targetAfter : EvmYul.SharedState .EVM :=
+                      { target.shared with
+                        toMachineState := targetMachine }
+                    have hExpected :
+                        Locals.Source.PrimitiveSemantics.structured.eval
+                            .returndatacopy target.shared
+                            [size, readStart, destination] =
+                          .ok (targetAfter, []) := by
+                      simp [
+                        Locals.Source.PrimitiveSemantics.structured,
+                        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                        Structured.BasicOp.toPrimOp,
+                        Assembly.PrimOp.continuingStep?,
+                        Expressions.Structured.BasicOp.inputs,
+                        Assembly.PrimStep.run,
+                        EvmYul.Stack.pop3,
+                        EvmYul.EVM.State.replaceStackAndIncrPC,
+                        EvmYul.EVM.State.incrPC, Id.run,
+                        hTargetInvalid, targetAfter, targetMachine]
+                    have hRun' :
+                        Locals.Source.PrimitiveSemantics.structured.eval
+                            .returndatacopy target.shared
+                            [size, readStart, destination] =
+                          .ok (targetShared, outputs) := by
+                      simpa using hRun
+                    rw [hExpected] at hRun'
+                    have hPair := Except.ok.inj hRun'
+                    have hSharedEq := congrArg Prod.fst hPair
+                    have hOutputsEq := congrArg Prod.snd hPair
+                    change targetAfter = targetShared at hSharedEq
+                    change [] = outputs at hOutputsEq
+                    subst targetShared
+                    subst outputs
+                    refine
+                      ⟨.Ok
+                          { sourceShared with
+                            toMachineState := sourceMachine }
+                          sourceVars,
+                        ?_, ?_, rfl⟩
+                    · have hDispatch :
+                          EvmYul.Yul.primCall (fuel + 1)
+                              (.Ok sourceShared sourceVars)
+                              (.Env .RETURNDATACOPY)
+                              [destination, readStart, size] =
+                            (match
+                              EvmYul.step (τ := .Yul)
+                                (.Env .RETURNDATACOPY)
+                                (arg := none)
+                                (.Ok sourceShared sourceVars)
+                                [destination, readStart, size] with
+                            | .ok (state, value?) =>
+                                .ok (state, value?.toList)
+                            | .error err => .error err) := by
+                        simp [EvmYul.Yul.primCall]
+                        rfl
+                      rw [hDispatch]
+                      unfold EvmYul.step
+                      simp [Id.run,
+                        EvmYul.Yul.State.toSharedState,
+                        hSourceValid,
+                        EvmYul.Yul.State.setMachineState,
+                        sourceMachine]
+                    · exact
+                        ⟨{ sourceShared with
+                            toMachineState := sourceMachine },
+                          sourceVars, rfl,
+                          StateRelation.Shared.withMachine hShared
+                            sourceMachine targetMachine hMachine,
+                          hVars⟩
+
 theorem safeReturndatacopy
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -335,7 +590,33 @@ theorem safeReturndatacopy
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_returndatacopy hRel hRun
+
+theorem safeReturndatacopyBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .returndatacopy target
+          sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source
+            (.Env .RETURNDATACOPY) sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
+      (backwardAt_returndatacopy (codeRel := codeRel) 0)
+      hRel hRun)
 
 theorem rawNoObservableFailure_returndatacopy
     {fuel : Nat}
@@ -477,6 +758,130 @@ theorem forwardAt_extcodecopy
                                   destination readStart size,
                                 hVars⟩
 
+theorem backwardAt_extcodecopy
+    {codeRel : StateRelation.CodeRel} (fuel : Nat) :
+    BackwardAt codeRel (fuel + 1)
+      (.Env .EXTCODECOPY) .extcodecopy := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+        Structured.BasicOp.toPrimOp,
+        Assembly.PrimOp.continuingStep?,
+        Expressions.Structured.BasicOp.inputs,
+        Structured.invalid] at hRun
+  | cons account rest =>
+      cases rest with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+            Structured.BasicOp.toPrimOp,
+            Assembly.PrimOp.continuingStep?,
+            Expressions.Structured.BasicOp.inputs,
+            Structured.invalid] at hRun
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                Structured.BasicOp.toPrimOp,
+                Assembly.PrimOp.continuingStep?,
+                Expressions.Structured.BasicOp.inputs,
+                Structured.invalid] at hRun
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [Locals.Source.PrimitiveSemantics.structured,
+                    Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                    Structured.BasicOp.toPrimOp,
+                    Assembly.PrimOp.continuingStep?,
+                    Expressions.Structured.BasicOp.inputs,
+                    Structured.invalid] at hRun
+              | cons size extra =>
+                  cases extra with
+                  | cons head tail =>
+                      simp [Locals.Source.PrimitiveSemantics.structured,
+                        Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                        Structured.BasicOp.toPrimOp,
+                        Assembly.PrimOp.continuingStep?,
+                        Expressions.Structured.BasicOp.inputs,
+                        Structured.invalid] at hRun
+                  | nil =>
+                      let sourceAfter :=
+                        EvmYul.SharedState.extCodeCopy'
+                          sourceShared account destination readStart size
+                      let targetAfter :=
+                        EvmYul.SharedState.extCodeCopy'
+                          target.shared account destination readStart size
+                      have hExpected :
+                          Locals.Source.PrimitiveSemantics.structured.eval
+                              .extcodecopy target.shared
+                              [size, readStart, destination, account] =
+                            .ok (targetAfter, []) := by
+                        simp [
+                          Locals.Source.PrimitiveSemantics.structured,
+                          Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                          Structured.BasicOp.toPrimOp,
+                          Assembly.PrimOp.continuingStep?,
+                          Expressions.Structured.BasicOp.inputs,
+                          Assembly.PrimStep.run,
+                          EvmYul.EVM.quaternaryCopyOp,
+                          EvmYul.EVM.State.replaceStackAndIncrPC,
+                          EvmYul.EVM.State.incrPC,
+                          EvmYul.Stack.pop4, targetAfter, Id.run]
+                      have hRun' :
+                          Locals.Source.PrimitiveSemantics.structured.eval
+                              .extcodecopy target.shared
+                              [size, readStart, destination, account] =
+                            .ok (targetShared, outputs) := by
+                        simpa using hRun
+                      rw [hExpected] at hRun'
+                      have hPair := Except.ok.inj hRun'
+                      have hSharedEq := congrArg Prod.fst hPair
+                      have hOutputsEq := congrArg Prod.snd hPair
+                      change targetAfter = targetShared at hSharedEq
+                      change [] = outputs at hOutputsEq
+                      subst targetShared
+                      subst outputs
+                      refine
+                        ⟨.Ok sourceAfter sourceVars, ?_, ?_, rfl⟩
+                      · have hDispatch :
+                            EvmYul.Yul.primCall (fuel + 1)
+                                (.Ok sourceShared sourceVars)
+                                (.Env .EXTCODECOPY)
+                                [account, destination, readStart, size] =
+                              (match EvmYul.Yul.quaternaryCopyOp
+                                EvmYul.SharedState.extCodeCopy'
+                                (.Ok sourceShared sourceVars)
+                                [account, destination, readStart, size] with
+                              | .ok (state, value?) =>
+                                  .ok (state, value?.toList)
+                              | .error err => .error err) := by
+                          simp [EvmYul.Yul.primCall]
+                          unfold EvmYul.step
+                          rfl
+                        rw [hDispatch]
+                        change
+                          Except.ok
+                              (EvmYul.Yul.State.Ok sourceAfter
+                                sourceVars,
+                                []) =
+                            Except.ok
+                              (EvmYul.Yul.State.Ok sourceAfter
+                                sourceVars,
+                                [])
+                        rfl
+                      · exact
+                          ⟨sourceAfter, sourceVars, rfl,
+                            extCodeCopy_related hShared account
+                              destination readStart size,
+                            hVars⟩
+
 theorem safeExtcodecopy
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -499,7 +904,33 @@ theorem safeExtcodecopy
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_extcodecopy hRel hRun
+
+theorem safeExtcodecopyBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .extcodecopy target
+          sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source
+            (.Env .EXTCODECOPY) sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
+      (backwardAt_extcodecopy (codeRel := codeRel) 0)
+      hRel hRun)
 
 theorem rawNoObservableFailure_extcodecopy
     {fuel : Nat}

@@ -91,6 +91,7 @@ def BackwardAt (codeRel : StateRelation.CodeRel) (fuel : Nat)
     {targetShared : EvmYul.SharedState .EVM}
     {sourceValues outputs : List Word},
     StateRelation.Regular.Rel codeRel source target →
+    Functions.ObserverSafety.PrimitivePermitted op target.shared →
     Locals.Source.PrimitiveSemantics.structured.eval
         op target.shared sourceValues.reverse =
       .ok (targetShared, outputs) →
@@ -109,6 +110,7 @@ def BackwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
     {sourceValues outputs : List Word},
     StateRelation.Regular.Rel codeRel source target →
     sourceValues.length = Expressions.Structured.BasicOp.inputs op →
+    Functions.ObserverSafety.PrimitivePermitted op target.shared →
     Locals.Source.PrimitiveSemantics.structured.eval
         op target.shared sourceValues.reverse =
       .ok (targetShared, outputs) →
@@ -216,8 +218,9 @@ theorem BackwardAt.withArity
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
     (hBackward : BackwardAt codeRel fuel prim op) :
     BackwardAtArity codeRel fuel prim op := by
-  intro source target targetShared sourceValues outputs hRel _hArity hRun
-  exact hBackward hRel hRun
+  intro source target targetShared sourceValues outputs
+    hRel _hArity hPermitted hRun
+  exact hBackward hRel hPermitted hRun
 
 /--
 Shared guarded lift after fixing the related source and target states.
@@ -238,6 +241,13 @@ private theorem safeBasicOp_of_raw
     (hTerminal : Prim.terminal? prim = none)
     (hOp : Prim.toUncheckedBasicOp? prim = some op)
     (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hPermitted :
+      ∀ {sourceAfter : EvmYul.Yul.State}
+        {rawOutputs : List Word},
+        EvmYul.Yul.primCall fuel source.source prim sourceValues =
+            .ok (sourceAfter, rawOutputs) →
+          Functions.ObserverSafety.PrimitivePermitted
+            op target.source.shared)
     (hRawForward :
       ∀ {sourceAfter : EvmYul.Yul.State}
         {rawOutputs : List Word},
@@ -281,6 +291,7 @@ private theorem safeBasicOp_of_raw
       rcases hSourceEq with ⟨hSourceEq, hOutputs⟩
       subst source'
       subst outputs
+      have hTargetPermitted := hPermitted hRaw
       obtain ⟨targetShared, hTargetRaw, hFinalRegular, hStore⟩ :=
         hRawForward hRaw
       have hTargetSafe :
@@ -299,7 +310,8 @@ private theorem safeBasicOp_of_raw
             hFunctionsObserver hTargetRaw
         exact
           Functions.ObserverSafety.SafeSemantics.eval_of_safe
-            hTargetSafe (by simpa [target'] using hTargetObserver)
+            hTargetSafe hTargetPermitted
+            (by simpa [target'] using hTargetObserver)
       · simpa using hStore
 
 /--
@@ -321,6 +333,13 @@ theorem safeBasicOp
       Functions.ObserverSemantics.basicOpObserver? op = none)
     (hTerminal : Prim.terminal? prim = none)
     (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hPermitted :
+      ∀ {sourceAfter : EvmYul.Yul.State}
+        {rawOutputs : List Word},
+        EvmYul.Yul.primCall fuel source.source prim sourceValues =
+            .ok (sourceAfter, rawOutputs) →
+          Functions.ObserverSafety.PrimitivePermitted
+            op target.source.shared)
     (hForward : ForwardAt codeRel fuel prim op)
     (hRel : StateRelation.Replay.Rel codeRel source target)
     (hRun :
@@ -334,7 +353,7 @@ theorem safeBasicOp
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store := by
   apply safeBasicOp_of_raw hYulObserver hFunctionsObserver
-    hTerminal hOp hRel _ hRun
+    hTerminal hOp hRel hPermitted _ hRun
   intro sourceAfter rawOutputs hRaw
   exact hForward hRel.2 hRaw
 
@@ -366,7 +385,7 @@ theorem safeBasicOpBackward
         StateRelation.Replay.Rel codeRel source' target' ∧
         source'.source.store = source.source.store := by
   classical
-  obtain ⟨hTargetSafe, hTargetRun⟩ :=
+  obtain ⟨hTargetSafe, hTargetPermitted, hTargetRun⟩ :=
     Functions.ObserverSafety.SafeSemantics.eval_parts hRun
   have hSourceMemorySafe :
       Simulation.MemorySafety.PrimitiveMemorySafe contract op
@@ -391,7 +410,7 @@ theorem safeBasicOpBackward
         hFunctionsObserver hTargetRun
     exact ⟨targetShared, hTargetRaw, hTargetEq⟩
   obtain ⟨sourceAfter, hSourceRaw, hFinalRel, hStore⟩ :=
-    hBackward hRel.2 hTargetRaw
+    hBackward hRel.2 hTargetPermitted hTargetRaw
   rw [hTargetShape]
   have hSourceObserver :
       ObserverSemantics.SourceReplay.primCall
@@ -422,6 +441,13 @@ theorem safeBasicOpArity
       Functions.ObserverSemantics.basicOpObserver? op = none)
     (hTerminal : Prim.terminal? prim = none)
     (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hPermitted :
+      ∀ {sourceAfter : EvmYul.Yul.State}
+        {rawOutputs : List Word},
+        EvmYul.Yul.primCall fuel source.source prim sourceValues =
+            .ok (sourceAfter, rawOutputs) →
+          Functions.ObserverSafety.PrimitivePermitted
+            op target.source.shared)
     (hForward : ForwardAtArity codeRel fuel prim op)
     (hArity :
       sourceValues.length = Expressions.Structured.BasicOp.inputs op)
@@ -437,7 +463,7 @@ theorem safeBasicOpArity
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store := by
   apply safeBasicOp_of_raw hYulObserver hFunctionsObserver
-    hTerminal hOp hRel _ hRun
+    hTerminal hOp hRel hPermitted _ hRun
   intro sourceAfter rawOutputs hRaw
   exact hForward hRel.2 hArity hRaw
 

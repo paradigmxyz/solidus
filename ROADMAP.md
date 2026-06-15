@@ -141,11 +141,16 @@ Adjacent boundary status:
   `compileProgramForward` now reaches the real compiled Functions whole-program
   runner for regular completion, `STOP`, `RETURN`, `REVERT`, and
   `SELFDESTRUCT`, including canonical `callDispatcher`/`finish` packaging.
-  Adjacent backward adequacy has begun with a stable raw/guarded primitive
-  interface, Functions-owned observer/nonobserver inversion, checked
-  `gas()`/`msize()` reconstruction, and the complete pure-binary family.
-  Remaining primitive families and recursive expression/control/program
-  inversion remain.
+  Adjacent backward adequacy now has a stable raw/guarded primitive interface,
+  Functions-owned observer/nonobserver inversion, and checked reconstruction
+  for every compiler-selected continuing primitive family. The exhaustive
+  `safeCompilerSelectedBackward` dispatcher covers arithmetic, environment,
+  world reads and writes, memory, copies, hashing, logs, `gas()`, `msize()`,
+  and `invalid`; external call/create cases are ruled out by the guarded source
+  boundary. Static-context permission for storage writes and logs is enforced
+  by canonical Functions safety semantics rather than exposed as a public
+  caller premise. Recursive expression, statement, control, call, and
+  whole-program inversion remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

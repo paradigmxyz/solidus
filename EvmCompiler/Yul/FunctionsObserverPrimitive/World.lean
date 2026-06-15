@@ -195,6 +195,69 @@ theorem forwardAtArity_of_worldNullary
               (.Ok sourceShared sourceVars) target from
             ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
 
+theorem backwardAt_of_worldNullary
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases sourceValues with
+  | cons head tail =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | nil =>
+      have hResult :
+          sourceResult sourceShared.toState =
+            targetResult target.shared.toState :=
+        hFamily.result_eq hShared.world
+      have hExpected :
+          Locals.Source.PrimitiveSemantics.structured.eval
+              op target.shared [] =
+            .ok (target.shared,
+              [targetResult target.shared.toState]) := by
+        simp [Locals.Source.PrimitiveSemantics.structured,
+          hInputs, hStep, Assembly.PrimStep.run,
+          EvmYul.EVM.stateOp,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.push, Id.run]
+      have hRun' :
+          Locals.Source.PrimitiveSemantics.structured.eval
+              op target.shared [] =
+            .ok (targetShared, outputs) := by
+        simpa using hRun
+      rw [hExpected] at hRun'
+      have hPair := Except.ok.inj hRun'
+      have hSharedEq := congrArg Prod.fst hPair
+      have hOutputsEq := congrArg Prod.snd hPair
+      change target.shared = targetShared at hSharedEq
+      change
+        [targetResult target.shared.toState] = outputs at hOutputsEq
+      subst targetShared
+      subst outputs
+      refine
+        ⟨.Ok sourceShared sourceVars, ?_, ?_, rfl⟩
+      · rw [yul_primCall_succ_eq_of_worldNullary hFamily]
+        change
+          Except.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                [sourceResult sourceShared.toState]) =
+            Except.ok
+              (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                [targetResult target.shared.toState])
+        simp [hResult]
+      · simpa [Locals.Source.State.withShared] using
+          (show
+            StateRelation.Regular.Rel codeRel
+              (.Ok sourceShared sourceVars) target from
+            ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+
 theorem safeWorldNullary
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -224,6 +287,7 @@ theorem safeWorldNullary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOpArity hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAtArity_of_worldNullary hFamily)
       hArity hRel hRun
 
@@ -368,6 +432,77 @@ theorem forwardAt_of_worldUnaryRead
                     ⟨sourceShared, sourceVars, rfl,
                       hShared, hVars⟩)
 
+theorem backwardAt_of_worldUnaryRead
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | cons value extra =>
+      cases extra with
+      | cons head tail =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            hInputs, Structured.invalid] at hRun
+      | nil =>
+          have hResult :
+              sourceResult sourceShared.toState value =
+                targetResult target.shared.toState value :=
+            hFamily.result_eq hShared.world value
+          have hExpected :
+              Locals.Source.PrimitiveSemantics.structured.eval
+                  op target.shared [value] =
+                .ok (target.shared,
+                  [targetResult target.shared.toState value]) := by
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              hInputs, hStep, Assembly.PrimStep.run,
+              EvmYul.EVM.unaryStateOp,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC, EvmYul.Stack.pop,
+              EvmYul.Stack.push, Id.run]
+          have hRun' :
+              Locals.Source.PrimitiveSemantics.structured.eval
+                  op target.shared [value] =
+                .ok (targetShared, outputs) := by
+            simpa using hRun
+          rw [hExpected] at hRun'
+          have hPair := Except.ok.inj hRun'
+          have hSharedEq := congrArg Prod.fst hPair
+          have hOutputsEq := congrArg Prod.snd hPair
+          change target.shared = targetShared at hSharedEq
+          change
+            [targetResult target.shared.toState value] =
+              outputs at hOutputsEq
+          subst targetShared
+          subst outputs
+          refine
+            ⟨.Ok sourceShared sourceVars, ?_, ?_, rfl⟩
+          · rw [yul_primCall_succ_eq_of_worldUnaryRead hFamily]
+            change
+              Except.ok
+                  (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                    [sourceResult sourceShared.toState value]) =
+                Except.ok
+                  (EvmYul.Yul.State.Ok sourceShared sourceVars,
+                    [targetResult target.shared.toState value])
+            simp [hResult]
+          · simpa [Locals.Source.State.withShared] using
+              (show
+                StateRelation.Regular.Rel codeRel
+                  (.Ok sourceShared sourceVars) target from
+                ⟨sourceShared, sourceVars, rfl,
+                  hShared, hVars⟩)
+
 theorem safeWorldUnaryRead
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -395,6 +530,7 @@ theorem safeWorldUnaryRead
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_worldUnaryRead hFamily) hRel hRun
 
 inductive WorldUnaryAccess :
@@ -623,6 +759,95 @@ theorem forwardAt_of_worldUnaryAccess
                         simpa [targetShared] using hShared.machine },
                     hVars⟩
 
+theorem backwardAt_of_worldUnaryAccess
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | cons value extra =>
+      cases extra with
+      | cons head tail =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            hInputs, Structured.invalid] at hRun
+      | nil =>
+          let sourceResult :=
+            sourceStep sourceShared.toState value
+          let targetResult :=
+            targetStep target.shared.toState value
+          have hResult :
+              StateRelation.World.Rel codeRel
+                  sourceResult.1 targetResult.1 ∧
+                sourceResult.2 = targetResult.2 := by
+            simpa [sourceResult, targetResult] using
+              hFamily.related hShared.world value
+          let targetAfter : EvmYul.SharedState .EVM :=
+            { target.shared with toState := targetResult.1 }
+          have hExpected :
+              Locals.Source.PrimitiveSemantics.structured.eval
+                  op target.shared [value] =
+                .ok (targetAfter, [targetResult.2]) := by
+            simp [Locals.Source.PrimitiveSemantics.structured,
+              hInputs, hStep, Assembly.PrimStep.run,
+              EvmYul.EVM.unaryStateOp,
+              EvmYul.EVM.State.replaceStackAndIncrPC,
+              EvmYul.EVM.State.incrPC, EvmYul.Stack.pop,
+              EvmYul.Stack.push, targetResult, targetAfter, Id.run]
+          have hRun' :
+              Locals.Source.PrimitiveSemantics.structured.eval
+                  op target.shared [value] =
+                .ok (targetShared, outputs) := by
+            simpa using hRun
+          rw [hExpected] at hRun'
+          have hPair := Except.ok.inj hRun'
+          have hSharedEq := congrArg Prod.fst hPair
+          have hOutputsEq := congrArg Prod.snd hPair
+          change targetAfter = targetShared at hSharedEq
+          change [targetResult.2] = outputs at hOutputsEq
+          subst targetShared
+          subst outputs
+          refine
+            ⟨.Ok
+                { sourceShared with toState := sourceResult.1 }
+                sourceVars,
+              ?_, ?_, rfl⟩
+          · rw [yul_primCall_succ_eq_of_worldUnaryAccess hFamily]
+            change
+              Except.ok
+                  (EvmYul.Yul.State.Ok
+                    { sourceShared with
+                      toState := sourceResult.1 }
+                    sourceVars,
+                    [sourceResult.2]) =
+                Except.ok
+                  (EvmYul.Yul.State.Ok
+                    { sourceShared with
+                      toState := sourceResult.1 }
+                    sourceVars,
+                    [targetResult.2])
+            simp [hResult.2]
+          · exact
+              ⟨{ sourceShared with
+                  toState := sourceResult.1 },
+                sourceVars, rfl,
+                { world := hResult.1
+                  machine := by
+                    simpa [targetAfter] using hShared.machine },
+                hVars⟩
+
 theorem safeWorldUnaryAccess
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -652,6 +877,7 @@ theorem safeWorldUnaryAccess
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_worldUnaryAccess hFamily) hRel hRun
 
 inductive WorldBinaryWrite :
@@ -722,6 +948,40 @@ theorem yul_primCall_succ_eq_of_worldBinaryWrite
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem WorldBinaryWrite.targetPermitted_of_run
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    {source source' : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (hRel : StateRelation.Regular.Rel codeRel source target)
+    (hRun :
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+        .ok (source', outputs)) :
+    Functions.ObserverSafety.PrimitivePermitted op target.shared := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldBinaryWrite hFamily] at hRun
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false =>
+          simp [EvmYul.Yul.State.executionEnv,
+            hPermission] at hRun
+      | true =>
+          cases hFamily <;>
+            simpa [Functions.ObserverSafety.PrimitivePermitted,
+              hPermission] using
+              hShared.world.executionEnv.permission.symm
 
 theorem WorldBinaryWrite.rawNoObservableFailureAt
     {fuel : Nat} {prim : EvmYul.Operation .Yul}
@@ -839,6 +1099,99 @@ theorem forwardAt_of_worldBinaryWrite
                                   hShared.machine },
                             hVars⟩
 
+theorem backwardAt_of_worldBinaryWrite
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases sourceValues with
+  | nil =>
+      simp [Locals.Source.PrimitiveSemantics.structured,
+        hInputs, Structured.invalid] at hRun
+  | cons key rest =>
+      cases rest with
+      | nil =>
+          simp [Locals.Source.PrimitiveSemantics.structured,
+            hInputs, Structured.invalid] at hRun
+      | cons value extra =>
+          cases extra with
+          | cons head tail =>
+              simp [Locals.Source.PrimitiveSemantics.structured,
+                hInputs, Structured.invalid] at hRun
+          | nil =>
+              have hTargetPermission :
+                  target.shared.executionEnv.perm = true := by
+                cases hFamily <;>
+                  simpa [
+                    Functions.ObserverSafety.PrimitivePermitted] using
+                    hPermitted
+              have hSourcePermission :
+                  sourceShared.executionEnv.perm = true := by
+                rw [hShared.world.executionEnv.permission]
+                exact hTargetPermission
+              let sourceWorld :=
+                sourceStep sourceShared.toState key value
+              let targetWorld :=
+                targetStep target.shared.toState key value
+              have hWorld :
+                  StateRelation.World.Rel codeRel
+                    sourceWorld targetWorld := by
+                simpa [sourceWorld, targetWorld] using
+                  hFamily.related hShared.world key value
+              let targetAfter : EvmYul.SharedState .EVM :=
+                { target.shared with toState := targetWorld }
+              have hExpected :
+                  Locals.Source.PrimitiveSemantics.structured.eval
+                      op target.shared [value, key] =
+                    .ok (targetAfter, []) := by
+                simp [Locals.Source.PrimitiveSemantics.structured,
+                  hInputs, hStep, Assembly.PrimStep.run,
+                  EvmYul.EVM.binaryStateOp,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC,
+                  EvmYul.Stack.pop2, targetAfter,
+                  targetWorld, Id.run]
+              have hRun' :
+                  Locals.Source.PrimitiveSemantics.structured.eval
+                      op target.shared [value, key] =
+                    .ok (targetShared, outputs) := by
+                simpa using hRun
+              rw [hExpected] at hRun'
+              have hPair := Except.ok.inj hRun'
+              have hSharedEq := congrArg Prod.fst hPair
+              have hOutputsEq := congrArg Prod.snd hPair
+              change targetAfter = targetShared at hSharedEq
+              change [] = outputs at hOutputsEq
+              subst targetShared
+              subst outputs
+              refine
+                ⟨.Ok
+                    { sourceShared with toState := sourceWorld }
+                    sourceVars,
+                  ?_, ?_, rfl⟩
+              · rw [yul_primCall_succ_eq_of_worldBinaryWrite hFamily]
+                simp [EvmYul.Yul.State.executionEnv,
+                  hSourcePermission, EvmYul.Yul.binaryStateOp,
+                  EvmYul.Yul.State.setState, sourceWorld]
+                rfl
+              · exact
+                  ⟨{ sourceShared with toState := sourceWorld },
+                    sourceVars, rfl,
+                    { world := hWorld
+                      machine := by
+                        simpa [targetAfter] using hShared.machine },
+                    hVars⟩
+
 theorem safeWorldBinaryWrite
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -868,7 +1221,132 @@ theorem safeWorldBinaryWrite
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun hRaw =>
+        hFamily.targetPermitted_of_run hRel.2 hRaw)
       (forwardAt_of_worldBinaryWrite hFamily) hRel hRun
+
+theorem safeWorldBinaryWriteBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_worldBinaryWrite
+        (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
+
+theorem safeWorldNullaryBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word}
+    {targetResult : EvmYul.State .EVM → Word}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldNullary prim op sourceResult targetResult)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_worldNullary (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
+
+theorem safeWorldUnaryReadBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_worldUnaryRead
+        (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
+
+theorem safeWorldUnaryAccessBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → EvmYul.State .Yul × Word}
+    {targetStep :
+      EvmYul.State .EVM → Word → EvmYul.State .EVM × Word}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldUnaryAccess prim op sourceStep targetStep)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_worldUnaryAccess
+        (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
 
 end FunctionsObserverPrimitive
 end Yul

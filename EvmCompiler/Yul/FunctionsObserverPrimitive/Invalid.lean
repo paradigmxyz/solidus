@@ -19,6 +19,22 @@ theorem forwardAt_invalid
           Except.ok (source', outputs) at hCall
       cases hCall
 
+theorem backwardAt_invalid
+    {codeRel : StateRelation.CodeRel} (fuel : Nat) :
+    BackwardAt codeRel (fuel + 1)
+      (.System .INVALID) .invalid := by
+  intro source target targetShared sourceValues outputs
+    hRel _hPermitted hRun
+  by_cases hLength :
+      sourceValues.length =
+        Expressions.Structured.BasicOp.inputs .invalid
+  all_goals
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+      Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.continuingStep?,
+      Assembly.PrimStep.run, Structured.invalid, hLength] at hRun
+
 theorem rawNoObservableFailure_invalid
     {fuel : Nat}
     {sourceShared : EvmYul.SharedState .Yul}
@@ -70,7 +86,32 @@ theorem safeInvalid
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_invalid hRel hRun
+
+theorem safeInvalidBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .invalid target
+          sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source
+            (.System .INVALID) sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    (safeBasicOpBackward (by rfl) (by rfl) (by rfl) (by rfl)
+      (backwardAt_invalid (codeRel := codeRel) 0) hRel hRun)
 
 end FunctionsObserverPrimitive
 end Yul

@@ -23,6 +23,246 @@ theorem LogFamily.metadata
       Prim.toUncheckedBasicOp? prim = some op := by
   cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
+private theorem targetPermitted_of_log_succ
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {target : Locals.Source.State}
+    {prim : EvmYul.Operation .Yul}
+    {sourceValues outputs : List Word}
+    {source' : EvmYul.Yul.State}
+    (hPermissionRel :
+      sourceShared.executionEnv.perm =
+        target.shared.executionEnv.perm)
+    (hStaticError :
+      sourceShared.executionEnv.perm = false →
+        EvmYul.Yul.primCall fuel.succ
+            (.Ok sourceShared sourceVars) prim sourceValues =
+          .error .StaticModeViolation)
+    (hRun :
+      EvmYul.Yul.primCall fuel.succ
+          (.Ok sourceShared sourceVars) prim sourceValues =
+        .ok (source', outputs)) :
+    target.shared.executionEnv.perm = true := by
+  cases hPermission : sourceShared.executionEnv.perm with
+  | false =>
+      rw [hStaticError hPermission] at hRun
+      cases hRun
+  | true =>
+      simpa [hPermission] using hPermissionRel.symm
+
+theorem LogFamily.targetPermitted_of_run
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    {source source' : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {sourceValues outputs : List Word}
+    (hFamily : LogFamily prim op arity)
+    (hRel : StateRelation.Regular.Rel codeRel source target)
+    (hRun :
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+        .ok (source', outputs)) :
+    Functions.ObserverSafety.PrimitivePermitted op target.shared := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+  | succ previous =>
+      cases hFamily with
+      | log0 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log1 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log2 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log3 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log4 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+
+theorem LogFamily.sourceRun_of_arity
+    {fuel : Nat}
+    {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {sourceValues : List Word}
+    (hFamily : LogFamily prim op arity)
+    (hPermission : sourceShared.executionEnv.perm = true)
+    (hArity : sourceValues.length = arity) :
+    ∃ sourceAfter,
+      EvmYul.Yul.primCall (fuel + 1)
+          (.Ok sourceShared sourceVars) prim sourceValues =
+        .ok (sourceAfter, []) := by
+  cases hFamily with
+  | log0 =>
+      obtain ⟨address, size, rfl⟩ :=
+        List.length_eq_two.mp hArity
+      refine
+        ⟨.Ok
+            (EvmYul.SharedState.logOp
+              address size #[] sourceShared)
+            sourceVars,
+          ?_⟩
+      simp [EvmYul.Yul.primCall]
+      unfold EvmYul.step
+      simp [EvmYul.Yul.State.executionEnv, hPermission]
+      change
+        Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[] sourceShared)
+              sourceVars,
+              []) =
+          Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[] sourceShared)
+              sourceVars,
+              [])
+      rfl
+  | log1 =>
+      obtain ⟨address, size, topic0, rfl⟩ :=
+        List.length_eq_three.mp hArity
+      refine
+        ⟨.Ok
+            (EvmYul.SharedState.logOp
+              address size #[topic0] sourceShared)
+            sourceVars,
+          ?_⟩
+      simp [EvmYul.Yul.primCall]
+      unfold EvmYul.step
+      simp [EvmYul.Yul.State.executionEnv, hPermission]
+      change
+        Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0] sourceShared)
+              sourceVars,
+              []) =
+          Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0] sourceShared)
+              sourceVars,
+              [])
+      rfl
+  | log2 =>
+      obtain ⟨address, size, topic0, topic1, rfl⟩ :=
+        list_eq_four_of_length_eq hArity
+      refine
+        ⟨.Ok
+            (EvmYul.SharedState.logOp
+              address size #[topic0, topic1] sourceShared)
+            sourceVars,
+          ?_⟩
+      simp [EvmYul.Yul.primCall]
+      unfold EvmYul.step
+      simp [EvmYul.Yul.State.executionEnv, hPermission]
+      change
+        Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1] sourceShared)
+              sourceVars,
+              []) =
+          Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1] sourceShared)
+              sourceVars,
+              [])
+      rfl
+  | log3 =>
+      obtain ⟨address, size, topic0, topic1, topic2, rfl⟩ :=
+        list_eq_five_of_length_eq hArity
+      refine
+        ⟨.Ok
+            (EvmYul.SharedState.logOp
+              address size #[topic0, topic1, topic2] sourceShared)
+            sourceVars,
+          ?_⟩
+      simp [EvmYul.Yul.primCall]
+      unfold EvmYul.step
+      simp [EvmYul.Yul.State.executionEnv, hPermission]
+      change
+        Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1, topic2] sourceShared)
+              sourceVars,
+              []) =
+          Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1, topic2] sourceShared)
+              sourceVars,
+              [])
+      rfl
+  | log4 =>
+      obtain
+          ⟨address, size, topic0, topic1, topic2, topic3, rfl⟩ :=
+        list_eq_six_of_length_eq hArity
+      refine
+        ⟨.Ok
+            (EvmYul.SharedState.logOp
+              address size #[topic0, topic1, topic2, topic3]
+              sourceShared)
+            sourceVars,
+          ?_⟩
+      simp [EvmYul.Yul.primCall]
+      unfold EvmYul.step
+      simp [EvmYul.Yul.State.executionEnv, hPermission]
+      change
+        Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1, topic2, topic3]
+                sourceShared)
+              sourceVars,
+              []) =
+          Except.ok
+            (EvmYul.Yul.State.Ok
+              (EvmYul.SharedState.logOp
+                address size #[topic0, topic1, topic2, topic3]
+                sourceShared)
+              sourceVars,
+              [])
+      rfl
+
 private theorem rawNoObservableFailure_log_succ
     {fuel : Nat}
     {sourceShared : EvmYul.SharedState .Yul}
@@ -612,6 +852,61 @@ theorem forwardAtArity_of_logFamily
   | log3 => exact forwardAtArity_log3
   | log4 => exact forwardAtArity_log4
 
+theorem backwardAt_of_logFamily
+    {codeRel : StateRelation.CodeRel} (fuel : Nat)
+    {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    (hFamily : LogFamily prim op arity) :
+    BackwardAt codeRel (fuel + 1) prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel hPermitted hRun
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, _⟩ := hFamily.metadata
+  have hInputLength :
+      sourceValues.length =
+        Expressions.Structured.BasicOp.inputs op := by
+    by_contra hLength
+    simp [Locals.Source.PrimitiveSemantics.structured,
+      hLength, Structured.invalid] at hRun
+  have hArity : sourceValues.length = arity := by
+    simpa [hInputs] using hInputLength
+  have hTargetPermission :
+      target.shared.executionEnv.perm = true := by
+    cases hFamily <;>
+      simpa [Functions.ObserverSafety.PrimitivePermitted] using
+        hPermitted
+  have hSourcePermission :
+      sourceShared.executionEnv.perm = true := by
+    rw [hShared.world.executionEnv.permission]
+    exact hTargetPermission
+  obtain ⟨sourceAfter, hSourceRun⟩ :=
+    hFamily.sourceRun_of_arity
+      (fuel := fuel) hSourcePermission hArity
+  have hInputArity :
+      sourceValues.length =
+        Expressions.Structured.BasicOp.inputs op := by
+    simpa [hInputs] using hArity
+  obtain
+      ⟨expectedShared, hExpected, hFinalRel, hStore⟩ :=
+    forwardAtArity_of_logFamily
+      (codeRel := codeRel) (fuel := fuel + 1) hFamily
+      (show
+        StateRelation.Regular.Rel codeRel
+          (.Ok sourceShared sourceVars) target from
+        ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+      hInputArity hSourceRun
+  rw [hExpected] at hRun
+  have hPair := Except.ok.inj hRun
+  have hSharedEq := congrArg Prod.fst hPair
+  have hOutputsEq := congrArg Prod.snd hPair
+  change expectedShared = targetShared at hSharedEq
+  change [] = outputs at hOutputsEq
+  subst targetShared
+  subst outputs
+  exact ⟨sourceAfter, hSourceRun, hFinalRel, hStore⟩
+
 theorem safeLog
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -639,8 +934,39 @@ theorem safeLog
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOpArity hYulObserver hFunctionsObserver hTerminal hOp
+      (fun hRaw =>
+        hFamily.targetPermitted_of_run hRel.2 hRaw)
       (forwardAtArity_of_logFamily hFamily)
       (by simpa [hInputs] using hArity) hRel hRun
+
+theorem safeLogBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    {sourceValues outputs : List Word}
+    (hFamily : LogFamily prim op arity)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  obtain ⟨_hInputs, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  simpa using
+    (safeBasicOpBackward hYulObserver hFunctionsObserver hTerminal hOp
+      (backwardAt_of_logFamily
+        (codeRel := codeRel) 0 hFamily)
+      hRel hRun)
 
 end FunctionsObserverPrimitive
 end Yul
