@@ -1557,3 +1557,4 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_of_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt

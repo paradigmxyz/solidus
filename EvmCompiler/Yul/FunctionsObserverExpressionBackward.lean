@@ -743,6 +743,253 @@ theorem boundArgsBackwardAt
         ⟨headBackward.sourceFinal, value :: restBackward.values,
           hSource', scopedPrepared, hTargetEq, hCtxEq⟩
 
+theorem boundPrimitiveBackwardAt
+    (profile : SolcValidation.DialectProfile)
+    (sourceContract : EvmYul.Yul.Ast.YulContract)
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    {fuel targetFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {prim : EvmYul.Operation .Yul} {args : List AstExpr}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target preTarget evalTarget :
+      Functions.ObserverSemantics.State transcript}
+    {ctx finalCtx : Functions.Source.Ctx}
+    {value : Word}
+    (hFuel : directFuel (.Call (.inl prim) args) ≤ fuel)
+    (hOk :
+      SolcValidation.ExprOk? profile sourceContract layout 1
+          (.Call (.inl prim) args) =
+        true)
+    (hBound : EvmCompiler.Yul.Expr.List.directPureArgsSafe? args = false)
+    (hLower :
+      EvmCompiler.Yul.Expr.lower1Unchecked? before
+          (.Call (.inl prim) args) =
+        some (pre, lower, after))
+    (hExpr :
+      ∀ {exprFuel targetExprFuel : Nat}
+        {exprBefore exprAfter : Fresh.State}
+        {expr : AstExpr} {exprPre : List Functions.Stmt}
+        {exprLower : Locals.Expr 1}
+        {exprSource : ObserverSemantics.SourceReplay.State transcript}
+        {exprTarget exprPreTarget exprEvalTarget :
+          Functions.ObserverSemantics.State transcript}
+        {exprCtx exprFinalCtx : Functions.Source.Ctx}
+        {exprValue : Word},
+        directFuel expr ≤ exprFuel →
+        SolcValidation.ExprOk? profile sourceContract layout 1 expr = true →
+        EvmCompiler.Yul.Expr.lower1Unchecked? exprBefore expr =
+          some (exprPre, exprLower, exprAfter) →
+        StateRelation.Replay.ScopedExactRel
+          codeRel layout exprSource exprTarget →
+        StateRelation.Vars.TargetDomainWithin
+          exprBefore.used exprTarget.source.vars →
+        StateRelation.Vars.NamesWithin exprBefore.used exprCtx.scope →
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program exprCtx targetExprFuel
+              { stmts := exprPre } exprTarget =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular exprPreTarget,
+              exprFinalCtx) →
+        Functions.Source.Effectful.Expr.eval
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            exprLower exprPreTarget =
+          .ok (exprEvalTarget, [exprValue]) →
+        Nonempty
+          (AlignedValueBackward contract transcript codeRel program
+            codeOverride exprFuel exprBefore exprAfter layout expr exprPre
+            exprLower exprSource exprTarget exprPreTarget exprEvalTarget
+            exprCtx exprFinalCtx exprValue))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin before.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hPre :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx targetFuel { stmts := pre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular preTarget,
+            finalCtx))
+    (hTarget :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower preTarget =
+        .ok (evalTarget, [value])) :
+    Nonempty
+      (AlignedValueBackward contract transcript codeRel program codeOverride
+        fuel before after layout (.Call (.inl prim) args) pre lower source
+        target preTarget evalTarget ctx finalCtx value) := by
+  cases fuel with
+  | zero =>
+      simp [directFuel] at hFuel
+  | succ callFuel =>
+      have hArgsFuel : directArgsFuel args ≤ callFuel := by
+        unfold directFuel at hFuel
+        unfold directArgsFuel
+        have hMax :
+            2 * args.length + maxDirectFuel args ≤
+              max (2 * args.length + maxDirectFuel args) 2 :=
+          Nat.le_max_left _ _
+        omega
+      have hPrimFuel : 2 ≤ callFuel := by
+        unfold directFuel at hFuel
+        have hMax :
+            2 ≤ max (directArgsFuel args) 2 :=
+          Nat.le_max_right _ _
+        omega
+      cases
+          EvmCompiler.Yul.Expr.uncheckedBoundPrimitiveLowering_of_lower1Unchecked?
+            hBound hLower with
+      | @primitive _ _ _ op _ lowerArgs seq hOp hArgs hSeq hOutputs =>
+          have hEligible :
+              ∀ expr, expr ∈ args →
+                SolcValidation.ExprOk? profile sourceContract layout 1 expr =
+                  true := by
+            intro expr hMem
+            exact
+              SolcValidation.exprOk_of_exprsOk_of_mem
+                (SolcValidation.exprsOk_of_exprOk_primitive hOk)
+                hMem
+          obtain ⟨argsBackward⟩ :=
+            boundArgsBackwardAt profile sourceContract contract transcript
+              codeRel program codeOverride hArgsFuel hArgs hEligible hExpr
+              hRel hDomain hScope hPre
+          rw [FunctionsObserverExpression.exprEval_cast] at hTarget
+          obtain
+              ⟨targetAfterArgs, targetValues,
+                hTargetArgs, hTargetPrimitive⟩ :=
+            Functions.Source.Effectful.Expr.eval_prim_ok_parts
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              hTarget
+          have hSeq' :
+              EvmCompiler.Yul.Expr.List.toSeq? lowerArgs.reverse
+                  (Expressions.Structured.BasicOp.inputs op) =
+                some seq := by
+            simpa [EvmCompiler.Yul.Expr.List.toStackSeq?] using hSeq
+          have hStableArgs :=
+            argsBackward.prepared.prepared.stackStable
+              argsBackward.prepared.prepared.prepared.finalTarget
+              (StateRelation.Vars.TargetExtends.refl _)
+          have hStableArgs' :
+              Functions.Source.Effectful.ArgList.eval
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  lowerArgs.reverse
+                  argsBackward.prepared.prepared.prepared.finalTarget =
+                .ok
+                  (argsBackward.prepared.prepared.prepared.finalTarget,
+                    argsBackward.values.reverse) := by
+            simpa using hStableArgs
+          have hPreparedSeq :=
+            FunctionsObserverExpression.argListEval_toSeq
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              hSeq' hStableArgs'
+          have hPreTarget :
+              argsBackward.prepared.prepared.prepared.finalTarget =
+                preTarget :=
+            argsBackward.finalTarget_eq
+          rw [hPreTarget] at hPreparedSeq
+          rw [hPreparedSeq] at hTargetArgs
+          injection hTargetArgs with hArgsResult
+          injection hArgsResult with hAfterArgs hValues
+          subst targetAfterArgs
+          subst targetValues
+          let primFuel := callFuel - 2
+          have hCallFuel : primFuel + 2 = callFuel := by
+            dsimp [primFuel]
+            omega
+          have hTargetPrimitive' :
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript).eval
+                  op
+                  argsBackward.prepared.prepared.prepared.finalTarget
+                  argsBackward.values.reverse =
+                .ok (evalTarget, [value]) := by
+            rw [hPreTarget]
+            exact hTargetPrimitive
+          obtain
+              ⟨sourceFinal, hSourcePrimitive, hFinalRel, hStore⟩ :=
+            EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelectedBackwardAt
+              primFuel
+              (Prim.toUncheckedBasicOp?_some_terminal_none hOp)
+              hOp
+              (StateRelation.Replay.rel_of_scopedExact
+                argsBackward.prepared.relation)
+              hTargetPrimitive'
+          have hSourcePrimitive' :
+              (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript).eval callFuel
+                  argsBackward.sourceFinal prim argsBackward.values =
+                .ok (sourceFinal, [value]) := by
+            simpa [hCallFuel] using hSourcePrimitive
+          have hSourceValues :
+              Yul.Source.Effectful.evalValues
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (callFuel + 1) (.Call (.inl prim) args)
+                  codeOverride source =
+                .ok (sourceFinal, [value]) := by
+            simp only [Yul.Source.Effectful.evalValues,
+              argsBackward.sourceRun]
+            simpa using hSourcePrimitive'
+          have hSource :
+              Yul.Source.Effectful.eval
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (callFuel + 1) (.Call (.inl prim) args)
+                  codeOverride source =
+                .ok (sourceFinal, value) := by
+            simp [Yul.Source.Effectful.eval, hSourceValues]
+          let prepared :=
+            PreparedValue.afterPrepared
+              (lower :=
+                EvmCompiler.Yul.Expr.cast hOutputs (.prim op seq))
+              argsBackward.prepared.prepared.prepared
+              (by
+                rw [hPreTarget]
+                rw [FunctionsObserverExpression.exprEval_cast]
+                exact hTarget)
+              hFinalRel
+          let scopedPrepared :
+              ScopedPreparedValue contract transcript codeRel program
+                pre (EvmCompiler.Yul.Expr.cast hOutputs (.prim op seq))
+                after layout sourceFinal target ctx value :=
+            { prepared := by
+                simpa using prepared
+              relation :=
+                StateRelation.Replay.scopedExact_of_rel_store
+                  prepared.rel (by
+                    rw [hStore]
+                    exact
+                      StateRelation.Replay.sourceStoreDomain_of_scopedExact
+                        argsBackward.prepared.relation) }
+          exact
+            ⟨sourceFinal, by simpa using hSource, scopedPrepared,
+              hPreTarget, rfl, argsBackward.finalCtx_eq⟩
+
 theorem directBackwardAt
     (profile : SolcValidation.DialectProfile)
     (sourceContract : EvmYul.Yul.Ast.YulContract)

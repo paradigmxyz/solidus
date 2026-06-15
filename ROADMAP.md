@@ -1733,10 +1733,12 @@ corridor.
   against the real `UncheckedBoundLowering`: the proof splits concrete target
   blocks, inverts generated `let` bindings, reconstructs exact-fuel
   right-to-left Yul argument evaluation, and returns the ordinary scoped
-  prepared-argument artifact aligned to the target run. The current obligation
-  is to instantiate that interface in recursive bound primitive expressions
-  and function-call expressions, followed by statements, control, loops, and
-  whole-program inversion.
+  prepared-argument artifact aligned to the target run. Bound primitive
+  expressions now consume that interface, identify the actual typed argument
+  execution, and reconstruct the source primitive through the exhaustive
+  backward dispatcher. The current obligation is to close the strictly
+  smaller recursive expression interface with function-call expressions,
+  followed by statements, control, loops, and whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

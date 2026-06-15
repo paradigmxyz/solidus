@@ -251,6 +251,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.AlignedArgsBackward
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt
