@@ -1310,6 +1310,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.close
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.prependForGuard
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.closeForGuardBody
+#print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedLoopResult.ofFalse
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward.block
 #print axioms EvmCompiler.Yul.Stmt.toFunctionsListUncheckedFuel?_if_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_if_ok_parts
@@ -1324,6 +1325,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_for_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero
+#print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.evalCondition_one
 #print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_iszero_of_eval_singleton
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runScoped_forGuard_break_exists
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_forGuard_body_exists

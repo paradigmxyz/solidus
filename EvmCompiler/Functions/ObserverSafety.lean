@@ -208,6 +208,23 @@ theorem eval_iszero
     Locals.Source.State.withShared]
   rfl
 
+theorem evalCondition_one
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    (state : Functions.ObserverSemantics.State transcript) :
+    Functions.Source.Effectful.Expr.evalCondition
+        (Functions.ObserverSemantics.stateModel transcript)
+        (primitiveSemantics contract transcript)
+        (.lit (EvmYul.UInt256.ofNat 1)) state =
+      .ok (state, true) := by
+  apply
+    Functions.Source.Effectful.Expr.evalCondition_true_of_eval_singleton
+      (value := EvmYul.UInt256.ofNat 1)
+      (Functions.ObserverSemantics.stateModel transcript)
+      (primitiveSemantics contract transcript)
+  · rfl
+  · decide
+
 theorem terminal_parts
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

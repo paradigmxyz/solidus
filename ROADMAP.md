@@ -1675,8 +1675,10 @@ corridor.
   Loop-owned compiler/source decomposition, asymmetric source/target handler
   scopes, resource-sensitive zero/nonzero guard execution, source-store
   stability across hidden target extensions, and reusable guarded-body lexical
-  closing are checked. The next obligation is recursive `for` outcome
-  composition, followed by mutual statement/block/function closure.
+  closing are checked. The zero-condition loop outcome is checked end to end
+  through the generated body break and canonical Functions loop result. The
+  next obligation is nonzero body/post and recursive `for` outcome composition,
+  followed by mutual statement/block/function closure.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

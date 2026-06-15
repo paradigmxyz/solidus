@@ -371,6 +371,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedStmtResult.ofStatement
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult
 #check EvmCompiler.Yul.FunctionsObserverForward.ClosedListResult
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopedLoopResult
+#check EvmCompiler.Yul.FunctionsObserverForward.ScopedLoopResult.ofFalse
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.close
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.prependForGuard
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.closeForGuardBody
@@ -399,6 +401,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.exec_for_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.evalCondition_one
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_forGuard_break_exists
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_forGuard_body_exists
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
