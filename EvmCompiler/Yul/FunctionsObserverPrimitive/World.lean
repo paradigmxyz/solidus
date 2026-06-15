@@ -205,6 +205,145 @@ theorem safeWorldNullary
       (forwardAtArity_of_worldNullary hFamily)
       hArity hRel hRun
 
+inductive WorldUnaryRead :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.State .Yul → Word → Word) →
+      (EvmYul.State .EVM → Word → Word) → Prop where
+  | calldataload :
+      WorldUnaryRead (.Env .CALLDATALOAD) .calldataload
+        EvmYul.State.calldataload EvmYul.State.calldataload
+  | blockhash :
+      WorldUnaryRead (.Block .BLOCKHASH) .blockhash
+        EvmYul.State.blockHash EvmYul.State.blockHash
+
+theorem WorldUnaryRead.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.inputs op = 1 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.unaryState
+          (fun state value => (state, targetResult state value))) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem WorldUnaryRead.result_eq
+    {codeRel : StateRelation.CodeRel}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult)
+    {source : EvmYul.State .Yul}
+    {target : EvmYul.State .EVM}
+    (hRel : StateRelation.World.Rel codeRel source target)
+    (value : Word) :
+    sourceResult source value = targetResult target value := by
+  cases hFamily with
+  | calldataload =>
+      simp [EvmYul.State.calldataload,
+        hRel.executionEnv.calldata]
+  | blockhash =>
+      simp [EvmYul.State.blockHash,
+        EvmYul.State.blockHashes,
+        hRel.executionEnv.header, hRel.blocks]
+
+theorem yul_primCall_succ_eq_of_worldUnaryRead
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      (match EvmYul.Yul.unaryStateOp
+        (fun state value => (state, sourceResult state value))
+        source args with
+      | .ok (state, value?) => .ok (state, value?.toList)
+      | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_worldUnaryRead
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_worldUnaryRead hFamily] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.unaryStateOp] at hCall
+      | cons value rest =>
+          cases rest with
+          | cons next tail =>
+              simp [EvmYul.Yul.unaryStateOp] at hCall
+          | nil =>
+              simp [EvmYul.Yul.unaryStateOp,
+                EvmYul.Yul.State.setSharedState] at hCall
+              rcases hCall with ⟨rfl, rfl⟩
+              have hResult :
+                  sourceResult sourceShared.toState value =
+                    targetResult target.shared.toState value :=
+                hFamily.result_eq hShared.world value
+              refine ⟨target.shared, ?_, ?_⟩
+              · simp [Locals.Source.PrimitiveSemantics.structured,
+                  hInputs, hStep, Assembly.PrimStep.run,
+                  EvmYul.EVM.unaryStateOp,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC, EvmYul.Stack.pop,
+                  EvmYul.Stack.push, Id.run, hResult] <;>
+                simpa using hResult.symm
+              · simpa [Locals.Source.State.withShared] using
+                  (show
+                    StateRelation.Regular.Rel codeRel
+                      (.Ok sourceShared sourceVars) target from
+                    ⟨sourceShared, sourceVars, rfl,
+                      hShared, hVars⟩)
+
+theorem safeWorldUnaryRead
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.State .Yul → Word → Word}
+    {targetResult : EvmYul.State .EVM → Word → Word}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldUnaryRead prim op sourceResult targetResult)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_worldUnaryRead hFamily) hRel hRun
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

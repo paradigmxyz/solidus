@@ -217,6 +217,139 @@ theorem safeEnvironmentNullary
       (forwardAtArity_of_environmentNullary hFamily)
       hArity hRel hRun
 
+inductive EnvironmentUnary :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.ExecutionEnv .Yul → Word → Word) →
+      (EvmYul.ExecutionEnv .EVM → Word → Word) → Prop where
+  | blobhash :
+      EnvironmentUnary (.Block .BLOBHASH) .blobhash
+        EvmYul.blobhash EvmYul.blobhash
+
+theorem EnvironmentUnary.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult) :
+    Expressions.Structured.BasicOp.inputs op = 1 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.unaryExecutionEnv targetResult) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem EnvironmentUnary.result_eq
+    {codeRel : StateRelation.CodeRel}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult)
+    {source : EvmYul.ExecutionEnv .Yul}
+    {target : EvmYul.ExecutionEnv .EVM}
+    (hRel : StateRelation.ExecutionEnv.Rel codeRel source target)
+    (value : Word) :
+    sourceResult source value = targetResult target value := by
+  cases hFamily
+  simp [EvmYul.blobhash, hRel.blobVersionedHashes]
+
+theorem yul_primCall_succ_eq_of_environmentUnary
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      (match EvmYul.Yul.unaryExecutionEnvOp
+        sourceResult source args with
+      | .ok (state, value?) => .ok (state, value?.toList)
+      | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_environmentUnary
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_environmentUnary hFamily] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.unaryExecutionEnvOp] at hCall
+      | cons value rest =>
+          cases rest with
+          | cons next tail =>
+              simp [EvmYul.Yul.unaryExecutionEnvOp] at hCall
+          | nil =>
+              simp [EvmYul.Yul.unaryExecutionEnvOp] at hCall
+              rcases hCall with ⟨rfl, rfl⟩
+              have hResult :
+                  sourceResult sourceShared.executionEnv value =
+                    targetResult target.shared.executionEnv value := by
+                exact hFamily.result_eq
+                  hShared.world.executionEnv value
+              refine ⟨target.shared, ?_, ?_⟩
+              · simp [Locals.Source.PrimitiveSemantics.structured,
+                  hInputs, hStep, Assembly.PrimStep.run,
+                  EvmYul.EVM.unaryExecutionEnvOp,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC, EvmYul.Stack.pop,
+                  EvmYul.Stack.push, hResult, Id.run]
+                simpa using hResult.symm
+              · simpa [Locals.Source.State.withShared] using
+                  (show
+                    StateRelation.Regular.Rel codeRel
+                      (.Ok sourceShared sourceVars) target from
+                    ⟨sourceShared, sourceVars, rfl,
+                      hShared, hVars⟩)
+
+theorem safeEnvironmentUnary
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceResult : EvmYul.ExecutionEnv .Yul → Word → Word}
+    {targetResult : EvmYul.ExecutionEnv .EVM → Word → Word}
+    {sourceValues outputs : List Word}
+    (hFamily :
+      EnvironmentUnary prim op sourceResult targetResult)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_environmentUnary hFamily) hRel hRun
+
 end FunctionsObserverPrimitive
 end Yul
 end EvmCompiler

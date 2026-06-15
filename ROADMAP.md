@@ -1507,7 +1507,8 @@ corridor.
   for observer primitives, and the ordinary compiler equations lift those
   proofs to checked `gas()` and `msize()` expression-lowering leaves.
   Pass-owned semantic classifiers now cover pure binary/unary/ternary
-  operations, execution-environment/header nullaries, world-state nullaries,
+  operations, execution-environment/header nullaries and unary `blobhash`,
+  world-state nullaries, read-only `calldataload`/`blockhash`,
   `returndatasize`, `pop`, `mload`, `mstore`, `mstore8`, `mcopy`, and
   `keccak256`. `selfbalance` is derived through related account maps rather
   than a whole-world equality. The primitive interface has separate exact-arity
