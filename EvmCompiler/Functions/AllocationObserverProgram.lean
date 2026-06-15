@@ -451,6 +451,41 @@ def MainArtifact.start
     { env := []
       nextSlot := compilation.recipe.stateAfterFunctions.nextSlot }
 
+/--
+Allocation-lowering state before compiler-owned allocator/frame setup.
+
+The source prelude has no local bindings, so its adjacent preservation theorem
+uses this empty layout. Main-frame setup then establishes `MainArtifact.start`.
+-/
+def MainArtifact.beforeSetup
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    (_artifact : MainArtifact compilation) :
+    AllocationLowering.State :=
+  { allocation :=
+      { env := []
+        nextSlot := compilation.recipe.stateAfterFunctions.nextSlot }
+    layout := [] }
+
+/--
+Number of scratch frames owned when execution reaches the lowered main body.
+-/
+def mainSetupDepth
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (compilation :
+      AllocationObserverForward.Compilation allocation program expressions) :
+    Nat :=
+  if AllocationLowering.mainNeedsFrame
+      compilation.recipe compilation.stackSlots then
+    1
+  else
+    0
+
 theorem MainArtifact.lowerRest
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -599,6 +634,375 @@ theorem MainPrepared.ofArtifact
        compileBody := hBody'
        cleanupCode := hCleanup
        output := hOutput }⟩
+
+namespace MainSetup
+
+/--
+Execute the allocator and optional main-frame setup emitted by the ordinary
+allocation and Locals passes.
+
+The result is the exact compiler-selected resource invariant consumed by the
+recursive main-body theorem. No observer-specific compiler, generated-code
+premise, replay certificate, or call oracle appears in the interface.
+-/
+theorem forward
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {artifact : MainArtifact compilation}
+    (prepared : MainPrepared artifact)
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hSourceCtx : prepared.sourceCtx = Locals.Ctx.initial)
+    (hInvariant :
+      AllocationObserverContext.ActivationInvariant
+        program.memoryContract artifact.lowerCtx artifact.beforeSetup
+        Locals.Ctx.initial artifact.plan [] 0 .stack source target) :
+    ∃ frameBase mode targetFinal targetFuel,
+      Structured.ObserverSemantics.Block.Eval
+        expressions.toStructured targetFuel
+        { stmts :=
+            Expressions.StmtList.toStructured
+              (prepared.allocatorCode ++ prepared.frameCode) }
+        target
+        (Structured.EffectSemantics.Outcome.regular targetFinal) ∧
+      AllocationObserverContext.ActivationResourceInvariant
+        artifact.resourceMode program.memoryContract
+        (mainSetupDepth compilation) artifact.lowerCtx artifact.start
+        prepared.bodyCtx artifact.plan [] frameBase mode source
+        targetFinal := by
+  rcases artifact.resourceMode_spec with hStack | hScratch
+  · rcases hStack with
+      ⟨hMode, hNoAllocator, hNoFrame, _hFunctions,
+        _hAllocatorPrelude, _hFramePrelude⟩
+    have hAllocatorExpected :=
+      artifact.components.compileAllocator_of_no_allocator
+        hNoAllocator prepared.sourceCtx
+    have hAllocatorPair :
+        (prepared.allocatorCode, prepared.allocatorCtx) =
+          ([], prepared.sourceCtx) :=
+      Option.some.inj
+        (prepared.compileAllocator.symm.trans hAllocatorExpected)
+    have hAllocatorCode := congrArg Prod.fst hAllocatorPair
+    have hAllocatorCtx := congrArg Prod.snd hAllocatorPair
+    simp only [Prod.fst] at hAllocatorCode
+    simp only [Prod.snd] at hAllocatorCtx
+    have hFrameExpected :=
+      artifact.components.compileFrame_of_no_frame
+        hNoFrame prepared.allocatorCtx
+    have hFramePair :
+        (prepared.frameCode, prepared.bodyCtx) =
+          ([], prepared.allocatorCtx) :=
+      Option.some.inj
+        (prepared.compileFrame.symm.trans hFrameExpected)
+    have hFrameCode := congrArg Prod.fst hFramePair
+    have hBodyCtx := congrArg Prod.snd hFramePair
+    simp only [Prod.fst] at hFrameCode
+    simp only [Prod.snd] at hBodyCtx
+    have hStart :
+        artifact.start = artifact.beforeSetup := by
+      simp [MainArtifact.start, MainArtifact.beforeSetup,
+        AllocationLowering.mainStartWithFrame, hNoFrame]
+    have hBodyCtxInitial :
+        prepared.bodyCtx = Locals.Ctx.initial := by
+      rw [hBodyCtx, hAllocatorCtx, hSourceCtx]
+    have hActivation :
+        AllocationObserverContext.ActivationInvariant
+          program.memoryContract artifact.lowerCtx artifact.start
+          prepared.bodyCtx artifact.plan [] 0 .stack source target := by
+      rw [hStart, hBodyCtxInitial]
+      exact hInvariant
+    refine
+      ⟨0, .stack, target, 1, ?_,
+        ?_⟩
+    · simpa [hAllocatorCode, hFrameCode,
+        Expressions.StmtList.toStructured] using
+          (Structured.EffectSemantics.Block.Eval.nil
+            (program := expressions.toStructured) (state := target))
+    · rw [hMode]
+      simpa [mainSetupDepth, hNoFrame] using
+        (AllocationObserverContext.ActivationResourceInvariant.stackOnly
+          (allocatorDepth := 0) hActivation rfl)
+  · rcases hScratch with
+      ⟨config, hMode, hFrameConfig, hNeedsAllocator⟩
+    have hConfig :
+        AllocationSupport.scratchFrameConfig?
+            program.memoryContract compilation.recipe.frameWords =
+          some config := by
+      simpa [AllocationObserverForward.Compilation.frameConfig?] using
+        hFrameConfig
+    have hAllocatorExpected :=
+      artifact.components.compileAllocator_of_scratch
+        hFrameConfig hNeedsAllocator prepared.sourceCtx
+    have hAllocatorPair :
+        (prepared.allocatorCode, prepared.allocatorCtx) =
+          ([Expressions.Stmt.code
+              (AllocationSupport.scratchAllocatorInitCode config)],
+            prepared.sourceCtx) :=
+      Option.some.inj
+        (prepared.compileAllocator.symm.trans hAllocatorExpected)
+    have hAllocatorCode := congrArg Prod.fst hAllocatorPair
+    have hAllocatorCtx := congrArg Prod.snd hAllocatorPair
+    simp only [Prod.fst] at hAllocatorCode
+    simp only [Prod.snd] at hAllocatorCtx
+    obtain
+        ⟨targetAfterInit, hInitRun, hInitRel, hInitReady, hInitStack⟩ :=
+      AllocationObserverPreservation.Frame.allocatorInit_forward
+        hInvariant.state.base hConfig hInvariant.state.activeNoWrap
+    by_cases hNeedsFrame :
+        AllocationLowering.mainNeedsFrame
+            compilation.recipe compilation.stackSlots =
+          true
+    · have hFrameExpected :=
+        artifact.components.compileFrame_of_scratch
+          hFrameConfig hNeedsFrame prepared.allocatorCtx
+      have hFramePair :
+          (prepared.frameCode, prepared.bodyCtx) =
+            ([Expressions.Stmt.code
+                (AllocationSupport.scratchFrameAcquireCode config ++
+                  Locals.bindLocals 0
+                    (compilation.frameName ::
+                      prepared.allocatorCtx.layout)),
+              Expressions.Stmt.code
+                (AllocationSupport.bindScratchBindingsCode 0
+                  (AllocationLowering.mainScratchBindings
+                    compilation.recipe compilation.stackSlots))],
+              prepared.allocatorCtx.withLayout
+                (compilation.frameName ::
+                  prepared.allocatorCtx.layout)) :=
+        Option.some.inj
+          (prepared.compileFrame.symm.trans hFrameExpected)
+      have hFrameCode := congrArg Prod.fst hFramePair
+      have hBodyCtx := congrArg Prod.snd hFramePair
+      simp only [Prod.fst] at hFrameCode
+      simp only [Prod.snd] at hBodyCtx
+      have hPositiveRecipe :
+          0 < compilation.recipe.frameWords := by
+        apply
+          AllocationLowering.frameWords_pos_of_validate_of_rootNeedsFrame
+            compilation.validate
+        simpa [AllocationLowering.rootNeedsFrame,
+          AllocationLowering.mainNeedsFrame,
+          AllocationLowering.mainScratchBindings] using hNeedsFrame
+      obtain
+          ⟨_reservation, _hReservation, _hAllocator, _hFirst,
+            _hLimit, hWords, _hWF, _hHost, _hReservationPositive,
+            _hFits⟩ :=
+        AllocationSupport.scratchFrameConfig?_sound hConfig
+      have hPositive : 0 < config.frameWords := by
+        rw [hWords]
+        exact hPositiveRecipe
+      have hBudget :
+          AllocationObserverRelation.Frame.Budget config 0 :=
+        AllocationObserverRelation.Frame.budget_zero_of_scratchFrameConfig?
+          hConfig
+      obtain
+          ⟨targetAfterFrame, hFrameRun, hFrameRel, hFrameReady,
+            hFrameStack⟩ :=
+        AllocationObserverPreservation.Frame.scratchFrameAcquire_empty_forward
+          hConfig hPositive hBudget hInitReady hInitRel
+      have hBindLocalsRun :
+          Structured.ObserverSemantics.Code.run
+              (Locals.bindLocals 0
+                (compilation.frameName ::
+                  prepared.allocatorCtx.layout))
+              targetAfterFrame =
+            .ok targetAfterFrame := by
+        rfl
+      have hFrameHeadRun :
+          Structured.ObserverSemantics.Code.run
+              (AllocationSupport.scratchFrameAcquireCode config ++
+                Locals.bindLocals 0
+                  (compilation.frameName ::
+                    prepared.allocatorCtx.layout))
+              targetAfterInit =
+            .ok targetAfterFrame := by
+        rw [AllocationObserverPreservation.ObserverCode.run_append,
+          hFrameRun]
+        simpa only [Except.bind] using hBindLocalsRun
+      have hBindingsRun :
+          Structured.ObserverSemantics.Code.run
+              (AllocationSupport.bindScratchBindingsCode 0
+                (AllocationLowering.mainScratchBindings
+                  compilation.recipe compilation.stackSlots))
+              targetAfterFrame =
+            .ok targetAfterFrame :=
+        AllocationObserverCall.EntryMarkers.run_bindScratchBindingsCode
+          0
+          (AllocationLowering.mainScratchBindings
+            compilation.recipe compilation.stackSlots)
+          targetAfterFrame
+      have hTargetEval :
+          Structured.ObserverSemantics.Block.Eval
+            expressions.toStructured 4
+            { stmts :=
+                [Structured.Stmt.code
+                    (AllocationSupport.scratchAllocatorInitCode config),
+                  Structured.Stmt.code
+                    (AllocationSupport.scratchFrameAcquireCode config ++
+                      Locals.bindLocals 0
+                        (compilation.frameName ::
+                          prepared.allocatorCtx.layout)),
+                  Structured.Stmt.code
+                    (AllocationSupport.bindScratchBindingsCode 0
+                      (AllocationLowering.mainScratchBindings
+                        compilation.recipe compilation.stackSlots))] }
+            target
+            (Structured.EffectSemantics.Outcome.regular
+              targetAfterFrame) :=
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hInitRun)
+          (Structured.EffectSemantics.Block.Eval.cons_regular
+            (Structured.EffectSemantics.Stmt.Eval.code hFrameHeadRun)
+            (Structured.EffectSemantics.Block.Eval.cons_regular
+              (Structured.EffectSemantics.Stmt.Eval.code hBindingsRun)
+              Structured.EffectSemantics.Block.Eval.nil))
+      have hAllocatorCtxInitial :
+          prepared.allocatorCtx = Locals.Ctx.initial := by
+        rw [hAllocatorCtx, hSourceCtx]
+      have hBodyLayout :
+          prepared.bodyCtx.layout = [compilation.frameName] := by
+        rw [hBodyCtx, hAllocatorCtxInitial]
+        rfl
+      have hStartLayout :
+          artifact.start.layout = [compilation.frameName] := by
+        simp [MainArtifact.start,
+          AllocationLowering.mainStartWithFrame, hNeedsFrame]
+      have hCompiler :
+          AllocationObserverContext.ActivationExprContext
+            artifact.lowerCtx artifact.start prepared.bodyCtx
+            artifact.plan [] (.scratch 0 config.frameWords) := by
+        apply
+          AllocationObserverContext.ActivationExprContext.scratch_of_layout
+            artifact.planWF
+        · rw [hBodyLayout, hStartLayout]
+        · simp [hStartLayout, MainArtifact.lowerCtx,
+            AllocationObserverForward.Compilation.lowerCtx,
+            AllocationObserverRelation.currentStackOrder]
+        · simp [AllocationObserverRelation.currentStackOrder]
+        · simp [MainArtifact.lowerCtx,
+            AllocationObserverForward.Compilation.lowerCtx,
+            AllocationObserverRelation.currentStackOrder]
+        · intro name hLive
+          simp at hLive
+        · intro name slot hLive
+          simp at hLive
+        · intro name slot hLive
+          simp at hLive
+      have hTargetInitialStack :
+          target.source.evm.stack = [] := by
+        apply List.length_eq_zero_iff.mp
+        simpa [Locals.Ctx.initial] using hInvariant.stackLength
+      have hTargetFrameLength :
+          targetAfterFrame.source.evm.stack.length = 1 := by
+        rw [hFrameStack, hInitStack, hTargetInitialStack]
+        rfl
+      have hActivation :
+          AllocationObserverContext.ActivationInvariant
+            program.memoryContract artifact.lowerCtx artifact.start
+            prepared.bodyCtx artifact.plan []
+            (AllocationObserverRelation.Frame.baseAt config 0)
+            (.scratch 0 config.frameWords) source targetAfterFrame :=
+        { compiler := hCompiler
+          planWF := artifact.planWF
+          defined := hInvariant.defined
+          state := hFrameRel
+          stackLength := by
+            rw [hTargetFrameLength, hBodyLayout]
+            rfl }
+      have hResource :
+          AllocationObserverContext.ActivationResourceInvariant
+            (.scratch config) program.memoryContract 1
+            artifact.lowerCtx artifact.start prepared.bodyCtx
+            artifact.plan []
+            (AllocationObserverRelation.Frame.baseAt config 0)
+            (.scratch 0 config.frameWords) source targetAfterFrame :=
+        { activation := hActivation
+          ready := by simpa using hFrameReady
+          owned := .scratch rfl rfl }
+      refine
+        ⟨AllocationObserverRelation.Frame.baseAt config 0,
+          .scratch 0 config.frameWords, targetAfterFrame, 4, ?_, ?_⟩
+      · simpa [hAllocatorCode, hFrameCode,
+          Expressions.StmtList.toStructured] using hTargetEval
+      · rw [hMode]
+        simpa [mainSetupDepth, hNeedsFrame] using hResource
+    · have hNoFrame :
+          AllocationLowering.mainNeedsFrame
+              compilation.recipe compilation.stackSlots =
+            false :=
+        Bool.eq_false_of_not_eq_true hNeedsFrame
+      have hFrameExpected :=
+        artifact.components.compileFrame_of_no_frame
+          hNoFrame prepared.allocatorCtx
+      have hFramePair :
+          (prepared.frameCode, prepared.bodyCtx) =
+            ([], prepared.allocatorCtx) :=
+        Option.some.inj
+          (prepared.compileFrame.symm.trans hFrameExpected)
+      have hFrameCode := congrArg Prod.fst hFramePair
+      have hBodyCtx := congrArg Prod.snd hFramePair
+      simp only [Prod.fst] at hFrameCode
+      simp only [Prod.snd] at hBodyCtx
+      have hBodyCtxInitial :
+          prepared.bodyCtx = Locals.Ctx.initial := by
+        rw [hBodyCtx, hAllocatorCtx, hSourceCtx]
+      have hStart :
+          artifact.start = artifact.beforeSetup := by
+        simp [MainArtifact.start, MainArtifact.beforeSetup,
+          AllocationLowering.mainStartWithFrame, hNoFrame]
+      have hCompiler :
+          AllocationObserverContext.ActivationExprContext
+            artifact.lowerCtx artifact.start prepared.bodyCtx
+            artifact.plan [] .stack := by
+        rw [hStart, hBodyCtxInitial]
+        exact hInvariant.compiler
+      have hActivation :
+          AllocationObserverContext.ActivationInvariant
+            program.memoryContract artifact.lowerCtx artifact.start
+            prepared.bodyCtx artifact.plan [] 0 .stack source
+            targetAfterInit :=
+        { compiler := hCompiler
+          planWF := artifact.planWF
+          defined := hInvariant.defined
+          state :=
+            .stack
+              (by
+                intro name slot hLive _hLocation
+                simp at hLive)
+              hInitReady.activeNoWrap hInitRel
+          stackLength := by
+            rw [hInitStack, hInvariant.stackLength, hBodyCtxInitial] }
+      have hTargetEval :
+          Structured.ObserverSemantics.Block.Eval
+            expressions.toStructured 2
+            { stmts :=
+                [Structured.Stmt.code
+                  (AllocationSupport.scratchAllocatorInitCode config)] }
+            target
+            (Structured.EffectSemantics.Outcome.regular
+              targetAfterInit) :=
+        Structured.EffectSemantics.Block.Eval.cons_regular
+          (Structured.EffectSemantics.Stmt.Eval.code hInitRun)
+          Structured.EffectSemantics.Block.Eval.nil
+      have hResource :
+          AllocationObserverContext.ActivationResourceInvariant
+            (.scratch config) program.memoryContract 0
+            artifact.lowerCtx artifact.start prepared.bodyCtx
+            artifact.plan [] 0 .stack source targetAfterInit :=
+        { activation := hActivation
+          ready := hInitReady
+          owned := .stack }
+      refine ⟨0, .stack, targetAfterInit, 2, ?_, ?_⟩
+      · simpa [hAllocatorCode, hFrameCode,
+          Expressions.StmtList.toStructured] using hTargetEval
+      · rw [hMode]
+        simpa [mainSetupDepth, hNoFrame] using hResource
+
+end MainSetup
 
 theorem MainArtifact.frameName_not_mem_final_env
     {allocation : Locals.Allocation.ProgramPlan}

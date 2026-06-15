@@ -4949,6 +4949,129 @@ theorem MainComponents.runtimeSelection
       .stackOnly hNoAllocator hNoMainFrame hNoFrameFunctions
         hAllocator hFrame
 
+/--
+The allocator prelude selected by successful main lowering compiles to the
+ordinary allocator-initialization code without changing the Locals context.
+-/
+theorem MainComponents.compileAllocator_of_scratch
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final)
+    {config : AllocationSupport.ScratchFrameConfig}
+    (hConfig : frameConfig? = some config)
+    (hNeeds : mainNeedsAllocator recipe stackSlots = true)
+    (ctx : Locals.Ctx) :
+    Locals.Block.compileOpen ctx
+        { stmts := components.allocatorPrelude } =
+      some
+        ([Expressions.Stmt.code
+          (AllocationSupport.scratchAllocatorInitCode config)],
+          ctx) := by
+  have hPrelude :
+      components.allocatorPrelude =
+        [.expr
+          (.code (results := 0)
+            (AllocationSupport.scratchAllocatorInitCode config))] := by
+    have hAllocator := components.allocator
+    simp [mainAllocatorPrelude?, hNeeds, hConfig] at hAllocator
+    exact hAllocator.symm
+  rw [hPrelude]
+  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+    Locals.Expr.compileCode, Locals.codeStmt]
+
+/--
+When main does not need allocator state, its allocator prelude compiles to no
+code and leaves the Locals context unchanged.
+-/
+theorem MainComponents.compileAllocator_of_no_allocator
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final)
+    (hNeeds : mainNeedsAllocator recipe stackSlots = false)
+    (ctx : Locals.Ctx) :
+    Locals.Block.compileOpen ctx
+        { stmts := components.allocatorPrelude } =
+      some ([], ctx) := by
+  have hPrelude : components.allocatorPrelude = [] := by
+    have hAllocator := components.allocator
+    simpa [mainAllocatorPrelude?, hNeeds] using hAllocator.symm
+  rw [hPrelude]
+  simp [Locals.Block.compileOpen]
+
+/--
+When main does not own a scratch frame, its frame prelude compiles to no code
+and leaves the Locals context unchanged.
+-/
+theorem MainComponents.compileFrame_of_no_frame
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final)
+    (hNeeds : mainNeedsFrame recipe stackSlots = false)
+    (ctx : Locals.Ctx) :
+    Locals.Block.compileOpen ctx
+        { stmts := components.framePrelude } =
+      some ([], ctx) := by
+  have hPrelude : components.framePrelude = [] := by
+    have hFrame := components.frame
+    simpa [mainFramePrelude?, hNeeds] using hFrame.symm
+  rw [hPrelude]
+  simp [Locals.Block.compileOpen]
+
+/--
+When main owns a scratch frame, its frame prelude compiles to the ordinary
+frame acquire, the Locals layout marker, and the scratch-binding markers.
+-/
+theorem MainComponents.compileFrame_of_scratch
+    {recipe : AllocationSupport.AllocationRecipe}
+    {stackSlots : SlotSet} {frameName : Name}
+    {frameConfig? : Option AllocationSupport.ScratchFrameConfig}
+    {state : AllocationSupport.CompileState}
+    {body : Block} {main : Locals.Block} {final : State}
+    (components :
+      MainComponents recipe stackSlots frameName frameConfig?
+        state body main final)
+    {config : AllocationSupport.ScratchFrameConfig}
+    (hConfig : frameConfig? = some config)
+    (hNeeds : mainNeedsFrame recipe stackSlots = true)
+    (ctx : Locals.Ctx) :
+    Locals.Block.compileOpen ctx
+        { stmts := components.framePrelude } =
+      some
+        ([Expressions.Stmt.code
+            (AllocationSupport.scratchFrameAcquireCode config ++
+              Locals.bindLocals 0 (frameName :: ctx.layout)),
+          Expressions.Stmt.code
+            (AllocationSupport.bindScratchBindingsCode 0
+              (mainScratchBindings recipe stackSlots))],
+          ctx.withLayout (frameName :: ctx.layout)) := by
+  have hPrelude :
+      components.framePrelude =
+        [Locals.Stmt.let_ frameName (frameExpr config),
+          bindScratchBindings 0
+            (mainScratchBindings recipe stackSlots)] := by
+    have hFrame := components.frame
+    simp [mainFramePrelude?, hNeeds, hConfig] at hFrame
+    exact hFrame.symm
+  rw [hPrelude]
+  simp [Locals.Block.compileOpen, Locals.Stmt.compile,
+    Locals.Expr.compileCode, Locals.codeStmt, bindScratchBindings,
+    Locals.Ctx.withLayout]
+
 def lowerToLocals? (recipe : AllocationSupport.AllocationRecipe)
     (stackSlots : SlotSet) (frameName : Name)
     (program : Program) : Option Locals.Program := do

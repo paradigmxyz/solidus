@@ -1030,7 +1030,8 @@ theorem allocatorInit_forward {transcript : Trace}
       AllocationObserverRelation.StateRel contract plan []
         stackOffset frameBase source targetFinal ∧
       AllocationObserverRelation.Frame.AllocatorReady config 0
-        targetFinal := by
+        targetFinal ∧
+      targetFinal.source.evm.stack = target.source.evm.stack := by
   let firstWord := EvmYul.UInt256.ofNat config.firstFrame
   let cellWord := EvmYul.UInt256.ofNat config.allocatorCell
   let afterFirst :=
@@ -1120,7 +1121,7 @@ theorem allocatorInit_forward {transcript : Trace}
       afterCell.source.evm.stack =
         cellWord :: firstWord :: target.source.evm.stack := by
     rfl
-  refine ⟨targetFinal, ?_, hFinalRel, hReady⟩
+  refine ⟨targetFinal, ?_, hFinalRel, hReady, rfl⟩
   simp only [AllocationSupport.scratchAllocatorInitCode]
   calc
     Structured.ObserverSemantics.Code.run
@@ -3178,6 +3179,108 @@ theorem scratchFrameAcquire_activation_forward {transcript : Trace}
             activeNoWrap := hFinalReady.activeNoWrap
             frameReserved := hScratch.frameReserved
             scratchBound := hScratch.scratchBound }
+
+/--
+Acquire a frame for an empty activation and make the new frame pointer the
+owned runtime representation of that activation.
+
+Unlike nested-call acquisition, there is no suspended caller frame and no live
+local can depend on the previous frame base.
+-/
+theorem scratchFrameAcquire_empty_forward {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {globalFrameWords depth oldFrameBase : Nat}
+    {config : AllocationObserverRelation.Frame.Config}
+    {plan : Locals.Allocation.Plan}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract globalFrameWords =
+        some config)
+    (hPositive : 0 < config.frameWords)
+    (hBudget :
+      AllocationObserverRelation.Frame.Budget config depth)
+    (hReady :
+      AllocationObserverRelation.Frame.AllocatorReady config depth target)
+    (hRel :
+      AllocationObserverRelation.StateRel contract plan [] 0 oldFrameBase
+        source target) :
+    ∃ targetFinal,
+      Structured.ObserverSemantics.Code.run
+          (AllocationSupport.scratchFrameAcquireCode config) target =
+        .ok targetFinal ∧
+      AllocationObserverRelation.ActivationStateRel
+        contract plan [] 0
+          (AllocationObserverRelation.Frame.baseAt config depth)
+          (.scratch 0 config.frameWords) source targetFinal ∧
+      AllocationObserverRelation.Frame.AllocatorReady
+        config (depth + 1) targetFinal ∧
+      targetFinal.source.evm.stack =
+        EvmYul.UInt256.ofNat
+            (AllocationObserverRelation.Frame.baseAt config depth) ::
+          target.source.evm.stack := by
+  obtain
+      ⟨targetFinal, hRun, hStack, hMachine, hFinalReady,
+        hFrameActive, hFrameAllocated⟩ :=
+    scratchFrameAcquire_forward
+      hConfig hPositive hBudget hReady hRel.core.machine
+  obtain ⟨hCursor, hWorld⟩ :=
+    scratchFrameAcquire_cursor_world hPositive hReady hRun
+  have hFrameNoWrap :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          MemoryContract.wordBytes * config.frameWords <
+        EvmYul.UInt256.size := by
+    simpa [AllocationObserverRelation.Frame.bytes,
+      MemoryContract.wordBytes] using
+      AllocationObserverRelation.Frame.noWrap_of_budget_of_scratchFrameConfig?
+        hConfig hBudget
+  have hFrameHost :
+      AllocationObserverRelation.Frame.baseAt config depth +
+          MemoryContract.wordBytes * config.frameWords <
+        USize.size := by
+    simpa [AllocationObserverRelation.Frame.bytes,
+      MemoryContract.wordBytes] using
+      AllocationObserverRelation.Frame.hostAddressable_of_budget_of_scratchFrameConfig?
+        hConfig hBudget
+  have hFrameReserved :
+      ∃ reservation,
+        contract.scratch? = some reservation ∧
+          reservation.containsRegion
+            (AllocationObserverRelation.Frame.baseAt config depth)
+            config.frameWords :=
+    AllocationObserverRelation.Frame.reserved_of_budget_of_scratchFrameConfig?
+      hConfig hBudget
+  have hEntry :
+      AllocationObserverRelation.ActivationCalleeEntryRel
+        contract plan [] []
+          (AllocationObserverRelation.Frame.baseAt config depth)
+          (.scratch 0 config.frameWords) source targetFinal := by
+    apply
+      AllocationObserverRelation.ActivationCalleeEntryRel.scratch_empty
+        (values := [])
+        (suffix :=
+          EvmYul.UInt256.ofNat
+              (AllocationObserverRelation.Frame.baseAt config depth) ::
+            target.source.evm.stack)
+    · exact hRel.cursor.trans hCursor.symm
+    · exact hMachine
+    · exact hRel.core.world.trans hWorld.symm
+    · rw [hStack]
+      rfl
+    · simpa [AllocationObserverRelation.Frame.bytes,
+        MemoryContract.wordBytes] using hFrameActive
+    · simpa [AllocationObserverRelation.Frame.bytes,
+        MemoryContract.wordBytes] using hFrameAllocated
+    · exact hFrameNoWrap
+    · exact hFrameHost
+    · exact hFinalReady.activeNoWrap
+    · exact hFrameReserved
+    · simp [Functions.Source.Store.lookupMany]
+    · simpa using hStack
+  exact
+    ⟨targetFinal, hRun,
+      AllocationObserverRelation.ActivationCalleeEntryRel.finish hEntry,
+      hFinalReady, hStack⟩
 
 theorem scratchFrameAcquire_backward {transcript : Trace}
     {contract : MemoryContract.Contract}

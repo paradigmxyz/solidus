@@ -369,8 +369,16 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.RecursiveBlockForward.toResource
 #check EvmCompiler.Functions.AllocationObserverProgram.compilationResourceMode
 #check EvmCompiler.Functions.AllocationLowering.compileNoVarExprCode?_of_lowerExpr
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.compileAllocator_of_scratch
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.compileAllocator_of_no_allocator
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.compileFrame_of_no_frame
+#check EvmCompiler.Functions.AllocationLowering.MainComponents.compileFrame_of_scratch
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.scoped_of_compileNoVar
 #check EvmCompiler.Functions.AllocationObserverProgram.SourcePrelude.forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Frame.allocatorInit_forward
+#check EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_empty_forward
+#check EvmCompiler.Functions.AllocationObserverProgram.mainSetupDepth
+#check EvmCompiler.Functions.AllocationObserverProgram.MainSetup.forward
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode
 #check EvmCompiler.Functions.AllocationObserverProgram.MainArtifact.resourceMode_spec
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared
