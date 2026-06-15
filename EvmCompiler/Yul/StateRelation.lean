@@ -1623,6 +1623,53 @@ theorem checkAssignment_ok
     firstDuplicate?_none_of_nodup names hNoDup,
     firstUndeclared?_none hDomain hDeclared]
 
+theorem checkAssignment_ok_parts
+    {layout : List Name} {source : EvmYul.Yul.VarStore}
+    {shared : EvmYul.SharedState .Yul} {names : List Name}
+    (hDomain : DomainExact layout source)
+    (hCheck :
+      EvmYul.Yul.checkAssignment (.Ok shared source) names = .ok ()) :
+    names.Nodup ∧
+      ∀ name, name ∈ names → name ∈ layout := by
+  unfold EvmYul.Yul.checkAssignment at hCheck
+  cases hDuplicate :
+      EvmYul.Yul.firstDuplicate? names with
+  | some duplicate =>
+      simp [hDuplicate] at hCheck
+  | none =>
+      cases hUndeclared :
+          EvmYul.Yul.firstUndeclared? (.Ok shared source) names with
+      | some undeclared =>
+          simp [hDuplicate, hUndeclared] at hCheck
+      | none =>
+          refine
+            ⟨nodup_of_firstDuplicate?_eq_none hDuplicate, ?_⟩
+          intro name hMem
+          have hNotUndeclared :=
+            List.find?_eq_none.mp hUndeclared name hMem
+          by_contra hNotMem
+          have hLookup :=
+            domainExact_isNone_of_not_mem hDomain hNotMem
+          simp [EvmYul.Yul.firstUndeclared?,
+            EvmYul.Yul.State.lookup?, hLookup] at hNotUndeclared
+
+theorem target_contains_of_scopedExact
+    {layout : List Name} {source : EvmYul.Yul.VarStore}
+    {target : Locals.Source.Store} {name : Name}
+    (hScoped : ScopedRel layout source target)
+    (hDomain : DomainExact layout source)
+    (hMem : name ∈ layout) :
+    target.contains name = true := by
+  have hSome : (source.lookup name).isSome = true :=
+    (hDomain name).mpr hMem
+  cases hLookup : source.lookup name with
+  | none =>
+      simp [hLookup] at hSome
+  | some value =>
+      have hTarget : target name = some value := by
+        simpa [hLookup] using (hScoped name hMem).symm
+      simp [Locals.Source.Store.contains, hTarget]
+
 theorem lookupMany_of_scopedExact
     {layout names : List Name}
     {source : EvmYul.Yul.VarStore}

@@ -1279,6 +1279,59 @@ structure PreparedValue
     StateRelation.Vars.TargetExtends
       target.source.vars preTarget.source.vars
 
+structure ScopedPreparedValue
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (program : Functions.Program)
+    (pre : List Functions.Stmt)
+    (lower : Locals.Expr 1)
+    (fresh : Fresh.State)
+    (layout : List Name)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx)
+    (value : Word) where
+  prepared :
+    PreparedValue contract transcript codeRel program pre lower
+      fresh source target ctx value
+  relation :
+    StateRelation.Replay.ScopedExactRel codeRel layout
+      source prepared.evalTarget
+
+def RecursiveScopedValueForward
+    (contract : MemoryContract.Contract)
+    (transcript : Assembly.ResourceTrace)
+    (codeRel : StateRelation.CodeRel)
+    (codeOverride : Option EvmYul.Yul.Ast.YulContract)
+    (program : Functions.Program)
+    (bound : Nat) : Prop :=
+  ∀ {exprFuel : Nat} {before after : Fresh.State}
+    {layout : List Name}
+    {expr : AstExpr} {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word},
+    exprFuel < bound →
+      EvmCompiler.Yul.Expr.lower1Unchecked? before expr =
+        some (pre, lower, after) →
+      StateRelation.Replay.ScopedExactRel codeRel layout source target →
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars →
+      StateRelation.Vars.NamesWithin before.used ctx.scope →
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          exprFuel expr codeOverride source =
+        .ok (source', values) →
+      ∃ value,
+        values = [value] ∧
+          Nonempty
+            (ScopedPreparedValue contract transcript codeRel program
+              pre lower after layout source' target ctx value)
+
 structure BoundValue
     (contract : MemoryContract.Contract)
     (transcript : Assembly.ResourceTrace)

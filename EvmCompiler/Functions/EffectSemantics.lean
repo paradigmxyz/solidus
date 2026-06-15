@@ -88,6 +88,16 @@ theorem eval_var {σ : Type}
       .ok (state, [value]) := by
   simp [eval, Locals.Source.Effectful.Expr.eval, hLookup]
 
+theorem evalOne_of_eval_singleton {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {value : Word}
+    (hEval :
+      eval model prim expr state =
+        .ok (final, [value])) :
+    evalOne model prim expr state =
+      .ok (final, value) := by
+  simp [evalOne, Locals.Source.Effectful.Expr.evalOne, hEval]
+
 end Expr
 
 namespace ArgList
@@ -1323,6 +1333,38 @@ theorem run_let_lit {σ : Type}
   simp [Stmt.run, Expr.evalOne, Expr.eval,
     Locals.Source.Effectful.Expr.evalOne,
     Locals.Source.Effectful.Expr.eval]
+
+theorem run_let_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state stateAfterValue : σ}
+    {name : Name} {value : Functions.Expr 1} {result : Word}
+    (hEval :
+      Expr.evalOne model prim value state =
+        .ok (stateAfterValue, result)) :
+    Stmt.run model prim program ctx fuel (.let_ name value) state =
+      .ok
+        (Outcome.regular (model.insert stateAfterValue name result),
+          { ctx with scope := name :: ctx.scope }) := by
+  simp [Stmt.run, hEval]
+
+theorem run_assign_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {fuel : Nat} {state stateAfterValue : σ}
+    {name : Name} {value : Functions.Expr 1} {result : Word}
+    (hContains : (model.vars state).contains name = true)
+    (hEval :
+      Expr.evalOne model prim value state =
+        .ok (stateAfterValue, result)) :
+    Stmt.run model prim program ctx fuel (.assign name value) state =
+      .ok
+        (Outcome.regular
+          (model.withVars stateAfterValue
+            (Locals.Source.Store.insert
+              (model.vars stateAfterValue) name result)),
+          ctx) := by
+  simp [Stmt.run, hContains, hEval]
 
 /--
 A successful `leave` statement has leave mode.

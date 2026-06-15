@@ -21,6 +21,13 @@ def stateModel (transcript : Trace) :
       state.withSource (state.source.insert name value) := by
   rfl
 
+@[simp] theorem stateModel_withVars
+    {transcript : Trace} (state : State transcript)
+    (vars : Locals.Source.Store) :
+    (stateModel transcript).withVars state vars =
+      state.withSource (state.source.withVars vars) := by
+  rfl
+
 def primitiveSemantics (transcript : Trace) :
     Functions.Source.Effectful.PrimitiveSemantics (State transcript) :=
   Locals.ObserverSemantics.primitiveSemantics transcript

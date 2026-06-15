@@ -15,6 +15,246 @@ interfaces; this module does not define a compiler or a control interpreter.
 abbrev Trace := Assembly.ResourceTrace
 abbrev Word := Assembly.Word
 
+namespace InitializedValue
+
+theorem run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {sourceAfterValue :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hValue :
+      FunctionsObserverExpression.PreparedValue
+        contract transcript codeRel program pre lower fresh
+        sourceAfterValue target ctx value)
+    (hScoped :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        sourceAfterValue hValue.evalTarget)
+    (hFresh : identName name ∉ layout) :
+    ∃ fuel finalTarget finalCtx,
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel
+          { stmts :=
+              pre ++
+                [Functions.Stmt.let_ (identName name) lower] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            finalCtx) ∧
+      StateRelation.Replay.ScopedExactRel codeRel
+        (identName name :: layout)
+        (sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value]))
+        finalTarget := by
+  let finalTarget :=
+    hValue.evalTarget.withSource
+      (hValue.evalTarget.source.insert (identName name) value)
+  let finalCtx :=
+    { hValue.finalCtx with
+      scope := identName name :: hValue.finalCtx.scope }
+  have hEvalOne :
+      Functions.Source.Effectful.Expr.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower hValue.preTarget =
+        .ok (hValue.evalTarget, value) :=
+    Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hValue.eval
+  have hLet :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 1
+          (.let_ (identName name) lower) hValue.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            finalCtx) := by
+    simpa [finalTarget, finalCtx,
+      Functions.ObserverSemantics.stateModel_insert] using
+        Functions.Source.Effectful.Stmt.run_let_of_eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hEvalOne
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program finalCtx 1 { stmts := [] } finalTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            finalCtx) :=
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program finalCtx 0 finalTarget
+  obtain ⟨rightFuel, hRight⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hLet hEmpty
+  obtain ⟨fuel, hRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program pre [.let_ (identName name) lower] ctx
+      hValue.finalCtx target hValue.preTarget
+      (Functions.Source.Effectful.Outcome.regular finalTarget)
+      finalCtx hValue.run ⟨rightFuel, hRight⟩
+  refine ⟨fuel, finalTarget, finalCtx, hRun, ?_⟩
+  simpa [finalTarget] using
+    StateRelation.Replay.scopedExact_multifill_single_fresh
+      hScoped name value hFresh
+
+end InitializedValue
+
+namespace AssignedValue
+
+theorem run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {sourceAfterValue :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hValue :
+      FunctionsObserverExpression.PreparedValue
+        contract transcript codeRel program pre lower fresh
+        sourceAfterValue target ctx value)
+    (hScoped :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        sourceAfterValue hValue.evalTarget)
+    (hDeclared : identName name ∈ layout) :
+    ∃ fuel finalTarget,
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel
+          { stmts :=
+              pre ++
+                [Functions.Stmt.assign (identName name) lower] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            hValue.finalCtx) ∧
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        (sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value]))
+        finalTarget := by
+  let finalTarget :=
+    hValue.evalTarget.withSource
+      (hValue.evalTarget.source.insert (identName name) value)
+  obtain
+      ⟨_sourceShared, _sourceVars, _hSource,
+        _hShared, hVars, hDomain⟩ :=
+    hScoped.2
+  have hEvalContains :
+      hValue.evalTarget.source.vars.contains (identName name) = true :=
+    StateRelation.Vars.target_contains_of_scopedExact
+      hVars hDomain hDeclared
+  have hEvalVars :
+      hValue.evalTarget.source.vars =
+        hValue.preTarget.source.vars :=
+    Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq hValue.eval
+  have hPreContains :
+      hValue.preTarget.source.vars.contains (identName name) = true := by
+    rw [← hEvalVars]
+    exact hEvalContains
+  have hEvalOne :
+      Functions.Source.Effectful.Expr.evalOne
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower hValue.preTarget =
+        .ok (hValue.evalTarget, value) :=
+    Functions.Source.Effectful.Expr.evalOne_of_eval_singleton
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hValue.eval
+  have hAssign :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 1
+          (.assign (identName name) lower) hValue.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            hValue.finalCtx) := by
+    simpa [finalTarget,
+      Functions.ObserverSemantics.stateModel_withVars] using
+        Functions.Source.Effectful.Stmt.run_assign_of_eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hPreContains hEvalOne
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 1 { stmts := [] } finalTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            hValue.finalCtx) :=
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hValue.finalCtx 0 finalTarget
+  obtain ⟨rightFuel, hRight⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hAssign hEmpty
+  obtain ⟨fuel, hRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program pre [.assign (identName name) lower] ctx
+      hValue.finalCtx target hValue.preTarget
+      (Functions.Source.Effectful.Outcome.regular finalTarget)
+      hValue.finalCtx hValue.run ⟨rightFuel, hRight⟩
+  refine ⟨fuel, finalTarget, hRun, ?_⟩
+  simpa [finalTarget] using
+    StateRelation.Replay.scopedExact_multifill_single_visible
+      hScoped name value hDeclared
+
+end AssignedValue
+
 namespace InitNames
 
 theorem run
@@ -659,6 +899,435 @@ theorem of_let_none
   refine
     ⟨targetFuel, ⟨paramStore, targetOutcome, finalCtx,
       hParamStore, ?_, ?_, ?_⟩⟩
+  · simpa [targetEntry] using hBodyRun
+  · exact Or.inl rfl
+  · rw [hRevived]
+    exact hRestrictedRel
+
+theorem of_let_one
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns : List EvmYul.Identifier}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before [.Let [name] (some expr)] =
+        some (fn.body, after))
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hTargetDomain :
+      StateRelation.Vars.TargetDomainWithin before.used
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns
+                fn.returns paramStore }).source.vars)
+    (hTargetScope :
+      StateRelation.Vars.NamesWithin before.used
+        (Functions.Source.Effectful.FunDef.bodyCtx fn).scope)
+    (hValue :
+      FunctionsObserverExpression.RecursiveScopedValueForward
+        contract transcript codeRel (some sourceProgram.contract)
+        targetProgram.toFunctions sourceFuel)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block [.Let [name] (some expr)])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) := by
+  obtain ⟨pre, lowerValue, hExprLower, hFnBody⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_singleton_let_one_parts
+      hNotFunctionCall hLower
+  let sourceEntry :=
+    sourceCaller.withSource
+      (EvmYul.Yul.State.mkOk
+        (sourceCaller.source.initcall params returns args))
+  let targetEntry :=
+    targetCaller.withSource
+      { shared := targetCaller.source.shared,
+        vars :=
+          Functions.Source.Store.initReturns fn.returns paramStore }
+  obtain
+      ⟨entryShared, entryVars, hEntrySource,
+        _hEntryShared, _hEntryVars, hEntryDomain⟩ :=
+    hEntry.2
+  obtain
+      ⟨_sourcePrevious, stateAfterSeq, _hSourceFuel,
+        hSeqRun, hSourceAfter⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨_seqPrevious, stateAfterLet, _hSeqFuel,
+        hLetRun, hSeqFinal⟩ :=
+    Yul.Source.Effectful.execSeq_cons_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hSeqRun
+  obtain
+      ⟨evalFuel, sourceAfterValue, values, hLetFuel,
+        hCheck, hEvalValues, hStateAfterLet⟩ :=
+    Yul.Source.Effectful.exec_let_some_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hLetRun
+  have hCheckEntry :
+      EvmYul.Yul.checkDeclaration
+          (.Ok entryShared entryVars) [name] =
+        .ok () := by
+    rw [← hEntrySource]
+    simpa [sourceEntry] using hCheck
+  have hNameFresh : identName name ∉ fn.returns ++ fn.params := by
+    have hParts :=
+      StateRelation.Vars.checkDeclaration_ok_parts
+        (layout := fn.returns ++ fn.params)
+        (source := entryVars) (shared := entryShared)
+        hEntryDomain hCheckEntry
+    exact hParts.2 (identName name) (by simp [identName])
+  obtain ⟨value, hValues, hScopedValueNonempty⟩ :=
+    hValue (by omega) hExprLower hEntry
+      (by simpa [targetEntry] using hTargetDomain)
+      hTargetScope hEvalValues
+  obtain ⟨hScopedValue⟩ := hScopedValueNonempty
+  let sourceDeclared :=
+    sourceAfterValue.withSource
+      (sourceAfterValue.source.multifill [name] [value])
+  have hStateAfterLet' : stateAfterLet = sourceDeclared := by
+    rw [hStateAfterLet, hValues]
+    rfl
+  obtain ⟨targetFuel, targetFinal, finalCtx,
+      hTargetRun, hDeclaredRel⟩ :=
+    InitializedValue.run hScopedValue.prepared
+      hScopedValue.relation hNameFresh
+  obtain
+      ⟨declaredShared, declaredVars, hDeclaredSource,
+        _hDeclaredShared, _hDeclaredVars, _hDeclaredDomain⟩ :=
+    hDeclaredRel.2
+  have hStateAfterSeq : stateAfterSeq = sourceDeclared := by
+    rw [hStateAfterLet'] at hSeqFinal
+    change
+      (match sourceDeclared.source with
+      | .Ok _ _ =>
+          Yul.Source.Effectful.execSeq
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              _ [] (some sourceProgram.contract) sourceDeclared =
+            .ok stateAfterSeq
+      | .OutOfFuel | .Checkpoint _ =>
+          stateAfterSeq = sourceDeclared) at hSeqFinal
+    rw [hDeclaredSource] at hSeqFinal
+    obtain ⟨_tailPrevious, _hTailFuel, hTailFinal⟩ :=
+      Yul.Source.Effectful.execSeq_nil_ok_parts
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        hSeqFinal
+    exact hTailFinal
+  have hSourceAfterBody :
+      sourceAfterBody =
+        sourceDeclared.withSource
+          (.Ok declaredShared
+            (EvmYul.Yul.State.restrictVarStore
+              declaredVars entryVars)) := by
+    rw [hSourceAfter, hStateAfterSeq]
+    change
+      sourceDeclared.withSource
+          (sourceDeclared.source.restrictStoreTo sourceEntry.source.store) =
+        _
+    rw [hDeclaredSource, hEntrySource]
+    rfl
+  have hRestrictedRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params) sourceAfterBody targetFinal := by
+    rw [hSourceAfterBody]
+    exact
+      StateRelation.Replay.scopedExact_restrict_source
+        hDeclaredSource hDeclaredRel hEntryDomain
+        (by
+          intro candidate hMem
+          exact List.mem_cons_of_mem (identName name) hMem)
+  have hRevived :
+      sourceAfterBody.withSource sourceAfterBody.source.reviveJump =
+        sourceAfterBody := by
+    rw [hSourceAfterBody]
+    rfl
+  let targetOutcome :=
+    Functions.Source.Effectful.Outcome.regular targetFinal
+  have hBodyRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel fn.body targetEntry =
+        .ok (targetOutcome, finalCtx) := by
+    rw [hFnBody]
+    simpa [targetOutcome] using hTargetRun
+  refine
+    ⟨targetFuel, ⟨paramStore, targetOutcome, finalCtx,
+      hParamStore, ?_, ?_, ?_⟩⟩
+  · simpa [targetEntry] using hBodyRun
+  · exact Or.inl rfl
+  · rw [hRevived]
+    exact hRestrictedRel
+
+theorem of_assign_one
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {sourceFuel : Nat}
+    {before after : Fresh.State}
+    {params returns : List EvmYul.Identifier}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {fn : Functions.FunDef}
+    {args : List Word}
+    {paramStore : Locals.Source.Store}
+    {sourceCaller sourceAfterBody :
+      ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller : Functions.ObserverSemantics.State transcript}
+    (hNotFunctionCall :
+      ∀ functionName functionArgs,
+        expr ≠ .Call (.inr functionName) functionArgs)
+    (hLower :
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before [.Assign [name] expr] =
+        some (fn.body, after))
+    (hParams : fn.params = identNames params)
+    (hReturns : fn.returns = identNames returns)
+    (hParamStore :
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore)
+    (hEntry :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }))
+    (hTargetDomain :
+      StateRelation.Vars.TargetDomainWithin before.used
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns
+                fn.returns paramStore }).source.vars)
+    (hTargetScope :
+      StateRelation.Vars.NamesWithin before.used
+        (Functions.Source.Effectful.FunDef.bodyCtx fn).scope)
+    (hValue :
+      FunctionsObserverExpression.RecursiveScopedValueForward
+        contract transcript codeRel (some sourceProgram.contract)
+        targetProgram.toFunctions sourceFuel)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Block [.Assign [name] expr])
+          (some sourceProgram.contract)
+          (sourceCaller.withSource
+            (EvmYul.Yul.State.mkOk
+              (sourceCaller.source.initcall params returns args))) =
+        .ok sourceAfterBody) :
+    ∃ targetFuel,
+      Nonempty
+        (FunctionsObserverCall.ReturnedBody
+          contract transcript codeRel targetProgram.toFunctions
+          fn args targetFuel sourceAfterBody targetCaller) := by
+  obtain ⟨pre, lowerValue, hExprLower, hFnBody⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_singleton_assign_one_parts
+      hNotFunctionCall hLower
+  let sourceEntry :=
+    sourceCaller.withSource
+      (EvmYul.Yul.State.mkOk
+        (sourceCaller.source.initcall params returns args))
+  let targetEntry :=
+    targetCaller.withSource
+      { shared := targetCaller.source.shared,
+        vars :=
+          Functions.Source.Store.initReturns fn.returns paramStore }
+  obtain
+      ⟨entryShared, entryVars, hEntrySource,
+        _hEntryShared, _hEntryVars, hEntryDomain⟩ :=
+    hEntry.2
+  obtain
+      ⟨_sourcePrevious, stateAfterSeq, _hSourceFuel,
+        hSeqRun, hSourceAfter⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  obtain
+      ⟨_seqPrevious, stateAfterAssign, _hSeqFuel,
+        hAssignRun, hSeqFinal⟩ :=
+    Yul.Source.Effectful.execSeq_cons_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hSeqRun
+  obtain
+      ⟨evalFuel, sourceAfterValue, values, hAssignFuel,
+        hCheck, hEvalValues, hStateAfterAssign⟩ :=
+    Yul.Source.Effectful.exec_assign_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hAssignRun
+  have hCheckEntry :
+      EvmYul.Yul.checkAssignment
+          (.Ok entryShared entryVars) [name] =
+        .ok () := by
+    rw [← hEntrySource]
+    simpa [sourceEntry] using hCheck
+  have hNameDeclared : identName name ∈ fn.returns ++ fn.params := by
+    have hParts :=
+      StateRelation.Vars.checkAssignment_ok_parts
+        (layout := fn.returns ++ fn.params)
+        (source := entryVars) (shared := entryShared)
+        hEntryDomain hCheckEntry
+    exact hParts.2 (identName name) (by simp [identName])
+  obtain ⟨value, hValues, hScopedValueNonempty⟩ :=
+    hValue (by omega) hExprLower hEntry
+      (by simpa [targetEntry] using hTargetDomain)
+      hTargetScope hEvalValues
+  obtain ⟨hScopedValue⟩ := hScopedValueNonempty
+  let sourceAssigned :=
+    sourceAfterValue.withSource
+      (sourceAfterValue.source.multifill [name] [value])
+  have hStateAfterAssign' : stateAfterAssign = sourceAssigned := by
+    rw [hStateAfterAssign, hValues]
+    rfl
+  obtain ⟨targetFuel, targetFinal,
+      hTargetRun, hAssignedRel⟩ :=
+    AssignedValue.run hScopedValue.prepared
+      hScopedValue.relation hNameDeclared
+  obtain
+      ⟨assignedShared, assignedVars, hAssignedSource,
+        _hAssignedShared, _hAssignedVars, _hAssignedDomain⟩ :=
+    hAssignedRel.2
+  have hStateAfterSeq : stateAfterSeq = sourceAssigned := by
+    rw [hStateAfterAssign'] at hSeqFinal
+    change
+      (match sourceAssigned.source with
+      | .Ok _ _ =>
+          Yul.Source.Effectful.execSeq
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              _ [] (some sourceProgram.contract) sourceAssigned =
+            .ok stateAfterSeq
+      | .OutOfFuel | .Checkpoint _ =>
+          stateAfterSeq = sourceAssigned) at hSeqFinal
+    rw [hAssignedSource] at hSeqFinal
+    obtain ⟨_tailPrevious, _hTailFuel, hTailFinal⟩ :=
+      Yul.Source.Effectful.execSeq_nil_ok_parts
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        hSeqFinal
+    exact hTailFinal
+  have hSourceAfterBody :
+      sourceAfterBody =
+        sourceAssigned.withSource
+          (.Ok assignedShared
+            (EvmYul.Yul.State.restrictVarStore
+              assignedVars entryVars)) := by
+    rw [hSourceAfter, hStateAfterSeq]
+    change
+      sourceAssigned.withSource
+          (sourceAssigned.source.restrictStoreTo sourceEntry.source.store) =
+        _
+    rw [hAssignedSource, hEntrySource]
+    rfl
+  have hRestrictedRel :
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params) sourceAfterBody targetFinal := by
+    rw [hSourceAfterBody]
+    exact
+      StateRelation.Replay.scopedExact_restrict_source
+        hAssignedSource hAssignedRel hEntryDomain
+        (by
+          intro candidate hMem
+          exact hMem)
+  have hRevived :
+      sourceAfterBody.withSource sourceAfterBody.source.reviveJump =
+        sourceAfterBody := by
+    rw [hSourceAfterBody]
+    rfl
+  let targetOutcome :=
+    Functions.Source.Effectful.Outcome.regular targetFinal
+  have hBodyRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel fn.body targetEntry =
+        .ok (targetOutcome, hScopedValue.prepared.finalCtx) := by
+    rw [hFnBody]
+    simpa [targetOutcome] using hTargetRun
+  refine
+    ⟨targetFuel,
+      ⟨paramStore, targetOutcome, hScopedValue.prepared.finalCtx,
+        hParamStore, ?_, ?_, ?_⟩⟩
   · simpa [targetEntry] using hBodyRun
   · exact Or.inl rfl
   · rw [hRevived]

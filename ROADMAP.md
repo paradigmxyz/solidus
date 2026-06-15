@@ -97,8 +97,12 @@ Adjacent boundary status:
   leaves, are checked in pass-owned modules; generated argument-binding
   preambles, function-call expressions, and the empty/`leave` function-body
   cases plus arbitrary uninitialized multi-name declarations are checked.
-  Initialized declarations, assignments, complete control statements, whole
-  functions/programs, and backward adequacy remain.
+  Initialized non-function-call singleton declarations and assignments have
+  checked body constructors over the strictly fuel-bounded
+  `RecursiveScopedValueForward` interface. Constructing that interface by the
+  main source-fuel induction, function-call declaration/assignment forms,
+  complete control statements, whole functions/programs, and backward adequacy
+  remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

@@ -2704,6 +2704,134 @@ theorem List.toBlockUncheckedFuel?_singleton_let_none_parts
       · simpa [hStmts] using hBlock
       · rfl
 
+theorem List.toBlockUncheckedFuel?_singleton_let_one_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {name : EvmYul.Identifier} {value : AstExpr}
+    {lower : Functions.Block}
+    (hNotFunctionCall :
+      ∀ functionName args,
+        value ≠ .Call (.inr functionName) args)
+    (hLower :
+      List.toBlockUncheckedFuel? fuel state
+          [.Let [name] (some value)] =
+        some (lower, final)) :
+    ∃ pre lowerValue,
+      Expr.lower1Unchecked? state value =
+        some (pre, lowerValue, final) ∧
+      lower =
+        { stmts :=
+            pre ++
+              [Functions.Stmt.let_ (identName name) lowerValue] } := by
+  obtain ⟨previous, lowerStmts, _hFuel, hList, hBlock⟩ :=
+    List.toBlockUncheckedFuel?_parts hLower
+  obtain
+      ⟨stmtFuel, lowerStmt, middle, lowerRest,
+        _hPrevious, hStmt, hRest, hStmts⟩ :=
+    List.toFunctionsUncheckedFuel?_cons_parts hList
+  cases stmtFuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hStmt
+  | succ remaining =>
+      have hGeneric :
+          (Expr.lower1Unchecked? state value).bind
+              (fun result =>
+                some
+                  (result.1 ++
+                    [Functions.Stmt.let_
+                      (identName name) result.2.1],
+                    result.2.2)) =
+            some (lowerStmt, middle) := by
+        cases value with
+        | Lit literal =>
+            simpa [toFunctionsListUncheckedFuel?] using hStmt
+        | Var identifier =>
+            simpa [toFunctionsListUncheckedFuel?] using hStmt
+        | Call callee args =>
+            cases callee with
+            | inl prim =>
+                simpa [toFunctionsListUncheckedFuel?] using hStmt
+            | inr functionName =>
+                exact False.elim
+                  (hNotFunctionCall functionName args rfl)
+      cases hValue : Expr.lower1Unchecked? state value with
+      | none =>
+          simp [hValue] at hGeneric
+      | some result =>
+          rcases result with ⟨pre, lowerValue, valueFinal⟩
+          simp [hValue] at hGeneric
+          rcases hGeneric with ⟨rfl, rfl⟩
+          obtain ⟨_restFuel, _hRestFuel, hLowerRest, hFinal⟩ :=
+            List.toFunctionsUncheckedFuel?_nil_parts hRest
+          subst lowerRest
+          subst final
+          refine ⟨pre, lowerValue, ?_, ?_⟩
+          · simp [hValue]
+          · simpa [hStmts] using hBlock
+
+theorem List.toBlockUncheckedFuel?_singleton_assign_one_parts
+    {fuel : Nat} {state final : Fresh.State}
+    {name : EvmYul.Identifier} {value : AstExpr}
+    {lower : Functions.Block}
+    (hNotFunctionCall :
+      ∀ functionName args,
+        value ≠ .Call (.inr functionName) args)
+    (hLower :
+      List.toBlockUncheckedFuel? fuel state
+          [.Assign [name] value] =
+        some (lower, final)) :
+    ∃ pre lowerValue,
+      Expr.lower1Unchecked? state value =
+        some (pre, lowerValue, final) ∧
+      lower =
+        { stmts :=
+            pre ++
+              [Functions.Stmt.assign (identName name) lowerValue] } := by
+  obtain ⟨previous, lowerStmts, _hFuel, hList, hBlock⟩ :=
+    List.toBlockUncheckedFuel?_parts hLower
+  obtain
+      ⟨stmtFuel, lowerStmt, middle, lowerRest,
+        _hPrevious, hStmt, hRest, hStmts⟩ :=
+    List.toFunctionsUncheckedFuel?_cons_parts hList
+  cases stmtFuel with
+  | zero =>
+      simp [toFunctionsListUncheckedFuel?] at hStmt
+  | succ remaining =>
+      have hGeneric :
+          (Expr.lower1Unchecked? state value).bind
+              (fun result =>
+                some
+                  (result.1 ++
+                    [Functions.Stmt.assign
+                      (identName name) result.2.1],
+                    result.2.2)) =
+            some (lowerStmt, middle) := by
+        cases value with
+        | Lit literal =>
+            simpa [toFunctionsListUncheckedFuel?] using hStmt
+        | Var identifier =>
+            simpa [toFunctionsListUncheckedFuel?] using hStmt
+        | Call callee args =>
+            cases callee with
+            | inl prim =>
+                simpa [toFunctionsListUncheckedFuel?] using hStmt
+            | inr functionName =>
+                exact False.elim
+                  (hNotFunctionCall functionName args rfl)
+      cases hValue : Expr.lower1Unchecked? state value with
+      | none =>
+          simp [hValue] at hGeneric
+      | some result =>
+          rcases result with ⟨pre, lowerValue, valueFinal⟩
+          simp [hValue] at hGeneric
+          rcases hGeneric with ⟨rfl, rfl⟩
+          obtain ⟨_restFuel, _hRestFuel, hLowerRest, hFinal⟩ :=
+            List.toFunctionsUncheckedFuel?_nil_parts hRest
+          subst lowerRest
+          subst final
+          refine ⟨pre, lowerValue, ?_, ?_⟩
+          · simp [hValue]
+          · simpa [hStmts] using hBlock
+
 theorem toFunctionsListUncheckedFuel?_let_gas
     (fuel : Nat) (state : Fresh.State) (name : EvmYul.Identifier) :
     toFunctionsListUncheckedFuel? fuel.succ state

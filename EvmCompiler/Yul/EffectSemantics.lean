@@ -626,6 +626,97 @@ theorem exec_let_none_ok_parts
           subst final
           exact ⟨previous, rfl, by simpa using hCheck, rfl⟩
 
+theorem eval_of_evalValues_singleton
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {value : Word}
+    (hRun :
+      evalValues model prim fuel expr codeOverride state =
+        .ok (final, [value])) :
+    eval model prim fuel expr codeOverride state =
+      .ok (final, value) := by
+  simp [eval, hRun]
+
+theorem exec_let_some_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.Let names (some expr))
+          codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterValue values,
+      fuel = previous + 1 ∧
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok () ∧
+      evalValues model prim previous expr codeOverride state =
+        .ok (stateAfterValue, values) ∧
+      final = model.multifill names stateAfterValue values := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hCheck :
+          EvmYul.Yul.checkDeclaration (model.source state) names with
+      | error err =>
+          simp [exec, hCheck, fail] at hRun
+      | ok unit =>
+          cases unit
+          cases hValues :
+              evalValues model prim previous expr codeOverride state with
+          | error failure =>
+              simp [exec, hCheck, multifill, hValues] at hRun
+          | ok result =>
+              rcases result with ⟨stateAfterValue, values⟩
+              simp [exec, hCheck, multifill, hValues] at hRun
+              subst final
+              exact
+                ⟨previous, stateAfterValue, values, rfl,
+                  by simpa using hCheck, hValues, rfl⟩
+
+theorem exec_assign_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ}
+    (hRun :
+      exec model prim fuel (.Assign names expr)
+          codeOverride state =
+        .ok final) :
+    ∃ previous stateAfterValue values,
+      fuel = previous + 1 ∧
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok () ∧
+      evalValues model prim previous expr codeOverride state =
+        .ok (stateAfterValue, values) ∧
+      final = model.multifill names stateAfterValue values := by
+  cases fuel with
+  | zero =>
+      simp [exec, fail] at hRun
+  | succ previous =>
+      cases hCheck :
+          EvmYul.Yul.checkAssignment (model.source state) names with
+      | error err =>
+          simp [exec, hCheck, fail] at hRun
+      | ok unit =>
+          cases unit
+          cases hValues :
+              evalValues model prim previous expr codeOverride state with
+          | error failure =>
+              simp [exec, hCheck, multifill, hValues] at hRun
+          | ok result =>
+              rcases result with ⟨stateAfterValue, values⟩
+              simp [exec, hCheck, multifill, hValues] at hRun
+              subst final
+              exact
+                ⟨previous, stateAfterValue, values, rfl,
+                  by simpa using hCheck, hValues, rfl⟩
+
 theorem execSeq_nil_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
