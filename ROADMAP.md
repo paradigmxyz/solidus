@@ -99,10 +99,13 @@ Adjacent boundary status:
   cases plus arbitrary uninitialized multi-name declarations are checked.
   Initialized non-function-call singleton declarations and assignments have
   checked body constructors over the strictly fuel-bounded
-  `RecursiveScopedValueForward` interface. Constructing that interface by the
-  main source-fuel induction, function-call declaration/assignment forms,
-  complete control statements, whole functions/programs, and backward adequacy
-  remain.
+  `RecursiveScopedValueForward` interface. Canonical literal and variable
+  evaluation now have source-owned inversions, and the expression pass
+  constructs scoped prepared values for both ordinary compiler lowering cases.
+  Constructing the primitive and function-call cases and assembling the full
+  interface by main source-fuel induction, function-call
+  declaration/assignment forms, complete control statements, whole
+  functions/programs, and backward adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1597,8 +1600,13 @@ corridor.
   `SolcValidation.ProgramOk`. The validation extraction is checked, and the
   statement-owned body induction now has a verified empty-body constructor
   using ordinary block/list lowering and canonical Yul block execution. The
-  next constructor handles a nonempty statement sequence, starting with
-  declaration and assignment leaves composed from `PreparedValue`.
+  declaration/assignment kernel now handles uninitialized multi-name
+  declarations and initialized non-call singleton forms. Scoped/full relation
+  conversion is shared by the relation owner, while
+  `ScopedPreparedValue.direct`, `ofLiteral`, and `ofVariable` provide the first
+  checked constructors of the bounded recursive value interface without
+  duplicating semantics or lowering. Primitive and function-call scoped-value
+  constructors are the next expression obligations.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

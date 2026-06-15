@@ -1445,6 +1445,167 @@ def bind
 
 end PreparedValue
 
+namespace ScopedPreparedValue
+
+noncomputable def direct
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel : Nat} {expr : AstExpr} {lower : Locals.Expr 1}
+    {fresh : Fresh.State} {layout : List Name}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word}
+    (hLower : EvmCompiler.Yul.Expr.toLocals? 1 expr = some lower)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin fresh.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin fresh.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel expr codeOverride source =
+        .ok (source', values))
+    (hSourceDomain :
+      ∀ sourceShared sourceVars,
+        source'.source = .Ok sourceShared sourceVars →
+          StateRelation.Vars.DomainExact layout sourceVars) :
+    ∃ value,
+      values = [value] ∧
+        Nonempty
+          (ScopedPreparedValue contract transcript codeRel program
+            [] lower fresh layout source' target ctx value) := by
+  obtain ⟨_target', _hTarget, _hFinalRel, hLength, _hFinalDomain⟩ :=
+    toLocals_forward_targetDomain hLower
+      (StateRelation.Replay.rel_of_scopedExact hRel)
+      hDomain hRun
+  cases values with
+  | nil =>
+      simp at hLength
+  | cons value rest =>
+      cases rest with
+      | nil =>
+          let prepared :=
+            PreparedValue.direct
+              (contract := contract) (transcript := transcript)
+              (codeRel := codeRel) (program := program)
+              hLower (StateRelation.Replay.rel_of_scopedExact hRel)
+              hDomain hScope hRun
+          refine ⟨value, rfl, ⟨prepared, ?_⟩⟩
+          exact
+            StateRelation.Replay.scopedExact_of_rel
+              prepared.rel hSourceDomain
+      | cons next tail =>
+          simp at hLength
+
+noncomputable def ofLiteral
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel : Nat} {value : Word}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {before after : Fresh.State} {layout : List Name}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word}
+    (hLower :
+      EvmCompiler.Yul.Expr.lower1Unchecked? before (.Lit value) =
+        some (pre, lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin before.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Lit value) codeOverride source =
+        .ok (source', values)) :
+    ∃ result,
+      values = [result] ∧
+        Nonempty
+          (ScopedPreparedValue contract transcript codeRel program
+            pre lower after layout source' target ctx result) := by
+  obtain ⟨rfl, rfl, hToLocals⟩ :=
+    EvmCompiler.Yul.Expr.lower1Unchecked?_direct_parts
+      (offset := 0)
+      (by
+        simp [EvmCompiler.Yul.Expr.directPureArgSafeAt?,
+          EvmCompiler.Yul.Expr.pureAliasArgSafe?,
+          EvmCompiler.Yul.Expr.pendingStackDepth])
+      hLower
+  have hParts :=
+    Yul.Source.Effectful.evalValues_lit_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  rcases hParts with ⟨rfl, rfl⟩
+  exact
+    direct hToLocals hRel hDomain hScope hRun
+      (StateRelation.Replay.sourceDomain_of_scopedExact hRel)
+
+noncomputable def ofVariable
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel : Nat} {name : Name}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {before after : Fresh.State} {layout : List Name}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word}
+    (hLower :
+      EvmCompiler.Yul.Expr.lower1Unchecked? before (.Var name) =
+        some (pre, lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin before.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Var name) codeOverride source =
+        .ok (source', values)) :
+    ∃ value,
+      values = [value] ∧
+        Nonempty
+          (ScopedPreparedValue contract transcript codeRel program
+            pre lower after layout source' target ctx value) := by
+  obtain ⟨rfl, rfl, hToLocals⟩ :=
+    EvmCompiler.Yul.Expr.lower1Unchecked?_direct_parts
+      (offset := 0)
+      (by
+        simp [EvmCompiler.Yul.Expr.directPureArgSafeAt?,
+          EvmCompiler.Yul.Expr.pureAliasArgSafe?,
+          EvmCompiler.Yul.Expr.pendingStackDepth])
+      hLower
+  obtain ⟨value, _hLookup, rfl, rfl⟩ :=
+    Yul.Source.Effectful.evalValues_var_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  exact
+    direct hToLocals hRel hDomain hScope hRun
+      (StateRelation.Replay.sourceDomain_of_scopedExact hRel)
+
+end ScopedPreparedValue
+
 structure PreparedArgs
     (contract : MemoryContract.Contract)
     (transcript : Assembly.ResourceTrace)

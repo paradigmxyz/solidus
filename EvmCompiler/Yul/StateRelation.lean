@@ -1075,6 +1075,17 @@ def TargetDomainWithin (used : List Name)
 def NamesWithin (used active : List Name) : Prop :=
   ∀ name, name ∈ active → name ∈ used
 
+theorem rel_of_scopedExact
+    {layout : List Name} {source : EvmYul.Yul.VarStore}
+    {target : Locals.Source.Store}
+    (hScoped : ScopedRel layout source target)
+    (hDomain : DomainExact layout source) :
+    Rel source target := by
+  intro name value hLookup
+  have hMem : name ∈ layout :=
+    (hDomain name).mp (by simp [hLookup])
+  simpa [hLookup] using (hScoped name hMem).symm
+
 def TargetExtends (before after : Locals.Source.Store) : Prop :=
   ∀ name value, before name = some value → after name = some value
 
@@ -1780,6 +1791,17 @@ theorem scopedExact_of_rel
     ⟨sourceShared, sourceVars, hSource, hShared,
       Vars.scoped_of_rel hVars hSourceDomain, hSourceDomain⟩
 
+theorem rel_of_scopedExact
+    {codeRel : CodeRel} {layout : List Name}
+    {source : EvmYul.Yul.State} {target : Locals.Source.State}
+    (hRel : ScopedExactRel codeRel layout source target) :
+    Rel codeRel source target := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hScoped, hDomain⟩
+  exact
+    ⟨sourceShared, sourceVars, hSource, hShared,
+      Vars.rel_of_scopedExact hScoped hDomain⟩
+
 theorem scopedExact_initcall
     {codeRel : CodeRel}
     {source : EvmYul.Yul.State}
@@ -2164,6 +2186,50 @@ def ScopedExactRel {transcript : Assembly.ResourceTrace}
       Simulation.ResourceReplay.State Locals.Source.State transcript) : Prop :=
   source.cursor = target.cursor ∧
     Regular.ScopedExactRel codeRel layout source.source target.source
+
+theorem rel_of_scopedExact
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedExactRel codeRel layout source target) :
+    Rel codeRel source target :=
+  ⟨hRel.1, Regular.rel_of_scopedExact hRel.2⟩
+
+theorem scopedExact_of_rel
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : Rel codeRel source target)
+    (hDomain :
+      ∀ sourceShared sourceVars,
+        source.source = .Ok sourceShared sourceVars →
+          Vars.DomainExact layout sourceVars) :
+    ScopedExactRel codeRel layout source target :=
+  ⟨hRel.1, Regular.scopedExact_of_rel hRel.2 hDomain⟩
+
+theorem sourceDomain_of_scopedExact
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {layout : List Name}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : ScopedExactRel codeRel layout source target) :
+    ∀ sourceShared sourceVars,
+      source.source = .Ok sourceShared sourceVars →
+        Vars.DomainExact layout sourceVars := by
+  rcases hRel.2 with
+    ⟨relatedShared, relatedVars, hSource, _hShared, _hScoped, hDomain⟩
+  intro sourceShared sourceVars hSource'
+  rw [hSource] at hSource'
+  cases hSource'
+  exact hDomain
 
 theorem scopedExact_initcall
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

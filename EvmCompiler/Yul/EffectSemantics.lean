@@ -394,6 +394,47 @@ mutual
 
 end
 
+theorem evalValues_lit_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {value : Word}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model prim fuel (.Lit value) codeOverride state =
+        .ok (final, values)) :
+    final = state ∧ values = [value] := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ previous =>
+      simp [evalValues] at hRun
+      exact ⟨hRun.1.symm, hRun.2.symm⟩
+
+theorem evalValues_var_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {name : EvmYul.Identifier}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model prim fuel (.Var name) codeOverride state =
+        .ok (final, values)) :
+    ∃ value,
+      (model.source state).lookup? name = some value ∧
+        final = state ∧ values = [value] := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ previous =>
+      cases hLookup : (model.source state).lookup? name with
+      | none =>
+          simp [evalValues, hLookup, fail] at hRun
+      | some value =>
+          simp [evalValues, hLookup] at hRun
+          exact
+            ⟨value, by simp [hLookup], hRun.1.symm, hRun.2.symm⟩
+
 theorem call_succ_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

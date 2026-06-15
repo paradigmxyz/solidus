@@ -1142,9 +1142,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_deferred_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_singleton_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_lit_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_var_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.eval_function_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_ok_length
 #print axioms EvmCompiler.Yul.Source.Effectful.call_succ_ok_parts
+#print axioms EvmCompiler.Yul.StateRelation.Vars.rel_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Regular.rel_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.rel_of_scopedExact
+#print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_of_rel
+#print axioms EvmCompiler.Yul.StateRelation.Replay.sourceDomain_of_scopedExact
 #print axioms EvmCompiler.Yul.StateRelation.Vars.TargetExtends.trans
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_initcall
 #print axioms EvmCompiler.Yul.StateRelation.Replay.lookupMany_of_scopedExact
@@ -1157,6 +1164,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.direct
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofLiteral
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofVariable
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
