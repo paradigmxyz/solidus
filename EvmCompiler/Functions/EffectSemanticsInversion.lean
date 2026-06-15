@@ -357,6 +357,102 @@ theorem runOpen_append_regular_parts {σ : Type}
             rw [← hOutcome]
             rfl
 
+theorem runOpen_append_two_regular_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program) :
+    ∀ {prefixStmts : List Functions.Stmt}
+      {first second : Functions.Stmt}
+      {ctx finalCtx : Source.Ctx} {fuel : Nat}
+      {source final : σ},
+      runOpen model prim program ctx fuel
+          { stmts := prefixStmts ++ [first, second] } source =
+        .ok (Outcome.regular final, finalCtx) →
+      ∃ prefixFinal prefixCtx firstFinal firstCtx
+          prefixFuel firstFuel secondFuel,
+        runOpen model prim program ctx prefixFuel
+            { stmts := prefixStmts } source =
+          .ok (Outcome.regular prefixFinal, prefixCtx) ∧
+        Stmt.run model prim program prefixCtx firstFuel first prefixFinal =
+          .ok (Outcome.regular firstFinal, firstCtx) ∧
+        Stmt.run model prim program firstCtx secondFuel second firstFinal =
+          .ok (Outcome.regular final, finalCtx) ∧
+        secondFuel + 2 ≤ fuel := by
+  intro prefixStmts
+  induction prefixStmts with
+  | nil =>
+      intro first second ctx finalCtx fuel source final hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ firstFuel =>
+          rcases
+              runOpen_cons_cases model prim program hRun with
+            hFirstRegular | hFirstNonregular
+          · rcases hFirstRegular with
+              ⟨firstFinal, firstCtx, hFirst, hSecondBlock⟩
+            cases firstFuel with
+            | zero =>
+                simp [runOpen, Source.invalid, Structured.invalid]
+                  at hSecondBlock
+            | succ secondFuel =>
+                rcases
+                    runOpen_cons_cases model prim program hSecondBlock with
+                  hSecondRegular | hSecondNonregular
+                · rcases hSecondRegular with
+                    ⟨secondFinal, secondCtx, hSecond, hEmpty⟩
+                  obtain ⟨hOutcome, hCtx⟩ :=
+                    runOpen_nil_ok model prim program hEmpty
+                  injection hOutcome with hFinal
+                  subst secondFinal
+                  subst secondCtx
+                  exact
+                    ⟨source, ctx, firstFinal, firstCtx,
+                      1, secondFuel + 1, secondFuel,
+                      by simp [runOpen], hFirst, hSecond, by omega⟩
+                · rcases hSecondNonregular with
+                    ⟨headOutcome, _headCtx, _hSecond, hMode,
+                      hOutcome, _hCtx⟩
+                  exfalso
+                  apply hMode
+                  rw [← hOutcome]
+                  rfl
+          · rcases hFirstNonregular with
+              ⟨headOutcome, _headCtx, _hFirst, hMode,
+                hOutcome, _hCtx⟩
+            exfalso
+            apply hMode
+            rw [← hOutcome]
+            rfl
+  | cons stmt rest ih =>
+      intro first second ctx finalCtx fuel source final hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ tailFuel =>
+          rcases
+              runOpen_cons_cases model prim program hRun with
+            hHeadRegular | hHeadNonregular
+          · rcases hHeadRegular with
+              ⟨afterHead, headCtx, hHead, hTail⟩
+            obtain
+                ⟨prefixFinal, prefixCtx, firstFinal, firstCtx,
+                  restFuel, firstFuel, secondFuel,
+                  hRest, hFirst, hSecond, hBound⟩ :=
+              ih hTail
+            obtain ⟨prefixFuel, hPrefix⟩ :=
+              runOpen_cons_regular_exists model prim program hHead hRest
+            exact
+              ⟨prefixFinal, prefixCtx, firstFinal, firstCtx,
+                prefixFuel, firstFuel, secondFuel,
+                hPrefix, hFirst, hSecond, by omega⟩
+          · rcases hHeadNonregular with
+              ⟨headOutcome, _headCtx, _hHead, hMode,
+                hOutcome, _hCtx⟩
+            exfalso
+            apply hMode
+            rw [← hOutcome]
+            rfl
+
 end Block
 
 end Effectful

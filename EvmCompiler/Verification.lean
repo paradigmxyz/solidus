@@ -57,6 +57,7 @@ import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverStatement
@@ -252,6 +253,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_two_regular_parts
+#check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward
+#check EvmCompiler.Yul.FunctionsObserverCallBackward.RecursiveBodyBackward
+#check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_safe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_observable_error_parts
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.RawNoObservableFailureAt

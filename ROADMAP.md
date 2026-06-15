@@ -156,6 +156,10 @@ Adjacent boundary status:
   default account when absent. Canonical source-semantics constructor lemmas
   expose successful internal-call and function-expression reconstruction
   without unfolding the interpreter in compiler-owned proof modules.
+  `FunctionsObserverCallBackward` now owns the fuel-bounded recursive body
+  adequacy interface and checked returned-body composition. A Functions-owned
+  two-statement suffix inversion retains the strict target-fuel decrease needed
+  for generated result initialization followed by a real internal call.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

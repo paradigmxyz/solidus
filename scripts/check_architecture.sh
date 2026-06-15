@@ -193,6 +193,7 @@ report_matches \
   EvmCompiler/Yul/CompilerStatementDecomposition.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -209,6 +210,7 @@ report_matches \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -226,6 +228,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -608,6 +611,7 @@ report_matches \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/EffectRefinement/Failure.lean \
   EvmCompiler/Yul/ObserverSafety.lean \
+  EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \

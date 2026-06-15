@@ -29,6 +29,7 @@ import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
+import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
@@ -1561,3 +1562,5 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_two_regular_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
