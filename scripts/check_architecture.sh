@@ -190,6 +190,7 @@ report_matches \
   '^import EvmCompiler\.(Locals|Expressions|Structured|TypedCfg|Assembly\.(Preservation|StackShuffle|StackShufflePreservation)|Public)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
@@ -197,6 +198,7 @@ report_matches \
   '(Locals\.(ObserverSemantics|Source\.Effectful)|TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation))' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
@@ -204,6 +206,7 @@ report_matches \
   '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(toObjectsWithObservers\?|compileWithObservers\?|toFunctionsListUncheckedFuel\?|toFunDefsUncheckedFuel\?)' \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
@@ -576,6 +579,7 @@ report_matches \
   EvmCompiler/Locals/PrimitivePreservation.lean \
   EvmCompiler/Yul/EffectSemantics.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
+  EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
   EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \

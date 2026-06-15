@@ -31,6 +31,22 @@ theorem primitiveSemantics_eval_observer
   simp [primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
     basicOpObserver?, hObserver, hConsume]
 
+theorem primitiveSemantics_eval_nonObserver
+    {transcript : Trace} {op : Structured.BasicOp}
+    {state : State transcript} {values outputs : List Assembly.Word}
+    {shared : EvmYul.SharedState .EVM}
+    (hObserver : basicOpObserver? op = none)
+    (hEval :
+      Locals.Source.PrimitiveSemantics.structured.eval
+          op state.source.shared values =
+        .ok (shared, outputs)) :
+    (primitiveSemantics transcript).eval op state values =
+      .ok
+        (state.withSource (state.source.withShared shared), outputs) := by
+  simp [primitiveSemantics, Locals.ObserverSemantics.primitiveSemantics,
+    basicOpObserver?, hObserver, hEval,
+    Simulation.ResourceReplay.State.withSource]
+
 theorem expr_eval_gas
     {transcript : Trace} {state state' : State transcript}
     {value : Assembly.Word}

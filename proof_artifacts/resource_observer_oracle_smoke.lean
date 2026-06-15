@@ -55,6 +55,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Functions.ObserverSafety.PrimitiveMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+#check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
+#check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
 #check EvmCompiler.Functions.AllocationObserverSafety.Expr.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverSafety.ExprSeq.MemorySafeEval.eval_eq
 #check EvmCompiler.Functions.AllocationObserverContext.ExprContext
@@ -317,6 +319,18 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetGas
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerExecLetMsize
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAt
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.ForwardAtArity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe
 #check EvmCompiler.Yul.FunctionsObserverPreservation.lowerEvalGasSafe
@@ -1012,6 +1026,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainTargetAgreement
 #print axioms EvmCompiler.Simulation.MemorySafety.primitiveMemorySafe_unrestricted_of_noExternal
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.successRefines
+#print axioms EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
+#print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_of_safe
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
 #print axioms EvmCompiler.Yul.ObserverSafety.primitiveSafe_basicOp
 #print axioms EvmCompiler.Yul.ObserverSafety.primitiveSafe_terminal
@@ -1042,6 +1058,17 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Vars.checkAssignment_ok
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict
 #print axioms EvmCompiler.Yul.FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+#print axioms EvmCompiler.Yul.StateRelation.Shared.withMachine
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOp
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeBasicOpArity
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureBinary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.msizeSafe

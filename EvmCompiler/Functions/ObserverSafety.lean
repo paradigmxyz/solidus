@@ -119,6 +119,23 @@ theorem eval_parts
   · simp [primitiveSemantics, hSafe, Functions.Source.invalid,
       Structured.invalid] at hEval
 
+theorem eval_of_safe
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {op : Structured.BasicOp}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values outputs : List Word}
+    (hSafe :
+      PrimitiveMemorySafe contract op
+        state.source.shared.toMachineState values)
+    (hEval :
+      (Functions.ObserverSemantics.primitiveSemantics transcript).eval
+          op state values =
+        .ok (final, outputs)) :
+    (primitiveSemantics contract transcript).eval op state values =
+      .ok (final, outputs) := by
+  simpa [primitiveSemantics, hSafe] using hEval
+
 theorem terminal_parts
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

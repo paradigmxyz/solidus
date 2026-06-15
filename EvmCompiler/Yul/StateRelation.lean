@@ -35,6 +35,7 @@ structure Rel (codeRel : CodeRel)
   permission : source.perm = target.perm
   blobVersionedHashes :
     source.blobVersionedHashes = target.blobVersionedHashes
+  codeImage : source.codeBytes = target.code
   codeBytes : source.codeBytes = target.codeBytes
 
 end ExecutionEnv
@@ -48,6 +49,7 @@ structure Rel (codeRel : CodeRel)
   balance : source.balance = target.balance
   storage : source.storage = target.storage
   code : codeRel source.code target.code
+  codeImage : source.codeBytes = target.code
   codeBytes : source.codeBytes = target.codeBytes
   transientStorage : source.tstorage = target.tstorage
 
@@ -92,6 +94,20 @@ structure Rel (codeRel : CodeRel)
     (target : EvmYul.SharedState .EVM) : Prop where
   world : World.Rel codeRel source.toState target.toState
   machine : source.toMachineState = target.toMachineState
+
+theorem withMachine
+    {codeRel : CodeRel}
+    {source : EvmYul.SharedState .Yul}
+    {target : EvmYul.SharedState .EVM}
+    (hRel : Rel codeRel source target)
+    (sourceMachine targetMachine : EvmYul.MachineState)
+    (hMachine : sourceMachine = targetMachine) :
+    Rel codeRel
+      { source with toMachineState := sourceMachine }
+      { target with toMachineState := targetMachine } := by
+  exact
+    { world := by simpa using hRel.world
+      machine := by simpa using hMachine }
 
 end Shared
 
@@ -529,6 +545,17 @@ def Rel (codeRel : CodeRel)
         Shared.Rel codeRel sourceShared target.shared ∧
         Vars.Rel sourceVars target.vars
 
+theorem machine_eq
+    {codeRel : CodeRel} {source : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    (hRel : Rel codeRel source target) :
+    source.sharedState.toMachineState =
+      target.shared.toMachineState := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, _hVars⟩
+  simpa only [hSource, EvmYul.Yul.State.sharedState] using
+    hShared.machine
+
 theorem multifill_single
     {codeRel : CodeRel} {source : EvmYul.Yul.State}
     {target : Locals.Source.State}
@@ -651,6 +678,17 @@ def Rel {transcript : Assembly.ResourceTrace} (codeRel : CodeRel)
       Simulation.ResourceReplay.State Locals.Source.State transcript) : Prop :=
   source.cursor = target.cursor ∧
     Regular.Rel codeRel source.source target.source
+
+theorem machine_eq
+    {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
+    {source :
+      Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
+    {target :
+      Simulation.ResourceReplay.State Locals.Source.State transcript}
+    (hRel : Rel codeRel source target) :
+    source.source.sharedState.toMachineState =
+      target.source.shared.toMachineState :=
+  Regular.machine_eq hRel.2
 
 theorem consumedExactly_iff
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}

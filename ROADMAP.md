@@ -1505,10 +1505,16 @@ corridor.
   `Functions.ObserverSafety`; allocation retains only compatibility exports.
   The adjacent primitive module proves guarded Yul-to-Functions preservation
   for observer primitives, and the ordinary compiler equations lift those
-  proofs to checked `gas()` and `msize()` expression-lowering leaves. The next
-  boundary is the complete compiler-selected primitive family and structural
-  expression preservation over this relation, followed by statements, loops,
-  calls, and whole-main composition.
+  proofs to checked `gas()` and `msize()` expression-lowering leaves.
+  Pass-owned semantic classifiers now cover pure binary/unary/ternary
+  operations, direct execution-environment reads, `returndatasize`, `pop`,
+  `mstore`, `mstore8`, and `mcopy`. The primitive interface has separate
+  exact-arity support for permissive imported-Yul handlers, and the state
+  relation explicitly equates Yul code images with executable EVM code for
+  `codesize`/`codecopy` families. The next boundary is the remaining
+  compiler-selected primitive families and structural expression preservation
+  over this relation, followed by statements, loops, calls, and whole-main
+  composition.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

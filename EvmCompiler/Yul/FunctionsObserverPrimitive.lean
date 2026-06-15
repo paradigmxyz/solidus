@@ -1,7 +1,7 @@
-import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Simulation.ObserverPass
-import EvmCompiler.Yul.ObserverSafety
-import EvmCompiler.Yul.StateRelation
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Environment
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Machine
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Pure
 
 namespace EvmCompiler
 namespace Yul
@@ -16,7 +16,6 @@ primitive selection; no lower compiler pass or target execution appears here.
 -/
 
 abbrev Trace := Assembly.ResourceTrace
-abbrev Word := Assembly.Word
 
 theorem observerPrim
     {transcript : Trace} {codeRel : StateRelation.CodeRel}

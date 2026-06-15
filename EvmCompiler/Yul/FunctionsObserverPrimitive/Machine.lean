@@ -1,0 +1,374 @@
+import EvmCompiler.Yul.FunctionsObserverPrimitive.Core
+
+namespace EvmCompiler
+namespace Yul
+namespace FunctionsObserverPrimitive
+
+inductive MachineBinaryZero :
+    EvmYul.Operation .Yul → Structured.BasicOp →
+      (EvmYul.MachineState → Word → Word →
+        EvmYul.MachineState) → Prop where
+  | mstore :
+      MachineBinaryZero (.StackMemFlow .MSTORE) .mstore
+        EvmYul.MachineState.mstore
+  | mstore8 :
+      MachineBinaryZero (.StackMemFlow .MSTORE8) .mstore8
+        EvmYul.MachineState.mstore8
+
+theorem MachineBinaryZero.metadata
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) :
+    Expressions.Structured.BasicOp.inputs op = 2 ∧
+      Locals.Source.PrimitiveSemantics.sourceContinuingStep? op =
+        some (.binaryMachineState f) ∧
+      ObserverSemantics.yulPrimObserver? prim = none ∧
+      Functions.ObserverSemantics.basicOpObserver? op = none ∧
+      Prim.terminal? prim = none ∧
+      Prim.toUncheckedBasicOp? prim = some op := by
+  cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem yul_primCall_succ_eq_of_machineBinaryZero
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f)
+    (fuel : Nat) (source : EvmYul.Yul.State)
+    (args : List Word) :
+    EvmYul.Yul.primCall fuel.succ source prim args =
+      (match EvmYul.Yul.binaryMachineStateOp f source args with
+      | .ok (state, value?) => .ok (state, value?.toList)
+      | .error err => .error err) := by
+  cases hFamily <;>
+    simp [EvmYul.Yul.primCall] <;>
+    unfold EvmYul.step <;>
+    rfl
+
+theorem forwardAt_of_machineBinaryZero
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    (hFamily : MachineBinaryZero prim op f) :
+    ForwardAt codeRel fuel prim op := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      rw [yul_primCall_succ_eq_of_machineBinaryZero hFamily] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.binaryMachineStateOp] at hCall
+      | cons left rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.binaryMachineStateOp] at hCall
+          | cons right extra =>
+              cases extra with
+              | cons head tail =>
+                  simp [EvmYul.Yul.binaryMachineStateOp] at hCall
+              | nil =>
+                  simp [EvmYul.Yul.binaryMachineStateOp,
+                    EvmYul.Yul.State.setMachineState] at hCall
+                  rcases hCall with ⟨rfl, rfl⟩
+                  let sourceMachine :=
+                    f sourceShared.toMachineState left right
+                  let targetMachine :=
+                    f target.shared.toMachineState left right
+                  have hMachine : sourceMachine = targetMachine := by
+                    simp [sourceMachine, targetMachine, hShared.machine]
+                  let targetShared : EvmYul.SharedState .EVM :=
+                    { target.shared with
+                      toMachineState := targetMachine }
+                  refine ⟨targetShared, ?_, ?_⟩
+                  · obtain ⟨hInputs, hStep, _⟩ := hFamily.metadata
+                    simp [Locals.Source.PrimitiveSemantics.structured,
+                      hInputs, hStep,
+                      Assembly.PrimStep.run,
+                      EvmYul.EVM.binaryMachineStateOp,
+                      EvmYul.Stack.pop2,
+                      EvmYul.EVM.State.replaceStackAndIncrPC,
+                      EvmYul.EVM.State.incrPC, targetShared,
+                      targetMachine]
+                    rfl
+                  · exact
+                      ⟨{ sourceShared with
+                          toMachineState := sourceMachine },
+                        sourceVars, rfl,
+                        StateRelation.Shared.withMachine hShared
+                          sourceMachine targetMachine hMachine,
+                        hVars⟩
+
+theorem safeMachineBinaryZero
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {f : EvmYul.MachineState → Word → Word → EvmYul.MachineState}
+    {sourceValues outputs : List Word}
+    (hFamily : MachineBinaryZero prim op f)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source prim sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' := by
+  obtain ⟨_hInputs, _hStep, hYulObserver, hFunctionsObserver,
+      hTerminal, hOp⟩ := hFamily.metadata
+  exact
+    safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (forwardAt_of_machineBinaryZero hFamily) hRel hRun
+
+theorem forwardAt_mcopy
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAt codeRel fuel (.StackMemFlow .MCOPY) .mcopy := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.StackMemFlow .MCOPY) sourceValues =
+            (match
+              EvmYul.Yul.ternaryMachineStateOp
+                EvmYul.MachineState.mcopy
+                (.Ok sourceShared sourceVars) sourceValues with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.ternaryMachineStateOp] at hCall
+      | cons destination rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.ternaryMachineStateOp] at hCall
+          | cons readStart rest =>
+              cases rest with
+              | nil =>
+                  simp [EvmYul.Yul.ternaryMachineStateOp] at hCall
+              | cons size extra =>
+                  cases extra with
+                  | cons head tail =>
+                      simp [EvmYul.Yul.ternaryMachineStateOp] at hCall
+                  | nil =>
+                      simp [EvmYul.Yul.ternaryMachineStateOp,
+                        EvmYul.Yul.State.setMachineState] at hCall
+                      rcases hCall with ⟨rfl, rfl⟩
+                      let sourceMachine :=
+                        EvmYul.MachineState.mcopy
+                          sourceShared.toMachineState
+                          destination readStart size
+                      let targetMachine :=
+                        EvmYul.MachineState.mcopy
+                          target.shared.toMachineState
+                          destination readStart size
+                      have hMachine : sourceMachine = targetMachine := by
+                        simp [sourceMachine, targetMachine, hShared.machine]
+                      let targetShared : EvmYul.SharedState .EVM :=
+                        { target.shared with
+                          toMachineState := targetMachine }
+                      refine ⟨targetShared, ?_, ?_⟩
+                      · simp [Locals.Source.PrimitiveSemantics.structured,
+                          Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                          Expressions.Structured.BasicOp.inputs,
+                          Assembly.PrimStep.run,
+                          EvmYul.EVM.ternaryMachineStateOp,
+                          EvmYul.Stack.pop3,
+                          EvmYul.EVM.State.replaceStackAndIncrPC,
+                          EvmYul.EVM.State.incrPC,
+                          targetShared, targetMachine]
+                        rfl
+                      · exact
+                          ⟨{ sourceShared with
+                              toMachineState := sourceMachine },
+                            sourceVars, rfl,
+                            StateRelation.Shared.withMachine hShared
+                              sourceMachine targetMachine hMachine,
+                            hVars⟩
+
+theorem safeMcopy
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.StackMemFlow .MCOPY) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .mcopy target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAt_mcopy hRel hRun
+
+theorem forwardAtArity_returndatasize
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAtArity codeRel fuel
+      (.Env .RETURNDATASIZE) .returndatasize := by
+  intro source source' target sourceValues outputs hRel hArity hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  have hValues : sourceValues = [] := by
+    apply List.eq_nil_of_length_eq_zero
+    simpa [Expressions.Structured.BasicOp.inputs] using hArity
+  subst sourceValues
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.Env .RETURNDATASIZE) [] =
+            .ok
+              (.Ok sourceShared sourceVars,
+                [EvmYul.MachineState.returndatasize
+                  sourceShared.toMachineState]) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hCall
+      rcases hCall with ⟨rfl, rfl⟩
+      have hResult :
+          EvmYul.MachineState.returndatasize sourceShared.toMachineState =
+            EvmYul.MachineState.returndatasize
+              target.shared.toMachineState :=
+        congrArg EvmYul.MachineState.returndatasize hShared.machine
+      refine ⟨target.shared, ?_, ?_⟩
+      · simp [Locals.Source.PrimitiveSemantics.structured,
+          Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+          Expressions.Structured.BasicOp.inputs,
+          Assembly.PrimStep.run, EvmYul.EVM.machineStateOp,
+          EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.push,
+          EvmYul.Yul.State.toMachineState, hResult]
+        rfl
+      · simpa [Locals.Source.State.withShared] using
+          (show
+            StateRelation.Regular.Rel codeRel
+              (.Ok sourceShared sourceVars) target from
+            ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+
+theorem safeReturndatasize
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hArity :
+      sourceValues.length =
+        Expressions.Structured.BasicOp.inputs .returndatasize)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.Env .RETURNDATASIZE) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .returndatasize target
+          sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAtArity_returndatasize hArity hRel hRun
+
+theorem forwardAtArity_pop
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAtArity codeRel fuel (.StackMemFlow .POP) .pop := by
+  intro source source' target sourceValues outputs hRel hArity hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  have hValues : ∃ value, sourceValues = [value] := by
+    cases sourceValues with
+    | nil =>
+        simp [Expressions.Structured.BasicOp.inputs] at hArity
+    | cons value rest =>
+        cases rest with
+        | nil => exact ⟨value, rfl⟩
+        | cons head tail =>
+            simp [Expressions.Structured.BasicOp.inputs] at hArity
+  rcases hValues with ⟨value, rfl⟩
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.StackMemFlow .POP) [value] =
+            .ok (.Ok sourceShared sourceVars, []) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hCall
+      rcases hCall with ⟨rfl, rfl⟩
+      refine ⟨target.shared, ?_, ?_⟩
+      · simp [Locals.Source.PrimitiveSemantics.structured,
+          Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+          Expressions.Structured.BasicOp.inputs,
+          Assembly.PrimStep.run, EvmYul.EVM.State.replaceStackAndIncrPC,
+          EvmYul.EVM.State.incrPC, EvmYul.Stack.pop]
+        rfl
+      · simpa [Locals.Source.State.withShared] using
+          (show
+            StateRelation.Regular.Rel codeRel
+              (.Ok sourceShared sourceVars) target from
+            ⟨sourceShared, sourceVars, rfl, hShared, hVars⟩)
+
+theorem safePop
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hArity :
+      sourceValues.length = Expressions.Structured.BasicOp.inputs .pop)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.StackMemFlow .POP) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .pop target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAtArity_pop hArity hRel hRun
+
+end FunctionsObserverPrimitive
+end Yul
+end EvmCompiler
