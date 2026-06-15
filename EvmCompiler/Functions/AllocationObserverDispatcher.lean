@@ -2438,6 +2438,361 @@ theorem nonregular
 
 end ResourceBlockResult
 
+namespace ResourceRecursiveBlockForward
+
+/--
+Invoke the compiler-selected recursive block interface at a regular open-block
+result.
+-/
+theorem regular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel sourceBlock source =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular sourceFinal,
+            finalCtx)) :
+    ∃ targetFinal finalMode,
+      AllocationObserverStatement.Sequence.RegularBlockResourceInvariantForward
+        program.memoryContract resource allocatorDepth transcript
+        root.lowerCtx cursor.finalState cursor.finalLocals cursor.plan
+        (Functions.Scope.Block.outEnv live sourceBlock)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceFinal targetFinal finalCtx ∧
+      AllocationObserverOutcome.SameControl sourceCtx finalCtx ∧
+      (∀ name,
+        name ∈ finalCtx.scope ↔
+          name ∈ Functions.Scope.Block.outEnv live sourceBlock) := by
+  have hResult :=
+    hRecursive cursor hFuel hBoundary hSource
+  obtain ⟨targetFinal, finalMode, hForward, hControl⟩ :=
+    hResult.regular
+  exact
+    ⟨targetFinal, finalMode, hForward, hControl,
+      hResult.regularScope rfl⟩
+
+/--
+Invoke the compiler-selected recursive block interface at an abrupt open-block
+result.
+-/
+theorem nonregular
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx finalCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceFuel sourceBlock source =
+        .ok (sourceOutcome, finalCtx))
+    (hMode : sourceOutcome.mode ≠ .regular) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverOutcome.BlockResourceForward
+        program.memoryContract resource allocatorDepth transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive root.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase mode finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured cursor.compiled }
+        target sourceOutcome targetOutcome finalCtx :=
+  ResourceBlockResult.nonregular cursor
+    hBoundary (hRecursive cursor hFuel hBoundary hSource) hMode
+
+/--
+Discharge one regular scoped block through compiler-selected recursive
+open-block preservation and the statement-owned lexical cleanup theorem.
+
+The loop pass only needs the ordinary scoped invariant. Resource bookkeeping
+remains internal to the recursive open-block proof and is forgotten exactly at
+this adjacent interface.
+-/
+theorem scopedRegularInvariant
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source sourceFinal :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {targetBlock : Expressions.Block}
+    {afterLocals : Locals.Ctx}
+    {afterPlan : Locals.Allocation.Plan}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceBlock sourceFuel source =
+        .ok (Functions.Source.Effectful.Outcome.regular sourceFinal))
+    (hAfterCompiler :
+      AllocationObserverContext.ActivationExprContext
+        root.lowerCtx lowerState afterLocals afterPlan live mode)
+    (hAfterWF : afterPlan.WellFormed)
+    (hAfterLayout : afterLocals.layout = localsCtx.layout)
+    (hFinish :
+      Locals.finishScoped afterLocals cursor.finalLocals cursor.compiled =
+        some targetBlock) :
+    ∃ targetFinal,
+      AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward
+        program.memoryContract transcript root.lowerCtx lowerState afterLocals
+        afterPlan live frameBase mode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target sourceFinal targetFinal := by
+  rcases
+      Functions.Source.Effectful.Block.runScoped_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hRegular | hNonregular
+  · rcases hRegular with
+      ⟨openFinal, finalCtx, hOpen, hOutcome⟩
+    have hRestrict :
+        (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            sourceCtx.scope openFinal =
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            live openFinal :=
+      Locals.Source.Effectful.StateModel.restrictTo_congr
+        (Functions.ObserverSemantics.stateModel transcript)
+        hBoundary.sourceScope
+    have hFinal :
+        sourceFinal =
+          (Functions.ObserverSemantics.stateModel transcript).restrictTo
+            live openFinal := by
+      have hState :=
+        congrArg Locals.Source.Effectful.Outcome.state hOutcome
+      rw [hRestrict] at hState
+      simpa [Functions.Source.Effectful.Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] using hState
+    obtain
+        ⟨targetMid, finalMode, hForward, _hControl, _hScope⟩ :=
+      regular cursor hRecursive hFuel hBoundary hOpen
+    obtain ⟨targetFinal, hScoped⟩ :=
+      AllocationObserverStatement.Sequence.RegularScopedBlockInvariantForward.finish_regular
+        hForward.toInvariant hBoundary.sourceScope
+        (congrArg List.length hAfterLayout.symm)
+        hAfterCompiler hAfterWF
+        (fun _ hName => Functions.Scope.Block.mem_outEnv hName)
+        cursor.sourceScoped cursor.lower hFinish
+    rw [← hFinal] at hScoped
+    exact ⟨targetFinal, hScoped⟩
+  · rcases hNonregular with
+      ⟨openOutcome, finalCtx, hOpen, hMode, hOutcome⟩
+    have hImpossible :
+        (Functions.Source.Effectful.Outcome.regular sourceFinal).mode ≠
+          .regular := by
+      rw [hOutcome]
+      exact hMode
+    exact False.elim (hImpossible rfl)
+
+/--
+Discharge one abrupt scoped block through compiler-selected recursive
+open-block preservation. The ordinary scoped execution proof is separated from
+the resource-indexed destination evidence retained by the recursive boundary.
+-/
+theorem scopedNonregularControlled
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {scope : Locals.Allocation.ScopeId}
+    {live : List Functions.Name}
+    {sourceBlock : Functions.Block}
+    {lowerState : AllocationLowering.State}
+    {localsCtx : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase fuelBound sourceFuel : Nat}
+    {transcript : Trace}
+    {mode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {source :
+      Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetBlock : Expressions.Block}
+    (cursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root scope live
+        sourceBlock lowerState localsCtx)
+    (hRecursive :
+      ResourceRecursiveBlockForward (root := root)
+        (resource := resource) (allocatorDepth := allocatorDepth)
+        (frameBase := frameBase) (fuelBound := fuelBound)
+        (transcript := transcript))
+    (hFuel : sourceFuel < fuelBound)
+    (hBoundary :
+      ResourceBoundary cursor (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := mode) (sourceCtx := sourceCtx)
+        (source := source) (target := target))
+    (hSource :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          program sourceCtx sourceBlock sourceFuel source =
+        .ok sourceOutcome)
+    (hMode : sourceOutcome.mode ≠ .regular)
+    (hFinish :
+      Locals.finishScoped localsCtx cursor.finalLocals cursor.compiled =
+        some targetBlock) :
+    ∃ targetOutcome finalMode,
+      AllocationObserverStatement.Sequence.ScopedBlockForward
+        program.memoryContract transcript cursor.plan
+        (AllocationObserverOutcome.outcomeLive root.returns
+          (Functions.Scope.Block.outEnv live sourceBlock)
+          sourceCtx sourceOutcome.mode)
+        frameBase finalMode program sourceCtx sourceBlock source
+        expressions.toStructured
+        { stmts :=
+            Expressions.StmtList.toStructured targetBlock.stmts }
+        target sourceOutcome targetOutcome ∧
+      ResourceControlOutcomeForward cursor hBoundary sourceOutcome
+        targetOutcome := by
+  rcases
+      Functions.Source.Effectful.Block.runScoped_cases
+        (Functions.ObserverSemantics.stateModel transcript)
+        (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+          program.memoryContract transcript)
+        program hSource with
+    hRegular | hNonregular
+  · rcases hRegular with
+      ⟨openFinal, finalCtx, hOpen, hOutcome⟩
+    have hImpossible :
+        sourceOutcome.mode = .regular := by
+      rw [hOutcome]
+      rfl
+    exact False.elim (hMode hImpossible)
+  · rcases hNonregular with
+      ⟨openOutcome, finalCtx, hOpen, hOpenMode, hOutcome⟩
+    subst sourceOutcome
+    have hResult :=
+      hRecursive cursor hFuel hBoundary hOpen
+    obtain ⟨targetOutcome, hRuntime, hControl⟩ :=
+      hResult.runtime
+    cases hRuntime with
+    | regular _ _ =>
+        exact False.elim (hOpenMode rfl)
+    | nonregular _ hForward =>
+      exact
+        ⟨targetOutcome, _,
+          AllocationObserverStatement.Sequence.ScopedBlockForward.finish_nonregular
+            (AllocationObserverStatement.Sequence.BlockForward.ofResource
+              hForward)
+            hOpenMode hFinish,
+          hControl⟩
+
+end ResourceRecursiveBlockForward
+
 namespace Boundary
 
 /--
@@ -3667,6 +4022,237 @@ def forInit
           simpa [Locals.Ctx.withoutLoopControl] using hDepth,
         by
           simpa [Locals.Ctx.withoutLoopControl] using hRetc⟩
+
+/-- Enter a loop post block under the compiler-selected resource mode. -/
+def forPost
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {outerScope postScope : Locals.Allocation.ScopeId}
+    {outerLive loopLive : List Functions.Name}
+    {outerBlock post : Functions.Block}
+    {initLowered : Locals.Block}
+    {initCode : List Expressions.Stmt}
+    {outerState loopState : AllocationLowering.State}
+    {outerLocals initLocals : Locals.Ctx}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {outerMode loopMode : ActivationMode}
+    {outerCtx loopCtx : Functions.Source.Ctx}
+    {outerSource postSource :
+      Functions.ObserverSemantics.State transcript}
+    {outerTarget postTarget :
+      Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope outerLive
+        outerBlock outerState outerLocals)
+    (postCursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root postScope loopLive
+        post loopState initLocals.withoutLoopControl)
+    (hBoundary :
+      ResourceBoundary outer (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := outerMode) (sourceCtx := outerCtx)
+        (source := outerSource) (target := outerTarget))
+    (hInitCompile :
+      Locals.Block.compileOpen outerLocals.withoutLoopControl
+          initLowered =
+        some (initCode, initLocals))
+    (hLoopScope :
+      ∀ name, name ∈ loopCtx.scope ↔ name ∈ loopLive)
+    (hOuterSubset :
+      ∀ name, name ∈ outerLive → name ∈ loopLive)
+    (hInitControl :
+      AllocationObserverOutcome.SameControl
+        outerCtx.withoutLoopControl loopCtx)
+    (hReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        loopCtx.withoutLoopControl postTarget)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        loopState initLocals.withoutLoopControl postCursor.plan loopLive
+        frameBase loopMode postSource postTarget) :
+    ResourceBoundary postCursor (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := loopMode) (sourceCtx := loopCtx.withoutLoopControl)
+      (source := postSource) (target := postTarget) := by
+  have hLoopControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns loopLive loopCtx :=
+    hInitControl.controlScopesWithin
+      ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
+  have hLocalsControl :=
+    Locals.Block.compileOpen_sameControl hInitCompile
+  refine
+    { sourceScope := by
+        intro name
+        simpa [Functions.Source.Ctx.withoutLoopControl] using
+          hLoopScope name
+      control := hLoopControl.withoutLoopControl
+      destinations :=
+        AllocationObserverOutcome.ControlDestinations.withoutLoopControl
+      returnFrame := hReturnFrame
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  intro functionScope hLeave
+  have hOuterLeave :
+      outerCtx.leaveScope? = some functionScope := by
+    calc
+      outerCtx.leaveScope? =
+          outerCtx.withoutLoopControl.leaveScope? := rfl
+      _ = loopCtx.leaveScope? := hInitControl.leaveScope
+      _ = loopCtx.withoutLoopControl.leaveScope? := rfl
+      _ = some functionScope := hLeave
+  obtain ⟨hDepth, hRetc⟩ :=
+    hBoundary.leaveTarget functionScope hOuterLeave
+  constructor
+  · calc
+      initLocals.withoutLoopControl.leaveDepth? =
+          initLocals.leaveDepth? := rfl
+      _ = outerLocals.withoutLoopControl.leaveDepth? :=
+        hLocalsControl.leaveDepth.symm
+      _ = outerLocals.leaveDepth? := rfl
+      _ = some 0 := hDepth
+  · calc
+      initLocals.withoutLoopControl.leaveRetc =
+          initLocals.leaveRetc := rfl
+      _ = outerLocals.withoutLoopControl.leaveRetc :=
+        hLocalsControl.leaveRetc.symm
+      _ = outerLocals.leaveRetc := rfl
+      _ = root.returns.length := hRetc
+
+/-- Enter a loop body under the compiler-selected resource mode. -/
+def forBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {compilation :
+      AllocationObserverForward.Compilation allocation program expressions}
+    {root :
+      AllocationObserverForward.BodyCursor.RootArtifact compilation}
+    {outerScope bodyScope : Locals.Allocation.ScopeId}
+    {outerLive loopLive : List Functions.Name}
+    {outerBlock body : Functions.Block}
+    {initLowered : Locals.Block}
+    {initCode : List Expressions.Stmt}
+    {outerState loopState bodyState : AllocationLowering.State}
+    {outerLocals initLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {outerMode loopMode : ActivationMode}
+    {outerCtx loopCtx : Functions.Source.Ctx}
+    {outerSource bodySource :
+      Functions.ObserverSemantics.State transcript}
+    {outerTarget bodyTarget :
+      Structured.ObserverSemantics.State transcript}
+    (outer :
+      AllocationObserverForward.BodyCursor.CoreCursor root outerScope outerLive
+        outerBlock outerState outerLocals)
+    (bodyCursor :
+      AllocationObserverForward.BodyCursor.CoreCursor root bodyScope loopLive
+        body bodyState
+        (initLocals.withLoopControl initLocals.layout.length))
+    (hBoundary :
+      ResourceBoundary outer (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (mode := outerMode) (sourceCtx := outerCtx)
+        (source := outerSource) (target := outerTarget))
+    (hInitCompile :
+      Locals.Block.compileOpen outerLocals.withoutLoopControl
+          initLowered =
+        some (initCode, initLocals))
+    (hLoopScope :
+      ∀ name, name ∈ loopCtx.scope ↔ name ∈ loopLive)
+    (hOuterSubset :
+      ∀ name, name ∈ outerLive → name ∈ loopLive)
+    (hInitControl :
+      AllocationObserverOutcome.SameControl
+        outerCtx.withoutLoopControl loopCtx)
+    (hLoopCompiler :
+      AllocationObserverContext.ActivationExprContext
+        root.lowerCtx loopState initLocals loopPlan loopLive loopMode)
+    (hLoopPlanWF : loopPlan.WellFormed)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState bodyState)
+    (hReturnFrame :
+      AllocationObserverOutcome.ReturnFrameAvailable
+        (loopCtx.withLoopControl loopCtx.scope loopCtx.scope) bodyTarget)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth root.lowerCtx
+        bodyState
+        (initLocals.withLoopControl initLocals.layout.length)
+        bodyCursor.plan loopLive frameBase loopMode bodySource bodyTarget) :
+    ResourceBoundary bodyCursor (resource := resource)
+      (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+      (mode := loopMode)
+      (sourceCtx :=
+        loopCtx.withLoopControl loopCtx.scope loopCtx.scope)
+      (source := bodySource) (target := bodyTarget) := by
+  have hLoopControl :
+      AllocationObserverOutcome.ControlScopesWithin
+        root.returns loopLive loopCtx :=
+    hInitControl.controlScopesWithin
+      ((hBoundary.control.mono hOuterSubset).withoutLoopControl)
+  have hLocalsControl :=
+    Locals.Block.compileOpen_sameControl hInitCompile
+  have hBaseDestinations :=
+    AllocationObserverOutcome.ControlDestinations.loopBody
+      hLoopCompiler hLoopPlanWF hState hLoopScope
+  refine
+    { sourceScope := by
+        intro name
+        simpa [Functions.Source.Ctx.withLoopControl] using
+          hLoopScope name
+      control := hLoopControl.withLoopControl hLoopScope
+      destinations :=
+        hBaseDestinations.transport
+          (AllocationObserverOutcome.SameControl.refl _)
+          (Locals.Ctx.SameControl.refl _)
+          (AllocationLowering.StateExtends.of_shape rfl rfl)
+          (fun _ hName => hName) (SameFrame.refl loopMode)
+      returnFrame := hReturnFrame
+      leaveTarget := ?_
+      budget := hBoundary.budget
+      invariant := hInvariant }
+  intro functionScope hLeave
+  have hOuterLeave :
+      outerCtx.leaveScope? = some functionScope := by
+    calc
+      outerCtx.leaveScope? =
+          outerCtx.withoutLoopControl.leaveScope? := rfl
+      _ = loopCtx.leaveScope? := hInitControl.leaveScope
+      _ = (loopCtx.withLoopControl
+            loopCtx.scope loopCtx.scope).leaveScope? := rfl
+      _ = some functionScope := hLeave
+  obtain ⟨hDepth, hRetc⟩ :=
+    hBoundary.leaveTarget functionScope hOuterLeave
+  constructor
+  · calc
+      (initLocals.withLoopControl
+          initLocals.layout.length).leaveDepth? =
+          initLocals.leaveDepth? := rfl
+      _ = outerLocals.withoutLoopControl.leaveDepth? :=
+        hLocalsControl.leaveDepth.symm
+      _ = outerLocals.leaveDepth? := rfl
+      _ = some 0 := hDepth
+  · calc
+      (initLocals.withLoopControl
+          initLocals.layout.length).leaveRetc =
+          initLocals.leaveRetc := rfl
+      _ = outerLocals.withoutLoopControl.leaveRetc :=
+        hLocalsControl.leaveRetc.symm
+      _ = outerLocals.leaveRetc := rfl
+      _ = root.returns.length := hRetc
 
 /--
 Transport resource-indexed abrupt-destination evidence from a nested cursor

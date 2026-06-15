@@ -1418,10 +1418,12 @@ corridor.
   Stack-only leaves, lexical blocks, and all `if` and `switch` outcomes now
   use the same resource-indexed cursor and controlled-dispatch interfaces.
   Stack-only loop initializer exits now compose through the same recursive
-  resource interface and activation-exit transport. The remaining Functions
-  work is regular and post-initializer loop outcomes, selected calls, the
-  recursive constructor, whole-program forward packaging, and matching
-  backward adequacy.
+  resource interface and activation-exit transport. Resource-generic loop
+  body/post boundaries and regular/abrupt recursive scoped adapters are also
+  checked through statement-owned cleanup and canonical control destinations.
+  The remaining Functions work is regular and post-initializer loop head
+  composition, selected calls, the recursive constructor, whole-program
+  forward packaging, and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

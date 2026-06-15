@@ -2529,6 +2529,53 @@ end DestinationRuntimeInvariant
 
 namespace DestinationResourceInvariant
 
+/-- Forget resource bookkeeping at a canonical control destination. -/
+theorem toInvariant
+    {kind : ControlKind}
+    {lowerCtx : AllocationLowering.Ctx}
+    {currentState : AllocationLowering.State}
+    {currentLocals : Locals.Ctx}
+    {currentPlan : Locals.Allocation.Plan}
+    {currentLive : List Functions.Name}
+    {currentMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {binding :
+      ControlBinding kind lowerCtx currentState currentLocals currentPlan
+        currentLive currentMode sourceCtx}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hInvariant :
+      DestinationResourceInvariant
+        (contract := contract) (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        binding sourceFinal targetFinal) :
+    ∃ (destination :
+          ControlDestination lowerCtx currentState currentPlan currentLive
+            currentMode)
+        (sourceLive : List Functions.Name)
+        (source : kind.sourceScope? sourceCtx = some sourceLive)
+        (sourceEquivalent :
+          ∀ name, name ∈ sourceLive ↔ name ∈ destination.live)
+        (target :
+          kind.targetDepth? currentLocals =
+            some destination.locals.layout.length),
+      binding =
+        .available destination sourceLive source sourceEquivalent target ∧
+      AllocationObserverContext.ActivationInvariant
+        contract lowerCtx destination.state destination.locals
+        destination.plan destination.live frameBase destination.mode
+        sourceFinal targetFinal := by
+  rcases hInvariant with
+    ⟨destination, sourceLive, source, sourceEquivalent, target,
+      hBinding, hResource⟩
+  exact
+    ⟨destination, sourceLive, source, sourceEquivalent, target,
+      hBinding, hResource.activation⟩
+
 theorem available
     {kind : ControlKind}
     {lowerCtx : AllocationLowering.Ctx}
@@ -2838,6 +2885,82 @@ theorem loopBody_continue_destination
       contract config allocatorDepth lowerCtx loopState loopLocals
       loopPlan loopLive frameBase loopMode sourceFinal targetFinal := by
   simp [loopBody, ControlBinding.DestinationRuntimeInvariant] at hDestination
+  exact hDestination.2.2.2
+
+/--
+Eliminate the canonical `break` destination of a loop body under the
+compiler-selected resource mode.
+-/
+theorem loopBody_break_resource_destination
+    {lowerCtx : AllocationLowering.Ctx}
+    {loopState currentState : AllocationLowering.State}
+    {loopLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {loopLive : List Functions.Name}
+    {loopMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hPlanWF : loopPlan.WellFormed)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState currentState)
+    (hScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ loopLive)
+    (hDestination :
+      ControlBinding.DestinationResourceInvariant
+        (contract := contract) (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (loopBody hCompiler hPlanWF hState hScope).brk
+        sourceFinal targetFinal) :
+    AllocationObserverContext.ActivationResourceInvariant
+      resource contract allocatorDepth lowerCtx loopState loopLocals
+      loopPlan loopLive frameBase loopMode sourceFinal targetFinal := by
+  simp [loopBody, ControlBinding.DestinationResourceInvariant] at hDestination
+  exact hDestination.2.2.2
+
+/--
+Eliminate the canonical `continue` destination of a loop body under the
+compiler-selected resource mode.
+-/
+theorem loopBody_continue_resource_destination
+    {lowerCtx : AllocationLowering.Ctx}
+    {loopState currentState : AllocationLowering.State}
+    {loopLocals : Locals.Ctx}
+    {loopPlan : Locals.Allocation.Plan}
+    {loopLive : List Functions.Name}
+    {loopMode : ActivationMode}
+    {sourceCtx : Functions.Source.Ctx}
+    {contract : MemoryContract.Contract}
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {sourceFinal : Functions.ObserverSemantics.State transcript}
+    {targetFinal : Structured.ObserverSemantics.State transcript}
+    (hCompiler :
+      AllocationObserverContext.ActivationExprContext
+        lowerCtx loopState loopLocals loopPlan loopLive loopMode)
+    (hPlanWF : loopPlan.WellFormed)
+    (hState :
+      AllocationLowering.StateExtends loopLive loopState currentState)
+    (hScope :
+      ∀ name, name ∈ sourceCtx.scope ↔ name ∈ loopLive)
+    (hDestination :
+      ControlBinding.DestinationResourceInvariant
+        (contract := contract) (resource := resource)
+        (allocatorDepth := allocatorDepth) (frameBase := frameBase)
+        (loopBody hCompiler hPlanWF hState hScope).cont
+        sourceFinal targetFinal) :
+    AllocationObserverContext.ActivationResourceInvariant
+      resource contract allocatorDepth lowerCtx loopState loopLocals
+      loopPlan loopLive frameBase loopMode sourceFinal targetFinal := by
+  simp [loopBody, ControlBinding.DestinationResourceInvariant] at hDestination
   exact hDestination.2.2.2
 
 def transport
