@@ -1486,8 +1486,11 @@ corridor.
   The stable leaf interface is now checked:
   `PrimitiveSemantics.ObservableRefines` covers ordinary success,
   `YulHalt`, and `Revert`, while `Result.Refines` supplies outcome-sensitive
-  `map`, `bind`, and `multifill` composition. Recursive expression, call,
-  sequence, and loop theorems must consume this interface horizontally.
+  `map`, `bind`, and `multifill` composition. Construct-owned expression
+  combinators now cover argument sequencing, primitive and function calls,
+  variables, literals, and single-value projection. Recursive call,
+  statement-sequence, branch, and loop theorems must consume these interfaces
+  horizontally; the final fuel driver must only assemble those checked pieces.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

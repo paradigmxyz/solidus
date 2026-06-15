@@ -1009,6 +1009,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_revert_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.Result.Refines.bind
 #print axioms EvmCompiler.Yul.Source.Effectful.multifill_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.evalTail_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_primitive_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_function_succ_refines
+#print axioms EvmCompiler.Yul.Source.Effectful.eval_refines_of_evalValues
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.observableRefines
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid

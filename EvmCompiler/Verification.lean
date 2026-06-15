@@ -779,6 +779,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.Result.Refines
 #check EvmCompiler.Yul.Source.Effectful.Result.Refines.bind
 #check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.ObservableRefines
+#check EvmCompiler.Yul.Source.Effectful.evalTail_succ_refines
+#check EvmCompiler.Yul.Source.Effectful.evalArgs_cons_succ_refines
+#check EvmCompiler.Yul.Source.Effectful.evalValues_primitive_succ_refines
+#check EvmCompiler.Yul.Source.Effectful.evalValues_function_succ_refines
+#check EvmCompiler.Yul.Source.Effectful.eval_refines_of_evalValues
 #check EvmCompiler.Yul.ObserverSafety.PrimitiveSafe
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Yul.ObserverSafety.SafeSemantics.eval_ok_parts

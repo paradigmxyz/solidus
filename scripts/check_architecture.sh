@@ -191,6 +191,16 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
 
 report_matches \
+  'Yul effect refinement must remain semantic-only and adjacent to canonical Yul semantics:' \
+  '^import EvmCompiler\.(Functions|Locals|Expressions|Structured|TypedCfg|Assembly|Objects|Public)' \
+  EvmCompiler/Yul/EffectRefinement.lean
+
+report_matches \
+  'Yul effect refinement must not define a compiler or duplicate the canonical control evaluator:' \
+  '^[[:space:]]*(noncomputable[[:space:]]+)?def[[:space:]]+(evalTail|evalArgs|evalValues|eval|call|callDispatcher|execSeq|exec|loop|.*compile.*|.*lower.*|.*emit.*|.*assemble.*)[[:space:]:=]' \
+  EvmCompiler/Yul/EffectRefinement.lean
+
+report_matches \
   'Retired vertical observer namespaces must not remain in checked Lean artifacts:' \
   'EvmCompiler\.Yul\.(ObserverOracle|ObserverPreservation)' \
   EvmCompiler proof_artifacts -g '*.lean'
