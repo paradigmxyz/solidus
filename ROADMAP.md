@@ -1469,6 +1469,13 @@ corridor.
   Structured block semantics. The public whole-main theorem selects its
   resource mode directly from the allocation plan and source program, consumes
   the ordinary lowering equation, and accepts no generated artifact premise.
+  Canonical Structured semantics now owns append inversion,
+  relational-to-executable reflection, and fuel-independent outcome uniqueness.
+  `mainTargetAgreement` consequently relates any guarded source run to any
+  target run. Genuine backward adequacy still requires constructing that
+  guarded source run from a source-facing reservation-safety contract; target
+  execution cannot derive reservation noninterference because ordinary EVM
+  memory operations do not reject accesses to compiler-reserved spill memory.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

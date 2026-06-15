@@ -399,6 +399,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.AllocationObserverProgram.MainRoot.resourceRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.forwardOpen
 #check EvmCompiler.Functions.AllocationObserverProgram.mainForward
+#check EvmCompiler.Functions.AllocationObserverProgram.mainTargetAgreement
 #check EvmCompiler.Functions.AllocationObserverProgram.mainRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverProgram.mainResourceRecursiveForward
 #check EvmCompiler.Functions.AllocationObserverDispatcher.BodyCursor.Boundary.recursiveRegular
@@ -510,7 +511,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_cases
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_cases
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_exists
+#check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_cases
+#check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_cases
 #check EvmCompiler.Structured.EffectSemantics.Block.Eval.append_nonregular
+#check EvmCompiler.Structured.EffectSemantics.Block.run_of_eval
+#check EvmCompiler.Structured.EffectSemantics.Stmt.run_of_eval
+#check EvmCompiler.Structured.EffectSemantics.For.run_of_eval
+#check EvmCompiler.Structured.EffectSemantics.Block.Eval.outcome_unique
+#check EvmCompiler.Structured.EffectSemantics.Stmt.Eval.outcome_unique
+#check EvmCompiler.Structured.EffectSemantics.For.Eval.outcome_unique
 #check EvmCompiler.Expressions.StmtList.toStructured_append
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationMode
 #check EvmCompiler.Functions.AllocationObserverRelation.ActivationStateRel

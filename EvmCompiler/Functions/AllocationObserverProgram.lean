@@ -2248,6 +2248,61 @@ theorem mainForward
     simpa [closeOutcome, hMode] using hOutcome
 
 /--
+Any successful target evaluation agrees with the unique target outcome
+constructed from a successful guarded source run.
+
+This is a determinism-strengthened forward theorem, not backward adequacy:
+constructing the guarded source run from target execution remains a separate
+obligation.
+-/
+theorem mainTargetAgreement
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    (hLower :
+      AllocationLowering.lowerExpressionsFromAllocation? allocation program =
+        some expressions)
+    {maxDepth fuelBound sourceFuel targetFuel : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    {sourceOutcome :
+      Functions.ObserverSemantics.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetOutcome :
+      Structured.ObserverSemantics.Outcome
+        (transcript := transcript)}
+    (hProgramScoped : program.Scoped)
+    (hFuelSafe :
+      (selectedResourceMode allocation program).FuelSafe maxDepth)
+    (hDepthBound :
+      selectedMainSetupDepth allocation program + fuelBound ≤ maxDepth)
+    (hSourceFuel : sourceFuel < fuelBound)
+    (hInitial :
+      InitialRel program.memoryContract source target)
+    (hSource :
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (AllocationObserverSafety.SafeSemantics.primitiveSemantics
+            program.memoryContract transcript)
+          sourceFuel program source =
+        .ok sourceOutcome)
+    (hTarget :
+      Structured.ObserverSemantics.Block.Eval
+        expressions.toStructured targetFuel expressions.body.toStructured
+        target targetOutcome) :
+    OutcomeRel program.memoryContract sourceOutcome targetOutcome := by
+  obtain
+      ⟨expectedOutcome, expectedFuel, hExpected, hOutcomeRel⟩ :=
+    mainForward hLower hProgramScoped hFuelSafe hDepthBound hSourceFuel
+      hInitial hSource
+  have hOutcome :
+      expectedOutcome = targetOutcome :=
+    Structured.EffectSemantics.Block.Eval.outcome_unique
+      hExpected hTarget
+  simpa [hOutcome] using hOutcomeRel
+
+/--
 Construct the checked recursive main-body theorem without accepting any
 compiler-generated evidence at the theorem boundary.
 -/

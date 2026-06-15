@@ -478,7 +478,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_exists
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_nonregular
 #print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_exists
+#print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.append_cases
+#print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.append_regular_cases
 #print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.append_nonregular
+#print axioms EvmCompiler.Structured.EffectSemantics.Block.run_of_eval
+#print axioms EvmCompiler.Structured.EffectSemantics.Stmt.run_of_eval
+#print axioms EvmCompiler.Structured.EffectSemantics.For.run_of_eval
+#print axioms EvmCompiler.Structured.EffectSemantics.Block.Eval.outcome_unique
+#print axioms EvmCompiler.Structured.EffectSemantics.Stmt.Eval.outcome_unique
+#print axioms EvmCompiler.Structured.EffectSemantics.For.Eval.outcome_unique
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtForward.expr_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtForward.let_of_compilers
 #print axioms EvmCompiler.Functions.AllocationObserverStatement.Sequence.RegularStmtForward.assign_of_compilers
@@ -986,6 +994,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainSetup.forward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.forwardOpen
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainForward
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.mainTargetAgreement
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay

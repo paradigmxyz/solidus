@@ -1127,6 +1127,111 @@ theorem Block.Eval.append_nonregular
 termination_by left.length
 
 /--
+Invert execution of an appended block at the append boundary.
+
+Either the left block completes regularly and execution continues through the
+right block, or a nonregular left outcome makes the right block unreachable.
+Fuel is existential because it bounds proof recursion rather than observable
+execution.
+-/
+theorem Block.Eval.append_cases
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {fuel : Nat} {left right : List Stmt}
+    {state : σ} {outcome : OutcomeT σ}
+    (hEval :
+      Block.Eval model handler program fuel
+        { stmts := left ++ right } state outcome) :
+    (∃ mid leftFuel rightFuel,
+        Block.Eval model handler program leftFuel
+            { stmts := left } state (Outcome.regular mid) ∧
+          Block.Eval model handler program rightFuel
+            { stmts := right } mid outcome) ∨
+      ∃ leftOutcome leftFuel,
+        leftOutcome.mode ≠ .regular ∧
+          Block.Eval model handler program leftFuel
+            { stmts := left } state leftOutcome ∧
+          outcome = leftOutcome := by
+  induction left generalizing fuel state outcome with
+  | nil =>
+      left
+      exact
+        ⟨state, 1, fuel, Block.Eval.nil, by simpa using hEval⟩
+  | cons stmt rest ih =>
+      simp only [List.cons_append] at hEval
+      cases hEval with
+      | @cons_regular stmtFuel _ _ _ mid _ hStmt hTail =>
+          rcases ih hTail with hRegular | hNonregular
+          · rcases hRegular with
+              ⟨final, leftFuel, rightFuel, hLeft, hRight⟩
+            left
+            refine
+              ⟨final, Nat.max stmtFuel leftFuel + 1, rightFuel, ?_,
+                hRight⟩
+            exact
+              Block.Eval.cons_regular
+                (Stmt.Eval.mono hStmt (Nat.le_max_left _ _))
+                (Block.Eval.mono hLeft (Nat.le_max_right _ _))
+          · rcases hNonregular with
+              ⟨leftOutcome, leftFuel, hMode, hLeft, hOutcome⟩
+            right
+            refine
+              ⟨leftOutcome, Nat.max stmtFuel leftFuel + 1, hMode, ?_,
+                hOutcome⟩
+            exact
+              Block.Eval.cons_regular
+                (Stmt.Eval.mono hStmt (Nat.le_max_left _ _))
+                (Block.Eval.mono hLeft (Nat.le_max_right _ _))
+      | @cons_brk stmtFuel _ _ _ final hStmt =>
+          right
+          refine ⟨Outcome.brk final, stmtFuel + 1, ?_, ?_, rfl⟩
+          · intro hMode
+            cases hMode
+          · exact Block.Eval.cons_brk hStmt
+      | @cons_cont stmtFuel _ _ _ final hStmt =>
+          right
+          refine ⟨Outcome.cont final, stmtFuel + 1, ?_, ?_, rfl⟩
+          · intro hMode
+            cases hMode
+          · exact Block.Eval.cons_cont hStmt
+      | @cons_leave stmtFuel _ _ _ final hStmt =>
+          right
+          refine ⟨Outcome.leave final, stmtFuel + 1, ?_, ?_, rfl⟩
+          · intro hMode
+            cases hMode
+          · exact Block.Eval.cons_leave hStmt
+      | @cons_halt stmtFuel _ _ _ final kind hStmt =>
+          right
+          refine ⟨Outcome.halt kind final, stmtFuel + 1, ?_, ?_, rfl⟩
+          · intro hMode
+            cases hMode
+          · exact Block.Eval.cons_halt hStmt
+
+/--
+A regular appended-block result forces the left prefix to complete regularly
+and exposes the exact right-suffix execution.
+-/
+theorem Block.Eval.append_regular_cases
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program}
+    {fuel : Nat} {left right : List Stmt}
+    {state final : σ}
+    (hEval :
+      Block.Eval model handler program fuel
+        { stmts := left ++ right } state (Outcome.regular final)) :
+    ∃ mid leftFuel rightFuel,
+      Block.Eval model handler program leftFuel
+          { stmts := left } state (Outcome.regular mid) ∧
+        Block.Eval model handler program rightFuel
+          { stmts := right } mid (Outcome.regular final) := by
+  rcases Block.Eval.append_cases hEval with hRegular | hNonregular
+  · exact hRegular
+  · rcases hNonregular with
+      ⟨leftOutcome, _leftFuel, hMode, _hLeft, hOutcome⟩
+    rw [← hOutcome] at hMode
+    exact False.elim (hMode rfl)
+
+/--
 A nonregular statement result exits its enclosing block immediately, making
 the remaining statement list unreachable.
 -/
@@ -1179,6 +1284,210 @@ theorem Stmt.Eval.for_init_exit
       exact Stmt.Eval.for_init_leave hInit
   | halt kind =>
       exact Stmt.Eval.for_init_halt hInit
+
+attribute [local simp] OutcomeT.regular OutcomeT.brk OutcomeT.cont
+  OutcomeT.leave OutcomeT.halt
+
+mutual
+  /--
+  Every relational Structured block evaluation is an execution of the
+  canonical interpreter at the same fuel.
+  -/
+  theorem Block.run_of_eval
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel : Nat}
+      {block : Block} {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        Block.Eval model handler program fuel block state outcome) :
+      Block.run model handler program fuel block state = .ok outcome := by
+    cases hEval with
+    | nil =>
+        rfl
+    | cons_regular hStmt hRest =>
+        simp [Block.run, Stmt.run_of_eval hStmt,
+          Block.run_of_eval hRest, Outcome.regular, Bind.bind, Except.bind]
+    | cons_brk hStmt =>
+        simp [Block.run, Stmt.run_of_eval hStmt, Outcome.brk,
+          Bind.bind, Except.bind]
+    | cons_cont hStmt =>
+        simp [Block.run, Stmt.run_of_eval hStmt, Outcome.cont,
+          Bind.bind, Except.bind]
+    | cons_leave hStmt =>
+        simp [Block.run, Stmt.run_of_eval hStmt, Outcome.leave,
+          Bind.bind, Except.bind]
+    | cons_halt hStmt =>
+        simp [Block.run, Stmt.run_of_eval hStmt, Outcome.halt,
+          Bind.bind, Except.bind]
+
+  theorem Stmt.run_of_eval
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel : Nat}
+      {stmt : Stmt} {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        Stmt.Eval model handler program fuel stmt state outcome) :
+      Stmt.run model handler program fuel stmt state = .ok outcome := by
+    cases hEval with
+    | code hCode =>
+        simp [Stmt.run, hCode, Outcome.regular, Bind.bind, Except.bind]
+    | if_false hCond =>
+        simp [Stmt.run, hCond, Outcome.regular, Bind.bind, Except.bind]
+    | if_true hCond hBody =>
+        simp [Stmt.run, hCond, Block.run_of_eval hBody,
+          Bind.bind, Except.bind]
+    | switch_none hScrutinee hPop hSelect =>
+        simp [Stmt.run, hScrutinee, hPop, hSelect, Outcome.regular,
+          Bind.bind, Except.bind]
+    | switch_some hScrutinee hPop hStateAfterPop hSelect hBody =>
+        subst hStateAfterPop
+        simp [Stmt.run, hScrutinee, hPop, hSelect,
+          Block.run_of_eval hBody, Bind.bind, Except.bind]
+    | for_init_regular hInit hLoop =>
+        simp [Stmt.run, Block.run_of_eval hInit,
+          For.run_of_eval hLoop, Outcome.regular, Bind.bind, Except.bind]
+    | for_init_leave hInit =>
+        simp [Stmt.run, Block.run_of_eval hInit, Outcome.leave,
+          Bind.bind, Except.bind]
+    | for_init_halt hInit =>
+        simp [Stmt.run, Block.run_of_eval hInit, Outcome.halt,
+          Bind.bind, Except.bind]
+    | brk =>
+        simp [Stmt.run, Outcome.brk]
+    | cont =>
+        simp [Stmt.run, Outcome.cont]
+    | leave hReturns =>
+        cases hReturnStack : model.returns state with
+        | nil =>
+            exact False.elim (hReturns hReturnStack)
+        | cons head tail =>
+            simp [Stmt.run, hReturnStack, Outcome.leave]
+    | call_regular hLookup hSplit hBody hPop hAttach =>
+        simp [Stmt.run, hLookup, hSplit, Block.run_of_eval hBody,
+          hPop, hAttach, Outcome.regular, Bind.bind, Except.bind]
+    | call_leave hLookup hSplit hBody hPop hAttach =>
+        simp [Stmt.run, hLookup, hSplit, Block.run_of_eval hBody,
+          hPop, hAttach, Outcome.leave, Outcome.regular,
+          Bind.bind, Except.bind]
+    | call_halt hLookup hSplit hBody =>
+        simp [Stmt.run, hLookup, hSplit, Block.run_of_eval hBody,
+          Outcome.halt, Bind.bind, Except.bind]
+    | terminal hStep =>
+        simp [Stmt.run, hStep, Outcome.halt, Bind.bind, Except.bind]
+
+  theorem For.run_of_eval
+      {σ : Type} {model : StateModel σ} {handler : Handler σ}
+      {program : Program} {fuel : Nat}
+      {cond : Code} {post body : Block}
+      {state : σ} {outcome : OutcomeT σ}
+      (hEval :
+        For.Eval model handler program fuel cond post body state outcome) :
+      Stmt.runForLoop model handler program fuel cond post body state =
+        .ok outcome := by
+    cases hEval with
+    | false hCond =>
+        simp [Stmt.runForLoop, hCond, Outcome.regular,
+          Bind.bind, Except.bind]
+    | body_brk hCond hBody =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Outcome.brk, Outcome.regular, Bind.bind, Except.bind]
+    | body_leave hCond hBody =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Outcome.leave, Bind.bind, Except.bind]
+    | body_halt hCond hBody =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Outcome.halt, Bind.bind, Except.bind]
+    | regular_post_regular hCond hBody hPost hLoop =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, For.run_of_eval hLoop,
+          Outcome.regular, Bind.bind, Except.bind]
+    | cont_post_regular hCond hBody hPost hLoop =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, For.run_of_eval hLoop,
+          Outcome.cont, Outcome.regular, Bind.bind, Except.bind]
+    | regular_post_leave hCond hBody hPost =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, Outcome.regular, Outcome.leave,
+          Bind.bind, Except.bind]
+    | cont_post_leave hCond hBody hPost =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, Outcome.cont, Outcome.leave,
+          Bind.bind, Except.bind]
+    | regular_post_halt hCond hBody hPost =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, Outcome.regular, Outcome.halt,
+          Bind.bind, Except.bind]
+    | cont_post_halt hCond hBody hPost =>
+        simp [Stmt.runForLoop, hCond, Block.run_of_eval hBody,
+          Block.run_of_eval hPost, Outcome.cont, Outcome.halt,
+          Bind.bind, Except.bind]
+end
+
+/--
+Structured block evaluation determines one outcome independently of the chosen
+sufficient fuel bound.
+-/
+theorem Block.Eval.outcome_unique
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program} {leftFuel rightFuel : Nat}
+    {block : Block} {state : σ} {leftOutcome rightOutcome : OutcomeT σ}
+    (hLeft :
+      Block.Eval model handler program leftFuel block state leftOutcome)
+    (hRight :
+      Block.Eval model handler program rightFuel block state rightOutcome) :
+    leftOutcome = rightOutcome := by
+  have hLeftRun :=
+    Block.run_of_eval
+      (hLeft.mono (Nat.le_max_left leftFuel rightFuel))
+  have hRightRun :=
+    Block.run_of_eval
+      (hRight.mono (Nat.le_max_right leftFuel rightFuel))
+  rw [hLeftRun] at hRightRun
+  exact Except.ok.inj hRightRun
+
+/--
+Structured statement evaluation determines one outcome independently of the
+chosen sufficient fuel bound.
+-/
+theorem Stmt.Eval.outcome_unique
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program} {leftFuel rightFuel : Nat}
+    {stmt : Stmt} {state : σ} {leftOutcome rightOutcome : OutcomeT σ}
+    (hLeft :
+      Stmt.Eval model handler program leftFuel stmt state leftOutcome)
+    (hRight :
+      Stmt.Eval model handler program rightFuel stmt state rightOutcome) :
+    leftOutcome = rightOutcome := by
+  have hLeftRun :=
+    Stmt.run_of_eval
+      (hLeft.mono (Nat.le_max_left leftFuel rightFuel))
+  have hRightRun :=
+    Stmt.run_of_eval
+      (hRight.mono (Nat.le_max_right leftFuel rightFuel))
+  rw [hLeftRun] at hRightRun
+  exact Except.ok.inj hRightRun
+
+/--
+Structured loop evaluation determines one outcome independently of the chosen
+sufficient fuel bound.
+-/
+theorem For.Eval.outcome_unique
+    {σ : Type} {model : StateModel σ} {handler : Handler σ}
+    {program : Program} {leftFuel rightFuel : Nat}
+    {cond : Code} {post body : Block}
+    {state : σ} {leftOutcome rightOutcome : OutcomeT σ}
+    (hLeft :
+      For.Eval model handler program leftFuel cond post body state leftOutcome)
+    (hRight :
+      For.Eval model handler program rightFuel cond post body state
+        rightOutcome) :
+    leftOutcome = rightOutcome := by
+  have hLeftRun :=
+    For.run_of_eval
+      (hLeft.mono (Nat.le_max_left leftFuel rightFuel))
+  have hRightRun :=
+    For.run_of_eval
+      (hRight.mono (Nat.le_max_right leftFuel rightFuel))
+  rw [hLeftRun] at hRightRun
+  exact Except.ok.inj hRightRun
 
 set_option linter.unusedSimpArgs false in
 mutual
