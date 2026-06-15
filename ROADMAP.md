@@ -1507,10 +1507,12 @@ corridor.
   for observer primitives, and the ordinary compiler equations lift those
   proofs to checked `gas()` and `msize()` expression-lowering leaves.
   Pass-owned semantic classifiers now cover pure binary/unary/ternary
-  operations, direct execution-environment reads, `returndatasize`, `pop`,
-  `mstore`, `mstore8`, and `mcopy`. The primitive interface has separate
-  exact-arity support for permissive imported-Yul handlers, and the state
-  relation explicitly equates Yul code images with executable EVM code for
+  operations, execution-environment/header nullaries, world-state nullaries,
+  `returndatasize`, `pop`, `mload`, `mstore`, `mstore8`, `mcopy`, and
+  `keccak256`. `selfbalance` is derived through related account maps rather
+  than a whole-world equality. The primitive interface has separate exact-arity
+  support for permissive imported-Yul handlers, and the state relation
+  explicitly equates Yul code images with executable EVM code for
   `codesize`/`codecopy` families. The next boundary is the remaining
   compiler-selected primitive families and structural expression preservation
   over this relation, followed by statements, loops, calls, and whole-main

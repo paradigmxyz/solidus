@@ -114,8 +114,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim

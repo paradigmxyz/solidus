@@ -46,6 +46,16 @@ inductive EnvironmentNullary :
       EnvironmentNullary (.Env .GASPRICE) .gasprice
         (EvmYul.UInt256.ofNat ∘ EvmYul.ExecutionEnv.gasPrice)
         (EvmYul.UInt256.ofNat ∘ EvmYul.ExecutionEnv.gasPrice)
+  | prevrandao :
+      EnvironmentNullary (.Block .PREVRANDAO) .prevrandao
+        EvmYul.prevRandao EvmYul.prevRandao
+  | basefee :
+      EnvironmentNullary (.Block .BASEFEE) .basefee
+        EvmYul.basefee EvmYul.basefee
+  | blobbasefee :
+      EnvironmentNullary (.Block .BLOBBASEFEE) .blobbasefee
+        EvmYul.ExecutionEnv.getBlobGasprice
+        EvmYul.ExecutionEnv.getBlobGasprice
 
 theorem EnvironmentNullary.metadata
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
@@ -99,6 +109,21 @@ theorem EnvironmentNullary.result_eq
   | gasprice =>
       simpa [Function.comp_def] using
         congrArg EvmYul.UInt256.ofNat hRel.gasPrice
+  | prevrandao =>
+      simpa [EvmYul.prevRandao] using
+        congrArg EvmYul.BlockHeader.prevRandao hRel.header
+  | basefee =>
+      simpa [EvmYul.basefee] using
+        congrArg
+          (fun header =>
+            EvmYul.UInt256.ofNat header.baseFeePerGas)
+          hRel.header
+  | blobbasefee =>
+      simpa [EvmYul.ExecutionEnv.getBlobGasprice] using
+        congrArg
+          (fun header =>
+            EvmYul.UInt256.ofNat header.getBlobGasprice)
+          hRel.header
 
 theorem yul_primCall_succ_eq_of_environmentNullary
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}

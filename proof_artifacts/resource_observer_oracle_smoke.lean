@@ -327,8 +327,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
+#check EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #check EvmCompiler.Yul.FunctionsObserverPrimitive.gasSafe
@@ -1065,8 +1068,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureUnary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePureTernary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeEnvironmentNullary
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeWorldNullary
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMachineBinaryZero
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMcopy
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeMload
+#print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeKeccak256
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeReturndatasize
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safePop
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverPrim

@@ -226,6 +226,192 @@ theorem safeMcopy
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
     forwardAt_mcopy hRel hRun
 
+theorem forwardAt_mload
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAt codeRel fuel (.StackMemFlow .MLOAD) .mload := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.StackMemFlow .MLOAD) sourceValues =
+            (match
+              EvmYul.step (τ := .Yul) (.StackMemFlow .MLOAD)
+                (arg := none)
+                (.Ok sourceShared sourceVars) sourceValues with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        rfl
+      rw [hDispatch] at hCall
+      unfold EvmYul.step at hCall
+      cases sourceValues with
+      | nil =>
+          simp [Id.run] at hCall
+      | cons address rest =>
+          cases rest with
+          | cons next tail =>
+              cases tail <;> simp [Id.run] at hCall
+          | nil =>
+              simp [Id.run] at hCall
+              rcases hCall with ⟨rfl, rfl⟩
+              let sourceResult :=
+                sourceShared.toMachineState.mload address
+              let targetResult :=
+                target.shared.toMachineState.mload address
+              have hResult : sourceResult = targetResult := by
+                simp [sourceResult, targetResult, hShared.machine]
+              have hValue : sourceResult.1 = targetResult.1 :=
+                congrArg Prod.fst hResult
+              let targetShared : EvmYul.SharedState .EVM :=
+                { target.shared with
+                  toMachineState := targetResult.2 }
+              refine ⟨targetShared, ?_, ?_⟩
+              · simp [Locals.Source.PrimitiveSemantics.structured,
+                  Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                  Structured.BasicOp.toPrimOp,
+                  Assembly.PrimOp.continuingStep?,
+                  Expressions.Structured.BasicOp.inputs,
+                  Assembly.PrimStep.run, EvmYul.Stack.pop,
+                  EvmYul.Stack.push,
+                  EvmYul.EVM.State.replaceStackAndIncrPC,
+                  EvmYul.EVM.State.incrPC,
+                  sourceResult, targetResult, targetShared,
+                  hShared.machine, hValue] <;>
+                simpa [sourceResult, targetResult] using hValue.symm
+              · exact
+                  ⟨{ sourceShared with
+                      toMachineState := sourceResult.2 },
+                    sourceVars, rfl,
+                    StateRelation.Shared.withMachine hShared
+                      sourceResult.2 targetResult.2
+                      (congrArg Prod.snd hResult),
+                    hVars⟩
+
+theorem safeMload
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.StackMemFlow .MLOAD) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .mload target sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAt_mload hRel hRun
+
+theorem forwardAt_keccak256
+    {codeRel : StateRelation.CodeRel} {fuel : Nat} :
+    ForwardAt codeRel fuel (.Keccak .KECCAK256) .keccak256 := by
+  intro source source' target sourceValues outputs hRel hCall
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hCall
+  | succ fuel =>
+      have hDispatch :
+          EvmYul.Yul.primCall fuel.succ
+              (.Ok sourceShared sourceVars)
+              (.Keccak .KECCAK256) sourceValues =
+            (match EvmYul.Yul.binaryMachineStateOp'
+              EvmYul.MachineState.keccak256
+              (.Ok sourceShared sourceVars) sourceValues with
+            | .ok (state, value?) => .ok (state, value?.toList)
+            | .error err => .error err) := by
+        simp [EvmYul.Yul.primCall]
+        unfold EvmYul.step
+        rfl
+      rw [hDispatch] at hCall
+      cases sourceValues with
+      | nil =>
+          simp [EvmYul.Yul.binaryMachineStateOp'] at hCall
+      | cons address rest =>
+          cases rest with
+          | nil =>
+              simp [EvmYul.Yul.binaryMachineStateOp'] at hCall
+          | cons size extra =>
+              cases extra with
+              | cons head tail =>
+                  simp [EvmYul.Yul.binaryMachineStateOp'] at hCall
+              | nil =>
+                  simp [EvmYul.Yul.binaryMachineStateOp',
+                    EvmYul.Yul.State.setMachineState] at hCall
+                  rcases hCall with ⟨rfl, rfl⟩
+                  let sourceResult :=
+                    sourceShared.toMachineState.keccak256 address size
+                  let targetResult :=
+                    target.shared.toMachineState.keccak256 address size
+                  have hResult : sourceResult = targetResult := by
+                    simp [sourceResult, targetResult, hShared.machine]
+                  have hValue : sourceResult.1 = targetResult.1 :=
+                    congrArg Prod.fst hResult
+                  let targetShared : EvmYul.SharedState .EVM :=
+                    { target.shared with
+                      toMachineState := targetResult.2 }
+                  refine ⟨targetShared, ?_, ?_⟩
+                  · simp [Locals.Source.PrimitiveSemantics.structured,
+                      Locals.Source.PrimitiveSemantics.sourceContinuingStep?,
+                      Structured.BasicOp.toPrimOp,
+                      Assembly.PrimOp.continuingStep?,
+                      Expressions.Structured.BasicOp.inputs,
+                      Assembly.PrimStep.run,
+                      EvmYul.EVM.binaryMachineStateOp',
+                      EvmYul.Stack.pop2, EvmYul.Stack.push,
+                      EvmYul.EVM.State.replaceStackAndIncrPC,
+                      EvmYul.EVM.State.incrPC, Id.run,
+                      sourceResult, targetResult, targetShared,
+                      hShared.machine, hValue] <;>
+                    simpa [sourceResult, targetResult] using hValue.symm
+                  · exact
+                      ⟨{ sourceShared with
+                          toMachineState := sourceResult.2 },
+                        sourceVars, rfl,
+                        StateRelation.Shared.withMachine hShared
+                          sourceResult.2 targetResult.2
+                          (congrArg Prod.snd hResult),
+                        hVars⟩
+
+theorem safeKeccak256
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {sourceValues outputs : List Word}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval fuel.succ source
+          (.Keccak .KECCAK256) sourceValues =
+        .ok (source', outputs)) :
+    ∃ target' : Functions.ObserverSemantics.State transcript,
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval .keccak256 target
+          sourceValues.reverse =
+        .ok (target', outputs) ∧
+      StateRelation.Replay.Rel codeRel source' target' :=
+  safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    forwardAt_keccak256 hRel hRun
+
 theorem forwardAtArity_returndatasize
     {codeRel : StateRelation.CodeRel} {fuel : Nat} :
     ForwardAtArity codeRel fuel

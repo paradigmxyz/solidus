@@ -2,6 +2,7 @@ import EvmCompiler.Simulation.ObserverPass
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Environment
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Machine
 import EvmCompiler.Yul.FunctionsObserverPrimitive.Pure
+import EvmCompiler.Yul.FunctionsObserverPrimitive.World
 
 namespace EvmCompiler
 namespace Yul
