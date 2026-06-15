@@ -2793,6 +2793,114 @@ theorem scopedNonregularControlled
 
 end ResourceRecursiveBlockForward
 
+namespace ResourceBoundary
+
+/--
+Construct the canonical resource-indexed recursive boundary at a selected
+function body.
+
+The source scope and control facts are independent of the selected runtime
+resource. The caller supplies only the resource-owned budget and activation
+invariant already established by the call pass.
+-/
+def functionBody
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {expressions : Expressions.Program}
+    {calleeName : Functions.Name}
+    {fn : Functions.FunDef}
+    {artifact :
+      AllocationObserverCall.SelectedCallee.Artifact
+        allocation program expressions calleeName fn}
+    (prepared : AllocationObserverCall.SelectedCallee.Prepared artifact)
+    {resource : Frame.ResourceMode}
+    {allocatorDepth frameBase : Nat}
+    {transcript : Trace}
+    {source : Functions.ObserverSemantics.State transcript}
+    {target : Structured.ObserverSemantics.State transcript}
+    (hProgramScoped : program.Scoped)
+    (hReturnFrame : target.source.returns ≠ [])
+    (hBudget : resource.Budget allocatorDepth)
+    (hInvariant :
+      AllocationObserverContext.ActivationResourceInvariant
+        resource program.memoryContract allocatorDepth artifact.lowerCtx
+        artifact.bodyStart prepared.returnCtx prepared.plan
+        ((artifact.slots.returns.map Prod.fst).reverse ++
+          (artifact.slots.params.map Prod.fst).reverse)
+        frameBase
+        (prepared.mode.atStackDepth
+          (currentStackOrder prepared.plan
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)).length)
+        source target) :
+    ResourceBoundary
+      (AllocationObserverForward.BodyCursor.RootArtifact.cursor
+        (AllocationObserverForward.BodyCursor.RootArtifact.ofSelected
+          artifact prepared (artifact.bodyScoped hProgramScoped)))
+      (resource := resource) (allocatorDepth := allocatorDepth)
+      (frameBase := frameBase)
+      (mode :=
+        prepared.mode.atStackDepth
+          (currentStackOrder prepared.plan
+            ((artifact.slots.returns.map Prod.fst).reverse ++
+              (artifact.slots.params.map Prod.fst).reverse)).length)
+      (sourceCtx := Functions.Source.Effectful.FunDef.bodyCtx fn)
+      (source := source) (target := target) := by
+  have hParamControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileParams
+  have hReturnControl :=
+    Locals.Block.compileOpen_sameControl prepared.compileReturns
+  have hPreludeControl :
+      Locals.Ctx.SameControl artifact.entryCtx prepared.returnCtx :=
+    hParamControl.trans hReturnControl
+  refine
+    { sourceScope := ?_
+      control := ?_
+      destinations := ?_
+      returnFrame := ?_
+      leaveTarget := ?_
+      budget := hBudget
+      invariant := hInvariant }
+  · intro localName
+    simp [AllocationObserverForward.BodyCursor.RootArtifact.ofSelected,
+      Functions.Source.Effectful.FunDef.bodyCtx,
+      Functions.Source.Ctx.initial,
+      Functions.Source.Ctx.withLeaveScope,
+      artifact.slotsMatch.2.1, artifact.slotsMatch.2.2]
+  · simpa
+      [AllocationObserverForward.BodyCursor.RootArtifact.ofSelected,
+        artifact.slotsMatch.2.1, artifact.slotsMatch.2.2] using
+      AllocationObserverOutcome.ControlScopesWithin.functionBody fn
+  · refine
+      { brk := .unavailable ?_ ?_
+        cont := .unavailable ?_ ?_ }
+    · simp [AllocationObserverOutcome.ControlKind.sourceScope?,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial,
+        Functions.Source.Ctx.withLeaveScope]
+    · change prepared.returnCtx.breakDepth? = none
+      rw [← hPreludeControl.breakDepth]
+      rfl
+    · simp [AllocationObserverOutcome.ControlKind.sourceScope?,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial,
+        Functions.Source.Ctx.withLeaveScope]
+    · change prepared.returnCtx.continueDepth? = none
+      rw [← hPreludeControl.continueDepth]
+      rfl
+  · intro _functionScope _hLeave
+    exact hReturnFrame
+  · intro _functionScope _hLeave
+    constructor
+    · change prepared.returnCtx.leaveDepth? = some 0
+      rw [← hPreludeControl.leaveDepth]
+      rfl
+    · change prepared.returnCtx.leaveRetc = fn.returns.length
+      rw [← hPreludeControl.leaveRetc]
+      rfl
+
+end ResourceBoundary
+
 namespace Boundary
 
 /--

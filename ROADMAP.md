@@ -767,8 +767,11 @@ compiler cleanup through the
   selected calls now compose all-stack argument preparation, the real selected
   procedure prelude/body/epilogue, caller restoration and writeback, and
   terminal short-circuiting through the same resource-indexed dispatcher. The
-  remaining recursive proof is the shared stack-only constructor, followed by
-  final cleanup and matching
+  shared stack-only strong induction now dispatches every statement form,
+  composes exact regular tails, preserves abrupt outcomes, and recursively
+  enters selected no-frame roots through the resource-indexed function-body
+  boundary. The remaining forward proof is compiler-selected main setup/body/
+  cleanup composition, followed by matching
   whole-function/whole-program backward adequacy.
 
 The CallAware/LiveLayout/recursive-Yul compatibility corridor, `LayerAudit`,
@@ -1445,9 +1448,11 @@ corridor.
   Selected no-frame regular and halting calls now reconstruct the ordinary
   compiler artifact, prove frame absence from the compiler-selected
   `frameFunctions`, consume the recursive resource body result, and package
-  the outcome in the shared controlled dispatcher. The remaining Functions
-  work is the shared stack-only recursive constructor, whole-program forward
-  packaging, and matching backward adequacy.
+  the outcome in the shared controlled dispatcher. The stack-only recursive
+  constructor is now checked over every compiler-owned root using the same
+  resource block result, control destinations, exact cursors, and selected
+  function-body boundary as scratch recursion. The remaining Functions work
+  is whole-program forward packaging and matching backward adequacy.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 
