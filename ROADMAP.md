@@ -1729,9 +1729,14 @@ corridor.
   compiler-selected primitives, and right-to-left argument lists. Its
   reversal-invariant syntax fuel bound assigns canonical source fuel without a
   replay witness, and the primitive dispatcher works at every sufficient
-  positive fuel. The current obligation is generated/bound argument-preamble
-  inversion and function-call expressions, followed by statements, control,
-  loops, and whole-program inversion.
+  positive fuel. Generated/bound argument-preamble inversion is now checked
+  against the real `UncheckedBoundLowering`: the proof splits concrete target
+  blocks, inverts generated `let` bindings, reconstructs exact-fuel
+  right-to-left Yul argument evaluation, and returns the ordinary scoped
+  prepared-argument artifact aligned to the target run. The current obligation
+  is to instantiate that interface in recursive bound primitive expressions
+  and function-call expressions, followed by statements, control, loops, and
+  whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

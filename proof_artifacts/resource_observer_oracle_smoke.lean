@@ -1552,3 +1552,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.EndToEnd.Result.target_terminal
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.valid
 #print axioms EvmCompiler.Yul.EndToEnd.ClosedArtifact.observerReplay
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_let_regular_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_of_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
