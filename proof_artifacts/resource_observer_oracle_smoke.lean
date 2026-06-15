@@ -1097,7 +1097,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.World.sstore
 #print axioms EvmCompiler.Yul.StateRelation.World.tstore
 #print axioms EvmCompiler.Yul.StateRelation.Replay.insert_target_hidden
-#print axioms EvmCompiler.Yul.StateRelation.Replay.source_lookup_none_of_targetDomain
+#print axioms EvmCompiler.Yul.StateRelation.Replay.source_lookup_none_of_targetDomainWithin
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.expr_eval_vars_eq
 #print axioms EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists

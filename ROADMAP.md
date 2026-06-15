@@ -1545,13 +1545,15 @@ corridor.
   preserve effects, values, and declared output arity without a call oracle.
   Functions-owned observer semantics now proves that successful expressions
   and argument lists preserve the locals store, and the adjacent Yul pass
-  carries an exact target-domain invariant indexed by the compiler used-name
-  list. Fresh compiler names are therefore absent from both the target store
-  and, via the source-visible relation, the current Yul source state.
+  proves that every target local and active scope name lies within the
+  compiler used-name set. Fresh compiler names are therefore absent from both
+  the target store and, via the source-visible relation, the current Yul
+  source state, without claiming that every globally reserved name is live.
   Canonical Functions semantics now composes regular open-block fragments
   across list append. The Yul expression pass packages generated preamble
   execution as `Prepared`, with checked empty, append, and fresh-binding
-  constructors preserving replay, exact target domains, and compiler scope.
+  constructors preserving replay, target-domain containment, and compiler
+  scope containment.
   The next expression boundary is `lowerBound1Unchecked?`: execute generated
   argument-binding preambles, preserve hidden temporary ownership, and compose
   function-call expressions. Statements, loops, calls, and whole-main

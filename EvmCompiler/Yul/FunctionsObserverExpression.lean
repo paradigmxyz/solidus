@@ -589,7 +589,7 @@ theorem toLocals_forward_targetDomain
       EvmCompiler.Yul.Expr.toLocals? results expr = some lower)
     (hRel : StateRelation.Replay.Rel codeRel source target)
     (hDomain :
-      StateRelation.Vars.TargetDomainExact used target.source.vars)
+      StateRelation.Vars.TargetDomainWithin used target.source.vars)
     (hRun :
       Yul.Source.Effectful.evalValues
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -606,7 +606,7 @@ theorem toLocals_forward_targetDomain
         .ok (target', values) ∧
       StateRelation.Replay.Rel codeRel source' target' ∧
       values.length = results ∧
-      StateRelation.Vars.TargetDomainExact used target'.source.vars := by
+      StateRelation.Vars.TargetDomainWithin used target'.source.vars := by
   obtain ⟨target', hTarget, hFinalRel, hLength⟩ :=
     toLocals_forward hLower hRel hRun
   have hVars :
@@ -630,7 +630,7 @@ theorem toLocalsArgs_forward_targetDomain
       EvmCompiler.Yul.Expr.List.toLocals1? args = some lower)
     (hRel : StateRelation.Replay.Rel codeRel source target)
     (hDomain :
-      StateRelation.Vars.TargetDomainExact used target.source.vars)
+      StateRelation.Vars.TargetDomainWithin used target.source.vars)
     (hRun :
       Yul.Source.Effectful.evalArgs
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -646,7 +646,7 @@ theorem toLocalsArgs_forward_targetDomain
           lower target =
         .ok (target', values) ∧
       StateRelation.Replay.Rel codeRel source' target' ∧
-      StateRelation.Vars.TargetDomainExact used target'.source.vars := by
+      StateRelation.Vars.TargetDomainWithin used target'.source.vars := by
   obtain ⟨target', hTarget, hFinalRel⟩ :=
     toLocalsArgs_forward hLower hRel hRun
   have hVars :
@@ -676,9 +676,9 @@ theorem bindGenerated
         .ok (targetAfter, [value]))
     (hRel : StateRelation.Replay.Rel codeRel source targetAfter)
     (hDomain :
-      StateRelation.Vars.TargetDomainExact
+      StateRelation.Vars.TargetDomainWithin
         before.used targetAfter.source.vars)
-    (hCtx : ctx.scope = before.used) :
+    (hCtx : StateRelation.Vars.NamesWithin before.used ctx.scope) :
     let targetBound :=
       targetAfter.withSource (targetAfter.source.insert tmp value)
     let ctxBound := { ctx with scope := tmp :: ctx.scope }
@@ -690,9 +690,9 @@ theorem bindGenerated
       .ok
         (Functions.Source.Effectful.Outcome.regular targetBound, ctxBound) ∧
     StateRelation.Replay.Rel codeRel source targetBound ∧
-    StateRelation.Vars.TargetDomainExact
+    StateRelation.Vars.TargetDomainWithin
       after.used targetBound.source.vars ∧
-    ctxBound.scope = after.used := by
+    StateRelation.Vars.NamesWithin after.used ctxBound.scope := by
   have hEvalOne :
       Functions.Source.Effectful.Expr.evalOne
           (Functions.ObserverSemantics.stateModel transcript)
@@ -714,14 +714,14 @@ theorem bindGenerated
   obtain ⟨hUsed, hNotMem⟩ := Fresh.fresh?_components hFresh
   have hSourceHidden :
       source.source.lookup? tmp = none :=
-    StateRelation.Replay.source_lookup_none_of_targetDomain
+    StateRelation.Replay.source_lookup_none_of_targetDomainWithin
       hRel hDomain hNotMem
   have hFinalRel :
       StateRelation.Replay.Rel codeRel source
         (targetAfter.withSource (targetAfter.source.insert tmp value)) :=
     StateRelation.Replay.insert_target_hidden hRel hSourceHidden
   have hFinalDomain :
-      StateRelation.Vars.TargetDomainExact after.used
+      StateRelation.Vars.TargetDomainWithin after.used
         (targetAfter.withSource
           (targetAfter.source.insert tmp value)).source.vars := by
     rw [hUsed]
@@ -731,7 +731,12 @@ theorem bindGenerated
   · unfold Functions.Source.Effectful.Stmt.run
     rw [hEvalOne]
     rfl
-  · simpa [hCtx] using hUsed.symm
+  · intro name hMem
+    rw [hUsed]
+    simp only [List.mem_cons] at hMem ⊢
+    rcases hMem with hEq | hActive
+    · exact Or.inl hEq
+    · exact Or.inr (hCtx name hActive)
 
 structure Prepared
     (contract : MemoryContract.Contract)
@@ -756,9 +761,9 @@ structure Prepared
           (Functions.Source.Effectful.Outcome.regular finalTarget, finalCtx)
   rel : StateRelation.Replay.Rel codeRel source finalTarget
   domain :
-    StateRelation.Vars.TargetDomainExact
+    StateRelation.Vars.TargetDomainWithin
       fresh.used finalTarget.source.vars
-  scope : finalCtx.scope = fresh.used
+  scope : StateRelation.Vars.NamesWithin fresh.used finalCtx.scope
 
 namespace Prepared
 
@@ -773,8 +778,8 @@ def empty
     {ctx : Functions.Source.Ctx}
     (hRel : StateRelation.Replay.Rel codeRel source target)
     (hDomain :
-      StateRelation.Vars.TargetDomainExact fresh.used target.source.vars)
-    (hScope : ctx.scope = fresh.used) :
+      StateRelation.Vars.TargetDomainWithin fresh.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin fresh.used ctx.scope) :
     Prepared contract transcript codeRel program []
       fresh source target ctx := by
   exact
@@ -844,9 +849,9 @@ def generated
         .ok (targetAfter, [value]))
     (hRel : StateRelation.Replay.Rel codeRel source targetAfter)
     (hDomain :
-      StateRelation.Vars.TargetDomainExact
+      StateRelation.Vars.TargetDomainWithin
         before.used targetAfter.source.vars)
-    (hCtx : ctx.scope = before.used) :
+    (hCtx : StateRelation.Vars.NamesWithin before.used ctx.scope) :
     Prepared contract transcript codeRel program
       [.let_ tmp lower] after source targetBefore ctx := by
   have hBound :=

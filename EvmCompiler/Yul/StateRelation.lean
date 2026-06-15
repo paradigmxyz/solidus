@@ -1057,9 +1057,12 @@ def DomainExact (layout : List Name)
     (source : EvmYul.Yul.VarStore) : Prop :=
   ∀ name, (source.lookup name).isSome = true ↔ name ∈ layout
 
-def TargetDomainExact (used : List Name)
+def TargetDomainWithin (used : List Name)
     (target : Locals.Source.Store) : Prop :=
-  ∀ name, (target name).isSome = true ↔ name ∈ used
+  ∀ name value, target name = some value → name ∈ used
+
+def NamesWithin (used active : List Name) : Prop :=
+  ∀ name, name ∈ active → name ∈ used
 
 theorem empty :
     Rel (default : EvmYul.Yul.VarStore) Locals.Source.Store.empty := by
@@ -1134,45 +1137,42 @@ theorem insert_target_hidden
   rw [Locals.Source.Store.insert_of_ne hNe]
   exact hRel key result hLookup
 
-theorem targetDomainExact_empty :
-    TargetDomainExact [] Locals.Source.Store.empty := by
-  intro name
-  simp [TargetDomainExact, Locals.Source.Store.empty]
+theorem targetDomainWithin_empty :
+    TargetDomainWithin [] Locals.Source.Store.empty := by
+  intro name value hLookup
+  simp [Locals.Source.Store.empty] at hLookup
 
-theorem TargetDomainExact.lookup_none
+theorem TargetDomainWithin.lookup_none
     {used : List Name} {target : Locals.Source.Store}
-    (hDomain : TargetDomainExact used target)
+    (hDomain : TargetDomainWithin used target)
     {name : Name} (hHidden : name ∉ used) :
     target name = none := by
   cases hLookup : target name with
   | none =>
       rfl
   | some value =>
-      have hMem : name ∈ used :=
-        (hDomain name).mp (by simp [hLookup])
+      have hMem : name ∈ used := hDomain name value hLookup
       contradiction
 
-theorem TargetDomainExact.insert
+theorem TargetDomainWithin.insert
     {used : List Name} {target : Locals.Source.Store}
-    (hDomain : TargetDomainExact used target)
+    (hDomain : TargetDomainWithin used target)
     {name : Name} {value : Assembly.Word}
     (hFresh : name ∉ used) :
-    TargetDomainExact (name :: used)
+    TargetDomainWithin (name :: used)
       (Locals.Source.Store.insert target name value) := by
-  intro key
+  intro key result hLookup
   by_cases hEq : key = name
   · subst key
-    simp [Locals.Source.Store.insert]
-  · rw [Locals.Source.Store.insert_of_ne hEq]
-    simp only [List.mem_cons]
-    rw [hDomain key]
-    simp [hEq]
+    simp
+  · rw [Locals.Source.Store.insert_of_ne hEq] at hLookup
+    exact List.mem_cons_of_mem name (hDomain key result hLookup)
 
-theorem TargetDomainExact.congr
+theorem TargetDomainWithin.congr
     {used : List Name} {left right : Locals.Source.Store}
-    (hDomain : TargetDomainExact used left)
+    (hDomain : TargetDomainWithin used left)
     (hEq : right = left) :
-    TargetDomainExact used right := by
+    TargetDomainWithin used right := by
   subst right
   exact hDomain
 
@@ -1628,7 +1628,7 @@ theorem insert_target_hidden
   exact
     ⟨hRel.1, Regular.insert_target_hidden hRel.2 hHidden⟩
 
-theorem source_lookup_none_of_targetDomain
+theorem source_lookup_none_of_targetDomainWithin
     {transcript : Assembly.ResourceTrace} {codeRel : CodeRel}
     {source :
       Simulation.ResourceReplay.State EvmYul.Yul.State transcript}
@@ -1636,7 +1636,7 @@ theorem source_lookup_none_of_targetDomain
       Simulation.ResourceReplay.State Locals.Source.State transcript}
     (hRel : Rel codeRel source target)
     {used : List Name}
-    (hDomain : Vars.TargetDomainExact used target.source.vars)
+    (hDomain : Vars.TargetDomainWithin used target.source.vars)
     {name : Name} (hHidden : name ∉ used) :
     source.source.lookup? name = none := by
   rcases hRel.2 with
