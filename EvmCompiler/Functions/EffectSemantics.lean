@@ -144,6 +144,41 @@ theorem eval_length {σ : Type} (model : StateModel σ)
               rw [← hValuesEq]
               simp [hTail]
 
+theorem eval_append
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ) :
+    ∀ {left right : List (Functions.Expr 1)}
+      {source middle final : σ}
+      {leftValues rightValues : List Word},
+      eval model prim left source = .ok (middle, leftValues) →
+      eval model prim right middle = .ok (final, rightValues) →
+      eval model prim (left ++ right) source =
+        .ok (final, leftValues ++ rightValues)
+  | [], right, source, middle, final, leftValues, rightValues,
+      hLeft, hRight => by
+      simp [eval] at hLeft
+      rcases hLeft with ⟨rfl, rfl⟩
+      simpa [eval] using hRight
+  | head :: rest, right, source, middle, final, leftValues, rightValues,
+      hLeft, hRight => by
+      unfold eval at hLeft ⊢
+      cases hHead : Expr.evalOne model prim head source with
+      | error err =>
+          simp [hHead] at hLeft
+      | ok headResult =>
+          rcases headResult with ⟨stateAfterHead, value⟩
+          simp [hHead] at hLeft ⊢
+          cases hRest : eval model prim rest stateAfterHead with
+          | error err =>
+              simp [hRest] at hLeft
+          | ok restResult =>
+              rcases restResult with ⟨stateAfterRest, restValues⟩
+              simp [hRest] at hLeft
+              rcases hLeft with ⟨rfl, rfl⟩
+              have hTail :=
+                eval_append model prim hRest hRight
+              simp [hTail]
+
 theorem eval_of_successRefines
     {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
     (model : StateModel σ)

@@ -203,8 +203,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
 #check EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #check EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#check EvmCompiler.Functions.Source.Effectful.ArgList.eval_append
+#check EvmCompiler.Yul.Source.Effectful.evalValues_primitive_ok_parts
+#check EvmCompiler.Yul.Expr.UncheckedDirectPrimitiveLowering
+#check EvmCompiler.Yul.Expr.UncheckedBoundPrimitiveLowering
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.evaluated
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.afterPrepared
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.direct
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.evaluated
@@ -215,6 +220,11 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedArgs
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofDirectPrimitive
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofBoundPrimitive
+#check EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofPrimitive
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering
 #check EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
 #check EvmCompiler.Yul.FunctionList.UncheckedLowering.names

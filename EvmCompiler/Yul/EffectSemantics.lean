@@ -461,6 +461,40 @@ theorem evalValues_prim_nil_ok_parts
             ⟨previous, by omega,
               by simpa [evalValues, evalArgs] using hRun⟩
 
+theorem evalValues_primitive_ok_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model primSemantics fuel (.Call (.inl prim) args)
+          codeOverride state =
+        .ok (final, values)) :
+    ∃ callFuel stateAfterArgs reversedValues,
+      fuel = callFuel + 1 ∧
+      evalArgs model primSemantics callFuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues) ∧
+      primSemantics.eval callFuel stateAfterArgs prim
+          reversedValues.reverse =
+        .ok (final, values) := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ callFuel =>
+      cases hArgs :
+          evalArgs model primSemantics callFuel args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [evalValues, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          exact
+            ⟨callFuel, stateAfterArgs, reversedValues, by omega,
+              hArgs, by simpa [evalValues, hArgs] using hRun⟩
+
 theorem call_succ_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

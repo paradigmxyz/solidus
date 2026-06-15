@@ -106,10 +106,14 @@ Adjacent boundary status:
   preservation for every compiler-selected family, direct expression
   induction carries that fact compositionally, and ordinary unchecked
   `gas()`/`msize()` lowering has checked scoped prepared-value constructors.
-  Constructing generated-argument primitive and function-call cases and
-  assembling the full interface by main source-fuel induction, function-call
-  declaration/assignment forms, complete control statements, whole
-  functions/programs, and backward adequacy remain.
+  Direct and generated-binding primitive arguments now share compiler-owned
+  lowering decompositions, scoped prepared-argument composition, exact
+  stack-order stability, and one checked `ofPrimitive` theorem covering every
+  compiler-selected primitive expression without generated-code evidence.
+  Constructing the scoped function-call case and assembling the full interface
+  by main source-fuel induction, function-call declaration/assignment forms,
+  complete control statements, whole functions/programs, and backward
+  adequacy remain.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned

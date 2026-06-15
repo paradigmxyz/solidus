@@ -1168,8 +1168,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_zeroFill_insertMany
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_source
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.deferredEval_stable
+#print axioms EvmCompiler.Functions.Source.Effectful.ArgList.eval_append
+#print axioms EvmCompiler.Yul.Source.Effectful.evalValues_primitive_ok_parts
+#print axioms EvmCompiler.Yul.Expr.uncheckedDirectPrimitiveLowering_of_lower1Unchecked?
+#print axioms EvmCompiler.Yul.Expr.uncheckedBoundPrimitiveLowering_of_lower1Unchecked?
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.evaluated
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.bind
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.afterPrepared
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.direct
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.evaluated
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofGas
@@ -1179,6 +1184,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.RecursiveScopedValueForward
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.bound
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedArgs.ofUncheckedLowering
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedArgs.ofUncheckedLowering
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofDirectPrimitive
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofBoundPrimitive
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.ScopedPreparedValue.ofPrimitive
 #print axioms EvmCompiler.Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
 #print axioms EvmCompiler.Yul.FunctionList.uncheckedLowering_of_toFunDefsUncheckedFuel?
 #print axioms EvmCompiler.Yul.FunctionList.UncheckedLowering.names

@@ -117,6 +117,13 @@ theorem toBasicOp?_some_terminal_none
   cases prim <;> rename_i primitive <;> cases primitive <;>
     simp [toBasicOp?, terminal?] at hOp ⊢
 
+theorem toUncheckedBasicOp?_some_terminal_none
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hOp : toUncheckedBasicOp? prim = some op) :
+    terminal? prim = none := by
+  cases prim <;> rename_i primitive <;> cases primitive <;>
+    simp [toBasicOp?, toUncheckedBasicOp?, terminal?] at hOp ⊢
+
 theorem toUncheckedBasicOp?_of_toBasicOp?
     {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
     (hOp : toBasicOp? prim = some op) :
