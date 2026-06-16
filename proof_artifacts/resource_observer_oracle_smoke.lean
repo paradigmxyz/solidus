@@ -1623,11 +1623,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_false_ok_parts
 #print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_true_ok_parts
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_if_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_ok_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_if_false_of_eval
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_if_true_of_eval
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_switch_of_eval
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_if_true_prepared
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_switch_selected_prepared
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_block_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.closeLexical
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.ifBackwardNonterminal
+#print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.switchBackwardNonterminal

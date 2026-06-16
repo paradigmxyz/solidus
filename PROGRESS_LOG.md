@@ -30143,3 +30143,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   dependency guard, aggregate proof-layer gate, standalone axiom smoke,
   forbidden-marker scan, and `git diff --check` passed. The new public audit
   surface depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 15:14:41 PDT - compaction-resume - Resumed the adjacent
+  Yul-to-Functions observer proof at the nonterminal `switch` backward bridge;
+  current work preserves pass-owned composition and exact trace replay.
+- 2026-06-16 15:21:27 PDT - proof/yul-switch-backward-nonterminal - Proved
+  `FunctionsObserverCompoundBackward.switchBackwardNonterminal`, reconstructing
+  the exact source scrutinee and selected lexical body from a concrete
+  nonhalting compiled Functions `switch` run.
+- 2026-06-16 15:21:27 PDT - architecture/yul-switch-owned-composition - Added
+  Functions-owned switch inversion, the canonical Yul switch execution
+  constructor, and statement-owned
+  `OpenResult.of_switch_selected_prepared`; refactored the forward selected
+  switch proof to use the same pass-owned composition theorem.
+- 2026-06-16 15:21:27 PDT - validation/yul-switch-backward-nonterminal -
+  Focused forward/backward builds, full 1,262-job verification root,
+  architecture dependency guard, forbidden-marker scan, standalone axiom
+  smoke, aggregate proof-layer gate, and `git diff --check` passed. New public
+  audit entries depend only on `propext`, `Classical.choice`, and `Quot.sound`.

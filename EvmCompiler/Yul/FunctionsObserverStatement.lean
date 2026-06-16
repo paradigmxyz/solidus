@@ -616,6 +616,97 @@ theorem of_if_true_prepared
          simpa [SolcValidation.StmtOutVars] using
            bodyResult.regularLayout hRegular }⟩
 
+theorem of_switch_selected_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {scrutinee : AstExpr}
+    {cases : List (Word × List AstStmt)}
+    {defaultBody selectedBody : List AstStmt}
+    {pre : List Functions.Stmt}
+    {lowerScrutinee : Locals.Expr 1}
+    {lowerCases : List (Word × Functions.Block)}
+    {lowerDefault : Option Functions.Block}
+    {lowerSelected : List Functions.Stmt}
+    {before afterScrutinee selectedBefore selectedAfter after :
+      Fresh.State}
+    {layout : List Name}
+    {sourceAfterScrutinee sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hScrutineeFresh : Fresh.Extends before afterScrutinee)
+    (hBeforeSelected : Fresh.Extends afterScrutinee selectedBefore)
+    (hAfterSelected : Fresh.Extends selectedAfter after)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerScrutinee
+        afterScrutinee layout sourceAfterScrutinee target ctx value)
+    (bodyResult :
+      Result contract codeRel program (.Block selectedBody)
+        [.block { stmts := lowerSelected }]
+        selectedBefore selectedAfter layout sourceFinal
+        hValue.prepared.evalTarget hValue.prepared.finalCtx
+        (sourceControl := sourceControl))
+    (hRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel
+            { stmts :=
+                pre ++
+                  [.switch lowerScrutinee lowerCases lowerDefault] }
+            target =
+          .ok
+            (bodyResult.openResult.outcome,
+              bodyResult.openResult.finalCtx)) :
+    Nonempty
+      (Result contract codeRel program
+        (.Switch scrutinee cases defaultBody)
+        (pre ++ [.switch lowerScrutinee lowerCases lowerDefault])
+        before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
+  have hPrefixFresh : Fresh.Extends before selectedBefore :=
+    Fresh.Extends.trans hScrutineeFresh hBeforeSelected
+  exact
+    ⟨{ openResult :=
+         { finalLayout := bodyResult.openResult.finalLayout
+           outcome := bodyResult.openResult.outcome
+           finalCtx := bodyResult.openResult.finalCtx
+           run := hRun
+           relation := bodyResult.openResult.relation
+           domain := bodyResult.openResult.domain.mono hAfterSelected
+           scope := bodyResult.openResult.scope.mono hAfterSelected
+           control :=
+             Functions.Source.Ctx.SameControl.trans
+               hValue.prepared.control bodyResult.openResult.control
+           freshExtends :=
+             Fresh.Extends.trans
+               (Fresh.Extends.trans hPrefixFresh
+                 bodyResult.openResult.freshExtends)
+               hAfterSelected
+           retains := bodyResult.openResult.retains
+           layoutWithin :=
+             bodyResult.openResult.layoutWithin.mono hAfterSelected
+           sourceDefined := bodyResult.openResult.sourceDefined
+           abruptTargetRestriction :=
+             FunctionsObserverOutcome.AbruptTargetRestriction.transport
+               hValue.prepared.control
+               bodyResult.openResult.abruptTargetRestriction
+           layoutScope := bodyResult.openResult.layoutScope
+           exitScope :=
+             FunctionsObserverOutcome.ExitScopeRel.transportTarget
+               hValue.prepared.control bodyResult.openResult.exitScope }
+       regularLayout := by
+         intro hRegular
+         simpa [SolcValidation.StmtOutVars] using
+           bodyResult.regularLayout hRegular }⟩
+
 theorem of_let_one_prepared
     {contract : MemoryContract.Contract}
     {transcript : Trace}

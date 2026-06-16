@@ -315,11 +315,15 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_false_ok_parts
 #check EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_true_ok_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_switch_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_if_false_of_eval
 #check EvmCompiler.Yul.Source.Effectful.exec_if_true_of_eval
+#check EvmCompiler.Yul.Source.Effectful.exec_switch_of_eval
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_if_true_prepared
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_switch_selected_prepared
 #check EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
 #check EvmCompiler.Yul.FunctionsObserverCompoundBackward.ifBackwardNonterminal
+#check EvmCompiler.Yul.FunctionsObserverCompoundBackward.switchBackwardNonterminal
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
 #check EvmCompiler.Yul.Source.Effectful.StateModel.Lawful
 #check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.PreservesOwner

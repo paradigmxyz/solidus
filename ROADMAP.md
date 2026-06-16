@@ -30,14 +30,15 @@ target run. `Yul.EndToEnd` remains a short composition module.
 
 ## Active Proof Work
 
-- [ ] Yul -> Functions backward adequacy:
+- [ ] Yul -> Functions exact observer-replay bridge:
   - [x] compiler-selected primitive families;
   - [x] direct and bound expressions;
   - [x] internal calls and regular leaf statements;
   - [x] recursive statement lists;
   - [x] lexical blocks;
   - [x] nonterminal `if`;
-  - [ ] terminal `if`, `switch`, and `for`;
+  - [x] nonterminal `switch`;
+  - [ ] terminal `if` and `switch`, plus `for`;
   - [ ] terminal call statements, complete outcome dispatch, dispatcher, and
     whole program.
 - [ ] Functions -> allocated Expressions whole-main backward adequacy:
@@ -53,8 +54,9 @@ target run. `Yul.EndToEnd` remains a short composition module.
 
 ## Completion Gates
 
-- [ ] Every adjacent boundary has checked forward preservation and terminal
-  backward adequacy.
+- [ ] Every adjacent boundary has checked forward preservation; the boundaries
+  used by observer replay expose only the reverse/trace adequacy needed for the
+  concrete terminal target run.
 - [ ] Public theorem accepts only source validation, related initial states,
   source-facing execution/resource safety, and a concrete terminal target run.
 - [ ] No observer-specific compiler, duplicate control interpreter, replay

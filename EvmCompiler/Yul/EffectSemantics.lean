@@ -1008,6 +1008,28 @@ theorem exec_switch_ok_parts
             ⟨previous, stateAfterScrutinee, value,
               rfl, hScrutinee, hRun⟩
 
+theorem exec_switch_of_eval
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {scrutinee : EvmYul.Yul.Ast.Expr}
+    {cases : List (Word × List EvmYul.Yul.Ast.Stmt)}
+    {defaultBody : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterScrutinee final : σ} {value : Word}
+    (hEval :
+      eval model prim fuel scrutinee codeOverride state =
+        .ok (stateAfterScrutinee, value))
+    (hBody :
+      exec model prim fuel
+          (.Block
+            (EvmYul.Yul.selectSwitchCase value defaultBody cases))
+          codeOverride stateAfterScrutinee =
+        .ok final) :
+    exec model prim (fuel + 1)
+        (.Switch scrutinee cases defaultBody) codeOverride state =
+      .ok final := by
+  simp [exec, hEval, hBody]
+
 theorem exec_for_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

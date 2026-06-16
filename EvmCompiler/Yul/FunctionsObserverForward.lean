@@ -3881,7 +3881,7 @@ theorem switch
           (prepared.prepared.domain.mono hBeforeSelected)
           (prepared.prepared.scope.mono hBeforeSelected)
           hSelectedLayout hPreparedControl hSelectedRun
-      obtain ⟨bodyFuel, hBodyScoped, _hBodyCtx⟩ :=
+      obtain ⟨bodyFuel, hBodyScoped, hBodyCtx⟩ :=
         Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
@@ -3921,47 +3921,55 @@ theorem switch
           prepared.prepared.preTarget closedBody.openResult.outcome
           prepared.prepared.finalCtx
           ⟨preFuel, hPreRun⟩ ⟨switchFuel, hSwitchRun⟩
-      let result :
-          FunctionsObserverOutcome.ScopedOpenResult
-            contract codeRel targetProgram.toFunctions
-            (preScrutinee ++
-              [.switch lowerScrutinee lowerCases lowerDefault])
-            before after layout sourceFinal target ctx
+      rcases selectedLowerBody with ⟨selectedLowerStmts⟩
+      let bodyResult :
+          FunctionsObserverStatement.OpenResult.Result
+            contract codeRel targetProgram.toFunctions (.Block selectedBody)
+            [.block { stmts := selectedLowerStmts }]
+            selectedBefore selectedAfter layout sourceFinal
+            prepared.prepared.evalTarget prepared.prepared.finalCtx
             (sourceControl := sourceControl) :=
-        { finalLayout := closedBody.openResult.finalLayout
-          outcome := closedBody.openResult.outcome
-          finalCtx := prepared.prepared.finalCtx
-          run := ⟨targetFuel, hTargetRun⟩
-          relation := closedBody.openResult.relation
-          domain := closedBody.openResult.domain.mono hAfterSelected
-          scope := prepared.prepared.scope.mono hSelectionFresh
-          control := prepared.prepared.control
-          freshExtends := hFresh
-          retains := closedBody.openResult.retains
-          layoutWithin :=
-            closedBody.openResult.layoutWithin.mono hAfterSelected
-          sourceDefined := closedBody.openResult.sourceDefined
-          abruptTargetRestriction :=
-            FunctionsObserverOutcome.AbruptTargetRestriction.transport
-              prepared.prepared.control
-              closedBody.openResult.abruptTargetRestriction
-          layoutScope := by
-            intro hRegular
-            rw [closedBody.regularLayout hRegular]
-            exact hPreparedLayoutScope
-          exitScope :=
-            FunctionsObserverOutcome.ExitScopeRel.transportTarget
-              prepared.prepared.control closedBody.openResult.exitScope }
+        { openResult := closedBody.openResult
+          regularLayout := closedBody.regularLayout }
+      have hTargetForResult :
+          ∃ fuel,
+            Functions.Source.Effectful.Block.runOpen
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                targetProgram.toFunctions ctx fuel
+                { stmts :=
+                    preScrutinee ++
+                      [.switch lowerScrutinee lowerCases lowerDefault] }
+                target =
+              .ok
+                (bodyResult.openResult.outcome,
+                  bodyResult.openResult.finalCtx) := by
+        refine ⟨targetFuel, ?_⟩
+        change
+          Functions.Source.Effectful.Block.runOpen
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions ctx targetFuel
+              { stmts :=
+                  preScrutinee ++
+                    [.switch lowerScrutinee lowerCases lowerDefault] }
+              target =
+            .ok
+              (closedBody.openResult.outcome,
+                closedBody.openResult.finalCtx)
+        rw [hBodyCtx]
+        exact hTargetRun
+      obtain ⟨result⟩ :=
+        FunctionsObserverStatement.OpenResult.of_switch_selected_prepared
+          (scrutinee := scrutinee) (cases := cases)
+          (defaultBody := defaultBody) (selectedBody := selectedBody)
+          (lowerSelected := selectedLowerStmts)
+          hScrutineeFresh hBeforeSelected hAfterSelected
+          prepared bodyResult hTargetForResult
       exact
-        ⟨{ openResult := result
-           regularLayout := by
-             intro hRegular
-             simpa [SolcValidation.StmtOutVars] using
-               closedBody.regularLayout hRegular
-           regularControl := by
-             intro hRegular
-             rw [closedBody.regularLayout hRegular]
-             exact hPreparedControl }⟩
+        ⟨ScopedStmtResult.ofStatement result hControl⟩
 
 theorem forLoop
     {contract : MemoryContract.Contract}

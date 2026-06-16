@@ -409,6 +409,42 @@ theorem run_if_ok_parts {σ : Type}
       refine ⟨previous, by omega, ?_⟩
       exact run_if_cases model prim program hRun
 
+theorem run_switch_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {scrutinee : Functions.Expr 1}
+    {cases : List (Word × Functions.Block)}
+    {defaultBody : Option Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      run model prim program ctx fuel
+          (.switch scrutinee cases defaultBody) source =
+        .ok (outcome, finalCtx)) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      ((∃ afterScrutinee value,
+          Expr.evalOne model prim scrutinee source =
+            .ok (afterScrutinee, value) ∧
+          Switch.select value cases defaultBody = none ∧
+          outcome = Outcome.regular afterScrutinee ∧
+          finalCtx = ctx) ∨
+        (∃ afterScrutinee value selected bodyOutcome,
+          Expr.evalOne model prim scrutinee source =
+            .ok (afterScrutinee, value) ∧
+          Switch.select value cases defaultBody = some selected ∧
+          Block.runScoped model prim program ctx selected previous
+              afterScrutinee =
+            .ok bodyOutcome ∧
+          outcome = bodyOutcome ∧
+          finalCtx = ctx)) := by
+  cases fuel with
+  | zero =>
+      simp [run, Functions.Source.invalid, Structured.invalid] at hRun
+  | succ previous =>
+      refine ⟨previous, by omega, ?_⟩
+      exact run_switch_cases model prim program hRun
+
 /--
 Expose the canonical scoped-body execution represented by a successful
 Functions `block` statement. The statement restores its incoming context for
