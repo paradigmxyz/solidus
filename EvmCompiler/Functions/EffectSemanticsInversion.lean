@@ -435,6 +435,47 @@ theorem runOpen_singleton_regular_bounded_parts {σ : Type}
         rw [← hOutcome]
         rfl
 
+/--
+Invert an abrupt singleton block while retaining its exact one-step fuel
+decrease. The enclosing open block restores its incoming context when the
+statement does not complete regularly.
+-/
+theorem runOpen_singleton_nonregular_bounded_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {stmt : Functions.Stmt} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      runOpen model prim program ctx fuel
+          { stmts := [stmt] } source =
+        .ok (outcome, finalCtx))
+    (hMode : outcome.mode ≠ .regular) :
+    ∃ stmtFuel stmtCtx,
+      fuel = stmtFuel + 1 ∧
+      Stmt.run model prim program ctx stmtFuel stmt source =
+        .ok (outcome, stmtCtx) ∧
+      finalCtx = ctx := by
+  cases fuel with
+  | zero =>
+      simp [runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ stmtFuel =>
+      rcases
+          runOpen_cons_cases model prim program hRun with
+        hRegular | hNonregular
+      · rcases hRegular with
+          ⟨middle, middleCtx, hStmt, hTail⟩
+        obtain ⟨hOutcome, _hCtx⟩ :=
+          runOpen_nil_ok model prim program hTail
+        exfalso
+        apply hMode
+        rw [hOutcome]
+        rfl
+      · rcases hNonregular with
+          ⟨headOutcome, headCtx, hStmt, _hHeadMode,
+            hOutcome, hCtx⟩
+        subst outcome
+        exact ⟨stmtFuel, headCtx, by omega, hStmt, hCtx⟩
+
 theorem runOpen_append_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program) :

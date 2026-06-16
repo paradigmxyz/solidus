@@ -30004,3 +30004,8 @@ Resumed from the checked regular Yul leaf dispatcher; current frontier is Functi
   aggregate proof-layer gate, standalone resource-observer axiom smoke,
   changed-file forbidden-marker scan, and `git diff --check` passed. The new
   list theorem depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+### compaction-resume
+
+Resumed from checked recursive Yul list backward adequacy; current frontier is target-run-indexed halting internal-call/body backward reconstruction, then lexical blocks.
+
+- 2026-06-15 - archive/full-backward-adequacy - Preserved the complete broad backward-adequacy campaign on `codex/archive-full-backward-adequacy`, including the checked recursive Yul list theorem and the in-progress halt-indexed internal-call body interface. Focused Functions inversion, Yul effect-semantics, and Yul call-backward checks pass. `scripts/verify_layer.sh proofs` passes the 1,256-job verification root, architecture checks, and proof-artifact axiom suite; changed-file forbidden-marker scanning and `git diff --check` pass. Printed theorem dependencies remain limited to Lean's accepted `propext`, `Classical.choice`, and `Quot.sound`.

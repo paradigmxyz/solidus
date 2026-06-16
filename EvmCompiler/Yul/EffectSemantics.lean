@@ -617,6 +617,34 @@ theorem call_succ_of_parts
           List.map (model.source stateAfterBody).lookup! returns) := by
   simp [call, hContract, hFunction, hBody]
 
+theorem call_succ_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {args : List Word}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    {yulContract : EvmYul.Account .Yul}
+    {params returns : List EvmYul.Identifier}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    (hContract :
+      (model.source state).sharedState.accountMap.find?
+          (model.source state).executionEnv.codeOwner =
+        some yulContract)
+    (hFunction :
+      (codeOverride.getD yulContract.code).functions.lookup functionName =
+        some (.Def params returns body))
+    (hBody :
+      exec model prim fuel (.Block body) codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall params returns args))) =
+        .error failure) :
+    call model prim (fuel + 1) args (some functionName)
+        codeOverride state =
+      .error failure := by
+  simp [call, hContract, hFunction, hBody]
+
 theorem callDispatcher_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
@@ -1797,6 +1825,49 @@ theorem exec_expr_function_of_parts
         (.ExprStmtCall (.Call (.inr functionName) args))
         codeOverride state =
       .ok (model.multifill [] final values) := by
+  simp [exec, hArgs, hCall, multifill]
+
+theorem evalValues_function_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs : σ}
+    {reversedValues : List Word} {failure : Failure σ}
+    (hArgs :
+      evalArgs model primSemantics fuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .error failure) :
+    evalValues model primSemantics (fuel + 1)
+        (.Call (.inr functionName) args) codeOverride state =
+      .error failure := by
+  simp [evalValues, hArgs, hCall]
+
+theorem exec_expr_function_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs : σ}
+    {reversedValues : List Word} {failure : Failure σ}
+    (hArgs :
+      evalArgs model primSemantics (fuel + 1) args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .error failure) :
+    exec model primSemantics (fuel + 2)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        codeOverride state =
+      .error failure := by
   simp [exec, hArgs, hCall, multifill]
 
 theorem exec_expr_primitive_error_parts

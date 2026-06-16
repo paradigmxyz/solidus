@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverExpressionBackward
+import EvmCompiler.Yul.FunctionsObserverOutcome
 
 namespace EvmCompiler
 namespace Yul
@@ -133,6 +134,123 @@ def RecursiveBodyBackward
         (ReturnedBodyBackward contract transcript codeRel sourceProgram
           targetProgram.toFunctions params returns body fn args targetFuel
           sourceCaller targetCaller)
+
+structure HaltedBodyBackward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Functions.Program)
+    (params returns : List EvmYul.Identifier)
+    (body : List AstStmt)
+    (fn : Functions.FunDef)
+    (args : List Word)
+    (bodyFuel : Nat)
+    (sourceCaller : ObserverSemantics.SourceReplay.State transcript)
+    (targetCaller finalTarget :
+      Functions.ObserverSemantics.State transcript)
+    (kind : Assembly.HaltKind) where
+  paramStore : Locals.Source.Store
+  finalCtx : Functions.Source.Ctx
+  paramsInserted :
+    Functions.Source.Store.insertMany fn.params args
+        Locals.Source.Store.empty =
+      some paramStore
+  targetRun :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        targetProgram (Functions.Source.Effectful.FunDef.bodyCtx fn)
+        bodyFuel fn.body
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }) =
+      .ok
+        (Functions.Source.Effectful.Outcome.halt kind finalTarget,
+          finalCtx)
+  failure :
+    Yul.Source.Effectful.Failure
+      (ObserverSemantics.SourceReplay.State transcript)
+  sourceFuel : Nat
+  sourceRun :
+    Yul.Source.Effectful.exec
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        sourceFuel (.Block body) (some sourceProgram.contract)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args))) =
+      .error failure
+  relation :
+    FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+      (Functions.Source.Effectful.Outcome.halt kind finalTarget)
+
+def RecursiveHaltedBodyBackward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (profile : SolcValidation.DialectProfile)
+    (bound : Nat) : Prop :=
+  ∀ {targetFuel : Nat} {before after : Fresh.State}
+    {params returns : List EvmYul.Identifier}
+    {body : List AstStmt} {fn : Functions.FunDef}
+    {args : List Word} {paramStore : Locals.Source.Store}
+    {sourceCaller : ObserverSemantics.SourceReplay.State transcript}
+    {targetCaller finalTarget :
+      Functions.ObserverSemantics.State transcript}
+    {kind : Assembly.HaltKind}
+    {finalCtx : Functions.Source.Ctx},
+    targetFuel < bound →
+      Stmt.List.toBlockUncheckedFuel?
+          (FunctionList.fuel
+            (Contract.functionEntries sourceProgram.contract))
+          before body =
+        some (fn.body, after) →
+      fn.params = identNames params →
+      fn.returns = identNames returns →
+      Functions.Source.Store.insertMany fn.params args
+          Locals.Source.Store.empty =
+        some paramStore →
+      StateRelation.Vars.NamesWithin before.used
+        (fn.returns ++ fn.params) →
+      StateRelation.Vars.NamesWithin before.used
+        (Stmt.List.names body) →
+      SolcValidation.StmtsOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          (fn.returns ++ fn.params) false false true body =
+        true →
+      StateRelation.Replay.ScopedExactRel codeRel
+        (fn.returns ++ fn.params)
+        (sourceCaller.withSource
+          (EvmYul.Yul.State.mkOk
+            (sourceCaller.source.initcall params returns args)))
+        (targetCaller.withSource
+          { shared := targetCaller.source.shared,
+            vars :=
+              Functions.Source.Store.initReturns fn.returns paramStore }) →
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          targetFuel fn.body
+          (targetCaller.withSource
+            { shared := targetCaller.source.shared,
+              vars :=
+                Functions.Source.Store.initReturns fn.returns paramStore }) =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt kind finalTarget,
+            finalCtx) →
+      Nonempty
+        (HaltedBodyBackward contract transcript codeRel sourceProgram
+          targetProgram.toFunctions params returns body fn args targetFuel
+          sourceCaller targetCaller finalTarget kind)
 
 theorem callArgsBackwardAt
     (profile : SolcValidation.DialectProfile)
