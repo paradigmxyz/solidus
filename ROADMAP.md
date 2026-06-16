@@ -157,9 +157,10 @@ Adjacent boundary status:
   expose successful internal-call and function-expression reconstruction
   without unfolding the interpreter in compiler-owned proof modules.
   `FunctionsObserverCallBackward` now owns the fuel-bounded recursive body
-  adequacy interface and checked returned-body composition. A Functions-owned
-  two-statement suffix inversion retains the strict target-fuel decrease needed
-  for generated result initialization followed by a real internal call.
+  adequacy interface, checked returned-body composition, and one shared
+  target-run-indexed returned-call theorem for visible and freshly declared
+  result targets. A Functions-owned bounded singleton inversion retains the
+  strict target-fuel decrease needed by real internal calls.
 - [ ] Functions -> allocated Locals/Expressions: public whole-main forward
   preservation is checked; matching backward adequacy remains. The frontend now
   retains Solidity `memoryguard` declarations and threads a source-owned
@@ -1759,9 +1760,12 @@ corridor.
   assignments, `break`, `continue`, `leave`, and arbitrary-arity continuing
   primitive statements. Primitive statement reconstruction uses one generic
   direct/bound expression theorem, so zero-result operations do not create a
-  statement-specific compiler path. The current obligation is internal-call
-  statement reconstruction and recursive statement-list/block adequacy,
-  followed by `if`/`switch`/`for`, dispatcher, and whole-program inversion.
+  statement-specific compiler path. Regular internal-call expression
+  statements, multi-target assignments, and fresh multi-name declarations are
+  now checked through the same returned-call artifact and ordinary compiler
+  decomposition. The current obligation is terminal internal-call statement
+  reconstruction and recursive statement-list/block adequacy, followed by
+  `if`/`switch`/`for`, dispatcher, and whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

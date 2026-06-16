@@ -394,6 +394,47 @@ theorem runOpen_singleton_regular_parts {σ : Type}
         rw [← hOutcome]
         rfl
 
+/--
+Invert a successful singleton block while retaining its exact one-step fuel
+decrease. Higher-language recursive adequacy uses the bound without unfolding
+the Functions block interpreter.
+-/
+theorem runOpen_singleton_regular_bounded_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {stmt : Functions.Stmt} {source final : σ}
+    (hRun :
+      runOpen model prim program ctx fuel
+          { stmts := [stmt] } source =
+        .ok (Outcome.regular final, finalCtx)) :
+    ∃ stmtFuel,
+      fuel = stmtFuel + 1 ∧
+      Stmt.run model prim program ctx stmtFuel stmt source =
+        .ok (Outcome.regular final, finalCtx) := by
+  cases fuel with
+  | zero =>
+      simp [runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ stmtFuel =>
+      rcases
+          runOpen_cons_cases model prim program hRun with
+        hRegular | hNonregular
+      · rcases hRegular with
+          ⟨middle, middleCtx, hStmt, hTail⟩
+        obtain ⟨hOutcome, hCtx⟩ :=
+          runOpen_nil_ok model prim program hTail
+        injection hOutcome with hFinal
+        subst middle
+        subst middleCtx
+        exact ⟨stmtFuel, by omega, hStmt⟩
+      · rcases hNonregular with
+          ⟨headOutcome, _headCtx, _hStmt, hMode,
+            hOutcome, _hCtx⟩
+        exfalso
+        apply hMode
+        rw [← hOutcome]
+        rfl
+
 theorem runOpen_append_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program) :

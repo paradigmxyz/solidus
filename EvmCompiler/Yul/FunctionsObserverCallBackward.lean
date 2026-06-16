@@ -415,6 +415,781 @@ theorem compose
 
 end ReturnedBodyBackward
 
+private structure ReturnedCallCoreBackward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Functions.Program)
+    (functionName : Name)
+    (targets : List Name)
+    (args : List AstExpr)
+    (preArgs : List Functions.Stmt)
+    (lowerArgs : List (Locals.Expr 1))
+    (fresh : Fresh.State)
+    (layout : List Name)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) where
+  sourceAfterArgs : ObserverSemantics.SourceReplay.State transcript
+  argValues : List Word
+  argsPrepared :
+    FunctionsObserverExpression.ScopedPreparedArgs
+      contract transcript codeRel targetProgram preArgs lowerArgs fresh
+      layout sourceAfterArgs target ctx argValues
+  fn : Functions.FunDef
+  bodyFuel : Nat
+  sourceAfterBody : ObserverSemantics.SourceReplay.State transcript
+  body :
+    FunctionsObserverCall.ReturnedBody contract transcript codeRel
+      targetProgram fn argValues bodyFuel sourceAfterBody
+      argsPrepared.prepared.prepared.finalTarget
+  find :
+    Functions.Source.FunList.find? functionName targetProgram.functions =
+      some fn
+  sourceAfterCall : ObserverSemantics.SourceReplay.State transcript
+  sourceAfterCall_eq :
+    sourceAfterCall =
+      sourceAfterBody.withSource
+        ((sourceAfterBody.source.reviveJump.overwrite?
+          sourceAfterArgs.source).setStore sourceAfterArgs.source)
+  returnValues : List Word
+  sourceFuel : Nat
+  sourceValuesRun :
+    Yul.Source.Effectful.evalValues
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        sourceFuel (.Call (.inr functionName) args)
+        (some sourceProgram.contract) source =
+      .ok (sourceAfterCall, returnValues)
+  sourceExprStmtRun :
+    Yul.Source.Effectful.exec
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        (sourceFuel + 1)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        (some sourceProgram.contract) source =
+      .ok
+        (sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill [] returnValues))
+  mappedReturnValues :
+    List.map sourceAfterBody.source.lookup! fn.returns = returnValues
+  returnLength : returnValues.length = targets.length
+
+structure ReturnedCallBackward
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Functions.Program)
+    (functionName : Name)
+    (targets : List Name)
+    (args : List AstExpr)
+    (preArgs : List Functions.Stmt)
+    (lowerArgs : List (Locals.Expr 1))
+    (fresh : Fresh.State)
+    (layout finalLayout : List Name)
+    (source : ObserverSemantics.SourceReplay.State transcript)
+    (target targetFinal : Functions.ObserverSemantics.State transcript)
+    (ctx targetFinalCtx : Functions.Source.Ctx) where
+  sourceFuel : Nat
+  sourceAfterCall : ObserverSemantics.SourceReplay.State transcript
+  returnValues : List Word
+  sourceValuesRun :
+    Yul.Source.Effectful.evalValues
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        sourceFuel (.Call (.inr functionName) args)
+        (some sourceProgram.contract) source =
+      .ok (sourceAfterCall, returnValues)
+  sourceExprStmtRun :
+    Yul.Source.Effectful.exec
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        (sourceFuel + 1)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        (some sourceProgram.contract) source =
+      .ok
+        (sourceAfterCall.withSource
+          (sourceAfterCall.source.multifill [] returnValues))
+  returned :
+    FunctionsObserverCall.ScopedReturnedCall contract transcript codeRel
+      targetProgram functionName targets preArgs lowerArgs fresh finalLayout
+      (sourceAfterCall.withSource
+        (sourceAfterCall.source.multifill targets returnValues))
+      target ctx
+  finalTarget_eq : returned.finalTarget = targetFinal
+  finalCtx_eq : returned.finalCtx = targetFinalCtx
+
+private theorem returnedCallCoreBackwardBelow
+    (profile : SolcValidation.DialectProfile)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (bound : Nat)
+    {targetFuel : Nat}
+    {initial final : Fresh.State}
+    {layout targets : List Name}
+    {functionName : Name} {args : List AstExpr}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    {ctx targetFinalCtx : Functions.Source.Ctx}
+    (hTargetFuel : targetFuel < bound)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout
+          targets.length (.Call (.inr functionName) args) =
+        true)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hExpr :
+      FunctionsObserverExpressionBackward.RecursiveAlignedValueBackwardBelow
+        profile sourceProgram.contract contract transcript codeRel
+        targetProgram.toFunctions (some sourceProgram.contract) layout bound)
+    (hBody :
+      RecursiveBodyBackward contract transcript codeRel sourceProgram
+        targetProgram profile bound)
+    (hOwner :
+      Yul.Source.Effectful.OwnerAvailable
+        (ObserverSemantics.SourceReplay.stateModel transcript) source)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hTarget :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions ctx targetFuel
+          { stmts :=
+              preArgs ++
+                [Functions.Stmt.call targets functionName lowerArgs] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            targetFinalCtx)) :
+    Nonempty
+      (ReturnedCallCoreBackward contract transcript codeRel sourceProgram
+        targetProgram.toFunctions functionName targets args preArgs lowerArgs
+        final layout source target ctx) := by
+  obtain ⟨params, returns, body, hLookup⟩ :=
+    SolcValidation.exprOk_functionCall_lookup_exists hOk
+  obtain
+      ⟨targetAfterArgs, ctxAfterArgs, callBlockFuel,
+        hArgsPre, hCallBlock, hCallBlockFuel⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_bounded_parts
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hTarget
+  obtain
+      ⟨callFuel, hCallBlockEq, hCall⟩ :=
+    Functions.Source.Effectful.Block.runOpen_singleton_regular_bounded_parts
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hCallBlock
+  obtain ⟨argsBackward⟩ :=
+    callArgsBackwardBelow profile sourceProgram.contract contract transcript
+      codeRel targetProgram.toFunctions (some sourceProgram.contract) bound
+      hTargetFuel hArgsLowering
+      (fun expr hMem =>
+        SolcValidation.exprOk_of_exprsOk_of_mem
+          (SolcValidation.exprsOk_of_exprOk_functionCall hOk hLookup)
+          hMem)
+      hExpr hRel hDomain hScope hArgsPre
+  let argsExact := argsBackward.result
+  have hArgsTarget :
+      argsExact.prepared.prepared.prepared.finalTarget =
+        targetAfterArgs :=
+    argsExact.finalTarget_eq
+  rw [← hArgsTarget] at hCall
+  have hStableArgs :
+      Functions.Source.Effectful.ArgList.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lowerArgs argsExact.prepared.prepared.prepared.finalTarget =
+        .ok
+          (argsExact.prepared.prepared.prepared.finalTarget,
+            argsExact.values) :=
+    argsExact.prepared.prepared.stable
+      argsExact.prepared.prepared.prepared.finalTarget
+      (StateRelation.Vars.TargetExtends.refl _)
+  cases callFuel with
+  | zero =>
+      simp [Functions.Source.Effectful.Stmt.run,
+        Functions.Source.invalid, Structured.invalid] at hCall
+  | succ callPrevious =>
+      have hFinalCtx : targetFinalCtx = ctxAfterArgs := by
+        rcases
+            Functions.Source.Effectful.Stmt.run_call_cases
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions hCall with
+          hRegular | hHalt
+        · rcases hRegular with ⟨sourceFinal, hOutcome, hCtx⟩
+          exact hCtx
+        · rcases hHalt with ⟨kind, sourceFinal, hOutcome, hCtx⟩
+          cases hOutcome
+      rw [hFinalCtx] at hCall
+      cases callPrevious with
+      | zero =>
+          obtain
+              ⟨stateAfterArgs, argValues, targetFn, stateAfterCall,
+                returnValues, returnStore, hTargets, hTargetArgs, hFind,
+                hBodyZero, hAssign, hCallFinal⟩ :=
+            Functions.Source.Effectful.Stmt.call_regular_parts
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions
+              (ctx := ctxAfterArgs)
+              (fuel := 0) (targets := targets)
+              (functionName := functionName) (args := lowerArgs)
+              (source :=
+                argsExact.prepared.prepared.prepared.finalTarget)
+              (sourceAfter := targetFinal)
+              (by simpa using hCall)
+          simp [Functions.Source.Effectful.FunDef.runBody,
+            Functions.Source.invalid, Structured.invalid] at hBodyZero
+      | succ bodyFuel =>
+          obtain
+              ⟨stateAfterArgs, argValues, targetFn, stateAfterCall,
+                returnValues, returnStore, paramStore, bodyOutcome,
+                bodyCtx, hTargets, hTargetArgs, hFind, hParamsInserted,
+                hBodyRun, hMode, hTargetReturns, hBodyState,
+                hAssign, hCallFinal⟩ :=
+            Functions.Source.Effectful.Stmt.call_regular_body_parts
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions
+              (ctx := ctxAfterArgs)
+              (fuel := bodyFuel) (targets := targets)
+              (functionName := functionName) (args := lowerArgs)
+              (source :=
+                argsExact.prepared.prepared.prepared.finalTarget)
+              (sourceAfter := targetFinal)
+              (by simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm]
+                using hCall)
+          rw [hStableArgs] at hTargetArgs
+          have hArgsPair := Except.ok.inj hTargetArgs
+          injection hArgsPair with hStateAfterArgs hArgValues
+          subst stateAfterArgs
+          subst argValues
+          obtain
+              ⟨fnBefore, fnAfter, compiledFn, hPrefix, hCompiledFind,
+                hFnName, hFnParams, hFnReturns, hLowerBody, hReserved⟩ :=
+            hDecomposition.findFunction_parts hLookup
+          rw [hFind] at hCompiledFind
+          injection hCompiledFind with hFnEq
+          subst compiledFn
+          have hBodyFuelLt : bodyFuel < bound := by
+            omega
+          obtain ⟨hReturnCount, hArgCount, hSignature⟩ :=
+            SolcValidation.programOkWith_functionCall_partsN
+              hProgramOk hOk hLookup
+          have hArgsLength :
+              argsExact.values.length = targetFn.params.length := by
+            have hEvaluatedLength :=
+              Yul.Source.Effectful.evalArgs_ok_length
+                (ObserverSemantics.SourceReplay.stateModel transcript)
+                (ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                argsExact.sourceRun
+            rw [hFnParams]
+            simpa [identNames, hArgCount] using hEvaluatedLength
+          have hEntry :
+              StateRelation.Replay.ScopedExactRel codeRel
+                (targetFn.returns ++ targetFn.params)
+                (argsExact.sourceFinal.withSource
+                  (EvmYul.Yul.State.mkOk
+                    (argsExact.sourceFinal.source.initcall
+                      params returns argsExact.values)))
+                (argsExact.prepared.prepared.prepared.finalTarget.withSource
+                  { shared :=
+                      argsExact.prepared.prepared.prepared.finalTarget.source.shared,
+                    vars :=
+                      Functions.Source.Store.initReturns
+                        targetFn.returns paramStore }) := by
+            have hSignature' : (returns ++ params).Nodup := by
+              simpa [identNames_eq_self] using hSignature
+            have hParamStore' :
+                Functions.Source.Store.insertMany params argsExact.values
+                    Locals.Source.Store.empty =
+                  some paramStore := by
+              simpa [hFnParams, identNames_eq_self] using hParamsInserted
+            have hEntryBase :=
+              StateRelation.Replay.scopedExact_initcall
+                (params := params) (returns := returns)
+                (args := argsExact.values) (paramStore := paramStore)
+                (StateRelation.Replay.rel_of_scopedExact
+                  argsExact.prepared.relation)
+                hSignature' hParamStore'
+            simpa [hFnParams, hFnReturns, identNames_eq_self] using
+              hEntryBase
+          have hBodyOk :
+              SolcValidation.StmtsOk? profile sourceProgram.contract
+                  ((Contract.functionEntries
+                    sourceProgram.contract).map Prod.fst)
+                  (targetFn.returns ++ targetFn.params)
+                  false false true body =
+                true := by
+            rw [hFnReturns, hFnParams]
+            exact
+              SolcValidation.programOkWith_function_bodyOk
+                hProgramOk hLookup
+          have hBodyNames :
+              StateRelation.Vars.NamesWithin fnBefore.used
+                (Stmt.List.names body) := by
+            intro candidate hMem
+            apply hPrefix candidate
+            change candidate ∈ Contract.names sourceProgram.contract
+            exact
+              (Contract.function_names_mem_names_of_lookup hLookup).2
+                candidate
+                (by simp [FunctionDefinition.names, hMem])
+          obtain ⟨returned⟩ :=
+            hBody hBodyFuelLt hLowerBody hFnParams hFnReturns
+              hParamsInserted hReserved hBodyNames hBodyOk hEntry
+              hBodyRun hMode
+          have hAfterArgsOwner :=
+            ObserverSafety.SafeSemantics.evalArgs_preservesOwner
+              contract transcript hOwner argsExact.sourceRun
+          unfold Yul.Source.Effectful.OwnerAvailable at hAfterArgsOwner
+          rcases argsExact.prepared.relation.2 with
+            ⟨sourceShared, sourceVars, hSourceOk, _hShared,
+              _hVars, _hDomain⟩
+          have hSharedOwner :
+              ∃ account,
+                sourceShared.accountMap.find?
+                    sourceShared.executionEnv.codeOwner =
+                  some account := by
+            change
+              Yul.Source.Effectful.ActiveOwnerAvailable
+                argsExact.sourceFinal.source at hAfterArgsOwner
+            rw [hSourceOk] at hAfterArgsOwner
+            simpa [Yul.Source.Effectful.ActiveOwnerAvailable,
+              Yul.Source.Effectful.activeShared?] using hAfterArgsOwner
+          obtain ⟨account, hSharedAccount⟩ := hSharedOwner
+          have hAccount :
+              argsExact.sourceFinal.source.sharedState.accountMap.find?
+                  argsExact.sourceFinal.source.executionEnv.codeOwner =
+                some account := by
+            rw [hSourceOk]
+            exact hSharedAccount
+          have hCallerRel :
+              StateRelation.Replay.Rel codeRel argsExact.sourceFinal
+                argsExact.prepared.prepared.prepared.finalTarget :=
+            StateRelation.Replay.rel_of_scopedExact
+              argsExact.prepared.relation
+          obtain
+              ⟨sourceReturnValues, hSourceCall, hTargetBody,
+                hMappedReturnValues, hRestoredRel⟩ :=
+            returned.compose hFnReturns hAccount
+              (by
+                rw [hFnName]
+                exact hLookup)
+              hCallerRel
+          have hActualTargetBody :
+              Functions.Source.Effectful.FunDef.runBody
+                  (Functions.ObserverSemantics.stateModel transcript)
+                  (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  targetProgram.toFunctions targetFn argsExact.values
+                  (bodyFuel + 1)
+                  argsExact.prepared.prepared.prepared.finalTarget =
+                .ok
+                  (Functions.Source.Effectful.CallResult.returned
+                    stateAfterCall returnValues) := by
+            exact
+              Functions.Source.Effectful.FunDef.runBody_returned_of_parts
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                targetProgram.toFunctions hParamsInserted hBodyRun hMode
+                hTargetReturns hBodyState
+          have hTargetBodyEq :
+              sourceReturnValues = returnValues := by
+            rw [hActualTargetBody] at hTargetBody
+            have hCallResult := Except.ok.inj hTargetBody
+            injection hCallResult with hStateEq hValuesEq
+            exact hValuesEq.symm
+          let bodyForward :
+              FunctionsObserverCall.ReturnedBody contract transcript codeRel
+                targetProgram.toFunctions targetFn argsExact.values bodyFuel
+                returned.sourceAfterBody
+                argsExact.prepared.prepared.prepared.finalTarget :=
+            { paramStore := returned.paramStore
+              bodyOutcome := returned.bodyOutcome
+              finalCtx := returned.finalCtx
+              params := returned.paramsInserted
+              run := returned.targetRun
+              mode := returned.mode
+              relation := returned.relation }
+          let restoredSource :=
+            returned.sourceAfterBody.withSource
+              ((returned.sourceAfterBody.source.reviveJump.overwrite?
+                argsExact.sourceFinal.source).setStore
+                  argsExact.sourceFinal.source)
+          let commonFuel :=
+            max argsBackward.sourceFuel (returned.sourceFuel + 1)
+          have hArgsSource :
+              Yul.Source.Effectful.evalArgs
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  commonFuel args.reverse (some sourceProgram.contract)
+                  source =
+                .ok
+                  (argsExact.sourceFinal, argsExact.values.reverse) :=
+            Yul.Source.Effectful.evalArgs_mono
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics_successMonotone
+                contract transcript)
+              (Nat.le_max_left _ _) argsExact.sourceRun
+          have hCallSource :
+              Yul.Source.Effectful.call
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  commonFuel argsExact.values (some functionName)
+                  (some sourceProgram.contract) argsExact.sourceFinal =
+                .ok (restoredSource, returnValues) := by
+            rw [hTargetBodyEq] at hSourceCall
+            exact
+              Yul.Source.Effectful.call_mono
+                (ObserverSemantics.SourceReplay.stateModel transcript)
+                (ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                (ObserverSafety.SafeSemantics.primitiveSemantics_successMonotone
+                  contract transcript)
+                (Nat.le_max_right _ _)
+                (by simpa [hFnName, restoredSource] using hSourceCall)
+          have hSourceValues :
+              Yul.Source.Effectful.evalValues
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (commonFuel + 1)
+                  (.Call (.inr functionName) args)
+                  (some sourceProgram.contract) source =
+                .ok (restoredSource, returnValues) := by
+            simp only [Yul.Source.Effectful.evalValues, hArgsSource]
+            simpa using hCallSource
+          have hArgsExec :
+              Yul.Source.Effectful.evalArgs
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (commonFuel + 1) args.reverse
+                  (some sourceProgram.contract) source =
+                .ok
+                  (argsExact.sourceFinal, argsExact.values.reverse) :=
+            Yul.Source.Effectful.evalArgs_mono
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics_successMonotone
+                contract transcript)
+              (Nat.le_succ commonFuel) hArgsSource
+          have hSourceExprStmt :
+              Yul.Source.Effectful.exec
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (commonFuel + 2)
+                  (.ExprStmtCall (.Call (.inr functionName) args))
+                  (some sourceProgram.contract) source =
+                .ok
+                  (restoredSource.withSource
+                    (restoredSource.source.multifill [] returnValues)) :=
+            Yul.Source.Effectful.exec_expr_function_of_parts
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              hArgsExec (by simpa using hCallSource)
+          have hMapped :
+              List.map returned.sourceAfterBody.source.lookup!
+                  targetFn.returns =
+                returnValues := by
+            rw [← hMappedReturnValues, hTargetBodyEq]
+          have hReturnLength :
+              returnValues.length = targets.length := by
+            calc
+              returnValues.length =
+                  sourceReturnValues.length := by
+                    rw [hTargetBodyEq]
+              _ = targetFn.returns.length := by
+                    rw [hMappedReturnValues]
+                    simp
+              _ = returns.length := by
+                    rw [hFnReturns, identNames_eq_self]
+              _ = targets.length := hReturnCount.symm
+          exact
+            ⟨{ sourceAfterArgs := argsExact.sourceFinal
+               argValues := argsExact.values
+               argsPrepared := argsExact.prepared
+               fn := targetFn
+               bodyFuel := bodyFuel
+               sourceAfterBody := returned.sourceAfterBody
+               body := bodyForward
+               find := hFind
+               sourceAfterCall := restoredSource
+               sourceAfterCall_eq := rfl
+               returnValues := returnValues
+               sourceFuel := commonFuel + 1
+               sourceValuesRun := hSourceValues
+               sourceExprStmtRun := by
+                 simpa [Nat.add_assoc] using hSourceExprStmt
+               mappedReturnValues := hMapped
+               returnLength := hReturnLength }⟩
+
+theorem returnedCallBackwardBelow
+    (profile : SolcValidation.DialectProfile)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (bound : Nat)
+    {targetFuel : Nat}
+    {initial final : Fresh.State}
+    {layout targets : List Name}
+    {functionName : Name} {args : List AstExpr}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    {ctx targetFinalCtx : Functions.Source.Ctx}
+    (hTargetFuel : targetFuel < bound)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout
+          targets.length (.Call (.inr functionName) args) =
+        true)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible : ∀ name, name ∈ targets → name ∈ layout)
+    (hExpr :
+      FunctionsObserverExpressionBackward.RecursiveAlignedValueBackwardBelow
+        profile sourceProgram.contract contract transcript codeRel
+        targetProgram.toFunctions (some sourceProgram.contract) layout bound)
+    (hBody :
+      RecursiveBodyBackward contract transcript codeRel sourceProgram
+        targetProgram profile bound)
+    (hOwner :
+      Yul.Source.Effectful.OwnerAvailable
+        (ObserverSemantics.SourceReplay.stateModel transcript) source)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hTarget :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions ctx targetFuel
+          { stmts :=
+              preArgs ++
+                [Functions.Stmt.call targets functionName lowerArgs] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            targetFinalCtx)) :
+    Nonempty
+      (ReturnedCallBackward contract transcript codeRel sourceProgram
+        targetProgram.toFunctions functionName targets args preArgs lowerArgs
+        final layout layout source target targetFinal ctx targetFinalCtx) := by
+  obtain ⟨core⟩ :=
+    returnedCallCoreBackwardBelow profile sourceProgram targetProgram
+      hDecomposition contract transcript codeRel bound hTargetFuel hProgramOk
+      hOk hArgsLowering hExpr hBody hOwner hRel hDomain hScope hTarget
+  obtain ⟨returned⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofReturnedBody
+      core.argsPrepared hTargetsNodup hTargetsVisible core.find core.body
+      core.mappedReturnValues core.returnLength rfl
+  have returned' :
+      FunctionsObserverCall.ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final layout
+        (core.sourceAfterCall.withSource
+          (core.sourceAfterCall.source.multifill
+            targets core.returnValues))
+        target ctx := by
+    simpa [core.sourceAfterCall_eq] using returned
+  obtain ⟨returnedFuel, hReturnedRun⟩ := returned'.run
+  have hAligned :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hReturnedRun hTarget
+  have hFinalTarget : returned'.finalTarget = targetFinal := by
+    have hOutcome := congrArg Prod.fst hAligned
+    injection hOutcome
+  exact
+    ⟨{ sourceFuel := core.sourceFuel
+       sourceAfterCall := core.sourceAfterCall
+       returnValues := core.returnValues
+       sourceValuesRun := core.sourceValuesRun
+       sourceExprStmtRun := core.sourceExprStmtRun
+       returned := returned'
+       finalTarget_eq := hFinalTarget
+       finalCtx_eq := congrArg Prod.snd hAligned }⟩
+
+theorem returnedCallFreshBackwardBelow
+    (profile : SolcValidation.DialectProfile)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (bound : Nat)
+    {targetFuel : Nat}
+    {initial final : Fresh.State}
+    {layout targets : List Name}
+    {functionName : Name} {args : List AstExpr}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    {ctx targetFinalCtx : Functions.Source.Ctx}
+    (hTargetFuel : targetFuel < bound)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hOk :
+      SolcValidation.ExprOk? profile sourceProgram.contract layout
+          targets.length (.Call (.inr functionName) args) =
+        true)
+    (hArgsLowering :
+      Expr.UncheckedCallArgsLowering initial args
+        preArgs lowerArgs final)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh : ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        target.source.vars.contains name = true)
+    (hExpr :
+      FunctionsObserverExpressionBackward.RecursiveAlignedValueBackwardBelow
+        profile sourceProgram.contract contract transcript codeRel
+        targetProgram.toFunctions (some sourceProgram.contract) layout bound)
+    (hBody :
+      RecursiveBodyBackward contract transcript codeRel sourceProgram
+        targetProgram profile bound)
+    (hOwner :
+      Yul.Source.Effectful.OwnerAvailable
+        (ObserverSemantics.SourceReplay.stateModel transcript) source)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        initial.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin initial.used ctx.scope)
+    (hTarget :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions ctx targetFuel
+          { stmts :=
+              preArgs ++
+                [Functions.Stmt.call targets functionName lowerArgs] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            targetFinalCtx)) :
+    Nonempty
+      (ReturnedCallBackward contract transcript codeRel sourceProgram
+        targetProgram.toFunctions functionName targets args preArgs lowerArgs
+        final layout (targets ++ layout) source target targetFinal ctx
+        targetFinalCtx) := by
+  obtain ⟨core⟩ :=
+    returnedCallCoreBackwardBelow profile sourceProgram targetProgram
+      hDecomposition contract transcript codeRel bound hTargetFuel hProgramOk
+      hOk hArgsLowering hExpr hBody hOwner hRel hDomain hScope hTarget
+  have hTargetsContainAfter :
+      ∀ name, name ∈ targets →
+        core.argsPrepared.prepared.prepared.finalTarget.source.vars.contains
+            name =
+          true := by
+    intro name hMem
+    cases hLookup : target.source.vars name with
+    | none =>
+        have hContains := hTargetsContain name hMem
+        simp [Locals.Source.Store.contains, hLookup] at hContains
+    | some value =>
+        have hFinalLookup :
+            core.argsPrepared.prepared.prepared.finalTarget.source.vars name =
+              some value :=
+          core.argsPrepared.prepared.prepared.varsExtends
+            name value hLookup
+        simp [Locals.Source.Store.contains, hFinalLookup]
+  obtain ⟨returned⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofReturnedBodyFresh
+      core.argsPrepared hTargetsNodup hTargetsFresh hTargetsContainAfter
+      core.find core.body core.mappedReturnValues core.returnLength rfl
+  have returned' :
+      FunctionsObserverCall.ScopedReturnedCall contract transcript codeRel
+        targetProgram.toFunctions functionName targets preArgs lowerArgs
+        final (targets ++ layout)
+        (core.sourceAfterCall.withSource
+          (core.sourceAfterCall.source.multifill
+            targets core.returnValues))
+        target ctx := by
+    simpa [core.sourceAfterCall_eq] using returned
+  obtain ⟨returnedFuel, hReturnedRun⟩ := returned'.run
+  have hAligned :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hReturnedRun hTarget
+  have hFinalTarget : returned'.finalTarget = targetFinal := by
+    have hOutcome := congrArg Prod.fst hAligned
+    injection hOutcome
+  exact
+    ⟨{ sourceFuel := core.sourceFuel
+       sourceAfterCall := core.sourceAfterCall
+       returnValues := core.returnValues
+       sourceValuesRun := core.sourceValuesRun
+       sourceExprStmtRun := core.sourceExprStmtRun
+       returned := returned'
+       finalTarget_eq := hFinalTarget
+       finalCtx_eq := congrArg Prod.snd hAligned }⟩
+
 theorem boundFunctionBackwardBelow
     (profile : SolcValidation.DialectProfile)
     (sourceProgram : Yul.Program)

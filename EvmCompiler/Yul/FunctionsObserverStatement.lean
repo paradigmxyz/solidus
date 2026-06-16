@@ -406,6 +406,80 @@ private theorem layoutWithinScope_of_run
       program hRun
   exact fun name hMem => hExtends name (hWithin name hMem)
 
+theorem of_regular_parts
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {before after : Fresh.State}
+    {layout finalLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target finalTarget :
+      Functions.ObserverSemantics.State transcript}
+    {ctx finalCtx : Functions.Source.Ctx}
+    (hRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel { stmts := lower } target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular finalTarget,
+              finalCtx))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel finalLayout
+        sourceFinal finalTarget)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        after.used finalTarget.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin after.used finalCtx.scope)
+    (hControl : Functions.Source.Ctx.SameControl ctx finalCtx)
+    (hFreshExtends : Fresh.Extends before after)
+    (hRetains :
+      ∀ candidate, candidate ∈ layout → candidate ∈ finalLayout)
+    (hLayoutWithin :
+      StateRelation.Vars.NamesWithin after.used finalLayout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope finalLayout finalCtx)
+    (hRegularLayout :
+      finalLayout = SolcValidation.StmtOutVars layout stmt) :
+    Nonempty
+      (Result contract codeRel program stmt lower before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  obtain
+      ⟨finalShared, finalVars, hFinalSource,
+        _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+    hRel.2
+  exact
+    ⟨{ openResult :=
+         { finalLayout := finalLayout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular finalTarget
+           finalCtx := finalCtx
+           run := hRun
+           relation :=
+             FunctionsObserverOutcome.ScopedOutcomeRel.regular
+               hFinalSource hRel
+           domain := hDomain
+           scope := hScope
+           control := hControl
+           freshExtends := hFreshExtends
+           retains := fun _hRegular => hRetains
+           layoutWithin := hLayoutWithin
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact hRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+           layoutScope := fun _hRegular => hLayoutScope
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
+       regularLayout := fun _hRegular => hRegularLayout }⟩
+
 theorem of_let_one_prepared
     {contract : MemoryContract.Contract}
     {transcript : Trace}

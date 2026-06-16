@@ -1586,6 +1586,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.letOneBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.assignOneBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.exprPrimitiveBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverCallBackward.returnedCallBackwardBelow
+#print axioms EvmCompiler.Yul.FunctionsObserverCallBackward.returnedCallFreshBackwardBelow
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.exprCallBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.assignCallBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.letCallBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward

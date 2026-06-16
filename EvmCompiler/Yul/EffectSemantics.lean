@@ -1665,6 +1665,40 @@ theorem exec_assign_ok_parts
                 ⟨previous, stateAfterValue, values, rfl,
                   by simpa using hCheck, hValues, rfl⟩
 
+theorem exec_let_some_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterValue : σ} {values : List Word}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hRun :
+      evalValues model prim fuel expr codeOverride state =
+        .ok (stateAfterValue, values)) :
+    exec model prim (fuel + 1) (.Let names (some expr))
+        codeOverride state =
+      .ok (model.multifill names stateAfterValue values) := by
+  simp [exec, hCheck, hRun, multifill]
+
+theorem exec_assign_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterValue : σ} {values : List Word}
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+    (hRun :
+      evalValues model prim fuel expr codeOverride state =
+        .ok (stateAfterValue, values)) :
+    exec model prim (fuel + 1) (.Assign names expr)
+        codeOverride state =
+      .ok (model.multifill names stateAfterValue values) := by
+  simp [exec, hCheck, hRun, multifill]
+
 theorem exec_expr_primitive_ok_parts
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)
@@ -1742,6 +1776,28 @@ theorem exec_expr_primitive_of_evalValues
               simp [evalValues, hArgs, hPrim] at hRun
               rcases hRun with ⟨rfl, rfl⟩
               simp [exec, hArgs, hPrim, multifill]
+
+theorem exec_expr_function_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs final : σ}
+    {reversedValues values : List Word}
+    (hArgs :
+      evalArgs model primSemantics (fuel + 1) args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, values)) :
+    exec model primSemantics (fuel + 2)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        codeOverride state =
+      .ok (model.multifill [] final values) := by
+  simp [exec, hArgs, hCall, multifill]
 
 theorem exec_expr_primitive_error_parts
     {σ : Type} (model : StateModel σ)
