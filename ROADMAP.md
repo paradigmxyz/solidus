@@ -1752,9 +1752,16 @@ corridor.
   strict target-fuel bound. Canonical active-code-owner preservation is proved
   once for every nonexternal primitive and lifted mutually through the ordinary
   parameterized Yul evaluator, so the public call theorem no longer accepts an
-  owner-after-arguments certificate. The current obligation is recursive
-  statement/list/block backward adequacy, including compound control and
-  loops, followed by dispatcher/whole-program inversion.
+  owner-after-arguments certificate. Shared control-scope relations now live in
+  the outcome owner rather than the forward corridor. The target-run-indexed
+  recursive statement backward interface is checked, together with canonical
+  reconstruction for uninitialized declarations, singleton declarations and
+  assignments, `break`, `continue`, `leave`, and arbitrary-arity continuing
+  primitive statements. Primitive statement reconstruction uses one generic
+  direct/bound expression theorem, so zero-result operations do not create a
+  statement-specific compiler path. The current obligation is internal-call
+  statement reconstruction and recursive statement-list/block adequacy,
+  followed by `if`/`switch`/`for`, dispatcher, and whole-program inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

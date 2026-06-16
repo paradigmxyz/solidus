@@ -53,7 +53,7 @@ def RecursiveTerminalStmtForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -103,7 +103,7 @@ def RecursiveTerminalListForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.execSeq
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -257,7 +257,7 @@ def RecursiveTerminalCompoundForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -327,7 +327,7 @@ def RecursiveTerminalLoopForward
         before.used target.source.vars →
       StateRelation.Vars.NamesWithin before.used ctx.scope →
       StateRelation.Vars.NamesWithin before.used layout →
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx →
       Yul.Source.Effectful.exec
           (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -1673,7 +1673,7 @@ theorem ofList
         continueScope? := none
         leaveScope? := some layout }
     have hControl :
-        FunctionsObserverForward.ControlContextRel
+        FunctionsObserverOutcome.ControlContextRel
           sourceControl layout false false true
           (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
       refine
@@ -1685,15 +1685,15 @@ theorem ofList
           Functions.Source.Ctx.initial,
           Functions.Source.Ctx.withLeaveScope,
           FunctionsObserverOutcome.LayoutWithinScope]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Effectful.FunDef.bodyCtx,
           Functions.Source.Ctx.initial,
           Functions.Source.Ctx.withLeaveScope]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Effectful.FunDef.bodyCtx,
           Functions.Source.Ctx.initial,
           Functions.Source.Ctx.withLeaveScope]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Effectful.FunDef.bodyCtx,
           Functions.Source.Ctx.initial,
           Functions.Source.Ctx.withLeaveScope, layout]
@@ -2618,7 +2618,7 @@ theorem block
           before.used target.source.vars →
         StateRelation.Vars.NamesWithin before.used ctx.scope →
         StateRelation.Vars.NamesWithin before.used layout →
-        FunctionsObserverForward.ControlContextRel sourceControl layout
+        FunctionsObserverOutcome.ControlContextRel sourceControl layout
           canBreak canContinue canLeave ctx →
         Yul.Source.Effectful.exec
             (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -2962,18 +2962,18 @@ theorem ofCompiler
             (ctx.withLoopControl ctx.scope ctx.scope).scope := by
         simpa [Functions.Source.Ctx.withLoopControl] using hScope
       have hBodyControl :
-          FunctionsObserverForward.ControlContextRel
-            (FunctionsObserverForward.ControlContextRel.forBodySourceControl
+          FunctionsObserverOutcome.ControlContextRel
+            (FunctionsObserverOutcome.ControlContextRel.forBodySourceControl
               layout sourceControl)
             layout true true canLeave
             (ctx.withLoopControl ctx.scope ctx.scope) :=
-        FunctionsObserverForward.ControlContextRel.forBody hControl
+        FunctionsObserverOutcome.ControlContextRel.forBody hControl
       have hPostControl :
-          FunctionsObserverForward.ControlContextRel
-            (FunctionsObserverForward.ControlContextRel.forPostSourceControl
+          FunctionsObserverOutcome.ControlContextRel
+            (FunctionsObserverOutcome.ControlContextRel.forPostSourceControl
               sourceControl)
             layout false false canLeave ctx.withoutLoopControl :=
-        FunctionsObserverForward.ControlContextRel.forPost hControl
+        FunctionsObserverOutcome.ControlContextRel.forPost hControl
       rcases hFailureCase with hCondFailure | hAfterCond
       · have hCondFailure' :
             Yul.Source.Effectful.eval
@@ -3052,11 +3052,11 @@ theorem ofCompiler
           exact fun name hMem =>
             hExtends name (hBodyControl.scope name hMem)
         have hPreparedControl :
-            FunctionsObserverForward.ControlContextRel
-              (FunctionsObserverForward.ControlContextRel.forBodySourceControl
+            FunctionsObserverOutcome.ControlContextRel
+              (FunctionsObserverOutcome.ControlContextRel.forBodySourceControl
                 layout sourceControl)
               layout true true canLeave prepared.prepared.finalCtx :=
-          FunctionsObserverForward.ControlContextRel.transport hBodyControl
+          FunctionsObserverOutcome.ControlContextRel.transport hBodyControl
             (fun _name hMem => hMem)
             prepared.prepared.control hPreparedLayoutScope
         cases hLoopCase with
@@ -3082,7 +3082,7 @@ theorem ofCompiler
                   (sourceFuel := bodyFuel)
                   (compilerFuel := listCompilerFuel)
                   (sourceControl :=
-                    FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                    FunctionsObserverOutcome.ControlContextRel.forBodySourceControl
                       layout sourceControl)
                   (before := afterPost) (after := after)
                   (layout := layout) (stmts := body)
@@ -3141,7 +3141,7 @@ theorem ofCompiler
             obtain ⟨closedBody⟩ :=
               FunctionsObserverForward.RecursiveOpenCompoundForward.closeGuardedBody
                 (sourceControl :=
-                  FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                  FunctionsObserverOutcome.ControlContextRel.forBodySourceControl
                     layout sourceControl)
                 hRegularList prepared (by omega) hBodyOk
                 hBodyNamesAfterPost hLowerBody hPostFresh hFresh
@@ -3170,7 +3170,7 @@ theorem ofCompiler
                   (sourceFuel := postFuel)
                   (compilerFuel := listCompilerFuel)
                   (sourceControl :=
-                    FunctionsObserverForward.ControlContextRel.forPostSourceControl
+                    FunctionsObserverOutcome.ControlContextRel.forPostSourceControl
                       sourceControl)
                   (before := afterCond) (after := afterPost)
                   (layout := layout) (stmts := post)
@@ -3318,7 +3318,7 @@ theorem ofCompiler
             obtain ⟨closedBody⟩ :=
               FunctionsObserverForward.RecursiveOpenCompoundForward.closeGuardedBody
                 (sourceControl :=
-                  FunctionsObserverForward.ControlContextRel.forBodySourceControl
+                  FunctionsObserverOutcome.ControlContextRel.forBodySourceControl
                     layout sourceControl)
                 hRegularList prepared (by omega) hBodyOk
                 hBodyNamesAfterPost hLowerBody hPostFresh hFresh
@@ -3329,7 +3329,7 @@ theorem ofCompiler
             obtain ⟨closedPost⟩ :=
               FunctionsObserverForward.RecursiveOpenCompoundForward.closeLoopPost
                 (sourceControl :=
-                  FunctionsObserverForward.ControlContextRel.forPostSourceControl
+                  FunctionsObserverOutcome.ControlContextRel.forPostSourceControl
                     sourceControl)
                 hRegularList bodyResult (by omega) hPostOk
                 hPostNamesAfterCond hLowerPost hBodyFresh
@@ -3365,7 +3365,7 @@ theorem ofCompiler
                           hModeRel
                     have hExit := closedPost.exitScope
                     simp [FunctionsObserverOutcome.ExitScopeRel,
-                      FunctionsObserverForward.ControlContextRel.forPostSourceControl,
+                      FunctionsObserverOutcome.ControlContextRel.forPostSourceControl,
                       hMode] at hExit
                 | Continue shared store =>
                     have hMode :
@@ -3377,7 +3377,7 @@ theorem ofCompiler
                           hModeRel
                     have hExit := closedPost.exitScope
                     simp [FunctionsObserverOutcome.ExitScopeRel,
-                      FunctionsObserverForward.ControlContextRel.forPostSourceControl,
+                      FunctionsObserverOutcome.ControlContextRel.forPostSourceControl,
                       hMode] at hExit
             | Ok postShared postStore =>
                 rcases lowerPost with ⟨lowerPostStmts⟩
@@ -3697,7 +3697,7 @@ theorem ifThen
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
@@ -3777,10 +3777,10 @@ theorem ifThen
       exact fun name hMem =>
         hExtends name (hControl.scope name hMem)
     have hPreparedControl :
-        FunctionsObserverForward.ControlContextRel sourceControl layout
+        FunctionsObserverOutcome.ControlContextRel sourceControl layout
           canBreak canContinue canLeave
           prepared.prepared.finalCtx :=
-      FunctionsObserverForward.ControlContextRel.transport hControl
+      FunctionsObserverOutcome.ControlContextRel.transport hControl
         (fun _name hMem => hMem)
         prepared.prepared.control hPreparedLayoutScope
     have hCondTrue :
@@ -3926,7 +3926,7 @@ theorem switch
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
@@ -4007,10 +4007,10 @@ theorem switch
       exact fun name hMem =>
         hExtends name (hControl.scope name hMem)
     have hPreparedControl :
-        FunctionsObserverForward.ControlContextRel sourceControl layout
+        FunctionsObserverOutcome.ControlContextRel sourceControl layout
           canBreak canContinue canLeave
           prepared.prepared.finalCtx :=
-      FunctionsObserverForward.ControlContextRel.transport hControl
+      FunctionsObserverOutcome.ControlContextRel.transport hControl
         (fun _name hMem => hMem)
         prepared.prepared.control hPreparedLayoutScope
     cases hSelection with
@@ -4187,7 +4187,7 @@ theorem forLoop
     (hLayout :
       StateRelation.Vars.NamesWithin before.used layout)
     (hControl :
-      FunctionsObserverForward.ControlContextRel sourceControl layout
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
         canBreak canContinue canLeave ctx)
     (hRun :
       Yul.Source.Effectful.exec
@@ -4503,7 +4503,7 @@ theorem dispatcherForward
         continueScope? := none
         leaveScope? := none }
     have hControl :
-        FunctionsObserverForward.ControlContextRel sourceControl []
+        FunctionsObserverOutcome.ControlContextRel sourceControl []
           false false false Functions.Source.Ctx.initial := by
       refine
         { scope := ?_
@@ -4511,11 +4511,11 @@ theorem dispatcherForward
           continueScope := ?_
           leaveScope := ?_ }
       · simp [FunctionsObserverOutcome.LayoutWithinScope]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Ctx.initial]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Ctx.initial]
-      · simp [sourceControl, FunctionsObserverForward.ScopeOptionWithin,
+      · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
           Functions.Source.Ctx.initial]
     have hFamily :=
       ofCompiler

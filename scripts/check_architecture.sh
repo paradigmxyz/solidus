@@ -194,6 +194,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -211,6 +212,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCompiler.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -229,6 +231,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpression.lean \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
@@ -239,6 +242,18 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
   EvmCompiler/Yul/FunctionsObserverPreservation.lean
+
+report_matches \
+  'Shared Yul observer control relations belong to FunctionsObserverOutcome, not the forward corridor:' \
+  '^(def ScopeOptionWithin|structure ControlContextRel)' \
+  EvmCompiler/Yul/FunctionsObserverForward.lean
+
+report_matches \
+  'Yul backward adequacy must consume pass-owned interfaces without importing the forward corridor:' \
+  '^import EvmCompiler\.Yul\.FunctionsObserverForward' \
+  EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverStatementBackward.lean
 
 report_matches \
   'Yul effect refinement must remain semantic-only and adjacent to canonical Yul semantics:' \

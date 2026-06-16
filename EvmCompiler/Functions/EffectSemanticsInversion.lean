@@ -203,6 +203,31 @@ end ArgList
 
 namespace Stmt
 
+theorem run_expr_regular_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {expr : Functions.Expr 0}
+    {source final : σ}
+    (hRun :
+      run model prim program ctx fuel (.expr expr) source =
+        .ok (Outcome.regular final, finalCtx)) :
+    ∃ values,
+      Expr.eval model prim expr source =
+        .ok (final, values) ∧
+      finalCtx = ctx := by
+  unfold run at hRun
+  cases hEval : Expr.eval model prim expr source with
+  | error err =>
+      simp [hEval] at hRun
+  | ok evaluated =>
+      rcases evaluated with ⟨afterExpr, values⟩
+      simp [hEval] at hRun
+      rcases hRun with ⟨hFinal, hCtx⟩
+      injection hFinal with hState
+      subst final
+      exact ⟨values, rfl, hCtx.symm⟩
+
 theorem run_let_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program)
@@ -233,9 +258,75 @@ theorem run_let_regular_parts {σ : Type}
             exact hState.symm,
           hCtx.symm⟩
 
+theorem run_assign_regular_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {name : Name} {value : Functions.Expr 1}
+    {source final : σ}
+    (hRun :
+      run model prim program ctx fuel (.assign name value) source =
+        .ok (Outcome.regular final, finalCtx)) :
+    (model.vars source).contains name = true ∧
+      ∃ afterValue result,
+        Expr.eval model prim value source =
+          .ok (afterValue, [result]) ∧
+        final =
+          model.withVars afterValue
+            (Locals.Source.Store.insert
+              (model.vars afterValue) name result) ∧
+        finalCtx = ctx := by
+  unfold run at hRun
+  by_cases hContains : (model.vars source).contains name = true
+  · simp only [hContains, ↓reduceIte] at hRun
+    cases hEval : Expr.evalOne model prim value source with
+    | error err =>
+        simp [hEval] at hRun
+    | ok evaluated =>
+        rcases evaluated with ⟨afterValue, result⟩
+        simp [hEval] at hRun
+        rcases hRun with ⟨hFinal, hCtx⟩
+        exact
+          ⟨hContains, afterValue, result,
+            Expr.eval_singleton_of_evalOne model prim hEval,
+            by
+              injection hFinal with hState
+              exact hState.symm,
+            hCtx.symm⟩
+  · have hContainsFalse :
+        (model.vars source).contains name = false := by
+      exact Bool.eq_false_of_not_eq_true hContains
+    simp [hContainsFalse, Functions.Source.invalid,
+      Structured.invalid] at hRun
+
 end Stmt
 
 namespace Block
+
+theorem runOpen_success_unique {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx leftCtx rightCtx : Source.Ctx}
+    {leftFuel rightFuel : Nat} {block : Functions.Block}
+    {source : σ} {leftOutcome rightOutcome : Outcome σ}
+    (hLeft :
+      runOpen model prim program ctx leftFuel block source =
+        .ok (leftOutcome, leftCtx))
+    (hRight :
+      runOpen model prim program ctx rightFuel block source =
+        .ok (rightOutcome, rightCtx)) :
+    (leftOutcome, leftCtx) = (rightOutcome, rightCtx) := by
+  let commonFuel := Nat.max leftFuel rightFuel
+  have hLeft' :
+      runOpen model prim program ctx commonFuel block source =
+        .ok (leftOutcome, leftCtx) :=
+    runOpen_mono model prim program (Nat.le_max_left _ _) hLeft
+  have hRight' :
+      runOpen model prim program ctx commonFuel block source =
+        .ok (rightOutcome, rightCtx) :=
+    runOpen_mono model prim program (Nat.le_max_right _ _) hRight
+  rw [hLeft'] at hRight'
+  exact Except.ok.inj hRight'
 
 theorem runOpen_regular_unique {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)

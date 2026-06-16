@@ -1706,6 +1706,43 @@ theorem exec_expr_primitive_ok_parts
                 ⟨previous, stateAfterPrim, values, rfl,
                   by simp [evalValues, hArgs, hPrim], hRun.symm⟩
 
+theorem exec_expr_primitive_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model primSemantics fuel
+          (.Call (.inl prim) args) codeOverride state =
+        .ok (final, values)) :
+    exec model primSemantics fuel
+        (.ExprStmtCall (.Call (.inl prim) args))
+        codeOverride state =
+      .ok (model.multifill [] final values) := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ previous =>
+      cases hArgs :
+          evalArgs model primSemantics previous args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [evalValues, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          cases hPrim :
+              primSemantics.eval previous stateAfterArgs prim
+                reversedValues.reverse with
+          | error failure =>
+              simp [evalValues, hArgs, hPrim] at hRun
+          | ok result =>
+              rcases result with ⟨stateAfterPrim, outputs⟩
+              simp [evalValues, hArgs, hPrim] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              simp [exec, hArgs, hPrim, multifill]
+
 theorem exec_expr_primitive_error_parts
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)

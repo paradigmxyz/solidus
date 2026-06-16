@@ -31,6 +31,7 @@ import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverStatement
+import EvmCompiler.Yul.FunctionsObserverStatementBackward
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
@@ -1502,8 +1503,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.StateRelation.Replay.scopedExact_restrict_target_scope
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOutcomeRel.restrictNonregularSource
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ExitScopeRel.transportTarget
-#print axioms EvmCompiler.Yul.FunctionsObserverForward.ControlContextRel.forBody
-#print axioms EvmCompiler.Yul.FunctionsObserverForward.ControlContextRel.forPost
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ControlContextRel.forBody
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ControlContextRel.forPost
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.close
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.prependForGuard
 #print axioms EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.closeForGuardBody
@@ -1562,6 +1563,9 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.deferredBackwardAt
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundArgsBackwardAt
 #print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveBackwardAt
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionBackward.primitiveExpressionBackwardBelow
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_of_evalValues
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_expr_regular_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_mono
 #print axioms EvmCompiler.Yul.Source.Effectful.call_mono
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics_successMonotone
@@ -1578,3 +1582,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.primitiveSemantics_preservesOwner
 #print axioms EvmCompiler.Yul.ObserverSafety.SafeSemantics.evalArgs_preservesOwner
 #print axioms EvmCompiler.Yul.FunctionsObserverCallBackward.boundFunctionBackwardBelow
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.letNoneBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.letOneBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.assignOneBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.exprPrimitiveBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward

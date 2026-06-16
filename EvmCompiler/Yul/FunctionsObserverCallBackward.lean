@@ -956,6 +956,28 @@ theorem boundFunctionBackwardBelow
               (Nat.le_max_right _ _) (by
                 rw [hTargetBodyEq] at hSourceCall
                 simpa [hFnName, restoredSource] using hSourceCall)
+          rw [hReturnSingleton] at hCallSource
+          have hCallSource' :
+              Yul.Source.Effectful.call
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  commonFuel argsExact.values.reverse.reverse
+                  (some functionName) (some sourceProgram.contract)
+                  argsExact.sourceFinal =
+                .ok (restoredSource, [value]) := by
+            simpa using hCallSource
+          have hSourceValues :
+              Yul.Source.Effectful.evalValues
+                  (ObserverSemantics.SourceReplay.stateModel transcript)
+                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                    contract transcript)
+                  (commonFuel + 1)
+                  (.Call (.inr functionName) args)
+                  (some sourceProgram.contract) source =
+                .ok (restoredSource, [value]) := by
+            simp only [Yul.Source.Effectful.evalValues, hArgsSource]
+            simpa using hCallSource'
           have hSource :
               Yul.Source.Effectful.eval
                   (ObserverSemantics.SourceReplay.stateModel transcript)
@@ -965,35 +987,10 @@ theorem boundFunctionBackwardBelow
                   (.Call (.inr functionName) args)
                   (some sourceProgram.contract) source =
                 .ok (restoredSource, value) := by
-            rw [hReturnSingleton] at hCallSource
-            have hCallSource' :
-                Yul.Source.Effectful.call
-                    (ObserverSemantics.SourceReplay.stateModel transcript)
-                    (ObserverSafety.SafeSemantics.primitiveSemantics
-                      contract transcript)
-                    commonFuel argsExact.values.reverse.reverse
-                    (some functionName) (some sourceProgram.contract)
-                    argsExact.sourceFinal =
-                  .ok (restoredSource, [value]) := by
-              simpa using hCallSource
-            simpa only [List.reverse_reverse] using
-              Yul.Source.Effectful.eval_function_of_parts
-                (ObserverSemantics.SourceReplay.stateModel transcript)
-                (ObserverSafety.SafeSemantics.primitiveSemantics
-                  contract transcript)
-                (callFuel := commonFuel)
-                (functionName := functionName)
-                (args := args)
-                (codeOverride := some sourceProgram.contract)
-                (state := source)
-                (stateAfterArgs := argsExact.sourceFinal)
-                (final := restoredSource)
-                (reversedValues := argsExact.values.reverse)
-                (returnValues := [value])
-                hArgsSource hCallSource'
+            simp [Yul.Source.Effectful.eval, hSourceValues]
           exact
             ⟨⟨commonFuel + 1,
-              ⟨restoredSource, hSource, scopedPrepared,
+              ⟨restoredSource, hSourceValues, hSource, scopedPrepared,
                 hPreparedTarget, hEvalTarget, hPreparedCtx⟩⟩⟩
 
 end FunctionsObserverCallBackward
