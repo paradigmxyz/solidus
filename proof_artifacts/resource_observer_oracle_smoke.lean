@@ -1666,4 +1666,6 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_bounded
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_sourceBounded
 #print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt

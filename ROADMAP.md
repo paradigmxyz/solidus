@@ -56,10 +56,10 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     strictly smaller recursive budgets plus compiler wrapper overhead;
   - [x] carry bounded argument preparation and returned function bodies through
     visible-target calls;
+  - [x] reuse the same bounded call execution for fresh declaration targets;
   - [x] prove bounded recursive statement-list composition from a bounded
     statement capability;
-  - [ ] cover fresh-target calls, leaf/compound statements, loops, and terminal
-    outcomes;
+  - [ ] cover leaf/compound statements, loops, and terminal outcomes;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated

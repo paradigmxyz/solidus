@@ -30281,3 +30281,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   scan, standalone axiom smoke, and `git diff --check` passed. The new bounded
   call and recursive-list theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 16:35:24 PDT - proof/yul-functions-fresh-call-fuel - Factored
+  returned-call fuel reconstruction over the shared target execution and added
+  bounded wrappers for fresh declaration targets. Visible assignment and fresh
+  declaration calls now differ only through the ordinary pass-owned writeback
+  relation, not duplicated call semantics.
+- 2026-06-16 16:37:53 PDT - validation/yul-functions-fresh-call-fuel - The
+  focused call build, full 1,266-job verification root, architecture guard,
+  aggregate proof-layer gate, forbidden-marker scan, standalone axiom smoke,
+  and `git diff --check` passed. Both fresh-call bounds use only `propext`,
+  `Classical.choice`, and `Quot.sound`.

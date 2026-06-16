@@ -314,6 +314,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.requiredFuel
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
+#check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_bounded
+#check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_sourceBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenStmtForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt

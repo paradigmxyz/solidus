@@ -102,11 +102,10 @@ theorem requiredFuel_le_of_run
   simpa [requiredFuel] using Nat.find_min' result.run hRun
 
 /--
-The ordinary returned-call constructor admits an explicit bound: argument
-preparation fuel, recursive body fuel, and three units for the call statement
-and enclosing open block.
+The shared returned-call execution admits an explicit bound independent of
+whether writeback targets are existing source variables or fresh declarations.
 -/
-theorem ofReturnedBody_bounded
+private theorem requiredFuel_le_of_parts
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -117,7 +116,7 @@ theorem ofReturnedBody_bounded
     {preArgs : List Functions.Stmt}
     {lowerArgs : List (Locals.Expr 1)}
     {fresh : Fresh.State}
-    {layout : List Name}
+    {layout finalLayout : List Name}
     {argValues returnValues : List Word}
     {bodyFuel : Nat}
     {sourceAfterArgs sourceAfterBody sourceFinal :
@@ -129,8 +128,10 @@ theorem ofReturnedBody_bounded
         contract transcript codeRel program preArgs lowerArgs fresh layout
         sourceAfterArgs target ctx argValues)
     (hTargetsNodup : targets.Nodup)
-    (hTargetsVisible :
-      ∀ name, name ∈ targets → name ∈ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
     (hFind :
       Functions.Source.FunList.find? functionName program.functions =
         some fn)
@@ -141,35 +142,12 @@ theorem ofReturnedBody_bounded
     (hReturnValues :
       List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
     (hLength : returnValues.length = targets.length)
-    (hSourceFinal :
-      sourceFinal =
-        sourceAfterBody.withSource
-          (((sourceAfterBody.source.reviveJump.overwrite?
-            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
-              targets returnValues)) :
-    Nonempty
-      { result :
-          FunctionsObserverCall.ScopedReturnedCall
-            contract transcript codeRel program functionName targets
-            preArgs lowerArgs fresh layout sourceFinal target ctx //
-        requiredFuel result ≤
-          argsPrepared.prepared.prepared.requiredFuel + bodyFuel + 3 } := by
-  obtain ⟨result⟩ :=
-    FunctionsObserverCall.ScopedReturnedCall.ofReturnedBody
-      argsPrepared hTargetsNodup hTargetsVisible hFind body
-      hReturnValues hLength hSourceFinal
-  have hTargetsContain :
-      ∀ name, name ∈ targets →
-        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
-          true := by
-    obtain
-        ⟨_sourceShared, _sourceVars, _hSource, _hShared,
-          hScoped, hSourceDomain⟩ :=
-      argsPrepared.relation.2
-    intro name hMem
-    exact
-      StateRelation.Vars.target_contains_of_scopedExact
-        hScoped hSourceDomain (hTargetsVisible name hMem)
+    (result :
+      FunctionsObserverCall.ScopedReturnedCall
+        contract transcript codeRel program functionName targets
+        preArgs lowerArgs fresh finalLayout sourceFinal target ctx) :
+    requiredFuel result ≤
+      argsPrepared.prepared.prepared.requiredFuel + bodyFuel + 3 := by
   let targetAfterArgs := argsPrepared.prepared.prepared.finalTarget
   have hArgsEval :
       Functions.Source.Effectful.ArgList.eval
@@ -302,7 +280,148 @@ theorem ofReturnedBody_bounded
         contract transcript)
       program hFullRun (run_requiredFuel result)
   rw [hFinalTarget, hFinalCtx] at hFullRun
-  exact ⟨⟨result, requiredFuel_le_of_run result hFullRun⟩⟩
+  exact requiredFuel_le_of_run result hFullRun
+
+/--
+The ordinary visible-target returned-call constructor admits an explicit
+target-fuel bound.
+-/
+theorem ofReturnedBody_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsVisible :
+      ∀ name, name ∈ targets → name ∈ layout)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel program functionName targets
+            preArgs lowerArgs fresh layout sourceFinal target ctx //
+        requiredFuel result ≤
+          argsPrepared.prepared.prepared.requiredFuel + bodyFuel + 3 } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofReturnedBody
+      argsPrepared hTargetsNodup hTargetsVisible hFind body
+      hReturnValues hLength hSourceFinal
+  have hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true := by
+    obtain
+        ⟨_sourceShared, _sourceVars, _hSource, _hShared,
+          hScoped, hSourceDomain⟩ :=
+      argsPrepared.relation.2
+    intro name hMem
+    exact
+      StateRelation.Vars.target_contains_of_scopedExact
+        hScoped hSourceDomain (hTargetsVisible name hMem)
+  exact
+    ⟨⟨result,
+      requiredFuel_le_of_parts
+        argsPrepared hTargetsNodup hTargetsContain hFind body
+        hReturnValues hLength result⟩⟩
+
+/--
+Fresh declaration targets use the same call execution bound; only the
+writeback relation differs in the ordinary pass-owned constructor.
+-/
+theorem ofReturnedBodyFresh_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel program functionName targets
+            preArgs lowerArgs fresh (targets ++ layout)
+            sourceFinal target ctx //
+        requiredFuel result ≤
+          argsPrepared.prepared.prepared.requiredFuel + bodyFuel + 3 } := by
+  obtain ⟨result⟩ :=
+    FunctionsObserverCall.ScopedReturnedCall.ofReturnedBodyFresh
+      argsPrepared hTargetsNodup hTargetsFresh hTargetsContain hFind body
+      hReturnValues hLength hSourceFinal
+  exact
+    ⟨⟨result,
+      requiredFuel_le_of_parts
+        argsPrepared hTargetsNodup hTargetsContain hFind body
+        hReturnValues hLength result⟩⟩
 
 /--
 Source-fuel lifting for returned calls. Argument preparation and the recursive
@@ -367,6 +486,91 @@ theorem ofReturnedBody_sourceBounded
   obtain ⟨bounded⟩ :=
     ofReturnedBody_bounded
       argsPrepared hTargetsNodup hTargetsVisible hFind body
+      hReturnValues hLength hSourceFinal
+  have hBudget :=
+    FunctionsObserverFuel.two_children_add_eight_le_of_lt
+      hArgsFuel hBodyFuel
+  exact
+    ⟨⟨bounded.1, by
+        calc
+          requiredFuel bounded.1 ≤
+              argsPrepared.prepared.prepared.requiredFuel +
+                bodyFuel + 3 :=
+            bounded.2
+          _ ≤
+              FunctionsObserverFuel.targetBudget argsSourceFuel +
+                FunctionsObserverFuel.targetBudget bodySourceFuel + 8 := by
+            omega
+          _ ≤ FunctionsObserverFuel.targetBudget sourceFuel :=
+            hBudget⟩⟩
+
+/--
+Source-fuel lifting for fresh declaration targets. The target declaration
+writeback changes the final layout but does not add runtime work.
+-/
+theorem ofReturnedBodyFresh_sourceBounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {functionName : Name}
+    {targets : List Name}
+    {fn : Functions.FunDef}
+    {preArgs : List Functions.Stmt}
+    {lowerArgs : List (Locals.Expr 1)}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {argValues returnValues : List Word}
+    {bodyFuel argsSourceFuel bodySourceFuel sourceFuel : Nat}
+    {sourceAfterArgs sourceAfterBody sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (argsPrepared :
+      FunctionsObserverExpression.ScopedPreparedArgs
+        contract transcript codeRel program preArgs lowerArgs fresh layout
+        sourceAfterArgs target ctx argValues)
+    (hArgsBound :
+      argsPrepared.prepared.prepared.requiredFuel ≤
+        FunctionsObserverFuel.targetBudget argsSourceFuel)
+    (hArgsFuel : argsSourceFuel < sourceFuel)
+    (hTargetsNodup : targets.Nodup)
+    (hTargetsFresh :
+      ∀ name, name ∈ targets → name ∉ layout)
+    (hTargetsContain :
+      ∀ name, name ∈ targets →
+        argsPrepared.prepared.prepared.finalTarget.source.vars.contains name =
+          true)
+    (hFind :
+      Functions.Source.FunList.find? functionName program.functions =
+        some fn)
+    (body :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel program fn argValues bodyFuel
+        sourceAfterBody argsPrepared.prepared.prepared.finalTarget)
+    (hBodyBound :
+      bodyFuel ≤ FunctionsObserverFuel.targetBudget bodySourceFuel)
+    (hBodyFuel : bodySourceFuel < sourceFuel)
+    (hReturnValues :
+      List.map sourceAfterBody.source.lookup! fn.returns = returnValues)
+    (hLength : returnValues.length = targets.length)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterBody.withSource
+          (((sourceAfterBody.source.reviveJump.overwrite?
+            sourceAfterArgs.source).setStore sourceAfterArgs.source).multifill
+              targets returnValues)) :
+    Nonempty
+      { result :
+          FunctionsObserverCall.ScopedReturnedCall
+            contract transcript codeRel program functionName targets
+            preArgs lowerArgs fresh (targets ++ layout)
+            sourceFinal target ctx //
+        requiredFuel result ≤
+          FunctionsObserverFuel.targetBudget sourceFuel } := by
+  obtain ⟨bounded⟩ :=
+    ofReturnedBodyFresh_bounded
+      argsPrepared hTargetsNodup hTargetsFresh hTargetsContain hFind body
       hReturnValues hLength hSourceFinal
   have hBudget :=
     FunctionsObserverFuel.two_children_add_eight_le_of_lt
