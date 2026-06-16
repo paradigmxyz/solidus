@@ -195,6 +195,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCompoundBackward.lean \
   EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
@@ -215,6 +216,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCompoundBackward.lean \
   EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
@@ -236,6 +238,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCompoundBackward.lean \
   EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
@@ -296,6 +299,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCompoundBackward.lean \
   EvmCompiler/Yul/FunctionsObserverStatementBackward.lean
 
 report_matches \
@@ -720,6 +724,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverExpressionBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallBackward.lean \
   EvmCompiler/Yul/FunctionsObserverListBackward.lean \
+  EvmCompiler/Yul/FunctionsObserverCompoundBackward.lean \
   EvmCompiler/Yul/FunctionsObserverStatementBackward.lean \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \

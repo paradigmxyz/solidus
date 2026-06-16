@@ -32,6 +32,7 @@ import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
+import EvmCompiler.Yul.FunctionsObserverCompoundBackward
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverStatementBackward
 import EvmCompiler.Yul.FunctionsObserverListBackward
@@ -1615,3 +1616,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_block_parts
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.closeLexical
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
+#print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward

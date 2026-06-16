@@ -3124,73 +3124,12 @@ theorem block
       (canLeave := canLeave)
       (by omega) hBodyOk hBodyNames hLowerList hRel hDomain
       hScope hLayout hControl hBodyRun
-  obtain ⟨closedBody⟩ :=
-    ScopedListResult.close bodyResult
+  obtain ⟨result⟩ :=
+    FunctionsObserverStatement.OpenResult.of_block
+      bodyResult.openResult
       (StateRelation.Replay.sourceStoreDomain_of_scopedExact hRel)
-      hLayout hControl hSourceFinal
-  obtain ⟨bodyFuel, hBodyScoped⟩ := closedBody.run
-  have hTargetStmt :
-      Functions.Source.Effectful.Stmt.run
-          (Functions.ObserverSemantics.stateModel transcript)
-          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript)
-          targetProgram.toFunctions ctx bodyFuel
-          (.block { stmts := lowerStmts }) target =
-        .ok (closedBody.outcome, ctx) := by
-    unfold Functions.Source.Effectful.Stmt.run
-    rw [hBodyScoped]
-    rfl
-  obtain ⟨targetFuel, hTargetRun⟩ :=
-    Functions.Source.Effectful.Block.runOpen_singleton_of_run
-      (Functions.ObserverSemantics.stateModel transcript)
-      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-        contract transcript)
-      targetProgram.toFunctions hTargetStmt
-  let result :
-      FunctionsObserverOutcome.ScopedOpenResult
-        contract codeRel targetProgram.toFunctions
-        [.block { stmts := lowerStmts }] before after layout
-        sourceFinal target ctx (sourceControl := sourceControl) :=
-    { finalLayout := closedBody.finalLayout
-      outcome := closedBody.outcome
-      finalCtx := ctx
-      run := ⟨targetFuel, hTargetRun⟩
-      relation := closedBody.relation
-      domain := closedBody.domain
-      scope := hScope.mono closedBody.freshExtends
-      control := Functions.Source.Ctx.SameControl.refl ctx
-      freshExtends := closedBody.freshExtends
-      retains := by
-        intro hRegular name hMem
-        rw [closedBody.regularLayout hRegular]
-        exact hMem
-      layoutWithin := closedBody.layoutWithin
-      sourceDefined := closedBody.sourceDefined
-      abruptTargetRestriction := by
-        cases hMode : closedBody.outcome.mode with
-        | regular =>
-            simp [FunctionsObserverOutcome.AbruptTargetRestriction, hMode]
-        | brk | cont | leave | halt =>
-            simpa [FunctionsObserverOutcome.ScopedTargetRestriction,
-              hMode] using closedBody.targetRestriction
-      layoutScope := by
-        intro hRegular
-        rw [closedBody.regularLayout hRegular]
-        exact hControl.scope
-      exitScope := closedBody.exitScope }
-  exact
-    ⟨{ openResult := result
-       regularLayout := by
-         intro hRegular
-         simpa [SolcValidation.StmtOutVars] using
-           closedBody.regularLayout hRegular
-       regularControl := by
-         intro hRegular
-         change
-           ControlContextRel sourceControl closedBody.finalLayout
-             canBreak canContinue canLeave ctx
-         rw [closedBody.regularLayout hRegular]
-         exact hControl }⟩
+      hScope hLayout hControl hSourceFinal
+  exact ⟨ScopedStmtResult.ofStatement result hControl⟩
 
 theorem ifThen
     {contract : MemoryContract.Contract}

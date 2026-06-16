@@ -30088,3 +30088,22 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   critique of interpreter-fuel budgeting versus a source-facing call-depth
   invariant. The request failed with `insufficient_quota`; no oracle advice
   was incorporated, and the local proof analysis continues independently.
+- 2026-06-16 14:36:36 PDT - proof/yul-block-backward - Checked lexical-block
+  backward adequacy in the adjacent `FunctionsObserverCompoundBackward`
+  owner. The proof decomposes the ordinary compiler result, uses
+  Functions-owned singleton/block/scoped-run inversion, recursively invokes
+  statement-list adequacy, and closes the Yul lexical store through a shared
+  outcome-owned constructor.
+- 2026-06-16 14:36:36 PDT - architecture/shared-lexical-close - Extracted
+  lexical scope closing from the forward corridor into
+  `FunctionsObserverOutcome.ScopedOpenResult.closeLexical`, with the
+  statement-owned `OpenResult.of_block` constructor consumed by both forward
+  preservation and backward adequacy. This removes duplicated scope/control
+  reasoning without adding a compiler, interpreter, certificate, or
+  cross-pass premise.
+- 2026-06-16 14:40:13 PDT - validation/yul-block-backward - Focused
+  1,196-job build, full 1,261-job verification root, architecture dependency
+  guard, aggregate proof-layer gate, standalone axiom audit, changed-file
+  forbidden-marker scan, and `git diff --check` passed. The new lexical-block
+  boundary depends only on Lean's accepted `propext`, `Classical.choice`, and
+  `Quot.sound`.

@@ -299,6 +299,32 @@ theorem run_assign_regular_parts {σ : Type}
     simp [hContainsFalse, Functions.Source.invalid,
       Structured.invalid] at hRun
 
+/--
+Expose the canonical scoped-body execution represented by a successful
+Functions `block` statement. The statement restores its incoming context for
+every outcome mode.
+-/
+theorem run_block_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {body : Functions.Block} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      run model prim program ctx fuel (.block body) source =
+        .ok (outcome, finalCtx)) :
+    Block.runScoped model prim program ctx body fuel source =
+        .ok outcome ∧
+      finalCtx = ctx := by
+  unfold run at hRun
+  cases hBody :
+      Block.runScoped model prim program ctx body fuel source with
+  | error err =>
+      simp [hBody] at hRun
+  | ok bodyOutcome =>
+      simp [hBody] at hRun
+      rcases hRun with ⟨hOutcome, hCtx⟩
+      exact ⟨by simpa [hOutcome], hCtx.symm⟩
+
 end Stmt
 
 namespace Block

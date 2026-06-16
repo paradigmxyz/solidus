@@ -490,6 +490,56 @@ theorem of_regular_parts
              simp [FunctionsObserverOutcome.ExitScopeRel] }
        regularLayout := fun _hRegular => hRegularLayout }⟩
 
+/--
+Close an already-related statement list as a lexical Yul block and lift its
+Functions body through the ordinary block statement.
+-/
+theorem of_block
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {body : List AstStmt}
+    {lowerBody : List Functions.Stmt}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {sourceEntry sourceOpen sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (bodyResult :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lowerBody before after layout
+        sourceOpen target ctx (sourceControl := sourceControl))
+    (hEntryDomain :
+      StateRelation.Vars.DomainExact layout sourceEntry.source.store)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hSourceFinal :
+      sourceFinal =
+        sourceOpen.withSource
+          (sourceOpen.source.restrictStoreTo sourceEntry.source.store)) :
+    Nonempty
+      (Result contract codeRel program (.Block body)
+        [.block { stmts := lowerBody }] before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  obtain ⟨⟨closed, hClosedLayout⟩⟩ :=
+    FunctionsObserverOutcome.ScopedOpenResult.closeLexical
+      bodyResult hEntryDomain hScope hLayout hControl hSourceFinal
+  exact
+    ⟨{ openResult := closed
+       regularLayout := by
+         intro hRegular
+         simpa [SolcValidation.StmtOutVars] using
+           hClosedLayout hRegular }⟩
+
 theorem of_let_one_prepared
     {contract : MemoryContract.Contract}
     {transcript : Trace}

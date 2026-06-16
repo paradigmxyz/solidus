@@ -62,6 +62,7 @@ import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
+import EvmCompiler.Yul.FunctionsObserverCompoundBackward
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverListBackward
 import EvmCompiler.Yul.FunctionsObserverOutcome
@@ -288,6 +289,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.returnedCallFreshBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.boundFunctionBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_regular_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_block_parts
+#check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.closeLexical
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.RecursiveOpenStmtBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.letNoneBackward
@@ -304,6 +308,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
+#check EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
 #check EvmCompiler.Yul.Source.Effectful.StateModel.Lawful
 #check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.PreservesOwner
