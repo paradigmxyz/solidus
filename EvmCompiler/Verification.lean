@@ -358,6 +358,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
 #check EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackward
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependPrepared
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular

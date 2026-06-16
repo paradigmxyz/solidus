@@ -437,6 +437,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
 #check EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackward
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
@@ -1336,6 +1337,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.Source.Effectful.call_observable_error_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependPrepared
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable

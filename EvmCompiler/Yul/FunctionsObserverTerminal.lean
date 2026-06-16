@@ -875,6 +875,291 @@ theorem primitiveForward
   | _ =>
       simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
+private theorem sourcePrimCall_stop
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore) :
+    EvmYul.Yul.primCall 1 (.Ok shared vars)
+        (.StopArith .STOP) [] =
+      .error
+        (.YulHalt
+          (.Ok { shared with H_return := ByteArray.empty } vars) ⟨0⟩) := by
+  have hStep :
+      (EvmYul.step (τ := .Yul) (.StopArith .STOP) (arg := none))
+          (.Ok shared vars) [] =
+        .error
+          (.YulHalt
+            (.Ok { shared with H_return := ByteArray.empty } vars) ⟨0⟩) := by
+    rfl
+  simp [EvmYul.Yul.primCall, hStep]
+
+private theorem sourcePrimCall_return
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (address size : Word) :
+    EvmYul.Yul.primCall 1 (.Ok shared vars)
+        (.System .RETURN) [address, size] =
+      .error
+        (.YulHalt
+          (.Ok
+            { shared with
+                toMachineState :=
+                  shared.toMachineState.evmReturn address size }
+            vars)
+          ⟨1⟩) := by
+  have hStep :
+      (EvmYul.step (τ := .Yul) (.System .RETURN) (arg := none))
+          (.Ok shared vars) [address, size] =
+        .error
+          (.YulHalt
+            (.Ok
+              { shared with
+                  toMachineState :=
+                    shared.toMachineState.evmReturn address size }
+              vars)
+            ⟨1⟩) := by
+    rfl
+  simp [EvmYul.Yul.primCall, hStep]
+
+private theorem sourcePrimCall_revert
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (address size : Word) :
+    EvmYul.Yul.primCall 1 (.Ok shared vars)
+        (.System .REVERT) [address, size] =
+      .error
+        (.Revert
+          (.Ok
+            { shared with
+                toMachineState :=
+                  shared.toMachineState.evmRevert address size }
+            vars)) := by
+  have hStep :
+      (EvmYul.step (τ := .Yul) (.System .REVERT) (arg := none))
+          (.Ok shared vars) [address, size] =
+        .error
+          (.Revert
+            (.Ok
+              { shared with
+                  toMachineState :=
+                    shared.toMachineState.evmRevert address size }
+              vars)) := by
+    rfl
+  simp [EvmYul.Yul.primCall, hStep]
+
+private theorem sourcePrimCall_selfdestruct
+    (shared : EvmYul.SharedState .Yul)
+    (vars : EvmYul.Yul.VarStore)
+    (recipient : Word)
+    (hPerm : shared.executionEnv.perm = true) :
+    EvmYul.Yul.primCall 1 (.Ok shared vars)
+        (.System .SELFDESTRUCT) [recipient] =
+      .error
+        (.YulHalt
+          (EvmYul.Yul.selfdestructState (.Ok shared vars) recipient)
+          ⟨0⟩) := by
+  have hStep :
+      (EvmYul.step (τ := .Yul) (.System .SELFDESTRUCT) (arg := none))
+          (.Ok shared vars) [recipient] =
+        .error
+          (.YulHalt
+            (EvmYul.Yul.selfdestructState (.Ok shared vars) recipient)
+            ⟨0⟩) := by
+    rfl
+  simp [EvmYul.Yul.primCall, EvmYul.Yul.State.executionEnv,
+    hPerm, hStep]
+
+/--
+A successful compiled terminal primitive reconstructs the canonical imported
+Yul terminal failure. The source primitive always needs exactly two units of
+fuel: one for the observer wrapper and one for the ordinary Yul primitive.
+
+The terminal state relation is obtained from `primitiveForward`, keeping the
+state-transforming proof owned by a single adjacent-pass theorem.
+-/
+theorem primitiveBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {layout : List Name}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul}
+    {kind : Assembly.HaltKind}
+    {values : List Word}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hTarget :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).terminal
+          kind target values.reverse =
+        .ok targetFinal) :
+    ∃ failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript),
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim values =
+        .error failure ∧
+      Yul.Source.Effectful.Exception.Observable failure.exception ∧
+      FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+        (Functions.Source.Effectful.Outcome.halt kind targetFinal) := by
+  have hTargetSafe :=
+    (Functions.ObserverSafety.SafeSemantics.terminal_parts hTarget).1
+  have hSourceSafe :
+      ObserverSafety.PrimitiveSafe contract prim
+        source.source.sharedState.toMachineState values :=
+    (ObserverSafety.primitiveSafe_terminal hTerminal).mpr hTargetSafe
+  rcases hRel.2 with
+    ⟨sourceShared, sourceVars, hSource, hShared,
+      hVars, hDomain⟩
+  rw [hSource] at hSourceSafe
+  have finish
+      {failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript)}
+      (hObservable :
+        Yul.Source.Effectful.Exception.Observable failure.exception)
+      (hEval :
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript).eval 2 source prim values =
+          .error failure) :
+      FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+        (Functions.Source.Effectful.Outcome.halt kind targetFinal) := by
+    obtain ⟨forwardFinal, hForward, hOutcome⟩ :=
+      primitiveForward hTerminal hObservable hRel hEval
+    rw [hTarget] at hForward
+    cases hForward
+    exact hOutcome
+  cases Invocation.of_safe hTerminal hSourceSafe with
+  | stop =>
+      let sourceFinal :=
+        EvmYul.Yul.State.Ok
+          { sourceShared with H_return := ByteArray.empty } sourceVars
+      let failure :
+          Yul.Source.Effectful.Failure
+            (ObserverSemantics.SourceReplay.State transcript) :=
+        { exception := .YulHalt sourceFinal ⟨0⟩
+          state := source.withSource sourceFinal }
+      have hEval :
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript).eval 2 source
+              (.StopArith .STOP) [] =
+            .error failure := by
+        simp [ObserverSafety.SafeSemantics.primitiveSemantics,
+          ObserverSemantics.SourceReplay.primCall,
+          ObserverSemantics.yulPrimObserver?,
+          Prim.toUncheckedBasicOp?, Prim.toBasicOp?,
+          hSource, hSourceSafe, sourceFinal, failure,
+          sourcePrimCall_stop,
+          EvmYul.Yul.State.executionEnv,
+          ObserverSemantics.SourceReplay.State.afterException,
+          Yul.Source.Effectful.fail]
+      exact
+        ⟨failure, hEval, by
+          simp [failure, Yul.Source.Effectful.Exception.Observable],
+          finish (by
+            simp [failure, Yul.Source.Effectful.Exception.Observable])
+            hEval⟩
+  | «return» address size safe =>
+      let sourceFinal :=
+        EvmYul.Yul.State.Ok
+          { sourceShared with
+              toMachineState :=
+                sourceShared.toMachineState.evmReturn address size }
+          sourceVars
+      let failure :
+          Yul.Source.Effectful.Failure
+            (ObserverSemantics.SourceReplay.State transcript) :=
+        { exception := .YulHalt sourceFinal ⟨1⟩
+          state := source.withSource sourceFinal }
+      have hEval :
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript).eval 2 source
+              (.System .RETURN) [address, size] =
+            .error failure := by
+        simp [ObserverSafety.SafeSemantics.primitiveSemantics,
+          ObserverSemantics.SourceReplay.primCall,
+          ObserverSemantics.yulPrimObserver?,
+          Prim.toUncheckedBasicOp?, Prim.toBasicOp?,
+          hSource, hSourceSafe, sourceFinal, failure,
+          sourcePrimCall_return,
+          EvmYul.Yul.State.executionEnv,
+          ObserverSemantics.SourceReplay.State.afterException,
+          Yul.Source.Effectful.fail]
+      exact
+        ⟨failure, hEval, by
+          simp [failure, Yul.Source.Effectful.Exception.Observable],
+          finish (by
+            simp [failure, Yul.Source.Effectful.Exception.Observable])
+            hEval⟩
+  | revert address size safe =>
+      let sourceFinal :=
+        EvmYul.Yul.State.Ok
+          { sourceShared with
+              toMachineState :=
+                sourceShared.toMachineState.evmRevert address size }
+          sourceVars
+      let failure :
+          Yul.Source.Effectful.Failure
+            (ObserverSemantics.SourceReplay.State transcript) :=
+        { exception := .Revert sourceFinal
+          state := source.withSource sourceFinal }
+      have hEval :
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript).eval 2 source
+              (.System .REVERT) [address, size] =
+            .error failure := by
+        simp [ObserverSafety.SafeSemantics.primitiveSemantics,
+          ObserverSemantics.SourceReplay.primCall,
+          ObserverSemantics.yulPrimObserver?,
+          Prim.toUncheckedBasicOp?, Prim.toBasicOp?,
+          hSource, hSourceSafe, sourceFinal, failure,
+          sourcePrimCall_revert,
+          EvmYul.Yul.State.executionEnv,
+          ObserverSemantics.SourceReplay.State.afterException,
+          Yul.Source.Effectful.fail]
+      exact
+        ⟨failure, hEval, by
+          simp [failure, Yul.Source.Effectful.Exception.Observable],
+          finish (by
+            simp [failure, Yul.Source.Effectful.Exception.Observable])
+            hEval⟩
+  | selfdestruct recipient =>
+      have hTargetPerm :=
+        Functions.ObserverSafety.SafeSemantics.terminal_permitted_parts hTarget
+      have hSourcePerm : sourceShared.executionEnv.perm = true := by
+        rw [hShared.world.executionEnv.permission]
+        exact hTargetPerm rfl
+      let sourceFinal :=
+        EvmYul.Yul.selfdestructState
+          (.Ok sourceShared sourceVars) recipient
+      let failure :
+          Yul.Source.Effectful.Failure
+            (ObserverSemantics.SourceReplay.State transcript) :=
+        { exception := .YulHalt sourceFinal ⟨0⟩
+          state := source.withSource sourceFinal }
+      have hEval :
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript).eval 2 source
+              (.System .SELFDESTRUCT) [recipient] =
+            .error failure := by
+        simp [ObserverSafety.SafeSemantics.primitiveSemantics,
+          ObserverSemantics.SourceReplay.primCall,
+          ObserverSemantics.yulPrimObserver?,
+          Prim.toUncheckedBasicOp?, Prim.toBasicOp?,
+          hSource, hSourceSafe, hSourcePerm, sourceFinal, failure,
+          sourcePrimCall_selfdestruct,
+          EvmYul.Yul.State.executionEnv,
+          ObserverSemantics.SourceReplay.State.afterException,
+          Yul.Source.Effectful.fail]
+      exact
+        ⟨failure, hEval, by
+          simp [failure, Yul.Source.Effectful.Exception.Observable],
+          finish (by
+            simp [failure, Yul.Source.Effectful.Exception.Observable])
+            hEval⟩
+
 structure StatementResult
     {transcript : Trace}
     (contract : MemoryContract.Contract)

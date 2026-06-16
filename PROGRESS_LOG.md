@@ -30170,3 +30170,24 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   public blocker is replacing `ClosedArtifact.stackOnly` with an honest
   source-facing scratch execution/reservation-safety premise and composing the
   existing `Public.ObserverComposition.terminalWithResourceSafety` theorem.
+- 2026-06-16 15:24:13 PDT - compaction-resume - Resumed the full active
+  adjacent-layer objective at the scratch resource boundary; current task is a
+  source-owned execution-depth interface that discharges allocation `FuelSafe`.
+- 2026-06-16 15:32:45 PDT - oracle/unavailable - Requested an independent
+  design review of the source-facing scratch resource interface, but the oracle
+  service returned `insufficient_quota`; no oracle output was used.
+- 2026-06-16 15:32:45 PDT - proof/yul-terminal-primitive-backward - Proved
+  `FunctionsObserverTerminal.primitiveBackward`: each successful compiled
+  `STOP`, `RETURN`, `REVERT`, or `SELFDESTRUCT` handler reconstructs the
+  canonical two-fuel Yul terminal failure and the exact terminal outcome
+  relation. The state relation is obtained through the existing forward owner,
+  avoiding a second terminal-state implementation.
+- 2026-06-16 15:32:45 PDT - roadmap/full-adjacent-objective - Restored terminal
+  control, Yul whole-program backward adequacy, and Functions allocation
+  whole-main backward adequacy as explicit completion blockers; the public
+  theorem remains a short composition with source-facing scratch safety.
+- 2026-06-16 15:35:30 PDT - validation/yul-terminal-primitive-backward -
+  Focused terminal build, full 1,262-job verification root, architecture
+  dependency guard, aggregate proof-layer gate, forbidden-marker scan, axiom
+  smoke, and `git diff --check` passed. `primitiveBackward` depends only on
+  `propext`, `Classical.choice`, and `Quot.sound`.

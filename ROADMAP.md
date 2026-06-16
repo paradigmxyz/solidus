@@ -35,6 +35,15 @@ target run. `Yul.EndToEnd` remains a short composition module.
 
 ## Active Proof Work
 
+- [ ] Complete Yul -> Functions terminal backward adequacy:
+  - [x] terminal primitive replay;
+  - [ ] terminal argument and expression replay;
+  - [ ] terminal internal-call replay;
+  - [ ] terminal statement-list and lexical-block replay;
+  - [ ] terminal `if`, `switch`, and `for` replay;
+  - [ ] dispatcher and whole-program backward adequacy.
+- [ ] Complete Functions -> allocated Expressions whole-main backward adequacy
+  for compiler-selected stack-only and scratch artifacts.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface that supplies the concrete source-run depth bound without exposing
   compiler-generated evidence.
@@ -48,11 +57,10 @@ target run. `Yul.EndToEnd` remains a short composition module.
 - [ ] Audit the public theorem for generated artifact evidence, replay
   certificates, call oracles, and cross-pass proof reasoning.
 
-## Retained Local Inversions
+## Adjacent Backward Coverage
 
-These checked Yul-to-Functions inversions are reusable diagnostics and exposed
-compiler-bug checks. Completing symmetric backward coverage is not a blocker
-for the narrowed public observer-replay theorem.
+These checked Yul-to-Functions inversions are reusable components of the full
+adjacent-boundary adequacy theorem.
 
 - [x] compiler-selected primitive families;
 - [x] direct and bound expressions;
@@ -61,14 +69,14 @@ for the narrowed public observer-replay theorem.
 - [x] lexical blocks;
 - [x] nonterminal `if`;
 - [x] nonterminal `switch`.
-- [ ] Terminal `if`/`switch`, `for`, and complete generic backward dispatch are
-  optional follow-on coverage, not completion prerequisites.
+- [x] terminal primitive replay.
+- [ ] Terminal expressions, calls, statement lists, `if`, `switch`, `for`,
+  dispatcher, and whole-program backward adequacy.
 
 ## Completion Gates
 
-- [x] Every adjacent boundary has checked forward preservation; the lower
-  terminal boundaries expose only the reverse/trace adequacy needed for the
-  concrete terminal target run.
+- [ ] Every adjacent boundary has checked forward preservation and backward
+  adequacy, with each theorem owned by that adjacent compiler pass.
 - [ ] Public theorem accepts only source validation, related initial states,
   source-facing execution/resource safety, and a concrete terminal target run.
 - [ ] No observer-specific compiler, duplicate control interpreter, replay
