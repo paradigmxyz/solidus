@@ -499,6 +499,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverTraceAdequacy.compileProgramTraceAdequate
 #check EvmCompiler.Public.ObserverComposition.InitialConditions
 #check EvmCompiler.Public.ObserverComposition.TerminalOutcomeRel
+#check EvmCompiler.Public.ObserverComposition.terminalWithResourceSafety
 #check EvmCompiler.Public.ObserverComposition.terminalStackOnly
 #check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
 #check EvmCompiler.Yul.EndToEnd.closedResourceCorrect

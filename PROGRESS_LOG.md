@@ -29959,3 +29959,24 @@ Yul/Functions boundary, and keep `Yul.EndToEnd` as a short theorem.
   expanded axiom smoke, aggregate `scripts/verify_layer.sh proofs`, and
   `git diff --check` passed. The new composition and public theorem depend
   only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 14:16:35 PDT - compaction-resume - Resumed the full active
+  end-to-end goal from checked narrow commit `6c1f20e78`. The stack-only
+  theorem is a sound milestone, but completion still requires scratch-backed
+  whole-main composition and adjacent backward adequacy at every compiler
+  boundary without restoring a vertical observer corridor.
+- 2026-06-16 14:16:35 PDT - audit/full-goal-gap - Current
+  `Yul.EndToEnd.closedResourceCorrect` requires `ClosedArtifact.stackOnly`;
+  `Public.ObserverComposition.terminalStackOnly` uses
+  `Functions.AllocationObserverProgram.mainTargetAgreement`, which relates
+  independently supplied source and target runs rather than constructing the
+  source run from the target. These are explicit blockers for the full active
+  theorem, despite all narrow theorem gates being green.
+- 2026-06-16 14:44:00 PDT - functions-resource-boundary - Added checked
+  `Public.ObserverComposition.terminalWithResourceSafety`, generalizing the
+  lower whole-main composition theorem from stack-only allocation to the
+  compiler-selected allocation mode under an explicit Functions-fuel resource
+  bound. Attempting to compose this directly from Yul exposed the remaining
+  adjacent invariant precisely: `Yul.FunctionsObserverPreservation` constructs
+  an existential Functions fuel but currently proves no source-derived bound
+  on it. Restored `Yul.EndToEnd` to the last green stack-only theorem pending
+  that pass-owned accounting result.

@@ -33,13 +33,14 @@ def TerminalOutcomeRel
 
 /--
 Terminal observer composition from canonical Functions semantics to assembled
-bytecode for the stack-only allocation mode.
+bytecode for the compiler-selected allocation mode.
 
-The theorem reconstructs only the concrete terminal execution needed for exact
-observer replay. It does not expose generated CFG/Assembly evidence and does
-not claim general backward adequacy for intermediate executions.
+Scratch-backed execution requires an explicit bound proving that the concrete
+source run cannot exhaust the compiler-reserved frame region. The theorem
+reconstructs only the concrete terminal execution needed for exact observer
+replay; it does not expose generated CFG/Assembly evidence.
 -/
-theorem terminalStackOnly
+theorem terminalWithResourceSafety
     {sourceProgram : Objects.Program}
     {artifact : Public.Artifact}
     {sourceFuel targetFuel : Nat}
@@ -53,10 +54,12 @@ theorem terminalStackOnly
     (hLowered :
       artifact.LoweredFrom sourceProgram.toFunctions)
     (hNoExternal : Public.Observer.NoExternalEffects artifact)
-    (hStackOnly :
-      Functions.AllocationObserverProgram.selectedResourceMode
-          artifact.metadata.allocation sourceProgram.toFunctions =
-        .stackOnly)
+    (hResourceSafe :
+      (Functions.AllocationObserverProgram.selectedResourceMode
+          artifact.metadata.allocation sourceProgram.toFunctions).FuelSafe
+        (Functions.AllocationObserverProgram.selectedMainSetupDepth
+            artifact.metadata.allocation sourceProgram.toFunctions +
+          (sourceFuel + 1)))
     (hInitial : InitialConditions initial)
     (hSource :
       Functions.Source.Effectful.Program.runState
@@ -212,8 +215,7 @@ theorem terminalStackOnly
       (Functions.AllocationObserverProgram.selectedResourceMode
           artifact.metadata.allocation sourceProgram.toFunctions).FuelSafe
         maxDepth := by
-    rw [hStackOnly]
-    trivial
+    simpa [maxDepth, fuelBound] using hResourceSafe
   have hDepthBound :
       Functions.AllocationObserverProgram.selectedMainSetupDepth
           artifact.metadata.allocation sourceProgram.toFunctions +
@@ -312,6 +314,51 @@ theorem terminalStackOnly
         ⟨halt, rfl, hSourceRemaining,
           ⟨kind, rfl, ?_, hShared, hOutputEq⟩⟩
       exact hHaltKind.trans hCfgKind
+
+/--
+Stack-only specialization of `terminalWithResourceSafety`.
+-/
+theorem terminalStackOnly
+    {sourceProgram : Objects.Program}
+    {artifact : Public.Artifact}
+    {sourceFuel targetFuel : Nat}
+    {transcript : Trace}
+    {initial : Assembly.EVMState}
+    {sourceOutcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    {targetResult : Assembly.StepResult}
+    (hAccepted : sourceProgram.SourceAccepted)
+    (hLowered :
+      artifact.LoweredFrom sourceProgram.toFunctions)
+    (hNoExternal : Public.Observer.NoExternalEffects artifact)
+    (hStackOnly :
+      Functions.AllocationObserverProgram.selectedResourceMode
+          artifact.metadata.allocation sourceProgram.toFunctions =
+        .stackOnly)
+    (hInitial : InitialConditions initial)
+    (hSource :
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.toFunctions.memoryContract transcript)
+          sourceFuel sourceProgram.toFunctions
+          (Locals.ObserverSemantics.Program.initialState
+            initial transcript) =
+        .ok sourceOutcome)
+    (hTarget :
+      Public.Observer.TerminalRun artifact targetFuel
+        initial targetResult transcript) :
+    ∃ halt,
+      targetResult = .halted halt ∧
+        sourceOutcome.state.remaining = [] ∧
+        TerminalOutcomeRel
+          sourceProgram.toFunctions.memoryContract sourceOutcome halt := by
+  apply
+    terminalWithResourceSafety hAccepted hLowered hNoExternal
+      (hInitial := hInitial) (hSource := hSource) (hTarget := hTarget)
+  rw [hStackOnly]
+  trivial
 
 end ObserverComposition
 end Public
