@@ -29977,3 +29977,30 @@ Resumed after checked returned-body backward composition and strict generated-ca
 - 2026-06-15 17:32:38 PDT - architecture/yul-compound-classifier-owner - Moved `CompoundStmt` from `FunctionsObserverForward` into the statement owner and updated forward, terminal, verification, and architecture-guard consumers. Backward recursion can now share the syntax boundary without importing the forward corridor.
 - 2026-06-15 17:32:38 PDT - proof/yul-regular-leaf-dispatcher - Added `regularLeafBackward`, one compiler-driven theorem covering every non-compound statement under a regular target run. It selects ordinary declaration/assignment/call/primitive leaves, reconstructs control leaves from the shared control contract, and rules out terminal primitive lowering through Functions-owned halt-mode inversion.
 - 2026-06-15 17:35:02 PDT - validation/yul-regular-leaf-dispatcher - Focused 1,193-job backward build, full 1,255-job verification root, architecture dependency guard, changed-file forbidden-marker scan, `git diff --check`, and standalone axiom smoke passed. `regularLeafBackward` depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+## 2026-06-15 — compaction-resume
+
+Resumed from the checked regular Yul leaf dispatcher; current frontier is Functions-owned arbitrary-outcome append inversion, then recursive statement-list adequacy.
+
+- 2026-06-15 17:40 PDT - theorem-boundary/functions-append-inversion - Added
+  `runOpen_append_bounded_cases` in the Functions effect-semantics owner. One
+  concrete run of an appended block now yields either an exact regular prefix
+  plus a target-fuel-bounded suffix run, or the exact nonregular prefix result.
+  This is the adjacent sequencing interface required by recursive Yul
+  statement-list backward adequacy and does not expose interpreter structure
+  at the Yul boundary.
+- 2026-06-15 17:47 PDT - proof/yul-list-backward - Added the adjacent
+  `FunctionsObserverListBackward` module and checked `ofStmt`. The theorem
+  recursively reconstructs canonical Yul `execSeq` from the ordinary list
+  compiler and one concrete Functions run, handling regular head/tail
+  composition and abrupt-head short circuiting through the shared
+  outcome-indexed relation. Source fuel is reconciled only through the
+  canonical success-monotonicity theorem.
+- 2026-06-15 17:47 PDT - architecture/yul-list-backward - Added source-owned
+  regular/checkpoint sequence constructors and a shared outcome-owned aligned
+  append constructor. The list proof imports no forward corridor, lower pass,
+  observer-specific compiler, replay certificate, or generated-code premise.
+- 2026-06-15 17:51 PDT - validation/yul-list-backward - Focused 1,194-job
+  build, full 1,256-job verification root, architecture dependency guard,
+  aggregate proof-layer gate, standalone resource-observer axiom smoke,
+  changed-file forbidden-marker scan, and `git diff --check` passed. The new
+  list theorem depends only on `propext`, `Classical.choice`, and `Quot.sound`.

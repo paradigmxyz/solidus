@@ -1252,6 +1252,74 @@ def appendRegular
               left.control.leaveScope.trans hTarget,
               hWithin⟩ }
 
+/--
+Compose a regular prefix with a suffix whose entry state and context are
+identified by explicit adjacent-boundary equalities.
+-/
+def appendRegularAligned
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target rightTarget : Functions.ObserverSemantics.State transcript}
+    {ctx rightCtx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (hTarget : left.outcome.state = rightTarget)
+    (hCtx : left.finalCtx = rightCtx)
+    (right :
+      ScopedOpenResult contract codeRel program rightLower
+        middle final left.finalLayout sourceFinal rightTarget rightCtx
+        (sourceControl := sourceControl)) :
+    ScopedOpenResult contract codeRel program
+      (leftLower ++ rightLower) initial final entryLayout
+      sourceFinal target ctx (sourceControl := sourceControl) := by
+  subst rightTarget
+  subst rightCtx
+  exact appendRegular left hRegular right
+
+theorem appendRegularAligned_parts
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target rightTarget : Functions.ObserverSemantics.State transcript}
+    {ctx rightCtx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (hTarget : left.outcome.state = rightTarget)
+    (hCtx : left.finalCtx = rightCtx)
+    (right :
+      ScopedOpenResult contract codeRel program rightLower
+        middle final left.finalLayout sourceFinal rightTarget rightCtx
+        (sourceControl := sourceControl)) :
+    let result :=
+      appendRegularAligned left hRegular hTarget hCtx right
+    result.finalLayout = right.finalLayout ∧
+      result.outcome = right.outcome ∧
+      result.finalCtx = right.finalCtx := by
+  subst rightTarget
+  subst rightCtx
+  exact ⟨rfl, rfl, rfl⟩
+
 def appendNonregular
     {transcript : Trace}
     {contract : MemoryContract.Contract}

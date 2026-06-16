@@ -1766,8 +1766,11 @@ corridor.
   decomposition. The shared statement owner now also owns the compound-syntax
   classifier, and `regularLeafBackward` dispatches every non-compound regular
   target outcome through the ordinary compiler without importing the forward
-  corridor. The current obligation is terminal internal-call statement
-  reconstruction and recursive statement-list/block adequacy, followed by
+  corridor. Functions-owned arbitrary-outcome append inversion and recursive
+  statement-list backward adequacy are now checked: one concrete target run
+  determines either a regular head plus bounded suffix or an abrupt head with
+  an unreachable tail. The current obligation is terminal internal-call
+  statement reconstruction and lexical-block adequacy, followed by
   `if`/`switch`/`for`, the full outcome dispatcher, and whole-program
   inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul

@@ -32,6 +32,7 @@ import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverStatementBackward
+import EvmCompiler.Yul.FunctionsObserverListBackward
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
@@ -1592,6 +1593,11 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.assignCallBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.letCallBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.regularLeafBackward
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_bounded_cases
+#print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_of_regular
+#print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_of_checkpoint
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.appendRegularAligned
+#print axioms EvmCompiler.Yul.FunctionsObserverListBackward.ofStmt
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward

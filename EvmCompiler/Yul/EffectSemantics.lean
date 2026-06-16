@@ -2069,6 +2069,50 @@ theorem execSeq_cons_ok_parts
                 ⟨previous, stateAfterStmt, rfl, hStmt,
                   by simp [hSource]⟩
 
+/--
+Compose a regularly completed statement with the remaining source sequence.
+-/
+theorem execSeq_cons_of_regular
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt final : σ}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Ok shared vars)
+    (hRest :
+      execSeq model prim fuel rest codeOverride afterStmt =
+        .ok final) :
+    execSeq model prim (fuel + 1) (stmt :: rest)
+        codeOverride state =
+      .ok final := by
+  simp [execSeq, hStmt, hSource, hRest]
+
+/--
+An abrupt source statement makes the remaining source sequence unreachable.
+-/
+theorem execSeq_cons_of_checkpoint
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt : σ}
+    {jump : EvmYul.Yul.Jump}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Checkpoint jump) :
+    execSeq model prim (fuel + 1) (stmt :: rest)
+        codeOverride state =
+      .ok afterStmt := by
+  simp [execSeq, hStmt, hSource]
+
 theorem evalArgs_append_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}

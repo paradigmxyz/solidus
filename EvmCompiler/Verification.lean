@@ -62,6 +62,7 @@ import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverForward
+import EvmCompiler.Yul.FunctionsObserverListBackward
 import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverStatementBackward
@@ -274,6 +275,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.exec_assign_of_evalValues
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_expr_regular_parts
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_bounded_parts
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_bounded_cases
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_singleton_regular_bounded_parts
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_two_regular_parts
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward
@@ -294,6 +296,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.assignCallBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.letCallBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.regularLeafBackward
+#check EvmCompiler.Yul.FunctionsObserverListBackward.AlignedListBackward
+#check EvmCompiler.Yul.FunctionsObserverListBackward.RecursiveOpenListBackwardBelow
+#check EvmCompiler.Yul.FunctionsObserverListBackward.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward

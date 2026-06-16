@@ -550,6 +550,90 @@ theorem runOpen_append_regular_bounded_parts {σ : Type}
             rw [← hOutcome]
             rfl
 
+/--
+Split an arbitrary successful block run at an appended statement boundary.
+
+Either the left prefix completes regularly and the right suffix realizes the
+observed outcome at no more fuel than the enclosing run, or the left prefix
+itself realizes that exact nonregular outcome. Higher-language adequacy proofs
+can therefore recurse over statement lists without unfolding `runOpen`.
+-/
+theorem runOpen_append_bounded_cases {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program) :
+    ∀ {left right : List Functions.Stmt}
+      {ctx finalCtx : Source.Ctx} {fuel : Nat}
+      {source : σ} {outcome : Outcome σ},
+      runOpen model prim program ctx fuel
+          { stmts := left ++ right } source =
+        .ok (outcome, finalCtx) →
+      (∃ middle middleCtx rightFuel,
+          runOpen model prim program ctx fuel
+              { stmts := left } source =
+            .ok (Outcome.regular middle, middleCtx) ∧
+          runOpen model prim program middleCtx rightFuel
+              { stmts := right } middle =
+            .ok (outcome, finalCtx) ∧
+          rightFuel ≤ fuel) ∨
+        (∃ leftOutcome leftCtx,
+          runOpen model prim program ctx fuel
+              { stmts := left } source =
+            .ok (leftOutcome, leftCtx) ∧
+          leftOutcome.mode ≠ .regular ∧
+          outcome = leftOutcome ∧
+          finalCtx = leftCtx) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx finalCtx fuel source outcome hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ previous =>
+          left
+          exact
+            ⟨source, ctx, previous + 1,
+              by simp [runOpen], by simpa using hRun, by omega⟩
+  | cons stmt rest ih =>
+      intro right ctx finalCtx fuel source outcome hRun
+      cases fuel with
+      | zero =>
+          simp [runOpen, Source.invalid, Structured.invalid] at hRun
+      | succ previous =>
+          rcases
+              runOpen_cons_cases model prim program hRun with
+            hHeadRegular | hHeadNonregular
+          · rcases hHeadRegular with
+              ⟨afterHead, headCtx, hHead, hTail⟩
+            rcases ih hTail with hRestRegular | hRestNonregular
+            · rcases hRestRegular with
+                ⟨middle, middleCtx, rightFuel,
+                  hRest, hRight, hRightFuel⟩
+              left
+              refine
+                ⟨middle, middleCtx, rightFuel, ?_,
+                  hRight, by omega⟩
+              simpa [runOpen, hHead, hRest]
+            · rcases hRestNonregular with
+                ⟨leftOutcome, leftCtx, hRest, hMode,
+                  hOutcome, hFinalCtx⟩
+              right
+              refine
+                ⟨leftOutcome, leftCtx, ?_, hMode,
+                  hOutcome, hFinalCtx⟩
+              simpa [runOpen, hHead, hRest]
+          · rcases hHeadNonregular with
+              ⟨headOutcome, headCtx, hHead, hMode,
+                hOutcome, hFinalCtx⟩
+            right
+            exact
+              ⟨headOutcome, ctx,
+                by
+                  simpa [List.cons_append] using
+                    runOpen_cons_nonregular model prim program
+                      (rest := rest) hHead hMode,
+                hMode, hOutcome, hFinalCtx⟩
+
 theorem runOpen_append_two_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     (program : Functions.Program) :
