@@ -30261,3 +30261,23 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   aggregate proof-layer gate passed. The architecture script reports only the
   pre-existing soft line-count debt; no new forbidden dependency, proof hole,
   or nonstandard axiom was introduced.
+- 2026-06-16 16:27:46 PDT - proof/yul-functions-call-fuel - Added the
+  pass-owned returned-call fuel interface. A bounded argument prelude and
+  bounded recursive body now produce a call result within the parent
+  source-fuel budget; canonical Functions success uniqueness aligns the
+  bounded reconstruction with the existing forward result.
+- 2026-06-16 16:27:46 PDT - proof/yul-functions-list-fuel - Added bounded
+  recursive statement-list composition. Empty lists use the base target
+  budget, regular heads combine two strictly smaller runs, and nonregular
+  heads retain their fuel while the generated suffix remains unreachable.
+- 2026-06-16 16:29:01 PDT - compaction-resume - Resumed the narrowed
+  observer-replay goal at quantitative Yul-to-Functions forward preservation;
+  generic backward adequacy remains out of scope, and the current checkpoint
+  is validating call/list fuel bounds before covering fresh calls and
+  statements.
+- 2026-06-16 16:33:16 PDT - validation/yul-functions-call-list-fuel - Focused
+  call/list builds, the full 1,266-job verification root, architecture
+  dependency guard, aggregate proof-layer gate, changed-file forbidden-marker
+  scan, standalone axiom smoke, and `git diff --check` passed. The new bounded
+  call and recursive-list theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.

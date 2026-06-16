@@ -183,6 +183,112 @@ def ScopedOpenResult.Bounded
         sourceFinal target ctx (sourceControl := sourceControl)) : Prop :=
   result.requiredFuel ≤ targetBudget sourceFuel
 
+theorem ScopedOpenResult.empty_bounded
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (sourceFuel : Nat)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        fresh.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin fresh.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin fresh.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx) :
+    ScopedOpenResult.Bounded sourceFuel
+      (FunctionsObserverOutcome.ScopedOpenResult.empty
+        (contract := contract) (program := program)
+        (sourceControl := sourceControl)
+        hRel hDomain hScope hLayout hLayoutScope) := by
+  have hFuel :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_empty_le
+      (contract := contract) (program := program)
+      (sourceControl := sourceControl)
+      hRel hDomain hScope hLayout hLayoutScope
+  have hBudget := targetBudget_ge_sixteen sourceFuel
+  exact le_trans hFuel (by omega)
+
+theorem ScopedOpenResult.appendRegular_bounded
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {leftSourceFuel rightSourceFuel sourceFuel : Nat}
+    (left :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program leftLower initial middle entryLayout
+        sourceMiddle target ctx (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (right :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program rightLower middle final
+        left.finalLayout sourceFinal left.outcome.state left.finalCtx
+        (sourceControl := sourceControl))
+    (hLeft : ScopedOpenResult.Bounded leftSourceFuel left)
+    (hRight : ScopedOpenResult.Bounded rightSourceFuel right)
+    (hLeftFuel : leftSourceFuel < sourceFuel)
+    (hRightFuel : rightSourceFuel < sourceFuel) :
+    ScopedOpenResult.Bounded sourceFuel
+      (FunctionsObserverOutcome.ScopedOpenResult.appendRegular
+        left hRegular right) := by
+  have hCompose :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendRegular_le
+      left hRegular right
+  have hBudget :=
+    two_children_add_eight_le_of_lt hLeftFuel hRightFuel
+  dsimp [ScopedOpenResult.Bounded] at hLeft hRight ⊢
+  omega
+
+theorem ScopedOpenResult.appendNonregular_bounded
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {childFuel sourceFuel : Nat}
+    (left :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program leftLower initial middle entryLayout
+        sourceFinal target ctx (sourceControl := sourceControl))
+    (hNonregular : left.outcome.mode ≠ .regular)
+    (hSuffixFresh : Fresh.Extends middle final)
+    (hLeft : ScopedOpenResult.Bounded childFuel left)
+    (hFuel : childFuel < sourceFuel) :
+    ScopedOpenResult.Bounded sourceFuel
+      (FunctionsObserverOutcome.ScopedOpenResult.appendNonregular
+        (rightLower := rightLower) left hNonregular hSuffixFresh) := by
+  have hCompose :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendNonregular_le
+      (rightLower := rightLower) left hNonregular hSuffixFresh
+  have hMono := targetBudget_mono (Nat.le_of_lt hFuel)
+  dsimp [ScopedOpenResult.Bounded] at hLeft ⊢
+  omega
+
 end FunctionsObserverFuel
 end Yul
 end EvmCompiler

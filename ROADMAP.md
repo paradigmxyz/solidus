@@ -54,7 +54,11 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     sufficient target fuel with pass-owned composition lemmas;
   - [x] define a source-fuel-indexed target budget that absorbs up to eight
     strictly smaller recursive budgets plus compiler wrapper overhead;
-  - [ ] carry the budget through calls, statements, lists, loops, and terminal
+  - [x] carry bounded argument preparation and returned function bodies through
+    visible-target calls;
+  - [x] prove bounded recursive statement-list composition from a bounded
+    statement capability;
+  - [ ] cover fresh-target calls, leaf/compound statements, loops, and terminal
     outcomes;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety

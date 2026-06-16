@@ -29,6 +29,8 @@ import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
 import EvmCompiler.Yul.FunctionsObserverFuel
+import EvmCompiler.Yul.FunctionsObserverCallFuel
+import EvmCompiler.Yul.FunctionsObserverForwardFuel
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
@@ -1662,3 +1664,6 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudget_mono
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
+#print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt
