@@ -935,6 +935,43 @@ theorem exec_if_ok_parts
               ⟨previous, stateAfterCond, condValue, rfl, hCond,
                 Or.inr ⟨hZero, (Except.ok.inj hRun).symm⟩⟩
 
+theorem exec_if_false_of_eval
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterCond : σ} {condValue : Word}
+    (hEval :
+      eval model prim fuel cond codeOverride state =
+        .ok (stateAfterCond, condValue))
+    (hZero : condValue = EvmYul.UInt256.ofNat 0) :
+    exec model prim (fuel + 1) (.If cond body) codeOverride state =
+      .ok stateAfterCond := by
+  have hZero' : condValue = (⟨0⟩ : Word) := by
+    simpa [EvmYul.UInt256.ofNat] using hZero
+  simp [exec, hEval, hZero']
+
+theorem exec_if_true_of_eval
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {cond : EvmYul.Yul.Ast.Expr}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterCond final : σ} {condValue : Word}
+    (hEval :
+      eval model prim fuel cond codeOverride state =
+        .ok (stateAfterCond, condValue))
+    (hNonzero : condValue ≠ EvmYul.UInt256.ofNat 0)
+    (hBody :
+      exec model prim fuel (.Block body) codeOverride stateAfterCond =
+        .ok final) :
+    exec model prim (fuel + 1) (.If cond body) codeOverride state =
+      .ok final := by
+  have hNonzero' : condValue ≠ (⟨0⟩ : Word) := by
+    simpa [EvmYul.UInt256.ofNat] using hNonzero
+  simp [exec, hEval, hNonzero', hBody]
+
 theorem exec_switch_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)

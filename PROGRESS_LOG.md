@@ -30124,3 +30124,22 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   guard, aggregate proof-layer gate, standalone axiom smoke, forbidden-marker
   scan, and `git diff --check` passed. The new theorems depend only on
   `propext` and `Quot.sound`.
+- 2026-06-16 15:10:52 PDT - proof/yul-if-backward-nonterminal - Proved
+  `FunctionsObserverCompoundBackward.ifBackwardNonterminal` for every
+  non-halt Functions outcome. The adjacent proof inverts the ordinary
+  compiler, classifies a generated condition prelude as regular-or-halt,
+  reconstructs the exact source condition through the existing expression
+  backward interface, recursively reconstructs the selected body, and
+  preserves regular, break, continue, and leave outcomes.
+- 2026-06-16 15:10:52 PDT - architecture/yul-if-owned-composition - Added
+  Functions-owned condition/singleton inversions, canonical Yul `if`
+  execution constructors, and statement-owned
+  `OpenResult.of_if_true_prepared`. Refactored the forward `if` proof to use
+  the same owner instead of retaining a second inline outcome/control record.
+  Terminal condition/body halts remain explicitly separate rather than being
+  hidden in the nonterminal theorem.
+- 2026-06-16 15:10:52 PDT - validation/yul-if-backward-nonterminal - Focused
+  forward/backward builds, full 1,262-job verification root, architecture
+  dependency guard, aggregate proof-layer gate, standalone axiom smoke,
+  forbidden-marker scan, and `git diff --check` passed. The new public audit
+  surface depends only on `propext`, `Classical.choice`, and `Quot.sound`.

@@ -1619,7 +1619,15 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
 #print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_prelude
 #print axioms EvmCompiler.Yul.Expr.Prelude.runOpen_regular_or_halt
+#print axioms EvmCompiler.Yul.Expr.lower1Unchecked?_append_run_cases
+#print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_false_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_true_ok_parts
+#print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_if_ok_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_if_false_of_eval
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_if_true_of_eval
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_if_true_prepared
 #print axioms EvmCompiler.Functions.Source.Effectful.Stmt.run_block_parts
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.closeLexical
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.ifBackwardNonterminal

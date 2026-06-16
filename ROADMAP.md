@@ -36,7 +36,8 @@ target run. `Yul.EndToEnd` remains a short composition module.
   - [x] internal calls and regular leaf statements;
   - [x] recursive statement lists;
   - [x] lexical blocks;
-  - [ ] `if`, `switch`, and `for`;
+  - [x] nonterminal `if`;
+  - [ ] terminal `if`, `switch`, and `for`;
   - [ ] terminal call statements, complete outcome dispatch, dispatcher, and
     whole program.
 - [ ] Functions -> allocated Expressions whole-main backward adequacy:

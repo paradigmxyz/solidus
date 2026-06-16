@@ -85,6 +85,86 @@ theorem eval_singleton_of_evalOne {σ : Type}
               simp [hExpr, Functions.Source.invalid,
                 Structured.invalid] at hEval
 
+theorem evalCondition_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ} {condition : Bool}
+    (hEval :
+      evalCondition model prim expr state =
+        .ok (final, condition)) :
+    ∃ value,
+      eval model prim expr state =
+        .ok (final, [value]) ∧
+      condition = (value != EvmYul.UInt256.ofNat 0) := by
+  unfold evalCondition at hEval
+  unfold Locals.Source.Effectful.Expr.evalCondition at hEval
+  unfold Locals.Source.Effectful.Expr.evalOne at hEval
+  cases hExpr : eval model prim expr state with
+  | error err =>
+      simp [hExpr] at hEval
+  | ok result =>
+      rcases result with ⟨afterExpr, values⟩
+      cases values with
+      | nil =>
+          simp [hExpr, Functions.Source.invalid,
+            Structured.invalid] at hEval
+      | cons value rest =>
+          cases rest with
+          | nil =>
+              simp [hExpr] at hEval
+              rcases hEval with ⟨rfl, rfl⟩
+              exact ⟨value, rfl, rfl⟩
+          | cons second tail =>
+              simp [hExpr, Functions.Source.invalid,
+                Structured.invalid] at hEval
+
+theorem evalCondition_false_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ}
+    (hEval :
+      evalCondition model prim expr state =
+        .ok (final, false)) :
+    ∃ value,
+      eval model prim expr state =
+        .ok (final, [value]) ∧
+      value = EvmYul.UInt256.ofNat 0 := by
+  obtain ⟨value, hValue, hCondition⟩ :=
+    evalCondition_ok_parts model prim hEval
+  refine ⟨value, hValue, ?_⟩
+  rcases value with ⟨value⟩
+  have hBne := hCondition.symm
+  change
+    (!(value == Fin.ofNat EvmYul.UInt256.size 0)) = false
+    at hBne
+  have hValue : value = Fin.ofNat EvmYul.UInt256.size 0 := by
+    simpa using hBne
+  cases hValue
+  rfl
+
+theorem evalCondition_true_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {expr : Functions.Expr 1} {state final : σ}
+    (hEval :
+      evalCondition model prim expr state =
+        .ok (final, true)) :
+    ∃ value,
+      eval model prim expr state =
+        .ok (final, [value]) ∧
+      value ≠ EvmYul.UInt256.ofNat 0 := by
+  obtain ⟨value, hValue, hCondition⟩ :=
+    evalCondition_ok_parts model prim hEval
+  refine ⟨value, hValue, ?_⟩
+  rcases value with ⟨value⟩
+  have hBne := hCondition.symm
+  change
+    (!(value == Fin.ofNat EvmYul.UInt256.size 0)) = true
+    at hBne
+  have hValueNe : value ≠ Fin.ofNat EvmYul.UInt256.size 0 := by
+    simpa using hBne
+  intro hZero
+  apply hValueNe
+  have hVal := congrArg EvmYul.UInt256.val hZero
+  simpa [EvmYul.UInt256.ofNat] using hVal
+
 theorem eval_prim_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
     {op : Structured.BasicOp}
@@ -299,6 +379,36 @@ theorem run_assign_regular_parts {σ : Type}
     simp [hContainsFalse, Functions.Source.invalid,
       Structured.invalid] at hRun
 
+theorem run_if_ok_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {cond : Functions.Expr 1} {body : Functions.Block}
+    {source : σ} {outcome : Outcome σ}
+    (hRun :
+      run model prim program ctx fuel (.if_ cond body) source =
+        .ok (outcome, finalCtx)) :
+    ∃ previous,
+      fuel = previous + 1 ∧
+      ((∃ afterCond,
+          Expr.evalCondition model prim cond source =
+            .ok (afterCond, false) ∧
+          outcome = Outcome.regular afterCond ∧
+          finalCtx = ctx) ∨
+        (∃ afterCond bodyOutcome,
+          Expr.evalCondition model prim cond source =
+            .ok (afterCond, true) ∧
+          Block.runScoped model prim program ctx body previous afterCond =
+            .ok bodyOutcome ∧
+          outcome = bodyOutcome ∧
+          finalCtx = ctx)) := by
+  cases fuel with
+  | zero =>
+      simp [run, Functions.Source.invalid, Structured.invalid] at hRun
+  | succ previous =>
+      refine ⟨previous, by omega, ?_⟩
+      exact run_if_cases model prim program hRun
+
 /--
 Expose the canonical scoped-body execution represented by a successful
 Functions `block` statement. The statement restores its incoming context for
@@ -501,6 +611,43 @@ theorem runOpen_singleton_nonregular_bounded_parts {σ : Type}
             hOutcome, hCtx⟩
         subst outcome
         exact ⟨stmtFuel, headCtx, by omega, hStmt, hCtx⟩
+
+theorem runOpen_singleton_bounded_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx finalCtx : Source.Ctx} {fuel : Nat}
+    {stmt : Functions.Stmt} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      runOpen model prim program ctx fuel
+          { stmts := [stmt] } source =
+        .ok (outcome, finalCtx)) :
+    ∃ stmtFuel stmtCtx,
+      fuel = stmtFuel + 1 ∧
+      Stmt.run model prim program ctx stmtFuel stmt source =
+        .ok (outcome, stmtCtx) ∧
+      (outcome.mode = .regular → finalCtx = stmtCtx) ∧
+      (outcome.mode ≠ .regular → finalCtx = ctx) := by
+  by_cases hRegular : outcome.mode = .regular
+  · have hOutcomeEq :
+        outcome = Outcome.regular outcome.state :=
+      Outcome.eq_regular_of_mode hRegular
+    have hRun' := hRun
+    rw [hOutcomeEq] at hRun'
+    obtain ⟨stmtFuel, hFuel, hStmt⟩ :=
+      runOpen_singleton_regular_bounded_parts
+        model prim program hRun'
+    refine
+      ⟨stmtFuel, finalCtx, hFuel, ?_, fun _ => rfl, ?_⟩
+    · rw [hOutcomeEq]
+      exact hStmt
+    · intro hNonregular
+      exact False.elim (hNonregular hRegular)
+  · obtain ⟨stmtFuel, stmtCtx, hFuel, hStmt, hFinalCtx⟩ :=
+      runOpen_singleton_nonregular_bounded_parts
+        model prim program hRun hRegular
+    exact
+      ⟨stmtFuel, stmtCtx, hFuel, hStmt,
+        fun h => False.elim (hRegular h), fun _ => hFinalCtx⟩
 
 theorem runOpen_append_regular_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)

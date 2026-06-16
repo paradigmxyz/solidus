@@ -540,6 +540,82 @@ theorem of_block
          simpa [SolcValidation.StmtOutVars] using
            hClosedLayout hRegular }⟩
 
+theorem of_if_true_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {cond : AstExpr}
+    {body : List AstStmt}
+    {pre : List Functions.Stmt}
+    {lowerCond : Locals.Expr 1}
+    {lowerBody : List Functions.Stmt}
+    {before middle after : Fresh.State}
+    {layout : List Name}
+    {sourceAfterCond sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hCondFresh : Fresh.Extends before middle)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerCond middle layout
+        sourceAfterCond target ctx value)
+    (bodyResult :
+      Result contract codeRel program (.Block body)
+        [.block { stmts := lowerBody }] middle after layout sourceFinal
+        hValue.prepared.evalTarget hValue.prepared.finalCtx
+        (sourceControl := sourceControl))
+    (hRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel
+            { stmts := pre ++ [.if_ lowerCond { stmts := lowerBody }] }
+            target =
+          .ok
+            (bodyResult.openResult.outcome,
+              bodyResult.openResult.finalCtx)) :
+    Nonempty
+      (Result contract codeRel program (.If cond body)
+        (pre ++ [.if_ lowerCond { stmts := lowerBody }])
+        before after layout sourceFinal target ctx
+        (sourceControl := sourceControl)) := by
+  exact
+    ⟨{ openResult :=
+         { finalLayout := bodyResult.openResult.finalLayout
+           outcome := bodyResult.openResult.outcome
+           finalCtx := bodyResult.openResult.finalCtx
+           run := hRun
+           relation := bodyResult.openResult.relation
+           domain := bodyResult.openResult.domain
+           scope := bodyResult.openResult.scope
+           control :=
+             Functions.Source.Ctx.SameControl.trans
+               hValue.prepared.control bodyResult.openResult.control
+           freshExtends :=
+             Fresh.Extends.trans hCondFresh
+               bodyResult.openResult.freshExtends
+           retains := bodyResult.openResult.retains
+           layoutWithin := bodyResult.openResult.layoutWithin
+           sourceDefined := bodyResult.openResult.sourceDefined
+           abruptTargetRestriction :=
+             FunctionsObserverOutcome.AbruptTargetRestriction.transport
+               hValue.prepared.control
+               bodyResult.openResult.abruptTargetRestriction
+           layoutScope := bodyResult.openResult.layoutScope
+           exitScope :=
+             FunctionsObserverOutcome.ExitScopeRel.transportTarget
+               hValue.prepared.control bodyResult.openResult.exitScope }
+       regularLayout := by
+         intro hRegular
+         simpa [SolcValidation.StmtOutVars] using
+           bodyResult.regularLayout hRegular }⟩
+
 theorem of_let_one_prepared
     {contract : MemoryContract.Contract}
     {transcript : Trace}

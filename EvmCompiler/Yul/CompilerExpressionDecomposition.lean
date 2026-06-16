@@ -336,6 +336,60 @@ theorem lower1Unchecked?_prelude
     Prelude pre := by
   exact lowerUnchecked?_prelude hLower
 
+theorem lower1Unchecked?_append_run_cases
+    {σ : Type}
+    (model : Functions.Source.Effectful.StateModel σ)
+    (prim : Functions.Source.Effectful.PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {before after : Fresh.State} {expr : AstExpr}
+    {pre suffix : List Functions.Stmt} {lower : Locals.Expr 1}
+    {ctx finalCtx : Functions.Source.Ctx} {fuel : Nat}
+    {source : σ}
+    {outcome : Functions.Source.Effectful.Outcome σ}
+    (hLower :
+      lower1Unchecked? before expr = some (pre, lower, after))
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          model prim program ctx fuel
+          { stmts := pre ++ suffix } source =
+        .ok (outcome, finalCtx)) :
+    (∃ middle middleCtx suffixFuel,
+        Functions.Source.Effectful.Block.runOpen
+            model prim program ctx fuel { stmts := pre } source =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular middle,
+              middleCtx) ∧
+        Functions.Source.Effectful.Block.runOpen
+            model prim program middleCtx suffixFuel
+            { stmts := suffix } middle =
+          .ok (outcome, finalCtx) ∧
+        suffixFuel ≤ fuel) ∨
+      (∃ kind preludeOutcome preludeCtx,
+        Functions.Source.Effectful.Block.runOpen
+            model prim program ctx fuel { stmts := pre } source =
+          .ok (preludeOutcome, preludeCtx) ∧
+        preludeOutcome.mode = .halt kind ∧
+        outcome = preludeOutcome ∧
+        finalCtx = preludeCtx) := by
+  rcases
+      Functions.Source.Effectful.Block.runOpen_append_bounded_cases
+        model prim program hRun with
+    hRegular | hNonregular
+  · exact Or.inl hRegular
+  · rcases hNonregular with
+      ⟨preludeOutcome, preludeCtx, hPreludeRun,
+        hPreludeNonregular, hOutcome, hFinalCtx⟩
+    rcases
+        Prelude.runOpen_regular_or_halt model prim program
+          (lower1Unchecked?_prelude hLower) hPreludeRun with
+      hPreludeRegular | hPreludeHalt
+    · exact False.elim (hPreludeNonregular hPreludeRegular)
+    · rcases hPreludeHalt with ⟨kind, hKind⟩
+      exact
+        Or.inr
+          ⟨kind, preludeOutcome, preludeCtx, hPreludeRun,
+            hKind, hOutcome, hFinalCtx⟩
+
 end Expr
 end Yul
 end EvmCompiler

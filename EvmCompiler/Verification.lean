@@ -311,7 +311,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
 #check EvmCompiler.Yul.Expr.lower1Unchecked?_prelude
 #check EvmCompiler.Yul.Expr.Prelude.runOpen_regular_or_halt
+#check EvmCompiler.Yul.Expr.lower1Unchecked?_append_run_cases
+#check EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_false_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.Expr.evalCondition_true_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.Stmt.run_if_ok_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_if_false_of_eval
+#check EvmCompiler.Yul.Source.Effectful.exec_if_true_of_eval
+#check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_if_true_prepared
 #check EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
+#check EvmCompiler.Yul.FunctionsObserverCompoundBackward.ifBackwardNonterminal
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
 #check EvmCompiler.Yul.Source.Effectful.StateModel.Lawful
 #check EvmCompiler.Yul.Source.Effectful.PrimitiveSemantics.PreservesOwner

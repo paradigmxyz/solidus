@@ -3413,7 +3413,7 @@ theorem ifThen
           (by omega) hBlockOk hBlockNames hBlockLower
           prepared.relation prepared.prepared.domain
           prepared.prepared.scope hLayoutMiddle hPreparedControl hBodyRun
-      obtain ⟨bodyFuel, hBodyScoped, _hBodyCtx⟩ :=
+      obtain ⟨bodyFuel, hBodyScoped, hBodyCtx⟩ :=
         Functions.Source.Effectful.Block.runScoped_of_runOpen_singleton_block
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
@@ -3516,45 +3516,53 @@ theorem ifThen
           prepared.prepared.preTarget closedBody.openResult.outcome
           prepared.prepared.finalCtx
           ⟨preFuel, hPreRun⟩ hIfRun
-      let result :
-          FunctionsObserverOutcome.ScopedOpenResult
-            contract codeRel targetProgram.toFunctions
-            (preCond ++ [.if_ lowerCond lowerBody])
-            before after layout sourceFinal target ctx
+      rcases lowerBody with ⟨lowerBodyStmts⟩
+      let bodyResult :
+          FunctionsObserverStatement.OpenResult.Result
+            contract codeRel targetProgram.toFunctions (.Block body)
+            [.block { stmts := lowerBodyStmts }]
+            middle after layout sourceFinal
+            prepared.prepared.evalTarget prepared.prepared.finalCtx
             (sourceControl := sourceControl) :=
-        { finalLayout := closedBody.openResult.finalLayout
-          outcome := closedBody.openResult.outcome
-          finalCtx := prepared.prepared.finalCtx
-          run := ⟨targetFuel, hTargetRun⟩
-          relation := closedBody.openResult.relation
-          domain := closedBody.openResult.domain
-          scope := prepared.prepared.scope.mono hBodyFresh
-          control := prepared.prepared.control
-          freshExtends := hFresh
-          retains := closedBody.openResult.retains
-          layoutWithin := closedBody.openResult.layoutWithin
-          sourceDefined := closedBody.openResult.sourceDefined
-          abruptTargetRestriction :=
-            FunctionsObserverOutcome.AbruptTargetRestriction.transport
-              prepared.prepared.control
-              closedBody.openResult.abruptTargetRestriction
-          layoutScope := by
-            intro hRegular
-            rw [closedBody.regularLayout hRegular]
-            exact hPreparedLayoutScope
-          exitScope :=
-            FunctionsObserverOutcome.ExitScopeRel.transportTarget
-              prepared.prepared.control closedBody.openResult.exitScope }
+        { openResult := closedBody.openResult
+          regularLayout := closedBody.regularLayout }
+      have hTargetForResult :
+          ∃ fuel,
+            Functions.Source.Effectful.Block.runOpen
+                (Functions.ObserverSemantics.stateModel transcript)
+                (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                  contract transcript)
+                targetProgram.toFunctions ctx fuel
+                { stmts :=
+                    preCond ++
+                      [.if_ lowerCond { stmts := lowerBodyStmts }] }
+                target =
+              .ok
+                (bodyResult.openResult.outcome,
+                  bodyResult.openResult.finalCtx) := by
+        refine ⟨targetFuel, ?_⟩
+        change
+          Functions.Source.Effectful.Block.runOpen
+              (Functions.ObserverSemantics.stateModel transcript)
+              (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                contract transcript)
+              targetProgram.toFunctions ctx targetFuel
+              { stmts :=
+                  preCond ++
+                    [.if_ lowerCond { stmts := lowerBodyStmts }] }
+              target =
+            .ok
+              (closedBody.openResult.outcome,
+                closedBody.openResult.finalCtx)
+        rw [hBodyCtx]
+        exact hTargetRun
+      obtain ⟨result⟩ :=
+        FunctionsObserverStatement.OpenResult.of_if_true_prepared
+          (cond := cond) (body := body)
+          (lowerBody := lowerBodyStmts)
+          hCondFresh prepared bodyResult hTargetForResult
       exact
-        ⟨{ openResult := result
-           regularLayout := by
-             intro hRegular
-             simpa [SolcValidation.StmtOutVars] using
-               closedBody.regularLayout hRegular
-           regularControl := by
-             intro hRegular
-             rw [closedBody.regularLayout hRegular]
-             exact hPreparedControl }⟩
+        ⟨ScopedStmtResult.ofStatement result hControl⟩
 
 theorem switch
     {contract : MemoryContract.Contract}
