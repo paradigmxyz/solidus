@@ -6208,6 +6208,46 @@ theorem budget_zero_of_scratchFrameConfig?
       reservation.base + 32 * reservation.words
   omega
 
+theorem fuelSafe_of_scratchFrameConfig?_of_capacity
+    {contract : MemoryContract.Contract} {frameWords fuel : Nat}
+    {reservation : MemoryContract.ScratchReservation}
+    {config : Config}
+    (hConfig :
+      AllocationSupport.scratchFrameConfig? contract frameWords =
+        some config)
+    (hReservation : contract.scratch? = some reservation)
+    (hCapacity :
+      (fuel + 1) * frameWords ≤ reservation.usableWords) :
+    FuelSafe config fuel := by
+  obtain
+    ⟨selectedReservation, hSelectedReservation, _hAllocator,
+      hFirst, hLimit, hWords, _hWF, _hHost, hPositive, _hFits⟩ :=
+    AllocationSupport.scratchFrameConfig?_sound hConfig
+  have hReservationEq : selectedReservation = reservation :=
+    Option.some.inj (hSelectedReservation.symm.trans hReservation)
+  subst selectedReservation
+  unfold FuelSafe Budget baseAt bytes
+  rw [hFirst, hLimit, hWords]
+  change
+    reservation.base + 32 +
+        fuel * (32 * frameWords) + 32 * frameWords ≤
+      reservation.base + 32 * reservation.words
+  have hWordsEq :
+      reservation.words = reservation.usableWords + 1 := by
+    unfold MemoryContract.ScratchReservation.usableWords
+    omega
+  calc
+    reservation.base + 32 +
+          fuel * (32 * frameWords) + 32 * frameWords =
+        reservation.base +
+          32 * ((fuel + 1) * frameWords + 1) := by ring
+    _ ≤
+        reservation.base +
+          32 * (reservation.usableWords + 1) := by
+      gcongr
+    _ = reservation.base + 32 * reservation.words := by
+      rw [hWordsEq]
+
 theorem allocatorAt_zero_after_init
     {transcript : Trace}
     {contract : MemoryContract.Contract} {frameWords : Nat}

@@ -11,9 +11,9 @@ Accepted Yul
 -> bytecode observer execution
 
 The primary compiler-correctness result is whole-program forward preservation.
-Each adjacent owner also exposes the terminal backward adequacy needed to
-reconstruct an exact `gas()`/`msize()` source replay from a concrete terminal
-target run. `Yul.EndToEnd` remains a short composition module.
+Reverse reasoning is limited to the exact bridge needed to align a concrete
+terminal target `gas()`/`msize()` transcript with a canonical source replay.
+`Yul.EndToEnd` remains a short composition module.
 
 ## Checked Boundaries
 
@@ -32,21 +32,25 @@ target run. `Yul.EndToEnd` remains a short composition module.
 - [x] Stack-only end-to-end exact observer replay.
 - [x] Compiler-selected lower composition under an explicit Functions resource
   bound.
+- [x] Narrow target-to-source transcript bridge through
+  `FunctionsObserverTraceAdequacy.compileProgramTraceAdequate`.
+- [x] Honest stack-only public theorem with explicit source execution safety.
 
 ## Active Proof Work
 
-- [ ] Complete Yul -> Functions terminal backward adequacy:
-  - [x] terminal primitive replay;
-  - [ ] terminal argument and expression replay;
-  - [ ] terminal internal-call replay;
-  - [ ] terminal statement-list and lexical-block replay;
-  - [ ] terminal `if`, `switch`, and `for` replay;
-  - [ ] dispatcher and whole-program backward adequacy.
-- [ ] Complete Functions -> allocated Expressions whole-main backward adequacy
-  for compiler-selected stack-only and scratch artifacts.
+- [x] Prove pass-owned reservation-capacity lemmas:
+  - [x] canonical recipe planning exposes its configured frame bound;
+  - [x] validated mixed allocation preserves that frame bound;
+  - [x] `(fuel + 1) * frameWords` source reservation capacity implies
+    scratch `FuelSafe fuel`;
+  - [x] compiler-selected main setup depth is at most one frame.
+- [ ] Strengthen Yul -> Functions whole-program forward preservation with a
+  checked source-derived upper bound on the existential Functions execution
+  fuel, or an equivalent source-owned execution-depth bound. The current
+  theorem proves existence but no numeric relation to the Yul run fuel.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
-  interface that supplies the concrete source-run depth bound without exposing
-  compiler-generated evidence.
+  interface using that checked bound, without exposing compiler-generated
+  evidence.
 - [ ] Generalize `Yul.EndToEnd.ClosedResourceCorrect`:
   - [ ] remove the stack-only field from `ClosedArtifact`;
   - [ ] derive the compiler-selected `FuelSafe` fact from the source-facing
@@ -57,10 +61,10 @@ target run. `Yul.EndToEnd` remains a short composition module.
 - [ ] Audit the public theorem for generated artifact evidence, replay
   certificates, call oracles, and cross-pass proof reasoning.
 
-## Adjacent Backward Coverage
+## Retained Local Inversions
 
-These checked Yul-to-Functions inversions are reusable components of the full
-adjacent-boundary adequacy theorem.
+These checked backward theorems remain reusable local facts. They are not
+completion gates unless the narrow transcript bridge actually needs them.
 
 - [x] compiler-selected primitive families;
 - [x] direct and bound expressions;
@@ -70,13 +74,15 @@ adjacent-boundary adequacy theorem.
 - [x] nonterminal `if`;
 - [x] nonterminal `switch`.
 - [x] terminal primitive replay.
-- [ ] Terminal expressions, calls, statement lists, `if`, `switch`, `for`,
-  dispatcher, and whole-program backward adequacy.
+- [x] terminal primitive-expression suffix replay after regular arguments.
+- [ ] No general terminal call/list/control backward campaign is planned.
 
 ## Completion Gates
 
-- [ ] Every adjacent boundary has checked forward preservation and backward
-  adequacy, with each theorem owned by that adjacent compiler pass.
+- [x] Every adjacent boundary used by the public spine has checked forward
+  preservation owned by that compiler pass.
+- [x] Concrete target transcript exhaustion yields an exact source replay
+  without reconstructing arbitrary intermediate target executions.
 - [ ] Public theorem accepts only source validation, related initial states,
   source-facing execution/resource safety, and a concrete terminal target run.
 - [ ] No observer-specific compiler, duplicate control interpreter, replay

@@ -1929,6 +1929,28 @@ theorem exec_expr_function_error_of_parts
       .error failure := by
   simp [exec, hArgs, hCall, multifill]
 
+theorem exec_expr_primitive_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs : σ}
+    {reversedValues : List Word} {failure : Failure σ}
+    (hArgs :
+      evalArgs model primSemantics fuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hPrim :
+      primSemantics.eval fuel stateAfterArgs prim
+          reversedValues.reverse =
+        .error failure) :
+    exec model primSemantics (fuel + 1)
+        (.ExprStmtCall (.Call (.inl prim) args))
+        codeOverride state =
+      .error failure := by
+  simp [exec, hArgs, hPrim, multifill]
+
 theorem exec_expr_primitive_error_parts
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)

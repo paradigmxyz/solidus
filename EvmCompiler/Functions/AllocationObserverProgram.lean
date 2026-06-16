@@ -682,6 +682,58 @@ theorem selectedResourceMode_eq_compilation
     compilation.validate,
     AllocationObserverForward.Compilation.frameConfig?]
 
+theorem selectedResourceMode_fuelSafe_of_recipe_capacity
+    {allocation : Locals.Allocation.ProgramPlan}
+    {program : Functions.Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    {reservation : MemoryContract.ScratchReservation}
+    {fuel : Nat}
+    (hRecipe :
+      AllocationSupport.planRecipeCore? program = some recipe)
+    (hReservation :
+      program.memoryContract.scratch? = some reservation)
+    (hCapacity :
+      (fuel + 1) * recipe.frameWords ≤ reservation.usableWords) :
+    (selectedResourceMode allocation program).FuelSafe fuel := by
+  cases hValidate :
+      AllocationLowering.validatePlan? allocation program with
+  | none =>
+      simp [selectedResourceMode, hValidate,
+        AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+        AllocationObserverRelation.Frame.ResourceMode.Budget]
+  | some validated =>
+      rcases validated with ⟨validatedRecipe, stackSlots⟩
+      have hValidatedCore :
+          AllocationSupport.planRecipeCore? program =
+            some validatedRecipe :=
+        (AllocationLowering.validatePlan?_eq_some_exact
+          hValidate).2.2.1
+      have hRecipeEq : validatedRecipe = recipe :=
+        Option.some.inj (hValidatedCore.symm.trans hRecipe)
+      subst validatedRecipe
+      by_cases hNeeds :
+          AllocationLowering.mainNeedsAllocator recipe stackSlots = true
+      · cases hConfig :
+          AllocationSupport.scratchFrameConfig?
+            program.memoryContract recipe.frameWords with
+        | none =>
+            simp [selectedResourceMode, hValidate, hNeeds, hConfig,
+              AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+              AllocationObserverRelation.Frame.ResourceMode.Budget]
+        | some config =>
+            simpa [selectedResourceMode, hValidate, hNeeds, hConfig,
+              AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+              AllocationObserverRelation.Frame.ResourceMode.Budget] using
+              (AllocationObserverRelation.Frame.fuelSafe_of_scratchFrameConfig?_of_capacity
+                hConfig hReservation hCapacity)
+      · have hNoNeeds :
+            AllocationLowering.mainNeedsAllocator recipe stackSlots =
+              false :=
+          Bool.eq_false_of_not_eq_true hNeeds
+        simp [selectedResourceMode, hValidate, hNoNeeds,
+          AllocationObserverRelation.Frame.ResourceMode.FuelSafe,
+          AllocationObserverRelation.Frame.ResourceMode.Budget]
+
 def MainArtifact.resourceMode
     {allocation : Locals.Allocation.ProgramPlan}
     {program : Functions.Program}
@@ -928,6 +980,24 @@ theorem selectedMainSetupDepth_eq_compilation
     selectedMainSetupDepth allocation program =
       mainSetupDepth compilation := by
   simp [selectedMainSetupDepth, mainSetupDepth, compilation.validate]
+
+theorem selectedMainSetupDepth_le_one
+    (allocation : Locals.Allocation.ProgramPlan)
+    (program : Functions.Program) :
+    selectedMainSetupDepth allocation program ≤ 1 := by
+  cases hValidate :
+      AllocationLowering.validatePlan? allocation program with
+  | none =>
+      simp [selectedMainSetupDepth, hValidate]
+  | some validated =>
+      rcases validated with ⟨recipe, stackSlots⟩
+      by_cases hNeeds :
+          AllocationLowering.mainNeedsFrame recipe stackSlots = true
+      · simp [selectedMainSetupDepth, hValidate, hNeeds]
+      · have hNoNeeds :
+            AllocationLowering.mainNeedsFrame recipe stackSlots = false :=
+          Bool.eq_false_of_not_eq_true hNeeds
+        simp [selectedMainSetupDepth, hValidate, hNoNeeds]
 
 theorem MainArtifact.lowerRest
     {allocation : Locals.Allocation.ProgramPlan}

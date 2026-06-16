@@ -411,6 +411,39 @@ def LoweredFrom (artifact : CompileArtifact)
         some artifact.target ∧
       artifact.metadata.certificate = compiled.metadata
 
+theorem LoweredFrom.allocationLowering
+    {artifact : CompileArtifact} {source : Functions.Program}
+    (hLowered : artifact.LoweredFrom source) :
+    ∃ expressions,
+      Functions.AllocationLowering.lowerExpressionsFromAllocation?
+          artifact.metadata.allocation source =
+        some expressions := by
+  rcases hLowered with
+    ⟨expressions, _compiled, _hCompatible, _hMemoryAuthorized,
+      hExpressions, _hStructuredWF, _hCfg, _hAllocated,
+      _hExecutable, _hCertificate⟩
+  let planned : PlannedProgram :=
+    { source := source
+      allocation := artifact.metadata.allocation }
+  unfold PlannedProgram.lowerWithAllocation? at hExpressions
+  cases hResult : planned.loweringResult? with
+  | none =>
+      simp [planned, hResult] at hExpressions
+  | some result =>
+      rcases result with ⟨backend, loweredExpressions⟩
+      simp [planned, hResult] at hExpressions
+      subst loweredExpressions
+      have hExact :=
+        PlannedProgram.loweringResult?_lowerer_exact
+          (planned := planned)
+          (backend := backend)
+          (expressions := expressions)
+          hResult
+      exact
+        ⟨expressions, by
+          simpa [Functions.AllocationLowering.allocationLowerer,
+            planned] using hExact⟩
+
 end CompileArtifact
 
 theorem PlannedProgram.lowerArtifact?_loweredFrom

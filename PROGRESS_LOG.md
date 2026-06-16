@@ -30191,3 +30191,52 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   dependency guard, aggregate proof-layer gate, forbidden-marker scan, axiom
   smoke, and `git diff --check` passed. `primitiveBackward` depends only on
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 15:36:04 PDT - compaction-resume - Resumed the full adjacent-pass
+  objective from checked terminal primitive backward adequacy; current work is
+  target `terminalArgs` inversion followed by terminal call/list/control replay.
+- 2026-06-16 15:41:20 PDT - proof/yul-terminal-expression-suffix-backward -
+  Proved fuel-parametric terminal primitive replay and
+  `FunctionsObserverTerminalBackward.primitiveExpressionAfterArgsBackwardBelow`.
+  A concrete regular generated argument prelude followed by `terminalArgs`
+  now reconstructs the canonical source argument evaluation, observable
+  terminal failure, and exact terminal outcome relation.
+- 2026-06-16 15:41:20 PDT - bottleneck/yul-terminal-expression-prelude -
+  Full terminal expression inversion now reduces to the alternative where the
+  generated argument prelude itself halts. That path requires the recursive
+  terminal expression/call interface rather than another terminal compiler.
+- 2026-06-16 15:46:20 PDT - theorem-boundary/narrow-goal-restored - Corrected
+  a stale roadmap/goal drift that had restored generic adjacent backward
+  adequacy as a completion gate. The active public route is again forward
+  preservation plus `compileProgramTraceAdequate`; terminal call/list/control
+  backward coverage is not required unless the narrow trace bridge needs it.
+- 2026-06-16 15:46:20 PDT - bottleneck/public-scratch-boundary - Restored the
+  actual remaining blocker: derive compiler-selected allocation `FuelSafe`
+  from an honest source-facing scratch execution/reservation-safety premise,
+  then compose `terminalWithResourceSafety` in the short `Yul.EndToEnd`
+  theorem.
+- 2026-06-16 15:48:02 PDT - compaction-resume - Resumed the narrow observer
+  replay goal at the source-facing scratch resource boundary. Generic
+  pass-by-pass backward adequacy remains non-blocking; the public route is
+  forward preservation plus exact concrete transcript replay.
+- 2026-06-16 15:59:23 PDT - proof/scratch-capacity-foundation - Added checked
+  pass-owned facts connecting bounded recipe planning, validated allocation,
+  source reservation capacity, and selected scratch `FuelSafe`. Also proved
+  that compiler-selected main setup owns at most one scratch frame and exposed
+  the ordinary allocation lowering equation from `CompileArtifact.LoweredFrom`.
+- 2026-06-16 15:59:23 PDT - theorem-boundary/yul-functions-fuel-gap - A direct
+  scratch EndToEnd composition exposed an unsound assumption: the existing
+  Yul-to-Functions forward theorem returns an existential Functions fuel but
+  proves no bound relating it to the canonical Yul run fuel. The attempted
+  public migration was removed and the checked stack-only endpoint restored.
+  The next adjacent obligation is a source-derived Functions fuel or dynamic
+  execution-depth bound; only after that theorem may reservation capacity use
+  the Yul source witness.
+- 2026-06-16 15:59:23 PDT - oracle/unavailable - Requested an independent
+  review of the Yul-to-Functions fuel-bound design; the oracle service again
+  returned `insufficient_quota`, so no oracle advice was used.
+- 2026-06-16 16:04:26 PDT - validation/scratch-capacity-foundation - Focused
+  allocation and EndToEnd builds, the full 1,263-job verification root,
+  architecture dependency guard, forbidden-marker scan, standalone axiom
+  smoke, aggregate proof-layer gate, and `git diff --check` passed. The new
+  capacity theorems use only `propext`, `Quot.sound`, and where extraction is
+  existential, `Classical.choice`.

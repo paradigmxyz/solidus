@@ -876,9 +876,10 @@ theorem primitiveForward
       simp [Yul.Source.Effectful.Exception.Observable] at hObservable
 
 private theorem sourcePrimCall_stop
+    (fuel : Nat)
     (shared : EvmYul.SharedState .Yul)
     (vars : EvmYul.Yul.VarStore) :
-    EvmYul.Yul.primCall 1 (.Ok shared vars)
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
         (.StopArith .STOP) [] =
       .error
         (.YulHalt
@@ -893,10 +894,11 @@ private theorem sourcePrimCall_stop
   simp [EvmYul.Yul.primCall, hStep]
 
 private theorem sourcePrimCall_return
+    (fuel : Nat)
     (shared : EvmYul.SharedState .Yul)
     (vars : EvmYul.Yul.VarStore)
     (address size : Word) :
-    EvmYul.Yul.primCall 1 (.Ok shared vars)
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
         (.System .RETURN) [address, size] =
       .error
         (.YulHalt
@@ -921,10 +923,11 @@ private theorem sourcePrimCall_return
   simp [EvmYul.Yul.primCall, hStep]
 
 private theorem sourcePrimCall_revert
+    (fuel : Nat)
     (shared : EvmYul.SharedState .Yul)
     (vars : EvmYul.Yul.VarStore)
     (address size : Word) :
-    EvmYul.Yul.primCall 1 (.Ok shared vars)
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
         (.System .REVERT) [address, size] =
       .error
         (.Revert
@@ -947,11 +950,12 @@ private theorem sourcePrimCall_revert
   simp [EvmYul.Yul.primCall, hStep]
 
 private theorem sourcePrimCall_selfdestruct
+    (fuel : Nat)
     (shared : EvmYul.SharedState .Yul)
     (vars : EvmYul.Yul.VarStore)
     (recipient : Word)
     (hPerm : shared.executionEnv.perm = true) :
-    EvmYul.Yul.primCall 1 (.Ok shared vars)
+    EvmYul.Yul.primCall (fuel + 1) (.Ok shared vars)
         (.System .SELFDESTRUCT) [recipient] =
       .error
         (.YulHalt
@@ -970,23 +974,25 @@ private theorem sourcePrimCall_selfdestruct
 
 /--
 A successful compiled terminal primitive reconstructs the canonical imported
-Yul terminal failure. The source primitive always needs exactly two units of
-fuel: one for the observer wrapper and one for the ordinary Yul primitive.
+Yul terminal failure at any source fuel that can enter both the observer wrapper
+and the ordinary Yul primitive.
 
 The terminal state relation is obtained from `primitiveForward`, keeping the
 state-transforming proof owned by a single adjacent-pass theorem.
 -/
-theorem primitiveBackward
+theorem primitiveBackwardAt
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
     {layout : List Name}
+    {fuel : Nat}
     {source :
       ObserverSemantics.SourceReplay.State transcript}
     {target targetFinal : Functions.ObserverSemantics.State transcript}
     {prim : EvmYul.Operation .Yul}
     {kind : Assembly.HaltKind}
     {values : List Word}
+    (hFuel : 2 ≤ fuel)
     (hTerminal : Prim.terminal? prim = some kind)
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
@@ -999,7 +1005,7 @@ theorem primitiveBackward
         Yul.Source.Effectful.Failure
           (ObserverSemantics.SourceReplay.State transcript),
       (ObserverSafety.SafeSemantics.primitiveSemantics
-          contract transcript).eval 2 source prim values =
+          contract transcript).eval fuel source prim values =
         .error failure ∧
       Yul.Source.Effectful.Exception.Observable failure.exception ∧
       FunctionsObserverOutcome.TerminalFailureRel codeRel failure
@@ -1022,7 +1028,7 @@ theorem primitiveBackward
         Yul.Source.Effectful.Exception.Observable failure.exception)
       (hEval :
         (ObserverSafety.SafeSemantics.primitiveSemantics
-            contract transcript).eval 2 source prim values =
+            contract transcript).eval fuel source prim values =
           .error failure) :
       FunctionsObserverOutcome.TerminalFailureRel codeRel failure
         (Functions.Source.Effectful.Outcome.halt kind targetFinal) := by
@@ -1031,6 +1037,7 @@ theorem primitiveBackward
     rw [hTarget] at hForward
     cases hForward
     exact hOutcome
+  obtain ⟨extra, rfl⟩ := Nat.exists_eq_add_of_le hFuel
   cases Invocation.of_safe hTerminal hSourceSafe with
   | stop =>
       let sourceFinal :=
@@ -1043,9 +1050,10 @@ theorem primitiveBackward
           state := source.withSource sourceFinal }
       have hEval :
           (ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript).eval 2 source
+              contract transcript).eval (2 + extra) source
               (.StopArith .STOP) [] =
             .error failure := by
+        rw [show 2 + extra = (extra + 1) + 1 by omega]
         simp [ObserverSafety.SafeSemantics.primitiveSemantics,
           ObserverSemantics.SourceReplay.primCall,
           ObserverSemantics.yulPrimObserver?,
@@ -1075,9 +1083,10 @@ theorem primitiveBackward
           state := source.withSource sourceFinal }
       have hEval :
           (ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript).eval 2 source
+              contract transcript).eval (2 + extra) source
               (.System .RETURN) [address, size] =
             .error failure := by
+        rw [show 2 + extra = (extra + 1) + 1 by omega]
         simp [ObserverSafety.SafeSemantics.primitiveSemantics,
           ObserverSemantics.SourceReplay.primCall,
           ObserverSemantics.yulPrimObserver?,
@@ -1107,9 +1116,10 @@ theorem primitiveBackward
           state := source.withSource sourceFinal }
       have hEval :
           (ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript).eval 2 source
+              contract transcript).eval (2 + extra) source
               (.System .REVERT) [address, size] =
             .error failure := by
+        rw [show 2 + extra = (extra + 1) + 1 by omega]
         simp [ObserverSafety.SafeSemantics.primitiveSemantics,
           ObserverSemantics.SourceReplay.primCall,
           ObserverSemantics.yulPrimObserver?,
@@ -1141,9 +1151,10 @@ theorem primitiveBackward
           state := source.withSource sourceFinal }
       have hEval :
           (ObserverSafety.SafeSemantics.primitiveSemantics
-              contract transcript).eval 2 source
+              contract transcript).eval (2 + extra) source
               (.System .SELFDESTRUCT) [recipient] =
             .error failure := by
+        rw [show 2 + extra = (extra + 1) + 1 by omega]
         simp [ObserverSafety.SafeSemantics.primitiveSemantics,
           ObserverSemantics.SourceReplay.primCall,
           ObserverSemantics.yulPrimObserver?,
@@ -1159,6 +1170,39 @@ theorem primitiveBackward
           finish (by
             simp [failure, Yul.Source.Effectful.Exception.Observable])
             hEval⟩
+
+/--
+The minimum-fuel specialization used by primitive-level clients.
+-/
+theorem primitiveBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {layout : List Name}
+    {source :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul}
+    {kind : Assembly.HaltKind}
+    {values : List Word}
+    (hTerminal : Prim.terminal? prim = some kind)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hTarget :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).terminal
+          kind target values.reverse =
+        .ok targetFinal) :
+    ∃ failure :
+        Yul.Source.Effectful.Failure
+          (ObserverSemantics.SourceReplay.State transcript),
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim values =
+        .error failure ∧
+      Yul.Source.Effectful.Exception.Observable failure.exception ∧
+      FunctionsObserverOutcome.TerminalFailureRel codeRel failure
+        (Functions.Source.Effectful.Outcome.halt kind targetFinal) :=
+  primitiveBackwardAt (by omega) hTerminal hRel hTarget
 
 structure StatementResult
     {transcript : Trace}

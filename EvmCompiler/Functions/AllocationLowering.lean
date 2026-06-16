@@ -5339,6 +5339,36 @@ theorem validatePlan?_eq_some_exact
     ⟨hSound.1, hAuthorized,
       compatiblePlan?_eq_some_exact hCompatible⟩
 
+theorem validatePlan?_frameWords_le_of_planAllocation?
+    {maxFrameWords : Nat}
+    {requestedSlots validatedSlots : MixedAllocation.SlotSet}
+    {allocation : ProgramPlan} {program : Program}
+    {recipe : AllocationSupport.AllocationRecipe}
+    (hPlan :
+      MixedAllocation.planAllocation?
+          maxFrameWords requestedSlots program =
+        some allocation)
+    (hValidate :
+      validatePlan? allocation program =
+        some (recipe, validatedSlots)) :
+    recipe.frameWords ≤ maxFrameWords := by
+  obtain ⟨_hWF, _hAuthorized, hValidatedCore, _hInfer,
+      _hSlots, _hExecutable, _hExact⟩ :=
+    validatePlan?_eq_some_exact hValidate
+  unfold MixedAllocation.planAllocation? at hPlan
+  by_cases hRequested : requestedSlots.Nodup
+  · cases hRecipe :
+      AllocationSupport.planRecipe? maxFrameWords program with
+    | none =>
+        simp [hRequested, hRecipe] at hPlan
+    | some plannedRecipe =>
+        obtain ⟨hPlannedCore, hFrameWords⟩ :=
+          AllocationSupport.planRecipe?_core_and_frameWords_le hRecipe
+        have hRecipeEq : plannedRecipe = recipe :=
+          Option.some.inj (hPlannedCore.symm.trans hValidatedCore)
+        simpa [hRecipeEq] using hFrameWords
+  · simp [hRequested] at hPlan
+
 theorem frameWords_pos_of_validate_of_rootNeedsFrame
     {allocation : ProgramPlan} {program : Program}
     {recipe : AllocationSupport.AllocationRecipe}

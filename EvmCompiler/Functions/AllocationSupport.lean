@@ -1196,6 +1196,23 @@ def planRecipe? (maxFrameWords : Nat) (program : Program) :
   let recipe ← planRecipeCore? program
   if recipe.frameWords ≤ maxFrameWords then some recipe else none
 
+theorem planRecipe?_core_and_frameWords_le
+    {maxFrameWords : Nat} {program : Program}
+    {recipe : AllocationRecipe}
+    (hPlan : planRecipe? maxFrameWords program = some recipe) :
+    planRecipeCore? program = some recipe ∧
+      recipe.frameWords ≤ maxFrameWords := by
+  unfold planRecipe? at hPlan
+  cases hCore : planRecipeCore? program with
+  | none =>
+      simp [hCore] at hPlan
+  | some planned =>
+      by_cases hFits : planned.frameWords ≤ maxFrameWords
+      · simp [hCore, hFits] at hPlan
+        subst recipe
+        exact ⟨rfl, hFits⟩
+      · simp [hCore, hFits] at hPlan
+
 def dupCode? (depth : Nat) : Option Structured.Code := do
   let op ← Locals.StackOp.dup? depth
   some [Structured.BasicInstr.op op]

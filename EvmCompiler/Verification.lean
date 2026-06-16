@@ -73,6 +73,7 @@ import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
 import EvmCompiler.Yul.FunctionsObserverTerminal
+import EvmCompiler.Yul.FunctionsObserverTerminalBackward
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpressionBackward
@@ -273,6 +274,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.boundPrimitiveExpressionBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.directPrimitiveExpressionBackward
 #check EvmCompiler.Yul.FunctionsObserverExpressionBackward.primitiveExpressionBackwardBelow
+#check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_of_parts
+#check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverTerminalBackward.AlignedPrimitiveExpressionBackward
+#check EvmCompiler.Yul.FunctionsObserverTerminalBackward.primitiveExpressionAfterArgsBackwardBelow
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_of_evalValues
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_function_of_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_let_some_of_evalValues

@@ -42,6 +42,7 @@ import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverExpressionBackward
 import EvmCompiler.Yul.FunctionsObserverTerminal
+import EvmCompiler.Yul.FunctionsObserverTerminalBackward
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
@@ -432,12 +433,16 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofMsize
 #check EvmCompiler.Yul.FunctionsObserverExpression.ScopedBackwardResult.ofNullaryPrimitive
 #check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
+#check EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_of_parts
 #check EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #check EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
 #check EvmCompiler.Yul.FunctionsObserverExpression.argListEval_toSeq
 #check EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
 #check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackward
+#check EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackwardAt
+#check EvmCompiler.Yul.FunctionsObserverTerminalBackward.AlignedPrimitiveExpressionBackward
+#check EvmCompiler.Yul.FunctionsObserverTerminalBackward.primitiveExpressionAfterArgsBackwardBelow
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
 #check EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
@@ -1159,6 +1164,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Functions.AllocationObserverPreservation.Frame.scratchFrameAcquire_empty_forward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.selectedResourceMode_eq_compilation
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.selectedMainSetupDepth_eq_compilation
+#print axioms EvmCompiler.Functions.AllocationSupport.planRecipe?_core_and_frameWords_le
+#print axioms EvmCompiler.Functions.AllocationLowering.validatePlan?_frameWords_le_of_planAllocation?
+#print axioms EvmCompiler.Functions.AllocationObserverRelation.Frame.fuelSafe_of_scratchFrameConfig?_of_capacity
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.selectedResourceMode_fuelSafe_of_recipe_capacity
+#print axioms EvmCompiler.Functions.AllocationObserverProgram.selectedMainSetupDepth_le_one
+#print axioms EvmCompiler.Objects.Program.CompileArtifact.LoweredFrom.allocationLowering
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainSetup.forward
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.MainPrepared.forwardOpen
 #print axioms EvmCompiler.Functions.AllocationObserverProgram.mainForward
@@ -1325,6 +1336,7 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeObserverNoObservableFailure
 #print axioms EvmCompiler.Yul.FunctionsObserverPrimitive.safeCompilerSelected_noObservableFailure
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_parts
+#print axioms EvmCompiler.Yul.Source.Effectful.exec_expr_primitive_error_of_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.exec_block_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.execSeq_cons_error_parts
 #print axioms EvmCompiler.Yul.Source.Effectful.evalArgs_append_error_parts
@@ -1338,6 +1350,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.terminalArgs_run_of_argList
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveForward
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminal.primitiveBackwardAt
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalBackward.primitiveExpressionAfterArgsBackwardBelow
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependPrepared
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.prependRegular
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminal.StatementResult.appendUnreachable
