@@ -66,6 +66,14 @@ theorem stack_eq {target source : EVMState}
   simp [SameRuntimeData, eraseRuntimeControl] at hRel
   exact hRel.2
 
+theorem shared_eq {target source : EVMState}
+    (hRel : SameRuntimeData target source) :
+    target.toSharedState = source.toSharedState := by
+  cases target
+  cases source
+  simp [SameRuntimeData, eraseRuntimeControl] at hRel
+  exact hRel.1
+
 theorem with_pc_left {target source : EVMState} (pc : Word)
     (hRel : SameRuntimeData target source) :
     SameRuntimeData { target with pc := pc } source := by

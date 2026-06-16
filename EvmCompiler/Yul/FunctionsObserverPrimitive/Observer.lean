@@ -143,9 +143,15 @@ theorem safeObserverPrim
         target.source.shared.toMachineState []
     rw [← hShared.machine]
     exact hSourceSharedSafe
+  have hTargetPermitted :
+      Functions.ObserverSafety.PrimitivePermitted
+        op target.source.shared :=
+    Functions.ObserverSafety.primitivePermitted_of_observer
+      hFunctionsObserver
   refine ⟨target', ?_, hFinalRel, hStore⟩
-  simpa [Functions.ObserverSafety.SafeSemantics.primitiveSemantics,
-    hTargetSafe] using hTargetRun
+  exact
+    Functions.ObserverSafety.SafeSemantics.eval_of_safe
+      hTargetSafe hTargetPermitted hTargetRun
 
 theorem safeObserverNoObservableFailure
     {contract : MemoryContract.Contract}

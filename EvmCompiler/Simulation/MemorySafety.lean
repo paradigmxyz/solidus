@@ -155,6 +155,15 @@ deliberately excluded from this closed-world contract.
       False
   | _, _ => True
 
+theorem noExternal_of_primitiveMemorySafe
+    {contract : MemoryContract.Contract} {op : Structured.BasicOp}
+    {machine : EvmYul.MachineState} {values : List Word}
+    (hSafe : PrimitiveMemorySafe contract op machine values) :
+    op.toPrimOp.isExternalCallCreate = false := by
+  cases op <;>
+    simp [PrimitiveMemorySafe, Structured.BasicOp.toPrimOp,
+      Assembly.PrimOp.isExternalCallCreate] at hSafe ⊢
+
 /--
 Terminal source memory reads obey the same reservation contract. `RETURN` and
 `REVERT` read a byte range; `STOP` and `SELFDESTRUCT` do not read memory.

@@ -1,5 +1,6 @@
 import EvmCompiler.Public
 import EvmCompiler.Public.Observer
+import EvmCompiler.Public.ObserverComposition
 import EvmCompiler.PublicVerification
 import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.MemoryRelation
@@ -61,6 +62,7 @@ import EvmCompiler.Yul.FunctionsObserverOutcome
 import EvmCompiler.Yul.FunctionsObserverStatement
 import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverPreservation
+import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.FunctionsObserverCompiler
@@ -469,8 +471,15 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.Source.Effectful.loop_ok_parts
 #check EvmCompiler.Yul.Source.Effectful.callDispatcher_ok_parts
 #check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_code_of_ok
+#check EvmCompiler.Yul.ObserverSemantics.SourceReplay.Program.installContract_find_owner_of_ok
+#check EvmCompiler.Yul.Source.Effectful.call_succ_of_parts
+#check EvmCompiler.Yul.Source.Effectful.eval_function_of_parts
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
+#check EvmCompiler.Yul.FunctionsObserverOutcome.ProgramOutcomeRel.consumedExactly_iff
+#check EvmCompiler.Simulation.MemorySafety.noExternal_of_primitiveMemorySafe
+#check EvmCompiler.Functions.ObserverSafety.PrimitivePermitted
+#check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_observer_values_eq_nil
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_iszero
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.evalCondition_one
 #check EvmCompiler.Functions.Source.Effectful.Block.runScoped_forGuard_break_exists
@@ -485,6 +494,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherTerminalForward
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramRegularForward
 #check EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramForward
+#check EvmCompiler.Functions.Source.Effectful.Program.runState_success_unique
+#check EvmCompiler.Yul.FunctionsObserverTraceAdequacy.SourceExecutionSafe
+#check EvmCompiler.Yul.FunctionsObserverTraceAdequacy.compileProgramTraceAdequate
+#check EvmCompiler.Public.ObserverComposition.InitialConditions
+#check EvmCompiler.Public.ObserverComposition.TerminalOutcomeRel
+#check EvmCompiler.Public.ObserverComposition.terminalStackOnly
+#check EvmCompiler.Yul.EndToEnd.ClosedResourceCorrect
+#check EvmCompiler.Yul.EndToEnd.closedResourceCorrect
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.simulate
 #check EvmCompiler.Functions.AllocationObserverPrimitive.SharedFamily.primitiveForward
 #check EvmCompiler.Functions.AllocationObserverPrimitive.MemoryFamily.mload_simulate

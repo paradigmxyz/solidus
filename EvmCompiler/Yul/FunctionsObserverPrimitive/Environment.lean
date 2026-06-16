@@ -237,6 +237,7 @@ theorem safeEnvironmentNullary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOpArity hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAtArity_of_environmentNullary hFamily)
       hArity hRel hRun
 
@@ -402,6 +403,7 @@ theorem safeEnvironmentUnary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_environmentUnary hFamily) hRel hRun
 
 end FunctionsObserverPrimitive

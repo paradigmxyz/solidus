@@ -224,6 +224,7 @@ theorem safeWorldNullary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOpArity hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAtArity_of_worldNullary hFamily)
       hArity hRel hRun
 
@@ -395,6 +396,7 @@ theorem safeWorldUnaryRead
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_worldUnaryRead hFamily) hRel hRun
 
 inductive WorldUnaryAccess :
@@ -652,6 +654,7 @@ theorem safeWorldUnaryAccess
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_worldUnaryAccess hFamily) hRel hRun
 
 inductive WorldBinaryWrite :
@@ -722,6 +725,40 @@ theorem yul_primCall_succ_eq_of_worldBinaryWrite
     simp [EvmYul.Yul.primCall] <;>
     unfold EvmYul.step <;>
     rfl
+
+theorem WorldBinaryWrite.targetPermitted_of_run
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceStep :
+      EvmYul.State .Yul → Word → Word → EvmYul.State .Yul}
+    {targetStep :
+      EvmYul.State .EVM → Word → Word → EvmYul.State .EVM}
+    {source source' : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {sourceValues outputs : List Word}
+    (hFamily : WorldBinaryWrite prim op sourceStep targetStep)
+    (hRel : StateRelation.Regular.Rel codeRel source target)
+    (hRun :
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+        .ok (source', outputs)) :
+    Functions.ObserverSafety.PrimitivePermitted op target.shared := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+  | succ previous =>
+      rw [yul_primCall_succ_eq_of_worldBinaryWrite hFamily] at hRun
+      cases hPermission : sourceShared.executionEnv.perm with
+      | false =>
+          simp [EvmYul.Yul.State.executionEnv,
+            hPermission] at hRun
+      | true =>
+          cases hFamily <;>
+            simpa [Functions.ObserverSafety.PrimitivePermitted,
+              hPermission] using
+              hShared.world.executionEnv.permission.symm
 
 theorem WorldBinaryWrite.rawNoObservableFailureAt
     {fuel : Nat} {prim : EvmYul.Operation .Yul}
@@ -868,6 +905,8 @@ theorem safeWorldBinaryWrite
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun hRaw =>
+        hFamily.targetPermitted_of_run hRel.2 hRaw)
       (forwardAt_of_worldBinaryWrite hFamily) hRel hRun
 
 end FunctionsObserverPrimitive

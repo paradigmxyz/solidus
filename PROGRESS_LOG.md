@@ -1,5 +1,10 @@
 # Progress Log
 
+- 2026-06-15 - compaction-resume - Resumed with the archive branch and
+  narrowed observer-replay implementation intact. Final work is limited to
+  consistency review, recording completed verification, and committing the
+  narrowed checkpoint.
+
 - 2026-06-10 14:02 PDT - validation/post-cutover-full-gates - repaired the
   layered verification script's empty-array `all` case and completed the broad
   post-cutover validation. The default 1152-job Lake build passed; focused
@@ -29914,3 +29919,43 @@ Resumed the end-to-end observer proof at the Functions → allocated Locals/Expr
 - 2026-06-15 13:34:10 PDT - proof/yul-terminal-family - Added `RecursiveTerminalCompoundForward.ofComponents` and `RecursiveTerminalFamily.ofCompiler`, closing observable terminal failures across expressions, function bodies, statements, statement lists, lexical/conditional/switch control, and recursive loops by source-fuel induction. Successful prefixes reuse the ordinary regular family; no alternate interpreter, call oracle, or generated-code premise was introduced.
 - 2026-06-15 13:34:10 PDT - proof/yul-whole-program-forward - Added the source-owned `callDispatcher_observable_error_parts`, terminal dispatcher execution through the real compiled Functions body, and `compileProgramForward`. The adjacent Yul-to-Functions theorem now covers regular completion plus `STOP`, `RETURN`, `REVERT`, and `SELFDESTRUCT` through canonical `callDispatcher`/`finish` packaging.
 - 2026-06-15 13:34:10 PDT - validation/yul-whole-program-forward - Focused Yul builds, the full 1,245-job verification root, proof-artifact/axiom suite, architecture dependency guard, forbidden-marker scan, and `git diff --check` passed. The new terminal family and `compileProgramForward` depend only on the accepted `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 - migration/narrow-observer-replay - Archived the complete general backward-adequacy campaign at `codex/archive-full-backward-adequacy` commit `41a3c5c5b`. Started `codex/narrow-observer-replay` from verified forward baseline `8fd1bd256`; forward preservation is primary, and only exact target-transcript-to-source-replay adequacy remains in scope.
+- 2026-06-15 - correctness-port/yul-installation - Selectively retained the canonical active-code-owner contract installation repair and source-semantics call/expression constructors from `b333c97f9`; generic backward modules remain only on the archive branch.
+- 2026-06-15 - correctness-port/static-memory - Selectively retained the static-mode permission guard for `sstore`, `tstore`, and logs, the observer-argument shape inversion, and the source-memory-safety exclusion of external call/create primitives from `f60bcc09d` and `6a4a618f0`. The forward baseline already contains the checked spill allocator, scratch-frame memory relation, frame acquire/release semantics, and whole-main spill preservation.
+- 2026-06-15 - compaction-resume - Resumed narrowed observer replay migration at the static-permission compatibility fix in Yul FunctionsObserverPrimitive.Core; next is checking compileProgramTraceAdequate, then correcting EndToEnd.
+- 2026-06-15 - correctness-port/static-permission - Completed the static-mode compatibility port through the Yul-to-Functions primitive boundary. Guarded Functions semantics now receives source-run-derived permission for `sstore`, `tstore`, and `log0`-`log4`; all other primitive families discharge permission definitionally. The focused Yul observer preservation build passed.
+- 2026-06-15 - proof/narrow-functions-trace-adequacy - Added Functions whole-program cross-fuel success uniqueness, outcome-owned exact-consumption transport, and `Yul.FunctionsObserverTraceAdequacy.compileProgramTraceAdequate`. Its source premise is guarded canonical Yul termination, not exact replay; target cursor exhaustion plus forward preservation derives exact source transcript consumption and terminal outcome agreement.
+- 2026-06-15 - theorem-boundary/public-source-safety - Corrected `Yul.EndToEnd.ClosedResourceCorrect` to require explicit Solc validation and source-facing guarded execution under the Yul memory contract. Scratch reservation safety is no longer inferred from acceptedness, target execution, or compiler-generated evidence. Public bytecode composition remains the next adjacent-owner obligation.
+- 2026-06-15 - architecture/narrow-replay - Added guards preventing the trace-adequacy module from importing lower compiler passes, exposing allocation/certificate evidence, implementing an observer compiler, or omitting source execution safety and target cursor exhaustion. The EndToEnd signature is also checked for explicit source safety and absence of generated evidence.
+- 2026-06-15 - validation/narrow-observer-replay - Focused trace-adequacy and
+  EndToEnd builds, the full 1,248-job verification root, aggregate proof gate,
+  architecture checks, changed-file forbidden-marker scan, axiom audit, and
+  `git diff --check` passed. The new determinism, exact-consumption transport,
+  and trace-adequacy theorems use only `propext`, `Classical.choice`, and
+  `Quot.sound`.
+## 2026-06-16 compaction-resume
+
+Resumed the narrowed observer-replay migration from the checked whole-program
+forward baseline. The remaining work is the public terminal composition:
+derive the concrete bytecode observer trace through existing pass-owned
+terminal theorems, use forward preservation and determinism at the
+Yul/Functions boundary, and keep `Yul.EndToEnd` as a short theorem.
+
+- 2026-06-16 14:15:47 PDT - proof/public-terminal-composition - Added
+  `Public.ObserverComposition.terminalStackOnly`, composing ordinary
+  Functions allocation, Structured, TypedCfg, Assembly, and bytecode terminal
+  interfaces. The theorem reconstructs only the concrete terminal execution
+  needed by observer replay and exposes no observer compiler or public replay
+  certificate.
+- 2026-06-16 14:15:47 PDT - proof/narrow-end-to-end - Proved
+  `Yul.EndToEnd.closedResourceCorrect`. For accepted, stack-only,
+  no-external-effects artifacts, related initial states, explicit
+  source-facing guarded execution safety, and a concrete terminal target run
+  with transcript `τ`, it constructs a canonical Yul replay consuming exactly
+  `τ` and a related terminal outcome.
+- 2026-06-16 14:15:47 PDT - validation/narrow-end-to-end - Focused
+  composition and EndToEnd builds, the 1,250-job verification root,
+  architecture guards, declaration-aware hole scan, project-axiom scan,
+  expanded axiom smoke, aggregate `scripts/verify_layer.sh proofs`, and
+  `git diff --check` passed. The new composition and public theorem depend
+  only on `propext`, `Classical.choice`, and `Quot.sound`.

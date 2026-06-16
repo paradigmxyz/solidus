@@ -208,6 +208,34 @@ def effects : Instr → Effects
 def ReplaySafe (instr : Instr) : Prop :=
   instr.effects.ReplaySafe
 
+def ProgramCounterIndependent (instr : Instr) : Prop :=
+  instr.effects.readsProgramCounter = false
+
+def NoExternalEffects (instr : Instr) : Prop :=
+  instr.effects.callsOrCreates = false
+
+def programCounterIndependent? (instr : Instr) : Bool :=
+  !instr.effects.readsProgramCounter
+
+def noExternalEffects? (instr : Instr) : Bool :=
+  !instr.effects.callsOrCreates
+
+theorem programCounterIndependent_of_check {instr : Instr}
+    (hCheck : instr.programCounterIndependent? = true) :
+    instr.ProgramCounterIndependent := by
+  simpa [programCounterIndependent?, ProgramCounterIndependent] using hCheck
+
+theorem noExternalEffects_of_check {instr : Instr}
+    (hCheck : instr.noExternalEffects? = true) :
+    instr.NoExternalEffects := by
+  simpa [noExternalEffects?, NoExternalEffects] using hCheck
+
+theorem replaySafe_of_independent_noExternal {instr : Instr}
+    (hPC : instr.ProgramCounterIndependent)
+    (hExternal : instr.NoExternalEffects) :
+    instr.ReplaySafe :=
+  ⟨hPC, hExternal⟩
+
 def certificate? (instr : Instr) (entry : Shape) :
     Option FragmentCert := do
   let exit ← instr.type? entry
@@ -251,6 +279,47 @@ namespace Block
 
 def ReplaySafe (block : Block) : Prop :=
   block.body.Forall Instr.ReplaySafe
+
+def ProgramCounterIndependent (block : Block) : Prop :=
+  block.body.Forall Instr.ProgramCounterIndependent
+
+def NoExternalEffects (block : Block) : Prop :=
+  block.body.Forall Instr.NoExternalEffects
+
+def programCounterIndependent? (block : Block) : Bool :=
+  block.body.all Instr.programCounterIndependent?
+
+def noExternalEffects? (block : Block) : Bool :=
+  block.body.all Instr.noExternalEffects?
+
+theorem programCounterIndependent_of_check {block : Block}
+    (hCheck : block.programCounterIndependent? = true) :
+    block.ProgramCounterIndependent := by
+  apply List.forall_iff_forall_mem.mpr
+  intro instr hMem
+  exact
+    Instr.programCounterIndependent_of_check
+      ((List.all_eq_true.mp hCheck) instr hMem)
+
+theorem noExternalEffects_of_check {block : Block}
+    (hCheck : block.noExternalEffects? = true) :
+    block.NoExternalEffects := by
+  apply List.forall_iff_forall_mem.mpr
+  intro instr hMem
+  exact
+    Instr.noExternalEffects_of_check
+      ((List.all_eq_true.mp hCheck) instr hMem)
+
+theorem replaySafe_of_independent_noExternal {block : Block}
+    (hPC : block.ProgramCounterIndependent)
+    (hExternal : block.NoExternalEffects) :
+    block.ReplaySafe := by
+  apply List.forall_iff_forall_mem.mpr
+  intro instr hMem
+  exact
+    Instr.replaySafe_of_independent_noExternal
+      ((List.forall_iff_forall_mem.mp hPC) instr hMem)
+      ((List.forall_iff_forall_mem.mp hExternal) instr hMem)
 
 def bodyCertificate? : List Instr → Shape → Option FragmentCert
   | [], shape => some (FragmentCert.empty shape)
@@ -351,6 +420,47 @@ namespace Program
 
 def ReplaySafe (program : Program) : Prop :=
   program.blocks.Forall Block.ReplaySafe
+
+def ProgramCounterIndependent (program : Program) : Prop :=
+  program.blocks.Forall Block.ProgramCounterIndependent
+
+def NoExternalEffects (program : Program) : Prop :=
+  program.blocks.Forall Block.NoExternalEffects
+
+def programCounterIndependent? (program : Program) : Bool :=
+  program.blocks.all Block.programCounterIndependent?
+
+def noExternalEffects? (program : Program) : Bool :=
+  program.blocks.all Block.noExternalEffects?
+
+theorem programCounterIndependent_of_check {program : Program}
+    (hCheck : program.programCounterIndependent? = true) :
+    program.ProgramCounterIndependent := by
+  apply List.forall_iff_forall_mem.mpr
+  intro block hMem
+  exact
+    Block.programCounterIndependent_of_check
+      ((List.all_eq_true.mp hCheck) block hMem)
+
+theorem noExternalEffects_of_check {program : Program}
+    (hCheck : program.noExternalEffects? = true) :
+    program.NoExternalEffects := by
+  apply List.forall_iff_forall_mem.mpr
+  intro block hMem
+  exact
+    Block.noExternalEffects_of_check
+      ((List.all_eq_true.mp hCheck) block hMem)
+
+theorem replaySafe_of_independent_noExternal {program : Program}
+    (hPC : program.ProgramCounterIndependent)
+    (hExternal : program.NoExternalEffects) :
+    program.ReplaySafe := by
+  apply List.forall_iff_forall_mem.mpr
+  intro block hMem
+  exact
+    Block.replaySafe_of_independent_noExternal
+      ((List.forall_iff_forall_mem.mp hPC) block hMem)
+      ((List.forall_iff_forall_mem.mp hExternal) block hMem)
 
 def collectCertificates? : List Block → Option (List FragmentCert)
   | [] => some []

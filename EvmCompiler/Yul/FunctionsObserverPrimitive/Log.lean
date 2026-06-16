@@ -23,6 +23,96 @@ theorem LogFamily.metadata
       Prim.toUncheckedBasicOp? prim = some op := by
   cases hFamily <;> exact ⟨rfl, rfl, rfl, rfl, rfl⟩
 
+private theorem targetPermitted_of_log_succ
+    {fuel : Nat}
+    {sourceShared : EvmYul.SharedState .Yul}
+    {sourceVars : EvmYul.Yul.VarStore}
+    {target : Locals.Source.State}
+    {prim : EvmYul.Operation .Yul}
+    {sourceValues outputs : List Word}
+    {source' : EvmYul.Yul.State}
+    (hPermissionRel :
+      sourceShared.executionEnv.perm =
+        target.shared.executionEnv.perm)
+    (hStaticError :
+      sourceShared.executionEnv.perm = false →
+        EvmYul.Yul.primCall fuel.succ
+            (.Ok sourceShared sourceVars) prim sourceValues =
+          .error .StaticModeViolation)
+    (hRun :
+      EvmYul.Yul.primCall fuel.succ
+          (.Ok sourceShared sourceVars) prim sourceValues =
+        .ok (source', outputs)) :
+    target.shared.executionEnv.perm = true := by
+  cases hPermission : sourceShared.executionEnv.perm with
+  | false =>
+      rw [hStaticError hPermission] at hRun
+      cases hRun
+  | true =>
+      simpa [hPermission] using hPermissionRel.symm
+
+theorem LogFamily.targetPermitted_of_run
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul}
+    {op : Structured.BasicOp} {arity : Nat}
+    {source source' : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {sourceValues outputs : List Word}
+    (hFamily : LogFamily prim op arity)
+    (hRel : StateRelation.Regular.Rel codeRel source target)
+    (hRun :
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+        .ok (source', outputs)) :
+    Functions.ObserverSafety.PrimitivePermitted op target.shared := by
+  rcases hRel with
+    ⟨sourceShared, sourceVars, hSource, hShared, hVars⟩
+  subst source
+  cases fuel with
+  | zero =>
+      simp [EvmYul.Yul.primCall] at hRun
+  | succ previous =>
+      cases hFamily with
+      | log0 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log1 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log2 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log3 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+      | log4 =>
+          refine targetPermitted_of_log_succ
+            hShared.world.executionEnv.permission ?_ hRun
+          intro hPermission
+          simp [EvmYul.Yul.primCall]
+          unfold EvmYul.step
+          simp [EvmYul.Yul.State.executionEnv, hPermission]
+          rfl
+
 private theorem rawNoObservableFailure_log_succ
     {fuel : Nat}
     {sourceShared : EvmYul.SharedState .Yul}
@@ -639,6 +729,8 @@ theorem safeLog
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOpArity hYulObserver hFunctionsObserver hTerminal hOp
+      (fun hRaw =>
+        hFamily.targetPermitted_of_run hRel.2 hRaw)
       (forwardAtArity_of_logFamily hFamily)
       (by simpa [hInputs] using hArity) hRel hRun
 

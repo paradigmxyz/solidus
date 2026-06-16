@@ -86,6 +86,18 @@ inductive ProgramStateRel
 
 namespace ProgramStateRel
 
+theorem consumedExactly_iff
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel : ProgramStateRel codeRel source target) :
+    source.ConsumedExactly ↔ target.ConsumedExactly := by
+  change
+    source.cursor = transcript.length ↔
+      target.cursor = transcript.length
+  rw [hRel.1]
+
 theorem restoreDispatcher
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -127,6 +139,18 @@ def ProgramTerminalStateRel
       source.source = .Ok sourceShared sourceVars ∧
         StateRelation.TerminalShared.Rel codeRel
           sourceShared target.source.shared
+
+theorem ProgramTerminalStateRel.consumedExactly_iff
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hRel : ProgramTerminalStateRel codeRel source target) :
+    source.ConsumedExactly ↔ target.ConsumedExactly := by
+  change
+    source.cursor = transcript.length ↔
+      target.cursor = transcript.length
+  rw [hRel.1]
 
 inductive ProgramOutcomeRel
     {transcript : Trace}
@@ -172,6 +196,48 @@ inductive ProgramOutcomeRel
       ProgramOutcomeRel codeRel
         (.revert source)
         (Functions.Source.Effectful.Outcome.halt .revert target)
+
+namespace ProgramOutcomeRel
+
+theorem cursor_eq
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.Result transcript}
+    {target :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hRel : ProgramOutcomeRel codeRel source target) :
+    source.state.cursor = target.state.cursor := by
+  cases hRel with
+  | regular state
+  | stop state
+  | «return» state
+  | selfdestruct state
+  | revert state =>
+      exact state.1
+
+theorem consumedExactly_iff
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.Result transcript}
+    {target :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (hRel : ProgramOutcomeRel codeRel source target) :
+    source.ConsumedExactly ↔ target.state.ConsumedExactly := by
+  cases hRel with
+  | regular state =>
+      exact ProgramStateRel.consumedExactly_iff state
+  | stop state =>
+      exact ProgramTerminalStateRel.consumedExactly_iff state
+  | «return» state =>
+      exact ProgramTerminalStateRel.consumedExactly_iff state
+  | selfdestruct state =>
+      exact ProgramTerminalStateRel.consumedExactly_iff state
+  | revert state =>
+      exact ProgramTerminalStateRel.consumedExactly_iff state
+
+end ProgramOutcomeRel
 
 inductive TerminalFailureRel
     {transcript : Trace}

@@ -222,6 +222,7 @@ theorem safeSharedTernaryCopy
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_sharedTernaryCopy hFamily) hRel hRun
 
 theorem forwardAt_returndatacopy
@@ -335,6 +336,7 @@ theorem safeReturndatacopy
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_returndatacopy hRel hRun
 
 theorem rawNoObservableFailure_returndatacopy
@@ -499,6 +501,7 @@ theorem safeExtcodecopy
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_extcodecopy hRel hRun
 
 theorem rawNoObservableFailure_extcodecopy

@@ -649,6 +649,68 @@ theorem Target.stepInstrResult_halted_output
           cases hStep
           rfl
 
+theorem Target.stepInstrResult_terminal_output_eq_H_return
+    {kind : HaltKind} {state : EVMState} {halt : Halt}
+    (hStep :
+      Target.stepInstrResult (.prim kind.toPrimOp) state =
+        .ok (.halted halt)) :
+    halt.output = halt.state.toMachineState.H_return := by
+  unfold Target.stepInstrResult at hStep
+  cases hRun :
+      Target.stepInstr (.prim kind.toPrimOp) state with
+  | error err =>
+      rw [hRun] at hStep
+      cases hStep
+  | ok final =>
+      rw [hRun] at hStep
+      have hKind :
+          (TargetInstr.prim kind.toPrimOp).haltKind? = some kind := by
+        cases kind <;> rfl
+      rw [hKind] at hStep
+      cases hStep
+      cases kind with
+      | stop =>
+          change PrimOp.stop.step state = .ok final at hRun
+          unfold PrimOp.step at hRun
+          change EvmYul.step (τ := .EVM) .STOP none state =
+            .ok final at hRun
+          cases state
+          cases hRun
+          rfl
+      | «return» =>
+          rfl
+      | revert =>
+          rfl
+      | selfdestruct =>
+          change PrimOp.selfdestruct.step state = .ok final at hRun
+          unfold PrimOp.step at hRun
+          change EvmYul.step (τ := .EVM) .SELFDESTRUCT none state =
+            .ok final at hRun
+          cases state with
+          | mk shared pc stack execLength =>
+              cases stack with
+              | nil =>
+                  contradiction
+              | cons recipient rest =>
+                  have hSelfdestruct :
+                      EvmYul.step (τ := .EVM) .SELFDESTRUCT none
+                          { toSharedState := shared
+                            pc := pc
+                            stack := recipient :: rest
+                            execLength := execLength } =
+                        .ok (EvmYul.EVM.selfdestructState
+                          { toSharedState := shared
+                            pc := pc
+                            stack := recipient :: rest
+                            execLength := execLength }
+                          recipient rest) :=
+                    EvmYul.EVM.step_selfdestruct_of_stack
+                      _ recipient rest rfl
+                  rw [hSelfdestruct] at hRun
+                  cases hRun
+                  simp [HaltKind.output, EvmYul.EVM.selfdestructState,
+                    EvmYul.MachineState.setHReturn]
+
 theorem Target.runListResult_halted_output
     {code : List TargetInstr} {state : EVMState} {halt : Halt}
     (hRun :

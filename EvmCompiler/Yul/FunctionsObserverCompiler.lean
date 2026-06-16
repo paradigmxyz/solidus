@@ -82,6 +82,16 @@ theorem decomposition_of_toObjectsWithObservers?
               subst contractLower
               rfl
 
+theorem memoryContract_of_toObjectsWithObservers?
+    {program : Program} {lower : Objects.Program}
+    (hLower :
+      Program.toObjectsWithObservers? program = some lower) :
+    lower.toFunctions.memoryContract = program.memoryContract := by
+  rcases decomposition_of_toObjectsWithObservers? hLower with
+    ⟨bodyStmts, afterBody, functions, afterFunctions,
+      hBody, hFunctions, hProgram⟩
+  exact congrArg Functions.Program.memoryContract hProgram
+
 theorem Decomposition.findFunction
     {program : Program} {targetProgram : Objects.Program}
     (hDecomposition : Decomposition program targetProgram)

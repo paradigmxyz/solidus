@@ -237,6 +237,7 @@ theorem safePureBinary
       source'.source.store = source.source.store :=
   safeBasicOp hFamily.yulObserver hFamily.functionsObserver
     hFamily.nonterminal hFamily.compilerOp
+    (fun _ => by cases hFamily <;> trivial)
     (forwardAt_of_pureBinary hFamily) hRel hRun
 
 inductive PureUnary :
@@ -487,6 +488,7 @@ theorem safePureUnary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_pureUnary hFamily) hRel hRun
 
 theorem safePureTernary
@@ -515,6 +517,7 @@ theorem safePureTernary
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_pureTernary hFamily) hRel hRun
 
 end FunctionsObserverPrimitive

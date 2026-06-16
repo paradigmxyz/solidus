@@ -1,3 +1,4 @@
+import EvmCompiler.Assembly.Preservation
 import EvmCompiler.Assembly.StackShuffleObserverPreservation
 import EvmCompiler.TypedCfg.Certificate
 import EvmCompiler.TypedCfg.ObserverSemantics
@@ -349,6 +350,37 @@ def HaltMatches (target : Assembly.Halt)
       Assembly.Target.stepInstrResult
           (.prim kind.toPrimOp) simulated =
         .ok (.halted target)
+
+theorem HaltMatches.elim
+    {target : Assembly.Halt}
+    {kind : Assembly.HaltKind} {source : EVMState}
+    (hMatches : HaltMatches target kind source) :
+    target.kind = kind ∧
+      ∃ simulated,
+        Assembly.SameRuntimeData simulated source ∧
+          Assembly.Target.stepInstr (.prim kind.toPrimOp) simulated =
+            .ok target.state ∧
+          target.output =
+            target.state.toMachineState.H_return := by
+  rcases hMatches with ⟨simulated, hRel, hStep⟩
+  have hOutput :=
+    Assembly.Preservation.Target.stepInstrResult_terminal_output_eq_H_return
+      hStep
+  unfold Assembly.Target.stepInstrResult at hStep
+  cases hRun :
+      Assembly.Target.stepInstr (.prim kind.toPrimOp) simulated with
+  | error err =>
+      rw [hRun] at hStep
+      cases hStep
+  | ok final =>
+      rw [hRun] at hStep
+      have hKind :
+          (Assembly.TargetInstr.prim kind.toPrimOp).haltKind? =
+            some kind := by
+        cases kind <;> rfl
+      rw [hKind] at hStep
+      cases hStep
+      exact ⟨rfl, simulated, hRel, hRun, hOutput⟩
 
 end Outcome
 

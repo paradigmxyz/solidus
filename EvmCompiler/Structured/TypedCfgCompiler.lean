@@ -740,6 +740,25 @@ theorem artifactWithProcEntryShapes?_entry
         exact generateWithProcEntryShapes?_entry hGenerate
       · simp [hGenerate, hCheck] at hArtifact
 
+theorem artifactWithProcEntryShapes?_generate
+    {program : Program} {entryShapes : ProcEntryShapes}
+    {artifact : CompileArtifact}
+    (hArtifact :
+      artifactWithProcEntryShapes? program entryShapes = some artifact) :
+    generateWithProcEntryShapes? program entryShapes =
+      some artifact.cfg := by
+  unfold artifactWithProcEntryShapes? at hArtifact
+  cases hGenerate :
+      generateWithProcEntryShapes? program entryShapes with
+  | none =>
+      simp [hGenerate] at hArtifact
+  | some cfg =>
+      by_cases hCheck : cfg.wellTyped? = true
+      · simp [hGenerate, hCheck] at hArtifact
+        cases hArtifact
+        simpa using hGenerate
+      · simp [hGenerate, hCheck] at hArtifact
+
 theorem compile?_wellTyped {program : Program} {cfg : TypedCfg.Program}
     (hCompile : compile? program = some cfg) :
     cfg.WellTyped := by

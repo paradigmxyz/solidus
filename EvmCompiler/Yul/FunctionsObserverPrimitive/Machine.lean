@@ -162,6 +162,7 @@ theorem safeMachineBinaryZero
       hTerminal, hOp⟩ := hFamily.metadata
   exact
     safeBasicOp hYulObserver hFunctionsObserver hTerminal hOp
+      (fun _ => by cases hFamily <;> trivial)
       (forwardAt_of_machineBinaryZero hFamily) hRel hRun
 
 theorem forwardAt_mcopy
@@ -261,6 +262,7 @@ theorem safeMcopy
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_mcopy hRel hRun
 
 theorem rawNoObservableFailureAt_mcopy
@@ -400,6 +402,7 @@ theorem safeMload
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_mload hRel hRun
 
 theorem rawNoObservableFailureAt_mload
@@ -539,6 +542,7 @@ theorem safeKeccak256
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_keccak256 hRel hRun
 
 theorem rawNoObservableFailureAt_keccak256
@@ -656,6 +660,7 @@ theorem safeReturndatasize
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAtArity_returndatasize hArity hRel hRun
 
 theorem rawNoObservableFailure_returndatasize
@@ -778,6 +783,7 @@ theorem safePop
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOpArity (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAtArity_pop hArity hRel hRun
 
 end FunctionsObserverPrimitive

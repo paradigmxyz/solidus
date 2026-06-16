@@ -15,16 +15,16 @@ replay belongs to `Yul.ObserverSemantics`.
 abbrev Trace := Assembly.ResourceTrace
 
 def NoExternalEffects (artifact : Public.Artifact) : Prop :=
-  artifact.metadata.certificate.cfg.safety.noCallCreate = true
+  artifact.metadata.typedCfg.NoExternalEffects
 
 def noExternalEffects? (artifact : Public.Artifact) : Bool :=
-  artifact.metadata.certificate.cfg.safety.noCallCreate
+  artifact.metadata.typedCfg.noExternalEffects?
 
 theorem noExternalEffects_of_check
     {artifact : Public.Artifact}
     (hCheck : noExternalEffects? artifact = true) :
     NoExternalEffects artifact :=
-  hCheck
+  TypedCfg.Program.noExternalEffects_of_check hCheck
 
 def TerminalRun (artifact : Public.Artifact) (fuel : Nat)
     (initial : Assembly.EVMState) (result : Assembly.StepResult)

@@ -350,6 +350,83 @@ def lowerBlocks? : List Block → Option Assembly.Program
 def lower? (program : Program) : Option Assembly.Program :=
   program.blocksInLoweringOrder? >>= lowerBlocks?
 
+theorem extractBlock?_label
+    {blocks : List Block} {label : Label}
+    {block : Block} {remaining : List Block}
+    (hExtract :
+      extractBlock? blocks label = some (block, remaining)) :
+    block.label = label := by
+  induction blocks generalizing block remaining with
+  | nil =>
+      simp [extractBlock?] at hExtract
+  | cons head rest ih =>
+      by_cases hHead : head.label = label
+      · simp [extractBlock?, hHead] at hExtract
+        rcases hExtract with ⟨rfl, rfl⟩
+        exact hHead
+      · simp [extractBlock?, hHead] at hExtract
+        cases hTail : extractBlock? rest label with
+        | none =>
+            simp [hTail] at hExtract
+        | some result =>
+            rcases result with ⟨entry, tail⟩
+            simp [hTail] at hExtract
+            rcases hExtract with ⟨rfl, rfl⟩
+            exact ih hTail
+
+theorem lowerBlocks?_starts_with_label
+    {block : Block} {rest : List Block}
+    {target : Assembly.Program}
+    (hLower : lowerBlocks? (block :: rest) = some target) :
+    ∃ tail, target = .label block.label :: tail := by
+  unfold lowerBlocks? at hLower
+  cases hHead : block.lower? with
+  | none =>
+      simp [hHead] at hLower
+  | some head =>
+      cases hTail : lowerBlocks? rest with
+      | none =>
+          simp [hHead, hTail] at hLower
+      | some tail =>
+          simp [hHead, hTail] at hLower
+          cases hLower
+          rcases Block.lower?_starts_with_label hHead with
+            ⟨headTail, rfl⟩
+          exact ⟨headTail ++ tail, by simp⟩
+
+theorem lower?_starts_with_entry_label
+    {program : Program} {target : Assembly.Program}
+    (hLower : program.lower? = some target) :
+    ∃ tail, target = .label program.entry :: tail := by
+  unfold lower? at hLower
+  cases hOrder : program.blocksInLoweringOrder? with
+  | none =>
+      simp [hOrder] at hLower
+  | some blocks =>
+      simp [hOrder] at hLower
+      unfold blocksInLoweringOrder? at hOrder
+      cases hExtract :
+          extractBlock? program.blocks program.entry with
+      | none =>
+          simp [hExtract] at hOrder
+      | some result =>
+          rcases result with ⟨entry, remaining⟩
+          simp [hExtract] at hOrder
+          subst blocks
+          have hEntry : entry.label = program.entry :=
+            extractBlock?_label hExtract
+          rcases lowerBlocks?_starts_with_label hLower with
+            ⟨tail, hTarget⟩
+          rw [hEntry] at hTarget
+          exact ⟨tail, hTarget⟩
+
+theorem lower?_entry_labelPc_zero
+    {program : Program} {target : Assembly.Program}
+    (hLower : program.lower? = some target) :
+    target.labelPc program.entry = some 0 := by
+  rcases lower?_starts_with_entry_label hLower with ⟨tail, rfl⟩
+  simp [Assembly.Program.labelPc, Assembly.Program.labelPcFrom]
+
 def Lowerable (program : Program) : Prop :=
   ∃ asm, program.lower? = some asm
 

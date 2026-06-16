@@ -70,6 +70,7 @@ theorem safeInvalid
       StateRelation.Replay.Rel codeRel source' target' ∧
       source'.source.store = source.source.store :=
   safeBasicOp (by rfl) (by rfl) (by rfl) (by rfl)
+    (fun _ => by trivial)
     forwardAt_invalid hRel hRun
 
 end FunctionsObserverPrimitive

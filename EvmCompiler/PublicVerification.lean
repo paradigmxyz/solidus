@@ -117,7 +117,7 @@ theorem blockSimulation_of_loweredFrom
     artifact.BlockSimulation label initial := by
   rcases hLowered with
     ⟨expressions, compiled, _hCompatible, _hMemoryAuthorized,
-      hExpressions, hCfg, hCompile, hExecutable, hCertificate⟩
+      hExpressions, _hSourceWF, hCfg, hCompile, hExecutable, hCertificate⟩
   rcases
       Compiler.AllocatedTypedCfg.Program.compileCertified?_labelPc_exists
         hCompile hFind with
@@ -151,7 +151,7 @@ theorem structuredSimulation_of_loweredFrom
   have hLoweredCopy := hLowered
   rcases hLowered with
     ⟨loweredExpressions, compiled, _hCompatible, _hMemoryAuthorized,
-      hExpressions, hCfg, hCompile, hExecutable, hCertificate⟩
+      hExpressions, _hSourceWF, hCfg, hCompile, hExecutable, hCertificate⟩
   rcases hEvaluation with
     ⟨evaluatedExpressions, hEvaluatedExpressions, hWF, hFrameSafe, hEval⟩
   have hExpressionsEq : evaluatedExpressions = loweredExpressions := by

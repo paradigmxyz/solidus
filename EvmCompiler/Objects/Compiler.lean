@@ -3,6 +3,7 @@ import EvmCompiler.Compiler.AllocatedTypedCfg
 import EvmCompiler.Compiler.Artifact
 import EvmCompiler.Functions.Compiler
 import EvmCompiler.Functions.AllocationLowering
+import EvmCompiler.Structured.SourceAcceptedCheck
 
 namespace EvmCompiler
 namespace Objects
@@ -222,9 +223,58 @@ def procEntryShapes? (planned : PlannedProgram)
 
 def lowerTypedCfg? (planned : PlannedProgram)
     (expressions : Expressions.Program) : Option TypedCfg.Program := do
+  if Structured.SourceAcceptedCheck.Program.wf?
+      expressions.toStructured then
+    pure ()
+  else
+    none
   let entryShapes ← planned.procEntryShapes? expressions
-  Structured.TypedCfgCompiler.lowerWithProcEntryShapes?
+  let cfg ← Structured.TypedCfgCompiler.lowerWithProcEntryShapes?
     expressions.toStructured entryShapes
+  if cfg.programCounterIndependent? then
+    some cfg
+  else
+    none
+
+theorem lowerTypedCfg?_sourceWF
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    {cfg : TypedCfg.Program}
+    (hLower : planned.lowerTypedCfg? expressions = some cfg) :
+    expressions.toStructured.WF := by
+  unfold lowerTypedCfg? at hLower
+  by_cases hWF :
+      Structured.SourceAcceptedCheck.Program.wf?
+          expressions.toStructured = true
+  · exact Structured.SourceAcceptedCheck.Program.wf_of_check hWF
+  · simp [hWF] at hLower
+
+theorem lowerTypedCfg?_programCounterIndependent
+    {planned : PlannedProgram} {expressions : Expressions.Program}
+    {cfg : TypedCfg.Program}
+    (hLower : planned.lowerTypedCfg? expressions = some cfg) :
+    cfg.ProgramCounterIndependent := by
+  unfold lowerTypedCfg? at hLower
+  by_cases hWF :
+      Structured.SourceAcceptedCheck.Program.wf?
+          expressions.toStructured = true
+  · simp [hWF] at hLower
+    cases hShapes : planned.procEntryShapes? expressions with
+    | none =>
+        simp [hShapes] at hLower
+    | some entryShapes =>
+        simp [hShapes] at hLower
+        cases hCfg :
+            Structured.TypedCfgCompiler.lowerWithProcEntryShapes?
+              expressions.toStructured entryShapes with
+        | none =>
+            simp [hCfg] at hLower
+        | some generated =>
+            by_cases hPC : generated.programCounterIndependent? = true
+            · simp [hCfg, hPC] at hLower
+              cases hLower
+              exact TypedCfg.Program.programCounterIndependent_of_check hPC
+            · simp [hCfg, hPC] at hLower
+  · simp [hWF] at hLower
 
 theorem lowerTypedCfg?_sourceArtifact
     {planned : PlannedProgram} {expressions : Expressions.Program}
@@ -237,21 +287,29 @@ theorem lowerTypedCfg?_sourceArtifact
           some sourceArtifact ∧
         sourceArtifact.cfg = cfg := by
   unfold lowerTypedCfg? at hLower
-  cases hShapes : planned.procEntryShapes? expressions with
-  | none =>
-      simp [hShapes] at hLower
-  | some entryShapes =>
-      simp [hShapes] at hLower
-      unfold Structured.TypedCfgCompiler.lowerWithProcEntryShapes? at hLower
-      cases hArtifact :
-          Structured.TypedCfgCompiler.artifactWithProcEntryShapes?
-            expressions.toStructured entryShapes with
-      | none =>
-          simp [hArtifact] at hLower
-      | some sourceArtifact =>
-          simp [hArtifact] at hLower
-          cases hLower
-          exact ⟨entryShapes, sourceArtifact, rfl, hArtifact, rfl⟩
+  by_cases hWF :
+      Structured.SourceAcceptedCheck.Program.wf?
+          expressions.toStructured = true
+  · simp [hWF] at hLower
+    cases hShapes : planned.procEntryShapes? expressions with
+    | none =>
+        simp [hShapes] at hLower
+    | some entryShapes =>
+        simp [hShapes] at hLower
+        unfold Structured.TypedCfgCompiler.lowerWithProcEntryShapes? at hLower
+        cases hArtifact :
+            Structured.TypedCfgCompiler.artifactWithProcEntryShapes?
+              expressions.toStructured entryShapes with
+        | none =>
+            simp [hArtifact] at hLower
+        | some sourceArtifact =>
+            by_cases hPC :
+                sourceArtifact.cfg.programCounterIndependent? = true
+            · simp [hArtifact, hPC] at hLower
+              cases hLower
+              exact ⟨entryShapes, sourceArtifact, rfl, hArtifact, rfl⟩
+            · simp [hArtifact, hPC] at hLower
+  · simp [hWF] at hLower
 
 def lowerArtifact? (planned : PlannedProgram) :
     Option CompileArtifact := do
@@ -343,6 +401,7 @@ def LoweredFrom (artifact : CompileArtifact)
       artifact.metadata.allocation.MemoryAuthorized
         source.memoryContract ∧
       planned.lowerWithAllocation? = some expressions ∧
+      expressions.toStructured.WF ∧
       planned.lowerTypedCfg? expressions = some artifact.metadata.typedCfg ∧
       (Compiler.AllocatedTypedCfg.Program.ofAllocation
         artifact.metadata.allocation
@@ -407,6 +466,7 @@ theorem PlannedProgram.lowerArtifact?_loweredFrom
                       ⟨expressions, compiled, hContract.2,
                         hMemoryAuthorized, by
                           simp [lowerWithAllocation?, hLower, expressions],
+                        lowerTypedCfg?_sourceWF hCfg,
                         hCfg, hAllocated,
                         hTarget, rfl⟩
   · simp [hValid] at hCompile

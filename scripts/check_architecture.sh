@@ -201,7 +201,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
-  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean \
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
 
 report_matches \
   'The Yul-to-Functions observer proof must not reason directly about lower pass semantics:' \
@@ -216,7 +217,8 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
-  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean \
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
 
 report_matches \
   'The Yul observer boundary must not implement a parallel compiler:' \
@@ -232,7 +234,44 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
-  EvmCompiler/Yul/FunctionsObserverPreservation.lean
+  EvmCompiler/Yul/FunctionsObserverPreservation.lean \
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
+
+trace_adequacy_signature="$(
+  sed -n '/^theorem compileProgramTraceAdequate/,/ := by$/p' \
+    EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean
+)"
+if [[ -z "$trace_adequacy_signature" ]]; then
+  printf 'Missing narrow Yul-to-Functions trace theorem: compileProgramTraceAdequate\n\n' >&2
+  failed=1
+else
+  trace_adequacy_leaks="$(
+    printf '%s\n' "$trace_adequacy_signature" |
+      rg -n \
+        '(Certificate|CompileArtifact|Allocation|ReplayCertificate|CallOracle|Evidence|TypedCfg|Assembly\.Program)' \
+        2>/dev/null || true
+  )"
+  if [[ -n "$trace_adequacy_leaks" ]]; then
+    printf '%s\n%s\n\n' \
+      'The narrow Yul trace theorem must not expose generated or lower-pass evidence:' \
+      "$trace_adequacy_leaks" >&2
+    failed=1
+  fi
+  if ! printf '%s\n' "$trace_adequacy_signature" |
+      rg -q 'SourceExecutionSafe'; then
+    printf '%s\n\n' \
+      'The narrow Yul trace theorem must expose the source-facing execution-safety premise.' \
+      >&2
+    failed=1
+  fi
+  if ! printf '%s\n' "$trace_adequacy_signature" |
+      rg -q 'hTargetExhausted'; then
+    printf '%s\n\n' \
+      'The narrow Yul trace theorem must derive exact replay from target cursor exhaustion.' \
+      >&2
+    failed=1
+  fi
+fi
 
 report_matches \
   'Yul effect refinement must remain semantic-only and adjacent to canonical Yul semantics:' \
@@ -284,6 +323,54 @@ report_matches \
   'The end-to-end theorem must not perform recursive lower-pass execution reasoning:' \
   '(TypedCfg\.|Structured\.TypedCfg|Assembly\.(Source|Compiled|Preservation)|runNResultWithOracle|lowerBodyFrom\?)' \
   EvmCompiler/Yul/EndToEnd.lean
+
+report_matches \
+  'The public observer composition must not import Yul or bypass pass-owned lower interfaces:' \
+  '^import EvmCompiler\.(Yul|Locals|Expressions|Assembly)' \
+  EvmCompiler/Public/ObserverComposition.lean
+
+closed_resource_signature="$(
+  sed -n '/^def ClosedResourceCorrect/,/^\/--$/p' \
+    EvmCompiler/Yul/EndToEnd.lean |
+    sed '$d'
+)"
+if [[ -z "$closed_resource_signature" ]] ||
+    ! printf '%s\n' "$closed_resource_signature" |
+      rg -q 'SourceExecutionSafe'; then
+  printf '%s\n\n' \
+    'ClosedResourceCorrect must expose source-facing execution safety explicitly.' \
+    >&2
+  failed=1
+fi
+if printf '%s\n' "$closed_resource_signature" |
+    rg -q '(Certificate|LoweredFrom|allocation|generated|Evidence|CallOracle)'; then
+  printf '%s\n%s\n\n' \
+    'ClosedResourceCorrect must not accept compiler-generated evidence:' \
+    "$closed_resource_signature" >&2
+    failed=1
+fi
+
+if ! rg -q '^theorem closedResourceCorrect : ClosedResourceCorrect := by$' \
+    EvmCompiler/Yul/EndToEnd.lean; then
+  printf '%s\n\n' \
+    'The public observer proposition must have a checked composition theorem.' \
+    >&2
+  failed=1
+fi
+
+closed_artifact_signature="$(
+  sed -n '/^structure ClosedArtifact/,/^theorem ClosedArtifact.valid/p' \
+    EvmCompiler/Yul/EndToEnd.lean |
+    sed '$d'
+)"
+if [[ -z "$closed_artifact_signature" ]] ||
+    ! printf '%s\n' "$closed_artifact_signature" |
+      rg -q 'stackOnly'; then
+  printf '%s\n\n' \
+    'The first checked public observer theorem must state its stack-only restriction.' \
+    >&2
+  failed=1
+fi
 
 if ! rg -q '^import EvmCompiler\.TypedCfg\.EffectSemantics$' \
     EvmCompiler/TypedCfg/ObserverSemantics.lean ||
@@ -614,6 +701,9 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverForward.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive.lean \
   EvmCompiler/Yul/FunctionsObserverPrimitive \
+  EvmCompiler/Yul/FunctionsObserverTraceAdequacy.lean \
+  EvmCompiler/Yul/EndToEnd.lean \
+  EvmCompiler/Public/ObserverComposition.lean \
   EvmCompiler/TypedCfg \
   EvmCompiler/Structured/TypedCfgCompiler.lean \
   EvmCompiler/Structured/TypedCfgCompilerFreshness.lean \
