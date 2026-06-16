@@ -59,6 +59,7 @@ import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
 import EvmCompiler.Yul.EndToEnd
 import EvmCompiler.Yul.CompilerCallDecomposition
+import EvmCompiler.Yul.CompilerExpressionDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
@@ -308,6 +309,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
+#check EvmCompiler.Yul.Expr.lower1Unchecked?_prelude
+#check EvmCompiler.Yul.Expr.Prelude.runOpen_regular_or_halt
 #check EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
 #check EvmCompiler.Yul.FunctionsObserverCallBackward.ReturnedBodyBackward.compose
 #check EvmCompiler.Yul.Source.Effectful.StateModel.Lawful

@@ -30107,3 +30107,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   forbidden-marker scan, and `git diff --check` passed. The new lexical-block
   boundary depends only on Lean's accepted `propext`, `Classical.choice`, and
   `Quot.sound`.
+- 2026-06-16 14:45:06 PDT - compaction-resume - Resumed from checked lexical
+  block backward adequacy; the current adjacent frontier is a compiler-owned
+  regular-or-halt classification for generated expression preludes, needed
+  before proving outcome-indexed Yul `if`, `switch`, and `for` backward
+  adequacy.
+- 2026-06-16 14:52:05 PDT - proof/yul-expression-prelude-classification -
+  Added the pass-owned `Expr.Prelude` classifier and proved both that every
+  successful unchecked expression lowering emits only generated bindings and
+  ordinary calls, and that any successful canonical Functions run of such a
+  prelude is regular or terminally halted. This supplies a reusable
+  outcome-indexed split for `if`, `switch`, and `for` without duplicating a
+  compiler or control interpreter.
+- 2026-06-16 14:52:05 PDT - validation/yul-expression-prelude-classification -
+  Focused build, full 1,262-job verification root, architecture dependency
+  guard, aggregate proof-layer gate, standalone axiom smoke, forbidden-marker
+  scan, and `git diff --check` passed. The new theorems depend only on
+  `propext` and `Quot.sound`.
