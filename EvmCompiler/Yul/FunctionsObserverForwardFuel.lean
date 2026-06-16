@@ -16,7 +16,7 @@ def RecursiveOpenStmtForwardBounded
     (sourceProgram : Yul.Program)
     (targetProgram : Objects.Program)
     (profile : SolcValidation.DialectProfile)
-    (bound : Nat) : Prop :=
+    (staticCost bound : Nat) : Prop :=
   ∀ {sourceFuel compilerFuel : Nat}
     {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
@@ -56,7 +56,7 @@ def RecursiveOpenStmtForwardBounded
               canBreak canContinue canLeave
               (sourceControl := sourceControl) //
           FunctionsObserverFuel.ScopedOpenResult.Bounded
-            sourceFuel result.openResult }
+            staticCost sourceFuel result.openResult }
 
 def RecursiveOpenListForwardBounded
     (contract : MemoryContract.Contract)
@@ -65,7 +65,7 @@ def RecursiveOpenListForwardBounded
     (sourceProgram : Yul.Program)
     (targetProgram : Objects.Program)
     (profile : SolcValidation.DialectProfile)
-    (bound : Nat) : Prop :=
+    (staticCost bound : Nat) : Prop :=
   ∀ {sourceFuel compilerFuel : Nat}
     {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
     {before after : Fresh.State}
@@ -106,7 +106,82 @@ def RecursiveOpenListForwardBounded
               canBreak canContinue canLeave
               (sourceControl := sourceControl) //
           FunctionsObserverFuel.ScopedOpenResult.Bounded
-            sourceFuel result.openResult }
+            staticCost sourceFuel result.openResult }
+
+namespace ScopedStmtResult
+
+/--
+An uninitialized declaration exposes its real static expansion cost: one
+Functions block level per declared name, plus the empty suffix.
+-/
+theorem ofLetNone_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {compilerFuel sourceFuel staticCost : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {names : List EvmYul.Identifier}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hStatic : names.length + 1 ≤ staticCost)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before
+          (.Let names none) =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hNamesUsed :
+      StateRelation.Vars.NamesWithin before.used
+        (identNames names))
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel (.Let names none)
+          codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program (.Let names none)
+            lower before after layout sourceFinal target ctx
+            canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  obtain ⟨⟨openResult, hRequired⟩⟩ :=
+    FunctionsObserverStatement.OpenResult.of_let_none
+      hLower hRel hDomain hScope hLayout hControl.scope hNamesUsed hRun
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  exact
+    hRequired.trans
+      (hStatic.trans
+        (FunctionsObserverFuel.staticCost_le_executionBudget
+          staticCost sourceFuel))
+
+end ScopedStmtResult
 
 namespace RecursiveOpenListForwardBounded
 
@@ -117,12 +192,13 @@ theorem ofStmt
     {sourceProgram : Yul.Program}
     {targetProgram : Objects.Program}
     {profile : SolcValidation.DialectProfile}
+    {staticCost : Nat}
     {bound : Nat}
     (hStmt :
       RecursiveOpenStmtForwardBounded contract transcript codeRel
-        sourceProgram targetProgram profile bound) :
+        sourceProgram targetProgram profile staticCost bound) :
     RecursiveOpenListForwardBounded contract transcript codeRel
-      sourceProgram targetProgram profile (bound + 1) := by
+      sourceProgram targetProgram profile staticCost (bound + 1) := by
   intro sourceFuel
   induction sourceFuel using Nat.strong_induction_on with
   | h sourceFuel ih =>
@@ -163,7 +239,8 @@ theorem ofStmt
           refine ⟨⟨result, ?_⟩⟩
           exact
             FunctionsObserverFuel.ScopedOpenResult.empty_bounded
-              sourceFuel hRel hDomain hScope hLayout hControl.scope
+              staticCost sourceFuel hRel hDomain hScope hLayout
+              hControl.scope
       | cons head tail =>
           obtain
               ⟨compilerPrevious, lowerHead, middle, lowerTail,

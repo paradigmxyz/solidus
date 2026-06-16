@@ -279,14 +279,14 @@ end AssignedValue
 
 namespace InitNames
 
-theorem run
+theorem run_at_length
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {program : Functions.Program}
     (names : List Name)
     (target : Functions.ObserverSemantics.State transcript)
     (ctx : Functions.Source.Ctx) :
-    ∃ fuel finalVars finalCtx,
+    ∃ finalVars finalCtx,
       Functions.Source.Store.insertMany names
           (names.map fun _name => Functions.Source.zero)
           target.source.vars =
@@ -295,7 +295,7 @@ theorem run
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          program ctx fuel
+          program ctx (names.length + 1)
           { stmts := Stmt.initNames names } target =
         .ok
           (Functions.Source.Effectful.Outcome.regular
@@ -306,7 +306,7 @@ theorem run
         { ctx with scope := names.reverse ++ ctx.scope } := by
   induction names generalizing target ctx with
   | nil =>
-      refine ⟨1, target.source.vars, ctx, rfl, ?_, ?_⟩
+      refine ⟨target.source.vars, ctx, rfl, ?_, ?_⟩
       · simpa [Stmt.initNames] using
           Functions.Source.Effectful.Block.runOpen_nil
             (Functions.ObserverSemantics.stateModel transcript)
@@ -335,7 +335,7 @@ theorem run
               (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
                 contract transcript)
               program name Functions.Source.zero
-      obtain ⟨tailFuel, finalVars, finalCtx,
+      obtain ⟨finalVars, finalCtx,
           hInsert, hTail, hFinalCtx⟩ :=
         ih (target := targetHead) (ctx := ctxHead)
       have hTarget :
@@ -346,18 +346,48 @@ theorem run
         cases target
         rfl
       rw [hTarget] at hTail
-      obtain ⟨fuel, hRun⟩ :=
-        Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      have hRun :=
+        Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           program hHead hTail
-      refine ⟨fuel, finalVars, finalCtx, ?_, ?_, ?_⟩
+      refine ⟨finalVars, finalCtx, ?_, ?_, ?_⟩
       · simpa [Functions.Source.Store.insertMany, targetHead,
           Locals.Source.State.insert] using hInsert
-      · simpa [Stmt.initNames] using hRun
+      · simpa [Stmt.initNames, Nat.max_eq_right] using hRun
       · rw [hFinalCtx]
         simp [ctxHead, List.reverse_cons, List.append_assoc]
+
+theorem run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {program : Functions.Program}
+    (names : List Name)
+    (target : Functions.ObserverSemantics.State transcript)
+    (ctx : Functions.Source.Ctx) :
+    ∃ fuel finalVars finalCtx,
+      Functions.Source.Store.insertMany names
+          (names.map fun _name => Functions.Source.zero)
+          target.source.vars =
+        some finalVars ∧
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel
+          { stmts := Stmt.initNames names } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            (target.withSource
+              { shared := target.source.shared, vars := finalVars }),
+            finalCtx) ∧
+      finalCtx =
+        { ctx with scope := names.reverse ++ ctx.scope } := by
+  obtain ⟨finalVars, finalCtx, hInsert, hRun, hCtx⟩ :=
+    run_at_length (contract := contract) (program := program)
+      names target ctx
+  exact ⟨names.length + 1, finalVars, finalCtx, hInsert, hRun, hCtx⟩
 
 end InitNames
 
@@ -1081,9 +1111,11 @@ theorem of_let_none
           codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (Result contract codeRel program (.Let names none)
-        lower before after layout sourceFinal target ctx
-        (sourceControl := sourceControl)) := by
+      { result :
+          Result contract codeRel program (.Let names none)
+            lower before after layout sourceFinal target ctx
+            (sourceControl := sourceControl) //
+        result.openResult.requiredFuel ≤ names.length + 1 } := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_let_none_parts hLower
   subst lower
@@ -1108,9 +1140,9 @@ theorem of_let_none
     StateRelation.Vars.checkDeclaration_ok_parts
       (layout := layout) (source := sourceVars)
       (shared := sourceShared) hSourceDomain hCheckSource
-  obtain ⟨targetFuel, finalVars, finalCtx,
+  obtain ⟨finalVars, finalCtx,
       hInsert, hTargetRun, hFinalCtx⟩ :=
-    InitNames.run
+    InitNames.run_at_length
       (contract := contract) (program := program)
       (identNames names) target ctx
   let targetFinal :=
@@ -1153,42 +1185,56 @@ theorem of_let_none
     rcases List.mem_append.mp hMem with hDeclared | hOuter
     · exact hNamesUsed name (by simpa using hDeclared)
     · exact hScope name hOuter
-  exact
-    ⟨{ openResult :=
-         { finalLayout := identNames names ++ layout
-           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
-           finalCtx := finalCtx
-           run := ⟨targetFuel, by simpa [targetFinal] using hTargetRun⟩
-           relation := hOutcomeRel
-           domain := hFinalDomain
-           scope := hFinalScope
-           control := by
-             rw [hFinalCtx]
-             exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
-           freshExtends := Fresh.Extends.refl before
-           retains := fun _hRegular name hMem =>
-             List.mem_append_right _ hMem
-           layoutWithin := by
-             intro name hMem
-             rcases List.mem_append.mp hMem with hDeclared | hOuter
-             · exact hNamesUsed name hDeclared
-             · exact hLayout name hOuter
-           sourceDefined :=
-             FunctionsObserverOutcome.SourceDefined.of_scopedExact
-               hFinalRel
-           abruptTargetRestriction := by
-             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
-           layoutScope := by
-             intro _hRegular name hMem
-             rw [hFinalCtx]
-             rcases List.mem_append.mp hMem with hDeclared | hOuter
-             · exact List.mem_append_left _ (by simpa using hDeclared)
-             · exact List.mem_append_right _ (hLayoutScope name hOuter)
-           exitScope := by
-             simp [FunctionsObserverOutcome.ExitScopeRel] }
-       regularLayout := by
-         intro _hRegular
-         rfl }⟩
+  let openResult :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program (Stmt.initNames (identNames names))
+        before before layout sourceFinal target ctx
+        (sourceControl := sourceControl) :=
+    { finalLayout := identNames names ++ layout
+      outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+      finalCtx := finalCtx
+      run :=
+        ⟨(identNames names).length + 1,
+          by simpa [targetFinal] using hTargetRun⟩
+      relation := hOutcomeRel
+      domain := hFinalDomain
+      scope := hFinalScope
+      control := by
+        rw [hFinalCtx]
+        exact Functions.Source.Ctx.SameControl.scopeUpdate ctx _
+      freshExtends := Fresh.Extends.refl before
+      retains := fun _hRegular name hMem =>
+        List.mem_append_right _ hMem
+      layoutWithin := by
+        intro name hMem
+        rcases List.mem_append.mp hMem with hDeclared | hOuter
+        · exact hNamesUsed name hDeclared
+        · exact hLayout name hOuter
+      sourceDefined :=
+        FunctionsObserverOutcome.SourceDefined.of_scopedExact hFinalRel
+      abruptTargetRestriction := by
+        simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+      layoutScope := by
+        intro _hRegular name hMem
+        rw [hFinalCtx]
+        rcases List.mem_append.mp hMem with hDeclared | hOuter
+        · exact List.mem_append_left _ (by simpa using hDeclared)
+        · exact List.mem_append_right _ (hLayoutScope name hOuter)
+      exitScope := by
+        simp [FunctionsObserverOutcome.ExitScopeRel] }
+  let result :
+      Result contract codeRel program (.Let names none)
+        (Stmt.initNames (identNames names)) before before layout
+        sourceFinal target ctx (sourceControl := sourceControl) :=
+    { openResult := openResult
+      regularLayout := by
+        intro _hRegular
+        rfl }
+  refine ⟨⟨result, ?_⟩⟩
+  apply
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+      result.openResult
+  simpa [result, targetFinal, identNames] using hTargetRun
 
 theorem of_let_one
     {contract : MemoryContract.Contract}

@@ -30291,3 +30291,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   aggregate proof-layer gate, forbidden-marker scan, standalone axiom smoke,
   and `git diff --check` passed. Both fresh-call bounds use only `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 16:43:49 PDT - theorem-boundary/yul-functions-static-cost - A
+  source-fuel-only target bound is false: one successful Yul multi-name
+  declaration uses one source step while emitting arbitrarily many Functions
+  initialization statements. Replaced the public quantitative capability with
+  `executionBudget staticCost sourceFuel`, retaining `targetBudget` only as the
+  dynamic recursion amplifier.
+- 2026-06-16 16:43:49 PDT - proof/yul-let-none-fuel - Proved
+  `InitNames.run_at_length` and strengthened `OpenResult.of_let_none` with the
+  exact `names.length + 1` least-fuel upper bound. Added
+  `ScopedStmtResult.ofLetNone_bounded`, the first statement leaf using the
+  corrected static-plus-dynamic interface.
+- 2026-06-16 16:46:20 PDT - validation/yul-functions-static-cost - Focused
+  statement/forward builds, the full 1,266-job verification root, architecture
+  dependency guard, aggregate proof-layer gate, changed-file forbidden-marker
+  scan, standalone axiom smoke, and `git diff --check` passed. The corrected
+  budget and declaration bound use only `propext`, `Classical.choice`, and
+  `Quot.sound`.

@@ -1984,7 +1984,7 @@ theorem ofCompound
               StateRelation.Vars.NamesWithin before.used
                 (identNames names) := by
             simpa [Stmt.names] using hNames
-          obtain ⟨result⟩ :=
+          obtain ⟨⟨result, _hFuelBound⟩⟩ :=
             FunctionsObserverStatement.OpenResult.of_let_none
               (sourceControl := sourceControl)
               hLower hRel hDomain hScope hLayout hControl.scope

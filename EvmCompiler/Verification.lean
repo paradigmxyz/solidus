@@ -310,7 +310,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_append_le
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
 #check EvmCompiler.Yul.FunctionsObserverFuel.targetBudget
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget
+#check EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
+#check EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run_at_length
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.requiredFuel
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
@@ -318,6 +321,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_sourceBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenStmtForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward

@@ -9,10 +9,12 @@ namespace FunctionsObserverFuel
 Quantitative interface for the adjacent Yul-to-Functions observer pass.
 
 The existing forward simulation chooses sufficient target fuel existentially.
-This module supplies a source-fuel-indexed budget large enough for local
-compiler wrappers and a bounded number of strictly smaller recursive runs.
-Pass-owned preservation theorems can expose bounds against this budget without
-changing either canonical semantics.
+`targetBudget` amplifies dynamic source fuel across strictly smaller recursive
+runs. `executionBudget` also carries a source-derived static expansion factor:
+one Yul step can emit an unbounded number of Functions statements as source
+syntax grows, for example a multi-name declaration. Pass-owned preservation
+theorems must account for both dimensions without changing either canonical
+semantics.
 -/
 
 def targetBudget : Nat → Nat
@@ -27,6 +29,9 @@ theorem targetBudget_ge_sixteen (fuel : Nat) :
   | succ fuel ih =>
       simp only [targetBudget]
       omega
+
+def executionBudget (staticCost sourceFuel : Nat) : Nat :=
+  (staticCost + 1) * targetBudget sourceFuel
 
 theorem targetBudget_mono {left right : Nat}
     (hLe : left ≤ right) :
@@ -108,6 +113,54 @@ theorem three_children_add_eight_le_of_lt
       simp only [targetBudget]
       omega
 
+theorem targetBudget_le_executionBudget
+    (staticCost sourceFuel : Nat) :
+    targetBudget sourceFuel ≤ executionBudget staticCost sourceFuel := by
+  have hPositive := targetBudget_ge_sixteen sourceFuel
+  simp only [executionBudget]
+  nlinarith
+
+theorem executionBudget_ge_sixteen
+    (staticCost sourceFuel : Nat) :
+    16 ≤ executionBudget staticCost sourceFuel := by
+  exact
+    le_trans (targetBudget_ge_sixteen sourceFuel)
+      (targetBudget_le_executionBudget staticCost sourceFuel)
+
+theorem staticCost_le_executionBudget
+    (staticCost sourceFuel : Nat) :
+    staticCost ≤ executionBudget staticCost sourceFuel := by
+  have hPositive := targetBudget_ge_sixteen sourceFuel
+  simp only [executionBudget]
+  nlinarith
+
+theorem executionBudget_mono
+    (staticCost : Nat) {left right : Nat}
+    (hLe : left ≤ right) :
+    executionBudget staticCost left ≤ executionBudget staticCost right := by
+  exact Nat.mul_le_mul_left _ (targetBudget_mono hLe)
+
+theorem executionBudget_child_add_eight_le_of_lt
+    (staticCost : Nat) {child parent : Nat}
+    (hLt : child < parent) :
+    executionBudget staticCost child + 8 ≤
+      executionBudget staticCost parent := by
+  have hMain := child_add_eight_le_of_lt hLt
+  have hScaled := Nat.mul_le_mul_left (staticCost + 1) hMain
+  simp only [executionBudget, Nat.mul_add] at hScaled ⊢
+  nlinarith
+
+theorem executionBudget_two_children_add_eight_le_of_lt
+    (staticCost : Nat) {left right parent : Nat}
+    (hLeft : left < parent) (hRight : right < parent) :
+    executionBudget staticCost left +
+        executionBudget staticCost right + 8 ≤
+      executionBudget staticCost parent := by
+  have hMain := two_children_add_eight_le_of_lt hLeft hRight
+  have hScaled := Nat.mul_le_mul_left (staticCost + 1) hMain
+  simp only [executionBudget, Nat.mul_add] at hScaled ⊢
+  nlinarith
+
 def Prepared.Bounded
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -118,12 +171,12 @@ def Prepared.Bounded
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
-    (sourceFuel : Nat)
+    (staticCost sourceFuel : Nat)
     (result :
       FunctionsObserverExpression.Prepared
         contract transcript codeRel program pre fresh source target ctx) :
     Prop :=
-  result.requiredFuel ≤ targetBudget sourceFuel
+  result.requiredFuel ≤ executionBudget staticCost sourceFuel
 
 def PreparedValue.Bounded
     {contract : MemoryContract.Contract}
@@ -137,12 +190,12 @@ def PreparedValue.Bounded
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
     {value : Assembly.Word}
-    (sourceFuel : Nat)
+    (staticCost sourceFuel : Nat)
     (result :
       FunctionsObserverExpression.PreparedValue
         contract transcript codeRel program pre lower fresh
         source target ctx value) : Prop :=
-  result.requiredFuel ≤ targetBudget sourceFuel
+  result.requiredFuel ≤ executionBudget staticCost sourceFuel
 
 def PreparedExpression.Bounded
     {contract : MemoryContract.Contract}
@@ -157,12 +210,12 @@ def PreparedExpression.Bounded
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
     {values : List Assembly.Word}
-    (sourceFuel : Nat)
+    (staticCost sourceFuel : Nat)
     (result :
       FunctionsObserverExpression.PreparedExpression
         contract transcript codeRel program pre lower fresh
         source target ctx values) : Prop :=
-  result.requiredFuel ≤ targetBudget sourceFuel
+  result.requiredFuel ≤ executionBudget staticCost sourceFuel
 
 def ScopedOpenResult.Bounded
     {transcript : Assembly.ResourceTrace}
@@ -176,12 +229,12 @@ def ScopedOpenResult.Bounded
     {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
-    (sourceFuel : Nat)
+    (staticCost sourceFuel : Nat)
     (result :
       FunctionsObserverOutcome.ScopedOpenResult
         contract codeRel program lower initial final entryLayout
         sourceFinal target ctx (sourceControl := sourceControl)) : Prop :=
-  result.requiredFuel ≤ targetBudget sourceFuel
+  result.requiredFuel ≤ executionBudget staticCost sourceFuel
 
 theorem ScopedOpenResult.empty_bounded
     {transcript : Assembly.ResourceTrace}
@@ -194,7 +247,7 @@ theorem ScopedOpenResult.empty_bounded
     {source : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
-    (sourceFuel : Nat)
+    (staticCost sourceFuel : Nat)
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
     (hDomain :
@@ -206,7 +259,7 @@ theorem ScopedOpenResult.empty_bounded
       StateRelation.Vars.NamesWithin fresh.used layout)
     (hLayoutScope :
       FunctionsObserverOutcome.LayoutWithinScope layout ctx) :
-    ScopedOpenResult.Bounded sourceFuel
+    ScopedOpenResult.Bounded staticCost sourceFuel
       (FunctionsObserverOutcome.ScopedOpenResult.empty
         (contract := contract) (program := program)
         (sourceControl := sourceControl)
@@ -216,7 +269,7 @@ theorem ScopedOpenResult.empty_bounded
       (contract := contract) (program := program)
       (sourceControl := sourceControl)
       hRel hDomain hScope hLayout hLayoutScope
-  have hBudget := targetBudget_ge_sixteen sourceFuel
+  have hBudget := executionBudget_ge_sixteen staticCost sourceFuel
   exact le_trans hFuel (by omega)
 
 theorem ScopedOpenResult.appendRegular_bounded
@@ -232,6 +285,7 @@ theorem ScopedOpenResult.appendRegular_bounded
       ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
+    {staticCost : Nat}
     {leftSourceFuel rightSourceFuel sourceFuel : Nat}
     (left :
       FunctionsObserverOutcome.ScopedOpenResult
@@ -243,18 +297,19 @@ theorem ScopedOpenResult.appendRegular_bounded
         contract codeRel program rightLower middle final
         left.finalLayout sourceFinal left.outcome.state left.finalCtx
         (sourceControl := sourceControl))
-    (hLeft : ScopedOpenResult.Bounded leftSourceFuel left)
-    (hRight : ScopedOpenResult.Bounded rightSourceFuel right)
+    (hLeft : ScopedOpenResult.Bounded staticCost leftSourceFuel left)
+    (hRight : ScopedOpenResult.Bounded staticCost rightSourceFuel right)
     (hLeftFuel : leftSourceFuel < sourceFuel)
     (hRightFuel : rightSourceFuel < sourceFuel) :
-    ScopedOpenResult.Bounded sourceFuel
+    ScopedOpenResult.Bounded staticCost sourceFuel
       (FunctionsObserverOutcome.ScopedOpenResult.appendRegular
         left hRegular right) := by
   have hCompose :=
     FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendRegular_le
       left hRegular right
   have hBudget :=
-    two_children_add_eight_le_of_lt hLeftFuel hRightFuel
+    executionBudget_two_children_add_eight_le_of_lt
+      staticCost hLeftFuel hRightFuel
   dsimp [ScopedOpenResult.Bounded] at hLeft hRight ⊢
   omega
 
@@ -270,6 +325,7 @@ theorem ScopedOpenResult.appendNonregular_bounded
     {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
+    {staticCost : Nat}
     {childFuel sourceFuel : Nat}
     (left :
       FunctionsObserverOutcome.ScopedOpenResult
@@ -277,15 +333,16 @@ theorem ScopedOpenResult.appendNonregular_bounded
         sourceFinal target ctx (sourceControl := sourceControl))
     (hNonregular : left.outcome.mode ≠ .regular)
     (hSuffixFresh : Fresh.Extends middle final)
-    (hLeft : ScopedOpenResult.Bounded childFuel left)
+    (hLeft : ScopedOpenResult.Bounded staticCost childFuel left)
     (hFuel : childFuel < sourceFuel) :
-    ScopedOpenResult.Bounded sourceFuel
+    ScopedOpenResult.Bounded staticCost sourceFuel
       (FunctionsObserverOutcome.ScopedOpenResult.appendNonregular
         (rightLower := rightLower) left hNonregular hSuffixFresh) := by
   have hCompose :=
     FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendNonregular_le
       (rightLower := rightLower) left hNonregular hSuffixFresh
-  have hMono := targetBudget_mono (Nat.le_of_lt hFuel)
+  have hMono :=
+    executionBudget_mono staticCost (Nat.le_of_lt hFuel)
   dsimp [ScopedOpenResult.Bounded] at hLeft ⊢
   omega
 

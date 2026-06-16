@@ -1663,9 +1663,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_append_le
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudget_mono
+#print axioms EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run_at_length
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBodyFresh_sourceBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt

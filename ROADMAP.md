@@ -52,14 +52,22 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     `max + 1`, singleton-wrapper, and unreachable-suffix fuel bounds;
   - [x] Yul expression preparation and scoped open results expose least
     sufficient target fuel with pass-owned composition lemmas;
-  - [x] define a source-fuel-indexed target budget that absorbs up to eight
+  - [x] define a dynamic source-fuel amplifier that absorbs up to eight
     strictly smaller recursive budgets plus compiler wrapper overhead;
+  - [x] correct the bound with a separate source-derived static expansion
+    factor: source fuel alone cannot bound multi-name declarations or wide
+    generated argument preambles;
   - [x] carry bounded argument preparation and returned function bodies through
     visible-target calls;
   - [x] reuse the same bounded call execution for fresh declaration targets;
   - [x] prove bounded recursive statement-list composition from a bounded
     statement capability;
-  - [ ] cover leaf/compound statements, loops, and terminal outcomes;
+  - [x] expose the exact `names.length + 1` target-fuel bound for
+    uninitialized declarations and lift it into the corrected execution
+    budget;
+  - [ ] define and prove the whole-program source static-expansion measure;
+  - [ ] cover remaining leaf/compound statements, loops, and terminal
+    outcomes;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated

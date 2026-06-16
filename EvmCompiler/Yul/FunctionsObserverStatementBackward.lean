@@ -284,7 +284,7 @@ theorem letNoneBackward
         .ok sourceFinal := by
     simp [Yul.Source.Effectful.exec,
       ObserverSemantics.SourceReplay.stateModel, hCheck, sourceFinal]
-  obtain ⟨result⟩ :=
+  obtain ⟨⟨result, _hFuelBound⟩⟩ :=
     FunctionsObserverStatement.OpenResult.of_let_none
       (program := program)
       (sourceControl := sourceControl)
