@@ -617,6 +617,34 @@ theorem call_succ_of_parts
           List.map (model.source stateAfterBody).lookup! returns) := by
   simp [call, hContract, hFunction, hBody]
 
+theorem call_succ_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {args : List Word}
+    {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state : σ} {failure : Failure σ}
+    {yulContract : EvmYul.Account .Yul}
+    {params returns : List EvmYul.Identifier}
+    {body : List EvmYul.Yul.Ast.Stmt}
+    (hContract :
+      (model.source state).sharedState.accountMap.find?
+          (model.source state).executionEnv.codeOwner =
+        some yulContract)
+    (hFunction :
+      (codeOverride.getD yulContract.code).functions.lookup functionName =
+        some (.Def params returns body))
+    (hBody :
+      exec model prim fuel (.Block body) codeOverride
+          (model.withSource state
+            (EvmYul.Yul.State.mkOk
+              ((model.source state).initcall params returns args))) =
+        .error failure) :
+    call model prim (fuel + 1) args (some functionName)
+        codeOverride state =
+      .error failure := by
+  simp [call, hContract, hFunction, hBody]
+
 theorem callDispatcher_ok_parts
     {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ)
@@ -1665,6 +1693,40 @@ theorem exec_assign_ok_parts
                 ⟨previous, stateAfterValue, values, rfl,
                   by simpa using hCheck, hValues, rfl⟩
 
+theorem exec_let_some_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterValue : σ} {values : List Word}
+    (hCheck :
+      EvmYul.Yul.checkDeclaration (model.source state) names = .ok ())
+    (hRun :
+      evalValues model prim fuel expr codeOverride state =
+        .ok (stateAfterValue, values)) :
+    exec model prim (fuel + 1) (.Let names (some expr))
+        codeOverride state =
+      .ok (model.multifill names stateAfterValue values) := by
+  simp [exec, hCheck, hRun, multifill]
+
+theorem exec_assign_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {names : List EvmYul.Identifier}
+    {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterValue : σ} {values : List Word}
+    (hCheck :
+      EvmYul.Yul.checkAssignment (model.source state) names = .ok ())
+    (hRun :
+      evalValues model prim fuel expr codeOverride state =
+        .ok (stateAfterValue, values)) :
+    exec model prim (fuel + 1) (.Assign names expr)
+        codeOverride state =
+      .ok (model.multifill names stateAfterValue values) := by
+  simp [exec, hCheck, hRun, multifill]
+
 theorem exec_expr_primitive_ok_parts
     {σ : Type} (model : StateModel σ)
     (primSemantics : PrimitiveSemantics σ)
@@ -1705,6 +1767,108 @@ theorem exec_expr_primitive_ok_parts
               exact
                 ⟨previous, stateAfterPrim, values, rfl,
                   by simp [evalValues, hArgs, hPrim], hRun.symm⟩
+
+theorem exec_expr_primitive_of_evalValues
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {prim : EvmYul.Operation .Yul}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : σ} {values : List Word}
+    (hRun :
+      evalValues model primSemantics fuel
+          (.Call (.inl prim) args) codeOverride state =
+        .ok (final, values)) :
+    exec model primSemantics fuel
+        (.ExprStmtCall (.Call (.inl prim) args))
+        codeOverride state =
+      .ok (model.multifill [] final values) := by
+  cases fuel with
+  | zero =>
+      simp [evalValues, fail] at hRun
+  | succ previous =>
+      cases hArgs :
+          evalArgs model primSemantics previous args.reverse
+            codeOverride state with
+      | error failure =>
+          simp [evalValues, hArgs] at hRun
+      | ok result =>
+          rcases result with ⟨stateAfterArgs, reversedValues⟩
+          cases hPrim :
+              primSemantics.eval previous stateAfterArgs prim
+                reversedValues.reverse with
+          | error failure =>
+              simp [evalValues, hArgs, hPrim] at hRun
+          | ok result =>
+              rcases result with ⟨stateAfterPrim, outputs⟩
+              simp [evalValues, hArgs, hPrim] at hRun
+              rcases hRun with ⟨rfl, rfl⟩
+              simp [exec, hArgs, hPrim, multifill]
+
+theorem exec_expr_function_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs final : σ}
+    {reversedValues values : List Word}
+    (hArgs :
+      evalArgs model primSemantics (fuel + 1) args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .ok (final, values)) :
+    exec model primSemantics (fuel + 2)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        codeOverride state =
+      .ok (model.multifill [] final values) := by
+  simp [exec, hArgs, hCall, multifill]
+
+theorem evalValues_function_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs : σ}
+    {reversedValues : List Word} {failure : Failure σ}
+    (hArgs :
+      evalArgs model primSemantics fuel args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .error failure) :
+    evalValues model primSemantics (fuel + 1)
+        (.Call (.inr functionName) args) codeOverride state =
+      .error failure := by
+  simp [evalValues, hArgs, hCall]
+
+theorem exec_expr_function_error_of_parts
+    {σ : Type} (model : StateModel σ)
+    (primSemantics : PrimitiveSemantics σ)
+    {fuel : Nat} {functionName : EvmYul.Yul.Ast.YulFunctionName}
+    {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state stateAfterArgs : σ}
+    {reversedValues : List Word} {failure : Failure σ}
+    (hArgs :
+      evalArgs model primSemantics (fuel + 1) args.reverse
+          codeOverride state =
+        .ok (stateAfterArgs, reversedValues))
+    (hCall :
+      call model primSemantics fuel reversedValues.reverse
+          (some functionName) codeOverride stateAfterArgs =
+        .error failure) :
+    exec model primSemantics (fuel + 2)
+        (.ExprStmtCall (.Call (.inr functionName) args))
+        codeOverride state =
+      .error failure := by
+  simp [exec, hArgs, hCall, multifill]
 
 theorem exec_expr_primitive_error_parts
     {σ : Type} (model : StateModel σ)
@@ -1976,6 +2140,50 @@ theorem execSeq_cons_ok_parts
                 ⟨previous, stateAfterStmt, rfl, hStmt,
                   by simp [hSource]⟩
 
+/--
+Compose a regularly completed statement with the remaining source sequence.
+-/
+theorem execSeq_cons_of_regular
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt final : σ}
+    {shared : EvmYul.SharedState .Yul}
+    {vars : EvmYul.Yul.VarStore}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Ok shared vars)
+    (hRest :
+      execSeq model prim fuel rest codeOverride afterStmt =
+        .ok final) :
+    execSeq model prim (fuel + 1) (stmt :: rest)
+        codeOverride state =
+      .ok final := by
+  simp [execSeq, hStmt, hSource, hRest]
+
+/--
+An abrupt source statement makes the remaining source sequence unreachable.
+-/
+theorem execSeq_cons_of_checkpoint
+    {σ : Type} (model : StateModel σ)
+    (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {stmt : EvmYul.Yul.Ast.Stmt}
+    {rest : List EvmYul.Yul.Ast.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state afterStmt : σ}
+    {jump : EvmYul.Yul.Jump}
+    (hStmt :
+      exec model prim fuel stmt codeOverride state =
+        .ok afterStmt)
+    (hSource : model.source afterStmt = .Checkpoint jump) :
+    execSeq model prim (fuel + 1) (stmt :: rest)
+        codeOverride state =
+      .ok afterStmt := by
+  simp [execSeq, hStmt, hSource]
+
 theorem evalArgs_append_ok_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :
     ∀ {fuel : Nat} {left right : List EvmYul.Yul.Ast.Expr}
@@ -2033,6 +2241,86 @@ theorem evalArgs_append_ok_parts {σ : Type}
                         omega
                       · simp [evalArgs, hHead, evalTail, hTail]
                       · simp [hValues]
+
+theorem evalArgs_append_of_parts {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ) :
+    ∀ {fuel remainingFuel : Nat}
+      {left right : List EvmYul.Yul.Ast.Expr}
+      {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+      {source middle final : σ}
+      {leftValues rightValues : List Word},
+      fuel = remainingFuel + 2 * left.length →
+      evalArgs model prim fuel left codeOverride source =
+        .ok (middle, leftValues) →
+      evalArgs model prim remainingFuel right codeOverride middle =
+        .ok (final, rightValues) →
+      evalArgs model prim fuel (left ++ right) codeOverride source =
+        .ok (final, leftValues ++ rightValues)
+  | fuel, remainingFuel, [], right, codeOverride, source, middle, final,
+      leftValues, rightValues, hFuel, hLeft, hRight => by
+      subst fuel
+      cases remainingFuel with
+      | zero =>
+          simp [evalArgs, fail] at hLeft
+      | succ previous =>
+          simp [evalArgs] at hLeft
+          rcases hLeft with ⟨rfl, rfl⟩
+          simpa using hRight
+  | fuel, remainingFuel, head :: tail, right, codeOverride, source,
+      middle, final, leftValues, rightValues, hFuel, hLeft, hRight => by
+      cases fuel with
+      | zero =>
+          simp [evalArgs, fail] at hLeft
+      | succ previous =>
+          cases hHead :
+              eval model prim previous head codeOverride source with
+          | error failure =>
+              simp [evalArgs, hHead, evalTail] at hLeft
+          | ok headResult =>
+              rcases headResult with ⟨afterHead, headValue⟩
+              cases previous with
+              | zero =>
+                  simp [evalArgs, hHead, evalTail, fail] at hLeft
+              | succ tailFuel =>
+                  cases hTail :
+                      evalArgs model prim tailFuel tail codeOverride
+                        afterHead with
+                  | error failure =>
+                      simp [evalArgs, hHead, evalTail, hTail] at hLeft
+                  | ok tailResult =>
+                      rcases tailResult with ⟨tailFinal, tailValues⟩
+                      simp [evalArgs, hHead, evalTail, hTail] at hLeft
+                      rcases hLeft with ⟨rfl, rfl⟩
+                      have hTailFuel :
+                          tailFuel =
+                            remainingFuel + 2 * tail.length := by
+                        simp only [List.length_cons] at hFuel
+                        omega
+                      have hCombined :=
+                        evalArgs_append_of_parts model prim
+                          hTailFuel hTail hRight
+                      simpa [evalArgs, hHead, evalTail, hCombined]
+
+theorem evalArgs_singleton_of_eval {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    {fuel : Nat} {expr : EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source final : σ} {value : Word}
+    (hFuel : 2 ≤ fuel)
+    (hEval :
+      eval model prim fuel expr codeOverride source =
+        .ok (final, value)) :
+    evalArgs model prim (fuel + 1) [expr] codeOverride source =
+      .ok (final, [value]) := by
+  cases fuel with
+  | zero =>
+      omega
+  | succ previous =>
+      cases previous with
+      | zero =>
+          omega
+      | succ remaining =>
+          simp [evalArgs, evalTail, hEval]
 
 theorem evalArgs_append_error_parts {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ) :

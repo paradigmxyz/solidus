@@ -280,6 +280,19 @@ theorem List.toSeq?_length
           | some lowerTail =>
               simpa [List.toSeq?] using congrArg Nat.succ (ih hTail)
 
+theorem List.toSeq?_nil_parts
+    {results : Nat} {seq : Locals.ExprSeq results}
+    (hSeq : List.toSeq? [] results = some seq) :
+    ∃ hResults : results = 0,
+      seq = seqCast hResults.symm .nil := by
+  cases results with
+  | zero =>
+      simp [List.toSeq?] at hSeq
+      subst seq
+      exact ⟨rfl, rfl⟩
+  | succ results =>
+      simp [List.toSeq?] at hSeq
+
 mutual
   def directCallArgSafe? : AstExpr → Bool
     | .Lit _value => true
@@ -1869,6 +1882,38 @@ theorem uncheckedDirectPrimitiveLowering_of_lower1Unchecked?
                     UncheckedDirectPrimitiveLowering.primitive
                       hOp hArgs hSeq hOutputs⟩
               · simp [hOp, hDirect, hArgs, hSeq, hOutputs] at hLower
+
+theorem lower1Unchecked?_nullaryPrimitive_parts
+    {state final : Fresh.State}
+    {prim : EvmYul.Operation .Yul}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    (hLower :
+      lower1Unchecked? state (.Call (.inl prim) []) =
+        some (pre, lower, final)) :
+    pre = [] ∧ final = state ∧
+      ∃ (op : Structured.BasicOp)
+        (hInputs : Expressions.Structured.BasicOp.inputs op = 0)
+        (hOutputs : Expressions.Structured.BasicOp.outputs op = 1),
+        Prim.toUncheckedBasicOp? prim = some op ∧
+          lower =
+            cast hOutputs
+              (.prim op (seqCast hInputs.symm .nil)) := by
+  obtain ⟨rfl, rfl, hPrimitive⟩ :=
+    uncheckedDirectPrimitiveLowering_of_lower1Unchecked?
+      (by simp [List.directPureArgsSafe?, List.pureAliasArgsSafe?,
+        List.pendingStackDepth])
+      hLower
+  cases hPrimitive with
+  | @primitive op lowerArgs seq hOp hArgs hSeq hOutputs =>
+      simp [List.toLocals1?] at hArgs
+      subst lowerArgs
+      have hSeq' :
+          List.toSeq? [] (Expressions.Structured.BasicOp.inputs op) =
+            some seq := by
+        simpa [List.toStackSeq?] using hSeq
+      obtain ⟨hInputs, hSeqNil⟩ := List.toSeq?_nil_parts hSeq'
+      refine ⟨rfl, rfl, op, hInputs, hOutputs, hOp, ?_⟩
+      rw [hSeqNil]
 
 inductive UncheckedBoundPrimitiveLowering :
     Fresh.State → EvmYul.Operation .Yul → List AstExpr →

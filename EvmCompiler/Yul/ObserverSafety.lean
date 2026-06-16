@@ -1,6 +1,10 @@
 import EvmCompiler.Simulation.MemorySafety
+import EvmCompiler.Yul.EffectSemanticsFuel
+import EvmCompiler.Yul.EffectSemanticsOwnerPreservation
 import EvmCompiler.Yul.EffectRefinement.Recursive
 import EvmCompiler.Yul.ObserverSemantics
+import EvmCompiler.Yul.PrimitiveFuel
+import EvmCompiler.Yul.PrimitiveOwner
 
 namespace EvmCompiler
 namespace Yul
@@ -202,6 +206,165 @@ theorem terminal_none_of_eval_ok
                     state.source.executionEnv.perm = false <;>
                   simp [hStep, hPerm, Yul.Source.Effectful.fail] at hRun <;>
                   cases hRun
+
+theorem stateModel_lawful (transcript : Trace) :
+    Yul.Source.Effectful.StateModel.Lawful
+      (ObserverSemantics.SourceReplay.stateModel transcript) := by
+  constructor
+  intro state source
+  rfl
+
+theorem primitiveSemantics_preservesOwner
+    (contract : MemoryContract.Contract) (transcript : Trace) :
+    Yul.Source.Effectful.PrimitiveSemantics.PreservesOwner
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (primitiveSemantics contract transcript) := by
+  constructor
+  intro fuel state final prim values outputs hOwner hEval
+  obtain ⟨hSafe, hRun⟩ := eval_ok_parts hEval
+  have hTerminal : Prim.terminal? prim = none :=
+    terminal_none_of_eval_ok hEval
+  cases hOp : Prim.toUncheckedBasicOp? prim with
+  | none =>
+      simp [PrimitiveSafe, hTerminal, hOp] at hSafe
+  | some op =>
+      have hMemorySafe :
+          Simulation.MemorySafety.PrimitiveMemorySafe contract op
+            state.source.sharedState.toMachineState values.reverse := by
+        simpa [PrimitiveSafe, hTerminal, hOp] using hSafe
+      have hNonExternal :
+          op.toPrimOp.isExternalCallCreate = false :=
+        Simulation.MemorySafety.noExternal_of_primitiveMemorySafe hMemorySafe
+      cases hObserver : ObserverSemantics.yulPrimObserver? prim with
+      | some kind =>
+          cases fuel with
+          | zero =>
+              simp [ObserverSemantics.SourceReplay.primCall,
+                Yul.Source.Effectful.fail] at hRun
+          | succ previous =>
+              unfold ObserverSemantics.SourceReplay.primCall at hRun
+              rw [hObserver] at hRun
+              cases values with
+              | cons first rest =>
+                  simp [Yul.Source.Effectful.fail] at hRun
+              | nil =>
+                  cases hConsume :
+                      Simulation.ResourceReplay.consume? kind state with
+                  | none =>
+                      simp [hConsume, Yul.Source.Effectful.fail] at hRun
+                  | some consumed =>
+                      rcases consumed with ⟨value, stateAfterConsume⟩
+                      simp [hConsume] at hRun
+                      rcases hRun with ⟨rfl, rfl⟩
+                      unfold Yul.Source.Effectful.OwnerAvailable at hOwner ⊢
+                      change
+                        Yul.Source.Effectful.ActiveOwnerAvailable
+                          state.source at hOwner
+                      change
+                        Yul.Source.Effectful.ActiveOwnerAvailable
+                          stateAfterConsume.source
+                      rw [
+                        Simulation.ResourceReplay.consume?_source hConsume]
+                      exact hOwner
+      | none =>
+          cases fuel with
+          | zero =>
+              simp [ObserverSemantics.SourceReplay.primCall,
+                Yul.Source.Effectful.fail] at hRun
+          | succ rawFuel =>
+              unfold ObserverSemantics.SourceReplay.primCall at hRun
+              rw [hObserver] at hRun
+              cases hRaw :
+                  EvmYul.Yul.primCall rawFuel state.source prim values with
+              | error err =>
+                  simp [hRaw, Yul.Source.Effectful.fail] at hRun
+              | ok result =>
+                  rcases result with ⟨sourceAfter, rawOutputs⟩
+                  simp [hRaw] at hRun
+                  rcases hRun with ⟨rfl, rfl⟩
+                  unfold Yul.Source.Effectful.OwnerAvailable at hOwner ⊢
+                  exact
+                    Prim.primCall_preserves_activeOwner_of_nonExternal
+                      hOp hNonExternal hOwner hRaw
+
+theorem evalArgs_preservesOwner
+    (contract : MemoryContract.Contract) (transcript : Trace)
+    {fuel : Nat} {args : List EvmYul.Yul.Ast.Expr}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {state final : State transcript} {values : List Word}
+    (hOwner :
+      Yul.Source.Effectful.OwnerAvailable
+        (ObserverSemantics.SourceReplay.stateModel transcript) state)
+    (hRun :
+      Yul.Source.Effectful.evalArgs
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (primitiveSemantics contract transcript)
+          fuel args codeOverride state =
+        .ok (final, values)) :
+    Yul.Source.Effectful.OwnerAvailable
+      (ObserverSemantics.SourceReplay.stateModel transcript) final :=
+  Yul.Source.Effectful.evalArgs_preserves_owner
+    (stateModel_lawful transcript)
+    (primitiveSemantics_preservesOwner contract transcript)
+    hOwner hRun
+
+theorem primitiveSemantics_successMonotone
+    (contract : MemoryContract.Contract) (transcript : Trace) :
+    (primitiveSemantics contract transcript).SuccessMonotone := by
+  constructor
+  intro fuel fuel' state final prim values outputs hLe hEval
+  obtain ⟨hSafe, hRun⟩ := eval_ok_parts hEval
+  have hTerminal : Prim.terminal? prim = none :=
+    terminal_none_of_eval_ok hEval
+  cases hOp : Prim.toUncheckedBasicOp? prim with
+  | none =>
+      simp [PrimitiveSafe, hTerminal, hOp] at hSafe
+  | some op =>
+      have hMemorySafe :
+          Simulation.MemorySafety.PrimitiveMemorySafe contract op
+            state.source.sharedState.toMachineState values.reverse := by
+        simpa [PrimitiveSafe, hTerminal, hOp] using hSafe
+      have hNonExternal :
+          op.toPrimOp.isExternalCallCreate = false :=
+        Simulation.MemorySafety.noExternal_of_primitiveMemorySafe hMemorySafe
+      have hTargetRun :
+          ObserverSemantics.SourceReplay.primCall
+              fuel' state prim values =
+            .ok (final, outputs) := by
+        cases fuel with
+        | zero =>
+            simp [ObserverSemantics.SourceReplay.primCall,
+              Yul.Source.Effectful.fail] at hRun
+        | succ sourceFuel =>
+            cases fuel' with
+            | zero =>
+                omega
+            | succ targetFuel =>
+                have hFuelLe : sourceFuel ≤ targetFuel :=
+                  Nat.succ_le_succ_iff.mp hLe
+                cases hObserver :
+                    ObserverSemantics.yulPrimObserver? prim with
+                | some kind =>
+                    simpa [ObserverSemantics.SourceReplay.primCall,
+                      hObserver] using hRun
+                | none =>
+                    cases sourceFuel with
+                    | zero =>
+                        simp [ObserverSemantics.SourceReplay.primCall,
+                          hObserver, EvmYul.Yul.primCall,
+                          Yul.Source.Effectful.fail] at hRun
+                    | succ sourceRawFuel =>
+                        cases targetFuel with
+                        | zero =>
+                            omega
+                        | succ targetRawFuel =>
+                            have hRawEq :=
+                              Prim.primCall_succ_eq_of_nonExternal
+                                hOp hNonExternal sourceRawFuel targetRawFuel
+                                state.source values
+                            simpa [ObserverSemantics.SourceReplay.primCall,
+                              hObserver, hRawEq] using hRun
+      simpa [primitiveSemantics, hSafe] using hTargetRun
 
 theorem eval_yulHalt_parts
     {contract : MemoryContract.Contract} {transcript : Trace}

@@ -209,6 +209,22 @@ theorem eval_outputs_length
       | cons head tail =>
           simp [hObserver, Structured.invalid] at hRun
 
+theorem eval_observer_values_eq_nil
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {op : Structured.BasicOp}
+    {kind : Assembly.ResourceObserver}
+    {state final : Functions.ObserverSemantics.State transcript}
+    {values outputs : List Word}
+    (hObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = some kind)
+    (hEval :
+      (primitiveSemantics contract transcript).eval op state values =
+        .ok (final, outputs)) :
+    values = [] :=
+  Functions.ObserverSemantics.primitiveSemantics_eval_observer_values_eq_nil
+    hObserver (eval_parts hEval).2.2
+
 theorem eval_of_safe
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

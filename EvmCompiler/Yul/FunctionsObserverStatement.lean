@@ -18,6 +18,16 @@ interfaces; this module does not define a compiler or a control interpreter.
 abbrev Trace := Assembly.ResourceTrace
 abbrev Word := Assembly.Word
 
+inductive CompoundStmt : AstStmt → Prop where
+  | block (body : List AstStmt) : CompoundStmt (.Block body)
+  | switch (scrutinee : AstExpr)
+      (cases : List (Word × List AstStmt)) (defaultBody : List AstStmt) :
+      CompoundStmt (.Switch scrutinee cases defaultBody)
+  | forLoop (cond : AstExpr) (post body : List AstStmt) :
+      CompoundStmt (.For cond post body)
+  | ifThen (cond : AstExpr) (body : List AstStmt) :
+      CompoundStmt (.If cond body)
+
 namespace InitializedValue
 
 theorem run
@@ -405,6 +415,411 @@ private theorem layoutWithinScope_of_run
         contract transcript)
       program hRun
   exact fun name hMem => hExtends name (hWithin name hMem)
+
+theorem of_regular_parts
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {before after : Fresh.State}
+    {layout finalLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target finalTarget :
+      Functions.ObserverSemantics.State transcript}
+    {ctx finalCtx : Functions.Source.Ctx}
+    (hRun :
+      ∃ fuel,
+        Functions.Source.Effectful.Block.runOpen
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx fuel { stmts := lower } target =
+          .ok
+            (Functions.Source.Effectful.Outcome.regular finalTarget,
+              finalCtx))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel finalLayout
+        sourceFinal finalTarget)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        after.used finalTarget.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin after.used finalCtx.scope)
+    (hControl : Functions.Source.Ctx.SameControl ctx finalCtx)
+    (hFreshExtends : Fresh.Extends before after)
+    (hRetains :
+      ∀ candidate, candidate ∈ layout → candidate ∈ finalLayout)
+    (hLayoutWithin :
+      StateRelation.Vars.NamesWithin after.used finalLayout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope finalLayout finalCtx)
+    (hRegularLayout :
+      finalLayout = SolcValidation.StmtOutVars layout stmt) :
+    Nonempty
+      (Result contract codeRel program stmt lower before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  obtain
+      ⟨finalShared, finalVars, hFinalSource,
+        _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+    hRel.2
+  exact
+    ⟨{ openResult :=
+         { finalLayout := finalLayout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular finalTarget
+           finalCtx := finalCtx
+           run := hRun
+           relation :=
+             FunctionsObserverOutcome.ScopedOutcomeRel.regular
+               hFinalSource hRel
+           domain := hDomain
+           scope := hScope
+           control := hControl
+           freshExtends := hFreshExtends
+           retains := fun _hRegular => hRetains
+           layoutWithin := hLayoutWithin
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact hRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+           layoutScope := fun _hRegular => hLayoutScope
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
+       regularLayout := fun _hRegular => hRegularLayout }⟩
+
+theorem of_let_one_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {lowerStmts pre : List Functions.Stmt}
+    {lowerValue : Locals.Expr 1}
+    {sourceAfterValue sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hLower :
+      lowerStmts =
+        pre ++ [Functions.Stmt.let_ (identName name) lowerValue])
+    (hFreshExtends : Fresh.Extends before after)
+    (hNameFresh : identName name ∉ layout)
+    (hNameUsed : identName name ∈ before.used)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerValue after layout
+        sourceAfterValue target ctx value)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value])) :
+    Nonempty
+      (Result contract codeRel program
+        (.Let [name] (some expr)) lowerStmts before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  obtain
+      ⟨targetFuel, targetFinal, finalCtx,
+        hTargetRun, hDeclaredRel, hTargetFinal, hFinalCtx⟩ :=
+    InitializedValue.run hValue.prepared hValue.relation hNameFresh
+  have hNameAfter : identName name ∈ after.used :=
+    hFreshExtends (identName name) hNameUsed
+  have hFinalDomain :
+      StateRelation.Vars.TargetDomainWithin
+        after.used targetFinal.source.vars := by
+    rw [hTargetFinal]
+    simpa using
+      hValue.prepared.domain.insert_visible hNameAfter
+  have hFinalScope :
+      StateRelation.Vars.NamesWithin after.used finalCtx.scope := by
+    rw [hFinalCtx]
+    intro candidate hMem
+    rcases List.mem_cons.mp hMem with hHead | hTail
+    · simpa [hHead] using hNameAfter
+    · exact hValue.prepared.scope candidate hTail
+  have hFinalControl :
+      Functions.Source.Ctx.SameControl ctx finalCtx := by
+    apply Functions.Source.Ctx.SameControl.trans
+      hValue.prepared.control
+    rw [hFinalCtx]
+    exact
+      Functions.Source.Ctx.SameControl.scopeUpdate
+        hValue.prepared.finalCtx _
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        (identName name :: layout) sourceFinal
+        (Functions.Source.Effectful.Outcome.regular targetFinal) := by
+    rw [hSourceFinal]
+    obtain
+        ⟨finalShared, finalVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+      hDeclaredRel.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource hDeclaredRel
+  exact
+    ⟨{ openResult :=
+         { finalLayout := identName name :: layout
+           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+           finalCtx := finalCtx
+           run := ⟨targetFuel, by simpa [hLower] using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hFinalDomain
+           scope := hFinalScope
+           control := hFinalControl
+           freshExtends := hFreshExtends
+           retains := fun _hRegular candidate hMem =>
+             List.mem_cons_of_mem (identName name) hMem
+           layoutWithin := by
+             intro candidate hMem
+             rcases List.mem_cons.mp hMem with hHead | hTail
+             · simpa [hHead] using hNameAfter
+             · exact hFreshExtends candidate (hLayout candidate hTail)
+           sourceDefined := by
+             rw [hSourceFinal]
+             exact
+               FunctionsObserverOutcome.SourceDefined.of_scopedExact
+                 hDeclaredRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+           layoutScope := by
+             intro _hRegular candidate hMem
+             rw [hFinalCtx]
+             change
+               candidate ∈
+                 identName name :: hValue.prepared.finalCtx.scope
+             rcases List.mem_cons.mp hMem with hHead | hTail
+             · exact List.mem_cons.mpr (Or.inl hHead)
+             · exact
+                 List.mem_cons.mpr
+                   (Or.inr
+                     ((layoutWithinScope_of_run hLayoutScope
+                        hValue.prepared.run) candidate hTail))
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
+
+theorem of_assign_one_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {expr : AstExpr}
+    {lowerStmts pre : List Functions.Stmt}
+    {lowerValue : Locals.Expr 1}
+    {sourceAfterValue sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hLower :
+      lowerStmts =
+        pre ++ [Functions.Stmt.assign (identName name) lowerValue])
+    (hFreshExtends : Fresh.Extends before after)
+    (hNameDeclared : identName name ∈ layout)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
+    (hValue :
+      FunctionsObserverExpression.ScopedPreparedValue
+        contract transcript codeRel program pre lowerValue after layout
+        sourceAfterValue target ctx value)
+    (hSourceFinal :
+      sourceFinal =
+        sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value])) :
+    Nonempty
+      (Result contract codeRel program
+        (.Assign [name] expr) lowerStmts before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  obtain
+      ⟨targetFuel, targetFinal,
+        hTargetRun, hAssignedRel, hTargetFinal⟩ :=
+    AssignedValue.run hValue.prepared hValue.relation hNameDeclared
+  have hNameAfter : identName name ∈ after.used :=
+    hFreshExtends (identName name)
+      (hLayout (identName name) hNameDeclared)
+  have hFinalDomain :
+      StateRelation.Vars.TargetDomainWithin
+        after.used targetFinal.source.vars := by
+    rw [hTargetFinal]
+    simpa using
+      hValue.prepared.domain.insert_visible hNameAfter
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout
+        sourceFinal
+        (Functions.Source.Effectful.Outcome.regular targetFinal) := by
+    rw [hSourceFinal]
+    obtain
+        ⟨finalShared, finalVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+      hAssignedRel.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource hAssignedRel
+  exact
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome := Functions.Source.Effectful.Outcome.regular targetFinal
+           finalCtx := hValue.prepared.finalCtx
+           run := ⟨targetFuel, by simpa [hLower] using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hFinalDomain
+           scope := hValue.prepared.scope
+           control := hValue.prepared.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined := by
+             rw [hSourceFinal]
+             exact
+               FunctionsObserverOutcome.SourceDefined.of_scopedExact
+                 hAssignedRel
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope
+               ⟨targetFuel, by simpa [hLower] using hTargetRun⟩
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
+
+theorem of_expr_prepared
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {expr : AstExpr}
+    {lowerStmts pre : List Functions.Stmt}
+    {lowerExpr : Locals.Expr 0}
+    {sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Word}
+    (hLower :
+      lowerStmts = pre ++ [Functions.Stmt.expr lowerExpr])
+    (hFreshExtends : Fresh.Extends before after)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hLayoutScope :
+      FunctionsObserverOutcome.LayoutWithinScope layout ctx)
+    (hExpr :
+      FunctionsObserverExpression.ScopedPreparedExpression
+        contract transcript codeRel program pre lowerExpr after layout
+        sourceFinal target ctx values) :
+    Nonempty
+      (Result contract codeRel program
+        (.ExprStmtCall expr) lowerStmts before after layout
+        sourceFinal target ctx (sourceControl := sourceControl)) := by
+  have hExprStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hExpr.prepared.finalCtx 0
+          (.expr lowerExpr) hExpr.prepared.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            hExpr.prepared.evalTarget,
+            hExpr.prepared.finalCtx) := by
+    simp [Functions.Source.Effectful.Stmt.run, hExpr.prepared.eval]
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hExpr.prepared.finalCtx 1
+          { stmts := [] } hExpr.prepared.evalTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            hExpr.prepared.evalTarget,
+            hExpr.prepared.finalCtx) := by
+    simpa using
+      Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hExpr.prepared.finalCtx 0 hExpr.prepared.evalTarget
+  obtain ⟨exprFuel, hExprBlock⟩ :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hExprStmt hEmpty
+  obtain ⟨targetFuel, hTargetRun⟩ :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program pre [.expr lowerExpr] ctx hExpr.prepared.finalCtx target
+      hExpr.prepared.preTarget
+      (Functions.Source.Effectful.Outcome.regular
+        hExpr.prepared.evalTarget)
+      hExpr.prepared.finalCtx hExpr.prepared.run
+      ⟨exprFuel, hExprBlock⟩
+  have hOutcomeRel :
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel layout sourceFinal
+        (Functions.Source.Effectful.Outcome.regular
+          hExpr.prepared.evalTarget) := by
+    obtain
+        ⟨finalShared, finalVars, hFinalSource,
+          _hFinalShared, _hFinalScoped, _hFinalSourceDomain⟩ :=
+      hExpr.relation.2
+    exact
+      FunctionsObserverOutcome.ScopedOutcomeRel.regular
+        hFinalSource hExpr.relation
+  exact
+    ⟨{ openResult :=
+         { finalLayout := layout
+           outcome :=
+             Functions.Source.Effectful.Outcome.regular
+               hExpr.prepared.evalTarget
+           finalCtx := hExpr.prepared.finalCtx
+           run := ⟨targetFuel, by simpa [hLower] using hTargetRun⟩
+           relation := hOutcomeRel
+           domain := hExpr.prepared.domain
+           scope := hExpr.prepared.scope
+           control := hExpr.prepared.control
+           freshExtends := hFreshExtends
+           retains := fun _hRegular _candidate hMem => hMem
+           layoutWithin := hLayout.mono hFreshExtends
+           sourceDefined :=
+             FunctionsObserverOutcome.SourceDefined.of_scopedExact
+               hExpr.relation
+           abruptTargetRestriction := by
+             simp [FunctionsObserverOutcome.AbruptTargetRestriction]
+           layoutScope := fun _hRegular =>
+             layoutWithinScope_of_run hLayoutScope
+               ⟨targetFuel, by simpa [hLower] using hTargetRun⟩
+           exitScope := by
+             simp [FunctionsObserverOutcome.ExitScopeRel] }
+       regularLayout := by
+         intro _hRegular
+         rfl }⟩
 
 theorem of_let_none
     {contract : MemoryContract.Contract}

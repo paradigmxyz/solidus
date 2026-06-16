@@ -662,6 +662,212 @@ theorem transportTarget
 
 end ExitScopeRel
 
+def ScopeOptionWithin (enabled : Bool)
+    (sourceScope? targetScope? : Option (List Name))
+    (layout : List Name) : Prop :=
+  if enabled then
+    ∃ sourceScope targetScope,
+      sourceScope? = some sourceScope ∧
+        targetScope? = some targetScope ∧
+        (∀ name, name ∈ sourceScope → name ∈ layout) ∧
+        ∀ name, name ∈ sourceScope → name ∈ targetScope
+  else
+    sourceScope? = none ∧ targetScope? = none
+
+namespace ScopeOptionWithin
+
+theorem mono
+    {enabled : Bool}
+    {sourceScope? targetScope? : Option (List Name)}
+    {before after : List Name}
+    (hWithin :
+      ScopeOptionWithin enabled sourceScope? targetScope? before)
+    (hSubset : ∀ name, name ∈ before → name ∈ after) :
+    ScopeOptionWithin enabled sourceScope? targetScope? after := by
+  by_cases hEnabled : enabled = true
+  · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
+    obtain
+      ⟨sourceScope, targetScope, hSource, hTarget,
+        hNames, hTargetNames⟩ := hWithin
+    exact
+      ⟨sourceScope, targetScope, hSource, hTarget,
+        fun name hMem => hSubset name (hNames name hMem),
+        hTargetNames⟩
+  · simp [ScopeOptionWithin, hEnabled] at hWithin ⊢
+    exact hWithin
+
+theorem source_subset_of_some
+    {enabled : Bool}
+    {sourceScope targetScope layout : List Name}
+    (hWithin :
+      ScopeOptionWithin enabled (some sourceScope)
+        (some targetScope) layout) :
+    ∀ name, name ∈ sourceScope → name ∈ layout := by
+  by_cases hEnabled : enabled = true
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+    exact hWithin.1
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+
+theorem target_contains_of_some
+    {enabled : Bool}
+    {sourceScope targetScope layout : List Name}
+    (hWithin :
+      ScopeOptionWithin enabled (some sourceScope)
+        (some targetScope) layout) :
+    ∀ name, name ∈ sourceScope → name ∈ targetScope := by
+  by_cases hEnabled : enabled = true
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+    exact hWithin.2
+  · simp [ScopeOptionWithin, hEnabled] at hWithin
+
+end ScopeOptionWithin
+
+structure ControlContextRel
+    (sourceControl : SourceControlScopes)
+    (layout : List Name)
+    (canBreak canContinue canLeave : Bool)
+    (ctx : Functions.Source.Ctx) : Prop where
+  scope : LayoutWithinScope layout ctx
+  breakScope :
+    ScopeOptionWithin canBreak sourceControl.breakScope?
+      ctx.breakScope? layout
+  continueScope :
+    ScopeOptionWithin canContinue sourceControl.continueScope?
+      ctx.continueScope? layout
+  leaveScope :
+    ScopeOptionWithin canLeave sourceControl.leaveScope?
+      ctx.leaveScope? layout
+
+namespace ControlContextRel
+
+def forBodySourceControl
+    (layout : List Name)
+    (outer : SourceControlScopes) :
+    SourceControlScopes :=
+  { breakScope? := some layout
+    continueScope? := some layout
+    leaveScope? := outer.leaveScope? }
+
+def forPostSourceControl
+    (outer : SourceControlScopes) :
+    SourceControlScopes :=
+  { breakScope? := none
+    continueScope? := none
+    leaveScope? := outer.leaveScope? }
+
+theorem forBody
+    {sourceControl : SourceControlScopes}
+    {layout : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx) :
+    ControlContextRel (forBodySourceControl layout sourceControl) layout
+      true true canLeave
+      (ctx.withLoopControl ctx.scope ctx.scope) := by
+  refine
+    { scope := ?_
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · simpa [Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withLoopControl] using hRel.scope
+  · simpa [forBodySourceControl, Functions.Source.Ctx.withLoopControl] using
+      hRel.leaveScope
+
+theorem forPost
+    {sourceControl : SourceControlScopes}
+    {layout : List Name}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx) :
+    ControlContextRel (forPostSourceControl sourceControl) layout
+      false false canLeave ctx.withoutLoopControl := by
+  refine
+    { scope := ?_
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · simpa [Functions.Source.Ctx.withoutLoopControl] using hRel.scope
+  · simp [forPostSourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withoutLoopControl]
+  · simp [forPostSourceControl, ScopeOptionWithin,
+      Functions.Source.Ctx.withoutLoopControl]
+  · simpa [forPostSourceControl, Functions.Source.Ctx.withoutLoopControl] using
+      hRel.leaveScope
+
+theorem transport
+    {beforeLayout afterLayout : List Name}
+    {sourceControl : SourceControlScopes}
+    {canBreak canContinue canLeave : Bool}
+    {beforeCtx afterCtx : Functions.Source.Ctx}
+    (hRel :
+      ControlContextRel sourceControl beforeLayout
+        canBreak canContinue canLeave beforeCtx)
+    (hSubset :
+      ∀ name, name ∈ beforeLayout → name ∈ afterLayout)
+    (hControl : Functions.Source.Ctx.SameControl beforeCtx afterCtx)
+    (hScope : LayoutWithinScope afterLayout afterCtx) :
+    ControlContextRel sourceControl afterLayout
+      canBreak canContinue canLeave afterCtx := by
+  refine
+    { scope := hScope
+      breakScope := ?_
+      continueScope := ?_
+      leaveScope := ?_ }
+  · rw [← hControl.breakScope]
+    exact hRel.breakScope.mono hSubset
+  · rw [← hControl.continueScope]
+    exact hRel.continueScope.mono hSubset
+  · rw [← hControl.leaveScope]
+    exact hRel.leaveScope.mono hSubset
+
+theorem exitSubset
+    {layout exitLayout : List Name}
+    {sourceControl : SourceControlScopes}
+    {canBreak canContinue canLeave : Bool}
+    {ctx : Functions.Source.Ctx}
+    {mode : Locals.Source.Mode}
+    (hRel :
+      ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hExit : ExitScopeRel sourceControl ctx mode exitLayout)
+    (hNonregular : mode ≠ .regular) :
+    ∀ name, name ∈ exitLayout → name ∈ layout := by
+  cases hMode : mode with
+  | regular => exact False.elim (hNonregular hMode)
+  | brk =>
+      simp [ExitScopeRel, hMode] at hExit
+      have hWithin := hRel.breakScope
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
+  | cont =>
+      simp [ExitScopeRel, hMode] at hExit
+      have hWithin := hRel.continueScope
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
+  | leave =>
+      simp [ExitScopeRel, hMode] at hExit
+      have hWithin := hRel.leaveScope
+      rcases hExit with
+        ⟨hSource, targetScope, hTarget, _hTargetContains⟩
+      rw [hSource, hTarget] at hWithin
+      exact ScopeOptionWithin.source_subset_of_some hWithin
+  | halt kind =>
+      simp [ExitScopeRel, hMode] at hExit
+
+end ControlContextRel
+
 def ModeRel {σ : Type} (source : EvmYul.Yul.State)
     (target : Functions.Source.Effectful.Outcome σ) : Prop :=
   match source, target.mode with
@@ -1111,6 +1317,74 @@ def appendRegular
             ⟨hSource, targetScope,
               left.control.leaveScope.trans hTarget,
               hWithin⟩ }
+
+/--
+Compose a regular prefix with a suffix whose entry state and context are
+identified by explicit adjacent-boundary equalities.
+-/
+def appendRegularAligned
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target rightTarget : Functions.ObserverSemantics.State transcript}
+    {ctx rightCtx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (hTarget : left.outcome.state = rightTarget)
+    (hCtx : left.finalCtx = rightCtx)
+    (right :
+      ScopedOpenResult contract codeRel program rightLower
+        middle final left.finalLayout sourceFinal rightTarget rightCtx
+        (sourceControl := sourceControl)) :
+    ScopedOpenResult contract codeRel program
+      (leftLower ++ rightLower) initial final entryLayout
+      sourceFinal target ctx (sourceControl := sourceControl) := by
+  subst rightTarget
+  subst rightCtx
+  exact appendRegular left hRegular right
+
+theorem appendRegularAligned_parts
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target rightTarget : Functions.ObserverSemantics.State transcript}
+    {ctx rightCtx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (hTarget : left.outcome.state = rightTarget)
+    (hCtx : left.finalCtx = rightCtx)
+    (right :
+      ScopedOpenResult contract codeRel program rightLower
+        middle final left.finalLayout sourceFinal rightTarget rightCtx
+        (sourceControl := sourceControl)) :
+    let result :=
+      appendRegularAligned left hRegular hTarget hCtx right
+    result.finalLayout = right.finalLayout ∧
+      result.outcome = right.outcome ∧
+      result.finalCtx = right.finalCtx := by
+  subst rightTarget
+  subst rightCtx
+  exact ⟨rfl, rfl, rfl⟩
 
 def appendNonregular
     {transcript : Trace}

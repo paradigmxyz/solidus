@@ -29980,3 +29980,111 @@ Yul/Functions boundary, and keep `Yul.EndToEnd` as a short theorem.
   an existential Functions fuel but currently proves no source-derived bound
   on it. Restored `Yul.EndToEnd` to the last green stack-only theorem pending
   that pass-owned accounting result.
+- 2026-06-15 13:45:09 PDT - theorem-boundary/yul-primitive-backward - Added `BackwardAt`/`BackwardAtArity` beside the existing raw forward contracts and `safeBasicOpBackward` as the canonical guarded lower-to-upper lift. Target memory safety is transported to the source through the shared machine relation; argument reversal, replay cursor, lexical store stability, and target state shape are discharged inside the interface.
+- 2026-06-15 13:45:09 PDT - architecture/yul-backward-ownership - Added observer and nonobserver primitive-result inversions to `Functions.ObserverSemantics`. The architecture guard initially rejected a direct Locals-semantics unfolding in the Yul proof; that route was removed and replaced by the Functions-owned inversion theorem.
+- 2026-06-15 13:45:09 PDT - proof/yul-backward-leaves - Checked backward reconstruction for `gas()`, `msize()`, and every pure binary compiler-selected operation. These theorems construct canonical guarded Yul runs from actual Functions primitive runs and related inputs; they are not determinism-strengthened forward wrappers.
+- 2026-06-15 13:45:09 PDT - validation/yul-backward-leaves - Focused primitive builds, the full 1,245-job verification root, architecture dependency guard, and expanded resource-observer axiom smoke passed. New backward leaves use only the accepted `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 13:53:48 PDT - compaction-resume - Resumed from the checked Yul primitive backward interface with `gas()`/`msize()` and pure-binary leaves; the immediate frontier is checkpointing that boundary, extending remaining primitive families, and then recursively reconstructing expressions, control, and whole-program runs.
+- 2026-06-15 14:14:09 PDT - compaction-resume - Resumed after the static-permission repair and implementation of all primitive-family backward adequacy; the immediate frontier is compiling and wiring the exhaustive compiler-selected backward dispatcher, then checkpointing it before recursive expression inversion.
+- 2026-06-15 14:23:55 PDT - theorem-boundary/static-primitive-permission - Corrected guarded Functions primitive semantics to reject `sstore`, `tstore`, and `log0`-`log4` in static mode, matching canonical Yul behavior. Successful target execution derives permission internally; no new public target-side premise was added.
+- 2026-06-15 14:23:55 PDT - proof/yul-primitive-backward-complete - Proved guarded backward adequacy for every compiler-selected continuing primitive family and checked the exhaustive `safeCompilerSelectedBackward` dispatcher. Functions-owned observer inversions derive nullary `gas()`/`msize()` arguments, and observer reconstruction now works at arbitrary positive source fuel while preserving the lexical store.
+- 2026-06-15 14:23:55 PDT - validation/yul-primitive-backward-complete - Focused 1,148-job dispatcher build, full 1,245-job verification root, architecture dependency guard, aggregate proof suite, expanded axiom smoke, changed-file proof-marker scan, and `git diff --check` passed. The exhaustive backward dispatcher uses only `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 14:33:48 PDT - compaction-resume - Resumed after checked expression backward leaves and the compiler-owned nullary primitive decomposition; the immediate frontier is aggregate proof validation and checkpointing, then recursive argument-list and nonnullary primitive inversion.
+- 2026-06-15 14:36:05 PDT - proof/yul-expression-backward-leaves - Added `ScopedBackwardResult` with checked backward constructors for literals, source-visible variables, `gas()`, `msize()`, and every successfully lowered nullary compiler-selected primitive. The result hides existential source fuel and returns the canonical guarded Yul run plus the scoped exact state relation.
+- 2026-06-15 14:36:05 PDT - architecture/nullary-primitive-decomposition - Added `Expr.List.toSeq?_nil_parts` and `Expr.lower1Unchecked?_nullaryPrimitive_parts` to the ordinary compiler owner, so the observer expression proof consumes exact lowering facts without reimplementing dependent compiler analysis.
+- 2026-06-15 14:36:05 PDT - validation/yul-expression-backward-leaves - Focused compiler/expression builds, full 1,245-job verification root, architecture guard, aggregate proof suite, expanded axiom smoke, changed-file marker scan, and `git diff --check` passed. New theorems use only `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 14:53:50 PDT - theorem-boundary/primitive-backward-fuel - Generalized all compiler-selected primitive-family backward theorems and added `safeCompilerSelectedBackwardAt`, reconstructing the guarded Yul primitive at any fuel of the form `fuel + 2`. The prior minimum-fuel `safeCompilerSelectedBackward` remains a checked specialization, not a duplicate dispatcher.
+- 2026-06-15 14:53:50 PDT - proof/yul-direct-expression-backward - Added `FunctionsObserverExpressionBackward.directBackwardAt`, a strong source-fuel induction covering validated literals, visible variables, nested direct primitives, and complete right-to-left direct argument lists. The reversal-invariant syntax fuel bound supplies recursive budgets; source final states remain existential and the interface exposes no replay certificate, compiler artifact, or call oracle.
+- 2026-06-15 14:53:50 PDT - architecture/functions-inversion-owner - Moved generic successful expression and argument-list inversions into `Functions.EffectSemanticsInversion`; the Yul proof consumes those adjacent target-semantics APIs. Added the new backward module to the direct-import, lower-semantics, and observer-specific-compiler architecture guards.
+- 2026-06-15 14:53:50 PDT - validation/yul-direct-expression-backward - Focused 1,148-job primitive, 1,179-job expression, full 1,247-job verification, architecture, aggregate proof-artifact, forbidden-marker, and `git diff --check` gates passed. `safeCompilerSelectedBackwardAt` and `directBackwardAt` depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 14:55:09 PDT - compaction-resume - Resumed after the checked direct-expression backward theorem and arbitrary-fuel primitive dispatcher; immediate frontier is Functions-owned regular let/append inversion followed by generated argument-preamble backward adequacy.
+- 2026-06-15 15:07:33 PDT - proof - Added Functions-owned regular `let`, singleton-block, concatenated-block, and cross-fuel uniqueness inversions; added exact Yul argument composition; checked `boundArgsBackwardAt`, which reconstructs real reversed Yul argument evaluation from `UncheckedBoundLowering` preamble execution and returns the existing scoped prepared artifact aligned to the concrete target run. Focused expression graph built 1179 jobs green; bound primitive-expression instantiation remains next.
+- 2026-06-15 15:07:33 PDT - audit - Generated argument-preamble backward boundary passed the 1247-job verification root, `scripts/check_architecture.sh`, `scripts/verify_layer.sh proofs`, changed-file forbidden-marker scan, and `git diff --check`. Axiom audit for `boundArgsBackwardAt` reports only `propext`, `Classical.choice`, and `Quot.sound`; the initial Locals-semantics ownership leak was moved into Functions-owned `eval_lit`/`eval_var_of_lookup` lemmas before the architecture gate passed.
+- 2026-06-15 15:15:25 PDT - proof - Checked `boundPrimitiveBackwardAt`: concrete bound primitive execution now composes preamble adequacy, compiler stack-sequence provenance, stable generated arguments, and `safeCompilerSelectedBackwardAt` into an aligned source Yul expression run. The only recursive premise is the strictly smaller expression interface needed for nested internal calls.
+- 2026-06-15 15:15:25 PDT - audit - Bound primitive-expression backward composition passed the 1247-job verification root, architecture check, proof-layer verification, forbidden-marker scan, and `git diff --check`; `#print axioms boundPrimitiveBackwardAt` reports only `propext`, `Classical.choice`, and `Quot.sound`.
+2026-06-15 compaction-resume: Resumed after checked generated-argument and bound-primitive backward adequacy; current theorem-truth frontier is repairing the active-code-owner installation premise before internal function-call inversion.
+- 2026-06-15 theorem-boundary - Repaired canonical Yul contract installation: ordinary and observer execution now install the program into the active code-owner account while preserving existing account state, so source internal-call lookup cannot fail merely because the supplied initial map omitted that owner. Added checked owner-lookup and installed-code theorems.
+- 2026-06-15 proof - Added source-semantics-owned `call_succ_of_parts` and `eval_function_of_parts`; adjacent backward proofs can reconstruct canonical successful calls and function expressions from account lookup, function selection, argument evaluation, and body execution without unfolding the recursive interpreter.
+- 2026-06-15 validation - The active-code-owner installation repair and source call constructors passed the 1,248-job verification root, architecture dependency check, proof-layer gate, resource-observer axiom smoke, and `git diff --check`. New theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 theorem-boundary - Added pass-owned `ReturnedBodyBackward` and target-fuel-bounded `RecursiveBodyBackward` beside the existing forward call artifact. `ReturnedBodyBackward.compose` reconstructs the canonical source call, target `runBody`, return values, and restored caller relation from one actual compiled body run.
+- 2026-06-15 proof - Added Functions-owned `runOpen_append_two_regular_parts`. An arbitrary successful prefix followed by two required statements now exposes all three concrete runs and proves the second statement executes at least two fuel steps below the enclosing block, supplying the induction measure for generated zero initialization plus internal call.
+- 2026-06-15 validation - The call-backward artifact and strict two-statement inversion passed the 1,249-job verification root, architecture dependency check, aggregate proof gate, changed-file forbidden-marker scan, `git diff --check`, and resource-observer axiom smoke. Both checked theorems use only `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 architecture-risk - Concrete recursive call inversion needs independently reconstructed source argument and callee-body runs to share one enclosing Yul fuel. The canonical parameterized semantics currently has no successful-run fuel monotonicity interface, and generic monotonicity is false without a primitive-handler monotonicity contract. Add a semantics-owned primitive `SuccessMonotone` interface and mutual control theorem before closing the call expression; do not replace it with an unbounded callee callback.
+
+## 2026-06-15 compaction-resume
+
+Resumed after checked returned-body backward composition and strict generated-call fuel inversion; current frontier is the canonical primitive-success/fuel-monotonicity interface needed to share source fuel across reconstructed arguments and callees.
+
+## 2026-06-15 15:50 PDT — compaction-resume
+- Resumed after checking canonical Yul success-fuel monotonicity and the closed-world observer primitive instance; current frontier is integrating call-argument reconstruction into the adjacent function-call backward theorem.
+
+## 2026-06-15 16:04 PDT — compaction-resume
+- Resumed after checking the existential-fuel argument boundary and conditional internal-call backward theorem; current frontier is finishing the proof/axiom gates and discharging installed-owner preservation.
+
+## 2026-06-15 16:26 PDT — compaction-resume
+- Resumed the active end-to-end proof at canonical active-code-owner preservation; compiling the lambda-inferred primitive-family proof before lifting it through the shared Yul semantics.
+
+## 2026-06-15 17:02 PDT — compaction-resume
+- Resumed after checking canonical owner preservation and unconditional internal-call backward adequacy; recording and checkpointing that boundary before recursive Yul statement/list/control inversion.
+
+- 2026-06-15 17:02 PDT - proof/yul-owner-preservation - Added pass-owned active-code-owner preservation for every compiler-selected nonexternal primitive and a semantics-owned mutual theorem family for canonical argument, expression, call, dispatcher, statement-sequence, statement, and loop evaluation. The observer-safe specialization derives the property from ordinary memory safety and the concrete resource transcript.
+- 2026-06-15 17:02 PDT - theorem-boundary/yul-call-backward-owner - `boundFunctionBackwardBelow` now takes only the source-facing initial owner-availability fact and derives owner availability after reconstructed argument evaluation. The former higher-order owner-after-arguments premise is deleted; the public adjacent call theorem still exposes no generated evidence, replay certificate, or all-callee oracle.
+- 2026-06-15 17:02 PDT - oracle - Owner-preservation consultation `resp_0729e0692ce275c6006a3086a0df20819986a9af732d866d59` failed with `insufficient_quota`; no oracle advice was incorporated, and the local semantics-owned route checked successfully.
+- 2026-06-15 17:02 PDT - validation/yul-call-backward-owner - Focused owner, observer-safety, and call-backward builds, the full 1,254-job verification root, architecture dependency checks, changed-file proof-marker scan, `git diff --check`, and resource-observer axiom smoke passed. New public theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 16:52 PDT - compaction-resume - Resumed from unconditional internal-call backward adequacy at the first pass-owned statement leaves; current frontier is checking assignment reconstruction, then defining recursive statement/list/control backward adequacy.
+- 2026-06-15 17:10 PDT - architecture/yul-control-relation-owner - Moved `ScopeOptionWithin`, `ControlContextRel`, and their loop/transport lemmas from the forward corridor into `FunctionsObserverOutcome`. Forward, terminal, and backward modules now consume the same pass-owned control contract; architecture guards reject redefinition in Forward and backward imports of Forward.
+- 2026-06-15 17:10 PDT - theorem-boundary/yul-statement-backward - Added target-run-indexed `RecursiveOpenStmtBackwardBelow` and checked aligned backward leaves for uninitialized declarations, singleton declarations/assignments, `break`, `continue`, and `leave`. The interface accepts ordinary source validity, owner availability, compiler lowering, state/control relations, and an actual target run, with no replay certificate or generated-code premise.
+- 2026-06-15 17:10 PDT - proof/yul-arbitrary-result-backward - Added arbitrary-arity aligned expression artifacts plus direct/bound `primitiveExpressionBackwardBelow`, then used the statement-owned `OpenResult.of_expr_prepared` to check zero-result continuing primitive statements. The proof inverts the ordinary compiler and target evaluator and reconstructs canonical Yul `exec`; stores, logs, and other result-zero primitives do not use a parallel statement compiler.
+- 2026-06-15 17:10 PDT - validation/yul-statement-backward-foundation - Focused statement-backward build, full 1,255-job verification root, architecture dependency guard, proof-layer gate, standalone resource-observer axiom smoke, changed-file forbidden-marker scan, and `git diff --check` passed. New statement and arbitrary-result expression theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 17:13:24 PDT - compaction-resume - Resumed from the checked Yul statement-backward foundation; current frontier is pass-owned internal-call statement inversion, then recursive statement/list adequacy.
+- 2026-06-15 17:30:07 PDT - theorem-boundary/yul-returned-call-backward - Added `ReturnedCallBackward` plus visible-target and fresh-target constructors from one concrete Functions call run. The proof reconstructs ordinary argument evaluation, the compiler-selected callee, a strictly smaller recursive body, canonical caller restoration, return writeback, and the real source function-call execution without a call oracle or generated-code premise.
+- 2026-06-15 17:30:07 PDT - proof/yul-call-statement-backward - Checked regular backward adequacy for zero-result internal-call expression statements, multi-target assignments, and fresh multi-name declarations. Declaration reconstruction aligns the actual emitted zero-initialization prefix with `InitNames.run`; all three forms use the shared statement `of_regular_parts` outcome assembler.
+- 2026-06-15 17:30:07 PDT - validation/yul-call-statement-backward - Focused 1,193-job statement build, full 1,255-job verification root, architecture dependency guard, proof-layer aggregate, standalone resource-observer axiom smoke, changed-file forbidden-marker scan, and `git diff --check` passed. New public theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-15 17:32:38 PDT - architecture/yul-compound-classifier-owner - Moved `CompoundStmt` from `FunctionsObserverForward` into the statement owner and updated forward, terminal, verification, and architecture-guard consumers. Backward recursion can now share the syntax boundary without importing the forward corridor.
+- 2026-06-15 17:32:38 PDT - proof/yul-regular-leaf-dispatcher - Added `regularLeafBackward`, one compiler-driven theorem covering every non-compound statement under a regular target run. It selects ordinary declaration/assignment/call/primitive leaves, reconstructs control leaves from the shared control contract, and rules out terminal primitive lowering through Functions-owned halt-mode inversion.
+- 2026-06-15 17:35:02 PDT - validation/yul-regular-leaf-dispatcher - Focused 1,193-job backward build, full 1,255-job verification root, architecture dependency guard, changed-file forbidden-marker scan, `git diff --check`, and standalone axiom smoke passed. `regularLeafBackward` depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+## 2026-06-15 — compaction-resume
+
+Resumed from the checked regular Yul leaf dispatcher; current frontier is Functions-owned arbitrary-outcome append inversion, then recursive statement-list adequacy.
+
+- 2026-06-15 17:40 PDT - theorem-boundary/functions-append-inversion - Added
+  `runOpen_append_bounded_cases` in the Functions effect-semantics owner. One
+  concrete run of an appended block now yields either an exact regular prefix
+  plus a target-fuel-bounded suffix run, or the exact nonregular prefix result.
+  This is the adjacent sequencing interface required by recursive Yul
+  statement-list backward adequacy and does not expose interpreter structure
+  at the Yul boundary.
+- 2026-06-15 17:47 PDT - proof/yul-list-backward - Added the adjacent
+  `FunctionsObserverListBackward` module and checked `ofStmt`. The theorem
+  recursively reconstructs canonical Yul `execSeq` from the ordinary list
+  compiler and one concrete Functions run, handling regular head/tail
+  composition and abrupt-head short circuiting through the shared
+  outcome-indexed relation. Source fuel is reconciled only through the
+  canonical success-monotonicity theorem.
+- 2026-06-15 17:47 PDT - architecture/yul-list-backward - Added source-owned
+  regular/checkpoint sequence constructors and a shared outcome-owned aligned
+  append constructor. The list proof imports no forward corridor, lower pass,
+  observer-specific compiler, replay certificate, or generated-code premise.
+- 2026-06-15 17:51 PDT - validation/yul-list-backward - Focused 1,194-job
+  build, full 1,256-job verification root, architecture dependency guard,
+  aggregate proof-layer gate, standalone resource-observer axiom smoke,
+  changed-file forbidden-marker scan, and `git diff --check` passed. The new
+  list theorem depends only on `propext`, `Classical.choice`, and `Quot.sound`.
+### compaction-resume
+
+Resumed from checked recursive Yul list backward adequacy; current frontier is target-run-indexed halting internal-call/body backward reconstruction, then lexical blocks.
+
+- 2026-06-15 - archive/full-backward-adequacy - Preserved the complete broad backward-adequacy campaign on `codex/archive-full-backward-adequacy`, including the checked recursive Yul list theorem and the in-progress halt-indexed internal-call body interface. Focused Functions inversion, Yul effect-semantics, and Yul call-backward checks pass. `scripts/verify_layer.sh proofs` passes the 1,256-job verification root, architecture checks, and proof-artifact axiom suite; changed-file forbidden-marker scanning and `git diff --check` pass. Printed theorem dependencies remain limited to Lean's accepted `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 14:27:49 PDT - consolidation/full-backward-integration -
+  Merged the archived adjacent Yul backward campaign into
+  `codex/narrow-observer-replay` while retaining the newer static-mode,
+  contract-installation, trace-adequacy, public-composition, and EndToEnd
+  fixes. Primitive, expression, internal-call, regular-leaf, and recursive-list
+  backward modules now coexist with the checked narrow theorem; the focused
+  1,250-job graph and architecture dependency guard pass. The next proof owner
+  is compound Yul control, beginning with lexical blocks.
+- 2026-06-16 14:27:49 PDT - oracle/scratch-depth-design - Submitted
+  `resp_08d0c5123d87506a006a31bf09ccf4819a8983543fc655b883` for hostile
+  critique of interpreter-fuel budgeting versus a source-facing call-depth
+  invariant. The request failed with `insufficient_quota`; no oracle advice
+  was incorporated, and the local proof analysis continues independently.

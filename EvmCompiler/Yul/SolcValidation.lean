@@ -431,6 +431,26 @@ noncomputable def ProgramOk? (program : Program) : Bool :=
 noncomputable def ProgramOk (program : Program) : Prop :=
   ProgramOk? program = true
 
+theorem exprOk_functionCall_lookup_exists
+    {profile : DialectProfile} {contract : AstContract}
+    {vars : List Name} {expected : Nat}
+    {functionName : Name} {args : List AstExpr}
+    (hOk :
+      ExprOk? profile contract vars expected
+          (.Call (.inr functionName) args) =
+        true) :
+    ∃ params returns body,
+      contract.functions.lookup functionName =
+        some (.Def params returns body) := by
+  unfold ExprOk? lookupFunction? at hOk
+  cases hLookup : contract.functions.lookup functionName with
+  | none =>
+      simp [hLookup] at hOk
+  | some fn =>
+      cases fn with
+      | Def params returns body =>
+          exact ⟨params, returns, body, rfl⟩
+
 theorem exprOk_functionCall_parts
     {profile : DialectProfile} {contract : AstContract}
     {vars : List Name} {expected : Nat}

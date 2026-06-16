@@ -418,6 +418,431 @@ theorem safeCompilerSelected
           exact safeInvalid hRel hRun
       | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
 
+theorem safeCompilerSelectedBackwardAt
+    (fuel : Nat)
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues outputs : List Word}
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval (fuel + 2) source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  cases prim with
+  | StopArith primitive =>
+      cases primitive with
+      | STOP => simp [Prim.terminal?] at hTerminal
+      | ADD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .add hRel hRun
+      | MUL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .mul hRel hRun
+      | SUB =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .sub hRel hRun
+      | DIV =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .div hRel hRun
+      | SDIV =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .sdiv hRel hRun
+      | MOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .mod hRel hRun
+      | SMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .smod hRel hRun
+      | ADDMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureTernaryBackward .addmod hRel hRun
+      | MULMOD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureTernaryBackward .mulmod hRel hRun
+      | EXP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .exp hRel hRun
+      | SIGNEXTEND =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .signextend hRel hRun
+  | CompBit primitive =>
+      cases primitive with
+      | LT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .lt hRel hRun
+      | GT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .gt hRel hRun
+      | SLT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .slt hRel hRun
+      | SGT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .sgt hRel hRun
+      | EQ =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .eq hRel hRun
+      | ISZERO =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureUnaryBackward .iszero hRel hRun
+      | AND =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .and hRel hRun
+      | OR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .or hRel hRun
+      | XOR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .xor hRel hRun
+      | NOT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureUnaryBackward .not hRel hRun
+      | BYTE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .byte hRel hRun
+      | SHL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .shl hRel hRun
+      | SHR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .shr hRel hRun
+      | SAR =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePureBinaryBackward .sar hRel hRun
+  | Keccak primitive =>
+      cases primitive with
+      | KECCAK256 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeKeccak256Backward hRel hRun
+  | Env primitive =>
+      cases primitive with
+      | ADDRESS =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .address hRel hRun
+      | BALANCE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryAccessBackward .balance hRel hRun
+      | ORIGIN =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .origin hRel hRun
+      | CALLER =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .caller hRel hRun
+      | CALLVALUE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .callvalue hRel hRun
+      | CALLDATALOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryReadBackward .calldataload hRel hRun
+      | CALLDATASIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .calldatasize hRel hRun
+      | CALLDATACOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeSharedTernaryCopyBackward .calldatacopy hRel hRun
+      | GASPRICE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .gasprice hRel hRun
+      | CODESIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .codesize hRel hRun
+      | CODECOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeSharedTernaryCopyBackward .codecopy hRel hRun
+      | EXTCODESIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryAccessBackward .extcodesize hRel hRun
+      | EXTCODECOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeExtcodecopyBackward hRel hRun
+      | RETURNDATASIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeReturndatasizeBackward hRel hRun
+      | RETURNDATACOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeReturndatacopyBackward hRel hRun
+      | EXTCODEHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryAccessBackward .extcodehash hRel hRun
+  | Block primitive =>
+      cases primitive with
+      | BLOCKHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryReadBackward .blockhash hRel hRun
+      | COINBASE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .coinbase hRel hRun
+      | TIMESTAMP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .timestamp hRel hRun
+      | NUMBER =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .number hRel hRun
+      | PREVRANDAO =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .prevrandao hRel hRun
+      | GASLIMIT =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .gaslimit hRel hRun
+      | CHAINID =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .chainid hRel hRun
+      | SELFBALANCE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldNullaryBackward .selfbalance hRel hRun
+      | BASEFEE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .basefee hRel hRun
+      | BLOBHASH =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentUnaryBackward .blobhash hRel hRun
+      | BLOBBASEFEE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeEnvironmentNullaryBackward .blobbasefee hRel hRun
+  | StackMemFlow primitive =>
+      cases primitive with
+      | POP =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safePopBackward hRel hRun
+      | MLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeMloadBackward hRel hRun
+      | MSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeMachineBinaryZeroBackward .mstore hRel hRun
+      | SLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryAccessBackward .sload hRel hRun
+      | SSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldBinaryWriteBackward .sstore hRel hRun
+      | MSTORE8 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeMachineBinaryZeroBackward .mstore8 hRel hRun
+      | MSIZE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          have hReverse :
+              sourceValues.reverse = [] :=
+            Functions.ObserverSafety.SafeSemantics.eval_observer_values_eq_nil
+              (by rfl) hRun
+          have hValues : sourceValues = [] := by
+            simpa using congrArg List.reverse hReverse
+          subst sourceValues
+          simpa using msizeSafeBackward (fuel := fuel + 1) hRel hRun
+      | GAS =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          have hReverse :
+              sourceValues.reverse = [] :=
+            Functions.ObserverSafety.SafeSemantics.eval_observer_values_eq_nil
+              (by rfl) hRun
+          have hValues : sourceValues = [] := by
+            simpa using congrArg List.reverse hReverse
+          subst sourceValues
+          simpa using gasSafeBackward (fuel := fuel + 1) hRel hRun
+      | TLOAD =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldUnaryAccessBackward .tload hRel hRun
+      | TSTORE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeWorldBinaryWriteBackward .tstore hRel hRun
+      | MCOPY =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeMcopyBackward hRel hRun
+  | Log primitive =>
+      cases primitive with
+      | LOG0 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeLogBackward .log0 hRel hRun
+      | LOG1 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeLogBackward .log1 hRel hRun
+      | LOG2 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeLogBackward .log2 hRel hRun
+      | LOG3 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeLogBackward .log3 hRel hRun
+      | LOG4 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeLogBackward .log4 hRel hRun
+  | System primitive =>
+      cases primitive with
+      | CREATE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | CALL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | CALLCODE =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | RETURN => simp [Prim.terminal?] at hTerminal
+      | DELEGATECALL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | CREATE2 =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | STATICCALL =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          obtain ⟨hSafe, _hPermitted, _hTargetRun⟩ :=
+            Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+          have : False := by
+            simpa only [
+              Functions.ObserverSafety.PrimitiveMemorySafe,
+              Simulation.MemorySafety.PrimitiveMemorySafe] using hSafe
+          exact this.elim
+      | REVERT => simp [Prim.terminal?] at hTerminal
+      | INVALID =>
+          simp [Prim.toUncheckedBasicOp?, Prim.toBasicOp?] at hOp
+          subst op
+          exact safeInvalidBackward hRel hRun
+      | SELFDESTRUCT => simp [Prim.terminal?] at hTerminal
+
+/--
+The canonical minimum-fuel specialization used by leaf expression proofs.
+-/
+theorem safeCompilerSelectedBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues outputs : List Word}
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval 2 source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  simpa using
+    safeCompilerSelectedBackwardAt 0 hTerminal hOp hRel hRun
+
 /--
 A guarded, compiler-selected nonterminal primitive cannot produce a public
 terminal Yul exception. Malformed arguments, static-mode rejection, depleted

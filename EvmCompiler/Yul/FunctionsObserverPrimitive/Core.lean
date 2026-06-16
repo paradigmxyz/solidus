@@ -84,6 +84,43 @@ def ForwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
         (target.withShared targetShared) ∧
       source'.store = source.store
 
+def BackwardAt (codeRel : StateRelation.CodeRel) (fuel : Nat)
+    (prim : EvmYul.Operation .Yul) (op : Structured.BasicOp) : Prop :=
+  ∀ {source : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {targetShared : EvmYul.SharedState .EVM}
+    {sourceValues outputs : List Word},
+    StateRelation.Regular.Rel codeRel source target →
+    Functions.ObserverSafety.PrimitivePermitted op target.shared →
+    Locals.Source.PrimitiveSemantics.structured.eval
+        op target.shared sourceValues.reverse =
+      .ok (targetShared, outputs) →
+    ∃ source',
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Regular.Rel codeRel source'
+          (target.withShared targetShared) ∧
+        source'.store = source.store
+
+def BackwardAtArity (codeRel : StateRelation.CodeRel) (fuel : Nat)
+    (prim : EvmYul.Operation .Yul) (op : Structured.BasicOp) : Prop :=
+  ∀ {source : EvmYul.Yul.State}
+    {target : Locals.Source.State}
+    {targetShared : EvmYul.SharedState .EVM}
+    {sourceValues outputs : List Word},
+    StateRelation.Regular.Rel codeRel source target →
+    sourceValues.length = Expressions.Structured.BasicOp.inputs op →
+    Functions.ObserverSafety.PrimitivePermitted op target.shared →
+    Locals.Source.PrimitiveSemantics.structured.eval
+        op target.shared sourceValues.reverse =
+      .ok (targetShared, outputs) →
+    ∃ source',
+      EvmYul.Yul.primCall fuel source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Regular.Rel codeRel source'
+          (target.withShared targetShared) ∧
+        source'.store = source.store
+
 def RawNoObservableFailureAt (fuel : Nat)
     (prim : EvmYul.Operation .Yul) : Prop :=
   ∀ {source : EvmYul.Yul.State} {values : List Word}
@@ -175,6 +212,15 @@ theorem ForwardAt.withArity
     ForwardAtArity codeRel fuel prim op := by
   intro source source' target sourceValues outputs hRel _hArity hRun
   exact hForward hRel hRun
+
+theorem BackwardAt.withArity
+    {codeRel : StateRelation.CodeRel} {fuel : Nat}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    (hBackward : BackwardAt codeRel fuel prim op) :
+    BackwardAtArity codeRel fuel prim op := by
+  intro source target targetShared sourceValues outputs
+    hRel _hArity hPermitted hRun
+  exact hBackward hRel hPermitted hRun
 
 /--
 Shared guarded lift after fixing the related source and target states.
@@ -310,6 +356,75 @@ theorem safeBasicOp
     hTerminal hOp hRel hPermitted _ hRun
   intro sourceAfter rawOutputs hRaw
   exact hForward hRel.2 hRaw
+
+theorem safeBasicOpBackward
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {fuel : Nat}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {prim : EvmYul.Operation .Yul} {op : Structured.BasicOp}
+    {sourceValues outputs : List Word}
+    (hYulObserver :
+      ObserverSemantics.yulPrimObserver? prim = none)
+    (hFunctionsObserver :
+      Functions.ObserverSemantics.basicOpObserver? op = none)
+    (hTerminal : Prim.terminal? prim = none)
+    (hOp : Prim.toUncheckedBasicOp? prim = some op)
+    (hBackward : BackwardAt codeRel fuel prim op)
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hRun :
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval op target sourceValues.reverse =
+        .ok (target', outputs)) :
+    ∃ source' : ObserverSemantics.SourceReplay.State transcript,
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript).eval (fuel + 1) source prim sourceValues =
+          .ok (source', outputs) ∧
+        StateRelation.Replay.Rel codeRel source' target' ∧
+        source'.source.store = source.source.store := by
+  classical
+  obtain ⟨hTargetSafe, hTargetPermitted, hTargetRun⟩ :=
+    Functions.ObserverSafety.SafeSemantics.eval_parts hRun
+  have hSourceMemorySafe :
+      Simulation.MemorySafety.PrimitiveMemorySafe contract op
+        source.source.sharedState.toMachineState sourceValues.reverse := by
+    rw [StateRelation.Replay.machine_eq hRel]
+    exact hTargetSafe
+  have hSourceSafe :
+      ObserverSafety.PrimitiveSafe contract prim
+        source.source.sharedState.toMachineState sourceValues :=
+    (ObserverSafety.primitiveSafe_basicOp hTerminal hOp).mpr
+      hSourceMemorySafe
+  obtain ⟨targetShared, hTargetRaw, hTargetShape⟩ :
+      ∃ targetShared,
+        Locals.Source.PrimitiveSemantics.structured.eval
+            op target.source.shared sourceValues.reverse =
+          .ok (targetShared, outputs) ∧
+        target' =
+          target.withSource
+            (target.source.withShared targetShared) := by
+    obtain ⟨targetShared, hTargetRaw, hTargetEq⟩ :=
+      Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver_parts
+        hFunctionsObserver hTargetRun
+    exact ⟨targetShared, hTargetRaw, hTargetEq⟩
+  obtain ⟨sourceAfter, hSourceRaw, hFinalRel, hStore⟩ :=
+    hBackward hRel.2 hTargetPermitted hTargetRaw
+  rw [hTargetShape]
+  have hSourceObserver :
+      ObserverSemantics.SourceReplay.primCall
+          (fuel + 1) source prim sourceValues =
+        .ok (source.withSource sourceAfter, outputs) := by
+    simp [ObserverSemantics.SourceReplay.primCall,
+      hYulObserver, hSourceRaw,
+      ObserverSemantics.SourceReplay.State.withSource,
+      Simulation.ResourceReplay.State.withSource]
+  refine
+    ⟨source.withSource sourceAfter, ?_, ⟨hRel.1, hFinalRel⟩, ?_⟩
+  · simpa [ObserverSafety.SafeSemantics.primitiveSemantics,
+      hSourceSafe] using hSourceObserver
+  · simpa using hStore
 
 theorem safeBasicOpArity
     {contract : MemoryContract.Contract}
