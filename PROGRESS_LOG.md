@@ -30160,3 +30160,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   architecture dependency guard, forbidden-marker scan, standalone axiom
   smoke, aggregate proof-layer gate, and `git diff --check` passed. New public
   audit entries depend only on `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-16 15:22:49 PDT - theorem-boundary/narrow-goal-audit - Confirmed
+  `FunctionsObserverTraceAdequacy.compileProgramTraceAdequate` already supplies
+  the required exact Yul replay from source-safe execution, whole-program
+  forward preservation, determinism, and target transcript exhaustion.
+  Generic terminal-control backward coverage is retained as useful local
+  inversion work but is no longer a completion blocker.
+- 2026-06-16 15:22:49 PDT - bottleneck/public-scratch-boundary - The remaining
+  public blocker is replacing `ClosedArtifact.stackOnly` with an honest
+  source-facing scratch execution/reservation-safety premise and composing the
+  existing `Public.ObserverComposition.terminalWithResourceSafety` theorem.

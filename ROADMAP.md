@@ -18,8 +18,13 @@ target run. `Yul.EndToEnd` remains a short composition module.
 ## Checked Boundaries
 
 - [x] Yul -> Functions whole-program forward preservation.
+- [x] Yul -> Functions exact observer replay from source-safe execution,
+  forward preservation, semantic uniqueness, and concrete target transcript
+  exhaustion.
 - [x] Functions -> allocated Expressions whole-main forward preservation for
   compiler-selected stack-only and scratch allocation.
+- [x] Functions -> bytecode compiler-selected terminal composition under an
+  explicit source-run resource bound.
 - [x] Expressions -> Structured transparent forward/backward interface.
 - [x] Structured -> TypedCfg terminal backward adequacy.
 - [x] TypedCfg -> Assembly terminal backward adequacy.
@@ -30,32 +35,39 @@ target run. `Yul.EndToEnd` remains a short composition module.
 
 ## Active Proof Work
 
-- [ ] Yul -> Functions exact observer-replay bridge:
-  - [x] compiler-selected primitive families;
-  - [x] direct and bound expressions;
-  - [x] internal calls and regular leaf statements;
-  - [x] recursive statement lists;
-  - [x] lexical blocks;
-  - [x] nonterminal `if`;
-  - [x] nonterminal `switch`;
-  - [ ] terminal `if` and `switch`, plus `for`;
-  - [ ] terminal call statements, complete outcome dispatch, dispatcher, and
-    whole program.
-- [ ] Functions -> allocated Expressions whole-main backward adequacy:
-  construct the canonical Functions run from a concrete terminal allocated
-  target run, for stack-only and scratch modes.
-- [ ] Replace interpreter-fuel-based scratch budgeting at the public Yul
-  boundary with a source-facing execution-depth/reservation invariant, or prove
-  a checked source-derived bound for the Functions run constructed by the
-  Yul -> Functions pass.
-- [ ] Compose compiler-selected stack-only/scratch
-  `Yul.EndToEnd.ClosedResourceCorrect` without public compiler-generated
-  evidence.
+- [ ] Define an honest source-facing scratch execution/reservation-safety
+  interface that supplies the concrete source-run depth bound without exposing
+  compiler-generated evidence.
+- [ ] Generalize `Yul.EndToEnd.ClosedResourceCorrect`:
+  - [ ] remove the stack-only field from `ClosedArtifact`;
+  - [ ] derive the compiler-selected `FuelSafe` fact from the source-facing
+    safety premise;
+  - [ ] compose through
+    `Public.ObserverComposition.terminalWithResourceSafety`;
+  - [ ] retain exact transcript consumption and terminal outcome relation.
+- [ ] Audit the public theorem for generated artifact evidence, replay
+  certificates, call oracles, and cross-pass proof reasoning.
+
+## Retained Local Inversions
+
+These checked Yul-to-Functions inversions are reusable diagnostics and exposed
+compiler-bug checks. Completing symmetric backward coverage is not a blocker
+for the narrowed public observer-replay theorem.
+
+- [x] compiler-selected primitive families;
+- [x] direct and bound expressions;
+- [x] internal calls and regular leaf statements;
+- [x] recursive statement lists;
+- [x] lexical blocks;
+- [x] nonterminal `if`;
+- [x] nonterminal `switch`.
+- [ ] Terminal `if`/`switch`, `for`, and complete generic backward dispatch are
+  optional follow-on coverage, not completion prerequisites.
 
 ## Completion Gates
 
-- [ ] Every adjacent boundary has checked forward preservation; the boundaries
-  used by observer replay expose only the reverse/trace adequacy needed for the
+- [x] Every adjacent boundary has checked forward preservation; the lower
+  terminal boundaries expose only the reverse/trace adequacy needed for the
   concrete terminal target run.
 - [ ] Public theorem accepts only source validation, related initial states,
   source-facing execution/resource safety, and a concrete terminal target run.
