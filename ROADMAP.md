@@ -1763,9 +1763,13 @@ corridor.
   statement-specific compiler path. Regular internal-call expression
   statements, multi-target assignments, and fresh multi-name declarations are
   now checked through the same returned-call artifact and ordinary compiler
-  decomposition. The current obligation is terminal internal-call statement
+  decomposition. The shared statement owner now also owns the compound-syntax
+  classifier, and `regularLeafBackward` dispatches every non-compound regular
+  target outcome through the ordinary compiler without importing the forward
+  corridor. The current obligation is terminal internal-call statement
   reconstruction and recursive statement-list/block adequacy, followed by
-  `if`/`switch`/`for`, dispatcher, and whole-program inversion.
+  `if`/`switch`/`for`, the full outcome dispatcher, and whole-program
+  inversion.
 - [ ] Prove the matching backward-adequacy boundary and compose the short Yul
   end-to-end theorem.
 

@@ -293,6 +293,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.exprCallBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.assignCallBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.letCallBackward
+#check EvmCompiler.Yul.FunctionsObserverStatementBackward.regularLeafBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.breakBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.continueBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.leaveBackward
@@ -571,7 +572,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForward.ScopedListResult.closeForGuardBody
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenStmtForward
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward
-#check EvmCompiler.Yul.FunctionsObserverForward.CompoundStmt
+#check EvmCompiler.Yul.FunctionsObserverStatement.CompoundStmt
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenCompoundForward
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenStmtForward.ofCompound
 #check EvmCompiler.Yul.FunctionsObserverForward.RecursiveOpenListForward.ofStmt

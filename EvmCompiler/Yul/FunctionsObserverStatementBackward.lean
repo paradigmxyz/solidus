@@ -1479,6 +1479,252 @@ theorem leaveBackward
   exact
     AlignedStmtBackward.ofResult 1 hSourceRun result hTarget
 
+theorem regularLeafBackward
+    (profile : SolcValidation.DialectProfile)
+    (sourceProgram : Yul.Program)
+    (targetProgram : Objects.Program)
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (contract : MemoryContract.Contract)
+    (transcript : Trace)
+    (codeRel : StateRelation.CodeRel)
+    (bound : Nat)
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {compilerFuel targetFuel : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {stmt : AstStmt}
+    {lower : List Functions.Stmt}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal : Functions.ObserverSemantics.State transcript}
+    {ctx targetFinalCtx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hTargetFuel : targetFuel < bound)
+    (hNotCompound :
+      ¬ FunctionsObserverStatement.CompoundStmt stmt)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hOk :
+      SolcValidation.StmtOk? profile sourceProgram.contract
+          ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
+          layout canBreak canContinue canLeave stmt =
+        true)
+    (hNames :
+      StateRelation.Vars.NamesWithin before.used (Stmt.names stmt))
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before stmt =
+        some (lower, after))
+    (hExpr :
+      FunctionsObserverExpressionBackward.RecursiveAlignedValueBackwardBelow
+        profile sourceProgram.contract contract transcript codeRel
+        targetProgram.toFunctions (some sourceProgram.contract) layout bound)
+    (hBody :
+      FunctionsObserverCallBackward.RecursiveBodyBackward
+        contract transcript codeRel sourceProgram targetProgram profile bound)
+    (hOwner :
+      Yul.Source.Effectful.OwnerAvailable
+        (ObserverSemantics.SourceReplay.stateModel transcript) source)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hTarget :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions ctx targetFuel { stmts := lower } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetFinal,
+            targetFinalCtx)) :
+    Nonempty
+      (AlignedStmtBackward contract codeRel targetProgram.toFunctions
+        (some sourceProgram.contract) stmt lower before after layout
+        source target ctx
+        (Functions.Source.Effectful.Outcome.regular targetFinal)
+        targetFinalCtx (sourceControl := sourceControl)) := by
+  cases stmt with
+  | Block body =>
+      exact False.elim (hNotCompound (.block body))
+  | Switch scrutinee cases defaultBody =>
+      exact
+        False.elim
+          (hNotCompound (.switch scrutinee cases defaultBody))
+  | For cond post body =>
+      exact False.elim (hNotCompound (.forLoop cond post body))
+  | If cond body =>
+      exact False.elim (hNotCompound (.ifThen cond body))
+  | Let names value? =>
+      cases value? with
+      | none =>
+          have hNamesUsed :
+              StateRelation.Vars.NamesWithin before.used
+                (identNames names) := by
+            simpa [Stmt.names] using hNames
+          exact
+            letNoneBackward profile sourceProgram.contract
+              (program := targetProgram.toFunctions)
+              (sourceControl := sourceControl)
+              hOk hLower hRel hDomain hScope hLayout hControl.scope
+              hNamesUsed hTarget
+      | some value =>
+          by_cases hFunctionCall :
+              ∃ functionName functionArgs,
+                value = .Call (.inr functionName) functionArgs
+          · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+            have hNamesUsed :
+                StateRelation.Vars.NamesWithin before.used
+                  (identNames names) := by
+              intro candidate hMem
+              apply hNames candidate
+              exact List.mem_append_left _ hMem
+            exact
+              letCallBackward profile sourceProgram targetProgram
+                hDecomposition contract transcript codeRel bound
+                hTargetFuel hProgramOk hOk hNamesUsed hLower hExpr hBody
+                hOwner hRel hDomain hScope hLayout hControl.scope hTarget
+          · have hNotFunctionCall :
+                ∀ functionName functionArgs,
+                  value ≠ .Call (.inr functionName) functionArgs := by
+              intro functionName functionArgs hEq
+              exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+            obtain ⟨name, hNamesEq⟩ :=
+              Stmt.toFunctionsListUncheckedFuel?_let_noncall_singleton
+                hNotFunctionCall hLower
+            subst names
+            have hNameUsed : identName name ∈ before.used := by
+              apply hNames
+              simp [Stmt.names, identNames, identName]
+            exact
+              letOneBackward profile sourceProgram.contract contract
+                transcript codeRel targetProgram.toFunctions
+                (some sourceProgram.contract) bound hTargetFuel
+                hNotFunctionCall hOk hLower hExpr hRel hDomain hScope
+                hLayout hControl.scope hNameUsed hTarget
+  | Assign names value =>
+      by_cases hFunctionCall :
+          ∃ functionName functionArgs,
+            value = .Call (.inr functionName) functionArgs
+      · obtain ⟨functionName, functionArgs, rfl⟩ := hFunctionCall
+        exact
+          assignCallBackward profile sourceProgram targetProgram
+            hDecomposition contract transcript codeRel bound hTargetFuel
+            hProgramOk hOk hLower hExpr hBody hOwner hRel hDomain hScope
+            hLayout hControl.scope hTarget
+      · have hNotFunctionCall :
+            ∀ functionName functionArgs,
+              value ≠ .Call (.inr functionName) functionArgs := by
+          intro functionName functionArgs hEq
+          exact hFunctionCall ⟨functionName, functionArgs, hEq⟩
+        obtain ⟨name, hNamesEq⟩ :=
+          Stmt.toFunctionsListUncheckedFuel?_assign_noncall_singleton
+            hNotFunctionCall hLower
+        subst names
+        exact
+          assignOneBackward profile sourceProgram.contract contract
+            transcript codeRel targetProgram.toFunctions
+            (some sourceProgram.contract) bound hTargetFuel
+            hNotFunctionCall hOk hLower hExpr hRel hDomain hScope hLayout
+            hControl.scope hTarget
+  | ExprStmtCall value =>
+      cases value with
+      | Lit literal =>
+          simp [SolcValidation.StmtOk?,
+            SolcValidation.ExprOk?] at hOk
+      | Var name =>
+          simp [SolcValidation.StmtOk?,
+            SolcValidation.ExprOk?] at hOk
+      | Call callee args =>
+          cases callee with
+          | inr functionName =>
+              exact
+                exprCallBackward profile sourceProgram targetProgram
+                  hDecomposition contract transcript codeRel bound
+                  hTargetFuel hProgramOk hOk hLower hExpr hBody hOwner
+                  hRel hDomain hScope hLayout hControl.scope hTarget
+          | inl prim =>
+              cases hTerminal : Prim.terminal? prim with
+              | none =>
+                  exact
+                    exprPrimitiveBackward profile sourceProgram.contract
+                      contract transcript codeRel targetProgram.toFunctions
+                      (some sourceProgram.contract) bound hTargetFuel
+                      hTerminal hOk hLower hExpr hRel hDomain hScope
+                      hLayout hControl.scope hTarget
+              | some kind =>
+                  obtain
+                      ⟨preArgs, lowerArgs, seq,
+                        hLowerArgs, hSeq, hLowerStmts⟩ :=
+                    Stmt.toFunctionsListUncheckedFuel?_expr_terminal_parts
+                      hTerminal hLower
+                  rw [hLowerStmts] at hTarget
+                  obtain
+                      ⟨targetAfterArgs, ctxAfterArgs, suffixFuel,
+                        hArgsRun, hSuffix, hSuffixFuel⟩ :=
+                    Functions.Source.Effectful.Block.runOpen_append_regular_bounded_parts
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions hTarget
+                  obtain ⟨stmtFuel, hTerminalRun⟩ :=
+                    Functions.Source.Effectful.Block.runOpen_singleton_regular_parts
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions hSuffix
+                  have hMode :=
+                    Functions.Source.Effectful.Stmt.run_terminalArgs_mode
+                      (Functions.ObserverSemantics.stateModel transcript)
+                      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+                        contract transcript)
+                      targetProgram.toFunctions hTerminalRun
+                  simp at hMode
+  | Break =>
+      have hEnabled : canBreak = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.breakScope
+      rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨breakLayout, targetBreakScope,
+            hSourceBreakScope, hBreakScope,
+            hBreakSubset, hBreakTarget⟩ := hWithin
+      exact
+        breakBackward hLower hRel hDomain hScope hLayout
+          hSourceBreakScope hBreakScope hBreakSubset hBreakTarget hTarget
+  | Continue =>
+      have hEnabled : canContinue = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.continueScope
+      rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨continueLayout, targetContinueScope,
+            hSourceContinueScope, hContinueScope,
+            hContinueSubset, hContinueTarget⟩ := hWithin
+      exact
+        continueBackward hLower hRel hDomain hScope hLayout
+          hSourceContinueScope hContinueScope
+          hContinueSubset hContinueTarget hTarget
+  | Leave =>
+      have hEnabled : canLeave = true := by
+        simpa [SolcValidation.StmtOk?] using hOk
+      have hWithin := hControl.leaveScope
+      rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+      obtain
+          ⟨leaveLayout, targetLeaveScope,
+            hSourceLeaveScope, hLeaveScope,
+            hLeaveSubset, hLeaveTarget⟩ := hWithin
+      exact
+        leaveBackward hLower hRel hDomain hScope hLayout
+          hSourceLeaveScope hLeaveScope hLeaveSubset hLeaveTarget hTarget
+
 end FunctionsObserverStatementBackward
 end Yul
 end EvmCompiler

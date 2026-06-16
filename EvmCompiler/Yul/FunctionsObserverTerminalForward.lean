@@ -243,7 +243,7 @@ def RecursiveTerminalCompoundForward
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
     {canBreak canContinue canLeave : Bool},
-    FunctionsObserverForward.CompoundStmt stmt →
+    FunctionsObserverStatement.CompoundStmt stmt →
       sourceFuel < bound →
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)

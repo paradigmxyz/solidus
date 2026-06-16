@@ -1870,16 +1870,6 @@ def RecursiveScopedLoopForward
                 lowerBody.stmts }
           after layout sourceFinal target ctx.withoutLoopControl)
 
-inductive CompoundStmt : AstStmt → Prop where
-  | block (body : List AstStmt) : CompoundStmt (.Block body)
-  | switch (scrutinee : AstExpr)
-      (cases : List (Word × List AstStmt)) (defaultBody : List AstStmt) :
-      CompoundStmt (.Switch scrutinee cases defaultBody)
-  | forLoop (cond : AstExpr) (post body : List AstStmt) :
-      CompoundStmt (.For cond post body)
-  | ifThen (cond : AstExpr) (body : List AstStmt) :
-      CompoundStmt (.If cond body)
-
 def RecursiveOpenCompoundForward
     (contract : MemoryContract.Contract)
     (transcript : Trace)
@@ -1899,7 +1889,7 @@ def RecursiveOpenCompoundForward
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
     {canBreak canContinue canLeave : Bool},
-    CompoundStmt stmt →
+    FunctionsObserverStatement.CompoundStmt stmt →
       sourceFuel < bound →
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)

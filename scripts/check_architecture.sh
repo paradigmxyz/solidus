@@ -245,7 +245,7 @@ report_matches \
 
 report_matches \
   'Shared Yul observer control relations belong to FunctionsObserverOutcome, not the forward corridor:' \
-  '^(def ScopeOptionWithin|structure ControlContextRel)' \
+  '^(def ScopeOptionWithin|structure ControlContextRel|inductive CompoundStmt)' \
   EvmCompiler/Yul/FunctionsObserverForward.lean
 
 report_matches \
