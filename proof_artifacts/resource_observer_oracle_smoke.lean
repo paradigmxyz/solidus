@@ -1665,6 +1665,10 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudget_mono
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
+#print axioms EvmCompiler.Yul.FunctionsObserverStaticCost.dispatcherList_le_program
+#print axioms EvmCompiler.Yul.FunctionsObserverStaticCost.function_body_le_program_of_lookup
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run_at_requiredFuel_add_two
+#print axioms EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run_at_requiredFuel_add_two
 #print axioms EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run_at_length
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded
 #print axioms EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_sourceBounded

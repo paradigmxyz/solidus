@@ -30308,3 +30308,20 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   scan, standalone axiom smoke, and `git diff --check` passed. The corrected
   budget and declaration bound use only `propext`, `Classical.choice`, and
   `Quot.sound`.
+- 2026-06-16 16:52:23 PDT - proof/yul-program-static-cost - Added the
+  source-only `FunctionsObserverStaticCost` measure over expressions,
+  statements, cases, functions, and whole programs. Its checked coverage
+  theorems bound the dispatcher singleton and every function body reached by
+  canonical source lookup; no compiler output or replay evidence appears in
+  the interface.
+- 2026-06-16 16:52:23 PDT - proof/yul-statement-base-fuel - Strengthened
+  `break`, `continue`, and `leave` results with their exact two-fuel upper
+  bound, and added exact `requiredFuel + 2` composition for initialized and
+  assigned prepared values. Existing forward and retained backward users now
+  consume the stronger pass-owned results.
+- 2026-06-16 16:55:17 PDT - validation/yul-program-static-cost - Focused
+  static-cost/statement/forward builds, the full 1,267-job verification root,
+  architecture dependency guard, aggregate proof-layer gate, changed-file
+  forbidden-marker scan, standalone axiom smoke, and `git diff --check`
+  passed. New public audit entries depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`.

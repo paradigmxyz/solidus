@@ -313,6 +313,12 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.staticCost_le_executionBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
+#check EvmCompiler.Yul.FunctionsObserverStaticCost.program
+#check EvmCompiler.Yul.FunctionsObserverStaticCost.programBudget
+#check EvmCompiler.Yul.FunctionsObserverStaticCost.dispatcherList_le_program
+#check EvmCompiler.Yul.FunctionsObserverStaticCost.function_body_le_program_of_lookup
+#check EvmCompiler.Yul.FunctionsObserverStatement.InitializedValue.run_at_requiredFuel_add_two
+#check EvmCompiler.Yul.FunctionsObserverStatement.AssignedValue.run_at_requiredFuel_add_two
 #check EvmCompiler.Yul.FunctionsObserverStatement.InitNames.run_at_length
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.requiredFuel
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.ScopedReturnedCall.ofReturnedBody_bounded

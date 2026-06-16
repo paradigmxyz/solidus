@@ -30,7 +30,7 @@ inductive CompoundStmt : AstStmt → Prop where
 
 namespace InitializedValue
 
-theorem run
+theorem run_at_requiredFuel_add_two
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -53,12 +53,12 @@ theorem run
       StateRelation.Replay.ScopedExactRel codeRel layout
         sourceAfterValue hValue.evalTarget)
     (hFresh : identName name ∉ layout) :
-    ∃ fuel finalTarget finalCtx,
+    ∃ finalTarget finalCtx,
       Functions.Source.Effectful.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
-          program ctx fuel
+          program ctx (hValue.requiredFuel + 2)
           { stmts :=
               pre ++
                 [Functions.Stmt.let_ (identName name) lower] }
@@ -126,29 +126,37 @@ theorem run
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       program finalCtx 0 finalTarget
-  obtain ⟨rightFuel, hRight⟩ :=
-    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
-      (Functions.ObserverSemantics.stateModel transcript)
-      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-        contract transcript)
-      program hLet hEmpty
-  obtain ⟨fuel, hRun⟩ :=
-    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+  have hRight :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 2
+          { stmts := [.let_ (identName name) lower] } hValue.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            finalCtx) := by
+    simpa using
+      Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hLet hEmpty
+  have hRun :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
       (Functions.ObserverSemantics.stateModel transcript)
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       program pre [.let_ (identName name) lower] ctx
       hValue.finalCtx target hValue.preTarget
       (Functions.Source.Effectful.Outcome.regular finalTarget)
-      finalCtx hValue.run ⟨rightFuel, hRight⟩
-  refine ⟨fuel, finalTarget, finalCtx, hRun, ?_, rfl, rfl⟩
+      finalCtx hValue.requiredFuel 2
+      (FunctionsObserverExpression.PreparedValue.run_requiredFuel hValue)
+      hRight
+  refine ⟨finalTarget, finalCtx, hRun, ?_, rfl, rfl⟩
   simpa [finalTarget] using
     StateRelation.Replay.scopedExact_multifill_single_fresh
       hScoped name value hFresh
-
-end InitializedValue
-
-namespace AssignedValue
 
 theorem run
     {contract : MemoryContract.Contract}
@@ -172,13 +180,70 @@ theorem run
     (hScoped :
       StateRelation.Replay.ScopedExactRel codeRel layout
         sourceAfterValue hValue.evalTarget)
-    (hDeclared : identName name ∈ layout) :
-    ∃ fuel finalTarget,
+    (hFresh : identName name ∉ layout) :
+    ∃ fuel finalTarget finalCtx,
       Functions.Source.Effectful.Block.runOpen
           (Functions.ObserverSemantics.stateModel transcript)
           (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
             contract transcript)
           program ctx fuel
+          { stmts :=
+              pre ++
+                [Functions.Stmt.let_ (identName name) lower] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            finalCtx) ∧
+      StateRelation.Replay.ScopedExactRel codeRel
+        (identName name :: layout)
+        (sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value]))
+        finalTarget ∧
+      finalTarget =
+        hValue.evalTarget.withSource
+          (hValue.evalTarget.source.insert (identName name) value) ∧
+      finalCtx =
+        { hValue.finalCtx with
+          scope := identName name :: hValue.finalCtx.scope } := by
+  obtain ⟨finalTarget, finalCtx, hRun, hRel, hTarget, hCtx⟩ :=
+    run_at_requiredFuel_add_two hValue hScoped hFresh
+  exact
+    ⟨hValue.requiredFuel + 2, finalTarget, finalCtx,
+      hRun, hRel, hTarget, hCtx⟩
+
+end InitializedValue
+
+namespace AssignedValue
+
+theorem run_at_requiredFuel_add_two
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {sourceAfterValue :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hValue :
+      FunctionsObserverExpression.PreparedValue
+        contract transcript codeRel program pre lower fresh
+        sourceAfterValue target ctx value)
+    (hScoped :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        sourceAfterValue hValue.evalTarget)
+    (hDeclared : identName name ∈ layout) :
+    ∃ finalTarget,
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (hValue.requiredFuel + 2)
           { stmts :=
               pre ++
                 [Functions.Stmt.assign (identName name) lower] }
@@ -255,25 +320,86 @@ theorem run
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       program hValue.finalCtx 0 finalTarget
-  obtain ⟨rightFuel, hRight⟩ :=
-    Functions.Source.Effectful.Block.runOpen_cons_regular_exists
-      (Functions.ObserverSemantics.stateModel transcript)
-      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
-        contract transcript)
-      program hAssign hEmpty
-  obtain ⟨fuel, hRun⟩ :=
-    Functions.Source.Effectful.Block.runOpen_append_regular_exists
+  have hRight :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 2
+          { stmts := [.assign (identName name) lower] }
+          hValue.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            hValue.finalCtx) := by
+    simpa using
+      Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program hAssign hEmpty
+  have hRun :=
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
       (Functions.ObserverSemantics.stateModel transcript)
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       program pre [.assign (identName name) lower] ctx
       hValue.finalCtx target hValue.preTarget
       (Functions.Source.Effectful.Outcome.regular finalTarget)
-      hValue.finalCtx hValue.run ⟨rightFuel, hRight⟩
-  refine ⟨fuel, finalTarget, hRun, ?_, rfl⟩
+      hValue.finalCtx hValue.requiredFuel 2
+      (FunctionsObserverExpression.PreparedValue.run_requiredFuel hValue)
+      hRight
+  refine ⟨finalTarget, hRun, ?_, rfl⟩
   simpa [finalTarget] using
     StateRelation.Replay.scopedExact_multifill_single_visible
       hScoped name value hDeclared
+
+theorem run
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {name : EvmYul.Identifier}
+    {sourceAfterValue :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (hValue :
+      FunctionsObserverExpression.PreparedValue
+        contract transcript codeRel program pre lower fresh
+        sourceAfterValue target ctx value)
+    (hScoped :
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        sourceAfterValue hValue.evalTarget)
+    (hDeclared : identName name ∈ layout) :
+    ∃ fuel finalTarget,
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel
+          { stmts :=
+              pre ++
+                [Functions.Stmt.assign (identName name) lower] }
+          target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular finalTarget,
+            hValue.finalCtx) ∧
+      StateRelation.Replay.ScopedExactRel codeRel layout
+        (sourceAfterValue.withSource
+          (sourceAfterValue.source.multifill [name] [value]))
+        finalTarget ∧
+      finalTarget =
+        hValue.evalTarget.withSource
+          (hValue.evalTarget.source.insert (identName name) value) := by
+  obtain ⟨finalTarget, hRun, hRel, hTarget⟩ :=
+    run_at_requiredFuel_add_two hValue hScoped hDeclared
+  exact
+    ⟨hValue.requiredFuel + 2, finalTarget, hRun, hRel, hTarget⟩
 
 end AssignedValue
 
@@ -2343,7 +2469,7 @@ private theorem of_single_nonregular
           FunctionsObserverOutcome.ScopedOpenResult
             contract codeRel program lower before after layout
             sourceFinal target ctx (sourceControl := sourceControl) //
-        result.outcome = outcome } := by
+        result.outcome = outcome ∧ result.requiredFuel ≤ 2 } := by
   subst lower
   subst after
   have hTargetRun :
@@ -2378,7 +2504,10 @@ private theorem of_single_nonregular
       abruptTargetRestriction := hTargetRestriction
       layoutScope := fun hRegular => False.elim (hNonregular hRegular)
       exitScope := hExitScope }
-  exact ⟨⟨result, rfl⟩⟩
+  exact
+    ⟨⟨result, rfl,
+      FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+        result hTargetRun⟩⟩
 
 theorem of_leave
     {contract : MemoryContract.Contract}
@@ -2422,8 +2551,10 @@ theorem of_leave
           sourceFuel .Leave codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (Result contract codeRel program .Leave lower before after layout
-        sourceFinal target ctx (sourceControl := sourceControl)) := by
+      { result :
+          Result contract codeRel program .Leave lower before after layout
+            sourceFinal target ctx (sourceControl := sourceControl) //
+        result.openResult.requiredFuel ≤ 2 } := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_leave_parts hLower
   subst lower
@@ -2495,7 +2626,7 @@ theorem of_leave
     exact hLayout name (hLeaveSubset name hMem)
   have hNonregular :=
     Functions.Source.Effectful.Outcome.leave_not_regular targetLeave
-  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+  obtain ⟨⟨result, hResultOutcome, hRequired⟩⟩ :=
     of_single_nonregular
       rfl rfl hTargetStmt hNonregular hOutcomeRel
       (by
@@ -2520,13 +2651,16 @@ theorem of_leave
         exact
           ⟨hSourceLeaveScope, targetLeaveScope,
             hLeaveScope, hLeaveTarget⟩)
-  exact
-    ⟨{ openResult := result
-       regularLayout := fun hRegular => by
-         apply False.elim
-         apply hNonregular
-         rw [← hResultOutcome]
-         exact hRegular }⟩
+  let statementResult :
+      Result contract codeRel program .Leave [.leave] before before layout
+        sourceFinal target ctx (sourceControl := sourceControl) :=
+    { openResult := result
+      regularLayout := fun hRegular => by
+        apply False.elim
+        apply hNonregular
+        rw [← hResultOutcome]
+        exact hRegular }
+  exact ⟨⟨statementResult, by simpa [statementResult] using hRequired⟩⟩
 
 theorem of_break
     {contract : MemoryContract.Contract}
@@ -2570,8 +2704,10 @@ theorem of_break
           sourceFuel .Break codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (Result contract codeRel program .Break lower before after layout
-        sourceFinal target ctx (sourceControl := sourceControl)) := by
+      { result :
+          Result contract codeRel program .Break lower before after layout
+            sourceFinal target ctx (sourceControl := sourceControl) //
+        result.openResult.requiredFuel ≤ 2 } := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_break_parts hLower
   obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
@@ -2641,7 +2777,7 @@ theorem of_break
     exact hLayout name (hBreakSubset name hMem)
   have hNonregular :=
     Functions.Source.Effectful.Outcome.brk_not_regular targetBreak
-  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+  obtain ⟨⟨result, hResultOutcome, hRequired⟩⟩ :=
     of_single_nonregular
       hLowerStmts hAfter hTargetStmt hNonregular hOutcomeRel
       (by
@@ -2666,13 +2802,16 @@ theorem of_break
         exact
           ⟨hSourceBreakScope, targetBreakScope,
             hBreakScope, hBreakTarget⟩)
-  exact
-    ⟨{ openResult := result
-       regularLayout := fun hRegular => by
-         apply False.elim
-         apply hNonregular
-         rw [← hResultOutcome]
-         exact hRegular }⟩
+  let statementResult :
+      Result contract codeRel program .Break lower before after layout
+        sourceFinal target ctx (sourceControl := sourceControl) :=
+    { openResult := result
+      regularLayout := fun hRegular => by
+        apply False.elim
+        apply hNonregular
+        rw [← hResultOutcome]
+        exact hRegular }
+  exact ⟨⟨statementResult, by simpa [statementResult] using hRequired⟩⟩
 
 theorem of_continue
     {contract : MemoryContract.Contract}
@@ -2717,8 +2856,10 @@ theorem of_continue
           sourceFuel .Continue codeOverride source =
         .ok sourceFinal) :
     Nonempty
-      (Result contract codeRel program .Continue lower before after layout
-        sourceFinal target ctx (sourceControl := sourceControl)) := by
+      { result :
+          Result contract codeRel program .Continue lower before after layout
+            sourceFinal target ctx (sourceControl := sourceControl) //
+        result.openResult.requiredFuel ≤ 2 } := by
   obtain ⟨hLowerStmts, hAfter⟩ :=
     Stmt.toFunctionsListUncheckedFuel?_continue_parts hLower
   obtain ⟨_previous, _hFuel, hSourceFinal⟩ :=
@@ -2790,7 +2931,7 @@ theorem of_continue
     exact hLayout name (hContinueSubset name hMem)
   have hNonregular :=
     Functions.Source.Effectful.Outcome.cont_not_regular targetContinue
-  obtain ⟨⟨result, hResultOutcome⟩⟩ :=
+  obtain ⟨⟨result, hResultOutcome, hRequired⟩⟩ :=
     of_single_nonregular
       hLowerStmts hAfter hTargetStmt hNonregular hOutcomeRel
       (by
@@ -2815,13 +2956,16 @@ theorem of_continue
         exact
           ⟨hSourceContinueScope, targetContinueScope,
             hContinueScope, hContinueTarget⟩)
-  exact
-    ⟨{ openResult := result
-       regularLayout := fun hRegular => by
-         apply False.elim
-         apply hNonregular
-         rw [← hResultOutcome]
-         exact hRegular }⟩
+  let statementResult :
+      Result contract codeRel program .Continue lower before after layout
+        sourceFinal target ctx (sourceControl := sourceControl) :=
+    { openResult := result
+      regularLayout := fun hRegular => by
+        apply False.elim
+        apply hNonregular
+        rw [← hResultOutcome]
+        exact hRegular }
+  exact ⟨⟨statementResult, by simpa [statementResult] using hRequired⟩⟩
 
 end OpenResult
 

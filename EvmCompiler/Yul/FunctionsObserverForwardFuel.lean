@@ -1,5 +1,6 @@
 import EvmCompiler.Yul.FunctionsObserverCallFuel
 import EvmCompiler.Yul.FunctionsObserverForward
+import EvmCompiler.Yul.FunctionsObserverStaticCost
 
 namespace EvmCompiler
 namespace Yul
@@ -29,6 +30,7 @@ def RecursiveOpenStmtForwardBounded
     {ctx : Functions.Source.Ctx}
     {canBreak canContinue canLeave : Bool},
     sourceFuel < bound →
+      FunctionsObserverStaticCost.stmt stmt ≤ staticCost →
       SolcValidation.StmtOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
           layout canBreak canContinue canLeave stmt =
@@ -78,6 +80,7 @@ def RecursiveOpenListForwardBounded
     {ctx : Functions.Source.Ctx}
     {canBreak canContinue canLeave : Bool},
     sourceFuel < bound →
+      FunctionsObserverStaticCost.stmtList stmts ≤ staticCost →
       SolcValidation.StmtsOk? profile sourceProgram.contract
           ((Contract.functionEntries sourceProgram.contract).map Prod.fst)
           layout canBreak canContinue canLeave stmts =
@@ -131,7 +134,8 @@ theorem ofLetNone_bounded
     {target : Functions.ObserverSemantics.State transcript}
     {ctx : Functions.Source.Ctx}
     {canBreak canContinue canLeave : Bool}
-    (hStatic : names.length + 1 ≤ staticCost)
+    (hStatic :
+      FunctionsObserverStaticCost.stmt (.Let names none) ≤ staticCost)
     (hLower :
       Stmt.toFunctionsListUncheckedFuel? compilerFuel before
           (.Let names none) =
@@ -175,9 +179,11 @@ theorem ofLetNone_bounded
   refine ⟨⟨result, ?_⟩⟩
   dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
     ScopedStmtResult.ofStatement]
+  have hNamesStatic : names.length + 1 ≤ staticCost := by
+    simpa [FunctionsObserverStaticCost.stmt] using hStatic
   exact
     hRequired.trans
-      (hStatic.trans
+      (hNamesStatic.trans
         (FunctionsObserverFuel.staticCost_le_executionBudget
           staticCost sourceFuel))
 
@@ -204,7 +210,8 @@ theorem ofStmt
   | h sourceFuel ih =>
       intro compilerFuel sourceControl before after layout stmts lower
         source sourceFinal target ctx canBreak canContinue canLeave
-        hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+        hFuel hStatic hOk hNames hLower hRel hDomain hScope hLayout
+        hControl hRun
       cases stmts with
       | nil =>
           obtain ⟨_compilerPrevious, _hCompilerFuel,
@@ -259,6 +266,14 @@ theorem ofStmt
             omega
           have hPreviousBound : sourcePrevious < bound := by
             omega
+          have hHeadStatic :
+              FunctionsObserverStaticCost.stmt head ≤ staticCost :=
+            (FunctionsObserverStaticCost.stmt_head_le_stmtList head tail).trans
+              hStatic
+          have hTailStatic :
+              FunctionsObserverStaticCost.stmtList tail ≤ staticCost :=
+            (FunctionsObserverStaticCost.stmtList_tail_le_stmtList
+              head tail).trans hStatic
           obtain ⟨hHeadOk, hTailOk⟩ :=
             SolcValidation.stmtsOk_cons_parts hOk
           have hHeadNames :
@@ -267,7 +282,7 @@ theorem ofStmt
             intro name hMem
             exact hNames name (List.mem_append_left _ hMem)
           obtain ⟨headBounded⟩ :=
-            hStmt hPreviousBound hHeadOk hHeadNames hLowerHead
+            hStmt hPreviousBound hHeadStatic hHeadOk hHeadNames hLowerHead
               hRel hDomain hScope hLayout hControl hHeadRun
           let headResult := headBounded.1
           by_cases hRegular :
@@ -335,7 +350,7 @@ theorem ofStmt
                 (ctx := headResult.openResult.finalCtx)
                 (canBreak := canBreak)
                 (canContinue := canContinue) (canLeave := canLeave)
-                (by omega) hTailOk' hTailNames hLowerTail hHeadRel
+                (by omega) hTailStatic hTailOk' hTailNames hLowerTail hHeadRel
                 headResult.openResult.domain
                 headResult.openResult.scope
                 headResult.openResult.layoutWithin

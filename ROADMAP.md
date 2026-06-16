@@ -65,9 +65,13 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
   - [x] expose the exact `names.length + 1` target-fuel bound for
     uninitialized declarations and lift it into the corrected execution
     budget;
-  - [ ] define and prove the whole-program source static-expansion measure;
-  - [ ] cover remaining leaf/compound statements, loops, and terminal
-    outcomes;
+  - [x] define a source-AST static-expansion measure whose program bound covers
+    the dispatcher and every function body reached through canonical lookup;
+  - [x] expose exact fuel composition for initialized values, visible
+    assignments, and `break`/`continue`/`leave`;
+  - [ ] prove every remaining compiler construct respects the program static
+    measure;
+  - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated

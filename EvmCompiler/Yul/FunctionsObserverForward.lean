@@ -2138,7 +2138,7 @@ theorem ofCompound
           ⟨breakLayout, targetBreakScope,
             hSourceBreakScope, hBreakScope,
             hBreakSubset, hBreakTarget⟩ := hWithin
-      obtain ⟨result⟩ :=
+      obtain ⟨⟨result, _hFuelBound⟩⟩ :=
         FunctionsObserverStatement.OpenResult.of_break
           (sourceControl := sourceControl)
           hLower hRel hDomain hScope hLayout
@@ -2153,7 +2153,7 @@ theorem ofCompound
           ⟨continueLayout, targetContinueScope,
             hSourceContinueScope, hContinueScope,
             hContinueSubset, hContinueTarget⟩ := hWithin
-      obtain ⟨result⟩ :=
+      obtain ⟨⟨result, _hFuelBound⟩⟩ :=
         FunctionsObserverStatement.OpenResult.of_continue
           (sourceControl := sourceControl)
           hLower hRel hDomain hScope hLayout
@@ -2169,7 +2169,7 @@ theorem ofCompound
           ⟨leaveLayout, targetLeaveScope,
             hSourceLeaveScope, hLeaveScope,
             hLeaveSubset, hLeaveTarget⟩ := hWithin
-      obtain ⟨result⟩ :=
+      obtain ⟨⟨result, _hFuelBound⟩⟩ :=
         FunctionsObserverStatement.OpenResult.of_leave
           (sourceControl := sourceControl)
           hLower hRel hDomain hScope hLayout

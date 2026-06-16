@@ -1337,7 +1337,7 @@ theorem breakBackward
         .ok sourceFinal := by
     simp [Yul.Source.Effectful.exec,
       ObserverSemantics.SourceReplay.stateModel, sourceFinal]
-  obtain ⟨result⟩ :=
+  obtain ⟨⟨result, _hFuelBound⟩⟩ :=
     FunctionsObserverStatement.OpenResult.of_break
       (sourceControl := sourceControl)
       hLower hRel hDomain hScope hLayout
@@ -1404,7 +1404,7 @@ theorem continueBackward
         .ok sourceFinal := by
     simp [Yul.Source.Effectful.exec,
       ObserverSemantics.SourceReplay.stateModel, sourceFinal]
-  obtain ⟨result⟩ :=
+  obtain ⟨⟨result, _hFuelBound⟩⟩ :=
     FunctionsObserverStatement.OpenResult.of_continue
       (sourceControl := sourceControl)
       hLower hRel hDomain hScope hLayout
@@ -1471,7 +1471,7 @@ theorem leaveBackward
         .ok sourceFinal := by
     simp [Yul.Source.Effectful.exec,
       ObserverSemantics.SourceReplay.stateModel, sourceFinal]
-  obtain ⟨result⟩ :=
+  obtain ⟨⟨result, _hFuelBound⟩⟩ :=
     FunctionsObserverStatement.OpenResult.of_leave
       (sourceControl := sourceControl)
       hLower hRel hDomain hScope hLayout
