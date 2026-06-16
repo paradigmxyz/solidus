@@ -48,6 +48,15 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
   checked source-derived upper bound on the existential Functions execution
   fuel, or an equivalent source-owned execution-depth bound. The current
   theorem proves existence but no numeric relation to the Yul run fuel.
+  - [x] canonical Functions open-block composition exposes explicit additive,
+    `max + 1`, singleton-wrapper, and unreachable-suffix fuel bounds;
+  - [x] Yul expression preparation and scoped open results expose least
+    sufficient target fuel with pass-owned composition lemmas;
+  - [x] define a source-fuel-indexed target budget that absorbs up to eight
+    strictly smaller recursive budgets plus compiler wrapper overhead;
+  - [ ] carry the budget through calls, statements, lists, loops, and terminal
+    outcomes;
+  - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated
   evidence.

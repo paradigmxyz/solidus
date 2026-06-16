@@ -64,6 +64,7 @@ import EvmCompiler.Yul.CompilerStatementDecomposition
 import EvmCompiler.Yul.FunctionsObserverCall
 import EvmCompiler.Yul.FunctionsObserverCallBackward
 import EvmCompiler.Yul.FunctionsObserverCompoundBackward
+import EvmCompiler.Yul.FunctionsObserverFuel
 import EvmCompiler.Yul.FunctionsObserverForward
 import EvmCompiler.Yul.FunctionsObserverListBackward
 import EvmCompiler.Yul.FunctionsObserverOutcome
@@ -119,6 +120,10 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.argList_eval_vars_eq
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.program_runState_eq
 #check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_exists
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_nonregular_at_same
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
+#check EvmCompiler.Functions.Source.Effectful.Block.runOpen_singleton_of_run_at_add_two
 #check EvmCompiler.Functions.Source.FunList.find?_eq_some_of_mem_of_names_nodup
 #check EvmCompiler.Simulation.MemorySafety.PrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.TerminalMemorySafe
@@ -297,6 +302,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_regular_parts
 #check EvmCompiler.Functions.Source.Effectful.Stmt.run_block_parts
 #check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.closeLexical
+#check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel
+#check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendRegular_le
+#check EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendNonregular_le
+#check EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_append_le
+#check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
+#check EvmCompiler.Yul.FunctionsObserverFuel.targetBudget
+#check EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.RecursiveOpenStmtBackwardBelow

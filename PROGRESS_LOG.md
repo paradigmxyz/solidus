@@ -30240,3 +30240,24 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   smoke, aggregate proof-layer gate, and `git diff --check` passed. The new
   capacity theorems use only `propext`, `Quot.sound`, and where extraction is
   existential, `Classical.choice`.
+- 2026-06-16 16:19:48 PDT - proof/yul-functions-quantitative-interface -
+  Added canonical Functions fuel-bounded constructors for regular sequence,
+  unreachable suffixes, singleton wrappers, and generated bindings. Yul
+  expression preparation and scoped open outcomes now expose least sufficient
+  target fuel with checked composition bounds.
+- 2026-06-16 16:19:48 PDT - proof/source-fuel-target-budget - Added the
+  pass-owned `FunctionsObserverFuel.targetBudget`, whose checked growth lemmas
+  absorb up to eight strictly smaller recursive target budgets plus fixed
+  compiler wrapper overhead. This is forward-proof infrastructure; generic
+  backward adequacy remains outside the active completion path.
+- 2026-06-16 16:19:48 PDT - validation/yul-functions-quantitative-interface -
+  Focused expression/forward/preservation builds, the full 1,264-job
+  verification root, forbidden-marker scan, and `git diff --check` passed.
+  Axiom smoke was rerun; the new semantic and least-fuel lemmas use only
+  `propext`, `Classical.choice`, and `Quot.sound`. The smoke import for the new
+  budget module was then added for the aggregate rerun.
+- 2026-06-16 16:23:54 PDT - validation/yul-functions-quantitative-aggregate -
+  The corrected standalone axiom smoke, architecture dependency guard, and
+  aggregate proof-layer gate passed. The architecture script reports only the
+  pre-existing soft line-count debt; no new forbidden dependency, proof hole,
+  or nonstandard axiom was introduced.

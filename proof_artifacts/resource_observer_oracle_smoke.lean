@@ -28,6 +28,7 @@ import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
+import EvmCompiler.Yul.FunctionsObserverFuel
 import EvmCompiler.Yul.CompilerCallDecomposition
 import EvmCompiler.Yul.CompilerExpressionDecomposition
 import EvmCompiler.Yul.CompilerStatementDecomposition
@@ -1651,3 +1652,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.blockBackward
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.ifBackwardNonterminal
 #print axioms EvmCompiler.Yul.FunctionsObserverCompoundBackward.switchBackwardNonterminal
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_append_nonregular_at_same
+#print axioms EvmCompiler.Functions.Source.Effectful.Block.runOpen_singleton_of_run_at_add_two
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendRegular_le
+#print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendNonregular_le
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_append_le
+#print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
+#print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudget_mono
+#print axioms EvmCompiler.Yul.FunctionsObserverFuel.three_children_add_eight_le_of_lt

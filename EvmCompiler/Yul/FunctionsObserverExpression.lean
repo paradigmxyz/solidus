@@ -1628,6 +1628,74 @@ structure Prepared
 
 namespace Prepared
 
+noncomputable def requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      Prepared contract transcript codeRel program pre fresh
+        source target ctx) : Nat := by
+  classical
+  exact Nat.find result.run
+
+theorem run_requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      Prepared contract transcript codeRel program pre fresh
+        source target ctx) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx result.requiredFuel { stmts := pre } target =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular result.finalTarget,
+          result.finalCtx) := by
+  classical
+  simpa [requiredFuel] using Nat.find_spec result.run
+
+theorem requiredFuel_le_of_run
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      Prepared contract transcript codeRel program pre fresh
+        source target ctx)
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := pre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            result.finalTarget,
+            result.finalCtx)) :
+    result.requiredFuel ≤ fuel := by
+  classical
+  simpa [requiredFuel] using Nat.find_min' result.run hRun
+
 def empty
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -1656,6 +1724,30 @@ def empty
       scope := hScope
       control := Functions.Source.Ctx.SameControl.refl ctx
       varsExtends := StateRelation.Vars.TargetExtends.refl _ }
+
+theorem requiredFuel_empty_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hRel : StateRelation.Replay.Rel codeRel source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin fresh.used target.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin fresh.used ctx.scope) :
+    (empty
+        (contract := contract) (program := program)
+        hRel hDomain hScope).requiredFuel ≤ 1 := by
+  apply requiredFuel_le_of_run
+  simpa [empty] using
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program ctx 0 target
 
 def append
     {contract : MemoryContract.Contract}
@@ -1696,6 +1788,36 @@ def append
       varsExtends :=
         StateRelation.Vars.TargetExtends.trans
           hLeft.varsExtends hRight.varsExtends }
+
+theorem requiredFuel_append_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {left right : List Functions.Stmt}
+    {middleFresh finalFresh : Fresh.State}
+    {middleSource finalSource :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hLeft :
+      Prepared contract transcript codeRel program left
+        middleFresh middleSource target ctx)
+    (hRight :
+      Prepared contract transcript codeRel program right
+        finalFresh finalSource hLeft.finalTarget hLeft.finalCtx) :
+    (append hLeft hRight).requiredFuel ≤
+      hLeft.requiredFuel + hRight.requiredFuel := by
+  apply requiredFuel_le_of_run
+  exact
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program left right ctx hLeft.finalCtx target hLeft.finalTarget
+      (Functions.Source.Effectful.Outcome.regular hRight.finalTarget)
+      hRight.finalCtx hLeft.requiredFuel hRight.requiredFuel
+      (run_requiredFuel hLeft) (run_requiredFuel hRight)
 
 def generated
     {contract : MemoryContract.Contract}
@@ -1777,6 +1899,73 @@ def generated
       (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
         contract transcript)
       program hBound.1 hEmpty
+
+theorem requiredFuel_generated_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {ctx : Functions.Source.Ctx}
+    {before after : Fresh.State} {tmp : Name}
+    {lower : Locals.Expr 1} {value : Word}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {targetBefore targetAfter :
+      Functions.ObserverSemantics.State transcript}
+    (hFresh : Fresh.fresh? before = some (tmp, after))
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower targetBefore =
+        .ok (targetAfter, [value]))
+    (hRel : StateRelation.Replay.Rel codeRel source targetAfter)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used targetAfter.source.vars)
+    (hCtx : StateRelation.Vars.NamesWithin before.used ctx.scope) :
+    (generated
+        (contract := contract) (program := program)
+        hFresh hEval hRel hDomain hCtx).requiredFuel ≤ 3 := by
+  let result :=
+    generated
+      (contract := contract) (program := program)
+      hFresh hEval hRel hDomain hCtx
+  apply requiredFuel_le_of_run result
+  have hBound :=
+    bindGenerated
+      (contract := contract) (transcript := transcript)
+      (codeRel := codeRel) (program := program)
+      (ctx := ctx) (stmtFuel := 1)
+      hFresh hEval hRel hDomain hCtx
+  let targetBound :=
+    targetAfter.withSource (targetAfter.source.insert tmp value)
+  let ctxBound := { ctx with scope := tmp :: ctx.scope }
+  have hEmpty :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctxBound 1 { stmts := [] } targetBound =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular targetBound,
+            ctxBound) := by
+    simp [Functions.Source.Effectful.Block.runOpen,
+      Functions.Source.Effectful.Outcome.regular,
+      Locals.Source.Effectful.Outcome.regular]
+  have hRun :=
+    Functions.Source.Effectful.Block.runOpen_cons_regular_at_max
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hBound.1 hEmpty
+  have hRun' :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by decide : Nat.max 1 1 + 1 ≤ 3) hRun
+  simpa [result, generated, targetBound, ctxBound] using hRun'
 
 end Prepared
 
@@ -1924,6 +2113,80 @@ structure BoundValue
 
 namespace PreparedValue
 
+noncomputable def requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (result :
+      PreparedValue contract transcript codeRel program pre lower
+        fresh source target ctx value) : Nat := by
+  classical
+  exact Nat.find result.run
+
+theorem run_requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (result :
+      PreparedValue contract transcript codeRel program pre lower
+        fresh source target ctx value) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx result.requiredFuel { stmts := pre } target =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular result.preTarget,
+          result.finalCtx) := by
+  classical
+  simpa [requiredFuel] using Nat.find_spec result.run
+
+theorem requiredFuel_le_of_run
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {value : Word}
+    (result :
+      PreparedValue contract transcript codeRel program pre lower
+        fresh source target ctx value)
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := pre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            result.preTarget,
+            result.finalCtx)) :
+    result.requiredFuel ≤ fuel := by
+  classical
+  simpa [requiredFuel] using Nat.find_min' result.run hRun
+
 def evaluated
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -1961,6 +2224,38 @@ def evaluated
     scope := hScope
     control := Functions.Source.Ctx.SameControl.refl ctx
     varsExtends := StateRelation.Vars.TargetExtends.refl _ }
+
+theorem requiredFuel_evaluated_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {value : Word}
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower target =
+        .ok (target', [value]))
+    (hRel : StateRelation.Replay.Rel codeRel source target')
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin fresh.used target'.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin fresh.used ctx.scope) :
+    (evaluated
+        (program := program)
+        hEval hRel hDomain hScope).requiredFuel ≤ 1 := by
+  apply requiredFuel_le_of_run
+  simpa [evaluated] using
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program ctx 0 target
 
 noncomputable def direct
     {contract : MemoryContract.Contract}
@@ -2044,6 +2339,60 @@ def bind
   dsimp [prepared, generated, Prepared.generated]
   simp [Locals.Source.State.insert, Locals.Source.Store.insert]
 
+theorem requiredFuel_bind_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {before after : Fresh.State} {tmp : Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {value : Word}
+    (hValue :
+      PreparedValue contract transcript codeRel program pre lower
+        before source target ctx value)
+    (hFresh : Fresh.fresh? before = some (tmp, after)) :
+    (bind hValue hFresh).prepared.requiredFuel ≤
+      hValue.requiredFuel + 3 := by
+  let generated :=
+    Prepared.generated
+      (contract := contract) (transcript := transcript)
+      (codeRel := codeRel) (program := program)
+      hFresh hValue.eval hValue.rel hValue.domain hValue.scope
+  apply Prepared.requiredFuel_le_of_run
+  have hGeneratedRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hValue.finalCtx 3
+          { stmts := [.let_ tmp lower] } hValue.preTarget =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            generated.finalTarget,
+            generated.finalCtx) :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program
+      (Prepared.requiredFuel_generated_le
+        (program := program)
+        hFresh hValue.eval hValue.rel hValue.domain hValue.scope)
+      (Prepared.run_requiredFuel generated)
+  simpa [bind, generated] using
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program pre [.let_ tmp lower] ctx hValue.finalCtx target
+      hValue.preTarget
+      (Functions.Source.Effectful.Outcome.regular
+        generated.finalTarget)
+      generated.finalCtx hValue.requiredFuel 3
+      (run_requiredFuel hValue) hGeneratedRun
+
 def afterPrepared
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}
@@ -2086,9 +2435,114 @@ def afterPrepared
         intro name result hLookup
         exact hPrepared.varsExtends name result hLookup }
 
+theorem requiredFuel_afterPrepared_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {pre : List Functions.Stmt} {lower : Locals.Expr 1}
+    {fresh : Fresh.State}
+    {sourceBefore sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {value : Word}
+    (hPrepared :
+      Prepared contract transcript codeRel program pre
+        fresh sourceBefore target ctx)
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower hPrepared.finalTarget =
+        .ok (targetFinal, [value]))
+    (hRel : StateRelation.Replay.Rel codeRel sourceFinal targetFinal) :
+    (afterPrepared hPrepared hEval hRel).requiredFuel ≤
+      hPrepared.requiredFuel := by
+  apply requiredFuel_le_of_run
+  simpa [afterPrepared] using Prepared.run_requiredFuel hPrepared
+
 end PreparedValue
 
 namespace PreparedExpression
+
+noncomputable def requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Word}
+    (result :
+      PreparedExpression contract transcript codeRel program pre lower
+        fresh source target ctx values) : Nat := by
+  classical
+  exact Nat.find result.run
+
+theorem run_requiredFuel
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Word}
+    (result :
+      PreparedExpression contract transcript codeRel program pre lower
+        fresh source target ctx values) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx result.requiredFuel { stmts := pre } target =
+      .ok
+        (Functions.Source.Effectful.Outcome.regular result.preTarget,
+          result.finalCtx) := by
+  classical
+  simpa [requiredFuel] using Nat.find_spec result.run
+
+theorem requiredFuel_le_of_run
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Word}
+    (result :
+      PreparedExpression contract transcript codeRel program pre lower
+        fresh source target ctx values)
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := pre } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular
+            result.preTarget,
+            result.finalCtx)) :
+    result.requiredFuel ≤ fuel := by
+  classical
+  simpa [requiredFuel] using Nat.find_min' result.run hRun
 
 def evaluated
     {contract : MemoryContract.Contract}
@@ -2128,6 +2582,39 @@ def evaluated
     scope := hScope
     control := Functions.Source.Ctx.SameControl.refl ctx
     varsExtends := StateRelation.Vars.TargetExtends.refl _ }
+
+theorem requiredFuel_evaluated_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target target' : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word}
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower target =
+        .ok (target', values))
+    (hRel : StateRelation.Replay.Rel codeRel source target')
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin fresh.used target'.source.vars)
+    (hScope : StateRelation.Vars.NamesWithin fresh.used ctx.scope) :
+    (evaluated
+        (program := program)
+        hEval hRel hDomain hScope).requiredFuel ≤ 1 := by
+  apply requiredFuel_le_of_run
+  simpa [evaluated] using
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program ctx 0 target
 
 def afterPrepared
     {contract : MemoryContract.Contract}
@@ -2169,6 +2656,35 @@ def afterPrepared
       scope := hPrepared.scope
       control := hPrepared.control
       varsExtends := hPrepared.varsExtends }
+
+theorem requiredFuel_afterPrepared_le
+    {contract : MemoryContract.Contract}
+    {transcript : Assembly.ResourceTrace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {results : Nat}
+    {pre : List Functions.Stmt} {lower : Locals.Expr results}
+    {fresh : Fresh.State}
+    {sourceBefore sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target targetFinal :
+      Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx} {values : List Word}
+    (hPrepared :
+      Prepared contract transcript codeRel program pre
+        fresh sourceBefore target ctx)
+    (hEval :
+      Functions.Source.Effectful.Expr.eval
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          lower hPrepared.finalTarget =
+        .ok (targetFinal, values))
+    (hRel : StateRelation.Replay.Rel codeRel sourceFinal targetFinal) :
+    (afterPrepared hPrepared hEval hRel).requiredFuel ≤
+      hPrepared.requiredFuel := by
+  apply requiredFuel_le_of_run
+  simpa [afterPrepared] using Prepared.run_requiredFuel hPrepared
 
 end PreparedExpression
 

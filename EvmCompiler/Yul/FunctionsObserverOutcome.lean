@@ -1221,6 +1221,78 @@ structure ScopedOpenResult
 
 namespace ScopedOpenResult
 
+noncomputable def requiredFuel
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      ScopedOpenResult contract codeRel program lower initial final
+        entryLayout sourceFinal target ctx
+        (sourceControl := sourceControl)) : Nat := by
+  classical
+  exact Nat.find result.run
+
+theorem run_requiredFuel
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      ScopedOpenResult contract codeRel program lower initial final
+        entryLayout sourceFinal target ctx
+        (sourceControl := sourceControl)) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx result.requiredFuel { stmts := lower } target =
+      .ok (result.outcome, result.finalCtx) := by
+  classical
+  simpa [requiredFuel] using Nat.find_spec result.run
+
+theorem requiredFuel_le_of_run
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      ScopedOpenResult contract codeRel program lower initial final
+        entryLayout sourceFinal target ctx
+        (sourceControl := sourceControl))
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := lower } target =
+        .ok (result.outcome, result.finalCtx)) :
+    result.requiredFuel ≤ fuel := by
+  classical
+  simpa [requiredFuel] using Nat.find_min' result.run hRun
+
 def appendRegular
     {transcript : Trace}
     {contract : MemoryContract.Contract}
@@ -1317,6 +1389,49 @@ def appendRegular
             ⟨hSource, targetScope,
               left.control.leaveScope.trans hTarget,
               hWithin⟩ }
+
+theorem requiredFuel_appendRegular_le
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceMiddle sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceMiddle target ctx
+        (sourceControl := sourceControl))
+    (hRegular : left.outcome.mode = .regular)
+    (right :
+      ScopedOpenResult contract codeRel program rightLower
+        middle final left.finalLayout sourceFinal
+        left.outcome.state left.finalCtx
+        (sourceControl := sourceControl)) :
+    (appendRegular left hRegular right).requiredFuel ≤
+      left.requiredFuel + right.requiredFuel := by
+  apply requiredFuel_le_of_run
+  have hLeftOutcome :
+      left.outcome =
+        Functions.Source.Effectful.Outcome.regular
+          left.outcome.state :=
+    Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+  have hLeft := run_requiredFuel left
+  rw [hLeftOutcome] at hLeft
+  exact
+    Functions.Source.Effectful.Block.runOpen_append_regular_at_add
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program leftLower rightLower ctx left.finalCtx target
+      left.outcome.state right.outcome right.finalCtx
+      left.requiredFuel right.requiredFuel hLeft
+      (run_requiredFuel right)
 
 /--
 Compose a regular prefix with a suffix whose entry state and context are
@@ -1433,6 +1548,38 @@ def appendNonregular
       layoutScope := fun hRegular =>
         False.elim (hNonregular hRegular)
       exitScope := left.exitScope }
+
+theorem requiredFuel_appendNonregular_le
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {leftLower rightLower : List Functions.Stmt}
+    {initial middle final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (left :
+      ScopedOpenResult contract codeRel program leftLower
+        initial middle entryLayout sourceFinal target ctx
+        (sourceControl := sourceControl))
+    (hNonregular : left.outcome.mode ≠ .regular)
+    (hSuffixFresh : Fresh.Extends middle final) :
+    (appendNonregular
+        (rightLower := rightLower) left hNonregular
+        hSuffixFresh).requiredFuel ≤
+      left.requiredFuel := by
+  apply requiredFuel_le_of_run
+  exact
+    Functions.Source.Effectful.Block.runOpen_append_nonregular_at_same
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program leftLower rightLower ctx target left.outcome
+      left.finalCtx left.requiredFuel
+      (run_requiredFuel left) hNonregular
 
 /--
 Close a Yul-visible lexical scope and lift the corresponding Functions body
@@ -1704,6 +1851,39 @@ def empty
       layoutScope := fun _hRegular => hLayoutScope
       exitScope := by
         simp [ExitScopeRel] }
+
+theorem requiredFuel_empty_le
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {fresh : Fresh.State}
+    {layout : List Name}
+    {source : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        fresh.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin fresh.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin fresh.used layout)
+    (hLayoutScope : LayoutWithinScope layout ctx) :
+    (empty
+        (contract := contract) (program := program)
+        (sourceControl := sourceControl)
+        hRel hDomain hScope hLayout hLayoutScope).requiredFuel ≤ 1 := by
+  apply requiredFuel_le_of_run
+  simpa [empty] using
+    Functions.Source.Effectful.Block.runOpen_nil
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program ctx 0 target
 
 end ScopedOpenResult
 

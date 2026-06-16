@@ -4671,6 +4671,41 @@ theorem runOpen_cons_regular_exists {σ : Type}
         Outcome.regular, Locals.Source.Effectful.Outcome.regular]⟩
 
 /--
+Compose a regular head statement and tail at their exact canonical
+`max + 1` open-block budget.
+-/
+theorem runOpen_cons_regular_at_max {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {headFuel tailFuel : Nat} {ctx midCtx finalCtx : Source.Ctx}
+    {stmt : Stmt} {rest : List Stmt}
+    {source mid : σ} {outcome : Outcome σ}
+    (hHead :
+      Stmt.run model prim program ctx headFuel stmt source =
+        .ok (Outcome.regular mid, midCtx))
+    (hTail :
+      Block.runOpen model prim program midCtx tailFuel
+          { stmts := rest } mid =
+        .ok (outcome, finalCtx)) :
+    Block.runOpen model prim program ctx
+        (Nat.max headFuel tailFuel + 1)
+        { stmts := stmt :: rest } source =
+      .ok (outcome, finalCtx) := by
+  let commonFuel := Nat.max headFuel tailFuel
+  have hHead' :
+      Stmt.run model prim program ctx commonFuel stmt source =
+        .ok (Outcome.regular mid, midCtx) :=
+    Stmt.run_mono model prim program (Nat.le_max_left _ _) hHead
+  have hTail' :
+      Block.runOpen model prim program midCtx commonFuel
+          { stmts := rest } mid =
+        .ok (outcome, finalCtx) :=
+    Block.runOpen_mono model prim program (Nat.le_max_right _ _) hTail
+  dsimp [commonFuel] at hHead' hTail'
+  simp [Block.runOpen, hHead', hTail',
+    Outcome.regular, Locals.Source.Effectful.Outcome.regular]
+
+/--
 Invert one successful nonempty open-block execution at its canonical
 one-smaller statement fuel.
 
@@ -4903,6 +4938,71 @@ theorem runOpen_append_regular_exists {σ : Type}
               Locals.Source.Effectful.Outcome.regular] at hMode
 
 /--
+Compose two regular open-block executions at an explicit additive fuel budget.
+Upper compiler passes use this theorem to retain quantitative bounds without
+unfolding the canonical Functions interpreter.
+-/
+theorem runOpen_append_regular_at_add {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) :
+    ∀ (left right : List Stmt) (ctx midCtx : Source.Ctx)
+      (source mid : σ) (outcome : Outcome σ) (runCtx : Source.Ctx)
+      (leftFuel rightFuel : Nat),
+      Block.runOpen model prim program ctx leftFuel
+          { stmts := left } source =
+        .ok (Outcome.regular mid, midCtx) →
+      Block.runOpen model prim program midCtx rightFuel
+          { stmts := right } mid =
+        .ok (outcome, runCtx) →
+      Block.runOpen model prim program ctx (leftFuel + rightFuel)
+          { stmts := left ++ right } source =
+        .ok (outcome, runCtx) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx midCtx source mid outcome runCtx
+        leftFuel rightFuel hLeft hRight
+      rcases runOpen_nil_ok model prim program hLeft with
+        ⟨hOutcome, hCtx⟩
+      cases hOutcome
+      cases hCtx
+      simpa using
+        Block.runOpen_mono model prim program
+          (by omega : rightFuel ≤ leftFuel + rightFuel) hRight
+  | cons stmt rest ih =>
+      intro right ctx midCtx source mid outcome runCtx
+        leftFuel rightFuel hLeft hRight
+      cases leftFuel with
+      | zero =>
+          simp [Block.runOpen, Source.invalid,
+            Structured.invalid] at hLeft
+      | succ fuel =>
+          rcases
+              runOpen_cons_cases model prim program
+                (fuel := fuel) hLeft with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨afterStmt, stmtCtx, hStmt, hRest⟩
+            have hTail :=
+              ih right stmtCtx midCtx afterStmt mid outcome runCtx
+                fuel rightFuel hRest hRight
+            have hHead :
+                Stmt.run model prim program ctx (fuel + rightFuel)
+                    stmt source =
+                  .ok (Outcome.regular afterStmt, stmtCtx) :=
+              Stmt.run_mono model prim program
+                (by omega : fuel ≤ fuel + rightFuel) hStmt
+            simpa [Block.runOpen, hHead, hTail, Nat.succ_add,
+              Outcome.regular,
+              Locals.Source.Effectful.Outcome.regular]
+          · rcases hNonregular with
+              ⟨headOutcome, headCtx, _hHead, hMode,
+                hOutcome, _hCtx⟩
+            rw [← hOutcome] at hMode
+            simp [Outcome.regular,
+              Locals.Source.Effectful.Outcome.regular] at hMode
+
+/--
 A nonregular source statement makes the remaining source list unreachable.
 -/
 theorem runOpen_cons_nonregular {σ : Type}
@@ -4968,6 +5068,48 @@ theorem runOpen_singleton_of_run {σ : Type}
   · exact
       ⟨stmtFuel + 1,
         runOpen_cons_nonregular model prim program hRun hRegular⟩
+
+/--
+Lift one successful statement to a singleton open block at a uniform
+`stmtFuel + 2` budget. The extra unit covers the empty regular tail; abrupt
+outcomes are raised to the same budget by fuel monotonicity.
+-/
+theorem runOpen_singleton_of_run_at_add_two {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {ctx : Source.Ctx} {stmtFuel : Nat}
+    {stmt : Stmt} {source : σ} {outcome : Outcome σ}
+    (hRun :
+      Stmt.run model prim program ctx stmtFuel stmt source =
+        .ok (outcome, ctx)) :
+    Block.runOpen model prim program ctx (stmtFuel + 2)
+        { stmts := [stmt] } source =
+      .ok (outcome, ctx) := by
+  by_cases hRegular : outcome.mode = .regular
+  · have hOutcomeEq :
+        outcome = Outcome.regular outcome.state :=
+      Outcome.eq_regular_of_mode hRegular
+    have hStmt :
+        Stmt.run model prim program ctx (stmtFuel + 1) stmt source =
+          .ok (Outcome.regular outcome.state, ctx) := by
+      rw [← hOutcomeEq]
+      exact
+        Stmt.run_mono model prim program
+          (by omega : stmtFuel ≤ stmtFuel + 1) hRun
+    have hEmpty :
+        Block.runOpen model prim program ctx (stmtFuel + 1)
+            { stmts := [] } outcome.state =
+          .ok (Outcome.regular outcome.state, ctx) := by
+      simpa using
+        runOpen_nil model prim program ctx stmtFuel outcome.state
+    rw [hOutcomeEq]
+    simpa [Block.runOpen, hStmt, hEmpty,
+      Outcome.regular,
+      Locals.Source.Effectful.Outcome.regular]
+  · exact
+      Block.runOpen_mono model prim program
+        (by omega : stmtFuel + 1 ≤ stmtFuel + 2)
+        (runOpen_cons_nonregular model prim program hRun hRegular)
 
 /--
 Lift a nonregular open body through the canonical scoped `block` statement and
@@ -5057,6 +5199,59 @@ theorem runOpen_append_nonregular_exists {σ : Type}
                   simpa [List.cons_append] using
                     runOpen_cons_nonregular model prim program
                       (rest := rest ++ right) hHead hHeadMode⟩
+
+/--
+Appending unreachable statements preserves the exact fuel of a nonregular
+open-block execution.
+-/
+theorem runOpen_append_nonregular_at_same {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program) :
+    ∀ (left right : List Stmt) (ctx : Source.Ctx) (source : σ)
+      (outcome : Outcome σ) (runCtx : Source.Ctx) (fuel : Nat),
+      Block.runOpen model prim program ctx fuel
+          { stmts := left } source =
+        .ok (outcome, runCtx) →
+      outcome.mode ≠ .regular →
+      Block.runOpen model prim program ctx fuel
+          { stmts := left ++ right } source =
+        .ok (outcome, runCtx) := by
+  intro left
+  induction left with
+  | nil =>
+      intro right ctx source outcome runCtx fuel hLeft hMode
+      rcases runOpen_nil_ok model prim program hLeft with
+        ⟨hOutcome, _hCtx⟩
+      rw [hOutcome] at hMode
+      simp [Outcome.regular,
+        Locals.Source.Effectful.Outcome.regular] at hMode
+  | cons stmt rest ih =>
+      intro right ctx source outcome runCtx runFuel hLeft hMode
+      cases runFuel with
+      | zero =>
+          simp [Block.runOpen, Source.invalid,
+            Structured.invalid] at hLeft
+      | succ fuel =>
+          rcases
+              runOpen_cons_cases model prim program
+                (fuel := fuel) hLeft with
+            hRegular | hNonregular
+          · rcases hRegular with
+              ⟨afterStmt, stmtCtx, hStmt, hRest⟩
+            have hTail :=
+              ih right stmtCtx afterStmt outcome runCtx fuel
+                hRest hMode
+            simpa [Block.runOpen, hStmt, hTail,
+              Outcome.regular,
+              Locals.Source.Effectful.Outcome.regular]
+          · rcases hNonregular with
+              ⟨headOutcome, headCtx, hHead, hHeadMode,
+                hOutcome, hCtx⟩
+            subst outcome
+            subst runCtx
+            simpa [List.cons_append] using
+              runOpen_cons_nonregular model prim program
+                (rest := rest ++ right) hHead hHeadMode
 
 /--
 Execute the compiler-generated Yul loop guard when the source condition is
