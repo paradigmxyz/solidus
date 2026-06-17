@@ -1423,6 +1423,37 @@ theorem mono
   | request hResume ih =>
       exact .request ih
 
+/-- Strengthen a forward simulation with a source-side invariant that holds at
+every terminal leaf. Source truncation remains source truncation and therefore
+does not require a target relation. -/
+theorem strengthen_left
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {property : Except Error₁ Result₁ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hAll : AllDone property left) :
+    ForwardRel truncated
+      (fun leftDone rightDone =>
+        doneRel leftDone rightDone ∧ property leftDone)
+      left right := by
+  induction hRel with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | done hDone =>
+      cases hAll with
+      | done hProperty =>
+          exact .done ⟨hDone, hProperty⟩
+  | request hResume ih =>
+      cases hAll with
+      | request hProperty =>
+          exact .request fun answer =>
+            ih answer (hProperty answer)
+
 theorem bind
     {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
     {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}

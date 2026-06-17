@@ -827,6 +827,9 @@ Exit: the shared core builds with no compiler layer changed.
       is again below the 5K-line architecture soft limit.
     - [x] Add policy-indexed empty-block and bounded sequence composition with
       one additive static target-fuel cost, ready for structural recursion.
+    - [x] Prove source control-policy compatibility at every open execution
+      leaf and use one shared forward-strengthening law to lift regular source
+      leaves without duplicating their compiler proofs.
     - [ ] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent

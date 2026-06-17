@@ -236,6 +236,14 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.expr_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.let_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.assign_of_compile
+#check EvmCompiler.Simulation.Interaction.ForwardRel.strengthen_left
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.allDone_openRun
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.RegularResultRel.toPolicyOpen
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policyOpen_of_regular
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policyForward_of_regular
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_expr_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_let_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_assign_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.brk_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policy_brk_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.cont_of_compile

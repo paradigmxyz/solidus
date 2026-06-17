@@ -3,7 +3,462 @@ import EvmCompiler.Locals.InteractionPreservation
 namespace EvmCompiler
 namespace Locals
 namespace InteractionPreservation
+
+namespace Stmt.ControlPolicy
+
+def CompatibleOutcome (policy : Stmt.ControlPolicy) :
+    Except EVMException
+      (Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Locals.Source.Ctx) → Prop
+  | .error _ => True
+  | .ok result => ContextCompatible policy result.2
+
+theorem allDone_bind_fixedContext
+    {α : Type}
+    (policy : Stmt.ControlPolicy)
+    (run : Simulation.Interaction EVMException α)
+    (finish : α → Locals.Source.Effectful.Outcome Locals.Source.State)
+    (ctx : Locals.Source.Ctx)
+    (hPolicy : ContextCompatible policy ctx) :
+    Simulation.Interaction.AllDone
+      (CompatibleOutcome policy)
+      (Simulation.Interaction.bind run
+        (fun value => Simulation.Interaction.pure (finish value, ctx))) := by
+  apply Simulation.Interaction.AllDone.bind
+    (Simulation.Interaction.AllDone.trivial run)
+  · intro error _
+    trivial
+  · intro value _
+    apply Simulation.Interaction.AllDone.done
+    exact hPolicy
+
+/-- Regular source execution changes only the lexical scope, never the
+surrounding break, continue, or leave destinations. -/
+theorem allDone_openRun
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (fuel : Nat) (stmt : Locals.Stmt)
+    (source : Locals.Source.State)
+    (hPolicy : ContextCompatible policy sourceCtx) :
+    Simulation.Interaction.AllDone
+      (CompatibleOutcome policy)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel stmt source) := by
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  cases stmt with
+  | expr expr =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+  | exprs exprs =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+  | let_ name value =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      exact
+        allDone_bind_fixedContext policy _ _ _
+          (contextCompatible_scope hPolicy (name :: sourceCtx.scope))
+  | assign name value =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      split
+      · exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+      · apply Simulation.Interaction.AllDone.done
+        trivial
+  | assignTop name =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
+  | assignTopWithOffset offset name =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
+  | promoteName name =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
+  | cleanupTo targetLayout =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
+  | block body =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+  | if_ cond body =>
+      cases fuel with
+      | zero =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | succ fuel =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.bind
+            (Simulation.Interaction.AllDone.trivial _)
+          · intro error _
+            trivial
+          · intro result _
+            rcases result with ⟨stateAfterCond, condTrue⟩
+            by_cases hCond : condTrue = true
+            · simp only [hCond]
+              exact
+                allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+            · simp only [hCond]
+              apply Simulation.Interaction.AllDone.done
+              exact hPolicy
+  | switch scrutinee cases defaultBody =>
+      cases fuel with
+      | zero =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | succ fuel =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.bind
+            (Simulation.Interaction.AllDone.trivial _)
+          · intro error _
+            trivial
+          · intro result _
+            rcases result with ⟨stateAfterScrutinee, value⟩
+            cases Source.Switch.select value cases defaultBody with
+            | none =>
+                apply Simulation.Interaction.AllDone.done
+                exact hPolicy
+            | some body =>
+                exact
+                  allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+  | for_ init cond post body =>
+      cases fuel with
+      | zero =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.done
+          trivial
+      | succ fuel =>
+          simp only [Locals.Source.Effectful.Control.Stmt.run]
+          apply Simulation.Interaction.AllDone.bind
+            (Simulation.Interaction.AllDone.trivial _)
+          · intro error _
+            trivial
+          · intro initResult _
+            rcases initResult with ⟨initOutcome, initCtx⟩
+            cases hMode : initOutcome.mode with
+            | regular =>
+                apply Simulation.Interaction.AllDone.bind
+                  (Simulation.Interaction.AllDone.trivial _)
+                · intro error _
+                  trivial
+                · intro loopOutcome _
+                  cases hLoopMode : loopOutcome.mode <;>
+                    apply Simulation.Interaction.AllDone.done
+                  all_goals first | exact hPolicy | trivial
+            | brk | cont =>
+                apply Simulation.Interaction.AllDone.done
+                trivial
+            | leave | halt =>
+                apply Simulation.Interaction.AllDone.done
+                exact hPolicy
+  | brk =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      cases sourceCtx.breakScope? <;>
+        apply Simulation.Interaction.AllDone.done
+      · trivial
+      · exact hPolicy
+  | cont =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      cases sourceCtx.continueScope? <;>
+        apply Simulation.Interaction.AllDone.done
+      · trivial
+      · exact hPolicy
+  | leave =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      cases sourceCtx.leaveScope? <;>
+        apply Simulation.Interaction.AllDone.done
+      · trivial
+      · exact hPolicy
+  | call name =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.done
+      trivial
+  | terminal kind =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+  | terminalArgs kind args =>
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      apply Simulation.Interaction.AllDone.bind
+        (Simulation.Interaction.AllDone.trivial _)
+      · intro error _
+        trivial
+      · intro result _
+        rcases result with ⟨stateAfterArgs, values⟩
+        exact allDone_bind_fixedContext policy _ _ sourceCtx hPolicy
+
+end Stmt.ControlPolicy
+
+namespace Stmt
+
+theorem RegularResultRel.toPolicyOpen
+    {policy : ControlPolicy}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Locals.Source.Ctx}
+    {target : Structured.Outcome}
+    (hRel : RegularResultRel finalCtx suffix returns source target)
+    (hPolicy :
+      ControlPolicy.ContextCompatible policy source.2) :
+    PolicyOpenResultRel policy finalCtx suffix returns source target := by
+  rcases source with ⟨sourceOutcome, sourceCtx⟩
+  rcases sourceOutcome with ⟨sourceState, sourceMode⟩
+  rcases target with ⟨targetState, targetMode⟩
+  cases hRel.sourceMode
+  cases hRel.targetMode
+  exact PolicyOpenResultRel.regular hPolicy hRel.context hRel.state
+
+/-- Add the independently checked source control-policy invariant to a
+regular adjacent simulation. -/
+theorem policyOpen_of_regular
+    {policy : ControlPolicy}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx)}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hRel :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel finalCtx suffix returns)
+        sourceRun targetRun)
+    (hPolicy :
+      Simulation.Interaction.AllDone
+        (ControlPolicy.CompatibleOutcome policy) sourceRun) :
+    Simulation.Interaction.Rel
+      (PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      sourceRun targetRun := by
+  have hStrong :=
+    Simulation.Interaction.Rel.strengthen_left hRel hPolicy
+  apply Simulation.Interaction.Rel.mono hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hCompatible⟩
+  cases hRelated with
+  | error _ =>
+      exact Simulation.Interaction.ExceptRel.error trivial
+  | ok hRegular =>
+      exact
+        Simulation.Interaction.ExceptRel.ok
+          (hRegular.toPolicyOpen hCompatible)
+
+theorem policyForward_of_regular
+    {policy : ControlPolicy}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx)}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hRel :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (RegularOutcomeRel finalCtx suffix returns)
+        sourceRun targetRun)
+    (hPolicy :
+      Simulation.Interaction.AllDone
+        (ControlPolicy.CompatibleOutcome policy) sourceRun) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      sourceRun targetRun := by
+  have hStrong :=
+    Simulation.Interaction.ForwardRel.strengthen_left hRel hPolicy
+  apply Simulation.Interaction.ForwardRel.mono hStrong
+  intro sourceDone targetDone hDone
+  rcases hDone with ⟨hRelated, hCompatible⟩
+  cases hRelated with
+  | error _ =>
+      exact Simulation.Interaction.ExceptRel.error trivial
+  | ok hRegular =>
+      exact
+        Simulation.Interaction.ExceptRel.ok
+          (hRegular.toPolicyOpen hCompatible)
+
+end Stmt
+
 namespace Stmt.Forward
+
+theorem policy_expr_of_compile
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (expr : Locals.Expr 0)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.expr expr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hPolicy : ControlPolicy.ContextCompatible policy sourceCtx)
+    (hScoped : Scope.ExprScoped targetCtx.layout expr)
+    (hSupported : InteractionSemantics.Expr.OpenSupported expr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel (.expr expr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_expr_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra expr hCompile hCtx hScoped hSupported hInitial
+  have hAll :=
+    ControlPolicy.allDone_openRun
+      policy sourceProgram sourceCtx (extra + 1) (.expr expr) source
+      hPolicy
+  have hPolicyRel := policyOpen_of_regular hRel hAll
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel (.expr expr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1) (.expr expr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hPolicyRel
+
+theorem policy_let_of_compile
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.let_ name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hPolicy : ControlPolicy.ContextCompatible policy sourceCtx)
+    (hFresh : name ∉ targetCtx.layout)
+    (hScoped : Scope.ExprScoped targetCtx.layout valueExpr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel
+          (.let_ name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_let_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra valueExpr hCompile hCtx hFresh hScoped hSupported hInitial
+  have hAll :=
+    ControlPolicy.allDone_openRun
+      policy sourceProgram sourceCtx (extra + 1)
+      (.let_ name valueExpr) source hPolicy
+  have hPolicyRel := policyOpen_of_regular hRel hAll
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel
+            (.let_ name valueExpr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1)
+            (.let_ name valueExpr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hPolicyRel
+
+theorem policy_assign_of_compile
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {name : Name} (valueExpr : Locals.Expr 1)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 2 ≤ targetFuel)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.assign name valueExpr) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hPolicy : ControlPolicy.ContextCompatible policy sourceCtx)
+    (hNodup : targetCtx.layout.Nodup)
+    (hScoped : Scope.ExprScoped targetCtx.layout valueExpr)
+    (hSupported :
+      InteractionSemantics.Expr.OpenSupported valueExpr)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx sourceFuel
+          (.assign name valueExpr) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  have hRel :=
+    openRun_assign_of_compile
+      sourceProgram targetProgram sourceCtx targetCtx finalCtx
+      extra valueExpr hCompile hCtx hNodup hScoped hSupported hInitial
+  have hAll :=
+    ControlPolicy.allDone_openRun
+      policy sourceProgram sourceCtx (extra + 1)
+      (.assign name valueExpr) source hPolicy
+  have hPolicyRel := policyOpen_of_regular hRel hAll
+  have hSourceEq :
+      InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel
+            (.assign name valueExpr) source =
+        InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx (extra + 1)
+            (.assign name valueExpr) source := by
+    unfold InteractionSemantics.Stmt.openRun
+      InteractionSemantics.stateModel
+      Locals.Source.Effectful.Ordinary.stateModel
+    simp only [Locals.Source.Effectful.Control.Stmt.run]
+  rw [hSourceEq, hFuelEq]
+  exact Simulation.Interaction.ForwardRel.ofRel hPolicyRel
 
 /-- Policy-indexed scoped cleanup, owned by the Locals control proof layer. -/
 theorem policyScopedBlock_generated

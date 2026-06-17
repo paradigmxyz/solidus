@@ -31436,3 +31436,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Locals control build, full verification root, architecture dependency check,
   touched-file hole scan, axiom audit, and `git diff --check` passed; both new
   theorems use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:24:51 PDT - proof/locals-policy-infrastructure - proved
+  `ControlPolicy.allDone_openRun` for every source statement and open-world
+  response, added generic `ForwardRel.strengthen_left`, and lifted expression,
+  fresh-local, and assignment compilation into policy-indexed preservation.
+- 2026-06-17 15:24:51 PDT - validation/locals-policy-infrastructure - focused
+  build, full verification root, architecture dependency check, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; the generic interaction
+  law uses `[propext, Quot.sound]` and Locals theorems add only
+  `Classical.choice`.
