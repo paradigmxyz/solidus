@@ -1586,6 +1586,66 @@ theorem openRun_single_code
   intro final _
   rfl
 
+theorem openRun_code_brk
+    (program : Expressions.Program) (fuel : Nat)
+    (code : Structured.Code)
+    (source final : Structured.RunState)
+    (hRun :
+      Structured.InteractionSemantics.Code.openRun code source =
+        .done (.ok final)) :
+    Expressions.InteractionSemantics.Block.openRun
+        program (fuel + 3)
+        { stmts := [.code code, .brk] } source =
+      .done (.ok (Structured.Outcome.brk final)) := by
+  unfold Structured.InteractionSemantics.Code.openRun at hRun
+  unfold Expressions.InteractionSemantics.Block.openRun
+  simp only [Expressions.EffectSemantics.Control.Block.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  rw [hRun]
+  rfl
+
+theorem openRun_code_cont
+    (program : Expressions.Program) (fuel : Nat)
+    (code : Structured.Code)
+    (source final : Structured.RunState)
+    (hRun :
+      Structured.InteractionSemantics.Code.openRun code source =
+        .done (.ok final)) :
+    Expressions.InteractionSemantics.Block.openRun
+        program (fuel + 3)
+        { stmts := [.code code, .cont] } source =
+      .done (.ok (Structured.Outcome.cont final)) := by
+  unfold Structured.InteractionSemantics.Code.openRun at hRun
+  unfold Expressions.InteractionSemantics.Block.openRun
+  simp only [Expressions.EffectSemantics.Control.Block.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  rw [hRun]
+  rfl
+
+theorem openRun_code_leave
+    (program : Expressions.Program) (fuel : Nat)
+    (code : Structured.Code)
+    (source final : Structured.RunState)
+    (hRun :
+      Structured.InteractionSemantics.Code.openRun code source =
+        .done (.ok final))
+    (hReturns : final.returns ≠ []) :
+    Expressions.InteractionSemantics.Block.openRun
+        program (fuel + 3)
+        { stmts := [.code code, .leave] } source =
+      .done (.ok (Structured.Outcome.leave final)) := by
+  unfold Structured.InteractionSemantics.Code.openRun at hRun
+  unfold Expressions.InteractionSemantics.Block.openRun
+  simp only [Expressions.EffectSemantics.Control.Block.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  rw [hRun]
+  dsimp [EvmCompiler.Simulation.Interaction.instMonad,
+    Simulation.Interaction.bind,
+    Simulation.Interaction.pure]
+  cases hFinalReturns : final.returns with
+  | nil => contradiction
+  | cons head tail => rfl
+
 end TargetBlock
 
 abbrev StateOutcomeRel (layout : Layout) (suffix : List Word)
@@ -1702,6 +1762,108 @@ abbrev RegularOutcomeRel (targetCtx : Locals.Ctx)
   Simulation.Interaction.ExceptRel
     (fun _sourceError _targetError => True)
     (RegularResultRel targetCtx suffix returns)
+
+/--
+Mode-indexed adjacent outcome relation for the Locals pass. Normal completion
+uses the compiler's final context. Abrupt lexical exits retain the entry
+context and expose exactly the selected source scope. Terminal outcomes discard
+the local-frame representation and retain only shared state and return-stack
+agreement.
+-/
+inductive OpenResultRel (entryCtx finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    (Locals.Source.Effectful.Outcome Locals.Source.State ×
+      Locals.Source.Ctx) →
+    Structured.Outcome → Prop
+  | regular {source sourceCtx target} :
+      Frame.CtxRel sourceCtx finalCtx →
+      Frame.StateRel finalCtx.layout suffix returns source target →
+      OpenResultRel entryCtx finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+        (Structured.Outcome.regular target)
+  | brk {source sourceCtx target scope} :
+      Frame.CtxRel sourceCtx entryCtx →
+      sourceCtx.breakScope? = some scope →
+      Frame.StateRel scope suffix returns source target →
+      OpenResultRel entryCtx finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
+        (Structured.Outcome.brk target)
+  | cont {source sourceCtx target scope} :
+      Frame.CtxRel sourceCtx entryCtx →
+      sourceCtx.continueScope? = some scope →
+      Frame.StateRel scope suffix returns source target →
+      OpenResultRel entryCtx finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
+        (Structured.Outcome.cont target)
+  | leave {source sourceCtx target scope} :
+      Frame.CtxRel sourceCtx entryCtx →
+      sourceCtx.leaveScope? = some scope →
+      Frame.StateRel scope suffix returns source target →
+      OpenResultRel entryCtx finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
+        (Structured.Outcome.leave target)
+  | halt {kind source sourceCtx target} :
+      Frame.CtxRel sourceCtx entryCtx →
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      OpenResultRel entryCtx finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
+        (Structured.Outcome.halt kind target)
+
+abbrev OpenOutcomeRel (entryCtx finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Except EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx) →
+      Except EVMException Structured.Outcome → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (OpenResultRel entryCtx finalCtx suffix returns)
+
+theorem RegularResultRel.toOpen
+    {entryCtx finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Locals.Source.Ctx}
+    {target : Structured.Outcome}
+    (hRel :
+      RegularResultRel finalCtx suffix returns source target) :
+    OpenResultRel entryCtx finalCtx suffix returns source target := by
+  rcases source with ⟨sourceOutcome, sourceCtx⟩
+  rcases sourceOutcome with ⟨sourceState, sourceMode⟩
+  rcases target with ⟨targetState, targetMode⟩
+  cases hRel.sourceMode
+  cases hRel.targetMode
+  exact OpenResultRel.regular hRel.context hRel.state
+
+theorem open_of_regular
+    {entryCtx finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx)}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hRel :
+      Simulation.Interaction.Rel
+        (RegularOutcomeRel finalCtx suffix returns)
+        sourceRun targetRun) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel entryCtx finalCtx suffix returns)
+      sourceRun targetRun := by
+  apply Simulation.Interaction.Rel.mono hRel
+  intro sourceDone targetDone hDone
+  cases hDone with
+  | error _ =>
+      exact Simulation.Interaction.ExceptRel.error trivial
+  | ok hResult =>
+      exact
+        Simulation.Interaction.ExceptRel.ok
+          (RegularResultRel.toOpen hResult)
 
 /--
 A source-owned zero-result expression statement preserves the current frame
@@ -2132,6 +2294,212 @@ theorem openRun_assign_of_compile
                       sourceProgram targetProgram sourceCtx targetCtx
                       (fuel + 1) valueExpr hCtx hNodup hDepth hValueScoped
                       hValueSupported hCode hSwap hInitial
+
+/--
+Compiler-facing `break` preservation. The ordinary compiler supplies the
+selected lexical depth and cleanup code; the proof exposes the corresponding
+source scope and relates the abrupt outcomes directly.
+-/
+theorem openRun_brk_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx .brk =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel .brk source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 3) { stmts := stmts } target) := by
+  obtain ⟨depth, cleanup, hDepth, hCleanup, rfl, rfl⟩ :=
+    Locals.Stmt.compile_brk_components hCompile
+  cases hScope : sourceCtx.breakScope? with
+  | none =>
+      have hDepthRel := hCtx.breakDepth
+      rw [hScope] at hDepthRel
+      simp at hDepthRel
+      rw [hDepthRel] at hDepth
+      contradiction
+  | some scope =>
+      obtain ⟨pre, hLayout, hScopeDepth⟩ :=
+        hCtx.breakLayout hScope
+      rw [hDepth] at hScopeDepth
+      cases hScopeDepth
+      obtain ⟨finalTarget, hCleanupRun, hFinal⟩ :=
+        hInitial.openRun_cleanupTo hLayout hCleanup
+      have hTargetRun :=
+        TargetBlock.openRun_code_brk
+          targetProgram fuel cleanup target finalTarget hCleanupRun
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      rw [hScope]
+      rw [show
+          Expressions.InteractionSemantics.Block.openRun
+              targetProgram (fuel + 3)
+              { stmts :=
+                  Locals.codeStmt cleanup ++
+                    [Expressions.Stmt.brk] }
+              target =
+            .done (.ok (Structured.Outcome.brk finalTarget)) by
+          simpa [Locals.codeStmt] using hTargetRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.brk hCtx hScope hFinal
+
+/--
+Compiler-facing `continue` preservation, using the compiler-owned loop-scope
+depth and cleanup code.
+-/
+theorem openRun_cont_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx .cont =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel .cont source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 3) { stmts := stmts } target) := by
+  obtain ⟨depth, cleanup, hDepth, hCleanup, rfl, rfl⟩ :=
+    Locals.Stmt.compile_cont_components hCompile
+  cases hScope : sourceCtx.continueScope? with
+  | none =>
+      have hDepthRel := hCtx.continueDepth
+      rw [hScope] at hDepthRel
+      simp at hDepthRel
+      rw [hDepthRel] at hDepth
+      contradiction
+  | some scope =>
+      obtain ⟨pre, hLayout, hScopeDepth⟩ :=
+        hCtx.continueLayout hScope
+      rw [hDepth] at hScopeDepth
+      cases hScopeDepth
+      obtain ⟨finalTarget, hCleanupRun, hFinal⟩ :=
+        hInitial.openRun_cleanupTo hLayout hCleanup
+      have hTargetRun :=
+        TargetBlock.openRun_code_cont
+          targetProgram fuel cleanup target finalTarget hCleanupRun
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      rw [hScope]
+      rw [show
+          Expressions.InteractionSemantics.Block.openRun
+              targetProgram (fuel + 3)
+              { stmts :=
+                  Locals.codeStmt cleanup ++
+                    [Expressions.Stmt.cont] }
+              target =
+            .done (.ok (Structured.Outcome.cont finalTarget)) by
+          simpa [Locals.codeStmt] using hTargetRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.cont hCtx hScope hFinal
+
+/--
+Compiler-facing `leave` preservation. At this boundary `leaveRetc = 0`, so the
+ordinary preserving cleanup reduces to the same lexical frame restriction used
+by source semantics. A live return destination is supplied by the enclosing
+function activation.
+-/
+theorem openRun_leave_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (fuel : Nat)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCompile :
+      Locals.Stmt.compile targetCtx .leave =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hReturns : returns ≠ [])
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.Rel
+      (OpenOutcomeRel targetCtx finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx fuel .leave source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram (fuel + 3) { stmts := stmts } target) := by
+  obtain ⟨depth, cleanup, hDepth, hCleanup, rfl, rfl⟩ :=
+    Locals.Stmt.compile_leave_components hCompile
+  cases hScope : sourceCtx.leaveScope? with
+  | none =>
+      have hDepthRel := hCtx.leaveDepth
+      rw [hScope] at hDepthRel
+      simp at hDepthRel
+      rw [hDepthRel] at hDepth
+      contradiction
+  | some scope =>
+      obtain ⟨pre, hLayout, hScopeDepth⟩ :=
+        hCtx.leaveLayout hScope
+      rw [hDepth] at hScopeDepth
+      cases hScopeDepth
+      have hCleanupZero :
+          Locals.Ctx.cleanupToPreserving?
+              finalCtx 0 scope.length =
+            some cleanup := by
+        simpa [hCtx.leaveRetc] using hCleanup
+      have hCleanupPlain :
+          Locals.Ctx.cleanupTo? finalCtx scope.length =
+            some cleanup := by
+        simpa using hCleanupZero
+      obtain ⟨finalTarget, hCleanupRun, hFinal⟩ :=
+        hInitial.openRun_cleanupTo hLayout hCleanupPlain
+      have hFinalReturns : finalTarget.returns ≠ [] := by
+        rw [hFinal.returns]
+        exact hReturns
+      have hTargetRun :=
+        TargetBlock.openRun_code_leave
+          targetProgram fuel cleanup target finalTarget
+            hCleanupRun hFinalReturns
+      unfold InteractionSemantics.Stmt.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Stmt.run]
+      rw [hScope]
+      rw [show
+          Expressions.InteractionSemantics.Block.openRun
+              targetProgram (fuel + 3)
+              { stmts :=
+                  Locals.codeStmt cleanup ++
+                    [Expressions.Stmt.leave] }
+              target =
+            .done (.ok (Structured.Outcome.leave finalTarget)) by
+          simpa [Locals.codeStmt] using hTargetRun]
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.leave hCtx hScope hFinal
 
 end Stmt
 

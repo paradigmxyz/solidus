@@ -31249,3 +31249,15 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`. Scope-layout
   lemmas are axiom-free; execution/frame lemmas depend only on
   `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 13:55:12 PDT - proof/locals-abrupt-exits - added pass-owned
+  compiler decomposition facts for `break`, `continue`, and `leave`, defined
+  the stable entry/final-context mode-indexed `OpenResultRel`, and proved all
+  three source exits through their actual emitted cleanup blocks. `leave`
+  exposes only the enclosing activation's nonempty return stack; preserving
+  cleanup reduces to ordinary cleanup because this boundary has
+  `leaveRetc = 0`.
+- 2026-06-17 13:56:06 PDT - validation/locals-abrupt-exits - passed the
+  focused Locals builds, full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. New public
+  theorems depend only on `[propext, Classical.choice, Quot.sound]` or a
+  subset.

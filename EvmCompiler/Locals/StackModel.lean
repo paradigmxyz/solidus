@@ -427,6 +427,25 @@ def cleanupToPreserving? (ctx : Ctx) (preserve targetDepth : Nat) :
   else
     none
 
+@[simp] theorem cleanupManyPreserving?_zero (count : Nat) :
+    cleanupManyPreserving? count 0 =
+      some
+        (List.replicate count
+          (Structured.BasicInstr.op .pop)) := by
+  induction count with
+  | zero =>
+      rfl
+  | succ count ih =>
+      simp [cleanupManyPreserving?, cleanupOnePreserving?, ih,
+        List.replicate_succ]
+
+@[simp] theorem cleanupToPreserving?_zero
+    (ctx : Ctx) (targetDepth : Nat) :
+    ctx.cleanupToPreserving? 0 targetDepth =
+      ctx.cleanupTo? targetDepth := by
+  unfold cleanupToPreserving? cleanupTo?
+  split <;> simp_all
+
 def cleanupAll (ctx : Ctx) : Structured.Code :=
   List.replicate ctx.layout.length (Structured.BasicInstr.op .pop)
 

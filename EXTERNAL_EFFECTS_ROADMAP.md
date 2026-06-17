@@ -782,6 +782,9 @@ Exit: the shared core builds with no compiler layer changed.
       context directly from successful `Stmt.compile`.
     - [x] Exact control-scope suffix invariants plus pass-owned POP cleanup and
       frame-restriction theorems for lexical exits.
+    - [x] Stable entry/final-context mode-indexed outcome relation, with
+      compiler-facing `break`, `continue`, and `leave` preservation through
+      the actual emitted cleanup blocks.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -833,6 +836,8 @@ Exit: every layer exposes one canonical open computation.
       singleton target blocks with an explicit adjacent fuel translation.
     - [x] Cleanup compilation packaged as an adjacent frame theorem, ready for
       break/continue/leave and scoped-block composition.
+    - [x] `break`, `continue`, and `leave` composed through ordinary compiler
+      decomposition facts and the shared mode-indexed outcome relation.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

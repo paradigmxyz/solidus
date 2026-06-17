@@ -388,6 +388,86 @@ theorem compile_cleanupTo_components
     contradiction
 
 /--
+Successful `break` compilation exposes the selected control depth and the
+compiler-owned lexical cleanup before the adjacent Expressions exit.
+-/
+theorem compile_brk_components
+    {ctx final : Ctx}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx .brk = some (code, final)) :
+    ∃ target cleanup,
+      ctx.breakDepth? = some target ∧
+        ctx.cleanupTo? target = some cleanup ∧
+        code = codeStmt cleanup ++ [Expressions.Stmt.brk] ∧
+        final = ctx := by
+  cases hTarget : ctx.breakDepth? with
+  | none =>
+      simp [Stmt.compile, hTarget] at hCompile
+  | some target =>
+      cases hCleanup : ctx.cleanupTo? target with
+      | none =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+      | some cleanup =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨target, cleanup, rfl, hCleanup, rfl, rfl⟩
+
+/--
+Successful `continue` compilation exposes the selected control depth and the
+compiler-owned lexical cleanup before the adjacent Expressions exit.
+-/
+theorem compile_cont_components
+    {ctx final : Ctx}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx .cont = some (code, final)) :
+    ∃ target cleanup,
+      ctx.continueDepth? = some target ∧
+        ctx.cleanupTo? target = some cleanup ∧
+        code = codeStmt cleanup ++ [Expressions.Stmt.cont] ∧
+        final = ctx := by
+  cases hTarget : ctx.continueDepth? with
+  | none =>
+      simp [Stmt.compile, hTarget] at hCompile
+  | some target =>
+      cases hCleanup : ctx.cleanupTo? target with
+      | none =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+      | some cleanup =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨target, cleanup, rfl, hCleanup, rfl, rfl⟩
+
+/--
+Successful `leave` compilation exposes the selected control depth and the
+compiler-owned preserving cleanup before the adjacent Expressions exit.
+-/
+theorem compile_leave_components
+    {ctx final : Ctx}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx .leave = some (code, final)) :
+    ∃ target cleanup,
+      ctx.leaveDepth? = some target ∧
+        ctx.cleanupToPreserving? ctx.leaveRetc target =
+          some cleanup ∧
+        code = codeStmt cleanup ++ [Expressions.Stmt.leave] ∧
+        final = ctx := by
+  cases hTarget : ctx.leaveDepth? with
+  | none =>
+      simp [Stmt.compile, hTarget] at hCompile
+  | some target =>
+      cases hCleanup :
+          ctx.cleanupToPreserving? ctx.leaveRetc target with
+      | none =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+      | some cleanup =>
+          simp [Stmt.compile, hTarget, hCleanup] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          exact ⟨target, cleanup, rfl, hCleanup, rfl, rfl⟩
+
+/--
 Successful compilation of a Locals `if` decomposes through the ordinary
 condition compiler, open-block compiler, and scoped cleanup.
 -/
