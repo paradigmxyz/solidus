@@ -158,6 +158,9 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.InteractionSemantics.Program.openRunState
 #check EvmCompiler.Functions.InteractionSemantics.Program.OpenSupported
 #check EvmCompiler.Functions.AllocationInteractionRelation.StateRel
+#check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.openWorld_eq
+#check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.callRequest_eq
+#check EvmCompiler.Functions.AllocationInteractionRelation.SharedRel.createRequest_eq
 #check EvmCompiler.Functions.AllocationInteractionRelation.ScratchStateRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.OutcomeRel
 #check EvmCompiler.Functions.AllocationInteractionRelation.OpenOutcomeRel
@@ -196,6 +199,7 @@ or audit-alias corridor.
 #check EvmCompiler.Simulation.Interaction.ForwardRel.interpret
 #check EvmCompiler.Simulation.MemorySafety.WindowSafe
 #check EvmCompiler.Simulation.MemorySafety.windowSafe_zero
+#check EvmCompiler.Simulation.MemorySafety.readWithPadding_eq_of_windowSafe
 #check EvmCompiler.Simulation.MemorySafety.OpenPrimitiveMemorySafe
 #check EvmCompiler.Simulation.MemorySafety.openPrimitiveMemorySafe_call_zero_windows
 #check EvmCompiler.Simulation.MemorySafety.openPrimitiveMemorySafe_create_zero_window

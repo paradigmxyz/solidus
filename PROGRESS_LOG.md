@@ -31534,3 +31534,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-file hole scan, and `git diff --check` passed; new expression
   theorems use `[propext, Classical.choice, Quot.sound]`, and the zero-window
   CALL safety theorem uses `[propext]`.
+- 2026-06-17 16:51:08 PDT - proof/functions-external-query-equality - proved
+  that allocation-related machines read identical safe calldata/init-code
+  windows and that related shared states produce exactly equal CALL-family and
+  CREATE-family requests and open worlds; zero-length windows require no
+  offset bound.
+- 2026-06-17 16:51:08 PDT - validation/functions-external-query-equality -
+  1154-job Functions build, 1304-job verification root, architecture check,
+  touched-file hole scan, and `git diff --check` passed; query-equality
+  theorems use only `[propext, Classical.choice, Quot.sound]`.

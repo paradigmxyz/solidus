@@ -2,6 +2,7 @@ import EvmCompiler.Compiler.MemoryRelation
 import EvmCompiler.Functions.AllocationSupport
 import EvmCompiler.Functions.InteractionSemantics
 import EvmCompiler.Expressions.InteractionSemantics
+import EvmCompiler.Simulation.MemorySafety
 import EvmYul.MachineStateOps
 
 namespace EvmCompiler
@@ -83,6 +84,92 @@ structure SharedRel
       source.toMachineState target.toMachineState
   world :
     source.toState = target.toState
+
+namespace SharedRel
+
+theorem executionEnv_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target) :
+    source.executionEnv = target.executionEnv :=
+  congrArg EvmYul.State.executionEnv hRel.world
+
+theorem openWorld_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target) :
+    Simulation.OpenWorld.ofEVMShared source =
+      Simulation.OpenWorld.ofEVMShared target := by
+  unfold Simulation.OpenWorld.ofEVMShared
+  rw [hRel.world]
+
+theorem calldata_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (callLocal : Simulation.CallLocal)
+    (hWindow :
+      Simulation.MemorySafety.WindowSafe contract
+        callLocal.inputOffset.toNat callLocal.inputSize.toNat) :
+    (Simulation.ExternalFrame.ofShared source).calldata callLocal =
+      (Simulation.ExternalFrame.ofShared target).calldata callLocal := by
+  exact
+    Simulation.MemorySafety.readWithPadding_eq_of_windowSafe
+      hRel.machine callLocal.inputOffset.toNat callLocal.inputSize.toNat hWindow
+
+theorem initCode_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (createLocal : Simulation.CreateLocal)
+    (hWindow :
+      Simulation.MemorySafety.WindowSafe contract
+        createLocal.initOffset.toNat createLocal.initSize.toNat) :
+    (Simulation.ExternalFrame.ofShared source).initCode createLocal =
+      (Simulation.ExternalFrame.ofShared target).initCode createLocal := by
+  exact
+    Simulation.MemorySafety.readWithPadding_eq_of_windowSafe
+      hRel.machine createLocal.initOffset.toNat createLocal.initSize.toNat hWindow
+
+theorem callRequest_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (kind : Simulation.CallKind) (operands : Simulation.CallOperands)
+    (hWindow :
+      Simulation.MemorySafety.WindowSafe contract
+        operands.inputOffset.toNat operands.inputSize.toNat) :
+    (Simulation.ExternalFrame.ofShared source).callRequest kind operands =
+      (Simulation.ExternalFrame.ofShared target).callRequest kind operands := by
+  have hEnv := hRel.executionEnv_eq
+  have hData := hRel.calldata_eq operands.callLocal hWindow
+  unfold Simulation.ExternalFrame.calldata
+    Simulation.ExternalFrame.ofShared at hData
+  cases kind <;>
+    simp [Simulation.ExternalFrame.callRequest,
+      Simulation.ExternalFrame.calldata,
+      Simulation.ExternalFrame.ofShared, hEnv, hData]
+
+theorem createRequest_eq
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.SharedState .EVM}
+    (hRel : SharedRel contract source target)
+    (kind : Simulation.CreateKind) (operands : Simulation.CreateOperands)
+    (hWindow :
+      Simulation.MemorySafety.WindowSafe contract
+        operands.initOffset.toNat operands.initSize.toNat) :
+    (Simulation.ExternalFrame.ofShared source).createRequest kind operands =
+      (Simulation.ExternalFrame.ofShared target).createRequest kind operands := by
+  have hEnv := hRel.executionEnv_eq
+  have hCode := hRel.initCode_eq operands.createLocal hWindow
+  unfold Simulation.ExternalFrame.initCode
+    Simulation.ExternalFrame.ofShared at hCode
+  cases kind <;>
+    simp [Simulation.ExternalFrame.createRequest,
+      Simulation.ExternalFrame.initCode,
+      Simulation.ExternalFrame.ofShared, hEnv, hCode]
+
+end SharedRel
 
 /-- Core allocation relation, independent of observers and interaction history. -/
 structure CoreRel

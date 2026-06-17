@@ -174,6 +174,35 @@ def WindowSafe (contract : MemoryContract.Contract)
     WindowSafe contract address 0 :=
   Or.inl rfl
 
+/-- Related machines expose identical bytes through every safe source window. -/
+theorem readWithPadding_eq_of_windowSafe
+    {contract : MemoryContract.Contract}
+    {source target : EvmYul.MachineState}
+    (hRel : Compiler.MemoryRelation.MachineRel contract source target)
+    (address size : Nat)
+    (hSafe : WindowSafe contract address size) :
+    source.memory.readWithPadding address size =
+      target.memory.readWithPadding address size := by
+  rcases hSafe with hZero | ⟨hAllowed, _hExpansion, hHost⟩
+  · subst size
+    simp [ByteArray.readWithPadding, ByteArray.readWithoutPadding]
+  · cases hReservation : contract.scratch? with
+    | none =>
+        have hMemory : source.memory = target.memory := by
+          simpa [hReservation] using hRel.memory
+        rw [hMemory]
+    | some reservation =>
+        have hMemory :
+            Compiler.MemoryRelation.OutsideReservation
+              reservation source.memory target.memory := by
+          simpa [hReservation] using hRel.memory
+        have hAllowed' :
+            reservation.sourceAccessAllowed address size := by
+          simpa [hReservation] using hAllowed
+        exact
+          Compiler.MemoryRelation.OutsideReservation.readWithPadding
+            hMemory address size hAllowed' (by omega)
+
 /--
 Source-facing primitive safety for the open interaction semantics.
 
