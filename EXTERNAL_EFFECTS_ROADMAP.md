@@ -833,6 +833,8 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Lift lexical blocks, conditionals, and switches through the shared
       policy-indexed scoped-child theorem; switch recursion is indexed by the
       checked source-selection equation rather than an arbitrary block oracle.
+    - [x] Lift terminals and complete outer loops through a checked source
+      no-`break`/`continue` invariant, reusing their existing compiler proofs.
     - [ ] Close the source-owned recursive whole-statement/block owner and
       remove recursive callback premises from the compiler-facing loop theorem.
   - [x] Canonical Expressions open semantics and transparent

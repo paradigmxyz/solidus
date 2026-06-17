@@ -31455,3 +31455,11 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   full verification root, architecture dependency check, touched-file hole
   scan, axiom audit, and `git diff --check` passed; public control theorems use
   only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:30:46 PDT - proof/locals-policy-terminal-loop - proved that
+  terminal statements and complete outer `for` statements never expose
+  `break`/`continue`, then lifted their existing preservation proofs through
+  `policyForward_of_open_noLoopExit` without duplicating compiler reasoning.
+- 2026-06-17 15:30:46 PDT - validation/locals-policy-terminal-loop - focused
+  build, full verification root, architecture dependency check, touched-file
+  hole scan, axiom audit, and `git diff --check` passed; theorem axioms remain
+  `[propext, Classical.choice, Quot.sound]`.
