@@ -30401,3 +30401,18 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check` passed. New compound, family, dispatcher, and regular
   whole-program theorems depend only on `propext`, `Classical.choice`, and
   `Quot.sound`; architecture reports only the existing soft line-count debt.
+- 2026-06-16 19:43:00 PDT - compaction-resume/scope - Resumed from the checked
+  regular whole-program quantitative theorem to audit the remaining terminal
+  fuel, source-facing scratch safety, and short end-to-end composition
+  obligations; generic backward adequacy remains archived and non-blocking.
+- 2026-06-16 19:47:54 PDT - proof/yul-terminal-fuel-foundation - Added
+  least-sufficient-fuel interfaces owned by terminal statement, body, and loop
+  results, plus the separate `FunctionsObserverTerminalFuel` quantitative
+  module. Checked exact bounds for prepared and regular prefixes, unreachable
+  suffixes, lexical blocks, body-to-loop lifting, and the compiled `for`
+  wrapper without changing the compiler, interpreter, or public theorem.
+- 2026-06-16 19:47:54 PDT - validation/yul-terminal-fuel-foundation - Focused
+  terminal-fuel build, full 1,269-job verification root, architecture
+  dependency guard, changed-file proof-marker scan, standalone observer axiom
+  smoke, and `git diff --check` passed. The new quantitative interfaces depend
+  only on `propext`, `Classical.choice`, and `Quot.sound`.

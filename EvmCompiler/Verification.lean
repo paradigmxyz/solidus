@@ -78,6 +78,7 @@ import EvmCompiler.Yul.FunctionsObserverPreservation
 import EvmCompiler.Yul.FunctionsObserverTraceAdequacy
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalBackward
+import EvmCompiler.Yul.FunctionsObserverTerminalFuel
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpressionBackward
@@ -521,6 +522,14 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalCompoundForward.ofComponents
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.ofCompiler
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.dispatcherForward
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.RunBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.ProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependPrepared_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependRegular_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.appendUnreachable_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.block_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.ForLoopResult.ofBody_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.ofForLoop_runBounded
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.DirectNoObservableFailureAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.directNoObservableFailureAt

@@ -46,6 +46,7 @@ import EvmCompiler.Yul.FunctionsObserverPrimitive
 import EvmCompiler.Yul.FunctionsObserverExpressionBackward
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalBackward
+import EvmCompiler.Yul.FunctionsObserverTerminalFuel
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 import EvmCompiler.Yul.EffectRefinement
 import EvmCompiler.Yul.EffectRefinement.Failure
@@ -467,6 +468,13 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalListForward.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalStmtForward.block
 #check EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalBodyForward.ofList
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.ProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependPrepared_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependRegular_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.appendUnreachable_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.block_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.ForLoopResult.ofBody_runBounded
+#check EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.ofForLoop_runBounded
 #check EvmCompiler.Yul.FunctionsObserverExpression.directAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.directNoObservableFailureAt
 #check EvmCompiler.Yul.FunctionsObserverExpression.toLocals_forward
@@ -1585,6 +1593,12 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalCompoundForward.ofComponents
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.ofCompiler
 #print axioms EvmCompiler.Yul.FunctionsObserverTerminalForward.RecursiveTerminalFamily.dispatcherForward
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependPrepared_runBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.prependRegular_runBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.appendUnreachable_runBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.block_runBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.ForLoopResult.ofBody_runBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverTerminalFuel.StatementResult.ofForLoop_runBounded
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileDispatcherTerminalForward
 #print axioms EvmCompiler.Yul.FunctionsObserverPreservation.compileProgramForward
 #print axioms EvmCompiler.Functions.Source.Effectful.Program.runState_success_unique

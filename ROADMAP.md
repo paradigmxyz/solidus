@@ -90,6 +90,12 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     - [x] recursive-family fixed point and dispatcher packaging;
   - [ ] retire the provisional one-level call-expanded runtime measure;
   - [ ] cover terminal outcomes with the same program-indexed budget;
+    - [x] expose least sufficient fuel for terminal statement, function-body,
+      and loop results;
+    - [x] prove exact quantitative composition for regular prefixes,
+      unreachable suffixes, lexical blocks, and loop wrappers;
+    - [ ] lift terminal expressions, calls, lists, bodies, and compound
+      control through the recursive program-indexed family;
   - [x] expose the bounded regular whole-program forward theorem;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety

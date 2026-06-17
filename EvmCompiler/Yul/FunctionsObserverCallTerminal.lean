@@ -44,6 +44,75 @@ structure BodyResult
 
 namespace BodyResult
 
+noncomputable def requiredFuel
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {body : Functions.Block}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      BodyResult contract codeRel program body failure target ctx) : Nat := by
+  classical
+  exact Nat.find result.run
+
+theorem run_requiredFuel
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {body : Functions.Block}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      BodyResult contract codeRel program body failure target ctx) :
+    Functions.Source.Effectful.Block.runOpen
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx result.requiredFuel body target =
+      .ok
+        (Functions.Source.Effectful.Outcome.halt
+          result.kind result.finalTarget,
+          result.finalCtx) := by
+  classical
+  simpa [requiredFuel] using Nat.find_spec result.run
+
+theorem requiredFuel_le_of_run
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {body : Functions.Block}
+    {failure :
+      Yul.Source.Effectful.Failure
+        (ObserverSemantics.SourceReplay.State transcript)}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (result :
+      BodyResult contract codeRel program body failure target ctx)
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel body target =
+        .ok
+          (Functions.Source.Effectful.Outcome.halt
+            result.kind result.finalTarget,
+            result.finalCtx)) :
+    result.requiredFuel ≤ fuel := by
+  classical
+  simpa [requiredFuel] using Nat.find_min' result.run hRun
+
 def ofStatement
     {contract : MemoryContract.Contract}
     {transcript : Trace}

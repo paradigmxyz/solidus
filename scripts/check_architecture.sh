@@ -201,6 +201,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
+  EvmCompiler/Yul/FunctionsObserverTerminalFuel.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
@@ -224,6 +225,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
+  EvmCompiler/Yul/FunctionsObserverTerminalFuel.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
@@ -247,6 +249,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
+  EvmCompiler/Yul/FunctionsObserverTerminalFuel.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
@@ -733,6 +736,7 @@ report_matches \
   EvmCompiler/Yul/FunctionsObserverCallTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminal.lean \
   EvmCompiler/Yul/FunctionsObserverTerminalForward.lean \
+  EvmCompiler/Yul/FunctionsObserverTerminalFuel.lean \
   EvmCompiler/Yul/FunctionsObserverCall.lean \
   EvmCompiler/Yul/FunctionsObserverOutcome.lean \
   EvmCompiler/Yul/FunctionsObserverStatement.lean \
