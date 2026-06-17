@@ -220,9 +220,10 @@ namespace EffectSemantics
 The canonical Structured control interpreter.
 
 `StateModel` exposes exactly the Structured state needed by control flow.
-`Handler.afterInstr` is the sole extension point for observers and future
-effects. Ordinary execution and transcript replay therefore share procedure,
-branch, switch, loop, and terminal control recursion.
+The legacy `Handler.afterInstr` API remains as a compatibility specialization.
+The canonical `Control.Handler` below owns complete primitive and terminal
+steps, so ordinary execution, transcript replay, and open effects share
+procedure, branch, switch, loop, and terminal control recursion.
 -/
 
 structure StateModel (σ : Type) where
@@ -265,32 +266,243 @@ def IsExit {σ : Type} (outcome : OutcomeT σ) : Prop :=
 
 end Outcome
 
+/-!
+The monad-polymorphic Structured control kernel.
+
+This is the only recursive Structured evaluator. `Handler.stepInstr` owns the
+entire instruction step, so open handlers can suspend before CALL/CREATE while
+ordinary and legacy observer handlers remain thin specializations.
+-/
+namespace Control
+
+structure Handler (M : Type → Type) (σ : Type) where
+  stepInstr : BasicInstr → σ → M σ
+  stepTerminal : Assembly.HaltKind → σ → M σ
+
+namespace Handler
+
+def ofLegacy {σ : Type} (model : StateModel σ)
+    (handler : EffectSemantics.Handler σ) :
+    Control.Handler (Except EVMException) σ where
+  stepInstr instr state := do
+    let evm ← instr.step (model.evm state)
+    handler.afterInstr instr (model.withEVM state evm)
+  stepTerminal kind state := do
+    let evm ← Terminal.step kind (model.evm state)
+    .ok (model.withEVM state evm)
+
+end Handler
+
 namespace Code
 
-def run {σ : Type} (model : StateModel σ) (handler : Handler σ) :
-    Structured.Code → σ → Except EVMException σ
-  | [], state => .ok state
+def run {M : Type → Type} [Monad M] {σ : Type}
+    (handler : Handler M σ) :
+    Structured.Code → σ → M σ
+  | [], state => pure state
   | instr :: rest, state => do
-      let evm ← instr.step (model.evm state)
-      let state' := model.withEVM state evm
-      let state'' ← handler.afterInstr instr state'
-      run model handler rest state''
+      let state' ← handler.stepInstr instr state
+      run handler rest state'
 
-def popCondition {σ : Type} (model : StateModel σ) (state : σ) :
-    Except EVMException (σ × Bool) :=
+def popCondition {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M] {σ : Type}
+    (model : StateModel σ) (state : σ) : M (σ × Bool) :=
   match (model.evm state).stack.pop with
   | some (stack, cond) =>
-      .ok
+      pure
         (model.withEVM state { model.evm state with stack := stack },
           cond != EvmYul.UInt256.ofNat 0)
   | none =>
-      .error .StackUnderflow
+      throw .StackUnderflow
 
-def runCondition {σ : Type} (model : StateModel σ)
-    (handler : Handler σ) (code : Structured.Code) (state : σ) :
-    Except EVMException (σ × Bool) := do
-  let state' ← run model handler code state
+def runCondition {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M] {σ : Type}
+    (model : StateModel σ) (handler : Handler M σ)
+    (code : Structured.Code) (state : σ) : M (σ × Bool) := do
+  let state' ← run handler code state
   popCondition model state'
+
+end Code
+
+mutual
+  def Block.run {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M] {σ : Type}
+      (model : StateModel σ) (handler : Handler M σ)
+      (program : Program) :
+      Nat → Block → σ → M (OutcomeT σ)
+    | 0, _block, _state =>
+        throw .InvalidInstruction
+    | _fuel + 1, ⟨[]⟩, state =>
+        pure (Outcome.regular state)
+    | fuel + 1, ⟨stmt :: rest⟩, state => do
+        let outcome ← Stmt.run model handler program fuel stmt state
+        match outcome.mode with
+        | .regular =>
+            Block.run model handler program fuel ⟨rest⟩ outcome.state
+        | .brk | .cont | .leave | .halt _ =>
+            pure outcome
+
+  def Stmt.runForLoop {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M] {σ : Type}
+      (model : StateModel σ) (handler : Handler M σ)
+      (program : Program) (fuel : Nat)
+      (cond : Structured.Code) (post body : Block) (state : σ) :
+      M (OutcomeT σ) :=
+    match fuel with
+    | 0 =>
+        throw .InvalidInstruction
+    | fuel' + 1 => do
+        let (stateAfterCond, condTrue) ←
+          Code.runCondition model handler cond state
+        if condTrue then
+          let bodyOutcome ←
+            Block.run model handler program fuel' body stateAfterCond
+          match bodyOutcome.mode with
+          | .brk =>
+              pure (Outcome.regular bodyOutcome.state)
+          | .regular | .cont =>
+              let postOutcome ←
+                Block.run model handler program fuel' post
+                  bodyOutcome.state
+              match postOutcome.mode with
+              | .regular =>
+                  Stmt.runForLoop model handler program fuel'
+                    cond post body postOutcome.state
+              | .brk | .cont =>
+                  throw .InvalidInstruction
+              | .leave | .halt _ =>
+                  pure postOutcome
+          | .leave | .halt _ =>
+              pure bodyOutcome
+        else
+          pure (Outcome.regular stateAfterCond)
+
+  def Stmt.run {M : Type → Type} [Monad M]
+      [MonadExceptOf EVMException M] {σ : Type}
+      (model : StateModel σ) (handler : Handler M σ)
+      (program : Program) :
+      Nat → Stmt → σ → M (OutcomeT σ)
+    | _fuel, .code code, state => do
+        let state' ← Code.run handler code state
+        pure (Outcome.regular state')
+    | 0, .if_ _cond _body, _state =>
+        throw .InvalidInstruction
+    | fuel + 1, .if_ cond body, state => do
+        let (stateAfterCond, condTrue) ←
+          Code.runCondition model handler cond state
+        if condTrue then
+          Block.run model handler program fuel body stateAfterCond
+        else
+          pure (Outcome.regular stateAfterCond)
+    | 0, .switch _scrutinee _cases _defaultBody, _state =>
+        throw .InvalidInstruction
+    | fuel + 1, .switch scrutinee cases defaultBody, state => do
+        let stateAfterScrutinee ← Code.run handler scrutinee state
+        match (model.evm stateAfterScrutinee).stack.pop with
+        | none =>
+            throw .StackUnderflow
+        | some ⟨stack, value⟩ =>
+            let stateAfterPop :=
+              model.withEVM stateAfterScrutinee
+                { model.evm stateAfterScrutinee with stack := stack }
+            match Switch.select value cases defaultBody with
+            | some body =>
+                Block.run model handler program fuel body stateAfterPop
+            | none =>
+                pure (Outcome.regular stateAfterPop)
+    | 0, .for_ _init _cond _post _body, _state =>
+        throw .InvalidInstruction
+    | fuel + 1, .for_ init cond post body, state => do
+        let initOutcome ←
+          Block.run model handler program fuel init state
+        match initOutcome.mode with
+        | .regular =>
+            Stmt.runForLoop model handler program fuel cond post body
+              initOutcome.state
+        | .brk | .cont =>
+            throw .InvalidInstruction
+        | .leave | .halt _ =>
+            pure initOutcome
+    | _fuel, .brk, state =>
+        pure (Outcome.brk state)
+    | _fuel, .cont, state =>
+        pure (Outcome.cont state)
+    | _fuel, .leave, state =>
+        match model.returns state with
+        | [] => throw .InvalidInstruction
+        | _ :: _ => pure (Outcome.leave state)
+    | 0, .call _name, _state =>
+        throw .InvalidInstruction
+    | fuel + 1, .call name, state =>
+        match ProcList.lookup? name program.procs with
+        | none =>
+            throw .InvalidInstruction
+        | some proc =>
+            match StackFrame.splitArgs? proc.argc (model.evm state).stack with
+            | none =>
+                throw .StackUnderflow
+            | some (args, callerStack) => do
+                let callEVM := { model.evm state with stack := args }
+                let callState :=
+                  model.pushReturn
+                    (model.withEVM state callEVM) callerStack proc.retc
+                let outcome ←
+                  Block.run model handler program fuel proc.body callState
+                match outcome.mode with
+                | .regular | .leave =>
+                    match model.popReturn? outcome.state with
+                    | none =>
+                        throw .InvalidInstruction
+                    | some (frame, returned) =>
+                        match
+                            StackFrame.attachReturns? frame
+                              (model.evm outcome.state).stack
+                        with
+                        | none =>
+                            throw .InvalidInstruction
+                        | some stack =>
+                            let evm :=
+                              { model.evm outcome.state with stack := stack }
+                            pure
+                              (Outcome.regular
+                                (model.withEVM returned evm))
+                | .brk | .cont =>
+                    throw .InvalidInstruction
+                | .halt kind =>
+                    pure (Outcome.halt kind outcome.state)
+    | _fuel, .terminal kind, state => do
+        let final ← handler.stepTerminal kind state
+        pure (Outcome.halt kind final)
+end
+
+namespace Program
+
+def runState {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M] {σ : Type}
+    (model : StateModel σ) (handler : Handler M σ)
+    (fuel : Nat) (program : Structured.Program)
+    (state : σ) : M (OutcomeT σ) :=
+  Block.run model handler program fuel program.body state
+
+end Program
+
+end Control
+
+namespace Code
+
+abbrev run {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (code : Structured.Code) (state : σ) :
+    Except EVMException σ :=
+  Control.Code.run (Control.Handler.ofLegacy model handler) code state
+
+abbrev popCondition {σ : Type} (model : StateModel σ) (state : σ) :
+    Except EVMException (σ × Bool) :=
+  Control.Code.popCondition model state
+
+abbrev runCondition {σ : Type} (model : StateModel σ)
+    (handler : Handler σ) (code : Structured.Code) (state : σ) :
+    Except EVMException (σ × Bool) :=
+  Control.Code.runCondition model
+    (Control.Handler.ofLegacy model handler) code state
 
 theorem run_cons_eq_run_single_bind
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -298,18 +510,19 @@ theorem run_cons_eq_run_single_bind
     run model handler (instr :: rest) state =
       (run model handler [instr] state).bind
         (run model handler rest) := by
-  unfold run
   cases hStep : instr.step (model.evm state) with
   | error err =>
-      simp [hStep, Bind.bind, Except.bind]
+      simp [run, Control.Code.run, Control.Handler.ofLegacy,
+        hStep, Bind.bind, Except.bind]
   | ok evm =>
       cases hAfter :
           handler.afterInstr instr (model.withEVM state evm) with
       | error err =>
-          simp [hStep, hAfter, Bind.bind, Except.bind]
+          simp [run, Control.Code.run, Control.Handler.ofLegacy,
+            hStep, hAfter, Bind.bind, Except.bind]
       | ok final =>
-          simp only [hStep, hAfter, Bind.bind, Except.bind]
-          rw [show run model handler [] final = .ok final from rfl]
+          simp [run, Control.Code.run, Control.Handler.ofLegacy,
+            hStep, hAfter, Bind.bind, Except.bind]
 
 theorem run_append
     {σ : Type} (model : StateModel σ) (handler : Handler σ)
@@ -334,79 +547,251 @@ theorem run_append
 
 end Code
 
-mutual
-  def Block.run {σ : Type} (model : StateModel σ)
-      (handler : Handler σ) (program : Program) :
-      Nat → Block → σ → Except EVMException (OutcomeT σ)
-    | 0, _block, _state =>
-        invalid
-    | _fuel + 1, ⟨[]⟩, state =>
-        .ok (Outcome.regular state)
-    | fuel + 1, ⟨stmt :: rest⟩, state => do
+namespace Block
+
+abbrev run {σ : Type} (model : StateModel σ)
+    (handler : Handler σ) (program : Program)
+    (fuel : Nat) (block : Block) (state : σ) :
+    Except EVMException (OutcomeT σ) :=
+  Control.Block.run model
+    (Control.Handler.ofLegacy model handler)
+    program fuel block state
+
+end Block
+
+namespace Stmt
+
+abbrev runForLoop {σ : Type} (model : StateModel σ)
+    (handler : Handler σ) (program : Program) (fuel : Nat)
+    (cond : Structured.Code) (post body : Block) (state : σ) :
+    Except EVMException (OutcomeT σ) :=
+  Control.Stmt.runForLoop model
+    (Control.Handler.ofLegacy model handler)
+    program fuel cond post body state
+
+abbrev run {σ : Type} (model : StateModel σ)
+    (handler : Handler σ) (program : Program)
+    (fuel : Nat) (stmt : Stmt) (state : σ) :
+    Except EVMException (OutcomeT σ) :=
+  Control.Stmt.run model
+    (Control.Handler.ofLegacy model handler)
+    program fuel stmt state
+
+end Stmt
+
+namespace Code
+
+@[simp] theorem run_nil
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (state : σ) :
+    run model handler [] state = .ok state := rfl
+
+@[simp] theorem run_cons
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (instr : BasicInstr) (rest : Structured.Code) (state : σ) :
+    run model handler (instr :: rest) state =
+      (do
+        let evm ← instr.step (model.evm state)
+        let state' := model.withEVM state evm
+        let state'' ← handler.afterInstr instr state'
+        run model handler rest state'') := by
+  simp [run, Control.Code.run, Control.Handler.ofLegacy]
+
+theorem runCondition_eq_run_bind
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (code : Structured.Code) (state : σ) :
+    runCondition model handler code state =
+      (run model handler code state).bind (popCondition model) := rfl
+
+end Code
+
+namespace Block
+
+@[simp] theorem run_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (block : Block) (state : σ) :
+    run model handler program 0 block state = invalid := rfl
+
+@[simp] theorem run_nil
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (state : σ) :
+    run model handler program (fuel + 1) { stmts := [] } state =
+      .ok (Outcome.regular state) := rfl
+
+@[simp] theorem run_cons
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (stmt : Stmt)
+    (rest : List Stmt) (state : σ) :
+    run model handler program (fuel + 1)
+        { stmts := stmt :: rest } state =
+      (do
         let outcome ← Stmt.run model handler program fuel stmt state
         match outcome.mode with
         | .regular =>
-            Block.run model handler program fuel ⟨rest⟩ outcome.state
-        | .brk | .cont | .leave | .halt _ => .ok outcome
+            run model handler program fuel { stmts := rest } outcome.state
+        | .brk | .cont | .leave | .halt _ =>
+            .ok outcome) := rfl
 
-  def Stmt.runForLoop {σ : Type} (model : StateModel σ)
-      (handler : Handler σ) (program : Program) (fuel : Nat)
-      (cond : Structured.Code) (post body : Block) (state : σ) :
-      Except EVMException (OutcomeT σ) :=
-    match fuel with
-    | 0 =>
-        invalid
-    | fuel' + 1 =>
-        match Code.runCondition model handler cond state with
-        | .error err => .error err
-        | .ok (stateAfterCond, condTrue) =>
-            if condTrue then
-              match
-                  Block.run model handler program fuel' body stateAfterCond
-              with
-              | .error err => .error err
-              | .ok bodyOutcome =>
-                  match bodyOutcome.mode with
-                  | .brk =>
-                      .ok (Outcome.regular bodyOutcome.state)
-                  | .regular | .cont =>
-                      match
-                          Block.run model handler program fuel' post
-                            bodyOutcome.state
-                      with
-                      | .error err => .error err
-                      | .ok postOutcome =>
-                          match postOutcome.mode with
-                          | .regular =>
-                              Stmt.runForLoop model handler program fuel'
-                                cond post body postOutcome.state
-                          | .brk | .cont =>
-                              invalid
-                          | .leave | .halt _ =>
-                              .ok postOutcome
-                  | .leave | .halt _ =>
-                      .ok bodyOutcome
-            else
-              .ok (Outcome.regular stateAfterCond)
+end Block
 
-  def Stmt.run {σ : Type} (model : StateModel σ)
-      (handler : Handler σ) (program : Program) :
-      Nat → Stmt → σ → Except EVMException (OutcomeT σ)
-    | _fuel, .code code, state => do
+namespace Stmt
+
+@[simp] theorem runForLoop_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (cond : Structured.Code)
+    (post body : Block) (state : σ) :
+    runForLoop model handler program 0 cond post body state =
+      invalid := rfl
+
+@[simp] theorem runForLoop_succ
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (cond : Structured.Code)
+    (post body : Block) (state : σ) :
+    runForLoop model handler program (fuel + 1)
+        cond post body state =
+      (match Code.runCondition model handler cond state with
+       | .error err => .error err
+       | .ok result =>
+           if result.2 then
+             match
+                 Block.run model handler program fuel body result.1
+             with
+             | .error err => .error err
+             | .ok bodyOutcome =>
+                 match bodyOutcome.mode with
+                 | .brk =>
+                     .ok (Outcome.regular bodyOutcome.state)
+                 | .regular | .cont =>
+                     match
+                         Block.run model handler program fuel post
+                           bodyOutcome.state
+                     with
+                     | .error err => .error err
+                     | .ok postOutcome =>
+                         match postOutcome.mode with
+                         | .regular =>
+                             runForLoop model handler program fuel
+                               cond post body postOutcome.state
+                         | .brk | .cont =>
+                             invalid
+                         | .leave | .halt _ =>
+                             .ok postOutcome
+                 | .leave | .halt _ =>
+                     .ok bodyOutcome
+           else
+             .ok (Outcome.regular result.1)) := by
+  cases hCode :
+      Control.Code.run
+        (Control.Handler.ofLegacy model handler) cond state with
+  | error err =>
+      simp [runForLoop, Control.Stmt.runForLoop,
+        Code.runCondition, Control.Code.runCondition, Block.run, invalid,
+        hCode, Bind.bind, Except.bind]
+  | ok afterCode =>
+      cases hPop :
+          Control.Code.popCondition (M := Except EVMException)
+            model afterCode with
+      | error err =>
+          simp [runForLoop, Control.Stmt.runForLoop,
+            Code.runCondition, Control.Code.runCondition, Block.run, invalid,
+            hCode, hPop, Bind.bind, Except.bind]
+      | ok result =>
+          rcases result with ⟨stateAfterCond, condTrue⟩
+          simp [runForLoop, Control.Stmt.runForLoop,
+            Code.runCondition, Control.Code.runCondition, Block.run, invalid,
+            hCode, hPop, Bind.bind, Except.bind]
+          cases condTrue with
+          | false =>
+              rfl
+          | true =>
+              simp only [Bool.true_eq, if_true]
+              cases hBody :
+                  Control.Block.run model
+                    (Control.Handler.ofLegacy model handler)
+                    program fuel body stateAfterCond with
+              | error err =>
+                  simp [hBody]
+              | ok bodyOutcome =>
+                  cases bodyOutcome with
+                  | mk bodyState bodyMode =>
+                      cases bodyMode with
+                      | brk =>
+                          simp [hBody]
+                      | leave =>
+                          simp [hBody]
+                      | halt kind =>
+                          simp [hBody]
+                      | regular =>
+                          cases hPost :
+                              Control.Block.run model
+                                (Control.Handler.ofLegacy model handler)
+                                program fuel post bodyState with
+                          | error err =>
+                              simp [hBody, hPost]
+                          | ok postOutcome =>
+                              cases postOutcome with
+                              | mk postState postMode =>
+                                  cases postMode <;> simp [hBody, hPost]
+                      | cont =>
+                          cases hPost :
+                              Control.Block.run model
+                                (Control.Handler.ofLegacy model handler)
+                                program fuel post bodyState with
+                          | error err =>
+                              simp [hBody, hPost]
+                          | ok postOutcome =>
+                              cases postOutcome with
+                              | mk postState postMode =>
+                                  cases postMode <;> simp [hBody, hPost]
+
+@[simp] theorem run_code
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (code : Structured.Code)
+    (state : σ) :
+    run model handler program fuel (.code code) state =
+      (do
         let state' ← Code.run model handler code state
-        .ok (Outcome.regular state')
-    | 0, .if_ _cond _body, _state =>
-        invalid
-    | fuel + 1, .if_ cond body, state => do
+        .ok (Outcome.regular state')) := by
+  simp [run, Control.Stmt.run]
+
+@[simp] theorem run_if_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (cond : Structured.Code)
+    (body : Block) (state : σ) :
+    run model handler program 0 (.if_ cond body) state =
+      invalid := rfl
+
+@[simp] theorem run_if_succ
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (cond : Structured.Code)
+    (body : Block) (state : σ) :
+    run model handler program (fuel + 1) (.if_ cond body) state =
+      (do
         let (stateAfterCond, condTrue) ←
           Code.runCondition model handler cond state
         if condTrue then
           Block.run model handler program fuel body stateAfterCond
         else
-          .ok (Outcome.regular stateAfterCond)
-    | 0, .switch _scrutinee _cases _defaultBody, _state =>
-        invalid
-    | fuel + 1, .switch scrutinee cases defaultBody, state => do
+          .ok (Outcome.regular stateAfterCond)) := rfl
+
+@[simp] theorem run_switch_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (scrutinee : Structured.Code)
+    (cases : List (Word × Block)) (defaultBody : Option Block)
+    (state : σ) :
+    run model handler program 0
+        (.switch scrutinee cases defaultBody) state =
+      invalid := rfl
+
+@[simp] theorem run_switch_succ
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat)
+    (scrutinee : Structured.Code)
+    (cases : List (Word × Block)) (defaultBody : Option Block)
+    (state : σ) :
+    run model handler program (fuel + 1)
+        (.switch scrutinee cases defaultBody) state =
+      (do
         let stateAfterScrutinee ←
           Code.run model handler scrutinee state
         match (model.evm stateAfterScrutinee).stack.pop with
@@ -419,73 +804,140 @@ mutual
             match Switch.select value cases defaultBody with
             | some body =>
                 Block.run model handler program fuel body stateAfterPop
-            | none => .ok (Outcome.regular stateAfterPop)
-    | 0, .for_ _init _cond _post _body, _state =>
-        invalid
-    | fuel + 1, .for_ init cond post body, state => do
+            | none =>
+                .ok (Outcome.regular stateAfterPop)) := rfl
+
+@[simp] theorem run_for_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (init : Block) (cond : Structured.Code)
+    (post body : Block) (state : σ) :
+    run model handler program 0 (.for_ init cond post body) state =
+      invalid := rfl
+
+@[simp] theorem run_for_succ
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (init : Block)
+    (cond : Structured.Code) (post body : Block) (state : σ) :
+    run model handler program (fuel + 1)
+        (.for_ init cond post body) state =
+      (do
         let initOutcome ←
           Block.run model handler program fuel init state
         match initOutcome.mode with
         | .regular =>
-            Stmt.runForLoop model handler program fuel cond post body
+            runForLoop model handler program fuel cond post body
               initOutcome.state
         | .brk | .cont =>
             invalid
         | .leave | .halt _ =>
-            .ok initOutcome
-    | _fuel, .brk, state =>
-        .ok (Outcome.brk state)
-    | _fuel, .cont, state =>
-        .ok (Outcome.cont state)
-    | _fuel, .leave, state =>
-        match model.returns state with
-        | [] => invalid
-        | _ :: _ => .ok (Outcome.leave state)
-    | 0, .call _name, _state =>
-        invalid
-    | fuel + 1, .call name, state =>
-        match ProcList.lookup? name program.procs with
-        | none =>
-            invalid
-        | some proc =>
-            match StackFrame.splitArgs? proc.argc (model.evm state).stack with
-            | none =>
-                .error .StackUnderflow
-            | some (args, callerStack) =>
-                let callEVM := { model.evm state with stack := args }
-                let callState :=
-                  model.pushReturn
-                    (model.withEVM state callEVM) callerStack proc.retc
-                match
-                    Block.run model handler program fuel proc.body callState
-                with
-                | .error err => .error err
-                | .ok outcome =>
-                    match outcome.mode with
-                    | .regular | .leave =>
-                        match model.popReturn? outcome.state with
-                        | none => invalid
-                        | some (frame, returned) =>
-                            match
-                                StackFrame.attachReturns? frame
-                                  (model.evm outcome.state).stack
-                            with
-                            | none => invalid
-                            | some stack =>
-                                let evm :=
-                                  { model.evm outcome.state with
-                                    stack := stack }
-                                .ok
-                                  (Outcome.regular
-                                    (model.withEVM returned evm))
-                    | .brk | .cont =>
-                        invalid
-                    | .halt kind =>
-                        .ok (Outcome.halt kind outcome.state)
-    | _fuel, .terminal kind, state => do
+            .ok initOutcome) := rfl
+
+@[simp] theorem run_brk
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (state : σ) :
+    run model handler program fuel .brk state =
+      .ok (Outcome.brk state) := by
+  simp [run, Control.Stmt.run]
+
+@[simp] theorem run_cont
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (state : σ) :
+    run model handler program fuel .cont state =
+      .ok (Outcome.cont state) := by
+  simp [run, Control.Stmt.run]
+
+@[simp] theorem run_leave
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (state : σ) :
+    run model handler program fuel .leave state =
+      (match model.returns state with
+       | [] => invalid
+       | _ :: _ => .ok (Outcome.leave state)) := by
+  simp [run, Control.Stmt.run, invalid]
+
+@[simp] theorem run_call_zero
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (name : Name) (state : σ) :
+    run model handler program 0 (.call name) state =
+      invalid := rfl
+
+@[simp] theorem run_call_succ
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (name : Name) (state : σ) :
+    run model handler program (fuel + 1) (.call name) state =
+      (match ProcList.lookup? name program.procs with
+       | none =>
+           invalid
+       | some proc =>
+           match StackFrame.splitArgs? proc.argc (model.evm state).stack with
+           | none =>
+               .error .StackUnderflow
+           | some (args, callerStack) =>
+               let callEVM := { model.evm state with stack := args }
+               let callState :=
+                 model.pushReturn
+                   (model.withEVM state callEVM) callerStack proc.retc
+               match
+                   Block.run model handler program fuel proc.body callState
+               with
+               | .error err => .error err
+               | .ok outcome =>
+                   match outcome.mode with
+                   | .regular | .leave =>
+                       match model.popReturn? outcome.state with
+                       | none => invalid
+                       | some (frame, returned) =>
+                           match
+                               StackFrame.attachReturns? frame
+                                 (model.evm outcome.state).stack
+                           with
+                           | none => invalid
+                           | some stack =>
+                               let evm :=
+                                 { model.evm outcome.state with stack := stack }
+                               .ok
+                                 (Outcome.regular
+                                   (model.withEVM returned evm))
+                   | .brk | .cont =>
+                       invalid
+                   | .halt kind =>
+                       .ok (Outcome.halt kind outcome.state)) := by
+  cases hLookup : ProcList.lookup? name program.procs with
+  | none =>
+      simp [run, Control.Stmt.run, Block.run, invalid,
+        hLookup, Bind.bind, Except.bind]
+  | some proc =>
+      cases hSplit :
+          StackFrame.splitArgs? proc.argc (model.evm state).stack with
+      | none =>
+          simp [run, Control.Stmt.run, Block.run, invalid,
+            hLookup, hSplit, Bind.bind, Except.bind]
+      | some split =>
+          rcases split with ⟨args, callerStack⟩
+          let callState :=
+            model.pushReturn
+              (model.withEVM state { model.evm state with stack := args })
+              callerStack proc.retc
+          cases hBody :
+              Block.run model handler program fuel proc.body callState with
+          | error err =>
+              simp [run, Control.Stmt.run, Block.run, invalid,
+                hLookup, hSplit, callState, hBody, Bind.bind, Except.bind]
+          | ok outcome =>
+              simp [run, Control.Stmt.run, Block.run, invalid,
+                hLookup, hSplit, callState, hBody, Bind.bind, Except.bind]
+
+@[simp] theorem run_terminal
+    {σ : Type} (model : StateModel σ) (handler : Handler σ)
+    (program : Program) (fuel : Nat) (kind : Assembly.HaltKind)
+    (state : σ) :
+    run model handler program fuel (.terminal kind) state =
+      (do
         let evm ← Terminal.step kind (model.evm state)
-        .ok (Outcome.halt kind (model.withEVM state evm))
-end
+        .ok (Outcome.halt kind (model.withEVM state evm))) := by
+  simp [run, Control.Stmt.run, Control.Handler.ofLegacy]
+
+end Stmt
 
 mutual
   /--
@@ -1508,7 +1960,7 @@ mutual
                 cases hRun
                 exact Block.Eval.nil
             | cons stmt rest =>
-                unfold Block.run at hRun
+                rw [Block.run_cons] at hRun
                 cases hStmtRun :
                     Stmt.run model handler program fuel stmt state with
                 | error err =>
@@ -1554,7 +2006,7 @@ mutual
       Stmt.Eval model handler program fuel stmt state outcome := by
     cases stmt with
     | code code =>
-        unfold Stmt.run at hRun
+        rw [Stmt.run_code] at hRun
         cases hCode : Code.run model handler code state with
         | error err =>
             simp [hCode, Bind.bind, Except.bind] at hRun
@@ -1567,7 +2019,7 @@ mutual
         | zero =>
             simp [Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            rw [Stmt.run_if_succ] at hRun
             cases hCond :
                 Code.runCondition model handler cond state with
             | error err =>
@@ -1590,7 +2042,7 @@ mutual
         | zero =>
             simp [Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            rw [Stmt.run_switch_succ] at hRun
             cases hScrutinee :
                 Code.run model handler scrutinee state with
             | error err =>
@@ -1629,7 +2081,7 @@ mutual
         | zero =>
             simp [Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            rw [Stmt.run_for_succ] at hRun
             cases hInitRun :
                 Block.run model handler program fuel init state with
             | error err =>
@@ -1668,15 +2120,15 @@ mutual
                           Stmt.Eval.for_init_halt
                             (by simpa [Outcome.halt] using hInitEval)
     | brk =>
-        simp [Stmt.run] at hRun
+        rw [Stmt.run_brk] at hRun
         cases hRun
         exact Stmt.Eval.brk
     | cont =>
-        simp [Stmt.run] at hRun
+        rw [Stmt.run_cont] at hRun
         cases hRun
         exact Stmt.Eval.cont
     | leave =>
-        unfold Stmt.run at hRun
+        rw [Stmt.run_leave] at hRun
         cases hReturns : model.returns state with
         | nil =>
             simp [hReturns, invalid] at hRun
@@ -1689,7 +2141,7 @@ mutual
         | zero =>
             simp [Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run at hRun
+            rw [Stmt.run_call_succ] at hRun
             cases hLookup : ProcList.lookup? name program.procs with
             | none =>
                 simp [hLookup, Bind.bind, Except.bind, invalid] at hRun
@@ -1780,7 +2232,7 @@ mutual
                                       simpa [callState, Outcome.halt]
                                         using hBodyEval)
     | terminal kind =>
-        unfold Stmt.run at hRun
+        rw [Stmt.run_terminal] at hRun
         cases hStep : Terminal.step kind (model.evm state) with
         | error err =>
             simp [hStep] at hRun
@@ -1801,7 +2253,7 @@ mutual
     | zero =>
         simp [Stmt.runForLoop, invalid] at hRun
     | succ fuel =>
-        unfold Stmt.runForLoop at hRun
+        rw [Stmt.runForLoop_succ] at hRun
         cases hCond :
             Code.runCondition model handler cond state with
         | error err =>
@@ -2144,24 +2596,29 @@ theorem ordinary_state_runCondition
     runCondition Ordinary.runStateModel Ordinary.handler code state =
       Structured.Code.runConditionState code state := by
   unfold Structured.Code.runConditionState
-  simp only [runCondition]
-  rw [ordinary_state_run]
+  change
+    (run Ordinary.runStateModel Ordinary.handler code state).bind
+        (popCondition Ordinary.runStateModel) =
+      ((run Ordinary.evmStateModel Ordinary.handler code state.evm).bind
+          (popCondition Ordinary.evmStateModel)).bind
+        (fun result => .ok (state.withEVM result.1, result.2))
+  rw [ordinary_state_run, ordinary_evm_run]
   unfold Structured.Code.runState
   cases hRun : Structured.Code.run code state.evm with
   | error err =>
-      simp [Structured.Code.runCondition, runCondition,
-        hRun, Bind.bind, Except.bind]
+      simp [hRun, Bind.bind, Except.bind]
   | ok evm =>
-      simp [Structured.Code.runCondition, runCondition,
-        hRun, Bind.bind, Except.bind]
+      simp [hRun, Bind.bind, Except.bind]
       cases hPop : evm.stack.pop with
       | none =>
-          simp [popCondition, Structured.Code.popCondition,
+          simp [popCondition, Control.Code.popCondition,
+            Structured.Code.popCondition,
             Ordinary.evmStateModel_evm,
             Ordinary.runStateModel_evm, hPop]
       | some pair =>
           rcases pair with ⟨stack, value⟩
-          simp [popCondition, Structured.Code.popCondition,
+          simp [popCondition, Control.Code.popCondition,
+            Structured.Code.popCondition,
             Ordinary.evmStateModel_evm,
             Ordinary.evmStateModel_withEVM,
             Ordinary.runStateModel_evm,

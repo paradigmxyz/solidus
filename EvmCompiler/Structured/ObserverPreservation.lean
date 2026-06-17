@@ -353,7 +353,8 @@ theorem run_of_rel
       subst leftFinal
       exact hRel
   | cons instr rest ih =>
-      unfold ObserverSemantics.Code.run EffectSemantics.Code.run at hLeft ⊢
+      unfold ObserverSemantics.Code.run at hLeft ⊢
+      rw [EffectSemantics.Code.run_cons] at hLeft ⊢
       simp only [ObserverSemantics.stateModel_evm,
         ObserverSemantics.stateModel_withEVM] at hLeft ⊢
       cases hStepLeft : instr.step left.source.evm with
@@ -511,7 +512,8 @@ theorem runCondition_of_runBody_toCfg
   obtain ⟨afterCode, hCode, hEVM, hTrace⟩ :=
     run_of_runBody_toCfg hType hBody
   unfold Structured.Code.popCondition
-    EffectSemantics.Code.popCondition at hPop
+    EffectSemantics.Code.popCondition
+    EffectSemantics.Control.Code.popCondition at hPop
   cases hTargetPop : targetAfterCode.stack.pop with
   | none =>
       simp [hTargetPop] at hPop
@@ -525,7 +527,7 @@ theorem runCondition_of_runBody_toCfg
             { targetAfterCode with stack := stack })
       refine ⟨final, ?_, ?_, ?_⟩
       · unfold ObserverSemantics.Code.runCondition
-          EffectSemantics.Code.runCondition
+        rw [EffectSemantics.Code.runCondition_eq_run_bind]
         have hEffectCode :
             EffectSemantics.Code.run
                 (ObserverSemantics.stateModel transcript)
@@ -535,9 +537,10 @@ theorem runCondition_of_runBody_toCfg
         rw [hEffectCode]
         simp only [Bind.bind, Except.bind]
         unfold EffectSemantics.Code.popCondition
+          EffectSemantics.Control.Code.popCondition
         simp only [ObserverSemantics.stateModel_evm,
           ObserverSemantics.stateModel_withEVM]
-        rw [hEVM, hTargetPop]
+        simp [hEVM, hTargetPop, final]
       · simp [final]
       · simpa [final] using hTrace
 
@@ -632,7 +635,8 @@ theorem popCondition
       Structured.Code.popCondition target =
           .ok (targetFinal, cond) ∧
       StateRel final tokens targetFinal trace := by
-  unfold EffectSemantics.Code.popCondition at hPop
+  unfold EffectSemantics.Code.popCondition
+    EffectSemantics.Control.Code.popCondition at hPop
   simp only [ObserverSemantics.stateModel_evm,
     ObserverSemantics.stateModel_withEVM] at hPop
   cases hSourcePop : source.source.evm.stack.pop with
@@ -755,8 +759,8 @@ theorem runCondition
       Structured.Code.popCondition targetAfterCode =
           .ok (targetFinal, cond) ∧
       StateRel final tokens targetFinal traceFinal := by
-  unfold ObserverSemantics.Code.runCondition
-    EffectSemantics.Code.runCondition at hRun
+  unfold ObserverSemantics.Code.runCondition at hRun
+  rw [EffectSemantics.Code.runCondition_eq_run_bind] at hRun
   cases hCode :
       EffectSemantics.Code.run
         (ObserverSemantics.stateModel transcript)
@@ -1543,7 +1547,8 @@ theorem run_jumpi_toCfg
   simp only [Bind.bind, Except.bind, ↓reduceIte]
   unfold TypedCfg.Block.runTerm
   unfold Structured.Code.popCondition
-    EffectSemantics.Code.popCondition at hTargetPop
+    EffectSemantics.Code.popCondition
+    EffectSemantics.Control.Code.popCondition at hTargetPop
   cases hStack : targetAfterCode.stack.pop with
   | none =>
       simp [hStack] at hTargetPop

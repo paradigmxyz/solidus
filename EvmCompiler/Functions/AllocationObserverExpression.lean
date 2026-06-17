@@ -1864,15 +1864,18 @@ theorem Expr.condition_forward
       Structured.ObserverSemantics.Code.runCondition code target =
         .ok (targetFinal, value != EvmYul.UInt256.ofNat 0) := by
     unfold Structured.ObserverSemantics.Code.runCondition
-    unfold Structured.EffectSemantics.Code.runCondition
-    change
-      Structured.EffectSemantics.Code.run
-          (Structured.ObserverSemantics.stateModel transcript)
-          (Structured.ObserverSemantics.handler transcript)
-          code target =
-        .ok targetWithValue at hRun
-    rw [hRun]
-    simp [Structured.EffectSemantics.Code.popCondition, hStack,
+    rw [Structured.EffectSemantics.Code.runCondition_eq_run_bind]
+    have hEffectRun :
+        Structured.EffectSemantics.Code.run
+            (Structured.ObserverSemantics.stateModel transcript)
+            (Structured.ObserverSemantics.handler transcript)
+            code target =
+          .ok targetWithValue :=
+      hRun
+    rw [hEffectRun]
+    simp [Structured.EffectSemantics.Code.popCondition,
+      Structured.EffectSemantics.Control.Code.popCondition,
+      Bind.bind, Except.bind, hStack,
       EvmYul.Stack.pop, targetFinal, StateRel.popTarget]
   refine ⟨targetFinal, hCondition, ?_⟩
   refine
@@ -1940,15 +1943,18 @@ theorem Expr.condition_forward_runtime
           (StateRel.popTarget target.source.evm.stack targetWithValue,
             value != EvmYul.UInt256.ofNat 0) := by
     unfold Structured.ObserverSemantics.Code.runCondition
-    unfold Structured.EffectSemantics.Code.runCondition
-    change
-      Structured.EffectSemantics.Code.run
-          (Structured.ObserverSemantics.stateModel transcript)
-          (Structured.ObserverSemantics.handler transcript)
-          code target =
-        .ok targetWithValue at hRun
-    rw [hRun]
-    simp [Structured.EffectSemantics.Code.popCondition, hPop,
+    rw [Structured.EffectSemantics.Code.runCondition_eq_run_bind]
+    have hEffectRun :
+        Structured.EffectSemantics.Code.run
+            (Structured.ObserverSemantics.stateModel transcript)
+            (Structured.ObserverSemantics.handler transcript)
+            code target =
+          .ok targetWithValue :=
+      hRun
+    rw [hEffectRun]
+    simp [Structured.EffectSemantics.Code.popCondition,
+      Structured.EffectSemantics.Control.Code.popCondition,
+      Bind.bind, Except.bind, hPop,
       StateRel.popTarget]
   exact ⟨_, hCondition, hFinalInvariant⟩
 
@@ -2013,15 +2019,18 @@ theorem Expr.condition_forward_runtime_with_effect
           (StateRel.popTarget target.source.evm.stack targetWithValue,
             value != EvmYul.UInt256.ofNat 0) := by
     unfold Structured.ObserverSemantics.Code.runCondition
-    unfold Structured.EffectSemantics.Code.runCondition
-    change
-      Structured.EffectSemantics.Code.run
-          (Structured.ObserverSemantics.stateModel transcript)
-          (Structured.ObserverSemantics.handler transcript)
-          code target =
-        .ok targetWithValue at hRun
-    rw [hRun]
-    simp [Structured.EffectSemantics.Code.popCondition, hPop,
+    rw [Structured.EffectSemantics.Code.runCondition_eq_run_bind]
+    have hEffectRun :
+        Structured.EffectSemantics.Code.run
+            (Structured.ObserverSemantics.stateModel transcript)
+            (Structured.ObserverSemantics.handler transcript)
+            code target =
+          .ok targetWithValue :=
+      hRun
+    rw [hEffectRun]
+    simp [Structured.EffectSemantics.Code.popCondition,
+      Structured.EffectSemantics.Control.Code.popCondition,
+      Bind.bind, Except.bind, hPop,
       StateRel.popTarget]
   exact ⟨_, hCondition, hFinalInvariant, hEffect⟩
 

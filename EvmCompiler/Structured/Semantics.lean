@@ -568,8 +568,9 @@ mutual
                 cases hRun
                 exact Block.Eval.nil
             | cons stmt rest =>
-                unfold Block.run EffectSemantics.Block.run at hRun
-                rw [EffectSemantics.Stmt.ordinary_run] at hRun
+                unfold Block.run at hRun
+                rw [EffectSemantics.Block.run_cons,
+                  EffectSemantics.Stmt.ordinary_run] at hRun
                 cases hStmtRun : Stmt.run program fuel stmt state with
                 | error err =>
                     rw [hStmtRun] at hRun
@@ -613,8 +614,9 @@ mutual
       Stmt.Eval program fuel stmt state outcome := by
     cases stmt with
     | code code =>
-        unfold Stmt.run EffectSemantics.Stmt.run at hRun
-        rw [EffectSemantics.Code.ordinary_state_run] at hRun
+        unfold Stmt.run at hRun
+        rw [EffectSemantics.Stmt.run_code,
+          EffectSemantics.Code.ordinary_state_run] at hRun
         cases hCode : Code.runState code state with
         | error err =>
             simp [Stmt.run, EffectSemantics.Stmt.run, hCode, Bind.bind, Except.bind] at hRun
@@ -627,8 +629,9 @@ mutual
         | zero =>
             simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run EffectSemantics.Stmt.run at hRun
-            rw [EffectSemantics.Code.ordinary_state_runCondition] at hRun
+            unfold Stmt.run at hRun
+            rw [EffectSemantics.Stmt.run_if_succ,
+              EffectSemantics.Code.ordinary_state_runCondition] at hRun
             cases hCond : Code.runConditionState cond state with
             | error err =>
                 rw [hCond] at hRun
@@ -650,8 +653,9 @@ mutual
         | zero =>
             simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run EffectSemantics.Stmt.run at hRun
-            rw [EffectSemantics.Code.ordinary_state_run] at hRun
+            unfold Stmt.run at hRun
+            rw [EffectSemantics.Stmt.run_switch_succ,
+              EffectSemantics.Code.ordinary_state_run] at hRun
             cases hScrutinee : Code.runState scrutinee state with
             | error err =>
                 simp [hScrutinee, Bind.bind, Except.bind] at hRun
@@ -685,8 +689,9 @@ mutual
         | zero =>
             simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run EffectSemantics.Stmt.run at hRun
-            rw [EffectSemantics.Block.ordinary_run] at hRun
+            unfold Stmt.run at hRun
+            rw [EffectSemantics.Stmt.run_for_succ,
+              EffectSemantics.Block.ordinary_run] at hRun
             cases hInitRun : Block.run program fuel init state with
             | error err =>
                 simp [hInitRun, Bind.bind, Except.bind] at hRun
@@ -724,15 +729,18 @@ mutual
                           Stmt.Eval.for_init_halt
                             (by simpa [Outcome.halt] using hInitEval)
     | brk =>
-        simp [Stmt.run, EffectSemantics.Stmt.run] at hRun
+        unfold Stmt.run at hRun
+        rw [EffectSemantics.Stmt.run_brk] at hRun
         cases hRun
         exact Stmt.Eval.brk
     | cont =>
-        simp [Stmt.run, EffectSemantics.Stmt.run] at hRun
+        unfold Stmt.run at hRun
+        rw [EffectSemantics.Stmt.run_cont] at hRun
         cases hRun
         exact Stmt.Eval.cont
     | leave =>
-        unfold Stmt.run EffectSemantics.Stmt.run at hRun
+        unfold Stmt.run at hRun
+        rw [EffectSemantics.Stmt.run_leave] at hRun
         simp only [EffectSemantics.Ordinary.runStateModel_returns] at hRun
         cases hReturns : state.returns with
         | nil =>
@@ -746,7 +754,8 @@ mutual
         | zero =>
             simp [Stmt.run, EffectSemantics.Stmt.run, invalid] at hRun
         | succ fuel =>
-            unfold Stmt.run EffectSemantics.Stmt.run at hRun
+            unfold Stmt.run at hRun
+            rw [EffectSemantics.Stmt.run_call_succ] at hRun
             simp only [EffectSemantics.Ordinary.runStateModel_evm,
               EffectSemantics.Ordinary.runStateModel_withEVM,
               EffectSemantics.Ordinary.runStateModel_pushReturn,
@@ -848,7 +857,9 @@ mutual
                                       simpa [callState, Outcome.halt]
                                         using hBodyEval)
     | terminal kind =>
-        simp only [Stmt.run, EffectSemantics.Stmt.run,
+        unfold Stmt.run at hRun
+        rw [EffectSemantics.Stmt.run_terminal] at hRun
+        simp only [
           EffectSemantics.Ordinary.runStateModel_evm,
           EffectSemantics.Ordinary.runStateModel_withEVM] at hRun
         cases hStep : Terminal.step kind state.evm with
@@ -868,8 +879,9 @@ mutual
     | zero =>
         simp [Stmt.runForLoop, EffectSemantics.Stmt.runForLoop, invalid] at hRun
     | succ fuel =>
-        unfold Stmt.runForLoop EffectSemantics.Stmt.runForLoop at hRun
-        rw [EffectSemantics.Code.ordinary_state_runCondition] at hRun
+        unfold Stmt.runForLoop at hRun
+        rw [EffectSemantics.Stmt.runForLoop_succ,
+          EffectSemantics.Code.ordinary_state_runCondition] at hRun
         cases hCond : Code.runConditionState cond state with
         | error err =>
             simp [hCond, Bind.bind, Except.bind] at hRun

@@ -144,7 +144,7 @@ theorem run_push {transcript : Trace}
         (AllocationObserverRelation.StateRel.pushTargetBy
           33 value target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Assembly.Target.stepInstr,
     Structured.ObserverSemantics.stateModel_evm,
     Structured.ObserverSemantics.stateModel_withEVM,
@@ -178,7 +178,7 @@ theorem run_dup {transcript : Trace}
         Assembly.ResourceObserver.ofPrimOp?,
         Assembly.PrimOp.continuingStep?] at hStep ⊢
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -208,7 +208,7 @@ theorem run_pop {transcript : Trace}
         (AllocationObserverRelation.StateRel.replaceStackBy
           1 rest target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -341,7 +341,7 @@ theorem run_swap {transcript : Trace}
     exact List.length_take_of_le hTakeBound
   have hSwap := swap_stack_eq_set (value := value) hGet
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -693,7 +693,7 @@ theorem run_add {transcript : Trace}
         (AllocationObserverRelation.StateRel.contractTargetBy
           1 (EvmYul.UInt256.add right left) rest target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -724,7 +724,7 @@ theorem run_sub {transcript : Trace}
         (AllocationObserverRelation.StateRel.contractTargetBy
           1 (EvmYul.UInt256.sub left right) rest target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -758,7 +758,7 @@ theorem run_mload {transcript : Trace}
         (AllocationObserverRelation.StateRel.contractTargetBy
           1 value rest target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -791,7 +791,7 @@ theorem run_mstore {transcript : Trace}
         (AllocationObserverRelation.StateRel.mstoreTarget
           address value rest target) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim,
     Structured.ObserverSemantics.stateModel_evm]
@@ -826,7 +826,7 @@ theorem run_gas {transcript : Trace}
         (AllocationObserverRelation.StateRel.pushTarget
           value targetConsumed) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim]
   simp only [Structured.BasicOp.toPrimOp]
@@ -865,7 +865,7 @@ theorem run_gas_none {transcript : Trace}
     Structured.ObserverSemantics.Code.run [.op .gas] target =
       .error .InvalidInstruction := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim, Structured.BasicOp.toPrimOp]
   have hGasStep :
@@ -921,7 +921,7 @@ theorem run_msize {transcript : Trace}
         (AllocationObserverRelation.StateRel.pushTarget
           value targetConsumed) := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim]
   simp only [Structured.BasicOp.toPrimOp]
@@ -960,7 +960,7 @@ theorem run_msize_none {transcript : Trace}
     Structured.ObserverSemantics.Code.run [.op .msize] target =
       .error .InvalidInstruction := by
   unfold Structured.ObserverSemantics.Code.run
-    Structured.EffectSemantics.Code.run
+  rw [Structured.EffectSemantics.Code.run_cons]
   simp only [Structured.BasicInstr.step, Structured.BasicOp.step,
     Assembly.Target.stepInstr_prim, Structured.BasicOp.toPrimOp]
   have hMsizeStep :

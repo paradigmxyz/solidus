@@ -612,6 +612,7 @@ theorem condition_of_step
                         false) := by
                 unfold Structured.Code.popCondition
                   EffectSemantics.Code.popCondition
+                  EffectSemantics.Control.Code.popCondition
                 simp [hStack, EvmYul.Stack.pop, hBne]
               obtain ⟨final, hCond, hFinalRel⟩ :=
                 Code.runCondition_of_runBody_toCfg
@@ -634,6 +635,7 @@ theorem condition_of_step
                         true) := by
                 unfold Structured.Code.popCondition
                   EffectSemantics.Code.popCondition
+                  EffectSemantics.Control.Code.popCondition
                 simp [hStack, EvmYul.Stack.pop, hBne]
               obtain ⟨final, hCond, hFinalRel⟩ :=
                 Code.runCondition_of_runBody_toCfg

@@ -405,7 +405,8 @@ theorem run_returns_eq
       cases hRun
       rfl
   | cons instr rest ih =>
-      unfold run Structured.EffectSemantics.Code.run at hRun
+      unfold run at hRun
+      rw [Structured.EffectSemantics.Code.run_cons] at hRun
       simp only [stateModel_evm, stateModel_withEVM] at hRun
       cases hStep : instr.step state.source.evm with
       | error err =>
@@ -465,7 +466,8 @@ theorem runCondition_returns_eq
     {state final : State transcript} {cond : Bool}
     (hRun : runCondition code state = .ok (final, cond)) :
     final.source.returns = state.source.returns := by
-  unfold runCondition Structured.EffectSemantics.Code.runCondition at hRun
+  unfold runCondition at hRun
+  rw [Structured.EffectSemantics.Code.runCondition_eq_run_bind] at hRun
   cases hCode :
       Structured.EffectSemantics.Code.run
         (stateModel transcript) (handler transcript) code state with
@@ -473,7 +475,8 @@ theorem runCondition_returns_eq
       simp [hCode, Bind.bind, Except.bind] at hRun
   | ok middle =>
       simp only [hCode, Bind.bind, Except.bind] at hRun
-      unfold Structured.EffectSemantics.Code.popCondition at hRun
+      unfold Structured.EffectSemantics.Code.popCondition
+        Structured.EffectSemantics.Control.Code.popCondition at hRun
       cases hPop : middle.source.evm.stack.pop with
       | none =>
           simp [hPop] at hRun

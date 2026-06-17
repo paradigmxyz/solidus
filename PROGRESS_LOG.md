@@ -30780,3 +30780,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   derives lowering, typing, acceptance, and PC-fit evidence internally. The
   full verification root, open-effects smoke and axiom output, architecture
   and hole checks, and `git diff --check` all pass.
+- 2026-06-17 04:08:06 PDT - compaction-resume - Resumed at the horizontal
+  `Structured → TypedCfg` boundary. The immediate task is to finish the shared
+  monad-polymorphic control kernel and compatibility equations, then instantiate
+  it with open CALL/CREATE effects without introducing a second recursive
+  interpreter.
+- 2026-06-17 04:32:17 PDT - architecture/structured-control-kernel - Replaced
+  the Structured layer's closed recursive evaluator with one
+  monad-polymorphic control kernel whose handler owns complete primitive and
+  terminal steps. Ordinary execution and resource replay remain compatibility
+  specializations through stable reduction equations; all downstream
+  Structured, Locals, Functions, observer, adequacy, and compiler proofs were
+  migrated off direct recursive unfolding. The full verification root,
+  architecture, hole, axiom, and diff checks pass.

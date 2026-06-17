@@ -318,8 +318,8 @@ theorem frameReflectingAt
           have hTailType :
               TypedCfgCompiler.Code.type? rest middle = some output := by
             simpa [hHeadType, hSafe] using hType
-          unfold ObserverSemantics.Code.run
-            EffectSemantics.Code.run at hFramed
+          unfold ObserverSemantics.Code.run at hFramed
+          rw [EffectSemantics.Code.run_cons] at hFramed
           simp only [ObserverSemantics.stateModel_evm,
             ObserverSemantics.stateModel_withEVM] at hFramed
           simp only [ObserverSemantics.Code.withHidden_source,
@@ -436,7 +436,7 @@ theorem frameReflectingAt
                     ih middle hTailType hAfterBound hExpectedTail
                   refine ⟨final, ?_, ?_⟩
                   · unfold ObserverSemantics.Code.run
-                      EffectSemantics.Code.run
+                    rw [EffectSemantics.Code.run_cons]
                     simp only [ObserverSemantics.stateModel_evm,
                       ObserverSemantics.stateModel_withEVM]
                     rw [hSourceStep]
@@ -605,6 +605,7 @@ theorem runCondition_of_runBody_toCfg
               (final,
                 value != EvmYul.UInt256.ofNat 0) := by
         unfold EffectSemantics.Code.popCondition
+          EffectSemantics.Control.Code.popCondition
         simp only [ObserverSemantics.stateModel_evm,
           ObserverSemantics.stateModel_withEVM]
         rw [hAfterStack]
@@ -629,7 +630,7 @@ theorem runCondition_of_runBody_toCfg
           ObserverPreservation.StateRel.At.ofFits hFinalRel
             (by simpa [final, hAfterStack] using hTailFits)⟩
       · unfold ObserverSemantics.Code.runCondition
-          EffectSemantics.Code.runCondition
+        rw [EffectSemantics.Code.runCondition_eq_run_bind]
         have hEffectRun :
             EffectSemantics.Code.run
                 (ObserverSemantics.stateModel transcript)
@@ -737,7 +738,8 @@ theorem runCondition_of_runBody_toCfg_noFrames
       targetAfter.stack = after.source.evm.stack :=
     Assembly.SameRuntimeData.stack_eq hSame
   unfold Structured.Code.popCondition
-    EffectSemantics.Code.popCondition at hPop
+    EffectSemantics.Code.popCondition
+    EffectSemantics.Control.Code.popCondition at hPop
   cases hTargetStack : targetAfter.stack with
   | nil =>
       simp [hTargetStack, EvmYul.Stack.pop] at hPop
@@ -753,7 +755,7 @@ theorem runCondition_of_runBody_toCfg_noFrames
             { after.source.evm with stack := stack })
       refine ⟨final, ?_, ?_⟩
       · unfold ObserverSemantics.Code.runCondition
-          EffectSemantics.Code.runCondition
+        rw [EffectSemantics.Code.runCondition_eq_run_bind]
         have hEffectRun :
             EffectSemantics.Code.run
                 (ObserverSemantics.stateModel transcript)
@@ -764,6 +766,7 @@ theorem runCondition_of_runBody_toCfg_noFrames
         rw [hEffectRun]
         simp only [Bind.bind, Except.bind]
         unfold EffectSemantics.Code.popCondition
+          EffectSemantics.Control.Code.popCondition
         simp only [ObserverSemantics.stateModel_evm,
           ObserverSemantics.stateModel_withEVM]
         rw [hSourceStack]
@@ -3982,6 +3985,7 @@ theorem outcome_if_false_of_compileStmtFuel?_and_step
                                     false) := by
                             unfold Structured.Code.popCondition
                               EffectSemantics.Code.popCondition
+                              EffectSemantics.Control.Code.popCondition
                             simp [hStack, EvmYul.Stack.pop, hBne]
                           obtain ⟨final, hCond, hFinalRel⟩ :=
                             Code.runCondition_of_runBody_toCfg
@@ -4159,6 +4163,7 @@ theorem condition_if_true_of_compileStmtFuel?_and_step
                                     true) := by
                             unfold Structured.Code.popCondition
                               EffectSemantics.Code.popCondition
+                              EffectSemantics.Control.Code.popCondition
                             simp [hStack, EvmYul.Stack.pop, hBne]
                           obtain ⟨final, hCond, hFinalRel⟩ :=
                             Code.runCondition_of_runBody_toCfg
@@ -4383,6 +4388,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                                     false) := by
                             unfold Structured.Code.popCondition
                               EffectSemantics.Code.popCondition
+                              EffectSemantics.Control.Code.popCondition
                             simp [hStack, EvmYul.Stack.pop, hBne]
                           obtain ⟨final, hCond, hFinalRel⟩ :=
                             Code.runCondition_of_runBody_toCfg
@@ -4412,6 +4418,7 @@ theorem condition_if_of_compileStmtFuel?_and_step
                                     true) := by
                             unfold Structured.Code.popCondition
                               EffectSemantics.Code.popCondition
+                              EffectSemantics.Control.Code.popCondition
                             simp [hStack, EvmYul.Stack.pop, hBne]
                           obtain ⟨final, hCond, hFinalRel⟩ :=
                             Code.runCondition_of_runBody_toCfg

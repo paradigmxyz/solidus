@@ -263,7 +263,9 @@ theorem popCondition
           let targetFinal : EVMState :=
             { target with stack := realizedTail }
           refine ⟨targetFinal, ?_, ?_⟩
-          · simp [Structured.Code.popCondition, EffectSemantics.Code.popCondition, targetFinal,
+          · simp [Structured.Code.popCondition,
+              EffectSemantics.Code.popCondition,
+              EffectSemantics.Control.Code.popCondition, targetFinal,
               hTargetStack, EvmYul.Stack.pop]
           · refine ⟨realizedTail, hTailRealize, ?_⟩
             have hAfter :=
@@ -1114,21 +1116,32 @@ theorem runCondition
     (hRel : StateRel source tokens target) :
     ∃ targetFinal,
       Structured.Code.runConditionState code (source.withEVM target) =
-          .ok (source.withEVM targetFinal, cond) ∧
+        .ok (source.withEVM targetFinal, cond) ∧
         StateRel final tokens targetFinal := by
   unfold Structured.Code.runConditionState at hRun
-  unfold Structured.Code.runCondition EffectSemantics.Code.runCondition at hRun
+  change
+    (EffectSemantics.Code.runCondition
+        EffectSemantics.Ordinary.evmStateModel
+        EffectSemantics.Ordinary.handler code source.evm).bind
+        (fun result => .ok (source.withEVM result.1, result.2)) =
+      .ok (final, cond) at hRun
+  rw [EffectSemantics.Code.runCondition_eq_run_bind,
+    EffectSemantics.Code.ordinary_evm_run] at hRun
   cases hSourceCode : Structured.Code.run code source.evm with
   | error err =>
       simp [hSourceCode, Bind.bind, Except.bind] at hRun
   | ok afterCode =>
       cases hSourcePop : afterCode.stack.pop with
       | none =>
-          simp [hSourceCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hSourcePop,
+          simp [hSourceCode, Structured.Code.popCondition,
+            EffectSemantics.Code.popCondition,
+            EffectSemantics.Control.Code.popCondition, hSourcePop,
             Bind.bind, Except.bind] at hRun
       | some popped =>
           rcases popped with ⟨stack, value⟩
-          simp [hSourceCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hSourcePop,
+          simp [hSourceCode, Structured.Code.popCondition,
+            EffectSemantics.Code.popCondition,
+            EffectSemantics.Control.Code.popCondition, hSourcePop,
             Bind.bind, Except.bind] at hRun
           rcases hRun with ⟨hFinal, hCond⟩
           subst final
@@ -1151,13 +1164,8 @@ theorem runCondition
                   (targetFinal,
                     value != EvmYul.UInt256.ofNat 0) := by
             unfold Structured.Code.runCondition
-            unfold EffectSemantics.Code.runCondition
-            change
-              EffectSemantics.Code.run
-                  EffectSemantics.Ordinary.evmStateModel
-                  EffectSemantics.Ordinary.handler code target =
-                .ok targetAfterCode at hTargetCode
-            rw [hTargetCode]
+            rw [EffectSemantics.Code.runCondition_eq_run_bind,
+              EffectSemantics.Code.ordinary_evm_run, hTargetCode]
             change
               EffectSemantics.Code.popCondition
                   EffectSemantics.Ordinary.evmStateModel targetAfterCode =
@@ -1590,16 +1598,16 @@ theorem runBody_toCfg
             simp only [TypedCfgCompiler.Code.toCfg, List.map_cons]
             unfold TypedCfg.Block.runBody
             rw [BasicInstr.runAt_toCfg hHeadType]
+            unfold Structured.Code.run
+            rw [EffectSemantics.Code.run_cons]
             cases hStep : instr.step state with
             | error err =>
                 simp only [hStep, Except.map, Bind.bind, Except.bind,
-                  Structured.Code.run, EffectSemantics.Code.run,
                   EffectSemantics.Ordinary.evmStateModel_evm,
                   EffectSemantics.Ordinary.evmStateModel_withEVM,
                   EffectSemantics.Ordinary.handler_afterInstr]
             | ok state' =>
                 simp only [hStep, Except.map, Bind.bind, Except.bind,
-                  Structured.Code.run, EffectSemantics.Code.run,
                   EffectSemantics.Ordinary.evmStateModel_evm,
                   EffectSemantics.Ordinary.evmStateModel_withEVM,
                   EffectSemantics.Ordinary.handler_afterInstr]
@@ -1643,18 +1651,29 @@ theorem run_jumpi_toCfg
       .ok
         (.jump (if cond then target else fallthrough) final.evm) := by
   unfold Structured.Code.runConditionState at hCond
-  unfold Structured.Code.runCondition EffectSemantics.Code.runCondition at hCond
+  change
+    (EffectSemantics.Code.runCondition
+        EffectSemantics.Ordinary.evmStateModel
+        EffectSemantics.Ordinary.handler code state.evm).bind
+        (fun result => .ok (state.withEVM result.1, result.2)) =
+      .ok (final, cond) at hCond
+  rw [EffectSemantics.Code.runCondition_eq_run_bind,
+    EffectSemantics.Code.ordinary_evm_run] at hCond
   cases hCode : Structured.Code.run code state.evm with
   | error err =>
       simp [hCode, Bind.bind, Except.bind] at hCond
   | ok afterCode =>
       cases hPop : afterCode.stack.pop with
       | none =>
-          simp [hCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hPop,
+          simp [hCode, Structured.Code.popCondition,
+            EffectSemantics.Code.popCondition,
+            EffectSemantics.Control.Code.popCondition, hPop,
             Bind.bind, Except.bind] at hCond
       | some popped =>
           rcases popped with ⟨stack, value⟩
-          simp [hCode, Structured.Code.popCondition, EffectSemantics.Code.popCondition, hPop,
+          simp [hCode, Structured.Code.popCondition,
+            EffectSemantics.Code.popCondition,
+            EffectSemantics.Control.Code.popCondition, hPop,
             Bind.bind, Except.bind] at hCond
           rcases hCond with ⟨hFinal, hBool⟩
           subst final

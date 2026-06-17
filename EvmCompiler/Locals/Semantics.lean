@@ -142,7 +142,6 @@ theorem run_replicate_pop_ok (state : EVMState) :
                 Assembly.Target.stepInstr, Assembly.PrimOp.step,
                 Assembly.PrimStep.run, Assembly.PrimOp.continuingStep?,
                 EvmYul.Stack.pop, List.replicate_succ] at hRun
-              cases hRun
           | cons top rest =>
               let state0 : EVMState :=
                 { toSharedState := shared, pc := pc, stack := top :: rest,

@@ -116,8 +116,8 @@ theorem shapeSound (code : Structured.Code) : ShapeSound code := by
           have hTailType :
               TypedCfgCompiler.Code.type? rest middle = some output := by
             simpa [hHeadType, hSafe] using hType
-          unfold ObserverSemantics.Code.run
-            EffectSemantics.Code.run at hRun
+          unfold ObserverSemantics.Code.run at hRun
+          rw [EffectSemantics.Code.run_cons] at hRun
           simp only [ObserverSemantics.stateModel_evm,
             ObserverSemantics.stateModel_withEVM] at hRun
           cases hStep : instr.step source.source.evm with
@@ -193,8 +193,8 @@ theorem sourceFrameFits
           have hTailType :
               TypedCfgCompiler.Code.type? rest middle = some output := by
             simpa [hHeadType, hSafe] using hType
-          unfold ObserverSemantics.Code.run
-            EffectSemantics.Code.run at hRun
+          unfold ObserverSemantics.Code.run at hRun
+          rw [EffectSemantics.Code.run_cons] at hRun
           simp only [ObserverSemantics.stateModel_evm,
             ObserverSemantics.stateModel_withEVM] at hRun
           cases hStep : instr.step source.source.evm with
