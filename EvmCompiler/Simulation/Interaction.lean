@@ -1350,6 +1350,205 @@ theorem executes
 
 end Rel
 
+/--
+Forward open-world refinement with an explicit source-side truncation error.
+
+Before truncation, the source and target expose the exact same query and all
+exact shared answers remain related. A truncated source computation carries no
+claim about the target suffix. This is the appropriate relation for
+fuel-indexed source semantics when compiler expansion changes the amount of
+target fuel needed to realize one source control step.
+-/
+inductive ForwardRel
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    (truncated : Error₁ → Prop)
+    (doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop) :
+    Interaction Error₁ Result₁ →
+    Interaction Error₂ Result₂ → Prop where
+  | truncated {error : Error₁}
+      {right : Interaction Error₂ Result₂} :
+      truncated error →
+      ForwardRel truncated doneRel (.done (.error error)) right
+  | done {left : Except Error₁ Result₁}
+      {right : Except Error₂ Result₂} :
+      doneRel left right →
+      ForwardRel truncated doneRel (.done left) (.done right)
+  | request {query : Query}
+      {left : Answer query → Interaction Error₁ Result₁}
+      {right : Answer query → Interaction Error₂ Result₂} :
+      (∀ answer,
+        ForwardRel truncated doneRel (left answer) (right answer)) →
+      ForwardRel truncated doneRel
+        (.request query left) (.request query right)
+
+namespace ForwardRel
+
+theorem ofRel
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : Rel doneRel left right) :
+    ForwardRel truncated doneRel left right := by
+  induction hRel with
+  | done hDone =>
+      exact .done hDone
+  | request hResume ih =>
+      exact .request ih
+
+theorem mono
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel₁ doneRel₂ :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (hRel : ForwardRel truncated doneRel₁ left right)
+    (hDone :
+      ∀ leftDone rightDone,
+        doneRel₁ leftDone rightDone →
+          doneRel₂ leftDone rightDone) :
+    ForwardRel truncated doneRel₂ left right := by
+  induction hRel with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | done hRelated =>
+      exact .done (hDone _ _ hRelated)
+  | request hResume ih =>
+      exact .request ih
+
+theorem bind
+    {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
+    {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}
+    {truncated : Error₁ → Prop}
+    {errorRel : Error₁ → Error₂ → Prop}
+    {sourceRel : Source₁ → Source₂ → Prop}
+    {targetRel : Target₁ → Target₂ → Prop}
+    {left : Interaction Error₁ Source₁}
+    {right : Interaction Error₂ Source₂}
+    {leftNext : Source₁ → Interaction Error₁ Target₁}
+    {rightNext : Source₂ → Interaction Error₂ Target₂}
+    (hResult :
+      ForwardRel truncated (ExceptRel errorRel sourceRel) left right)
+    (hNext :
+      ∀ leftValue rightValue,
+        sourceRel leftValue rightValue →
+          ForwardRel truncated (ExceptRel errorRel targetRel)
+            (leftNext leftValue) (rightNext rightValue)) :
+    ForwardRel truncated (ExceptRel errorRel targetRel)
+      (Interaction.bind left leftNext)
+      (Interaction.bind right rightNext) := by
+  induction hResult with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | done hDone =>
+      cases hDone with
+      | error hError =>
+          exact .done (.error hError)
+      | ok hValue =>
+          exact hNext _ _ hValue
+  | request hResume ih =>
+      exact .request ih
+
+theorem bind_custom
+    {Error₁ : Type u1} {Source₁ : Type v1} {Target₁ : Type w1}
+    {Error₂ : Type u2} {Source₂ : Type v2} {Target₂ : Type w2}
+    {truncated : Error₁ → Prop}
+    {sourceDoneRel :
+      Except Error₁ Source₁ → Except Error₂ Source₂ → Prop}
+    {targetDoneRel :
+      Except Error₁ Target₁ → Except Error₂ Target₂ → Prop}
+    {left : Interaction Error₁ Source₁}
+    {right : Interaction Error₂ Source₂}
+    {leftNext : Source₁ → Interaction Error₁ Target₁}
+    {rightNext : Source₂ → Interaction Error₂ Target₂}
+    (hResult : ForwardRel truncated sourceDoneRel left right)
+    (hNext :
+      ∀ leftDone rightDone,
+        sourceDoneRel leftDone rightDone →
+          ForwardRel truncated targetDoneRel
+            (match leftDone with
+            | .error error => .done (.error error)
+            | .ok value => leftNext value)
+            (match rightDone with
+            | .error error => .done (.error error)
+            | .ok value => rightNext value)) :
+    ForwardRel truncated targetDoneRel
+      (Interaction.bind left leftNext)
+      (Interaction.bind right rightNext) := by
+  induction hResult with
+  | truncated hTruncated =>
+      exact .truncated hTruncated
+  | @done leftDone rightDone hDone =>
+      cases leftDone <;> cases rightDone <;>
+        simpa [Interaction.bind] using
+          hNext _ _ hDone
+  | request hResume ih =>
+      exact .request ih
+
+/--
+Every non-truncated concrete source execution is reproduced by the target with
+the exact same ordered query/answer transcript.
+-/
+theorem executes
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    {transcript : Transcript}
+    {leftOutcome : Except Error₁ Result₁}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hExec : Executes left transcript leftOutcome)
+    (hNotTruncated :
+      ∀ error, leftOutcome = .error error → ¬ truncated error) :
+    ∃ rightOutcome,
+      Executes right transcript rightOutcome ∧
+        doneRel leftOutcome rightOutcome := by
+  induction hExec generalizing right with
+  | done outcome =>
+      cases hRel with
+      | truncated hTruncated =>
+          exact False.elim (hNotTruncated _ rfl hTruncated)
+      | done hDone =>
+          exact ⟨_, Executes.done _, hDone⟩
+  | request answer tail ih =>
+      cases hRel with
+      | request hResume =>
+          obtain ⟨rightOutcome, hRight, hDone⟩ :=
+            ih (hResume answer) hNotTruncated
+          exact
+            ⟨rightOutcome, Executes.request answer hRight, hDone⟩
+
+theorem executes_ok
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    {transcript : Transcript}
+    {leftResult : Result₁}
+    (hRel : ForwardRel truncated doneRel left right)
+    (hExec : Executes left transcript (.ok leftResult)) :
+    ∃ rightOutcome,
+      Executes right transcript rightOutcome ∧
+        doneRel (.ok leftResult) rightOutcome := by
+  apply executes hRel hExec
+  intro error hError
+  cases hError
+
+end ForwardRel
+
 /-- A deterministic client for the open interaction tree. -/
 abbrev Strategy := (query : Query) → Answer query
 
@@ -1375,6 +1574,28 @@ theorem Rel.interpret
       exact hDone
   | @request query left right hResume ih =>
       exact ih (strategy query)
+
+theorem ForwardRel.interpret
+    {Error₁ : Type u1} {Result₁ : Type v1}
+    {Error₂ : Type u2} {Result₂ : Type v2}
+    {truncated : Error₁ → Prop}
+    {doneRel :
+      Except Error₁ Result₁ → Except Error₂ Result₂ → Prop}
+    {left : Interaction Error₁ Result₁}
+    {right : Interaction Error₂ Result₂}
+    (strategy : Strategy)
+    (hRel : ForwardRel truncated doneRel left right)
+    (hNotTruncated :
+      ∀ error, interpret strategy left = .error error →
+        ¬ truncated error) :
+    doneRel (interpret strategy left) (interpret strategy right) := by
+  induction hRel with
+  | truncated hTruncated =>
+      exact False.elim (hNotTruncated _ rfl hTruncated)
+  | done hDone =>
+      exact hDone
+  | @request query left right hResume ih =>
+      exact ih (strategy query) hNotTruncated
 
 end Interaction
 

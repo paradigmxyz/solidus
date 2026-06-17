@@ -31164,3 +31164,34 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check` pass. New public theorems depend only on `propext`,
   `Classical.choice`, and `Quot.sound`; only pre-existing module-size debt
   remains.
+- 2026-06-17 13:12:58 PDT - theorem-boundary/locals-calls - Source audit
+  confirmed that Locals `.call`, `.exprs`, `assignTop`, promotion, and explicit
+  cleanup form the lower stack protocol emitted by Functions and are
+  intentionally rejected by stack-free `Locals.SourceWF`. Internal calls must
+  therefore be proved by the Functions allocation owner; adding an operand
+  stack to canonical Locals would violate the named-environment abstraction.
+  Locals remains responsible for source-owned control and for external
+  CALL/CREATE primitive effects.
+- 2026-06-17 13:14:31 PDT - compaction-resume - resumed the horizontal CALL/CREATE proof at the Locals source-owned control boundary; the immediate obligation is an honest pass-owned fuel translation for one source statement lowering to multiple Expressions statements.
+- 2026-06-17 13:27:00 PDT - theorem-boundary/locals-fuel - rejected exact
+  `Interaction.Rel` between differently fuelled Locals and Expressions trees:
+  one fixed conservative target budget can leave branch-dependent slack after
+  source fuel exhaustion because statement expansion varies by control path.
+  The replacement interface must treat meta-level fuel truncation as bottom
+  while retaining exact query equality and universal continuations before
+  truncation; every terminating source execution must still transport to an
+  exact target transcript and related terminal outcome.
+- 2026-06-17 13:27:00 PDT - oracle - submitted the Locals open-fuel interface
+  critique as `resp_0a08e2b1e87dd33b006a33005d5b248199bead3d8358e2859d`;
+  the request failed with insufficient API quota, so no oracle advice was used.
+- 2026-06-17 13:43:00 PDT - proof/open-forward-refinement - added the shared
+  `Simulation.Interaction.ForwardRel` relation with exact matching queries and
+  universal continuations before explicit source truncation, plus `ofRel`,
+  `mono`, `bind`, `bind_custom`, exact-transcript `executes`/`executes_ok`, and
+  deterministic-world `interpret`. Verification passed with
+  `lake build EvmCompiler.Simulation.Interaction`,
+  `lake env lean EvmCompiler/Verification.lean`,
+  `bash scripts/check_architecture.sh`, a touched-Lean hole scan, and
+  `git diff --check`. Axiom audits for the new public lemmas report only
+  `[propext, Quot.sound]`; architecture debt is limited to the pre-existing
+  oversized legacy observer modules.

@@ -767,8 +767,11 @@ Exit: the shared core builds with no compiler layer changed.
   - [x] Recursive Locals expression and expression-sequence preservation,
     including initialized named-local lookup, exact result arity, arbitrary
     target runtime control, and ordered open effects.
-  - [ ] Recursive Locals statement, block, loop, call, and program
-    preservation.
+  - [ ] Recursive source-owned Locals statement, scoped-block, loop,
+    terminal, and program preservation. Internal `.call`, `.exprs`,
+    `assignTop`, promotion, and explicit cleanup are lower stack-protocol
+    constructs owned by the Functions allocation boundary, not by the
+    stack-free Locals source semantics.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -812,11 +815,19 @@ Exit: every layer exposes one canonical open computation.
   - [x] Recursive compiler-owned Locals expression composition.
   - [x] Transparent whole-program Expressions-to-Structured open
     preservation, including loops and internal calls.
-  - [ ] Recursive compiler-owned statement and control composition.
+  - [ ] Recursive compiler-owned source-Locals statement and control
+    composition.
 - [ ] Functions -> allocated Locals/Expressions.
+  - [ ] Own the emitted internal-call and stack-protocol constructs rather
+    than extending stack-free Locals with an operand stack.
 - [ ] Yul -> Functions.
 
 Every boundary proves exact query equality and universal continuation
+before source fuel truncation. Boundaries whose lowering changes control-step
+cost use the shared `Simulation.Interaction.ForwardRel`; its execution theorem
+recovers the exact ordered transcript and related outcome for every
+non-truncated source run. Fuel-preserving boundaries continue to expose exact
+`Simulation.Interaction.Rel`.
 preservation.
 
 The allocation boundary additionally proves CALL/CREATE memory and spill
