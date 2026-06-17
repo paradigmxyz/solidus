@@ -785,6 +785,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Stable entry/final-context mode-indexed outcome relation, with
       compiler-facing `break`, `continue`, and `leave` preservation through
       the actual emitted cleanup blocks.
+    - [x] Terminal frame theorem plus compiler-facing plain and
+      argument-bearing terminal preservation; bare source-owned terminals are
+      restricted to zero-argument halt kinds.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -838,6 +841,8 @@ Exit: every layer exposes one canonical open computation.
       break/continue/leave and scoped-block composition.
     - [x] `break`, `continue`, and `leave` composed through ordinary compiler
       decomposition facts and the shared mode-indexed outcome relation.
+    - [x] Plain and argument-bearing terminals composed through the same
+      outcome relation, with arbitrary caller stack suffixes protected.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

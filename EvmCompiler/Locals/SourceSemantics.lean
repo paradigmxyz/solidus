@@ -1016,7 +1016,7 @@ mutual
           Block.SourceOwned post ∧ Block.SourceOwned body
     | .brk | .cont | .leave => True
     | .call _name => False
-    | .terminal _kind => True
+    | .terminal kind => kind.argCount = 0
     | .terminalArgs _kind args => ExprSeq.SourceOwned args
 
   def StmtList.SourceOwned : List Stmt → Prop

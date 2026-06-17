@@ -31261,3 +31261,18 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`. New public
   theorems depend only on `[propext, Classical.choice, Quot.sound]` or a
   subset.
+- 2026-06-17 14:05:50 PDT - theorem-boundary/locals-bare-terminal - found that
+  treating every bare `.terminal kind` as source-owned is false with a hidden
+  caller stack suffix: bare `return`, `revert`, or `selfdestruct` could consume
+  caller words on the target after source underflow. Restricted bare
+  source-owned terminals to `kind.argCount = 0`; argument-taking halts remain
+  represented by `terminalArgs`, matching Yul lowering.
+- 2026-06-17 14:05:50 PDT - proof/locals-terminals - proved terminal execution
+  over arbitrary caller stack suffixes from the canonical terminal frame law,
+  added pass-owned compiler decomposition facts, and proved both plain
+  zero-argument terminals and effectful argument-bearing terminals through the
+  ordinary Locals compiler and mode-indexed outcome relation.
+- 2026-06-17 14:06:36 PDT - validation/locals-terminals - passed focused
+  Locals builds, the full verification root, architecture checks, touched-Lean
+  hole scan, axiom audit, and `git diff --check`; all new terminal theorems
+  depend only on `[propext, Classical.choice, Quot.sound]`.

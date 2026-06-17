@@ -468,6 +468,48 @@ theorem compile_leave_components
           exact ⟨target, cleanup, rfl, hCleanup, rfl, rfl⟩
 
 /--
+Successful plain-terminal compilation emits complete local cleanup followed by
+the adjacent Expressions terminal.
+-/
+theorem compile_terminal_components
+    {ctx final : Ctx} {kind : Assembly.HaltKind}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.terminal kind) = some (code, final)) :
+    code =
+        codeStmt ctx.cleanupAll ++
+          [Expressions.Stmt.terminal kind] ∧
+      final = ctx := by
+  simp [Stmt.compile] at hCompile
+  exact ⟨hCompile.1.symm, hCompile.2.symm⟩
+
+/--
+Successful terminal-with-arguments compilation exposes the ordinary expression
+sequence code followed by the adjacent Expressions terminal.
+-/
+theorem compile_terminalArgs_components
+    {ctx final : Ctx} {kind : Assembly.HaltKind}
+    {args : ExprSeq kind.argCount}
+    {code : List Expressions.Stmt}
+    (hCompile :
+      Stmt.compile ctx (.terminalArgs kind args) =
+        some (code, final)) :
+    ∃ argsCode,
+      ExprSeq.compileCode ctx 0 args = some argsCode ∧
+        code =
+          codeStmt argsCode ++
+            [Expressions.Stmt.terminal kind] ∧
+        final = ctx := by
+  cases hArgs :
+      ExprSeq.compileCode ctx 0 args with
+  | none =>
+      simp [Stmt.compile, hArgs] at hCompile
+  | some argsCode =>
+      simp [Stmt.compile, hArgs] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      exact ⟨argsCode, rfl, rfl, rfl⟩
+
+/--
 Successful compilation of a Locals `if` decomposes through the ordinary
 condition compiler, open-block compiler, and scoped cleanup.
 -/
