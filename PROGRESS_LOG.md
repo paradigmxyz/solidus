@@ -30904,3 +30904,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   builds, architecture and changed-Lean-file hole checks, open-effects axiom
   smoke, and `git diff --check` pass; axioms remain `propext`,
   `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 06:26:37 PDT - proof/structured-open-switch-routing - Added the
+  compiler-owned open-code/unconditional-jump theorem and split switch routing
+  into two closed adjacent leaves. Generated tests retain the scrutinee and
+  select exactly the source case/next-test label; case and default entries pop
+  it exactly once before jumping. These facts use the canonical TypedCfg
+  interaction kernel directly and do not import lower aggregate preservation
+  proofs or observer modules. Focused and full 1,289-job verification builds,
+  architecture and changed-Lean-file hole checks, open-effects axiom smoke,
+  and `git diff --check` pass; axioms remain `propext`, `Classical.choice`,
+  and `Quot.sound`.

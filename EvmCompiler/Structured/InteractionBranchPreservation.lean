@@ -4,6 +4,91 @@ namespace EvmCompiler
 namespace Structured
 namespace InteractionBranchPreservation
 
+namespace Code
+
+def JumpResultRel
+    (label : Assembly.Label) (tokens : List Word)
+    (output : TypedCfg.Shape)
+    (source : RunState) (target : TypedCfg.Outcome) : Prop :=
+  ∃ targetState,
+    target = .jump label targetState ∧
+      TypedCfgPreservation.StateRel source tokens targetState ∧
+        TypedCfgCompiler.Shape.SourceFrameFits
+          output source.evm.stack.length
+
+abbrev JumpDoneRel
+    (label : Assembly.Label) (tokens : List Word)
+    (output : TypedCfg.Shape) :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError : EVMException => True)
+    (JumpResultRel label tokens output)
+
+/--
+Straight-line open code followed by a compiler-selected unconditional jump
+preserves the complete interaction tree and exposes the exact target label.
+-/
+theorem openRun_jump_toCfg
+    {code : Structured.Code}
+    {input output : TypedCfg.Shape}
+    {entry label : Assembly.Label}
+    {source : RunState} {tokens : List Word} {target : EVMState}
+    (hType :
+      TypedCfgCompiler.Code.type? code input = some output)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hRel :
+      TypedCfgPreservation.StateRel source tokens target) :
+    Simulation.Interaction.Rel
+      (JumpDoneRel label tokens output)
+      (InteractionSemantics.Code.openRun code source)
+      (TypedCfg.InteractionSemantics.Block.openRun
+        { label := entry
+          input := input
+          body := TypedCfgCompiler.Code.toCfg code
+          output := output
+          term := .jump label }
+        target) := by
+  have hCode :=
+    InteractionPreservation.Code.openRun_toCfg
+      hType hFits hRel
+  have hComposed :
+      Simulation.Interaction.Rel
+        (JumpDoneRel label tokens output)
+        (Simulation.Interaction.bind
+          (InteractionSemantics.Code.openRun code source)
+          Simulation.Interaction.pure)
+        (Simulation.Interaction.bind
+          (TypedCfg.InteractionSemantics.Block.openRunBody
+            (TypedCfgCompiler.Code.toCfg code) input target)
+          (fun result =>
+            if result.2 = output then
+              Simulation.Interaction.pure
+                (TypedCfg.Block.runTerm output
+                  (.jump label) result.1)
+            else
+              Simulation.Interaction.error .InvalidInstruction)) := by
+    apply Simulation.Interaction.Rel.bind hCode
+    intro sourceFinal targetAfterCode hAfterCode
+    rcases hAfterCode with
+      ⟨hOutput, hStateRel, hFinalFits⟩
+    rcases targetAfterCode with
+      ⟨targetAfterCode, targetShape⟩
+    change targetShape = output at hOutput
+    subst targetShape
+    simp only [Prod.snd, if_pos rfl, if_true]
+    apply Simulation.Interaction.Rel.done
+    apply Simulation.Interaction.ExceptRel.ok
+    exact
+      ⟨targetAfterCode, by simp [TypedCfg.Block.runTerm],
+        hStateRel, hFinalFits⟩
+  simpa [
+    Simulation.Interaction.bind_pure,
+    TypedCfg.InteractionSemantics.Block.openRun,
+    TypedCfg.Control.Block.run, hType] using hComposed
+
+end Code
+
 namespace Condition
 
 def ResultRel

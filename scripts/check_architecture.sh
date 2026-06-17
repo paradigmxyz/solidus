@@ -171,6 +171,7 @@ for theorem in \
 done
 
 for theorem in \
+    'Code.openRun_jump_toCfg' \
     'Condition.openRunCondition_jumpi_toCfg' \
     'Condition.openStep_if_of_compileStmtFuel?' \
     'Stmt.openRun_if_within_stop_of_compileStmtFuel?'; do
@@ -178,6 +179,18 @@ for theorem in \
       "#check EvmCompiler.Structured.InteractionBranchPreservation.${theorem}" \
       EvmCompiler/Verification.lean; then
     printf 'Verification root is missing Structured open branch theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
+    'Switch.openStep_test' \
+    'Switch.openStep_pop_jump'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Structured.InteractionSwitchPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Structured open switch theorem %s.\n\n' \
       "$theorem" >&2
     failed=1
   fi
@@ -954,6 +967,7 @@ report_matches \
   EvmCompiler/Structured/InteractionControlPreservation.lean \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
   EvmCompiler/Structured/InteractionBranchPreservation.lean \
+  EvmCompiler/Structured/InteractionSwitchPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \
