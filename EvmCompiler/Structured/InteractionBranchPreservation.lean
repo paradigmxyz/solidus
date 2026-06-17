@@ -393,6 +393,11 @@ theorem openRun_if_under_of_compileStmtFuel?
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
         afterCond.returns = source.returns →
+        bodyResult.requireFallthrough?
+            { output with slots := output.slots.tail } =
+          some () →
+        result.fallthrough? =
+          some { output with slots := output.slots.tail } →
         InteractionControlPreservation.OpenOutcome.PreservesUnder
           bodyResult cfg (LabelSupply.label supply 0) ctx
           regular regularExit afterCond tokens
@@ -521,6 +526,7 @@ theorem openRun_if_under_of_compileStmtFuel?
                   (bodyResult := bodyResult)
                   (afterCond := afterCond)
                   hBodyCompile hBodyBlocks hReturnsEq
+                  hBodyRequire hFallthrough
               have hBodyLifted :=
                 InteractionControlPreservation.OpenOutcome.PreservesUnder.change_result_of_required_fallthrough
                   hBodyRequire hFallthrough hBodyPreserves

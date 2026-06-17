@@ -207,6 +207,51 @@ theorem openRun_brk_within_of_compileStmtFuel?
         hNoFallthrough hRel)
 
 /--
+`break` preserves under any active policy that stops nonregular outcomes.
+-/
+theorem openRun_brk_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry exitLabel regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {regularExit :
+      InteractionControlPreservation.OpenOutcome.RegularExit}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hExit : ctx.breakLabel? = some exitLabel)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .brk ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hNonregularStops :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.StopsNonregular
+        policy ctx source.returns tokens) :
+    InteractionControlPreservation.OpenOutcome.PreservesUnder
+      result cfg entry ctx regular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel .brk source)
+      1 policy := by
+  obtain ⟨_hBreakShape, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_brk
+      hExit hCompile
+  apply
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.of_openStep_no_fallthrough
+      (by simp [hResult])
+  · intro targetState hStateRel
+    exact
+      openStep_brk_of_compileStmtFuel?
+        hExit hCompile hBlocks hFits hStateRel
+  · exact hNonregularStops
+
+/--
 Compiled `continue` performs the context-owned continue jump and preserves the
 same open outcome relation.
 -/
@@ -325,6 +370,51 @@ theorem openRun_cont_within_of_compileStmtFuel?
     exact False.elim
       (InteractionControlPreservation.OpenOutcome.Rel.not_regular_of_fallthrough_none
         hNoFallthrough hRel)
+
+/--
+`continue` preserves under any active policy that stops nonregular outcomes.
+-/
+theorem openRun_cont_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry exitLabel regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {regularExit :
+      InteractionControlPreservation.OpenOutcome.RegularExit}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hExit : ctx.continueLabel? = some exitLabel)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .cont ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hNonregularStops :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.StopsNonregular
+        policy ctx source.returns tokens) :
+    InteractionControlPreservation.OpenOutcome.PreservesUnder
+      result cfg entry ctx regular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel .cont source)
+      1 policy := by
+  obtain ⟨_hContinueShape, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_cont
+      hExit hCompile
+  apply
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.of_openStep_no_fallthrough
+      (by simp [hResult])
+  · intro targetState hStateRel
+    exact
+      openStep_cont_of_compileStmtFuel?
+        hExit hCompile hBlocks hFits hStateRel
+  · exact hNonregularStops
 
 /--
 Compiled `leave` performs the procedure-exit jump. The explicit return-frame
@@ -450,6 +540,53 @@ theorem openRun_leave_within_of_compileStmtFuel?
     exact False.elim
       (InteractionControlPreservation.OpenOutcome.Rel.not_regular_of_fallthrough_none
         hNoFallthrough hRel)
+
+/--
+`leave` preserves under any active policy that stops nonregular outcomes.
+-/
+theorem openRun_leave_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry exitLabel regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {frame : ReturnDest} {restReturns : List ReturnDest}
+    {regularExit :
+      InteractionControlPreservation.OpenOutcome.RegularExit}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hExit : ctx.leaveLabel? = some exitLabel)
+    (hReturns : source.returns = frame :: restReturns)
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          .leave ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hNonregularStops :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.StopsNonregular
+        policy ctx source.returns tokens) :
+    InteractionControlPreservation.OpenOutcome.PreservesUnder
+      result cfg entry ctx regular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel .leave source)
+      1 policy := by
+  obtain ⟨_hLeaveShape, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_leave
+      hExit hCompile
+  apply
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.of_openStep_no_fallthrough
+      (by simp [hResult])
+  · intro targetState hStateRel
+    exact
+      openStep_leave_of_compileStmtFuel?
+        hExit hReturns hCompile hBlocks hFits hStateRel
+  · exact hNonregularStops
 
 /--
 Compiled terminal statements preserve the open terminal step and relate the
@@ -618,6 +755,51 @@ theorem openRun_terminal_within_of_compileStmtFuel?
     exact False.elim
       (InteractionControlPreservation.OpenOutcome.Rel.not_regular_of_fallthrough_none
         hNoFallthrough hRel)
+
+/--
+Terminals preserve under any active policy that stops nonregular outcomes.
+-/
+theorem openRun_terminal_under_of_compileStmtFuel?
+    {compilerFuel sourceFuel : Nat}
+    {kind : Assembly.HaltKind}
+    {ctx : TypedCfgCompiler.Context} {supply : LabelSupply}
+    {entry regular : Assembly.Label}
+    {input : TypedCfg.Shape}
+    {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
+    {sourceProgram : Structured.Program}
+    {source : RunState} {tokens : List Word}
+    {regularExit :
+      InteractionControlPreservation.OpenOutcome.RegularExit}
+    {policy :
+      InteractionControlPreservation.OpenOutcome.StopPolicy}
+    (hCompile :
+      TypedCfgCompiler.compileStmtFuel? (compilerFuel + 1)
+          (.terminal kind) ctx supply entry input regular =
+        some result)
+    (hBlocks :
+      TypedCfgPreservation.BlocksInProgram result cfg)
+    (hFits :
+      TypedCfgCompiler.Shape.SourceFrameFits
+        input source.evm.stack.length)
+    (hNonregularStops :
+      InteractionControlPreservation.OpenOutcome.StopPolicy.StopsNonregular
+        policy ctx source.returns tokens) :
+    InteractionControlPreservation.OpenOutcome.PreservesUnder
+      result cfg entry ctx regular regularExit source tokens
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceFuel (.terminal kind) source)
+      1 policy := by
+  obtain ⟨_hSourceWords, hResult⟩ :=
+    TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_terminal
+      hCompile
+  apply
+    InteractionControlPreservation.OpenOutcome.PreservesUnder.of_openStep_no_fallthrough
+      (by simp [hResult])
+  · intro targetState hStateRel
+    exact
+      openStep_terminal_of_compileStmtFuel?
+        hCompile hBlocks hFits hStateRel
+  · exact hNonregularStops
 
 end Stmt
 

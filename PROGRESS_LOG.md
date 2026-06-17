@@ -30950,3 +30950,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   preservation, and a policy-parametric conditional theorem. The attempted
   external oracle architecture review could not run because the configured API
   account reported `insufficient_quota`; no oracle output was used.
+- 2026-06-17 08:05:00 PDT - proof/structured-policy-owned-control - Finished
+  the arbitrary-policy owner interfaces for non-loop Structured control.
+  `break`, `continue`, `leave`, and terminals now use one generic
+  no-fallthrough constructor. Switch default arms, case routing, and complete
+  scrutinee dispatch preserve under the same active policy as their selected
+  source body. Replaced the over-strong generated-label invariant with
+  `FreshExceptAt`, which permits exactly the current compiler continuation
+  while rejecting every other fresh internal label. Child callbacks now expose
+  compiler-owned fallthrough evidence, allowing the forthcoming mutual
+  statement/block theorem to derive stop obligations locally.

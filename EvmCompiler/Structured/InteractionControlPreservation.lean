@@ -82,6 +82,13 @@ def StopPolicy.FreshAt (policy : StopPolicy)
     supply ≤ scope →
       policy (.generated scope tag) state = false
 
+def StopPolicy.FreshExceptAt (policy : StopPolicy)
+    (regular : Assembly.Label) (supply : LabelSupply) : Prop :=
+  ∀ scope tag state,
+    supply ≤ scope →
+      .generated scope tag ≠ regular →
+        policy (.generated scope tag) state = false
+
 namespace StopPolicy.FreshAt
 
 theorem mono
@@ -92,7 +99,47 @@ theorem mono
   intro scope tag state hScope
   exact hFresh scope tag state (Nat.le_trans hSupply hScope)
 
+theorem except
+    {policy : StopPolicy} {regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hFresh : StopPolicy.FreshAt policy supply) :
+    StopPolicy.FreshExceptAt policy regular supply := by
+  intro scope tag state hScope _hNe
+  exact hFresh scope tag state hScope
+
 end StopPolicy.FreshAt
+
+namespace StopPolicy.FreshExceptAt
+
+theorem mono
+    {policy : StopPolicy} {regular : Assembly.Label}
+    {supply next : LabelSupply}
+    (hFresh : StopPolicy.FreshExceptAt policy regular supply)
+    (hSupply : supply ≤ next) :
+    StopPolicy.FreshExceptAt policy regular next := by
+  intro scope tag state hScope hNe
+  exact hFresh scope tag state (Nat.le_trans hSupply hScope) hNe
+
+theorem toFreshAt
+    {policy : StopPolicy} {regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hFresh : StopPolicy.FreshExceptAt policy regular supply)
+    (hRegular :
+      TypedCfgCompilerFacts.LabelBeforeSupply regular supply) :
+    StopPolicy.FreshAt policy supply := by
+  intro scope tag state hScope
+  exact hFresh scope tag state hScope (hRegular.generated_ne hScope)
+
+theorem at_succ
+    {policy : StopPolicy} {regular : Assembly.Label}
+    {supply : LabelSupply}
+    (hFresh : StopPolicy.FreshExceptAt policy regular supply)
+    (hRegular :
+      TypedCfgCompilerFacts.RegularAtSupply regular supply) :
+    StopPolicy.FreshAt policy (supply + 1) :=
+  (hFresh.mono (by simp)).toFreshAt hRegular.before_succ
+
+end StopPolicy.FreshExceptAt
 
 @[simp] theorem stopJump_regular
     {result : TypedCfgCompiler.Result}
@@ -323,6 +370,25 @@ theorem StopPolicy.FreshAt.push_rest_succ
   apply StopPolicy.FreshAt.push
   · exact hOuter.mono (by simp)
   · exact hBefore.rest_succ
+
+theorem StopPolicy.FreshExceptAt.push_rest
+    {outer : StopPolicy}
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {boundaryRegular : Assembly.Label} {supply : LabelSupply}
+    (hOuter : StopPolicy.FreshAt outer supply)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx boundaryRegular supply)
+    (returns : List ReturnDest) (tokens : List Word) :
+    StopPolicy.FreshExceptAt
+      (pushStopJump result ctx (TypedCfgCompiler.restLabel supply)
+        returns tokens outer)
+      (TypedCfgCompiler.restLabel supply) supply := by
+  intro scope tag state hScope hNe
+  exact
+    pushStopJump_generated_eq_false_of_regular_ne
+      hOuter hBefore hNe hScope returns tokens state
 
 theorem pushStopJump_rest_current_generated_eq_false
     {outer : StopPolicy}
@@ -578,6 +644,21 @@ theorem Rel.not_regular_of_fallthrough_none
   rcases hRel.2.1 with ⟨shape, hShape, _hFits⟩
   rw [hFallthrough] at hShape
   cases hShape
+
+theorem Rel.mode_ne_regular_of_fallthrough_none
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome} {target : TypedCfg.Outcome}
+    (hFallthrough : result.fallthrough? = none)
+    (hRel :
+      Rel result ctx regular returns tokens source target) :
+    source.mode ≠ .regular := by
+  intro hMode
+  rcases source with ⟨state, mode⟩
+  change mode = .regular at hMode
+  subst mode
+  exact Rel.not_regular_of_fallthrough_none hFallthrough hRel
 
 theorem Rel.change_result_of_required_fallthrough
     {left right : TypedCfgCompiler.Result}
@@ -1231,6 +1312,38 @@ theorem of_openStep
                   afterOpenStepResultWithPolicy_of_targetStopped
                     hOutcome (hStops hOutcome)
   simpa [Simulation.Interaction.bind_pure] using hLifted
+
+theorem of_openStep_no_fallthrough
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry regular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {regularExit : RegularExit} {policy : StopPolicy}
+    (hFallthrough : result.fallthrough? = none)
+    (hStep :
+      ∀ target,
+        TypedCfgPreservation.StateRel source tokens target →
+          Simulation.Interaction.Rel
+            (OutcomeDoneRel result ctx regular
+              source.returns tokens)
+            sourceRun
+            (TypedCfg.InteractionSemantics.Program.openStep
+              cfg entry target))
+    (hNonregularStops :
+      StopPolicy.StopsNonregular
+        policy ctx source.returns tokens) :
+    PreservesUnder result cfg entry ctx regular regularExit
+      source tokens sourceRun 1 policy := by
+  apply of_openStep hStep
+  intro sourceOutcome targetOutcome hRel
+  exact
+    hNonregularStops
+      (Rel.mode_ne_regular_of_fallthrough_none
+        hFallthrough hRel)
+      hRel
 
 theorem sequence
     {headResult tailResult : TypedCfgCompiler.Result}
