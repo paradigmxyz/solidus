@@ -246,24 +246,31 @@ inductive RegularExit where
   | resume
   deriving DecidableEq
 
+def segmentStopJump
+    (fragmentResult boundaryResult : TypedCfgCompiler.Result)
+    (ctx : TypedCfgCompiler.Context)
+    (fragmentRegular boundaryRegular : Assembly.Label)
+    (returns : List ReturnDest) (tokens : List Word) :
+    RegularExit → Assembly.Label → EVMState → Bool
+  | .stop =>
+      stopJump boundaryResult ctx boundaryRegular returns tokens
+  | .resume =>
+      fun label state =>
+        stopJump boundaryResult ctx boundaryRegular
+            returns tokens label state ||
+          stopJump fragmentResult ctx fragmentRegular
+            returns tokens label state
+
 def SegmentRunRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
     (returns : List ReturnDest) (tokens : List Word)
     (regularExit : RegularExit)
     (source : Structured.Outcome) :
     TypedCfg.Control.Program.RunResult → Prop :=
-  match regularExit, source.mode with
-  | .resume, .regular =>
-      fun
-      | .exhausted label target =>
-          Rel result ctx regular returns tokens source
-            (.jump label target)
-      | .stopped _ => False
-  | _, _ =>
-      fun
-      | .exhausted _ _ => False
-      | .stopped target =>
-          Rel result ctx regular returns tokens source target
+  fun
+  | .exhausted _ _ => False
+  | .stopped _ target =>
+      Rel result ctx regular returns tokens source target
 
 abbrev SegmentDoneRel (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
@@ -445,7 +452,7 @@ theorem SegmentRunRel.append_right_stop
   cases target with
   | exhausted label state =>
       exact False.elim hRun
-  | stopped outcome =>
+  | stopped remaining outcome =>
       exact Rel.append_right hRun
 
 theorem SegmentDoneRel.append_right_stop
@@ -519,6 +526,50 @@ theorem SegmentDoneRel.change_result_of_required_fallthrough
           (SegmentRunRel.change_result_of_required_fallthrough
             hRequire hRight hRun)
 
+theorem SegmentRunRel.addFuelToRunResult
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
+    {target : TypedCfg.Control.Program.RunResult}
+    {regularExit : RegularExit}
+    (extra : Nat)
+    (hRun :
+      SegmentRunRel result ctx regular returns tokens regularExit
+        source target) :
+    SegmentRunRel result ctx regular returns tokens regularExit source
+      (TypedCfg.InteractionSemantics.Program.addFuelToRunResult
+        extra target) := by
+  cases target with
+  | exhausted label state =>
+      exact False.elim hRun
+  | stopped remaining outcome =>
+      exact hRun
+
+theorem SegmentDoneRel.addFuelToRunResult
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Except EVMException Structured.Outcome}
+    {target :
+      Except EVMException TypedCfg.Control.Program.RunResult}
+    {regularExit : RegularExit}
+    (extra : Nat)
+    (hDone :
+      SegmentDoneRel result ctx regular returns tokens regularExit
+        source target) :
+    SegmentDoneRel result ctx regular returns tokens regularExit source
+      (target.map
+        (TypedCfg.InteractionSemantics.Program.addFuelToRunResult
+          extra)) := by
+  cases hDone with
+  | error hError =>
+      exact Simulation.Interaction.ExceptRel.error hError
+  | ok hRun =>
+      exact
+        Simulation.Interaction.ExceptRel.ok
+          (SegmentRunRel.addFuelToRunResult extra hRun)
+
 /--
 Fixed-fuel preservation for a fragment executed under an enclosing fragment's
 boundary policy.
@@ -545,332 +596,10 @@ def PreservesWithin (fragmentResult boundaryResult :
           source.returns tokens regularExit)
         sourceRun
         (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
-          (stopJump boundaryResult ctx boundaryRegular
-            source.returns tokens)
+          (segmentStopJump fragmentResult boundaryResult ctx
+            fragmentRegular boundaryRegular source.returns tokens
+            regularExit)
           cfg targetFuel entry target)
-
-namespace PreservesWithin
-
-/--
-Retarget a preserved fragment to an enclosing compiler result that has the
-same required source fallthrough shape. This changes only the outcome-indexed
-relation; the target runner and enclosing stop policy remain unchanged.
--/
-theorem change_result_of_required_fallthrough
-    {left right boundaryResult : TypedCfgCompiler.Result}
-    {cfg : TypedCfg.Program}
-    {entry fragmentRegular boundaryRegular : Assembly.Label}
-    {ctx : TypedCfgCompiler.Context}
-    {source : RunState} {tokens : List Word}
-    {sourceRun :
-      Simulation.Interaction EVMException Structured.Outcome}
-    {regularExit : RegularExit} {targetFuel : Nat}
-    {expected : TypedCfg.Shape}
-    (hRequire :
-      left.requireFallthrough? expected = some ())
-    (hRight :
-      right.fallthrough? = some expected)
-    (hPreserves :
-      PreservesWithin left boundaryResult cfg entry ctx
-        fragmentRegular boundaryRegular regularExit source tokens
-        sourceRun targetFuel) :
-    PreservesWithin right boundaryResult cfg entry ctx
-      fragmentRegular boundaryRegular regularExit source tokens
-      sourceRun targetFuel := by
-  intro target hStateRel
-  apply Simulation.Interaction.Rel.mono
-    (hPreserves target hStateRel)
-  intro sourceDone targetDone hDone
-  exact
-    SegmentDoneRel.change_result_of_required_fallthrough
-      hRequire hRight hDone
-
-/--
-Compose two adjacent Structured fragments under one enclosing stop policy.
-
-The head's regular exit is tagged as exhausted, so the canonical target
-fuel-add theorem resumes exactly those branches. Every nonregular head outcome
-is already stopped and bypasses the tail.
--/
-theorem sequence
-    {headResult tailResult boundaryResult :
-      TypedCfgCompiler.Result}
-    {cfg : TypedCfg.Program}
-    {entry middle boundaryRegular : Assembly.Label}
-    {ctx : TypedCfgCompiler.Context}
-    {source : RunState} {tokens : List Word}
-    {headRun :
-      Simulation.Interaction EVMException Structured.Outcome}
-    {tailRun :
-      RunState →
-        Simulation.Interaction EVMException Structured.Outcome}
-    {headFuel tailFuel : Nat}
-    (hHead :
-      PreservesWithin headResult boundaryResult cfg entry ctx
-        middle boundaryRegular .resume source tokens
-        headRun headFuel)
-    (hTail :
-      ∀ middleSource,
-        middleSource.returns = source.returns →
-          PreservesWithin tailResult boundaryResult cfg middle ctx
-            boundaryRegular boundaryRegular .stop
-            middleSource tokens (tailRun middleSource) tailFuel) :
-    PreservesWithin (headResult.append tailResult) boundaryResult
-      cfg entry ctx boundaryRegular boundaryRegular .stop
-      source tokens
-      (Simulation.Interaction.bind headRun
-        (fun outcome =>
-          match outcome.mode with
-          | .regular => tailRun outcome.state
-          | .brk | .cont | .leave | .halt _ =>
-              Simulation.Interaction.pure outcome))
-      (headFuel + tailFuel) := by
-  intro target hStateRel
-  rw [
-    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
-  apply Simulation.Interaction.Rel.bind_custom
-    (hHead target hStateRel)
-  intro sourceDone targetDone hDone
-  cases sourceDone with
-  | error sourceError =>
-      cases targetDone with
-      | error targetError =>
-          exact
-            Simulation.Interaction.Rel.done
-              (Simulation.Interaction.ExceptRel.error trivial)
-      | ok targetResult =>
-          cases hDone
-  | ok headOutcome =>
-      cases targetDone with
-      | error targetError =>
-          cases hDone
-      | ok targetResult =>
-          cases hDone with
-          | ok hRun =>
-              rcases headOutcome with ⟨middleSource, headMode⟩
-              cases headMode with
-              | regular =>
-                  cases targetResult with
-                  | exhausted label targetMiddle =>
-                      change
-                        Rel headResult ctx middle source.returns tokens
-                          (Structured.Outcome.regular middleSource)
-                          (.jump label targetMiddle)
-                        at hRun
-                      rcases hRun with
-                        ⟨hOutcome, _hFits, hRestored⟩
-                      rcases
-                          TypedCfgPreservation.OutcomeSimulation.Rel.regular_iff.mp
-                            hOutcome with
-                        ⟨hLabel, hMiddleStateRel⟩
-                      have hReturns :
-                          middleSource.returns = source.returns := by
-                        simpa [ActivationRestored] using hRestored
-                      have hTailRel :=
-                        hTail middleSource hReturns
-                          targetMiddle hMiddleStateRel
-                      have hTailRel' :
-                          Simulation.Interaction.Rel
-                            (SegmentDoneRel
-                              (headResult.append tailResult)
-                              ctx boundaryRegular
-                              middleSource.returns tokens .stop)
-                            (tailRun middleSource)
-                            (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
-                              (stopJump boundaryResult ctx boundaryRegular
-                                middleSource.returns tokens)
-                              cfg tailFuel middle targetMiddle) := by
-                        apply Simulation.Interaction.Rel.mono hTailRel
-                        intro sourceFinal targetFinal hFinal
-                        exact
-                          SegmentDoneRel.append_right_stop
-                            (left := headResult) hFinal
-                      simpa [
-                        TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithStop,
-                        hLabel, hReturns] using hTailRel'
-                  | stopped targetOutcome =>
-                      exact False.elim hRun
-              | brk =>
-                  cases targetResult with
-                  | exhausted label targetMiddle =>
-                      exact False.elim hRun
-                  | stopped targetOutcome =>
-                      change
-                        Rel headResult ctx middle source.returns tokens
-                          (Structured.Outcome.brk middleSource)
-                          targetOutcome
-                        at hRun
-                      have hFinalRel :=
-                        Rel.change_regular_of_nonregular
-                          (left := headResult)
-                          (right := headResult.append tailResult)
-                          (leftRegular := middle)
-                          (rightRegular := boundaryRegular)
-                          (by simp) hRun
-                      exact
-                        Simulation.Interaction.Rel.done
-                          (Simulation.Interaction.ExceptRel.ok hFinalRel)
-              | cont =>
-                  cases targetResult with
-                  | exhausted label targetMiddle =>
-                      exact False.elim hRun
-                  | stopped targetOutcome =>
-                      change
-                        Rel headResult ctx middle source.returns tokens
-                          (Structured.Outcome.cont middleSource)
-                          targetOutcome
-                        at hRun
-                      have hFinalRel :=
-                        Rel.change_regular_of_nonregular
-                          (left := headResult)
-                          (right := headResult.append tailResult)
-                          (leftRegular := middle)
-                          (rightRegular := boundaryRegular)
-                          (by simp) hRun
-                      exact
-                        Simulation.Interaction.Rel.done
-                          (Simulation.Interaction.ExceptRel.ok hFinalRel)
-              | leave =>
-                  cases targetResult with
-                  | exhausted label targetMiddle =>
-                      exact False.elim hRun
-                  | stopped targetOutcome =>
-                      change
-                        Rel headResult ctx middle source.returns tokens
-                          (Structured.Outcome.leave middleSource)
-                          targetOutcome
-                        at hRun
-                      have hFinalRel :=
-                        Rel.change_regular_of_nonregular
-                          (left := headResult)
-                          (right := headResult.append tailResult)
-                          (leftRegular := middle)
-                          (rightRegular := boundaryRegular)
-                          (by simp) hRun
-                      exact
-                        Simulation.Interaction.Rel.done
-                          (Simulation.Interaction.ExceptRel.ok hFinalRel)
-              | halt kind =>
-                  cases targetResult with
-                  | exhausted label targetMiddle =>
-                      exact False.elim hRun
-                  | stopped targetOutcome =>
-                      change
-                        Rel headResult ctx middle source.returns tokens
-                          (Structured.Outcome.halt kind middleSource)
-                          targetOutcome
-                        at hRun
-                      have hFinalRel :=
-                        Rel.change_regular_of_nonregular
-                          (left := headResult)
-                          (right := headResult.append tailResult)
-                          (leftRegular := middle)
-                          (rightRegular := boundaryRegular)
-                          (by simp) hRun
-                      exact
-                        Simulation.Interaction.Rel.done
-                          (Simulation.Interaction.ExceptRel.ok hFinalRel)
-
-/--
-A compiler fragment with no fallthrough cannot produce a regular source
-outcome. Consequently an enclosing statement-list tail is unreachable, and
-binding that tail onto the source interaction leaves preservation unchanged.
--/
-theorem ignore_tail_of_no_fallthrough
-    {headResult boundaryResult : TypedCfgCompiler.Result}
-    {cfg : TypedCfg.Program}
-    {entry headRegular boundaryRegular : Assembly.Label}
-    {ctx : TypedCfgCompiler.Context}
-    {source : RunState} {tokens : List Word}
-    {headRun :
-      Simulation.Interaction EVMException Structured.Outcome}
-    {tailRun :
-      RunState →
-        Simulation.Interaction EVMException Structured.Outcome}
-    {headFuel : Nat}
-    (hFallthrough : headResult.fallthrough? = none)
-    (hHead :
-      PreservesWithin headResult boundaryResult cfg entry ctx
-        headRegular boundaryRegular .stop source tokens
-        headRun headFuel) :
-    PreservesWithin headResult boundaryResult cfg entry ctx
-      boundaryRegular boundaryRegular .stop source tokens
-      (Simulation.Interaction.bind headRun
-        (fun outcome =>
-          match outcome.mode with
-          | .regular => tailRun outcome.state
-          | .brk | .cont | .leave | .halt _ =>
-              Simulation.Interaction.pure outcome))
-      headFuel := by
-  intro target hStateRel
-  have hHeadRel := hHead target hStateRel
-  have hLifted :
-      Simulation.Interaction.Rel
-        (SegmentDoneRel headResult ctx boundaryRegular
-          source.returns tokens .stop)
-        (Simulation.Interaction.bind headRun
-          (fun outcome =>
-            match outcome.mode with
-            | .regular => tailRun outcome.state
-            | .brk | .cont | .leave | .halt _ =>
-                Simulation.Interaction.pure outcome))
-        (Simulation.Interaction.bind
-          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
-            (stopJump boundaryResult ctx boundaryRegular
-              source.returns tokens)
-            cfg headFuel entry target)
-          Simulation.Interaction.pure) := by
-    apply Simulation.Interaction.Rel.bind_custom hHeadRel
-    intro sourceDone targetDone hDone
-    cases sourceDone with
-    | error sourceError =>
-        cases targetDone with
-        | error targetError =>
-            exact
-              Simulation.Interaction.Rel.done
-                (Simulation.Interaction.ExceptRel.error trivial)
-        | ok targetResult =>
-            cases hDone
-    | ok sourceOutcome =>
-        cases targetDone with
-        | error targetError =>
-            cases hDone
-        | ok targetResult =>
-            cases hDone with
-            | ok hRun =>
-                rcases sourceOutcome with ⟨middleSource, sourceMode⟩
-                cases sourceMode with
-                | regular =>
-                    cases targetResult with
-                    | exhausted label targetMiddle =>
-                        exact False.elim hRun
-                    | stopped targetOutcome =>
-                        exact False.elim
-                          (Rel.not_regular_of_fallthrough_none
-                            hFallthrough hRun)
-                | brk | cont | leave | halt kind =>
-                    cases targetResult with
-                    | exhausted label targetMiddle =>
-                        exact False.elim hRun
-                    | stopped targetOutcome =>
-                        change
-                          Rel headResult ctx headRegular
-                            source.returns tokens
-                            _ targetOutcome
-                          at hRun
-                        have hFinalRel :=
-                          Rel.change_regular_of_nonregular
-                            (left := headResult)
-                            (right := headResult)
-                            (leftRegular := headRegular)
-                            (rightRegular := boundaryRegular)
-                            (by simp) hRun
-                        exact
-                          Simulation.Interaction.Rel.done
-                            (Simulation.Interaction.ExceptRel.ok hFinalRel)
-  simpa [Simulation.Interaction.bind_pure] using hLifted
-
-end PreservesWithin
 
 def TargetStopped (result : TypedCfgCompiler.Result)
     (ctx : TypedCfgCompiler.Context) (regular : Assembly.Label)
@@ -978,6 +707,500 @@ theorem targetStopped_of_rel
           hOutcome
       trivial
 
+theorem afterOpenStepResultWithStop_of_targetStopped
+    {result boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {ctx : TypedCfgCompiler.Context}
+    {regular boundaryRegular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
+    {target : TypedCfg.Outcome}
+    {regularExit : RegularExit} {fuel : Nat}
+    (hRel : Rel result ctx regular returns tokens source target)
+    (hStopped :
+      TargetStopped boundaryResult ctx boundaryRegular
+        returns tokens target) :
+    Simulation.Interaction.Rel
+      (SegmentDoneRel result ctx regular returns tokens regularExit)
+      (Simulation.Interaction.pure source)
+      (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+        (stopJump boundaryResult ctx boundaryRegular returns tokens)
+        cfg fuel target) := by
+  cases target with
+  | jump label targetState =>
+      change
+        stopJump boundaryResult ctx boundaryRegular returns tokens
+          label targetState = true
+        at hStopped
+      simp only [
+        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+        hStopped, if_true]
+      exact
+        Simulation.Interaction.Rel.done
+          (Simulation.Interaction.ExceptRel.ok hRel)
+  | halt kind targetState =>
+      exact
+        Simulation.Interaction.Rel.done
+          (Simulation.Interaction.ExceptRel.ok hRel)
+  | fallthrough targetState
+  | returnDispatch targetState
+  | invalid targetState =>
+      exact False.elim hStopped
+
+namespace PreservesWithin
+
+/--
+Retarget a preserved fragment to an enclosing compiler result that has the
+same required source fallthrough shape. This changes only the outcome-indexed
+relation; the target runner and enclosing stop policy remain unchanged.
+-/
+theorem change_result_of_required_fallthrough
+    {left right boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry fragmentRegular boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat}
+    {expected : TypedCfg.Shape}
+    (hRequire :
+      left.requireFallthrough? expected = some ())
+    (hRight :
+      right.fallthrough? = some expected)
+    (hPreserves :
+      PreservesWithin left boundaryResult cfg entry ctx
+        fragmentRegular boundaryRegular .stop source tokens
+        sourceRun targetFuel) :
+    PreservesWithin right boundaryResult cfg entry ctx
+      fragmentRegular boundaryRegular .stop source tokens
+      sourceRun targetFuel := by
+  intro target hStateRel
+  apply Simulation.Interaction.Rel.mono
+    (hPreserves target hStateRel)
+  intro sourceDone targetDone hDone
+  exact
+    SegmentDoneRel.change_result_of_required_fallthrough
+      hRequire hRight hDone
+
+/--
+Once a fragment has stopped at the enclosing semantic boundary, extra target
+fuel cannot expose another block or interaction.
+-/
+theorem pad_stop
+    {fragmentResult boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry fragmentRegular boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {sourceRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {targetFuel : Nat}
+    (hPreserves :
+      PreservesWithin fragmentResult boundaryResult cfg entry ctx
+        fragmentRegular boundaryRegular .stop source tokens
+        sourceRun targetFuel)
+    (extra : Nat) :
+    PreservesWithin fragmentResult boundaryResult cfg entry ctx
+      fragmentRegular boundaryRegular .stop source tokens
+      sourceRun (targetFuel + extra) := by
+  intro target hStateRel
+  have hRel := hPreserves target hStateRel
+  have hStopped :
+      Simulation.Interaction.AllDone
+        TypedCfg.InteractionSemantics.Program.RunResultStopped
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          (segmentStopJump fragmentResult boundaryResult ctx
+            fragmentRegular boundaryRegular source.returns tokens .stop)
+          cfg targetFuel entry target) := by
+    apply Simulation.Interaction.Rel.allDone_right hRel
+    intro sourceDone targetDone hDone
+    cases hDone with
+    | error _ =>
+        trivial
+    | @ok sourceResult targetResult hRun =>
+        cases targetResult with
+        | exhausted label state =>
+            exact False.elim hRun
+        | stopped remaining outcome =>
+            trivial
+  rw [
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_map_addFuel_of_allStopped
+      (stopJump :=
+        segmentStopJump fragmentResult boundaryResult ctx
+          fragmentRegular boundaryRegular source.returns tokens .stop)
+      (program := cfg) (fuel := targetFuel) (extra := extra)
+      (label := entry) (state := target) hStopped]
+  have hMapped :
+      Simulation.Interaction.Rel
+        (SegmentDoneRel fragmentResult ctx fragmentRegular
+          source.returns tokens .stop)
+        (Simulation.Interaction.bind
+          sourceRun Simulation.Interaction.pure)
+        (Simulation.Interaction.map
+          (TypedCfg.InteractionSemantics.Program.addFuelToRunResult extra)
+          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+            (segmentStopJump fragmentResult boundaryResult ctx
+              fragmentRegular boundaryRegular source.returns tokens .stop)
+            cfg targetFuel entry target)) := by
+    apply Simulation.Interaction.Rel.bind_custom hRel
+    intro sourceDone targetDone hDone
+    cases sourceDone with
+    | error sourceError =>
+        cases targetDone with
+        | error targetError =>
+            exact
+              Simulation.Interaction.Rel.done
+                (Simulation.Interaction.ExceptRel.error trivial)
+        | ok targetResult =>
+            cases hDone
+    | ok sourceOutcome =>
+        cases targetDone with
+        | error targetError =>
+            cases hDone
+        | ok targetResult =>
+            exact
+              Simulation.Interaction.Rel.done
+                (SegmentDoneRel.addFuelToRunResult
+                  extra hDone)
+  simpa [
+    Simulation.Interaction.bind_pure,
+    Simulation.Interaction.map] using hMapped
+
+/--
+Compose two adjacent Structured fragments under one enclosing stop policy.
+
+The head runner stops at either the enclosing boundary or its generated middle
+label. The refined-stop splice resumes only the middle-label branch, carrying
+the head's residual fuel into the tail. Every nonregular head outcome remains
+stopped and bypasses the tail.
+-/
+theorem sequence
+    {headResult tailResult boundaryResult :
+      TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry middle boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {headRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {tailRun :
+      RunState →
+        Simulation.Interaction EVMException Structured.Outcome}
+    {headFuel tailFuel : Nat}
+    (hHead :
+      PreservesWithin headResult boundaryResult cfg entry ctx
+        middle boundaryRegular .resume source tokens
+        headRun headFuel)
+    (hMiddleNoStop :
+      ∀ targetMiddle,
+        stopJump boundaryResult ctx boundaryRegular
+            source.returns tokens middle targetMiddle =
+          false)
+    (hTail :
+      ∀ middleSource,
+        middleSource.returns = source.returns →
+          PreservesWithin tailResult boundaryResult cfg middle ctx
+            boundaryRegular boundaryRegular .stop
+            middleSource tokens (tailRun middleSource) tailFuel) :
+    PreservesWithin (headResult.append tailResult) boundaryResult
+      cfg entry ctx boundaryRegular boundaryRegular .stop
+      source tokens
+      (Simulation.Interaction.bind headRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => tailRun outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome))
+      (headFuel + tailFuel) := by
+  intro target hStateRel
+  let outerStop : Assembly.Label → EVMState → Bool :=
+    segmentStopJump (headResult.append tailResult) boundaryResult ctx
+      boundaryRegular boundaryRegular source.returns tokens .stop
+  let innerStop : Assembly.Label → EVMState → Bool :=
+    segmentStopJump headResult boundaryResult ctx
+      middle boundaryRegular source.returns tokens .resume
+  have hRefines :
+      ∀ next nextState,
+        outerStop next nextState = true →
+          innerStop next nextState = true := by
+    intro next nextState hOuter
+    change
+      stopJump boundaryResult ctx boundaryRegular
+          source.returns tokens next nextState =
+        true
+      at hOuter
+    simp [innerStop, segmentStopJump, hOuter]
+  change
+    Simulation.Interaction.Rel
+      (SegmentDoneRel (headResult.append tailResult) ctx
+        boundaryRegular source.returns tokens .stop)
+      (Simulation.Interaction.bind headRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => tailRun outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome))
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        outerStop cfg (headFuel + tailFuel) entry target)
+  rw [
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+      outerStop innerStop cfg headFuel tailFuel entry target hRefines]
+  have hHeadRel :
+      Simulation.Interaction.Rel
+        (SegmentDoneRel headResult ctx middle
+          source.returns tokens .resume)
+        headRun
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          innerStop cfg headFuel entry target) := by
+    simpa [innerStop] using hHead target hStateRel
+  apply Simulation.Interaction.Rel.bind_custom
+    hHeadRel
+  intro sourceDone targetDone hDone
+  cases sourceDone with
+  | error sourceError =>
+      cases targetDone with
+      | error targetError =>
+          exact
+            Simulation.Interaction.Rel.done
+              (Simulation.Interaction.ExceptRel.error trivial)
+      | ok targetResult =>
+          cases hDone
+  | ok headOutcome =>
+      cases targetDone with
+      | error targetError =>
+          cases hDone
+      | ok targetResult =>
+          cases hDone with
+          | ok hRun =>
+              rcases headOutcome with ⟨middleSource, headMode⟩
+              have hNonregular
+                  (hMode : headMode ≠ .regular) :
+                  Simulation.Interaction.Rel
+                    (SegmentDoneRel
+                      (headResult.append tailResult)
+                      ctx boundaryRegular
+                      source.returns tokens .stop)
+                    (Simulation.Interaction.pure
+                      { state := middleSource, mode := headMode })
+                    (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+                      outerStop cfg tailFuel targetResult) := by
+                cases targetResult with
+                | exhausted label targetMiddle =>
+                    exact False.elim hRun
+                | stopped remaining targetOutcome =>
+                    change
+                      Rel headResult ctx middle source.returns tokens
+                        { state := middleSource, mode := headMode }
+                        targetOutcome
+                      at hRun
+                    have hOutputRel :
+                        Rel (headResult.append tailResult) ctx
+                          boundaryRegular source.returns tokens
+                          { state := middleSource, mode := headMode }
+                          targetOutcome :=
+                      Rel.change_regular_of_nonregular
+                        (left := headResult)
+                        (right := headResult.append tailResult)
+                        (leftRegular := middle)
+                        (rightRegular := boundaryRegular)
+                        hMode hRun
+                    have hBoundaryRel :
+                        Rel boundaryResult ctx boundaryRegular
+                          source.returns tokens
+                          { state := middleSource, mode := headMode }
+                          targetOutcome :=
+                      Rel.change_regular_of_nonregular
+                        (left := headResult)
+                        (right := boundaryResult)
+                        (leftRegular := middle)
+                        (rightRegular := boundaryRegular)
+                        hMode hRun
+                    have hStopped :=
+                      targetStopped_of_rel hBoundaryRel
+                    have hFinal :=
+                      afterOpenStepResultWithStop_of_targetStopped
+                        (cfg := cfg)
+                        (regularExit := .stop)
+                        (fuel := remaining + tailFuel)
+                        hOutputRel hStopped
+                    simpa [
+                      TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
+                      outerStop, segmentStopJump] using hFinal
+              cases headMode with
+              | regular =>
+                  cases targetResult with
+                  | exhausted label targetMiddle =>
+                      exact False.elim hRun
+                  | stopped remaining targetOutcome =>
+                      change
+                        Rel headResult ctx middle source.returns tokens
+                          (Structured.Outcome.regular middleSource)
+                          targetOutcome
+                        at hRun
+                      obtain ⟨targetMiddle, rfl, hMiddleStateRel⟩ :=
+                        TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim
+                          hRun.1
+                      have hReturns :
+                          middleSource.returns = source.returns := by
+                        simpa [ActivationRestored] using hRun.2.2
+                      have hTailPadded :=
+                        PreservesWithin.pad_stop
+                          (hTail middleSource hReturns) remaining
+                      have hTailRel :=
+                        hTailPadded targetMiddle hMiddleStateRel
+                      have hAppended :=
+                        Simulation.Interaction.Rel.mono hTailRel
+                          (fun sourceFinal targetFinal hFinal =>
+                            SegmentDoneRel.append_right_stop
+                              (left := headResult) hFinal)
+                      have hTailRel' :
+                          Simulation.Interaction.Rel
+                            (SegmentDoneRel
+                              (headResult.append tailResult)
+                              ctx boundaryRegular
+                              source.returns tokens .stop)
+                            (tailRun middleSource)
+                            (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+                              outerStop cfg (remaining + tailFuel)
+                              middle targetMiddle) := by
+                        simpa [
+                          outerStop, segmentStopJump, hReturns,
+                          Nat.add_comm] using hAppended
+                      simpa [
+                        TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
+                        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                        TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
+                        outerStop, segmentStopJump,
+                        hMiddleNoStop targetMiddle] using hTailRel'
+              | brk =>
+                  exact hNonregular (by simp)
+              | cont =>
+                  exact hNonregular (by simp)
+              | leave =>
+                  exact hNonregular (by simp)
+              | halt kind =>
+                  exact hNonregular (by simp)
+
+/--
+A compiler fragment with no fallthrough cannot produce a regular source
+outcome. Consequently an enclosing statement-list tail is unreachable, and
+binding that tail onto the source interaction leaves preservation unchanged.
+-/
+theorem ignore_tail_of_no_fallthrough
+    {headResult boundaryResult : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {entry headRegular boundaryRegular : Assembly.Label}
+    {ctx : TypedCfgCompiler.Context}
+    {source : RunState} {tokens : List Word}
+    {headRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    {tailRun :
+      RunState →
+        Simulation.Interaction EVMException Structured.Outcome}
+    {headFuel : Nat}
+    (hFallthrough : headResult.fallthrough? = none)
+    (hHead :
+      PreservesWithin headResult boundaryResult cfg entry ctx
+        headRegular boundaryRegular .stop source tokens
+        headRun headFuel) :
+    PreservesWithin headResult boundaryResult cfg entry ctx
+      boundaryRegular boundaryRegular .stop source tokens
+      (Simulation.Interaction.bind headRun
+        (fun outcome =>
+          match outcome.mode with
+          | .regular => tailRun outcome.state
+          | .brk | .cont | .leave | .halt _ =>
+              Simulation.Interaction.pure outcome))
+      headFuel := by
+  intro target hStateRel
+  have hHeadRel := hHead target hStateRel
+  have hLifted :
+      Simulation.Interaction.Rel
+        (SegmentDoneRel headResult ctx boundaryRegular
+          source.returns tokens .stop)
+        (Simulation.Interaction.bind headRun
+          (fun outcome =>
+            match outcome.mode with
+            | .regular => tailRun outcome.state
+            | .brk | .cont | .leave | .halt _ =>
+                Simulation.Interaction.pure outcome))
+        (Simulation.Interaction.bind
+          (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+            (stopJump boundaryResult ctx boundaryRegular
+              source.returns tokens)
+            cfg headFuel entry target)
+          Simulation.Interaction.pure) := by
+    apply Simulation.Interaction.Rel.bind_custom hHeadRel
+    intro sourceDone targetDone hDone
+    cases sourceDone with
+    | error sourceError =>
+        cases targetDone with
+        | error targetError =>
+            exact
+              Simulation.Interaction.Rel.done
+                (Simulation.Interaction.ExceptRel.error trivial)
+        | ok targetResult =>
+            cases hDone
+    | ok sourceOutcome =>
+        cases targetDone with
+        | error targetError =>
+            cases hDone
+        | ok targetResult =>
+            cases hDone with
+            | ok hRun =>
+                rcases sourceOutcome with ⟨middleSource, sourceMode⟩
+                cases sourceMode with
+                | regular =>
+                    cases targetResult with
+                    | exhausted label targetMiddle =>
+                        exact False.elim hRun
+                    | stopped _remaining targetOutcome =>
+                        exact False.elim
+                          (Rel.not_regular_of_fallthrough_none
+                            hFallthrough hRun)
+                | brk | cont | leave | halt kind =>
+                    cases targetResult with
+                    | exhausted label targetMiddle =>
+                        exact False.elim hRun
+                    | stopped _remaining targetOutcome =>
+                        change
+                          Rel headResult ctx headRegular
+                            source.returns tokens
+                            _ targetOutcome
+                          at hRun
+                        have hFinalRel :=
+                          Rel.change_regular_of_nonregular
+                            (left := headResult)
+                            (right := headResult)
+                            (leftRegular := headRegular)
+                            (rightRegular := boundaryRegular)
+                            (by simp) hRun
+                        exact
+                          Simulation.Interaction.Rel.done
+                            (Simulation.Interaction.ExceptRel.ok hFinalRel)
+  simpa [Simulation.Interaction.bind_pure] using hLifted
+
+end PreservesWithin
+
+theorem afterOpenStepResultWithStop_rel
+    {result : TypedCfgCompiler.Result}
+    {cfg : TypedCfg.Program}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome}
+    {target : TypedCfg.Outcome}
+    {fuel : Nat}
+    (hRel : Rel result ctx regular returns tokens source target) :
+    Simulation.Interaction.Rel
+      (DoneRel result ctx regular returns tokens)
+      (Simulation.Interaction.pure source)
+      (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+        (stopJump result ctx regular returns tokens) cfg fuel target) := by
+  exact
+    afterOpenStepResultWithStop_of_targetStopped hRel
+      (targetStopped_of_rel hRel)
+
 theorem afterOpenStepResultWithStop_zero_rel
     {result : TypedCfgCompiler.Result}
     {cfg : TypedCfg.Program}
@@ -990,27 +1213,8 @@ theorem afterOpenStepResultWithStop_zero_rel
       (DoneRel result ctx regular returns tokens)
       (Simulation.Interaction.pure source)
       (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-        (stopJump result ctx regular returns tokens) cfg 0 target) := by
-  have hStopped := targetStopped_of_rel hRel
-  cases target with
-  | jump label targetState =>
-      change
-        stopJump result ctx regular returns tokens
-          label targetState = true at hStopped
-      simp only [
-        TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-        hStopped, if_true]
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact hRel
-  | halt kind targetState =>
-      apply Simulation.Interaction.Rel.done
-      apply Simulation.Interaction.ExceptRel.ok
-      exact hRel
-  | fallthrough targetState
-  | returnDispatch targetState
-  | invalid targetState =>
-      exact False.elim hStopped
+        (stopJump result ctx regular returns tokens) cfg 0 target) :=
+  afterOpenStepResultWithStop_rel hRel
 
 theorem target_allStopped
     {result : TypedCfgCompiler.Result}
@@ -1036,43 +1240,10 @@ theorem target_allStopped
       cases targetResult with
       | exhausted label state =>
           exact False.elim hRun
-      | stopped outcome =>
+      | stopped remaining outcome =>
           trivial
 
 namespace PreservesWithin
-
-/--
-Once a fragment has stopped at the enclosing semantic boundary, extra target
-fuel cannot expose another block or interaction.
--/
-theorem pad_stop
-    {fragmentResult boundaryResult : TypedCfgCompiler.Result}
-    {cfg : TypedCfg.Program}
-    {entry fragmentRegular boundaryRegular : Assembly.Label}
-    {ctx : TypedCfgCompiler.Context}
-    {source : RunState} {tokens : List Word}
-    {sourceRun :
-      Simulation.Interaction EVMException Structured.Outcome}
-    {targetFuel : Nat}
-    (hPreserves :
-      PreservesWithin fragmentResult boundaryResult cfg entry ctx
-        fragmentRegular boundaryRegular .stop source tokens
-        sourceRun targetFuel)
-    (extra : Nat) :
-    PreservesWithin fragmentResult boundaryResult cfg entry ctx
-      fragmentRegular boundaryRegular .stop source tokens
-      sourceRun (targetFuel + extra) := by
-  intro target hStateRel
-  have hRel := hPreserves target hStateRel
-  have hStopped := target_allStopped hRel
-  rw [
-    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add_eq_of_allStopped
-      (stopJump :=
-        stopJump boundaryResult ctx boundaryRegular
-          source.returns tokens)
-      (program := cfg) (fuel := targetFuel) (extra := extra)
-      (label := entry) (state := target) hStopped]
-  exact hRel
 
 /--
 Monotone form of `pad_stop`, convenient when branch proofs provide only a
@@ -1127,8 +1298,9 @@ theorem prepend_closed_jump
       ∀ targetAfter,
         TypedCfgPreservation.StateRel
             nextSource tokens targetAfter →
-          stopJump boundaryResult ctx boundaryRegular
-              source.returns tokens next targetAfter =
+          segmentStopJump fragmentResult boundaryResult ctx
+              fragmentRegular boundaryRegular source.returns tokens
+              regularExit next targetAfter =
             false)
     (hTail :
       PreservesWithin fragmentResult boundaryResult cfg next ctx
@@ -1202,8 +1374,9 @@ theorem of_openStep
           (TypedCfg.InteractionSemantics.Program.openStep
             cfg entry target)
           (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-            (stopJump boundaryResult ctx boundaryRegular
-              source.returns tokens)
+            (segmentStopJump fragmentResult boundaryResult ctx
+              fragmentRegular boundaryRegular source.returns tokens
+              regularExit)
             cfg 0)) := by
     apply Simulation.Interaction.Rel.bind_custom
       (hStep target hStateRel)
@@ -1233,8 +1406,9 @@ theorem of_openStep
                       (Simulation.Interaction.pure
                         { state := final, mode := sourceMode })
                       (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
-                        (stopJump boundaryResult ctx boundaryRegular
-                          source.returns tokens)
+                        (segmentStopJump fragmentResult boundaryResult ctx
+                          fragmentRegular boundaryRegular source.returns tokens
+                          regularExit)
                         cfg 0 targetOutcome) := by
                   have hBoundary :
                       Rel boundaryResult ctx boundaryRegular
@@ -1254,16 +1428,23 @@ theorem of_openStep
                         stopJump boundaryResult ctx boundaryRegular
                           source.returns tokens label targetState = true
                         at hStopped
+                      have hSegmentStop :
+                          segmentStopJump fragmentResult boundaryResult ctx
+                              fragmentRegular boundaryRegular
+                              source.returns tokens regularExit
+                              label targetState =
+                            true := by
+                        cases regularExit <;>
+                          simp [segmentStopJump, hStopped]
                       have hSegment :
                           SegmentRunRel fragmentResult ctx fragmentRegular
                             source.returns tokens regularExit
                             { state := final, mode := sourceMode }
-                            (.stopped (.jump label targetState)) := by
-                        cases regularExit <;>
-                          simp [SegmentRunRel, hMode, hOutcome]
+                            (.stopped 0 (.jump label targetState)) := by
+                        simpa [SegmentRunRel] using hOutcome
                       simp only [
                         TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-                        hStopped, if_true]
+                        hSegmentStop, if_true]
                       exact
                         Simulation.Interaction.Rel.done
                           (Simulation.Interaction.ExceptRel.ok hSegment)
@@ -1272,9 +1453,8 @@ theorem of_openStep
                           SegmentRunRel fragmentResult ctx fragmentRegular
                             source.returns tokens regularExit
                             { state := final, mode := sourceMode }
-                            (.stopped (.halt kind targetState)) := by
-                        cases regularExit <;>
-                          simp [SegmentRunRel, hMode, hOutcome]
+                            (.stopped 0 (.halt kind targetState)) := by
+                        simpa [SegmentRunRel] using hOutcome
                       exact
                         Simulation.Interaction.Rel.done
                           (Simulation.Interaction.ExceptRel.ok hSegment)
@@ -1296,24 +1476,39 @@ theorem of_openStep
                         TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext]
                         using hOutcome
                     have hPolicy := hRegularPolicy hOutcome'
-                    cases regularExit with
-                    | stop =>
-                        simp only [
-                          TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-                          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
-                          hPolicy, if_true]
-                        exact
-                          Simulation.Interaction.Rel.done
-                            (Simulation.Interaction.ExceptRel.ok hOutcome')
-                    | resume =>
-                        simp only [
-                          TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-                          TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
-                          hPolicy, if_false,
-                          TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_zero]
-                        exact
-                          Simulation.Interaction.Rel.done
-                            (Simulation.Interaction.ExceptRel.ok hOutcome')
+                    have hFragmentStopped :=
+                      targetStopped_of_rel hOutcome'
+                    change
+                      stopJump fragmentResult ctx fragmentRegular
+                        source.returns tokens fragmentRegular targetState =
+                          true
+                      at hFragmentStopped
+                    have hSegmentStop :
+                        segmentStopJump fragmentResult boundaryResult ctx
+                            fragmentRegular boundaryRegular
+                            source.returns tokens regularExit
+                            fragmentRegular targetState =
+                          true := by
+                      cases regularExit with
+                      | stop =>
+                          simpa [segmentStopJump] using hPolicy
+                      | resume =>
+                          simp [
+                            segmentStopJump, hPolicy, hFragmentStopped]
+                    have hSegment :
+                        SegmentRunRel fragmentResult ctx fragmentRegular
+                          source.returns tokens regularExit
+                          (Structured.Outcome.regular final)
+                          (.stopped 0
+                            (.jump fragmentRegular targetState)) := by
+                      simpa [SegmentRunRel] using hOutcome'
+                    simp only [
+                      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                      TypedCfgPreservation.OutcomeSimulation.Continuations.ofContext,
+                      hSegmentStop, if_true]
+                    exact
+                      Simulation.Interaction.Rel.done
+                        (Simulation.Interaction.ExceptRel.ok hSegment)
                 | brk | cont | leave | halt kind =>
                     exact hNonregular (by simp)
   simpa [Simulation.Interaction.bind_pure] using hLifted
@@ -1731,7 +1926,7 @@ theorem openRun_nil_of_compileStmtListFuel?
         (Simulation.Interaction.pure
           (Structured.Outcome.regular source))
         (Simulation.Interaction.pure
-          (TypedCfg.Control.Program.RunResult.stopped
+          (TypedCfg.Control.Program.RunResult.stopped 0
             (TypedCfg.Outcome.jump regular target))) :=
     Simulation.Interaction.Rel.done
       (Simulation.Interaction.ExceptRel.ok hRelated)
@@ -1757,7 +1952,7 @@ theorem openRun_nil_of_compileStmtListFuel?
               ctx regular source.returns tokens)
             cfg 0) =
         Simulation.Interaction.pure
-          (TypedCfg.Control.Program.RunResult.stopped
+          (TypedCfg.Control.Program.RunResult.stopped 0
             (TypedCfg.Outcome.jump regular target)) := by
     change
       TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
@@ -1769,7 +1964,7 @@ theorem openRun_nil_of_compileStmtListFuel?
             ctx regular source.returns tokens)
           cfg 0 (TypedCfg.Outcome.jump regular target) =
         Simulation.Interaction.pure
-          (TypedCfg.Control.Program.RunResult.stopped
+          (TypedCfg.Control.Program.RunResult.stopped 0
             (TypedCfg.Outcome.jump regular target))
     simp [
       TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
@@ -1803,6 +1998,9 @@ theorem openRun_cons_within_of_compileStmtListFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx regular supply)
     (hHeadNoTail :
       ∀ {headResult : TypedCfgCompiler.Result},
         TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
@@ -1885,6 +2083,9 @@ theorem openRun_cons_within_of_compileStmtListFuel?
       hHeadWithTail hHeadCompile hHeadBlocks hFallthrough
     have hComposed :=
       OpenOutcome.PreservesWithin.sequence hHead
+        (fun targetMiddle =>
+          OpenOutcome.stopJump_restLabel_eq_false
+            hBefore source.returns tokens targetMiddle)
         (fun middleSource hReturns =>
           hTail hHeadCompile hFallthrough hTailCompile
             hTailBlocks hReturns)
@@ -1951,7 +2152,7 @@ theorem openRun_code_cons_within_of_compileStmtListFuel?
   | succ compilerFuel =>
       apply
         openRun_cons_within_of_compileStmtListFuel?
-          hCompile hBlocks
+          hCompile hBlocks hBefore
       · intro headResult hHeadCompile _hHeadBlocks hFallthrough
         obtain ⟨output, _hType, hHeadResult⟩ :=
           TypedCfgCompilerFacts.Stmt.components_of_compileStmtFuel?_code

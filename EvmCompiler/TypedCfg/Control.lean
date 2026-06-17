@@ -63,14 +63,14 @@ def step {M : Type → Type}
 
 inductive RunResult where
   | exhausted (label : Label) (state : EVMState)
-  | stopped (outcome : TypedCfg.Outcome)
+  | stopped (remaining : Nat) (outcome : TypedCfg.Outcome)
 
 def runNWithStopAs {M : Type → Type} {Result : Type}
     [Monad M] [MonadExceptOf EVMException M]
     (runState : TypedCfg.Instr → Shape → EVMState → M EVMState)
     (stopJump : Label → EVMState → Bool)
     (exhausted : Label → EVMState → Result)
-    (stopped : TypedCfg.Outcome → Result)
+    (stopped : Nat → TypedCfg.Outcome → Result)
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M Result
   | 0, label, state => pure (exhausted label state)
@@ -79,18 +79,18 @@ def runNWithStopAs {M : Type → Type} {Result : Type}
       match outcome with
       | .jump next state' =>
           if stopJump next state' then
-            pure (stopped (.jump next state'))
+            pure (stopped fuel (.jump next state'))
           else
             runNWithStopAs runState stopJump exhausted stopped
               program fuel next state'
       | .fallthrough state' =>
-          pure (stopped (.fallthrough state'))
+          pure (stopped fuel (.fallthrough state'))
       | .returnDispatch state' =>
-          pure (stopped (.returnDispatch state'))
+          pure (stopped fuel (.returnDispatch state'))
       | .halt kind state' =>
-          pure (stopped (.halt kind state'))
+          pure (stopped fuel (.halt kind state'))
       | .invalid state' =>
-          pure (stopped (.invalid state'))
+          pure (stopped fuel (.invalid state'))
 
 abbrev runNWithStop {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
@@ -99,7 +99,7 @@ abbrev runNWithStop {M : Type → Type}
     (program : TypedCfg.Program) :
     Nat → Label → EVMState → M TypedCfg.Outcome :=
   runNWithStopAs runState stopJump
-    (fun label state => .jump label state) id program
+    (fun label state => .jump label state) (fun _ outcome => outcome) program
 
 abbrev runNResultWithStop {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]
@@ -139,18 +139,18 @@ theorem runNResultWithStop_succ {M : Type → Type}
         match outcome with
         | .jump next state' =>
             if stopJump next state' then
-              pure (.stopped (.jump next state'))
+              pure (.stopped fuel (.jump next state'))
             else
               runNResultWithStop runState stopJump
                 program fuel next state'
         | .fallthrough state' =>
-            pure (.stopped (.fallthrough state'))
+            pure (.stopped fuel (.fallthrough state'))
         | .returnDispatch state' =>
-            pure (.stopped (.returnDispatch state'))
+            pure (.stopped fuel (.returnDispatch state'))
         | .halt kind state' =>
-            pure (.stopped (.halt kind state'))
+            pure (.stopped fuel (.halt kind state'))
         | .invalid state' =>
-            pure (.stopped (.invalid state'))) := rfl
+            pure (.stopped fuel (.invalid state'))) := rfl
 
 @[simp] theorem runNWithStop_zero {M : Type → Type}
     [Monad M] [MonadExceptOf EVMException M]

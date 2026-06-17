@@ -418,8 +418,6 @@ theorem openRun_default_some_of_compileDefaultFuel?
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
     {stack : EvmYul.Stack Word} {value : Word}
-    {regularExit :
-      InteractionControlPreservation.OpenOutcome.RegularExit}
     (hCompile :
       TypedCfgCompiler.compileDefaultFuel? (compilerFuel + 1)
           (some body) ctx supply entry valueShape bodyShape regular =
@@ -442,13 +440,13 @@ theorem openRun_default_some_of_compileDefaultFuel?
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
         InteractionControlPreservation.OpenOutcome.PreservesWithin
           bodyResult boundaryResult cfg (.generated supply 2000) ctx
-          regular boundaryRegular regularExit
+          regular boundaryRegular .stop
           (source.withEVM { source.evm with stack := stack }) tokens
           (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
             (source.withEVM { source.evm with stack := stack }))
           bodyTargetFuel) :
     InteractionControlPreservation.OpenOutcome.PreservesWithin
-      result boundaryResult cfg entry ctx regular boundaryRegular regularExit
+      result boundaryResult cfg entry ctx regular boundaryRegular .stop
       source tokens
       (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
         (source.withEVM { source.evm with stack := stack }))
@@ -477,7 +475,7 @@ theorem openRun_default_some_of_compileDefaultFuel?
           calls := bodyResult.calls
           fallthrough? := some bodyShape }
         boundaryResult cfg (.generated supply 2000) ctx
-        regular boundaryRegular regularExit
+        regular boundaryRegular .stop
         (source.withEVM { source.evm with stack := stack }) tokens
         (InteractionSemantics.Block.openRun sourceProgram sourceFuel body
           (source.withEVM { source.evm with stack := stack }))
@@ -1129,6 +1127,7 @@ theorem openRun_switch_within_stop_of_compileStmtFuel?
                         (idx := 0)
                   simp only [
                     TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                    InteractionControlPreservation.OpenOutcome.segmentStopJump,
                     hNoStop, Bool.true_eq, if_false]
                   cases hSelect :
                       Structured.Switch.select value cases defaultBody with

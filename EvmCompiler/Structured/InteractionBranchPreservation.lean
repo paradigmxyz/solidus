@@ -505,12 +505,22 @@ theorem openRun_if_within_stop_of_compileStmtFuel?
                 · simpa [
                     InteractionControlPreservation.OpenOutcome.ActivationRestored]
                     using hReturnsEq
+              have hWholeRun :
+                  InteractionControlPreservation.OpenOutcome.SegmentRunRel
+                    result ctx regular source.returns tokens .stop
+                    (Structured.Outcome.regular afterCond)
+                    (.stopped bodyTargetFuel
+                      (.jump regular targetAfterCond)) := by
+                simpa [
+                  InteractionControlPreservation.OpenOutcome.SegmentRunRel]
+                  using hWholeRel
               simp only [
                 TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+                InteractionControlPreservation.OpenOutcome.segmentStopJump,
                 hStop, Bool.false_eq_true, if_false]
               exact
                 Simulation.Interaction.Rel.done
-                  (Simulation.Interaction.ExceptRel.ok hWholeRel)
+                  (Simulation.Interaction.ExceptRel.ok hWholeRun)
           | true =>
               simp only [if_true] at hTargetOutcome
               subst targetOutcome
@@ -550,7 +560,8 @@ theorem openRun_if_within_stop_of_compileStmtFuel?
                 simpa [hReturnsEq] using hBodyRelBase
               simp only [
                 TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-                hNoStop, Bool.true_eq, if_false]
+                InteractionControlPreservation.OpenOutcome.segmentStopJump,
+                hNoStop, Bool.true_eq, if_true, if_false]
               have hLifted :
                   Simulation.Interaction.Rel
                     (InteractionControlPreservation.OpenOutcome.SegmentDoneRel
@@ -582,7 +593,7 @@ theorem openRun_if_within_stop_of_compileStmtFuel?
                             cases targetRun with
                             | exhausted label targetState =>
                                 exact False.elim hRun
-                            | stopped targetOutcome =>
+                            | stopped _remaining targetOutcome =>
                                 exact
                                   Simulation.Interaction.ExceptRel.ok
                                     (InteractionControlPreservation.OpenOutcome.Rel.change_result_of_required_fallthrough

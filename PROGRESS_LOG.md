@@ -30924,3 +30924,17 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   lengths cannot be padded across a resumable statement-list continuation, so
   switch/if list composition needs a generic internal-boundary splice theorem
   rather than branch-specific fuel evidence or a duplicate interpreter.
+- 2026-06-17 06:45:25 PDT - compaction-resume - Resumed the horizontal
+  CALL/CREATE proof goal at checkpoint `b7515ca2a`; finish the generic
+  residual-fuel refined-stop splice in Structured control, verify it, then
+  continue upward through Expressions, Locals, Functions, and Yul.
+- 2026-06-17 06:54:54 PDT - proof/structured-refined-stop-splice - Added
+  residual fuel to the canonical TypedCfg stopped result and proved
+  `openRunNResultWithRefinedStop_add`: an enclosing run is recovered exactly
+  from a run stopped at enclosing-or-internal boundaries, resuming internal
+  branches with their unused budget. Rebuilt `PreservesWithin.sequence` around
+  that theorem and compiler-owned middle-label freshness, so variable-length
+  `if`/`switch` paths compose without replay evidence or construct-specific
+  schedulers. Focused Structured builds and the full 1,289-job verification
+  root pass; architecture, changed-file hole, open-effects axiom, and diff
+  checks pass. Axioms remain `propext`, `Classical.choice`, and `Quot.sound`.

@@ -205,7 +205,8 @@ done
 
 for theorem in \
     'openRunNResultWithStop_add' \
-    'openRunNResultWithStop_add_eq_of_allStopped'; do
+    'openRunNResultWithRefinedStop_add' \
+    'openRunNResultWithStop_add_eq_map_addFuel_of_allStopped'; do
   if ! rg -Fq \
       "#check EvmCompiler.TypedCfg.InteractionSemantics.Program.${theorem}" \
       EvmCompiler/Verification.lean; then
