@@ -199,6 +199,13 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Primitive.openTerminal_frame
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.OpenResultRel
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.ControlPolicy.loop
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyOpenResultRel
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyOpenResultRel.forget
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyScopedResultRel
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.PolicyScopedResultRel.withContext
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.policy_forward_scoped_withContext
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel.withContext
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.forward_scoped_withContext
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.SwitchCompile.SelectedRel
@@ -226,10 +233,12 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.terminalArgs_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Block.forward_cons
+#check EvmCompiler.Locals.InteractionPreservation.Block.policy_forward_cons
 #check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.switch_generated

@@ -2211,6 +2211,231 @@ abbrev ScopedOutcomeRel (outerCtx : Locals.Ctx)
     (fun _sourceError _targetError => True)
     (ScopedResultRel outerCtx suffix returns)
 
+/--
+Optional control-scope refinement carried alongside the ordinary outcome
+relation. Generic statements use `any`; loop bodies use `loop` so that a
+`break` or `continue` can later be reinterpreted without recovering a target
+frame from an erased existential.
+-/
+structure ControlPolicy where
+  context : Locals.Source.Ctx → Prop
+  brk : Layout → Prop
+  cont : Layout → Prop
+  leave : Layout → Prop
+
+namespace ControlPolicy
+
+def any : ControlPolicy where
+  context := fun _ => True
+  brk := fun _ => True
+  cont := fun _ => True
+  leave := fun _ => True
+
+def loop (scope : Layout) : ControlPolicy where
+  context := fun ctx =>
+    ctx.breakScope? = some scope ∧ ctx.continueScope? = some scope
+  brk := fun frame => frame = scope
+  cont := fun frame => frame = scope
+  leave := fun _ => True
+
+end ControlPolicy
+
+/-- The ordinary adjacent outcome relation strengthened by a control policy. -/
+inductive PolicyOpenResultRel (policy : ControlPolicy)
+    (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    (Locals.Source.Effectful.Outcome Locals.Source.State ×
+      Locals.Source.Ctx) →
+    Structured.Outcome → Prop
+  | regular {source sourceCtx target} :
+      policy.context sourceCtx →
+      Frame.CtxRel sourceCtx finalCtx →
+      Frame.StateRel finalCtx.layout suffix returns source target →
+      PolicyOpenResultRel policy finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source, sourceCtx)
+        (Structured.Outcome.regular target)
+  | brk {source sourceCtx target scope} :
+      policy.context sourceCtx →
+      policy.brk scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyOpenResultRel policy finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source, sourceCtx)
+        (Structured.Outcome.brk target)
+  | cont {source sourceCtx target scope} :
+      policy.context sourceCtx →
+      policy.cont scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyOpenResultRel policy finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source, sourceCtx)
+        (Structured.Outcome.cont target)
+  | leave {source sourceCtx target scope} :
+      policy.context sourceCtx →
+      policy.leave scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyOpenResultRel policy finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source, sourceCtx)
+        (Structured.Outcome.leave target)
+  | halt {kind source sourceCtx target} :
+      policy.context sourceCtx →
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      PolicyOpenResultRel policy finalCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source, sourceCtx)
+        (Structured.Outcome.halt kind target)
+
+abbrev PolicyOpenOutcomeRel (policy : ControlPolicy)
+    (finalCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Except EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State ×
+          Locals.Source.Ctx) →
+      Except EVMException Structured.Outcome → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (PolicyOpenResultRel policy finalCtx suffix returns)
+
+theorem PolicyOpenResultRel.forget
+    {policy : ControlPolicy}
+    {finalCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source :
+      Locals.Source.Effectful.Outcome Locals.Source.State ×
+        Locals.Source.Ctx}
+    {target : Structured.Outcome}
+    (hRel :
+      PolicyOpenResultRel policy finalCtx suffix returns source target) :
+    OpenResultRel finalCtx suffix returns source target := by
+  cases hRel with
+  | regular _ hCtx hState => exact OpenResultRel.regular hCtx hState
+  | brk _ _ hState => exact OpenResultRel.brk hState
+  | cont _ _ hState => exact OpenResultRel.cont hState
+  | leave _ _ hState => exact OpenResultRel.leave hState
+  | halt _ hShared hReturns => exact OpenResultRel.halt hShared hReturns
+
+/-- Scoped outcomes retain policy evidence for abrupt child completion. -/
+inductive PolicyScopedResultRel (policy : ControlPolicy)
+    (outerCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Locals.Source.Effectful.Outcome Locals.Source.State →
+      Structured.Outcome → Prop
+  | regular {source target} :
+      Frame.StateRel outerCtx.layout suffix returns source target →
+      PolicyScopedResultRel policy outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.regular source)
+        (Structured.Outcome.regular target)
+  | brk {source target scope} :
+      policy.brk scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyScopedResultRel policy outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.brk source)
+        (Structured.Outcome.brk target)
+  | cont {source target scope} :
+      policy.cont scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyScopedResultRel policy outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.cont source)
+        (Structured.Outcome.cont target)
+  | leave {source target scope} :
+      policy.leave scope →
+      Frame.StateRel scope suffix returns source target →
+      PolicyScopedResultRel policy outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.leave source)
+        (Structured.Outcome.leave target)
+  | halt {kind source target} :
+      source.shared = target.evm.toSharedState →
+      target.returns = returns →
+      PolicyScopedResultRel policy outerCtx suffix returns
+        (Locals.Source.Effectful.Outcome.halt kind source)
+        (Structured.Outcome.halt kind target)
+
+abbrev PolicyScopedOutcomeRel (policy : ControlPolicy)
+    (outerCtx : Locals.Ctx)
+    (suffix : List Word) (returns : List Structured.ReturnDest) :
+    Except EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State) →
+      Except EVMException Structured.Outcome → Prop :=
+  Simulation.Interaction.ExceptRel
+    (fun _sourceError _targetError => True)
+    (PolicyScopedResultRel policy outerCtx suffix returns)
+
+theorem PolicyScopedResultRel.forget
+    {policy : ControlPolicy}
+    {outerCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.Effectful.Outcome Locals.Source.State}
+    {target : Structured.Outcome}
+    (hRel :
+      PolicyScopedResultRel policy outerCtx suffix returns source target) :
+    ScopedResultRel outerCtx suffix returns source target := by
+  cases hRel with
+  | regular hState => exact ScopedResultRel.regular hState
+  | brk _ hState => exact ScopedResultRel.brk hState
+  | cont _ hState => exact ScopedResultRel.cont hState
+  | leave _ hState => exact ScopedResultRel.leave hState
+  | halt hShared hReturns => exact ScopedResultRel.halt hShared hReturns
+
+theorem PolicyScopedResultRel.withContext
+    {policy : ControlPolicy}
+    {outerCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.Effectful.Outcome Locals.Source.State}
+    {target : Structured.Outcome}
+    {sourceCtx : Locals.Source.Ctx}
+    (hPolicyCtx : policy.context sourceCtx)
+    (hCtx : Frame.CtxRel sourceCtx outerCtx)
+    (hRel :
+      PolicyScopedResultRel policy outerCtx suffix returns source target) :
+    PolicyOpenResultRel policy outerCtx suffix returns
+      (source, sourceCtx) target := by
+  cases hRel with
+  | regular hState =>
+      exact PolicyOpenResultRel.regular hPolicyCtx hCtx hState
+  | brk hPolicy hState =>
+      exact PolicyOpenResultRel.brk hPolicyCtx hPolicy hState
+  | cont hPolicy hState =>
+      exact PolicyOpenResultRel.cont hPolicyCtx hPolicy hState
+  | leave hPolicy hState =>
+      exact PolicyOpenResultRel.leave hPolicyCtx hPolicy hState
+  | halt hShared hReturns =>
+      exact PolicyOpenResultRel.halt hPolicyCtx hShared hReturns
+
+theorem policy_forward_scoped_withContext
+    {truncated : EVMException → Prop}
+    {policy : ControlPolicy}
+    {outerCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceCtx : Locals.Source.Ctx}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State)}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hPolicyCtx : policy.context sourceCtx)
+    (hCtx : Frame.CtxRel sourceCtx outerCtx)
+    (hRel :
+      Simulation.Interaction.ForwardRel
+        truncated
+        (PolicyScopedOutcomeRel policy outerCtx suffix returns)
+        sourceRun targetRun) :
+    Simulation.Interaction.ForwardRel
+      truncated
+      (PolicyOpenOutcomeRel policy outerCtx suffix returns)
+      (Simulation.Interaction.bind sourceRun
+        (fun outcome =>
+          Simulation.Interaction.pure (outcome, sourceCtx)))
+      targetRun := by
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure targetRun]
+  apply Simulation.Interaction.ForwardRel.bind hRel
+  intro sourceResult targetResult hResult
+  apply Simulation.Interaction.ForwardRel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact hResult.withContext hPolicyCtx hCtx
+
 theorem ScopedResultRel.withContext
     {outerCtx : Locals.Ctx}
     {suffix : List Word}
@@ -3675,6 +3900,96 @@ Scoped block preservation from an already-related open body and the
 compiler-owned cleanup. This is the shared child-block interface used by
 lexical blocks, conditionals, switches, and loops.
 -/
+theorem policyScopedBlock_generated
+    (policy : ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat) (body : Locals.Block)
+    (bodyCode : List Expressions.Stmt) (cleanup : Structured.Code)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hLayout : ∃ pre, bodyCtx.layout = pre ++ targetCtx.layout)
+    (hCleanup :
+      bodyCtx.cleanupTo? targetCtx.layout.length = some cleanup)
+    (hCleanupFuel : 2 ≤ targetFuel - bodyCode.length)
+    (hBody :
+      Simulation.Interaction.ForwardRel
+        Block.FuelTruncated
+        (PolicyOpenOutcomeRel policy bodyCtx suffix returns)
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := bodyCode } target)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyScopedOutcomeRel policy targetCtx suffix returns)
+      (InteractionSemantics.Block.openRunScoped
+        sourceProgram sourceCtx body sourceFuel source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts := bodyCode ++ Locals.codeStmt cleanup } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold InteractionSemantics.Block.openRunScoped
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  unfold Locals.Source.Effectful.Control.Block.runScoped
+  change
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (PolicyScopedOutcomeRel policy targetCtx suffix returns)
+      (Simulation.Interaction.bind
+        (InteractionSemantics.Block.openRun
+          sourceProgram sourceCtx sourceFuel body source)
+        _)
+      _
+  apply Simulation.Interaction.ForwardRel.bind hBody
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | @regular sourceAfter sourceAfterCtx targetAfter
+      hPolicyCtx hInnerCtx hState =>
+      obtain ⟨pre, hLayout⟩ := hLayout
+      obtain ⟨afterCleanup, hCleanupRun, hFinal⟩ :=
+        hState.openRun_cleanupTo hLayout hCleanup
+      have hTargetCleanup :=
+        TargetBlock.openRun_single_code_done
+          targetProgram (targetFuel - bodyCode.length)
+          cleanup targetAfter afterCleanup
+          hCleanupFuel hCleanupRun
+      simp only [Structured.Outcome.regular_mode,
+        Structured.Outcome.regular_state,
+        Locals.Source.Effectful.Outcome.regular,
+        Locals.codeStmt]
+      rw [hTargetCleanup]
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      apply PolicyScopedResultRel.regular
+      simpa [hCtx.layout] using hFinal
+  | brk hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact PolicyScopedResultRel.brk hPolicy hState
+  | cont hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact PolicyScopedResultRel.cont hPolicy hState
+  | leave hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact PolicyScopedResultRel.leave hPolicy hState
+  | halt hPolicyCtx hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact PolicyScopedResultRel.halt hShared hReturns
+
 theorem scopedBlock_generated
     (sourceProgram : Locals.Program)
     (targetProgram : Expressions.Program)
@@ -4274,6 +4589,92 @@ theorem switch_of_compile
 end Stmt.Forward
 
 namespace Block
+
+/-- Policy-indexed sequence composition used when a control owner needs exact
+abrupt frames. The policy context invariant is passed from a regular head into
+the tail and is otherwise preserved with the abrupt outcome. -/
+theorem policy_forward_cons
+    (policy : Stmt.ControlPolicy)
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (middleCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (stmt : Locals.Stmt) (rest : List Locals.Stmt)
+    (headCode tailCode : List Expressions.Stmt)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hEntryPolicy : policy.context sourceCtx)
+    (hHead :
+      Simulation.Interaction.ForwardRel
+        FuelTruncated
+        (Stmt.PolicyOpenOutcomeRel policy middleCtx suffix returns)
+        (InteractionSemantics.Stmt.openRun
+          sourceProgram sourceCtx sourceFuel stmt source)
+        (Expressions.InteractionSemantics.Block.openRun
+          targetProgram targetFuel { stmts := headCode } target))
+    (hTail :
+      ∀ {sourceMid : Locals.Source.State}
+        {targetMid : Structured.RunState}
+        {sourceMidCtx : Locals.Source.Ctx},
+        policy.context sourceMidCtx →
+        Frame.CtxRel sourceMidCtx middleCtx →
+        Frame.StateRel middleCtx.layout suffix returns
+            sourceMid targetMid →
+          Simulation.Interaction.ForwardRel
+            FuelTruncated
+            (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceMidCtx sourceFuel
+                { stmts := rest } sourceMid)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (targetFuel - headCode.length)
+                { stmts := tailCode } targetMid)) :
+    Simulation.Interaction.ForwardRel
+      FuelTruncated
+      (Stmt.PolicyOpenOutcomeRel policy finalCtx suffix returns)
+      (InteractionSemantics.Block.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          { stmts := stmt :: rest } source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts := headCode ++ tailCode } target) := by
+  rw [Expressions.InteractionSemantics.Block.openRun_append]
+  unfold InteractionSemantics.Block.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+  simp only [Locals.Source.Effectful.Control.Block.runOpen]
+  apply Simulation.Interaction.ForwardRel.bind hHead
+  intro sourceResult targetResult hResult
+  cases hResult with
+  | regular hPolicyCtx hCtx hState =>
+      exact hTail hPolicyCtx hCtx hState
+  | brk hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        Stmt.PolicyOpenResultRel.brk hEntryPolicy hPolicy hState
+  | cont hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        Stmt.PolicyOpenResultRel.cont hEntryPolicy hPolicy hState
+  | leave hPolicyCtx hPolicy hState =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        Stmt.PolicyOpenResultRel.leave hEntryPolicy hPolicy hState
+  | halt hPolicyCtx hShared hReturns =>
+      apply Simulation.Interaction.ForwardRel.ofRel
+      apply Simulation.Interaction.Rel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact
+        Stmt.PolicyOpenResultRel.halt hEntryPolicy hShared hReturns
 
 /--
 Generic sequence kernel for the Locals pass. The head theorem owns one source

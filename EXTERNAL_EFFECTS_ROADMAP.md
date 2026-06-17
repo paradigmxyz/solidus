@@ -807,6 +807,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Compiler-facing switch preservation with one structural
       source/compiled selection relation, exact scrutinee-pop frame recovery,
       and shared scoped-child preservation for every selected branch.
+    - [x] Independent control-policy refinement for exact break/continue
+      frames, with policy-indexed scoped-child and sequence composition; the
+      generic outcome interface remains lightweight.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -876,6 +879,8 @@ Exit: every layer exposes one canonical open computation.
     - [x] Ordinary compiled switches preserve no-match and selected-branch
       behavior without importing lower-pass preservation or duplicating a
       switch interpreter.
+    - [x] Exact loop-control frames are an orthogonal proof capability rather
+      than a stronger global outcome relation or a loop-specific interpreter.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

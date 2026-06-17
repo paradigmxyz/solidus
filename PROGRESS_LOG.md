@@ -31364,3 +31364,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   generic scoped composition depend on transient source contexts, so it was
   removed before checkpointing. The next layer is an independent stable
   control-scope capability composed alongside, not inside, generic outcomes.
+- 2026-06-17 14:51:46 PDT - proof/locals-control-policy - added an independent
+  `ControlPolicy` refinement over the ordinary Locals outcome relation. The
+  loop policy records inherited source contexts and exact break/continue
+  frames; policy-indexed scoped-child and sequence theorems compose it without
+  changing or duplicating either canonical interpreter.
+- 2026-06-17 14:51:46 PDT - validation/locals-control-policy - passed the
+  focused Locals build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. New policy
+  theorems depend only on `[propext, Classical.choice, Quot.sound]`.
