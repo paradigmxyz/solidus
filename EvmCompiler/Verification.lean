@@ -167,6 +167,13 @@ or audit-alias corridor.
 #check EvmCompiler.Simulation.Interaction.ForwardRel.executes
 #check EvmCompiler.Simulation.Interaction.ForwardRel.executes_ok
 #check EvmCompiler.Simulation.Interaction.ForwardRel.interpret
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.initial
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.prependScope
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.withoutLoopControl
+#check EvmCompiler.Locals.InteractionPreservation.Frame.CtxRel.withLoopControl
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.expr
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultZero
+#check EvmCompiler.Locals.InteractionPreservation.Frame.StateRel.ofExprResultOneInsert
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall

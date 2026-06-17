@@ -271,6 +271,111 @@ theorem openEval_length
 
 end Primitive
 
+namespace Frame
+
+/--
+Statement-boundary realization of the stack-free Locals state.
+
+The active compiler layout occupies exactly the target stack prefix; `suffix`
+is caller-owned and remains abstract. The relation owns no allocation plan or
+scratch-frame data, which belong to the upper Functions allocation pass.
+-/
+structure StateRel (layout : Layout) (suffix : List Word)
+    (returns : List Structured.ReturnDest)
+    (source : Locals.Source.State)
+    (target : Structured.RunState) : Prop where
+  shared :
+    target.evm.toSharedState = source.shared
+  returns :
+    target.returns = returns
+  stackLength :
+    target.evm.stack.length = layout.length + suffix.length
+  suffix :
+    target.evm.stack.drop layout.length = suffix
+  slot :
+    ∀ {index : Nat} {name : Name},
+      layout[index]? = some name →
+        target.evm.stack[index]? = source.vars name
+  defined :
+    ∀ {name : Name}, name ∈ layout →
+      ∃ value, source.vars name = some value
+  storeScoped :
+    ∀ {name : Name}, name ∉ layout →
+      source.vars name = none
+
+/--
+The source lexical destinations and target stack depths describe the same
+control scopes. `leaveRetc` is zero because internal return-value protocol is
+owned by Functions allocation rather than the stack-free Locals language.
+-/
+structure CtxRel (source : Locals.Source.Ctx)
+    (target : Locals.Ctx) : Prop where
+  layout :
+    target.layout = source.scope
+  breakDepth :
+    target.breakDepth? = source.breakScope?.map List.length
+  continueDepth :
+    target.continueDepth? = source.continueScope?.map List.length
+  leaveDepth :
+    target.leaveDepth? = source.leaveScope?.map List.length
+  leaveRetc :
+    target.leaveRetc = 0
+
+namespace CtxRel
+
+theorem initial :
+    CtxRel Locals.Source.Ctx.initial Locals.Ctx.initial := by
+  constructor <;> rfl
+
+theorem prependScope
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target) (name : Name) :
+    CtxRel
+      { source with scope := name :: source.scope }
+      (target.withLayout (name :: target.layout)) := by
+  constructor
+  · simp [Locals.Ctx.withLayout, hRel.layout]
+  · simpa [Locals.Ctx.withLayout] using hRel.breakDepth
+  · simpa [Locals.Ctx.withLayout] using hRel.continueDepth
+  · simpa [Locals.Ctx.withLayout] using hRel.leaveDepth
+  · simpa [Locals.Ctx.withLayout] using hRel.leaveRetc
+
+theorem withoutLoopControl
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target) :
+    CtxRel source.withoutLoopControl target.withoutLoopControl := by
+  constructor
+  · simpa [Locals.Source.Ctx.withoutLoopControl,
+      Locals.Ctx.withoutLoopControl] using hRel.layout
+  · rfl
+  · rfl
+  · simpa [Locals.Source.Ctx.withoutLoopControl,
+      Locals.Ctx.withoutLoopControl] using hRel.leaveDepth
+  · simpa [Locals.Source.Ctx.withoutLoopControl,
+      Locals.Ctx.withoutLoopControl] using hRel.leaveRetc
+
+theorem withLoopControl
+    {source : Locals.Source.Ctx} {target : Locals.Ctx}
+    (hRel : CtxRel source target) :
+    CtxRel
+      (source.withLoopControl source.scope source.scope)
+      (target.withLoopControl target.layout.length) := by
+  constructor
+  · simpa [Locals.Source.Ctx.withLoopControl,
+      Locals.Ctx.withLoopControl] using hRel.layout
+  · simp [Locals.Source.Ctx.withLoopControl,
+      Locals.Ctx.withLoopControl, hRel.layout]
+  · simp [Locals.Source.Ctx.withLoopControl,
+      Locals.Ctx.withLoopControl, hRel.layout]
+  · simpa [Locals.Source.Ctx.withLoopControl,
+      Locals.Ctx.withLoopControl] using hRel.leaveDepth
+  · simpa [Locals.Source.Ctx.withLoopControl,
+      Locals.Ctx.withLoopControl] using hRel.leaveRetc
+
+end CtxRel
+
+end Frame
+
 namespace Expr
 
 structure StateRel (layout : Layout) (offset : Nat)
@@ -301,6 +406,149 @@ structure ResultRel (results : Nat)
   stack :
     target.evm.stack =
       source.2.reverse ++ initialTarget.evm.stack
+
+end Expr
+
+namespace Frame.StateRel
+
+theorem expr
+    {layout : Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hRel : Frame.StateRel layout suffix returns source target) :
+    Expr.StateRel layout 0 source target := by
+  constructor
+  · exact hRel.shared
+  · intro name depth hDepth
+    have hAt :
+        layout[depth]? = some name :=
+      Layout.getElem?_eq_some_of_lookupDepth?_eq_some hDepth
+    have hMem : name ∈ layout :=
+      List.mem_of_getElem? hAt
+    obtain ⟨value, hValue⟩ := hRel.defined hMem
+    refine ⟨value, hValue, ?_⟩
+    have hSlot := hRel.slot hAt
+    rw [hValue] at hSlot
+    simpa using hSlot
+
+theorem ofExprResultZero
+    {layout : Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {initialSource sourceFinal : Locals.Source.State}
+    {values : List Word}
+    {initialTarget targetFinal : Structured.RunState}
+    (hInitial :
+      Frame.StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Expr.ResultRel 0 initialSource initialTarget
+        (sourceFinal, values) targetFinal) :
+    Frame.StateRel layout suffix returns sourceFinal targetFinal := by
+  cases values with
+  | cons value rest =>
+      have hLength := hResult.length
+      simp at hLength
+  | nil =>
+    constructor
+    · exact hResult.shared
+    · exact hResult.returns.trans hInitial.returns
+    · simpa [hResult.stack] using hInitial.stackLength
+    · simpa [hResult.stack] using hInitial.suffix
+    · intro index name hAt
+      rw [hResult.stack, hResult.vars]
+      simpa using hInitial.slot hAt
+    · intro name hMem
+      rw [hResult.vars]
+      exact hInitial.defined hMem
+    · intro name hNotMem
+      rw [hResult.vars]
+      exact hInitial.storeScoped hNotMem
+
+theorem ofExprResultOneInsert
+    {layout : Layout} {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {name : Name} {value : Word}
+    {initialSource sourceFinal : Locals.Source.State}
+    {initialTarget targetFinal : Structured.RunState}
+    (hFresh : name ∉ layout)
+    (hInitial :
+      Frame.StateRel layout suffix returns initialSource initialTarget)
+    (hResult :
+      Expr.ResultRel 1 initialSource initialTarget
+        (sourceFinal, [value]) targetFinal) :
+    Frame.StateRel (name :: layout) suffix returns
+      (sourceFinal.insert name value) targetFinal := by
+  constructor
+  · exact hResult.shared
+  · exact hResult.returns.trans hInitial.returns
+  · rw [hResult.stack]
+    simpa [hInitial.stackLength, Nat.add_assoc, Nat.add_comm,
+      Nat.add_left_comm]
+  · rw [hResult.stack]
+    simpa using hInitial.suffix
+  · intro index slotName hAt
+    cases index with
+    | zero =>
+        simp at hAt
+        subst slotName
+        simp [hResult.stack, Locals.Source.State.insert]
+    | succ index =>
+        simp only [List.getElem?_cons_succ] at hAt
+        have hMem : slotName ∈ layout :=
+          List.mem_of_getElem? hAt
+        have hNe : slotName ≠ name := by
+          intro hEq
+          subst slotName
+          exact hFresh hMem
+        rw [hResult.stack]
+        simp only [List.getElem?_cons_succ]
+        rw [show
+          (sourceFinal.insert name value).vars slotName =
+            sourceFinal.vars slotName by
+          simp [Locals.Source.State.insert,
+            Locals.Source.Store.insert, hNe]]
+        rw [hResult.vars]
+        exact hInitial.slot hAt
+  · intro slotName hMem
+    rcases List.mem_cons.mp hMem with hEq | hTail
+    · subst slotName
+      exact
+        ⟨value, by
+          simp [Locals.Source.State.insert,
+            Locals.Source.Store.insert]⟩
+    · obtain ⟨oldValue, hOldValue⟩ :=
+        hInitial.defined hTail
+      have hNe : slotName ≠ name := by
+        intro hEq
+        subst slotName
+        exact hFresh hTail
+      refine ⟨oldValue, ?_⟩
+      rw [show
+        (sourceFinal.insert name value).vars slotName =
+          sourceFinal.vars slotName by
+        simp [Locals.Source.State.insert,
+          Locals.Source.Store.insert, hNe]]
+      rw [hResult.vars]
+      exact hOldValue
+  · intro slotName hNotMem
+    have hNe : slotName ≠ name := by
+      intro hEq
+      subst slotName
+      exact hNotMem (by simp)
+    have hNotTail : slotName ∉ layout := by
+      intro hMem
+      exact hNotMem (List.mem_cons_of_mem name hMem)
+    rw [show
+      (sourceFinal.insert name value).vars slotName =
+        sourceFinal.vars slotName by
+      simp [Locals.Source.State.insert,
+        Locals.Source.Store.insert, hNe]]
+    rw [hResult.vars]
+    exact hInitial.storeScoped hNotTail
+
+end Frame.StateRel
+
+namespace Expr
 
 abbrev OutcomeRel (results : Nat)
     (initialSource : Locals.Source.State)

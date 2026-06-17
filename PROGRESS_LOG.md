@@ -31173,7 +31173,7 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Locals remains responsible for source-owned control and for external
   CALL/CREATE primitive effects.
 - 2026-06-17 13:14:31 PDT - compaction-resume - resumed the horizontal CALL/CREATE proof at the Locals source-owned control boundary; the immediate obligation is an honest pass-owned fuel translation for one source statement lowering to multiple Expressions statements.
-- 2026-06-17 13:27:00 PDT - theorem-boundary/locals-fuel - rejected exact
+- 2026-06-17 13:16:00 PDT - theorem-boundary/locals-fuel - rejected exact
   `Interaction.Rel` between differently fuelled Locals and Expressions trees:
   one fixed conservative target budget can leave branch-dependent slack after
   source fuel exhaustion because statement expansion varies by control path.
@@ -31181,10 +31181,10 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   while retaining exact query equality and universal continuations before
   truncation; every terminating source execution must still transport to an
   exact target transcript and related terminal outcome.
-- 2026-06-17 13:27:00 PDT - oracle - submitted the Locals open-fuel interface
+- 2026-06-17 13:17:00 PDT - oracle - submitted the Locals open-fuel interface
   critique as `resp_0a08e2b1e87dd33b006a33005d5b248199bead3d8358e2859d`;
   the request failed with insufficient API quota, so no oracle advice was used.
-- 2026-06-17 13:43:00 PDT - proof/open-forward-refinement - added the shared
+- 2026-06-17 13:20:00 PDT - proof/open-forward-refinement - added the shared
   `Simulation.Interaction.ForwardRel` relation with exact matching queries and
   universal continuations before explicit source truncation, plus `ofRel`,
   `mono`, `bind`, `bind_custom`, exact-transcript `executes`/`executes_ok`, and
@@ -31195,3 +31195,14 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check`. Axiom audits for the new public lemmas report only
   `[propext, Quot.sound]`; architecture debt is limited to the pre-existing
   oversized legacy observer modules.
+- 2026-06-17 13:25:13 PDT - proof/locals-frame-interface - added the
+  Locals-owned `Frame.StateRel` and `Frame.CtxRel`, including exact active
+  layout-stack realization over an abstract caller suffix, source-store
+  definedness/support, shared-state and return-stack preservation, initial and
+  loop/lexical context algebra, the bridge to recursive expression
+  preservation, and checked zero-result/fresh-binding frame laws. Verification
+  passed with `lake build EvmCompiler.Locals.InteractionPreservation`,
+  `lake env lean EvmCompiler/Verification.lean`,
+  `bash scripts/check_architecture.sh`, touched-Lean hole scans, axiom prints,
+  and `git diff --check`. New lemmas use only the project-standard
+  `[propext, Classical.choice, Quot.sound]`.
