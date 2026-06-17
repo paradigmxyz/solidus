@@ -320,6 +320,8 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_le_executionBudgetFor
 #check EvmCompiler.Yul.FunctionsObserverFuel.PreparedValue.ProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverFuel.ScopedOpenResult.ProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverFuel.ScopedOpenResult.appendRegular_programBounded
+#check EvmCompiler.Yul.FunctionsObserverFuel.ScopedOpenResult.appendNonregular_programBounded
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_mono
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_add_static
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_children_add_eight_le_of_lt
@@ -373,7 +375,10 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverCallFuel.RecursiveScopedValueForwardProgramBounded.ofBody
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenStmtForwardBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenStmtForwardProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveBodyForwardBounded.ofList
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveBodyForwardProgramBounded.ofList
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetOnePrepared_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofAssignOnePrepared_bounded
@@ -381,6 +386,7 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofContinue_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLeave_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardProgramBounded.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.RecursiveOpenStmtBackwardBelow

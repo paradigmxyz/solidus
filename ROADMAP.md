@@ -85,7 +85,8 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     call-expanded runtime measure;
     - [x] argument preparation and primitive expression evaluation;
     - [x] internal function calls and recursive expression capability;
-    - [ ] statements, lists, and returned bodies;
+    - [x] list sequencing and returned-body packaging;
+    - [ ] leaf and compound statements;
   - [ ] prove every remaining compiler construct respects the program static
     measure;
   - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;
