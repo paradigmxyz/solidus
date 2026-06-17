@@ -645,6 +645,51 @@ theorem Rel.not_regular_of_fallthrough_none
   rw [hFallthrough] at hShape
   cases hShape
 
+/--
+Eliminate a related regular outcome at a compiler-checked join shape.
+
+`requireFallthrough?` permits a fragment with no regular path, but the
+existence of this regular relation rules that case out and identifies the
+compiler's actual fallthrough shape with `expected`.
+-/
+theorem Rel.regular_elim_of_required_fallthrough
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {expected : TypedCfg.Shape}
+    {source : RunState} {target : TypedCfg.Outcome}
+    (hRequire :
+      result.requireFallthrough? expected = some ())
+    (hRel :
+      Rel result ctx regular returns tokens
+        (Structured.Outcome.regular source) target) :
+    ∃ targetState,
+      target = .jump regular targetState ∧
+        TypedCfgPreservation.StateRel source tokens targetState ∧
+          TypedCfgCompiler.Shape.SourceFrameFits
+            expected source.evm.stack.length ∧
+            source.returns = returns := by
+  obtain ⟨targetState, rfl, hStateRel⟩ :=
+    TypedCfgPreservation.OutcomeSimulation.Rel.regular_elim
+      hRel.1
+  rcases hRel.2.1 with ⟨shape, hShape, hFits⟩
+  have hExpected :
+      result.fallthrough? = some expected := by
+    rcases
+        TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
+          hRequire with
+      hNone | hSome
+    · rw [hNone] at hShape
+      cases hShape
+    · exact hSome
+  have hShapeEq : shape = expected := by
+    rw [hExpected] at hShape
+    exact Option.some.inj hShape.symm
+  subst shape
+  have hReturns : source.returns = returns := by
+    simpa [ActivationRestored] using hRel.2.2
+  exact ⟨targetState, rfl, hStateRel, hFits, hReturns⟩
+
 theorem Rel.mode_ne_regular_of_fallthrough_none
     {result : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
@@ -1740,6 +1785,174 @@ private theorem continue_refined_zero_executes_of_stopped
       simp [TargetStoppedBy] at hStopped
   | invalid state =>
       simp [TargetStoppedBy] at hStopped
+
+/--
+Close an execution stopped by a refined compiler-boundary policy when its
+target outcome is also a genuine boundary of the enclosing policy.
+-/
+theorem close_refined
+    {outer inner : StopPolicy} {cfg : TypedCfg.Program}
+    {headFuel headRemaining : Nat}
+    {entry : Assembly.Label} {target : EVMState}
+    {targetOutcome : TypedCfg.Outcome}
+    {transcript : Simulation.Interaction.Transcript}
+    (hRefines :
+      ∀ next nextState,
+        outer next nextState = true →
+          inner next nextState = true)
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          inner cfg headFuel entry target)
+        transcript
+        (.ok (.stopped headRemaining targetOutcome)))
+    (hStopped : TargetStoppedBy outer targetOutcome) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        outer cfg headFuel entry target)
+      transcript
+      (.ok (.stopped headRemaining targetOutcome)) := by
+  have hContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          outer cfg 0 (.stopped headRemaining targetOutcome))
+        []
+        (.ok (.stopped headRemaining targetOutcome)) :=
+    continue_refined_zero_executes_of_stopped hStopped
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_ok hHead hContinuation
+  rw [
+    ← TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+      outer inner cfg headFuel 0 entry target hRefines] at hCombined
+  simpa using hCombined
+
+/--
+Resume a refined execution at an internal jump and splice in a successful run
+under the enclosing stop policy. Residual fuel from the first segment remains
+available after the tail stops.
+-/
+theorem splice_refined_jump
+    {outer inner : StopPolicy} {cfg : TypedCfg.Program}
+    {headFuel headRemaining tailFuel tailRemaining : Nat}
+    {entry next : Assembly.Label}
+    {target nextTarget : EVMState}
+    {targetFinal : TypedCfg.Outcome}
+    {headTranscript tailTranscript :
+      Simulation.Interaction.Transcript}
+    (hRefines :
+      ∀ label state,
+        outer label state = true →
+          inner label state = true)
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          inner cfg headFuel entry target)
+        headTranscript
+        (.ok
+          (.stopped headRemaining
+            (.jump next nextTarget))))
+    (hNoStop : outer next nextTarget = false)
+    (hTail :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          outer cfg tailFuel next nextTarget)
+        tailTranscript
+        (.ok (.stopped tailRemaining targetFinal))) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        outer cfg (headFuel + tailFuel) entry target)
+      (headTranscript ++ tailTranscript)
+      (.ok
+        (.stopped (tailRemaining + headRemaining) targetFinal)) := by
+  have hTailContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithStop
+          outer cfg headRemaining
+          (.stopped tailRemaining targetFinal))
+        []
+        (.ok
+          (.stopped (tailRemaining + headRemaining) targetFinal)) := by
+    exact
+      Simulation.Interaction.Executes.done
+        (.ok
+          (TypedCfg.Control.Program.RunResult.stopped
+            (tailRemaining + headRemaining) targetFinal))
+  have hTailPadded :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          outer cfg (headRemaining + tailFuel) next nextTarget)
+        tailTranscript
+        (.ok
+          (.stopped (tailRemaining + headRemaining) targetFinal)) := by
+    rw [show headRemaining + tailFuel =
+      tailFuel + headRemaining by omega]
+    rw [
+      TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_add]
+    simpa using
+      Simulation.Interaction.Executes.bind_ok hTail hTailContinuation
+  have hContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop
+          outer cfg tailFuel
+          (.stopped headRemaining (.jump next nextTarget)))
+        tailTranscript
+        (.ok
+          (.stopped (tailRemaining + headRemaining) targetFinal)) := by
+    simpa [
+      TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hNoStop] using hTailPadded
+  have hCombined :=
+    Simulation.Interaction.Executes.bind_ok hHead hContinuation
+  rw [
+    ← TypedCfg.InteractionSemantics.Program.openRunNResultWithRefinedStop_add
+      outer inner cfg headFuel tailFuel entry target hRefines] at hCombined
+  exact hCombined
+
+/--
+Prepend one target step that reaches a non-stopping jump before a successful
+execution under the same policy. The head step may carry an open interaction
+prefix, as loop conditions and switch scrutinees do.
+-/
+theorem prepend_step_jump
+    {policy : StopPolicy} {cfg : TypedCfg.Program}
+    {tailFuel tailRemaining : Nat}
+    {entry next : Assembly.Label}
+    {target nextTarget : EVMState}
+    {targetFinal : TypedCfg.Outcome}
+    {headTranscript tailTranscript :
+      Simulation.Interaction.Transcript}
+    (hHead :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openStep
+          cfg entry target)
+        headTranscript
+        (.ok (.jump next nextTarget)))
+    (hNoStop : policy next nextTarget = false)
+    (hTail :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+          policy cfg tailFuel next nextTarget)
+        tailTranscript
+        (.ok (.stopped tailRemaining targetFinal))) :
+    Simulation.Interaction.Executes
+      (TypedCfg.InteractionSemantics.Program.openRunNResultWithStop
+        policy cfg (tailFuel + 1) entry target)
+      (headTranscript ++ tailTranscript)
+      (.ok (.stopped tailRemaining targetFinal)) := by
+  have hContinuation :
+      Simulation.Interaction.Executes
+        (TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop
+          policy cfg tailFuel (.jump next nextTarget))
+        tailTranscript
+        (.ok (.stopped tailRemaining targetFinal)) := by
+    simpa [
+      TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
+      hNoStop] using hTail
+  rw [
+    TypedCfg.InteractionSemantics.Program.openRunNResultWithStop_succ_eq_bind]
+  exact
+    Simulation.Interaction.Executes.bind_ok hHead hContinuation
 
 theorem change_result_of_required_fallthrough
     {left right : TypedCfgCompiler.Result}

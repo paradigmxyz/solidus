@@ -30976,3 +30976,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   switch-test, pop, stop-policy, and state-relation lemmas. Generated routing
   remains closed and pass-private; only the selected source block contributes
   open effects. Focused Structured builds pass.
+- 2026-06-17 07:47:39 PDT - proof/structured-execution-owned-loops - Added the
+  pass-owned open loop theorem in
+  `Structured/InteractionLoopPreservation.lean`. The recursive theorem follows
+  concrete successful source executions, preserves the exact ordered
+  interaction transcript, and handles false exit, body break/continue,
+  post-loop recursion, leave, and halt. The compiler-facing theorem consumes
+  the real initializer/body/post decomposition and generated-label freshness;
+  no observer interpreter, replay certificate, or cross-layer compiler
+  premise was introduced. Shared refined-stop splice lemmas now centralize
+  target fuel composition. The focused smoke, full 1,290-job verification
+  root, architecture guard, changed-file hole scan, axiom audit, and
+  `git diff --check` pass. Axioms remain `propext`, `Classical.choice`, and
+  `Quot.sound`.

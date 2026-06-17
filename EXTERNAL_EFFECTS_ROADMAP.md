@@ -736,6 +736,15 @@ Exit: the shared core builds with no compiler layer changed.
     and invalid execution.
   - [x] Internal-label-aware `returnDispatch`, block, and program theorems.
 - [ ] Structured.
+  - [x] One canonical parameterized control semantics shared by ordinary and
+    open execution.
+  - [x] Exact open preservation for straight-line code, lexical exits,
+    terminals, statement lists, conditionals, and switches.
+  - [x] Execution-indexed recursive `for` preservation over the real
+    initializer/body/post compiler artifacts, including break, continue,
+    leave, halt, and exact transcript order.
+  - [ ] Internal procedure calls and generated return dispatch.
+  - [ ] One mutual whole-statement/block/program owner theorem.
 - [ ] Locals/Expressions.
 - [ ] Functions.
 - [ ] Yul.
@@ -764,6 +773,10 @@ Exit: every layer exposes one canonical open computation.
   - [x] Certified-artifact entry theorem deriving all compiler-selected
     lowering, acceptance, PC-fit, and typing evidence internally.
 - [ ] Structured -> TypedCfg.
+  - [x] Straight-line code, lexical exits, terminals, lists, conditionals, and
+    switches.
+  - [x] Recursive `for` loops through the adjacent compiler decomposition.
+  - [ ] Internal procedure calls and generated program wrapper.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.

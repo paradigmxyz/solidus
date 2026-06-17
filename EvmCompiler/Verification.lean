@@ -44,6 +44,7 @@ import EvmCompiler.Structured.InteractionControlPreservation
 import EvmCompiler.Structured.InteractionLeafPreservation
 import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.Structured.InteractionSwitchPreservation
+import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
@@ -206,6 +207,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.StopPolicy.FreshExceptAt
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.PreservesUnder.exec
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.Rel.regular_elim_of_required_fallthrough
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.close_refined
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.splice_refined_jump
+#check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_step_jump
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.afterOpenStepResultWithPolicy_executes_of_targetStopped
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.prepend_closed_jump
 #check EvmCompiler.Structured.InteractionControlPreservation.OpenOutcome.ExecPreservesUnder.sequence
@@ -263,6 +268,8 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionSwitchPreservation.Stmt.openRun_switch_within_stop_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionLoopPreservation.Loop.openRunForLoop_exec_under
+#check EvmCompiler.Structured.InteractionLoopPreservation.Loop.Stmt.openRun_for_exec_under_of_compileStmtFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode
