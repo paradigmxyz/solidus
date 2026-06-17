@@ -1590,6 +1590,142 @@ theorem ofFunctionCall_bounded
 
 end ScopedPreparedValue
 
+namespace RecursiveScopedValueForwardBounded
+
+theorem ofBody
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hDecomposition :
+      FunctionsObserverCompiler.Decomposition sourceProgram targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hBody :
+      RecursiveBodyForwardBounded
+        contract transcript codeRel sourceProgram targetProgram profile
+        bound) :
+    RecursiveScopedValueForwardBounded
+      contract transcript codeRel sourceProgram targetProgram profile
+      (bound + 1) := by
+  intro exprFuel
+  induction exprFuel using Nat.strong_induction_on with
+  | h exprFuel ih =>
+      intro before after layout expr pre lower source source'
+        target ctx values hFuel hOk hLower hRel hDomain hScope hRun
+      have hSmallerValue :
+          RecursiveScopedValueForwardBounded
+            contract transcript codeRel sourceProgram targetProgram
+            profile exprFuel := by
+        intro smallerFuel smallerBefore smallerAfter smallerLayout
+          smallerExpr smallerPre smallerLower smallerSource
+          smallerSource' smallerTarget smallerCtx smallerValues
+          hSmaller hSmallerOk hSmallerLower hSmallerRel
+          hSmallerDomain hSmallerScope hSmallerRun
+        exact
+          ih smallerFuel hSmaller
+            (by omega) hSmallerOk hSmallerLower hSmallerRel
+            hSmallerDomain hSmallerScope hSmallerRun
+      have hSmallerExpr :
+          RecursiveScopedExpressionForwardBounded
+            contract transcript codeRel sourceProgram targetProgram
+            profile exprFuel :=
+        RecursiveScopedValueForwardBounded.expression hSmallerValue
+      have hSmallerBody :
+          RecursiveBodyForwardBounded
+            contract transcript codeRel sourceProgram targetProgram profile
+            exprFuel := by
+        intro sourceFuel bodyBefore bodyAfter params returns body fn
+          args paramStore sourceCaller sourceAfterBody targetCaller
+          hSourceFuel hBodyLower hParams hReturns hParamStore
+          hReserved hBodyNames hBodyOk hEntry hBodyRun
+        exact
+          hBody (by omega) hBodyLower hParams hReturns hParamStore
+            hReserved hBodyNames hBodyOk hEntry hBodyRun
+      cases expr with
+      | Lit value =>
+          simpa [FunctionsObserverStaticCost.runtimeExpr] using
+            FunctionsObserverExpressionFuel.ScopedPreparedValue.ofLiteral_bounded
+                hLower hRel hDomain hScope hRun
+      | Var name =>
+          simpa [FunctionsObserverStaticCost.runtimeExpr] using
+            FunctionsObserverExpressionFuel.ScopedPreparedValue.ofVariable_bounded
+                hLower hRel hDomain hScope hRun
+      | Call callee args =>
+          cases callee with
+          | inl prim =>
+              have hArgsOk :
+                  SolcValidation.ExprsOk? profile
+                      sourceProgram.contract layout args =
+                    true :=
+                SolcValidation.exprsOk_of_exprOk_primitive hOk
+              exact
+                FunctionsObserverExpressionFuel.ScopedPreparedValue.ofPrimitive_bounded
+                    (sourceProgram := sourceProgram)
+                    hLower
+                    (fun candidate hMem =>
+                      SolcValidation.exprOk_of_exprsOk_of_mem
+                        hArgsOk hMem)
+                    (fun hArgFuel hArgOk hArgLower hArgRel
+                        hArgDomain hArgScope hArgRun =>
+                      hSmallerExpr hArgFuel hArgOk hArgLower hArgRel
+                        hArgDomain hArgScope hArgRun)
+                    hRel hDomain hScope hRun
+          | inr functionName =>
+              cases hLookup :
+                  sourceProgram.contract.functions.lookup functionName with
+              | none =>
+                  simp [SolcValidation.ExprOk?,
+                    SolcValidation.lookupFunction?, hLookup] at hOk
+              | some fnDef =>
+                  cases fnDef with
+                  | Def params returns body =>
+                      obtain ⟨returnName, hReturns⟩ :=
+                        SolcValidation.returns_singleton_of_exprOk_functionCall
+                          hOk hLookup
+                      have hLength :=
+                        Yul.Source.Effectful.evalValues_function_ok_length
+                          (ObserverSemantics.SourceReplay.stateModel transcript)
+                          (ObserverSafety.SafeSemantics.primitiveSemantics
+                            contract transcript)
+                          hLookup hRun
+                      rw [hReturns] at hLength
+                      cases values with
+                      | nil =>
+                          simp at hLength
+                      | cons value rest =>
+                          cases rest with
+                          | nil =>
+                              have hEval :
+                                  Yul.Source.Effectful.eval
+                                      (ObserverSemantics.SourceReplay.stateModel
+                                        transcript)
+                                      (ObserverSafety.SafeSemantics.primitiveSemantics
+                                        contract transcript)
+                                      exprFuel
+                                      (.Call (.inr functionName) args)
+                                      (some sourceProgram.contract) source =
+                                    .ok (source', value) :=
+                                Yul.Source.Effectful.eval_of_evalValues_singleton
+                                  (ObserverSemantics.SourceReplay.stateModel
+                                    transcript)
+                                  (ObserverSafety.SafeSemantics.primitiveSemantics
+                                    contract transcript)
+                                  hRun
+                              exact
+                                ⟨value, rfl,
+                                  ScopedPreparedValue.ofFunctionCall_bounded
+                                    hDecomposition hLower hProgramOk hOk
+                                    hSmallerExpr hSmallerBody hRel
+                                    hDomain hScope hEval⟩
+                          | cons next tail =>
+                              simp at hLength
+
+end RecursiveScopedValueForwardBounded
+
 end FunctionsObserverCallFuel
 end Yul
 end EvmCompiler

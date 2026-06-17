@@ -445,6 +445,193 @@ theorem ofAssignOnePrepared_bounded
 
 end ScopedStmtResult
 
+namespace RecursiveBodyForwardBounded
+
+theorem ofList
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {bound : Nat}
+    (hList :
+      ∀ staticCost,
+        RecursiveOpenListForwardBounded contract transcript codeRel
+          sourceProgram targetProgram profile staticCost bound) :
+    FunctionsObserverCallFuel.RecursiveBodyForwardBounded
+      contract transcript codeRel sourceProgram targetProgram profile
+      (bound + 1) := by
+  have hOrdinaryList :
+      RecursiveOpenListForward contract transcript codeRel
+        sourceProgram targetProgram profile bound := by
+    intro sourceFuel compilerFuel sourceControl before after layout stmts
+      lower source sourceFinal target ctx canBreak canContinue canLeave
+      hFuel hOk hNames hLower hRel hDomain hScope hLayout hControl hRun
+    obtain ⟨bounded⟩ :=
+      hList (FunctionsObserverStaticCost.stmtList stmts)
+        hFuel (by rfl) hOk hNames hLower hRel hDomain hScope hLayout
+        hControl hRun
+    exact ⟨bounded.1⟩
+  have hOrdinaryBody :
+      FunctionsObserverCall.RecursiveBodyForward
+        contract transcript codeRel sourceProgram targetProgram profile
+        (bound + 1) :=
+    FunctionsObserverForward.RecursiveBodyForward.ofList hOrdinaryList
+  intro sourceFuel before after params returns body fn args paramStore
+    sourceCaller sourceAfterBody targetCaller hFuel hLower hParams
+    hReturns hParamStore hReserved hBodyNames hBodyOk hEntry hRun
+  obtain ⟨ordinaryFuel, ordinaryNonempty⟩ :=
+    hOrdinaryBody hFuel hLower hParams hReturns hParamStore
+      hReserved hBodyNames hBodyOk hEntry hRun
+  obtain ⟨ordinaryBody⟩ := ordinaryNonempty
+  let layout := fn.returns ++ fn.params
+  let sourceEntry :=
+    sourceCaller.withSource
+      (EvmYul.Yul.State.mkOk
+        (sourceCaller.source.initcall params returns args))
+  let targetEntry :=
+    targetCaller.withSource
+      { shared := targetCaller.source.shared
+        vars :=
+          Functions.Source.Store.initReturns fn.returns paramStore }
+  obtain
+      ⟨entryShared, entryVars, hEntrySource,
+        _hEntryShared, _hEntryVars, hEntryDomain⟩ :=
+    hEntry.2
+  change StateRelation.Vars.DomainExact layout entryVars at hEntryDomain
+  change StateRelation.Vars.NamesWithin before.used layout at hReserved
+  obtain ⟨listCompilerFuel, lower, _hCompilerFuel,
+      hLowerList, hFnBody⟩ :=
+    Stmt.List.toBlockUncheckedFuel?_parts hLower
+  obtain ⟨listSourceFuel, sourceOpen, hSourceFuel,
+      hListRun, _hSourceAfterBody⟩ :=
+    Yul.Source.Effectful.exec_block_ok_parts
+      (ObserverSemantics.SourceReplay.stateModel transcript)
+      (ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      hRun
+  let sourceControl : FunctionsObserverOutcome.SourceControlScopes :=
+    { breakScope? := none
+      continueScope? := none
+      leaveScope? := some layout }
+  have hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        false false true
+        (Functions.Source.Effectful.FunDef.bodyCtx fn) := by
+    refine
+      { scope := ?_
+        breakScope := ?_
+        continueScope := ?_
+        leaveScope := ?_ }
+    · simp [layout, Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope,
+        FunctionsObserverOutcome.LayoutWithinScope]
+    · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+    · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope]
+    · simp [sourceControl, FunctionsObserverOutcome.ScopeOptionWithin,
+        Functions.Source.Effectful.FunDef.bodyCtx,
+        Functions.Source.Ctx.initial, Functions.Source.Ctx.withLeaveScope,
+        layout]
+  obtain ⟨boundedList⟩ :=
+    hList (FunctionsObserverStaticCost.stmtList body)
+      (sourceFuel := listSourceFuel)
+      (compilerFuel := listCompilerFuel)
+      (sourceControl := sourceControl)
+      (before := before) (after := after)
+      (layout := layout) (stmts := body) (lower := lower)
+      (source := sourceEntry) (sourceFinal := sourceOpen)
+      (target := targetEntry)
+      (ctx := Functions.Source.Effectful.FunDef.bodyCtx fn)
+      (canBreak := false) (canContinue := false) (canLeave := true)
+      (by omega) (by rfl) hBodyOk hBodyNames hLowerList hEntry
+      (by
+        simpa [targetEntry] using
+          FunctionsObserverForward.RecursiveBodyForward.entryTargetDomain
+            hParamStore hReserved)
+      (FunctionsObserverForward.RecursiveBodyForward.bodyScope hReserved)
+      hReserved hControl hListRun
+  let result := boundedList.1
+  have hBoundedRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          result.openResult.requiredFuel fn.body
+          (targetCaller.withSource
+            { shared := targetCaller.source.shared
+              vars :=
+                Functions.Source.Store.initReturns
+                  fn.returns paramStore }) =
+        .ok
+          (result.openResult.outcome,
+            result.openResult.finalCtx) := by
+    rw [hFnBody]
+    simpa [result, targetEntry] using
+      FunctionsObserverOutcome.ScopedOpenResult.run_requiredFuel
+        result.openResult
+  have hParamStoreEq : ordinaryBody.paramStore = paramStore := by
+    have hOrdinaryParams := ordinaryBody.params
+    rw [hParamStore] at hOrdinaryParams
+    exact (Option.some.inj hOrdinaryParams).symm
+  have hOrdinaryRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          targetProgram.toFunctions
+          (Functions.Source.Effectful.FunDef.bodyCtx fn)
+          ordinaryFuel fn.body
+          (targetCaller.withSource
+            { shared := targetCaller.source.shared
+              vars :=
+                Functions.Source.Store.initReturns
+                  fn.returns paramStore }) =
+        .ok
+          (ordinaryBody.bodyOutcome,
+            ordinaryBody.finalCtx) := by
+    simpa [hParamStoreEq] using ordinaryBody.run
+  have hPairEq :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      targetProgram.toFunctions hBoundedRun hOrdinaryRun
+  have hOutcomeEq :
+      result.openResult.outcome = ordinaryBody.bodyOutcome :=
+    congrArg Prod.fst hPairEq
+  let bodyResult :
+      FunctionsObserverCall.ReturnedBody
+        contract transcript codeRel targetProgram.toFunctions
+        fn args result.openResult.requiredFuel sourceAfterBody targetCaller :=
+    { paramStore := paramStore
+      bodyOutcome := result.openResult.outcome
+      finalCtx := result.openResult.finalCtx
+      params := hParamStore
+      run := hBoundedRun
+      mode := by
+        simpa [hOutcomeEq] using ordinaryBody.mode
+      relation := by
+        simpa [hOutcomeEq] using ordinaryBody.relation }
+  refine
+    ⟨result.openResult.requiredFuel, ⟨⟨bodyResult, ?_⟩⟩⟩
+  have hFuelMono :
+      FunctionsObserverFuel.executionBudget
+          (FunctionsObserverStaticCost.stmtList body) listSourceFuel ≤
+        FunctionsObserverFuel.executionBudget
+          (FunctionsObserverStaticCost.stmtList body) sourceFuel :=
+    FunctionsObserverFuel.executionBudget_mono
+      (FunctionsObserverStaticCost.stmtList body) (by omega)
+  exact boundedList.2.trans hFuelMono
+
+end RecursiveBodyForwardBounded
+
 namespace RecursiveOpenListForwardBounded
 
 theorem ofStmt

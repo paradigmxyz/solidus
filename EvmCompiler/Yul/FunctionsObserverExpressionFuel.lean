@@ -615,10 +615,71 @@ theorem ofDirectPrimitive_bounded
             fuel
         omega)
 
+theorem ofDirectPrimitive_boundedWithStatic
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {fuel staticCost : Nat}
+    {prim : EvmYul.Operation .Yul}
+    {args : List AstExpr}
+    {pre : List Functions.Stmt}
+    {lower : Locals.Expr 1}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {source source' : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {values : List Assembly.Word}
+    (hDirect : Expr.List.directPureArgsSafe? args = true)
+    (hLower :
+      Expr.lower1Unchecked? before (.Call (.inl prim) args) =
+        some (pre, lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hRun :
+      Yul.Source.Effectful.evalValues
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          fuel (.Call (.inl prim) args) codeOverride source =
+        .ok (source', values)) :
+    ∃ value,
+      values = [value] ∧
+        Nonempty
+          { result :
+              FunctionsObserverExpression.ScopedPreparedValue
+                contract transcript codeRel program pre lower after layout
+                source' target ctx value //
+            FunctionsObserverFuel.PreparedValue.Bounded
+              staticCost fuel result.prepared } := by
+  obtain ⟨rfl, rfl, _hLowering⟩ :=
+    Expr.uncheckedDirectPrimitiveLowering_of_lower1Unchecked?
+      hDirect hLower
+  obtain ⟨value, hValues, ⟨result⟩⟩ :=
+    FunctionsObserverExpression.ScopedPreparedValue.ofDirectPrimitive
+      hDirect hLower hRel hDomain hScope hRun
+  refine ⟨value, hValues, ⟨⟨result, ?_⟩⟩⟩
+  dsimp [FunctionsObserverFuel.PreparedValue.Bounded]
+  exact
+    (FunctionsObserverExpression.PreparedValue.requiredFuel_nil_le
+      result.prepared).trans
+      (by
+        have hBudget :=
+          FunctionsObserverFuel.executionBudget_ge_sixteen
+            staticCost fuel
+        omega)
+
 theorem ofBoundPrimitive_bounded
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
     {program : Functions.Program}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {fuel : Nat}
@@ -670,7 +731,8 @@ theorem ofBoundPrimitive_bounded
                   exprPre exprLower exprAfter layout exprSource'
                   exprTarget exprCtx value //
               FunctionsObserverFuel.PreparedValue.Bounded
-                (FunctionsObserverStaticCost.expr expr)
+                (FunctionsObserverStaticCost.runtimeExpr
+                  sourceProgram expr)
                 exprFuel result.prepared })
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
@@ -693,7 +755,7 @@ theorem ofBoundPrimitive_bounded
                 contract transcript codeRel program pre lower after layout
                 source' target ctx value //
             FunctionsObserverFuel.PreparedValue.Bounded
-              (FunctionsObserverStaticCost.expr
+              (FunctionsObserverStaticCost.runtimeExpr sourceProgram
                 (.Call (.inl prim) args))
               fuel result.prepared } := by
   obtain ⟨value, hValues, ⟨result⟩⟩ :=
@@ -728,7 +790,8 @@ theorem ofBoundPrimitive_bounded
       | succ primFuel =>
           obtain ⟨argsBounded⟩ :=
             ScopedPreparedArgs.ofUncheckedLowering_bounded
-              FunctionsObserverStaticCost.expr hArgs hEligible
+              (FunctionsObserverStaticCost.runtimeExpr sourceProgram)
+              hArgs hEligible
               (fun hExprFuel hExprEligible hExprLower hExprRel
                   hExprDomain hExprScope hExprRun =>
                 hExpr (by omega) hExprEligible hExprLower hExprRel
@@ -742,24 +805,27 @@ theorem ofBoundPrimitive_bounded
           have hArgsBound :
               argsBounded.1.prepared.prepared.requiredFuel ≤
                 FunctionsObserverFuel.executionBudget
-                  (FunctionsObserverStaticCost.exprList args)
+                  (FunctionsObserverStaticCost.runtimeExprList
+                    sourceProgram args)
                   primFuel.succ := by
             simpa [FunctionsObserverFuel.PreparedArgs.Bounded,
-              FunctionsObserverStaticCost.exprList_eq_exprListBy] using
+              FunctionsObserverStaticCost.runtimeExprList_eq_exprListBy] using
               argsBounded.2
           refine ⟨value, hValues, ⟨⟨result, ?_⟩⟩⟩
           dsimp [FunctionsObserverFuel.PreparedValue.Bounded]
           have hDynamic :=
             FunctionsObserverFuel.executionBudget_mono
-              (FunctionsObserverStaticCost.exprList args)
+              (FunctionsObserverStaticCost.runtimeExprList
+                sourceProgram args)
               (show primFuel.succ ≤ fuel by omega)
           have hStatic :=
             FunctionsObserverFuel.executionBudget_static_mono
               (show
-                FunctionsObserverStaticCost.exprList args ≤
-                  FunctionsObserverStaticCost.expr
+                FunctionsObserverStaticCost.runtimeExprList
+                    sourceProgram args ≤
+                  FunctionsObserverStaticCost.runtimeExpr sourceProgram
                     (.Call (.inl prim) args) by
-                simp [FunctionsObserverStaticCost.expr])
+                simp [FunctionsObserverStaticCost.runtimeExpr])
               fuel
           exact
             hRequired.trans
@@ -769,6 +835,7 @@ theorem ofPrimitive_bounded
     {contract : MemoryContract.Contract}
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
     {program : Functions.Program}
     {codeOverride : Option EvmYul.Yul.Ast.YulContract}
     {fuel : Nat}
@@ -819,7 +886,8 @@ theorem ofPrimitive_bounded
                   exprPre exprLower exprAfter layout exprSource'
                   exprTarget exprCtx value //
               FunctionsObserverFuel.PreparedValue.Bounded
-                (FunctionsObserverStaticCost.expr expr)
+                (FunctionsObserverStaticCost.runtimeExpr
+                  sourceProgram expr)
                 exprFuel result.prepared })
     (hRel :
       StateRelation.Replay.ScopedExactRel codeRel layout source target)
@@ -842,7 +910,7 @@ theorem ofPrimitive_bounded
                 contract transcript codeRel program pre lower after layout
                 source' target ctx value //
             FunctionsObserverFuel.PreparedValue.Bounded
-              (FunctionsObserverStaticCost.expr
+              (FunctionsObserverStaticCost.runtimeExpr sourceProgram
                 (.Call (.inl prim) args))
               fuel result.prepared } := by
   cases hDirect : Expr.List.directPureArgsSafe? args with
@@ -852,7 +920,11 @@ theorem ofPrimitive_bounded
           hRel hDomain hScope hRun
   | true =>
       exact
-        ofDirectPrimitive_bounded hDirect hLower
+        ofDirectPrimitive_boundedWithStatic
+          (staticCost :=
+            FunctionsObserverStaticCost.runtimeExpr sourceProgram
+              (.Call (.inl prim) args))
+          hDirect hLower
           hRel hDomain hScope hRun
 
 end ScopedPreparedValue
