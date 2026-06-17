@@ -18,6 +18,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_rel
 #check EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
 #check EvmCompiler.Assembly.InteractionPreservation.source_openRunNResult_rel_compiled
+#check EvmCompiler.Assembly.InteractionPreservation.source_openRunUntilTransfer_rel_compiled
 #check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
 #check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_target_executes
 #check EvmCompiler.TypedCfg.InteractionPreservation.Instr.call_lowerAt_openRunNResult_eq
@@ -27,6 +28,7 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create_lowerAt_openRunNResult_eq
 #check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create2_lowerAt_openRunNResult_eq
 #check EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
+#check EvmCompiler.TypedCfg.InteractionPreservation.Terminator.lowerAt?_openRunUntilTransfer_rel_of_direct
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
@@ -46,9 +48,11 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Simulation.Interaction.Rel.executes
 #print axioms EvmCompiler.Assembly.InteractionSemantics.Source.prim_openStep_rel
 #print axioms EvmCompiler.Assembly.InteractionPreservation.stepAt_emit_open_result_rel
+#print axioms EvmCompiler.Assembly.InteractionPreservation.source_openRunUntilTransfer_rel_compiled
 #print axioms EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
 #print axioms EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_target_executes
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Instr.openRunAt_atLoweredEnd
 #print axioms EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
+#print axioms EvmCompiler.TypedCfg.InteractionPreservation.Terminator.lowerAt?_openRunUntilTransfer_rel_of_direct
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes

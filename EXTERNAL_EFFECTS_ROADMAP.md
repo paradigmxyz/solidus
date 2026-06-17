@@ -730,8 +730,11 @@ Exit: the shared core builds with no compiler layer changed.
     and open interaction semantics.
   - [x] Exact open preservation for every instruction and recursively composed
     instruction-list body.
-  - [ ] Assembly-owned control-transfer runner and checked terminator, block,
-    and program theorems.
+  - [x] Assembly-owned control-transfer runner shared by source and compiled
+    Assembly execution.
+  - [x] Checked direct-terminator theorem for jumps, conditional jumps, halts,
+    and invalid execution.
+  - [ ] Internal-label-aware `returnDispatch`, block, and program theorems.
 - [ ] Structured.
 - [ ] Locals/Expressions.
 - [ ] Functions.
@@ -756,7 +759,8 @@ Exit: every layer exposes one canonical open computation.
 - [ ] TypedCfg -> Assembly.
   - [x] Every lowered instruction, including all six external opcodes.
   - [x] Arbitrary lowered instruction-list bodies.
-  - [ ] Terminators, blocks, and whole-program execution.
+  - [x] Direct terminators through the Assembly-owned transfer runner.
+  - [ ] `returnDispatch`, blocks, and whole-program execution.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.

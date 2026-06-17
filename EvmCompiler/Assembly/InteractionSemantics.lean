@@ -289,6 +289,11 @@ def openRunNResult (program : Program) (fuel : Nat)
     (state : EVMState) : OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult program) fuel state
 
+def openRunUntilTransfer (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Source.runUntilTransferWith
+    (openStepResult program) program fuel state
+
 theorem openRunNResult_add
     (program : Program) (first second : Nat)
     (state : EVMState) :
@@ -338,6 +343,11 @@ def openRunN (program : Program) (fuel : Nat) (state : EVMState) :
 def openRunNResult (program : Program) (fuel : Nat)
     (state : EVMState) : OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult program) fuel state
+
+def openRunUntilTransfer (program : Program) (fuel : Nat)
+    (state : EVMState) : OpenStepResult :=
+  Assembly.Source.runUntilTransferWith
+    (openStepResult program) program fuel state
 
 end Compiled
 

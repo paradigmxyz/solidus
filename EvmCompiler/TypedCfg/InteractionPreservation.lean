@@ -6,131 +6,7 @@ namespace EvmCompiler
 namespace TypedCfg
 namespace InteractionPreservation
 
-theorem source_openStepResult_at_boundary
-    {pre post : Assembly.Program} {instr : Assembly.Instr}
-    {state : EVMState}
-    (hFits : pre.PCFits)
-    (hPc : state.pc = pre.pcAfter) :
-    Assembly.InteractionSemantics.Source.openStepResult
-        (pre ++ instr :: post) state =
-      Assembly.InteractionSemantics.Source.openStepAtResult
-        (pre ++ instr :: post) pre.byteLength instr state := by
-  unfold Assembly.InteractionSemantics.Source.openStepResult
-    Assembly.Source.stepResultWith
-  have hAt :
-      Assembly.Program.instrAtPc
-          (pre ++ instr :: post) state.pc.toNat =
-        some (pre.byteLength, instr) := by
-    unfold Assembly.Program.instrAtPc
-    rw [hPc, hFits]
-    simpa using
-      Assembly.Program.instrAtPcFrom_append_boundary_cons
-        pre post instr 0
-  rw [hAt]
-
-theorem source_openRunNResult_one_at_boundary
-    {pre post : Assembly.Program} {instr : Assembly.Instr}
-    {state : EVMState}
-    (hFits : pre.PCFits)
-    (hPc : state.pc = pre.pcAfter) :
-    Assembly.InteractionSemantics.Source.openRunNResult
-        (pre ++ instr :: post) 1 state =
-      Assembly.InteractionSemantics.Source.openStepAtResult
-        (pre ++ instr :: post) pre.byteLength instr state := by
-  unfold Assembly.InteractionSemantics.Source.openRunNResult
-    Assembly.Control.runNResultWith
-  rw [source_openStepResult_at_boundary hFits hPc]
-  change
-    Simulation.Interaction.bind
-        (Assembly.InteractionSemantics.Source.openStepAtResult
-          (pre ++ instr :: post) pre.byteLength instr state)
-        (fun result =>
-          match result with
-          | .running state' =>
-              Simulation.Interaction.pure
-                (Error := EVMException) (.running state')
-          | .halted halt =>
-              Simulation.Interaction.pure
-                (Error := EVMException) (.halted halt)) =
-      Assembly.InteractionSemantics.Source.openStepAtResult
-        (pre ++ instr :: post) pre.byteLength instr state
-  have hContinuation :
-      (fun result : Assembly.StepResult =>
-        match result with
-        | .running state' =>
-            Simulation.Interaction.pure
-              (Error := EVMException) (.running state')
-        | .halted halt =>
-            Simulation.Interaction.pure
-              (Error := EVMException) (.halted halt)) =
-        (Simulation.Interaction.pure (Error := EVMException) :
-          Assembly.StepResult →
-            Simulation.Interaction EVMException Assembly.StepResult) := by
-    funext result
-    cases result <;> rfl
-  rw [hContinuation]
-  exact Simulation.Interaction.bind_pure _
-
-theorem source_openStepAtResult_eq_done_of_stepAt
-    {program : Assembly.Program} {pc : Nat}
-    {instr : Assembly.Instr} {state : EVMState}
-    (hOpen :
-      Assembly.InteractionSemantics.Source.openStepAt
-          program pc instr state =
-        .done (Assembly.Source.stepAt program pc instr state)) :
-    Assembly.InteractionSemantics.Source.openStepAtResult
-        program pc instr state =
-      .done
-        (Assembly.Source.stepAtResult
-          program pc instr state) := by
-  unfold
-    Assembly.InteractionSemantics.Source.openStepAtResult
-    Assembly.Source.stepAtResult
-  rw [hOpen]
-  cases hStep :
-      Assembly.Source.stepAt program pc instr state with
-  | error err =>
-      rfl
-  | ok state' =>
-      cases instr.haltKind? <;> rfl
-
-theorem source_openRunNResult_one_eq_done
-    {pre post : Assembly.Program} {instr : Assembly.Instr}
-    {state : EVMState}
-    (hFits : pre.PCFits)
-    (hPc : state.pc = pre.pcAfter)
-    (hOpen :
-      Assembly.InteractionSemantics.Source.openStepAt
-          (pre ++ instr :: post) pre.byteLength instr state =
-        .done
-          (Assembly.Source.stepAt
-            (pre ++ instr :: post) pre.byteLength instr state)) :
-    Assembly.InteractionSemantics.Source.openRunNResult
-        (pre ++ instr :: post) 1 state =
-      .done
-        (Assembly.Source.runNResult
-          (pre ++ instr :: post) 1 state) := by
-  rw [source_openRunNResult_one_at_boundary hFits hPc]
-  rw [Preservation.source_runNResult_one_at_boundary hFits hPc]
-  exact source_openStepAtResult_eq_done_of_stepAt hOpen
-
-theorem source_openStepAt_prim_closed
-    {program : Assembly.Program} {pc : Nat}
-    {op : Assembly.PrimOp} {state : EVMState}
-    (hExternal :
-      Simulation.ExternalKind.ofEVMOperation? op.toEVM = none)
-    (hGas : op ≠ .gas) (hMsize : op ≠ .msize) :
-    Assembly.InteractionSemantics.Source.openStepAt
-        program pc (.prim op) state =
-      .done
-        (Assembly.Source.stepAt
-          program pc (.prim op) state) := by
-  change
-    Assembly.InteractionSemantics.PrimOp.openStep op state =
-      .done (op.step state)
-  exact
-    Assembly.InteractionSemantics.PrimOp.openStep_closed
-      hExternal hGas hMsize
+open Assembly.InteractionPreservation
 
 theorem runPops_source_openRunNResult
     (count : Nat) {pre post : Assembly.Program} {state : EVMState}
@@ -795,6 +671,443 @@ theorem create2_lowerAt_openRunNResult_eq
   prim_lowerAt_openRunNResult_eq hLower hFits hPc
 
 end Instr
+
+namespace Terminator
+
+/--
+Direct TypedCfg terminators are related to the Assembly-owned runner that
+stops at the first taken control transfer or halt.
+-/
+theorem lowerAt?_openRunUntilTransfer_rel_of_direct
+    {shape : Shape} {term : TypedCfg.Terminator}
+    {code pre post : Assembly.Program} {state : EVMState}
+    (hDirect : Preservation.Terminator.Direct term)
+    (hLower : term.lowerAt? shape = some code)
+    (hFits : Assembly.Program.PCFitsFrom pre code)
+    (hPc : state.pc = pre.pcAfter)
+    (hResolved :
+      Preservation.Terminator.ResolvedTargets
+        (pre ++ code ++ post) term) :
+    Simulation.Interaction.Rel
+      (Preservation.Block.RunSimulates
+        (pre ++ code ++ post))
+      (.done (.ok
+        (TypedCfg.Block.runTerm shape term state)))
+      (Assembly.InteractionSemantics.Source.openRunUntilTransfer
+        (pre ++ code ++ post) code.length state) := by
+  cases term with
+  | fallthrough next =>
+      simp [TypedCfg.Terminator.lowerAt?] at hLower
+      subst code
+      rcases hResolved next
+          (by simp [TypedCfg.Terminator.targets]) with
+        ⟨dest, hDest⟩
+      have hDest' :
+          (pre ++ Assembly.Instr.jump next :: post).labelPc next =
+            some dest := by
+        simpa using hDest
+      have hRun :
+          Assembly.InteractionSemantics.Source.openRunUntilTransfer
+              (pre ++ [Assembly.Instr.jump next] ++ post)
+              1 state =
+            .done
+              (.ok
+                (.running
+                  (Assembly.Source.jumpPc dest state))) := by
+        rw [show
+          pre ++ [Assembly.Instr.jump next] ++ post =
+            pre ++ Assembly.Instr.jump next :: post by simp]
+        rw [source_openRunUntilTransfer_one_at_boundary
+          hFits.1 hPc]
+        simp [Assembly.InteractionSemantics.Source.openStepAtResult,
+          Assembly.InteractionSemantics.Source.openStepAt,
+          Assembly.Source.stepAt,
+          Assembly.Instr.haltKind?,
+          Assembly.Instr.classifyFlow,
+          Assembly.FlowStep.result,
+          hDest', Assembly.Source.invalid,
+          Simulation.Interaction.bind_done_ok,
+          Simulation.Interaction.bind_done_error]
+        rfl
+      rw [show
+        ([Assembly.Instr.jump next] : Assembly.Program).length = 1 by
+          rfl]
+      rw [hRun]
+      apply Simulation.Interaction.Rel.done
+      exact
+        ⟨dest, hDest, rfl,
+          Assembly.SameRuntimeData.jumpPc dest state⟩
+  | jump target =>
+      simp [TypedCfg.Terminator.lowerAt?] at hLower
+      subst code
+      rcases hResolved target
+          (by simp [TypedCfg.Terminator.targets]) with
+        ⟨dest, hDest⟩
+      have hDest' :
+          (pre ++ Assembly.Instr.jump target :: post).labelPc target =
+            some dest := by
+        simpa using hDest
+      have hRun :
+          Assembly.InteractionSemantics.Source.openRunUntilTransfer
+              (pre ++ [Assembly.Instr.jump target] ++ post)
+              1 state =
+            .done
+              (.ok
+                (.running
+                  (Assembly.Source.jumpPc dest state))) := by
+        rw [show
+          pre ++ [Assembly.Instr.jump target] ++ post =
+            pre ++ Assembly.Instr.jump target :: post by simp]
+        rw [source_openRunUntilTransfer_one_at_boundary
+          hFits.1 hPc]
+        simp [Assembly.InteractionSemantics.Source.openStepAtResult,
+          Assembly.InteractionSemantics.Source.openStepAt,
+          Assembly.Source.stepAt,
+          Assembly.Instr.haltKind?,
+          Assembly.Instr.classifyFlow,
+          Assembly.FlowStep.result,
+          hDest', Assembly.Source.invalid,
+          Simulation.Interaction.bind_done_ok,
+          Simulation.Interaction.bind_done_error]
+        rfl
+      rw [show
+        ([Assembly.Instr.jump target] : Assembly.Program).length = 1 by
+          rfl]
+      rw [hRun]
+      apply Simulation.Interaction.Rel.done
+      exact
+        ⟨dest, hDest, rfl,
+          Assembly.SameRuntimeData.jumpPc dest state⟩
+  | jumpi target next =>
+      simp [TypedCfg.Terminator.lowerAt?] at hLower
+      subst code
+      rcases hResolved target
+          (by simp [TypedCfg.Terminator.targets]) with
+        ⟨targetDest, hTargetDest⟩
+      rcases hResolved next
+          (by simp [TypedCfg.Terminator.targets]) with
+        ⟨nextDest, hNextDest⟩
+      have hTargetDest' :
+          (pre ++ Assembly.Instr.jumpi target ::
+              Assembly.Instr.jump next :: post).labelPc target =
+            some targetDest := by
+        simpa using hTargetDest
+      have hNextDest' :
+          (pre ++ Assembly.Instr.jumpi target ::
+              Assembly.Instr.jump next :: post).labelPc next =
+            some nextDest := by
+        simpa using hNextDest
+      cases hPop : state.stack.pop with
+      | none =>
+          have hRun :
+              Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                  (pre ++
+                    [Assembly.Instr.jumpi target,
+                      Assembly.Instr.jump next] ++ post)
+                  2 state =
+                .done (.error .StackUnderflow) := by
+            rw [show
+              pre ++
+                    [Assembly.Instr.jumpi target,
+                      Assembly.Instr.jump next] ++ post =
+                  pre ++ Assembly.Instr.jumpi target ::
+                    Assembly.Instr.jump next :: post by simp]
+            rw [show 2 = 1 + 1 by omega]
+            rw [source_openRunUntilTransfer_succ_at_boundary
+              1 hFits.1 hPc]
+            simp [Assembly.InteractionSemantics.Source.openStepAtResult,
+              Assembly.InteractionSemantics.Source.openStepAt,
+              Assembly.Source.stepAt,
+              Assembly.Instr.haltKind?,
+              Assembly.Instr.classifyFlow,
+              Assembly.FlowStep.result,
+              hTargetDest', hPop,
+              Assembly.Source.invalid,
+              Simulation.Interaction.bind_done_ok,
+              Simulation.Interaction.bind_done_error]
+            rfl
+          rw [show
+            ([Assembly.Instr.jumpi target,
+              Assembly.Instr.jump next] :
+                Assembly.Program).length = 2 by rfl]
+          rw [hRun]
+          apply Simulation.Interaction.Rel.done
+          simp [Preservation.Block.RunSimulates,
+            TypedCfg.Block.runTerm, hPop,
+            Preservation.Outcome.Simulates]
+      | some popResult =>
+          rcases popResult with ⟨stack, cond⟩
+          let popped : EVMState := { state with stack := stack }
+          by_cases hZero : cond = EvmYul.UInt256.ofNat 0
+          · subst cond
+            let mid : EVMState :=
+              { popped with
+                pc := Assembly.Source.jumpiFallthroughPc state }
+            have hMidPc :
+                mid.pc =
+                  (pre ++ [Assembly.Instr.jumpi target]).pcAfter := by
+              calc
+                mid.pc =
+                    (state.pc +
+                      EvmYul.UInt256.ofNat
+                        Assembly.Instr.push32Size) +
+                      EvmYul.UInt256.ofNat 1 := rfl
+                _ =
+                    (pre.pcAfter +
+                      EvmYul.UInt256.ofNat
+                        Assembly.Instr.push32Size) +
+                      EvmYul.UInt256.ofNat 1 := by
+                  rw [hPc]
+                _ =
+                    pre.pcAfter +
+                      (EvmYul.UInt256.ofNat
+                        Assembly.Instr.push32Size +
+                        EvmYul.UInt256.ofNat 1) := by
+                  exact Preservation.uint256_add_assoc _ _ _
+                _ =
+                    pre.pcAfter +
+                      EvmYul.UInt256.ofNat
+                        (Assembly.Instr.push32Size + 1) := by
+                  rw [Assembly.UInt256_ofNat_add]
+                _ =
+                    (pre ++
+                      [Assembly.Instr.jumpi target]).pcAfter := by
+                  simpa [Assembly.Instr.byteSize,
+                    Assembly.Instr.jumpSize] using
+                    (Assembly.Program.pcAfter_snoc pre
+                      (Assembly.Instr.jumpi target)).symm
+            have hRun :
+                Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                    (pre ++
+                      [Assembly.Instr.jumpi target,
+                        Assembly.Instr.jump next] ++ post)
+                    2 state =
+                  .done
+                    (.ok
+                      (.running
+                        (Assembly.Source.jumpPc nextDest popped))) := by
+              rw [show
+                pre ++
+                      [Assembly.Instr.jumpi target,
+                        Assembly.Instr.jump next] ++ post =
+                    pre ++ Assembly.Instr.jumpi target ::
+                      Assembly.Instr.jump next :: post by simp]
+              rw [show 2 = 1 + 1 by omega]
+              rw [source_openRunUntilTransfer_succ_at_boundary
+                1 hFits.1 hPc]
+              simp only [
+                Assembly.InteractionSemantics.Source.openStepAtResult,
+                Assembly.InteractionSemantics.Source.openStepAt,
+                Assembly.Instr.haltKind?,
+                Assembly.Instr.classifyFlow]
+              simp [Assembly.Source.stepAt,
+                hTargetDest', hPop,
+                Assembly.Source.invalid, mid, popped,
+                Preservation.uint256_bne_zero_self,
+                Simulation.Interaction.bind_done_ok,
+                Simulation.Interaction.bind_done_error]
+              change
+                Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                    (pre ++ Assembly.Instr.jumpi target ::
+                      Assembly.Instr.jump next :: post)
+                    1 mid =
+                  .done
+                    (.ok
+                      (.running
+                        (Assembly.Source.jumpPc nextDest popped)))
+              rw [show
+                pre ++ Assembly.Instr.jumpi target ::
+                    Assembly.Instr.jump next :: post =
+                  (pre ++ [Assembly.Instr.jumpi target]) ++
+                    Assembly.Instr.jump next :: post by simp]
+              rw [source_openRunUntilTransfer_one_at_boundary
+                hFits.2.1 hMidPc]
+              simp [Assembly.InteractionSemantics.Source.openStepAtResult,
+                Assembly.InteractionSemantics.Source.openStepAt,
+                Assembly.Source.stepAt,
+                Assembly.Instr.haltKind?,
+                Assembly.Instr.classifyFlow,
+                Assembly.FlowStep.result,
+                hNextDest', Assembly.Source.invalid,
+                mid, popped,
+                Simulation.Interaction.bind_done_ok,
+                Simulation.Interaction.bind_done_error]
+              simp [Assembly.Source.jumpPc, mid, popped]
+              rfl
+            rw [show
+              ([Assembly.Instr.jumpi target,
+                Assembly.Instr.jump next] :
+                  Assembly.Program).length = 2 by rfl]
+            rw [hRun]
+            apply Simulation.Interaction.Rel.done
+            simp [Preservation.Block.RunSimulates,
+              TypedCfg.Block.runTerm, hPop, popped,
+              Preservation.Outcome.Simulates]
+            exact
+              ⟨nextDest, hNextDest', rfl,
+                Assembly.SameRuntimeData.jumpPc nextDest popped⟩
+          · have hBne :
+                (cond != EvmYul.UInt256.ofNat 0) = true :=
+              Preservation.uint256_bne_zero_of_ne cond hZero
+            have hRun :
+                Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                    (pre ++
+                      [Assembly.Instr.jumpi target,
+                        Assembly.Instr.jump next] ++ post)
+                    2 state =
+                  .done
+                    (.ok
+                      (.running
+                        (Assembly.Source.jumpPc targetDest popped))) := by
+              rw [show
+                pre ++
+                      [Assembly.Instr.jumpi target,
+                        Assembly.Instr.jump next] ++ post =
+                    pre ++ Assembly.Instr.jumpi target ::
+                      Assembly.Instr.jump next :: post by simp]
+              rw [show 2 = 1 + 1 by omega]
+              rw [source_openRunUntilTransfer_succ_at_boundary
+                1 hFits.1 hPc]
+              simp [Assembly.InteractionSemantics.Source.openStepAtResult,
+                Assembly.InteractionSemantics.Source.openStepAt,
+                Assembly.Source.stepAt,
+                Assembly.Instr.haltKind?,
+                Assembly.Instr.classifyFlow,
+                hTargetDest', hPop, hZero, hBne,
+                Assembly.Source.invalid, popped,
+                Assembly.Source.jumpPc,
+                Assembly.FlowStep.result,
+                Simulation.Interaction.bind_done_ok,
+                Simulation.Interaction.bind_done_error]
+              rfl
+            rw [show
+              ([Assembly.Instr.jumpi target,
+                Assembly.Instr.jump next] :
+                  Assembly.Program).length = 2 by rfl]
+            rw [hRun]
+            apply Simulation.Interaction.Rel.done
+            simp [Preservation.Block.RunSimulates,
+              TypedCfg.Block.runTerm, hPop, hZero, popped,
+              Preservation.Outcome.Simulates]
+            exact
+              ⟨targetDest, hTargetDest', rfl,
+                Assembly.SameRuntimeData.jumpPc targetDest popped⟩
+  | returnDispatch returnCount sites =>
+      simp [Preservation.Terminator.Direct] at hDirect
+  | halt kind =>
+      cases kind with
+      | stop =>
+          simp [TypedCfg.Terminator.lowerAt?] at hLower
+          subst code
+          have hRun :
+              Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                  (pre ++ [Assembly.Instr.prim .stop] ++ post)
+                  1 state =
+                .done
+                  (Assembly.Target.stepInstrResult
+                    (.prim .stop) state) := by
+            rw [show
+              pre ++ [Assembly.Instr.prim .stop] ++ post =
+                pre ++ Assembly.Instr.prim .stop :: post by simp]
+            exact
+              source_openRunUntilTransfer_one_prim_closed
+                hFits.1 hPc (by rfl) (by decide) (by decide)
+          rw [show
+            ([Assembly.Instr.prim .stop] :
+              Assembly.Program).length = 1 by rfl]
+          rw [hRun]
+          apply Simulation.Interaction.Rel.done
+          rfl
+      | «return» =>
+          simp [TypedCfg.Terminator.lowerAt?] at hLower
+          subst code
+          have hRun :
+              Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                  (pre ++ [Assembly.Instr.prim .return] ++ post)
+                  1 state =
+                .done
+                  (Assembly.Target.stepInstrResult
+                    (.prim .return) state) := by
+            rw [show
+              pre ++ [Assembly.Instr.prim .return] ++ post =
+                pre ++ Assembly.Instr.prim .return :: post by simp]
+            exact
+              source_openRunUntilTransfer_one_prim_closed
+                hFits.1 hPc (by rfl) (by decide) (by decide)
+          rw [show
+            ([Assembly.Instr.prim .return] :
+              Assembly.Program).length = 1 by rfl]
+          rw [hRun]
+          apply Simulation.Interaction.Rel.done
+          rfl
+      | revert =>
+          simp [TypedCfg.Terminator.lowerAt?] at hLower
+          subst code
+          have hRun :
+              Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                  (pre ++ [Assembly.Instr.prim .revert] ++ post)
+                  1 state =
+                .done
+                  (Assembly.Target.stepInstrResult
+                    (.prim .revert) state) := by
+            rw [show
+              pre ++ [Assembly.Instr.prim .revert] ++ post =
+                pre ++ Assembly.Instr.prim .revert :: post by simp]
+            exact
+              source_openRunUntilTransfer_one_prim_closed
+                hFits.1 hPc (by rfl) (by decide) (by decide)
+          rw [show
+            ([Assembly.Instr.prim .revert] :
+              Assembly.Program).length = 1 by rfl]
+          rw [hRun]
+          apply Simulation.Interaction.Rel.done
+          rfl
+      | selfdestruct =>
+          simp [TypedCfg.Terminator.lowerAt?] at hLower
+          subst code
+          have hRun :
+              Assembly.InteractionSemantics.Source.openRunUntilTransfer
+                  (pre ++ [Assembly.Instr.prim .selfdestruct] ++ post)
+                  1 state =
+                .done
+                  (Assembly.Target.stepInstrResult
+                    (.prim .selfdestruct) state) := by
+            rw [show
+              pre ++ [Assembly.Instr.prim .selfdestruct] ++ post =
+                pre ++ Assembly.Instr.prim .selfdestruct :: post by simp]
+            exact
+              source_openRunUntilTransfer_one_prim_closed
+                hFits.1 hPc (by rfl) (by decide) (by decide)
+          rw [show
+            ([Assembly.Instr.prim .selfdestruct] :
+              Assembly.Program).length = 1 by rfl]
+          rw [hRun]
+          apply Simulation.Interaction.Rel.done
+          rfl
+  | invalid =>
+      simp [TypedCfg.Terminator.lowerAt?] at hLower
+      subst code
+      have hRun :
+          Assembly.InteractionSemantics.Source.openRunUntilTransfer
+              (pre ++ [Assembly.Instr.prim .invalid] ++ post)
+              1 state =
+            .done (.error .InvalidInstruction) := by
+        rw [show
+          pre ++ [Assembly.Instr.prim .invalid] ++ post =
+            pre ++ Assembly.Instr.prim .invalid :: post by simp]
+        simpa [Assembly.Target.stepInstrResult] using
+          (source_openRunUntilTransfer_one_prim_closed
+            (pre := pre) (post := post) (op := .invalid)
+            (state := state) hFits.1 hPc
+            (by rfl) (by decide) (by decide))
+      rw [show
+        ([Assembly.Instr.prim .invalid] :
+          Assembly.Program).length = 1 by rfl]
+      rw [hRun]
+      apply Simulation.Interaction.Rel.done
+      exact ⟨.InvalidInstruction, rfl⟩
+
+end Terminator
 
 namespace Block
 

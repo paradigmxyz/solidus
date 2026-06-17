@@ -31,6 +31,18 @@ inductive StepResult where
   | running (state : EVMState)
   | halted (halt : Halt)
 
+inductive FlowStep where
+  | next (state : EVMState)
+  | exit (result : StepResult)
+
+namespace FlowStep
+
+def result : FlowStep → StepResult
+  | .next state => .running state
+  | .exit result => result
+
+end FlowStep
+
 namespace StepResult
 
 def IsTerminal : StepResult → Prop
@@ -89,6 +101,30 @@ def haltKind? : Instr → Option HaltKind
   | .prim op => op.haltKind?
   | _ => none
 
+/--
+Classify whether a successful Assembly instruction remains in the current
+basic block or transfers control out of it.
+
+An untaken conditional jump falls through to the next Assembly instruction.
+A taken conditional jump and every unconditional jump end the current block.
+Halts end it independently of the instruction form.
+-/
+def classifyFlow (instr : Instr) (before : EVMState) :
+    StepResult → FlowStep
+  | .halted halt => .exit (.halted halt)
+  | .running after =>
+      match instr with
+      | .jump _ => .exit (.running after)
+      | .jumpi _ =>
+          match before.stack.pop with
+          | none => .exit (.running after)
+          | some (_, cond) =>
+              if cond = EvmYul.UInt256.ofNat 0 then
+                .next after
+              else
+                .exit (.running after)
+      | _ => .next after
+
 end Instr
 
 namespace Control
@@ -110,6 +146,19 @@ def runNResultWith {M : Type → Type}
       match result with
       | .running state' => runNResultWith step fuel state'
       | .halted halt => pure (.halted halt)
+
+def runUntilTransferWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M FlowStep) :
+    Nat → EVMState → M StepResult
+  | 0, state => pure (.running state)
+  | fuel + 1, state => do
+      let flow ← step state
+      match flow with
+      | .next state' =>
+          runUntilTransferWith step fuel state'
+      | .exit result =>
+          pure result
 
 end Control
 
@@ -326,6 +375,24 @@ def stepResultWith {M : Type → Type}
   | some (pc, instr) => instrStep pc instr state
   | none => throw .InvalidInstruction
 
+def flowStepWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M StepResult)
+    (program : Program) (state : EVMState) : M FlowStep :=
+  match Program.instrAtPc program state.pc.toNat with
+  | some (_, instr) => do
+      let result ← step state
+      pure (instr.classifyFlow state result)
+  | none => throw .InvalidInstruction
+
+def runUntilTransferWith {M : Type → Type}
+    [Monad M] [MonadExceptOf EVMException M]
+    (step : EVMState → M StepResult)
+    (program : Program) (fuel : Nat)
+    (state : EVMState) : M StepResult :=
+  Control.runUntilTransferWith
+    (flowStepWith step program) fuel state
+
 abbrev step (program : Program) (state : EVMState) :
     Except EVMException EVMState :=
   stepWith (stepAt program) program state
@@ -360,6 +427,10 @@ theorem runN_add (program : Program) (first second : Nat)
 abbrev runNResult (program : Program) (fuel : Nat) (state : EVMState) :
     Except EVMException StepResult :=
   Control.runNResultWith (stepResult program) fuel state
+
+abbrev runUntilTransfer (program : Program) (fuel : Nat)
+    (state : EVMState) : Except EVMException StepResult :=
+  runUntilTransferWith (stepResult program) program fuel state
 
 abbrev ExecutionOutcome := Except EVMException StepResult
 
