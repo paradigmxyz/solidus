@@ -275,6 +275,45 @@ theorem case_body_le_caseList_of_mem
           Nat.le_max_right (stmtList headBody) (caseList tail)
         exact hLe.trans (hMax.trans (Nat.le_add_right _ 1))
 
+theorem stmtList_selectSwitchCase_le_max
+    (value : Word) (defaultBody : List AstStmt)
+    (cases : List (Word × List AstStmt)) :
+    stmtList
+        (EvmYul.Yul.selectSwitchCase value defaultBody cases) ≤
+      Nat.max (caseList cases) (stmtList defaultBody) := by
+  induction cases with
+  | nil =>
+      simp [EvmYul.Yul.selectSwitchCase, caseList]
+  | cons head tail ih =>
+      rcases head with ⟨caseValue, body⟩
+      simp only [EvmYul.Yul.selectSwitchCase, caseList]
+      by_cases hMatch : caseValue = value
+      · simp only [hMatch, ↓reduceIte]
+        have hBody :
+            stmtList body ≤
+              Nat.max (stmtList body) (caseList tail) + 1 := by
+          exact
+            (Nat.le_max_left _ _).trans
+              (Nat.le_add_right _ 1)
+        exact hBody.trans (Nat.le_max_left _ _)
+      · simp only [hMatch, ↓reduceIte]
+        have hCases :
+            caseList tail ≤
+              Nat.max (stmtList body) (caseList tail) + 1 := by
+          exact
+            (Nat.le_max_right _ _).trans
+              (Nat.le_add_right _ 1)
+        have hOuter :
+            Nat.max (caseList tail) (stmtList defaultBody) ≤
+              Nat.max
+                (Nat.max (stmtList body) (caseList tail) + 1)
+                (stmtList defaultBody) := by
+          exact
+            Nat.max_le.mpr
+              ⟨hCases.trans (Nat.le_max_left _ _),
+                Nat.le_max_right _ _⟩
+        exact ih.trans hOuter
+
 theorem functionDefinition_le_functionList_of_mem
     {name : Name} {fn : AstFunctionDefinition}
     {functions : List (Name × AstFunctionDefinition)}

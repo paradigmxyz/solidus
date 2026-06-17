@@ -1,6 +1,7 @@
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.FunctionsObserverExpression
 import EvmCompiler.Yul.FunctionsObserverForward
+import EvmCompiler.Yul.FunctionsObserverForwardFuel
 import EvmCompiler.Yul.FunctionsObserverTerminal
 import EvmCompiler.Yul.FunctionsObserverTerminalForward
 
@@ -427,6 +428,58 @@ theorem compileDispatcherForward
       hLower)
     hProgramOk hRel hDomain hRun
 
+theorem compileDispatcherForwardProgramBounded
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {sourceEntry sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Program.toObjectsWithObservers? sourceProgram =
+        some targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel [] sourceEntry target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        (Fresh.initial
+          (Contract.names sourceProgram.contract)).used
+        target.source.vars)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          sourceFuel
+          (.Block [sourceProgram.contract.dispatcher])
+          (some sourceProgram.contract) sourceEntry =
+        .ok sourceFinal) :
+    ∃ targetFuel outcome,
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          targetFuel targetProgram.toFunctions target =
+        .ok outcome ∧
+      outcome.mode = .regular ∧
+      FunctionsObserverOutcome.ScopedOutcomeRel codeRel
+        [] sourceFinal outcome ∧
+      targetFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          (FunctionsObserverStaticCost.program sourceProgram)
+          (FunctionsObserverStaticCost.program sourceProgram)
+          sourceFuel :=
+  FunctionsObserverForwardFuel.RecursiveForwardProgramBoundedFamily.dispatcherForward
+      (contract := sourceProgram.memoryContract)
+      (FunctionsObserverCompiler.decomposition_of_toObjectsWithObservers?
+        hLower)
+      hProgramOk hRel hDomain hRun
+
 theorem compileDispatcherTerminalForward
     {transcript : Trace}
     {codeRel : StateRelation.CodeRel}
@@ -604,6 +657,147 @@ theorem compileProgramRegularForward
       refine ⟨targetFuel, outcome, hTarget, ?_⟩
       rw [hOutcomeEq]
       exact FunctionsObserverOutcome.ProgramOutcomeRel.regular hState
+
+theorem compileProgramRegularForwardProgramBounded
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {sourceProgram : Yul.Program}
+    {targetProgram : Objects.Program}
+    {profile : SolcValidation.DialectProfile}
+    {sourceFuel : Nat}
+    {source : EvmYul.Yul.State}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    (hLower :
+      Program.toObjectsWithObservers? sourceProgram =
+        some targetProgram)
+    (hProgramOk :
+      SolcValidation.ProgramOkWith? profile sourceProgram = true)
+    (hInput :
+      FunctionsObserverOutcome.ProgramInputRel codeRel
+        (ObserverSemantics.SourceReplay.Program.installContract
+          sourceProgram { source := source })
+        target)
+    (hRun :
+      ObserverSafety.SafeSemantics.Program.run
+          sourceProgram.memoryContract sourceFuel sourceProgram source
+          transcript =
+        .ok (.regular sourceFinal)) :
+    ∃ targetFuel outcome,
+      Functions.Source.Effectful.Program.runState
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          targetFuel targetProgram.toFunctions target =
+        .ok outcome ∧
+      FunctionsObserverOutcome.ProgramOutcomeRel codeRel
+        (.regular sourceFinal) outcome ∧
+      targetFuel ≤
+        FunctionsObserverFuel.executionBudgetFor
+          (FunctionsObserverStaticCost.program sourceProgram)
+          (FunctionsObserverStaticCost.program sourceProgram)
+          sourceFuel := by
+  let caller : ObserverSemantics.SourceReplay.State transcript :=
+    ObserverSemantics.SourceReplay.Program.installContract
+      (transcript := transcript) sourceProgram { source := source }
+  rcases hInput with
+    ⟨hCursor, callerShared, callerVars, hCallerSource,
+      hCallerShared, hTargetVars⟩
+  have hInput' :
+      FunctionsObserverOutcome.ProgramInputRel codeRel caller target :=
+    .intro hCursor callerShared callerVars hCallerSource
+      hCallerShared hTargetVars
+  change
+    ObserverSemantics.SourceReplay.Program.finish
+        (Yul.Source.Effectful.callDispatcher
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          sourceFuel (some sourceProgram.contract) caller) =
+      .ok (.regular sourceFinal) at hRun
+  cases hCall :
+      Yul.Source.Effectful.callDispatcher
+        (ObserverSemantics.SourceReplay.stateModel transcript)
+        (ObserverSafety.SafeSemantics.primitiveSemantics
+          sourceProgram.memoryContract transcript)
+        sourceFuel (some sourceProgram.contract) caller with
+  | error failure =>
+      rcases failure with ⟨exception, failureState⟩
+      cases exception <;>
+        simp [ObserverSemantics.SourceReplay.Program.finish, hCall] at hRun
+  | ok result =>
+      rcases result with ⟨callerFinal, values⟩
+      simp [ObserverSemantics.SourceReplay.Program.finish, hCall] at hRun
+      subst callerFinal
+      obtain
+          ⟨bodyFuel, bodyFinal, hFuel, hBody, hFinal, _hValues⟩ :=
+        Yul.Source.Effectful.callDispatcher_ok_parts
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            sourceProgram.memoryContract transcript)
+          hCall
+      have hCallerCode :
+          caller.source.executionEnv.code = sourceProgram.contract := by
+        rw [hCallerSource]
+        exact
+          ObserverSemantics.SourceReplay.Program.installContract_code_of_ok
+            hCallerSource
+      have hBody' :
+          Yul.Source.Effectful.exec
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                sourceProgram.memoryContract transcript)
+              bodyFuel
+              (.Block [sourceProgram.contract.dispatcher])
+              (some sourceProgram.contract)
+              (caller.withSource
+                (EvmYul.Yul.State.mkOk
+                  (caller.source.initcall [] [] []))) =
+            .ok bodyFinal := by
+        change
+          Yul.Source.Effectful.exec
+              (ObserverSemantics.SourceReplay.stateModel transcript)
+              (ObserverSafety.SafeSemantics.primitiveSemantics
+                sourceProgram.memoryContract transcript)
+              bodyFuel
+              (.Block [caller.source.executionEnv.code.dispatcher])
+              (some sourceProgram.contract)
+              (caller.withSource
+                (EvmYul.Yul.State.mkOk
+                  (caller.source.initcall [] [] []))) =
+            .ok bodyFinal at hBody
+        simpa [hCallerCode] using hBody
+      have hEntry :=
+        FunctionsObserverOutcome.ProgramInputRel.dispatcherEntry hInput'
+      have hDomain :=
+        FunctionsObserverOutcome.ProgramInputRel.targetDomainWithin hInput'
+          (Fresh.initial
+            (Contract.names sourceProgram.contract)).used
+      obtain
+          ⟨targetFuel, outcome, hTarget, hRegular, hOutcome,
+            hTargetFuel⟩ :=
+        compileDispatcherForwardProgramBounded
+          hLower hProgramOk hEntry hDomain hBody'
+      have hState :
+          FunctionsObserverOutcome.ProgramStateRel codeRel
+            sourceFinal outcome.state := by
+        rw [hFinal]
+        exact
+          FunctionsObserverOutcome.ProgramStateRel.restoreDispatcher
+            hInput' (hOutcome.exact hRegular)
+      have hOutcomeEq :
+          outcome =
+            Functions.Source.Effectful.Outcome.regular outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+      refine ⟨targetFuel, outcome, hTarget, ?_, ?_⟩
+      · rw [hOutcomeEq]
+        exact FunctionsObserverOutcome.ProgramOutcomeRel.regular hState
+      · exact
+          hTargetFuel.trans
+            (FunctionsObserverFuel.executionBudgetFor_mono
+              (FunctionsObserverStaticCost.program sourceProgram)
+              (FunctionsObserverStaticCost.program sourceProgram)
+              (by omega))
 
 theorem compileProgramForward
     {transcript : Trace}

@@ -4841,6 +4841,77 @@ theorem runScoped_of_runOpen_singleton_block {σ : Type}
         exact ⟨fuel, hScoped, hCtx⟩
 
 /--
+Expose a singleton `block` body at the same fuel as the enclosing successful
+open-block execution. The body itself runs one level lower; fuel monotonicity
+raises that checked execution to the caller's index.
+-/
+theorem runScoped_at_of_runOpen_singleton_block {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {fuel : Nat} {ctx : Source.Ctx} {body : Block} {source : σ}
+    {outcome : Outcome σ} {finalCtx : Source.Ctx}
+    (hRun :
+      Block.runOpen model prim program ctx fuel
+          { stmts := [.block body] } source =
+        .ok (outcome, finalCtx)) :
+    Block.runScoped model prim program ctx body fuel source =
+        .ok outcome ∧
+      finalCtx = ctx := by
+  cases fuel with
+  | zero =>
+      simp [Block.runOpen, Source.invalid, Structured.invalid] at hRun
+  | succ previous =>
+      rcases runOpen_cons_cases model prim program hRun with
+        hRegular | hNonregular
+      · obtain ⟨middle, middleCtx, hStmt, hTail⟩ := hRegular
+        have hStmtParts :
+            Block.runScoped model prim program ctx body previous source =
+                .ok (Outcome.regular middle) ∧
+              middleCtx = ctx := by
+          unfold Stmt.run at hStmt
+          cases hBody :
+              Block.runScoped model prim program ctx body previous source with
+          | error err =>
+              simp [hBody] at hStmt
+          | ok bodyOutcome =>
+              have hPair :
+                  (bodyOutcome, ctx) =
+                    (Outcome.regular middle, middleCtx) := by
+                simpa [hBody] using hStmt
+              injection hPair with hOutcome hStmtCtx
+              exact
+                ⟨by simpa [hOutcome] using hBody, hStmtCtx.symm⟩
+        obtain ⟨hOutcome, hTailCtx⟩ :=
+          runOpen_nil_ok model prim program hTail
+        rw [hOutcome]
+        exact
+          ⟨Block.runScoped_mono model prim program
+              (Nat.le_succ previous) hStmtParts.1,
+            hTailCtx.trans hStmtParts.2⟩
+      · obtain
+          ⟨headOutcome, headCtx, hStmt, _hMode,
+            hOutcome, hCtx⟩ := hNonregular
+        have hScoped :
+            Block.runScoped model prim program ctx body previous source =
+              .ok headOutcome := by
+          unfold Stmt.run at hStmt
+          cases hBody :
+              Block.runScoped model prim program ctx body previous source with
+          | error err =>
+              simp [hBody] at hStmt
+          | ok bodyOutcome =>
+              have hPair :
+                  (bodyOutcome, ctx) = (headOutcome, headCtx) := by
+                simpa [hBody] using hStmt
+              injection hPair with hOutcome _hCtx
+              simpa [hOutcome] using hBody
+        rw [hOutcome]
+        exact
+          ⟨Block.runScoped_mono model prim program
+              (Nat.le_succ previous) hScoped,
+            hCtx⟩
+
+/--
 Successful open-block execution never removes names from its lexical context.
 Regular heads may extend the context through declarations; abrupt heads return
 the block's incoming context.
@@ -5342,6 +5413,95 @@ theorem runScoped_forGuard_break_exists {σ : Type}
       runScoped_nonregular_of_runOpen model prim program hOpen (by simp)⟩
 
 /--
+Execute the compiler-generated false loop guard at an explicit additive fuel
+budget. Five units cover the synthetic `break`, `if`, and open-block wrappers.
+-/
+theorem runScoped_forGuard_break_at_add_five {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {bodyBase condCtx : Source.Ctx}
+    {pre : List Stmt} {cond : Functions.Expr 1}
+    {rest : List Stmt} {source afterPre afterEval : σ}
+    {value : Word} {breakScope : List Name} {preFuel : Nat}
+    (hPre :
+      Block.runOpen model prim program bodyBase preFuel
+          { stmts := pre } source =
+        .ok (Outcome.regular afterPre, condCtx))
+    (hEval :
+      Expr.eval model prim cond afterPre =
+        .ok (afterEval, [value]))
+    (hIszero :
+      prim.eval .iszero afterEval [value] =
+        .ok (afterEval, [EvmYul.UInt256.isZero value]))
+    (hZero : value = EvmYul.UInt256.ofNat 0)
+    (hBreakScope : condCtx.breakScope? = some breakScope) :
+    Block.runScoped model prim program bodyBase
+        { stmts :=
+            pre ++
+              .if_
+                (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                { stmts := [.brk] } ::
+              rest }
+        (preFuel + 5) source =
+      .ok (Outcome.brk (model.restrictTo breakScope afterEval)) := by
+  have hGuard :
+      Expr.evalCondition model prim
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil)) afterPre =
+        .ok (afterEval, true) :=
+    Expr.evalCondition_iszero_true_of_eval_singleton
+      model prim hEval hIszero hZero
+  have hBreakStmt :
+      Stmt.run model prim program condCtx 1 .brk afterEval =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
+    Stmt.run_brk_of_scope model prim program hBreakScope
+  have hBreakOpen :
+      Block.runOpen model prim program condCtx 3
+          { stmts := [.brk] } afterEval =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) := by
+    simpa using
+      runOpen_singleton_of_run_at_add_two model prim program hBreakStmt
+  have hBreakScoped :
+      Block.runScoped model prim program condCtx
+          { stmts := [.brk] } 3 afterEval =
+        .ok (Outcome.brk (model.restrictTo breakScope afterEval)) :=
+    runScoped_nonregular_of_runOpen model prim program hBreakOpen (by simp)
+  have hIfStmt :
+      Stmt.run model prim program condCtx 4
+          (.if_
+            (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+            { stmts := [.brk] })
+          afterPre =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) :=
+    Stmt.run_if_true_of_eval model prim program hGuard hBreakScoped
+  have hGuardTail :
+      Block.runOpen model prim program condCtx 5
+          { stmts :=
+              .if_
+                  (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                  { stmts := [.brk] } ::
+                rest }
+          afterPre =
+        .ok
+          (Outcome.brk (model.restrictTo breakScope afterEval), condCtx) := by
+    simpa using
+      runOpen_cons_nonregular model prim program hIfStmt (by simp)
+  have hOpen :=
+    runOpen_append_regular_at_add model prim program
+      pre
+      (.if_
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+          { stmts := [.brk] } ::
+        rest)
+      bodyBase condCtx source afterPre
+      (Outcome.brk (model.restrictTo breakScope afterEval))
+      condCtx preFuel 5 hPre hGuardTail
+  exact
+    runScoped_nonregular_of_runOpen model prim program hOpen (by simp)
+
+/--
 Execute the compiler-generated Yul loop guard when the source condition is
 nonzero, then continue with an arbitrary checked body run.
 
@@ -5416,6 +5576,86 @@ theorem runOpen_forGuard_body_exists {σ : Type}
         rest)
       bodyBase condCtx source afterPre outcome finalCtx
       hPre ⟨guardBodyFuel, hGuardBody⟩
+
+/--
+Execute the compiler-generated true loop guard followed by its body at an
+explicit additive fuel budget. Three units cover the synthetic `if` and
+singleton open-block wrapper.
+-/
+theorem runOpen_forGuard_body_at_add_three {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Program)
+    {bodyBase condCtx finalCtx : Source.Ctx}
+    {pre : List Stmt} {cond : Functions.Expr 1}
+    {rest : List Stmt} {source afterPre afterEval : σ}
+    {value : Word} {outcome : Outcome σ}
+    {preFuel bodyFuel : Nat}
+    (hPre :
+      Block.runOpen model prim program bodyBase preFuel
+          { stmts := pre } source =
+        .ok (Outcome.regular afterPre, condCtx))
+    (hEval :
+      Expr.eval model prim cond afterPre =
+        .ok (afterEval, [value]))
+    (hIszero :
+      prim.eval .iszero afterEval [value] =
+        .ok (afterEval, [EvmYul.UInt256.isZero value]))
+    (hNonzero : value ≠ EvmYul.UInt256.ofNat 0)
+    (hBody :
+      Block.runOpen model prim program condCtx bodyFuel
+          { stmts := rest } afterEval =
+        .ok (outcome, finalCtx)) :
+    Block.runOpen model prim program bodyBase
+        (preFuel + bodyFuel + 3)
+        { stmts :=
+            pre ++
+              .if_
+                (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                { stmts := [.brk] } ::
+              rest }
+        source =
+      .ok (outcome, finalCtx) := by
+  have hGuard :
+      Expr.evalCondition model prim
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil)) afterPre =
+        .ok (afterEval, false) :=
+    Expr.evalCondition_iszero_false_of_eval_singleton
+      model prim hEval hIszero hNonzero
+  have hIfStmt :
+      Stmt.run model prim program condCtx 1
+          (.if_
+            (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+            { stmts := [.brk] })
+          afterPre =
+        .ok (Outcome.regular afterEval, condCtx) :=
+    Stmt.run_if_false_of_eval model prim program hGuard
+  have hIfOpen :
+      Block.runOpen model prim program condCtx 3
+          { stmts :=
+              [(.if_
+                (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+                { stmts := [.brk] })] }
+          afterPre =
+        .ok (Outcome.regular afterEval, condCtx) := by
+    simpa using
+      runOpen_singleton_of_run_at_add_two model prim program hIfStmt
+  have hGuardBody :=
+    runOpen_append_regular_at_add model prim program
+      [(.if_
+        (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+        { stmts := [.brk] })]
+      rest condCtx condCtx afterPre afterEval outcome finalCtx
+      3 bodyFuel hIfOpen hBody
+  have hAll :=
+    runOpen_append_regular_at_add model prim program
+      pre
+      (.if_
+          (.prim .iszero (Locals.ExprSeq.cons cond .nil))
+          { stmts := [.brk] } ::
+        rest)
+      bodyBase condCtx source afterPre outcome finalCtx
+      preFuel (3 + bodyFuel) hPre hGuardBody
+  simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using hAll
 
 end Block
 

@@ -30373,3 +30373,31 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
 - 2026-06-16 18:31:11 PDT - compaction-resume/scope - Resumed the narrowed observer proof after completing program-indexed expression, call, list, body, and leaf-statement preservation; checkpointing those interfaces before proving compound statements.
 - 2026-06-16 18:34:33 PDT - proof/yul-program-indexed-leaves - Completed program-indexed preservation for arbitrary-result primitive expressions, returned internal calls with independent argument/callee fuel, declarations, assignments, expression statements, and abrupt control. Added the recursive statement dispatcher that delegates only block, conditional, switch, and loop cases to the adjacent compound capability.
 - 2026-06-16 18:34:33 PDT - validation/yul-program-indexed-leaves - Focused 1,197-job forward-fuel build, full 1,268-job verification root, architecture dependency guard, changed-file forbidden-marker scan, standalone axiom smoke, and `git diff --check` passed. New theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`; architecture reported only pre-existing oversized-module debt.
+- 2026-06-16 18:46:03 PDT - compaction-resume/scope - Resumed the
+  narrowed observer proof with program-indexed block, conditional, and switch
+  preservation checked locally. The recursive `for` case is the last compound
+  constructor before closing the bounded whole-program Yul-to-Functions layer;
+  generic backward adequacy remains archived and is not a completion gate.
+- 2026-06-16 19:01:59 PDT - compaction-resume/scope - Resumed after checking
+  program-indexed loop preservation, for-statement packaging, and compound
+  dispatch. The next boundary is the recursive-family fixed point and bounded
+  whole-program Yul-to-Functions theorem; generic backward adequacy remains
+  archived and non-blocking.
+- 2026-06-16 19:09:00 PDT - proof/yul-program-indexed-compounds-family -
+  Checked program-indexed loop preservation, `for` statement packaging,
+  compound dispatch, and the recursive-family fixed point. The quantitative
+  family reuses the ordinary forward family for semantic relations and adds
+  only source-owned numeric execution bounds.
+- 2026-06-16 19:09:00 PDT - theorem-boundary/yul-regular-program-fuel -
+  Added bounded dispatcher and regular whole-program forward theorems. A
+  canonical successful regular Yul run now produces a related Functions run
+  whose fuel is bounded by `executionBudgetFor` of the source program cost and
+  source fuel. Observable terminal prefixes remain the only Yul-to-Functions
+  quantitative gap before scratch composition.
+- 2026-06-16 19:42:43 PDT - validation/yul-program-indexed-compounds-family -
+  Focused forward-fuel and preservation builds, the full 1,268-job verification
+  root, architecture dependency guard, aggregate proof-layer gate, standalone
+  resource-observer axiom audit, changed-file forbidden-marker scan, and
+  `git diff --check` passed. New compound, family, dispatcher, and regular
+  whole-program theorems depend only on `propext`, `Classical.choice`, and
+  `Quot.sound`; architecture reports only the existing soft line-count debt.

@@ -1698,6 +1698,163 @@ def toOpen
                   loop.exitScope },
         fun hResultRegular => (hExit.not_regular hResultRegular).elim⟩⟩
 
+/--
+Turning a checked loop execution into the emitted singleton `for` block costs
+at most four additional fuel units. This theorem is independent of the
+particular witness chosen by `toOpen`; Functions determinism aligns any
+successful result over the same generated statement.
+-/
+theorem toOpen_requiredFuel_le_of_run
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {post body : Functions.Block}
+    {initial final : Fresh.State}
+    {layout closedLayout : List Name}
+    {sourceFinal closedSource :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {loopFuel : Nat}
+    (loop :
+      ScopedLoopResult contract codeRel program sourceControl
+        (.lit (EvmYul.UInt256.ofNat 1))
+        ctx.withoutLoopControl post
+        (ctx.withLoopControl ctx.scope ctx.scope) body
+        final layout sourceFinal target ctx.withoutLoopControl)
+    (hLoop :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope) body loopFuel target =
+        .ok loop.outcome)
+    (opened :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program
+        [.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+          post body]
+        initial final closedLayout closedSource target ctx
+        (sourceControl := sourceControl)) :
+    opened.requiredFuel ≤ loopFuel + 4 := by
+  let commonFuel := max 1 loopFuel
+  have hInit :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl commonFuel { stmts := [] } target =
+        .ok
+          (Functions.Source.Effectful.Outcome.regular target,
+            ctx.withoutLoopControl) :=
+    Functions.Source.Effectful.Block.runOpen_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel])
+      (Functions.Source.Effectful.Block.runOpen_nil
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx.withoutLoopControl 0 target)
+  have hLoop' :
+      Functions.Source.Effectful.Stmt.runForLoop
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx.withoutLoopControl
+          (.lit (EvmYul.UInt256.ofNat 1))
+          ctx.withoutLoopControl post
+          (ctx.withLoopControl ctx.scope ctx.scope) body commonFuel target =
+        .ok loop.outcome :=
+    Functions.Source.Effectful.Stmt.runForLoop_mono
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program (by simp [commonFuel]) hLoop
+  have hStmt :
+      ∃ outcome,
+        Functions.Source.Effectful.Stmt.run
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program ctx (commonFuel + 1)
+            (.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+              post body) target =
+          .ok (outcome, ctx) := by
+    rcases
+        Functions.Source.Effectful.Stmt.runForLoop_regular_or_exit
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hLoop' with hRegular | hExit
+    · have hLoopEq :
+          loop.outcome =
+            Functions.Source.Effectful.Outcome.regular
+              loop.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+      have hLoopRegular := hLoop'
+      rw [hLoopEq] at hLoopRegular
+      let targetFinal :=
+        loop.outcome.state.withSource
+          (loop.outcome.state.source.restrictTo ctx.scope)
+      refine ⟨
+        Functions.Source.Effectful.Outcome.regular targetFinal, ?_⟩
+      simpa [targetFinal] using
+        Functions.Source.Effectful.Stmt.run_for_regular_of_runs
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hInit hLoopRegular
+    · exact
+        ⟨loop.outcome,
+          Functions.Source.Effectful.Stmt.run_for_exit_of_runs
+            (Functions.ObserverSemantics.stateModel transcript)
+            (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+              contract transcript)
+            program hExit hInit hLoop'⟩
+  obtain ⟨outcome, hStmt⟩ := hStmt
+  have hOpen :=
+    Functions.Source.Effectful.Block.runOpen_singleton_of_run_at_add_two
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hStmt
+  obtain ⟨openedFuel, hOpened⟩ := opened.run
+  have hUnique :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hOpen hOpened
+  have hOutcome : outcome = opened.outcome :=
+    congrArg Prod.fst hUnique
+  have hCtx : ctx = opened.finalCtx :=
+    congrArg Prod.snd hUnique
+  have hOpen' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (commonFuel + 1 + 2)
+          { stmts :=
+              [.for_ { stmts := [] } (.lit (EvmYul.UInt256.ofNat 1))
+                post body] }
+          target =
+        .ok (opened.outcome, opened.finalCtx) := by
+    simpa [hOutcome, hCtx] using hOpen
+  have hRequired :=
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+      opened hOpen'
+  have hCommon : commonFuel ≤ loopFuel + 1 := by
+    simp [commonFuel]
+  omega
+
 end ScopedLoopResult
 
 def RecursiveOpenStmtForward

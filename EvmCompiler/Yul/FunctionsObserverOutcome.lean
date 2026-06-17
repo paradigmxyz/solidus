@@ -1,3 +1,4 @@
+import EvmCompiler.Functions.EffectSemanticsInversion
 import EvmCompiler.Functions.ObserverSafety
 import EvmCompiler.Yul.FunctionsObserverCompiler
 import EvmCompiler.Yul.ObserverSafety
@@ -1795,6 +1796,117 @@ theorem closeLexical
           exitScope := result.exitScope },
         fun hResultRegular =>
           False.elim (hRegular hResultRegular)⟩⟩
+
+/--
+Relate an open body to any successful lexical singleton-block result over the
+same lowered body. Determinism identifies the singleton result with the scoped
+execution obtained from the open body at its least sufficient fuel.
+-/
+theorem singletonBlock_requiredFuel_parts
+    {transcript : Trace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout closedLayout : List Name}
+    {sourceOpen sourceClosed :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    (body :
+      ScopedOpenResult contract codeRel program lower initial final
+        entryLayout sourceOpen target ctx
+        (sourceControl := sourceControl))
+    (closed :
+      ScopedOpenResult contract codeRel program
+        [.block { stmts := lower }] initial final closedLayout
+        sourceClosed target ctx (sourceControl := sourceControl)) :
+    Functions.Source.Effectful.Block.runScoped
+        (Functions.ObserverSemantics.stateModel transcript)
+        (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+          contract transcript)
+        program ctx { stmts := lower } body.requiredFuel target =
+      .ok closed.outcome ∧
+    closed.finalCtx = ctx ∧
+    closed.requiredFuel ≤ body.requiredFuel + 2 := by
+  let scopedOutcome :=
+    if body.outcome.mode = .regular then
+      Functions.Source.Effectful.Outcome.regular
+        ((Functions.ObserverSemantics.stateModel transcript).restrictTo
+          ctx.scope body.outcome.state)
+    else
+      body.outcome
+  have hScoped :
+      Functions.Source.Effectful.Block.runScoped
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx { stmts := lower } body.requiredFuel target =
+        .ok scopedOutcome := by
+    by_cases hRegular : body.outcome.mode = .regular
+    · have hOutcome :
+          body.outcome =
+            Functions.Source.Effectful.Outcome.regular
+              body.outcome.state :=
+        Functions.Source.Effectful.Outcome.eq_regular_of_mode hRegular
+      have hOpen := run_requiredFuel body
+      rw [hOutcome] at hOpen
+      simp only [scopedOutcome, hRegular, ↓reduceIte]
+      exact
+        Functions.Source.Effectful.Block.runScoped_regular_of_runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program hOpen
+    · simp only [scopedOutcome, hRegular, ↓reduceIte]
+      exact
+        Functions.Source.Effectful.Block.runScoped_nonregular_of_runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program (run_requiredFuel body) hRegular
+  have hStmt :
+      Functions.Source.Effectful.Stmt.run
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx body.requiredFuel
+          (.block { stmts := lower }) target =
+        .ok (scopedOutcome, ctx) := by
+    unfold Functions.Source.Effectful.Stmt.run
+    rw [hScoped]
+    rfl
+  have hSingleton :=
+    Functions.Source.Effectful.Block.runOpen_singleton_of_run_at_add_two
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hStmt
+  obtain ⟨closedFuel, hClosed⟩ := closed.run
+  have hUnique :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hSingleton hClosed
+  have hOutcome : scopedOutcome = closed.outcome :=
+    congrArg Prod.fst hUnique
+  have hCtx : ctx = closed.finalCtx :=
+    congrArg Prod.snd hUnique
+  have hSingleton' :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx (body.requiredFuel + 2)
+          { stmts := [.block { stmts := lower }] } target =
+        .ok (closed.outcome, closed.finalCtx) := by
+    simpa [hOutcome, hCtx] using hSingleton
+  exact
+    ⟨by simpa [hOutcome] using hScoped, hCtx.symm,
+      requiredFuel_le_of_run closed hSingleton'⟩
 
 def empty
     {transcript : Trace}

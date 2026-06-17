@@ -656,6 +656,55 @@ def ScopedOpenResult.ProgramBounded
   result.requiredFuel ≤
     executionBudgetFor globalCost localCost sourceFuel
 
+/--
+Any successful run of the same lowered block bounds a related result's least
+fuel. Functions determinism identifies the caller-supplied terminal pair with
+the one stored in the outcome-indexed result.
+-/
+theorem ScopedOpenResult.requiredFuel_le_of_successful_run
+    {transcript : Assembly.ResourceTrace}
+    {contract : MemoryContract.Contract}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {lower : List Functions.Stmt}
+    {initial final : Fresh.State}
+    {entryLayout : List Name}
+    {sourceFinal : ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx runCtx : Functions.Source.Ctx}
+    {outcome :
+      Functions.Source.Effectful.Outcome
+        (Functions.ObserverSemantics.State transcript)}
+    (result :
+      FunctionsObserverOutcome.ScopedOpenResult
+        contract codeRel program lower initial final entryLayout
+        sourceFinal target ctx (sourceControl := sourceControl))
+    {fuel : Nat}
+    (hRun :
+      Functions.Source.Effectful.Block.runOpen
+          (Functions.ObserverSemantics.stateModel transcript)
+          (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          program ctx fuel { stmts := lower } target =
+        .ok (outcome, runCtx)) :
+    result.requiredFuel ≤ fuel := by
+  obtain ⟨storedFuel, hStored⟩ := result.run
+  have hUnique :=
+    Functions.Source.Effectful.Block.runOpen_success_unique
+      (Functions.ObserverSemantics.stateModel transcript)
+      (Functions.ObserverSafety.SafeSemantics.primitiveSemantics
+        contract transcript)
+      program hRun hStored
+  have hOutcome : outcome = result.outcome :=
+    congrArg Prod.fst hUnique
+  have hCtx : runCtx = result.finalCtx :=
+    congrArg Prod.snd hUnique
+  apply
+    FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_le_of_run
+      result
+  simpa [hOutcome, hCtx] using hRun
+
 theorem Prepared.programBounded_of_bounded
     {contract : MemoryContract.Contract}
     {transcript : Assembly.ResourceTrace}

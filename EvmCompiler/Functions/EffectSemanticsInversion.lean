@@ -471,6 +471,41 @@ theorem run_block_parts {σ : Type}
       rcases hRun with ⟨hOutcome, hCtx⟩
       exact ⟨by simpa [hOutcome], hCtx.symm⟩
 
+/--
+Successful loop executions from the same input are unique, independently of
+the sufficient fuel chosen by the caller.
+-/
+theorem runForLoop_success_unique {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {cond : Functions.Expr 1}
+    {postBase bodyBase : Source.Ctx}
+    {post body : Functions.Block}
+    {leftFuel rightFuel : Nat} {source : σ}
+    {leftOutcome rightOutcome : Outcome σ}
+    (hLeft :
+      runForLoop model prim program ctx cond postBase post bodyBase body
+          leftFuel source =
+        .ok leftOutcome)
+    (hRight :
+      runForLoop model prim program ctx cond postBase post bodyBase body
+          rightFuel source =
+        .ok rightOutcome) :
+    leftOutcome = rightOutcome := by
+  let commonFuel := Nat.max leftFuel rightFuel
+  have hLeft' :
+      runForLoop model prim program ctx cond postBase post bodyBase body
+          commonFuel source =
+        .ok leftOutcome :=
+    runForLoop_mono model prim program (Nat.le_max_left _ _) hLeft
+  have hRight' :
+      runForLoop model prim program ctx cond postBase post bodyBase body
+          commonFuel source =
+        .ok rightOutcome :=
+    runForLoop_mono model prim program (Nat.le_max_right _ _) hRight
+  rw [hLeft'] at hRight'
+  exact Except.ok.inj hRight'
+
 end Stmt
 
 namespace Block
@@ -497,6 +532,35 @@ theorem runOpen_success_unique {σ : Type}
       runOpen model prim program ctx commonFuel block source =
         .ok (rightOutcome, rightCtx) :=
     runOpen_mono model prim program (Nat.le_max_right _ _) hRight
+  rw [hLeft'] at hRight'
+  exact Except.ok.inj hRight'
+
+/--
+Successful scoped-block executions from the same input are unique,
+independently of the sufficient fuel chosen by the caller.
+-/
+theorem runScoped_success_unique {σ : Type}
+    (model : StateModel σ) (prim : PrimitiveSemantics σ)
+    (program : Functions.Program)
+    {ctx : Source.Ctx} {leftFuel rightFuel : Nat}
+    {block : Functions.Block} {source : σ}
+    {leftOutcome rightOutcome : Outcome σ}
+    (hLeft :
+      runScoped model prim program ctx block leftFuel source =
+        .ok leftOutcome)
+    (hRight :
+      runScoped model prim program ctx block rightFuel source =
+        .ok rightOutcome) :
+    leftOutcome = rightOutcome := by
+  let commonFuel := Nat.max leftFuel rightFuel
+  have hLeft' :
+      runScoped model prim program ctx block commonFuel source =
+        .ok leftOutcome :=
+    runScoped_mono model prim program (Nat.le_max_left _ _) hLeft
+  have hRight' :
+      runScoped model prim program ctx block commonFuel source =
+        .ok rightOutcome :=
+    runScoped_mono model prim program (Nat.le_max_right _ _) hRight
   rw [hLeft'] at hRight'
   exact Except.ok.inj hRight'
 

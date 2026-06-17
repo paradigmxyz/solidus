@@ -80,17 +80,17 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
   - [x] identify and repair the nested-call theorem boundary: add a checked
     program-global/local-static two-dimensional budget whose source-fuel step
     absorbs recursive children bounded by the whole program;
-  - [ ] migrate recursive expression, call, statement, and body capabilities
-    to the program-indexed budget and retire the provisional one-level
-    call-expanded runtime measure;
+  - [x] migrate recursive expression, call, statement, and body capabilities
+    to the program-indexed budget;
     - [x] argument preparation and primitive expression evaluation;
     - [x] internal function calls and recursive expression capability;
     - [x] list sequencing and returned-body packaging;
     - [x] leaf statements;
-    - [ ] compound statements;
-  - [ ] prove every remaining compiler construct respects the program static
-    measure;
-  - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;
+    - [x] compound statements and loops;
+    - [x] recursive-family fixed point and dispatcher packaging;
+  - [ ] retire the provisional one-level call-expanded runtime measure;
+  - [ ] cover terminal outcomes with the same program-indexed budget;
+  - [x] expose the bounded regular whole-program forward theorem;
   - [ ] expose the bounded whole-program forward theorem.
 - [ ] Define an honest source-facing scratch execution/reservation-safety
   interface using that checked bound, without exposing compiler-generated
