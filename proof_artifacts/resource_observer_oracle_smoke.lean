@@ -1662,6 +1662,8 @@ import EvmCompiler.TypedCfg.ObserverPreservation
 #print axioms EvmCompiler.Yul.FunctionsObserverOutcome.ScopedOpenResult.requiredFuel_appendNonregular_le
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.Prepared.requiredFuel_append_le
 #print axioms EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedArgs.ofUncheckedLowering_programBounded
+#print axioms EvmCompiler.Yul.FunctionsObserverExpressionFuel.ScopedPreparedValue.ofPrimitive_programBounded
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudget_mono
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.targetBudgetFor_mono
 #print axioms EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor_child_add_eight_le
