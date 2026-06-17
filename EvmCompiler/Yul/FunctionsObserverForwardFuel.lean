@@ -443,6 +443,229 @@ theorem ofAssignOnePrepared_bounded
     ScopedStmtResult.ofStatement]
   omega
 
+theorem ofBreak_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {compilerFuel sourceFuel staticCost : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hStatic :
+      FunctionsObserverStaticCost.stmt .Break ≤ staticCost)
+    (hEnabled : canBreak = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Break =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Break codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program .Break
+            lower before after layout sourceFinal target ctx
+            canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  have hWithin := hControl.breakScope
+  rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+  obtain
+      ⟨breakLayout, targetBreakScope,
+        hSourceBreakScope, hBreakScope,
+        hBreakSubset, hBreakTarget⟩ :=
+    hWithin
+  obtain ⟨⟨openResult, hRequired⟩⟩ :=
+    FunctionsObserverStatement.OpenResult.of_break
+      (sourceControl := sourceControl)
+      hLower hRel hDomain hScope hLayout
+      hSourceBreakScope hBreakScope hBreakSubset hBreakTarget hRun
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  have hTwo : 2 ≤ staticCost := by
+    simpa [FunctionsObserverStaticCost.stmt] using hStatic
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  exact
+    hRequired.trans
+      (hTwo.trans
+        (FunctionsObserverFuel.staticCost_le_executionBudget
+          staticCost sourceFuel))
+
+theorem ofContinue_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {compilerFuel sourceFuel staticCost : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hStatic :
+      FunctionsObserverStaticCost.stmt .Continue ≤ staticCost)
+    (hEnabled : canContinue = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Continue =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Continue codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program .Continue
+            lower before after layout sourceFinal target ctx
+            canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  have hWithin := hControl.continueScope
+  rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+  obtain
+      ⟨continueLayout, targetContinueScope,
+        hSourceContinueScope, hContinueScope,
+        hContinueSubset, hContinueTarget⟩ :=
+    hWithin
+  obtain ⟨⟨openResult, hRequired⟩⟩ :=
+    FunctionsObserverStatement.OpenResult.of_continue
+      (sourceControl := sourceControl)
+      hLower hRel hDomain hScope hLayout
+      hSourceContinueScope hContinueScope
+      hContinueSubset hContinueTarget hRun
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  have hTwo : 2 ≤ staticCost := by
+    simpa [FunctionsObserverStaticCost.stmt] using hStatic
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  exact
+    hRequired.trans
+      (hTwo.trans
+        (FunctionsObserverFuel.staticCost_le_executionBudget
+          staticCost sourceFuel))
+
+theorem ofLeave_bounded
+    {contract : MemoryContract.Contract}
+    {transcript : Trace}
+    {codeRel : StateRelation.CodeRel}
+    {program : Functions.Program}
+    {sourceControl : FunctionsObserverOutcome.SourceControlScopes}
+    {compilerFuel sourceFuel staticCost : Nat}
+    {before after : Fresh.State}
+    {layout : List Name}
+    {lower : List Functions.Stmt}
+    {codeOverride : Option EvmYul.Yul.Ast.YulContract}
+    {source sourceFinal :
+      ObserverSemantics.SourceReplay.State transcript}
+    {target : Functions.ObserverSemantics.State transcript}
+    {ctx : Functions.Source.Ctx}
+    {canBreak canContinue canLeave : Bool}
+    (hStatic :
+      FunctionsObserverStaticCost.stmt .Leave ≤ staticCost)
+    (hEnabled : canLeave = true)
+    (hLower :
+      Stmt.toFunctionsListUncheckedFuel? compilerFuel before .Leave =
+        some (lower, after))
+    (hRel :
+      StateRelation.Replay.ScopedExactRel codeRel layout source target)
+    (hDomain :
+      StateRelation.Vars.TargetDomainWithin
+        before.used target.source.vars)
+    (hScope :
+      StateRelation.Vars.NamesWithin before.used ctx.scope)
+    (hLayout :
+      StateRelation.Vars.NamesWithin before.used layout)
+    (hControl :
+      FunctionsObserverOutcome.ControlContextRel sourceControl layout
+        canBreak canContinue canLeave ctx)
+    (hRun :
+      Yul.Source.Effectful.exec
+          (ObserverSemantics.SourceReplay.stateModel transcript)
+          (ObserverSafety.SafeSemantics.primitiveSemantics
+            contract transcript)
+          sourceFuel .Leave codeOverride source =
+        .ok sourceFinal) :
+    Nonempty
+      { result :
+          ScopedStmtResult contract codeRel program .Leave
+            lower before after layout sourceFinal target ctx
+            canBreak canContinue canLeave
+            (sourceControl := sourceControl) //
+        FunctionsObserverFuel.ScopedOpenResult.Bounded
+          staticCost sourceFuel result.openResult } := by
+  have hWithin := hControl.leaveScope
+  rw [FunctionsObserverOutcome.ScopeOptionWithin, hEnabled] at hWithin
+  obtain
+      ⟨leaveLayout, targetLeaveScope,
+        hSourceLeaveScope, hLeaveScope,
+        hLeaveSubset, hLeaveTarget⟩ :=
+    hWithin
+  obtain ⟨⟨openResult, hRequired⟩⟩ :=
+    FunctionsObserverStatement.OpenResult.of_leave
+      (sourceControl := sourceControl)
+      hLower hRel hDomain hScope hLayout
+      hSourceLeaveScope hLeaveScope hLeaveSubset hLeaveTarget hRun
+  let result :=
+    ScopedStmtResult.ofStatement openResult hControl
+  refine ⟨⟨result, ?_⟩⟩
+  have hTwo : 2 ≤ staticCost := by
+    simpa [FunctionsObserverStaticCost.stmt] using hStatic
+  dsimp [FunctionsObserverFuel.ScopedOpenResult.Bounded, result,
+    ScopedStmtResult.ofStatement]
+  exact
+    hRequired.trans
+      (hTwo.trans
+        (FunctionsObserverFuel.staticCost_le_executionBudget
+          staticCost sourceFuel))
+
 end ScopedStmtResult
 
 namespace RecursiveBodyForwardBounded

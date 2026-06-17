@@ -312,6 +312,13 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverExpression.PreparedValue.requiredFuel_bind_le
 #check EvmCompiler.Yul.FunctionsObserverFuel.targetBudget
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget
+#check EvmCompiler.Yul.FunctionsObserverFuel.targetBudgetFor
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor_child_add_eight_le
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudgetFor_two_children_add_eight_le
+#check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_le_executionBudgetFor
+#check EvmCompiler.Yul.FunctionsObserverFuel.PreparedValue.ProgramBounded
+#check EvmCompiler.Yul.FunctionsObserverFuel.ScopedOpenResult.ProgramBounded
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_mono
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_add_static
 #check EvmCompiler.Yul.FunctionsObserverFuel.executionBudget_static_children_add_eight_le_of_lt
@@ -356,6 +363,9 @@ or audit-alias corridor.
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetNone_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLetOnePrepared_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofAssignOnePrepared_bounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofBreak_bounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofContinue_bounded
+#check EvmCompiler.Yul.FunctionsObserverForwardFuel.ScopedStmtResult.ofLeave_bounded
 #check EvmCompiler.Yul.FunctionsObserverForwardFuel.RecursiveOpenListForwardBounded.ofStmt
 #check EvmCompiler.Yul.FunctionsObserverStatement.OpenResult.of_block
 #check EvmCompiler.Yul.FunctionsObserverStatementBackward.AlignedStmtBackward

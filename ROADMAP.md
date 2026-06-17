@@ -77,6 +77,12 @@ terminal target `gas()`/`msize()` transcript with a canonical source replay.
     runtime cost plus the compiler-selected callee body cost;
   - [x] close recursive expression/value preservation under the call-aware
     runtime cost and derive exact bounded function bodies from bounded lists;
+  - [x] identify and repair the nested-call theorem boundary: add a checked
+    program-global/local-static two-dimensional budget whose source-fuel step
+    absorbs recursive children bounded by the whole program;
+  - [ ] migrate recursive expression, call, statement, and body capabilities
+    to the program-indexed budget and retire the provisional one-level
+    call-expanded runtime measure;
   - [ ] prove every remaining compiler construct respects the program static
     measure;
   - [ ] cover remaining leaf/compound statements, loops, and terminal outcomes;
