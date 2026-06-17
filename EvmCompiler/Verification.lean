@@ -247,7 +247,9 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Block.forward_cons
 #check EvmCompiler.Locals.InteractionPreservation.Block.policy_forward_cons
 #check EvmCompiler.Locals.Stmt.compile_layout_extends_of_sourceOwned
+#check EvmCompiler.Locals.Stmt.compile_layout_eq_outEnv_of_sourceOwned
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned
+#check EvmCompiler.Locals.Block.compileOpen_layout_eq_outEnv_of_sourceOwned
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.policyScopedBlock_generated

@@ -819,6 +819,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Compiler-facing `for` decomposition deriving initializer, condition,
       post/body blocks, scoped cleanups, outer cleanup, layout extensions, and
       final context from the ordinary pass.
+    - [x] Exact source-owned compiler layout equals syntax-level `outEnv` for
+      statements and open blocks, eliminating generated tail/condition layout
+      premises from the recursive owner.
     - [x] Split policy/control recursion into a dedicated adjacent Locals owner
       before adding the whole compiled `for` wrapper; the current proof module
       is again below the 5K-line architecture soft limit.

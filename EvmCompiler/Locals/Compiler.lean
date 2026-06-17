@@ -949,6 +949,98 @@ theorem compile_layout_extends_of_sourceOwned
       rw [hFinal]
       exact ⟨[], by simp⟩
 
+/-- Source-owned statement compilation realizes the syntax-level output
+environment exactly; only `let` changes either representation. -/
+theorem compile_layout_eq_outEnv_of_sourceOwned
+    {ctx final : Ctx} {stmt : Stmt}
+    {code : List Expressions.Stmt}
+    (hOwned : Source.Stmt.SourceOwned stmt)
+    (hCompile : Stmt.compile ctx stmt = some (code, final)) :
+    final.layout = Scope.Stmt.outEnv ctx.layout stmt := by
+  cases stmt with
+  | expr expr =>
+      rw [compile_expr_final hCompile]
+      rfl
+  | exprs exprs =>
+      simp [Source.Stmt.SourceOwned] at hOwned
+  | let_ name value =>
+      cases hCode : Expr.compileCode ctx 0 value with
+      | none => simp [Stmt.compile, hCode] at hCompile
+      | some valueCode =>
+          simp [Stmt.compile, hCode] at hCompile
+          rcases hCompile with ⟨rfl, rfl⟩
+          rfl
+  | assign name value =>
+      cases hDepth : Layout.lookupDepth? name ctx.layout with
+      | none => simp [Stmt.compile, hDepth] at hCompile
+      | some depth =>
+          cases hCode : Expr.compileCode ctx 0 value with
+          | none => simp [Stmt.compile, hDepth, hCode] at hCompile
+          | some valueCode =>
+              cases hSwap : StackOp.swap? depth with
+              | none => simp [Stmt.compile, hDepth, hCode, hSwap] at hCompile
+              | some swapOp =>
+                  simp [Stmt.compile, hDepth, hCode, hSwap] at hCompile
+                  rcases hCompile with ⟨rfl, rfl⟩
+                  rfl
+  | assignTop name => simp [Source.Stmt.SourceOwned] at hOwned
+  | assignTopWithOffset offset name =>
+      simp [Source.Stmt.SourceOwned] at hOwned
+  | promoteName name => simp [Source.Stmt.SourceOwned] at hOwned
+  | cleanupTo targetLayout => simp [Source.Stmt.SourceOwned] at hOwned
+  | block body =>
+      obtain ⟨_bodyCode, _bodyCtx, _lowerBody,
+        _hBody, _hFinish, _hCode, hFinal⟩ :=
+        compile_block_components hCompile
+      cases hFinal
+      rfl
+  | if_ cond body =>
+      obtain ⟨_condCode, _bodyCode, _bodyCtx, _lowerBody,
+        _hCond, _hBody, _hFinish, _hCode, hFinal⟩ :=
+        compile_if_components hCompile
+      cases hFinal
+      rfl
+  | switch scrutinee cases defaultBody =>
+      obtain ⟨_scrutineeCode, _compiledCases, _compiledDefault,
+        _hScrutinee, _hCases, _hDefault, _hCode, hFinal⟩ :=
+        compile_switch_components hCompile
+      cases hFinal
+      rfl
+  | for_ init cond post body =>
+      obtain ⟨_initCode, _initCtx, _condCode,
+        _postCode, _postCtx, _compiledPost,
+        _bodyCode, _bodyCtx, _compiledBody, _cleanup,
+        _hInit, _hCond, _hPost, _hFinishPost,
+        _hBody, _hFinishBody, _hCleanup, _hCode, hFinal⟩ :=
+        compile_for_components hCompile
+      cases hFinal
+      rfl
+  | brk =>
+      obtain ⟨_depth, _cleanup, _hDepth, _hCleanup,
+        _hCode, hFinal⟩ := compile_brk_components hCompile
+      cases hFinal
+      rfl
+  | cont =>
+      obtain ⟨_depth, _cleanup, _hDepth, _hCleanup,
+        _hCode, hFinal⟩ := compile_cont_components hCompile
+      cases hFinal
+      rfl
+  | leave =>
+      obtain ⟨_depth, _cleanup, _hDepth, _hCleanup,
+        _hCode, hFinal⟩ := compile_leave_components hCompile
+      cases hFinal
+      rfl
+  | call name => simp [Source.Stmt.SourceOwned] at hOwned
+  | terminal kind =>
+      obtain ⟨_hCode, hFinal⟩ := compile_terminal_components hCompile
+      cases hFinal
+      rfl
+  | terminalArgs kind args =>
+      obtain ⟨_argsCode, _hArgs, _hCode, hFinal⟩ :=
+        compile_terminalArgs_components hCompile
+      cases hFinal
+      rfl
+
 end Stmt
 
 namespace Block
@@ -1012,6 +1104,33 @@ theorem compileOpen_layout_extends_of_sourceOwned
         ih hOwned.2 hTail
       refine ⟨tailPre ++ headPre, ?_⟩
       rw [hTailLayout, hHeadLayout, List.append_assoc]
+
+/-- Open source-owned block compilation realizes its syntax-level output
+environment exactly. -/
+theorem compileOpen_layout_eq_outEnv_of_sourceOwned
+    {ctx final : Ctx} {block : Block}
+    {code : List Expressions.Stmt}
+    (hOwned : Source.Block.SourceOwned block)
+    (hCompile :
+      Block.compileOpen ctx block = some (code, final)) :
+    final.layout = Scope.Block.outEnv ctx.layout block := by
+  rcases block with ⟨stmts⟩
+  induction stmts generalizing ctx code final with
+  | nil =>
+      simp [Block.compileOpen] at hCompile
+      rcases hCompile with ⟨rfl, rfl⟩
+      rfl
+  | cons stmt rest ih =>
+      simp [Source.Block.SourceOwned,
+        Source.StmtList.SourceOwned] at hOwned
+      obtain ⟨headCode, middle, tailCode,
+        hHead, hTail, hCode⟩ :=
+        compileOpen_cons_components hCompile
+      have hHeadLayout :=
+        Stmt.compile_layout_eq_outEnv_of_sourceOwned hOwned.1 hHead
+      have hTailLayout := ih hOwned.2 hTail
+      simpa [Scope.Block.outEnv, Scope.StmtList.outEnv,
+        hHeadLayout] using hTailLayout
 
 /--
 Open-block compilation preserves the enclosing loop and leave destinations

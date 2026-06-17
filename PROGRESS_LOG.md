@@ -31415,3 +31415,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   control-owner build, full verification root, architecture dependency/size
   checks, touched-Lean hole scan, axiom audit, and `git diff --check`; the
   theorem depends only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 15:13:02 PDT - proof/locals-outenv-layout - proved that ordinary
+  source-owned statement and open-block compilation produces exactly the
+  syntax-level `Scope.Stmt.outEnv`/`Scope.Block.outEnv`, not merely an unknown
+  layout extension. Recursive tail scope and generated loop-condition scope
+  can now be derived without compiler evidence at theorem boundaries.
+- 2026-06-17 15:13:02 PDT - validation/locals-outenv-layout - passed focused
+  compiler/control-owner builds, the full verification root, architecture
+  checks, touched-Lean hole scan, axiom audit, and `git diff --check`; both
+  theorems use only `[propext, Classical.choice, Quot.sound]`.
