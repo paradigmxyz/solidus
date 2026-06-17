@@ -132,6 +132,11 @@ def openRunCondition (code : Structured.Code) (state : RunState) :
   EffectSemantics.Control.Code.runCondition
     EffectSemantics.Ordinary.runStateModel handler code state
 
+def ConditionReturnsEq (returns : List ReturnDest) :
+    Except EVMException (RunState × Bool) → Prop
+  | .error _ => True
+  | .ok result => result.1.returns = returns
+
 theorem openRun_returns (code : Structured.Code) (state : RunState) :
     Simulation.Interaction.AllDone
       (ReturnsEq state.returns)
@@ -153,6 +158,47 @@ theorem openRun_returns (code : Structured.Code) (state : RunState) :
             trivial
         | ok final =>
             exact hOutcome.trans hMiddle
+
+theorem openPopCondition_returns (state : RunState) :
+    Simulation.Interaction.AllDone
+      (ConditionReturnsEq state.returns)
+      (openPopCondition state) := by
+  unfold openPopCondition
+    EffectSemantics.Control.Code.popCondition
+  cases hPop : state.evm.stack.pop with
+  | none =>
+      simp only [
+        EffectSemantics.Ordinary.runStateModel_evm, hPop,
+        Simulation.Interaction.error]
+      exact Simulation.Interaction.AllDone.done True.intro
+  | some popped =>
+      rcases popped with ⟨stack, value⟩
+      simp only [
+        EffectSemantics.Ordinary.runStateModel_evm, hPop,
+        EffectSemantics.Ordinary.runStateModel_withEVM,
+        Simulation.Interaction.pure]
+      exact Simulation.Interaction.AllDone.done rfl
+
+theorem openRunCondition_returns
+    (code : Structured.Code) (state : RunState) :
+    Simulation.Interaction.AllDone
+      (ConditionReturnsEq state.returns)
+      (openRunCondition code state) := by
+  unfold openRunCondition
+    EffectSemantics.Control.Code.runCondition
+  apply Simulation.Interaction.AllDone.bind
+    (openRun_returns code state)
+  · intro err _h
+    trivial
+  · intro middle hMiddle
+    apply Simulation.Interaction.AllDone.mono
+      (openPopCondition_returns middle)
+    intro outcome hOutcome
+    cases outcome with
+    | error err =>
+        trivial
+    | ok result =>
+        exact hOutcome.trans hMiddle
 
 end Code
 

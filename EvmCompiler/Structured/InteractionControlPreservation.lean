@@ -123,6 +123,52 @@ theorem stopJump_restLabel_eq_false
         (hBefore.leaveLabel expected hExpected).restLabel_ne)
   simp [stopJump, hRegular, hBreak, hContinue, hLeave]
 
+theorem stopJump_generated_eq_false
+    {result : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context}
+    {regular : Assembly.Label} {supply scope tag : Nat}
+    (hBefore :
+      TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
+        ctx regular supply)
+    (hScope : supply ≤ scope)
+    (returns : List ReturnDest) (tokens : List Word)
+    (state : EVMState) :
+    stopJump result ctx regular returns tokens
+        (.generated scope tag) state = false := by
+  have hRegularNe :
+      .generated scope tag ≠ regular :=
+    hBefore.regular.generated_ne hScope
+  have hRegular :
+      continuationMatches? returns tokens
+          (some regular) result.fallthrough?
+          (.generated scope tag) state = false :=
+    continuationMatches?_eq_false_of_ne
+      (fun expected hExpected => by
+        cases Option.some.inj hExpected
+        exact hRegularNe)
+  have hBreak :
+      continuationMatches? returns tokens
+          ctx.breakLabel? ctx.breakShape?
+          (.generated scope tag) state = false :=
+    continuationMatches?_eq_false_of_ne
+      (fun expected hExpected =>
+        (hBefore.breakLabel expected hExpected).generated_ne hScope)
+  have hContinue :
+      continuationMatches? returns tokens
+          ctx.continueLabel? ctx.continueShape?
+          (.generated scope tag) state = false :=
+    continuationMatches?_eq_false_of_ne
+      (fun expected hExpected =>
+        (hBefore.continueLabel expected hExpected).generated_ne hScope)
+  have hLeave :
+      continuationMatches? returns tokens
+          ctx.leaveLabel? ctx.leaveShape?
+          (.generated scope tag) state = false :=
+    continuationMatches?_eq_false_of_ne
+      (fun expected hExpected =>
+        (hBefore.leaveLabel expected hExpected).generated_ne hScope)
+  simp [stopJump, hRegular, hBreak, hContinue, hLeave]
+
 /--
 Source-visible stack capacity at every Structured lexical continuation.
 
@@ -248,6 +294,25 @@ theorem Rel.append_right
     Rel (left.append right) ctx regular returns tokens source target := by
   simpa [Rel, FrameFits, TypedCfgCompiler.Result.append] using hRel
 
+theorem Rel.change_result_of_fallthrough_eq
+    {left right : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome} {target : TypedCfg.Outcome}
+    (hFallthrough :
+      left.fallthrough? = right.fallthrough?)
+    (hRel : Rel left ctx regular returns tokens source target) :
+    Rel right ctx regular returns tokens source target := by
+  rcases hRel with ⟨hOutcome, hFits, hRestored⟩
+  refine ⟨hOutcome, ?_, hRestored⟩
+  rcases source with ⟨sourceState, sourceMode⟩
+  cases sourceMode with
+  | regular =>
+      rcases hFits with ⟨shape, hShape, hSourceFits⟩
+      exact ⟨shape, hFallthrough ▸ hShape, hSourceFits⟩
+  | brk | cont | leave | halt kind =>
+      exact hFits
+
 theorem Rel.change_regular_of_nonregular
     {left right : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context}
@@ -334,6 +399,37 @@ theorem Rel.not_regular_of_fallthrough_none
   rcases hRel.2.1 with ⟨shape, hShape, _hFits⟩
   rw [hFallthrough] at hShape
   cases hShape
+
+theorem Rel.change_result_of_required_fallthrough
+    {left right : TypedCfgCompiler.Result}
+    {ctx : TypedCfgCompiler.Context} {regular : Assembly.Label}
+    {returns : List ReturnDest} {tokens : List Word}
+    {source : Structured.Outcome} {target : TypedCfg.Outcome}
+    {expected : TypedCfg.Shape}
+    (hRequire :
+      left.requireFallthrough? expected = some ())
+    (hRight :
+      right.fallthrough? = some expected)
+    (hRel : Rel left ctx regular returns tokens source target) :
+    Rel right ctx regular returns tokens source target := by
+  by_cases hMode : source.mode = .regular
+  · rcases
+        TypedCfgCompilerFacts.Result.requireFallthrough?_eq_some_iff.mp
+          hRequire with
+      hNone | hSome
+    · rcases source with ⟨state, mode⟩
+      change mode = .regular at hMode
+      subst mode
+      exact False.elim
+        (Rel.not_regular_of_fallthrough_none hNone hRel)
+    · exact
+        Rel.change_result_of_fallthrough_eq
+          (hSome.trans hRight.symm) hRel
+  · exact
+      Rel.change_regular_of_nonregular
+        (left := left) (right := right)
+        (leftRegular := regular) (rightRegular := regular)
+        hMode hRel
 
 theorem SegmentRunRel.append_right_stop
     {left right : TypedCfgCompiler.Result}

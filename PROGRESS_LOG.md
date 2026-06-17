@@ -30894,3 +30894,13 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   1,287-job verification root, architecture and changed-file hole checks,
   open-effects axiom smoke, and `git diff --check` pass; axioms remain
   `propext`, `Classical.choice`, and `Quot.sound`.
+- 2026-06-17 06:18:48 PDT - proof/structured-open-conditional-control - Added
+  the pass-owned open condition relation and checked compiled `if` preservation
+  through its activation-aware regular boundary. The false branch stops at the
+  compiler-selected continuation; the true branch delegates only to the
+  recursively compiled body theorem. The proof quantifies structurally over
+  every resource and external-world answer and adds no observer interpreter or
+  cross-pass compiler reasoning. Focused and full 1,288-job verification
+  builds, architecture and changed-Lean-file hole checks, open-effects axiom
+  smoke, and `git diff --check` pass; axioms remain `propext`,
+  `Classical.choice`, and `Quot.sound`.

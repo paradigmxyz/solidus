@@ -171,6 +171,19 @@ for theorem in \
 done
 
 for theorem in \
+    'Condition.openRunCondition_jumpi_toCfg' \
+    'Condition.openStep_if_of_compileStmtFuel?' \
+    'Stmt.openRun_if_within_stop_of_compileStmtFuel?'; do
+  if ! rg -Fq \
+      "#check EvmCompiler.Structured.InteractionBranchPreservation.${theorem}" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing Structured open branch theorem %s.\n\n' \
+      "$theorem" >&2
+    failed=1
+  fi
+done
+
+for theorem in \
     'openRunNResultWithStop_add' \
     'openRunNResultWithStop_add_eq_of_allStopped'; do
   if ! rg -Fq \
@@ -197,6 +210,13 @@ report_matches \
   'Open-effect specialization modules must not add recursive control evaluators:' \
   '^[[:space:]]*(partial[[:space:]]+)?def[[:space:]]+(run|runN|runList|exec|eval|loop)([^A-Za-z0-9_]|$)' \
   EvmCompiler -g '*InteractionSemantics.lean'
+
+report_matches \
+  'Horizontal open-effect proofs must not depend on observer proof corridors:' \
+  '^import .*Observer' \
+  EvmCompiler/Assembly/*Interaction*.lean \
+  EvmCompiler/TypedCfg/*Interaction*.lean \
+  EvmCompiler/Structured/*Interaction*.lean
 
 report_matches \
   'Syntax modules must not import aggregate layer modules:' \
@@ -932,6 +952,8 @@ report_matches \
   EvmCompiler/Structured/InteractionSemantics.lean \
   EvmCompiler/Structured/InteractionPreservation.lean \
   EvmCompiler/Structured/InteractionControlPreservation.lean \
+  EvmCompiler/Structured/InteractionLeafPreservation.lean \
+  EvmCompiler/Structured/InteractionBranchPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

@@ -1,6 +1,7 @@
 import EvmCompiler.Assembly.InteractionBytecode
 import EvmCompiler.Structured.InteractionControlPreservation
 import EvmCompiler.Structured.InteractionLeafPreservation
+import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
 #check EvmCompiler.Simulation.OpenWorld
@@ -63,6 +64,9 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openRun_leave_within_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openStep_terminal_of_compileStmtFuel?
 #check EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openRun_terminal_within_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionBranchPreservation.Condition.openRunCondition_jumpi_toCfg
+#check EvmCompiler.Structured.InteractionBranchPreservation.Condition.openStep_if_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionBranchPreservation.Stmt.openRun_if_within_stop_of_compileStmtFuel?
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.Bytecode.InteractionSemantics.openRunNResult
 #check EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
@@ -113,5 +117,8 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openRun_cont_within_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openRun_leave_within_of_compileStmtFuel?
 #print axioms EvmCompiler.Structured.InteractionLeafPreservation.Stmt.openRun_terminal_within_of_compileStmtFuel?
+#print axioms EvmCompiler.Structured.InteractionBranchPreservation.Condition.openRunCondition_jumpi_toCfg
+#print axioms EvmCompiler.Structured.InteractionBranchPreservation.Condition.openStep_if_of_compileStmtFuel?
+#print axioms EvmCompiler.Structured.InteractionBranchPreservation.Stmt.openRun_if_within_stop_of_compileStmtFuel?
 #print axioms EvmCompiler.Assembly.Bytecode.target_openRunNResult_executes
 #print axioms EvmCompiler.Assembly.Bytecode.compile_openRunNResult_executes
