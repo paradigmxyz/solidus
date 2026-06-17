@@ -1759,6 +1759,58 @@ namespace Stmt
 
 namespace TargetBlock
 
+/-- A singleton Expressions block exposes its statement at the residual fuel. -/
+theorem openRun_single_stmt
+    (program : Expressions.Program) (fuel : Nat)
+    (stmt : Expressions.Stmt) (state : Structured.RunState) :
+    Expressions.InteractionSemantics.Block.openRun
+        program (fuel + 2) { stmts := [stmt] } state =
+      Expressions.InteractionSemantics.Stmt.openRun
+        program (fuel + 1) stmt state := by
+  unfold Expressions.InteractionSemantics.Block.openRun
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Expressions.EffectSemantics.Control.Block.run]
+  change
+    Simulation.Interaction.bind
+        (Expressions.EffectSemantics.Control.Stmt.run
+          Structured.EffectSemantics.Ordinary.runStateModel
+          Structured.InteractionSemantics.handler
+          program (fuel + 1) stmt state)
+        _ =
+      Expressions.EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure
+      (Expressions.EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state)]
+  apply Simulation.Interaction.AllDone.bind_congr
+    (Simulation.Interaction.AllDone.trivial
+      (Expressions.EffectSemantics.Control.Stmt.run
+        Structured.EffectSemantics.Ordinary.runStateModel
+        Structured.InteractionSemantics.handler
+        program (fuel + 1) stmt state))
+  intro outcome _
+  rcases outcome with ⟨outcomeState, outcomeMode⟩
+  cases outcomeMode <;> rfl
+
+theorem openRun_single_stmt_of_fuel
+    (program : Expressions.Program) (targetFuel : Nat)
+    (stmt : Expressions.Stmt) (state : Structured.RunState)
+    (hFuel : 2 ≤ targetFuel) :
+    Expressions.InteractionSemantics.Block.openRun
+        program targetFuel { stmts := [stmt] } state =
+      Expressions.InteractionSemantics.Stmt.openRun
+        program (targetFuel - 1) stmt state := by
+  let extra := targetFuel - 2
+  have hFuelEq : targetFuel = extra + 2 := by
+    omega
+  rw [hFuelEq, openRun_single_stmt]
+  congr 3
+
 theorem openRun_single_code
     (program : Expressions.Program) (fuel : Nat)
     (code : Structured.Code) (state : Structured.RunState) :
@@ -2175,6 +2227,38 @@ theorem ScopedResultRel.withContext
   | cont hState => exact OpenResultRel.cont hState
   | leave hState => exact OpenResultRel.leave hState
   | halt hShared hReturns => exact OpenResultRel.halt hShared hReturns
+
+theorem forward_scoped_withContext
+    {truncated : EVMException → Prop}
+    {outerCtx : Locals.Ctx}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {sourceCtx : Locals.Source.Ctx}
+    {sourceRun :
+      Simulation.Interaction EVMException
+        (Locals.Source.Effectful.Outcome Locals.Source.State)}
+    {targetRun :
+      Simulation.Interaction EVMException Structured.Outcome}
+    (hCtx : Frame.CtxRel sourceCtx outerCtx)
+    (hRel :
+      Simulation.Interaction.ForwardRel
+        truncated
+        (ScopedOutcomeRel outerCtx suffix returns)
+        sourceRun targetRun) :
+    Simulation.Interaction.ForwardRel
+      truncated
+      (OpenOutcomeRel outerCtx suffix returns)
+      (Simulation.Interaction.bind sourceRun
+        (fun outcome =>
+          Simulation.Interaction.pure (outcome, sourceCtx)))
+      targetRun := by
+  conv_rhs =>
+    rw [← Simulation.Interaction.bind_pure targetRun]
+  apply Simulation.Interaction.ForwardRel.bind hRel
+  intro sourceResult targetResult hResult
+  apply Simulation.Interaction.ForwardRel.done
+  apply Simulation.Interaction.ExceptRel.ok
+  exact hResult.withContext hCtx
 
 theorem RegularResultRel.toOpen
     {finalCtx : Locals.Ctx}
@@ -3597,6 +3681,100 @@ theorem scopedBlock_generated
       exact ScopedResultRel.halt hShared hReturns
 
 /--
+Conditional preservation from the shared condition bridge and scoped-child
+theorem. The false branch preserves the restored condition frame; the true
+branch delegates all cleanup and abrupt-exit behavior to
+`scopedBlock_generated`.
+-/
+theorem if_generated
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx)
+    (targetCtx bodyCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cond : Locals.Expr 1) (body : Locals.Block)
+    (condCode : Structured.Code)
+    (bodyCode : List Expressions.Stmt) (cleanup : Structured.Code)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : bodyCode.length + 4 ≤ targetFuel)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hCondScoped : Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported :
+      InteractionSemantics.Expr.OpenSupported cond)
+    (hCondCompile :
+      Locals.Expr.compileCode targetCtx 0 cond = some condCode)
+    (hLayout : ∃ pre, bodyCtx.layout = pre ++ targetCtx.layout)
+    (hCleanup :
+      bodyCtx.cleanupTo? targetCtx.layout.length = some cleanup)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hBody :
+      ∀ {sourceAfter : Locals.Source.State}
+        {targetAfter : Structured.RunState},
+        Frame.StateRel targetCtx.layout suffix returns
+            sourceAfter targetAfter →
+          Simulation.Interaction.ForwardRel
+            Block.FuelTruncated
+            (OpenOutcomeRel bodyCtx suffix returns)
+            (InteractionSemantics.Block.openRun
+              sourceProgram sourceCtx sourceFuel body sourceAfter)
+            (Expressions.InteractionSemantics.Block.openRun
+              targetProgram (targetFuel - 2)
+                { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel targetCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel
+          { stmts :=
+              [Expressions.Stmt.if_ (.code condCode)
+                { stmts :=
+                    bodyCode ++ Locals.codeStmt cleanup }] }
+          target) := by
+  rw [TargetBlock.openRun_single_stmt_of_fuel
+    targetProgram targetFuel _ target (by omega)]
+  have hTargetStmtFuel :
+      targetFuel - 1 = (targetFuel - 2) + 1 := by
+    omega
+  rw [hTargetStmtFuel]
+  unfold InteractionSemantics.Stmt.openRun
+    InteractionSemantics.stateModel
+    Locals.Source.Effectful.Ordinary.stateModel
+    Expressions.InteractionSemantics.Stmt.openRun
+  simp only [Locals.Source.Effectful.Control.Stmt.run,
+    Expressions.EffectSemantics.Control.Stmt.run]
+  have hCond :=
+    Expr.openEvalCondition_compileCode
+      cond targetCtx hCondScoped hCondSupported hCondCompile hInitial
+  apply Simulation.Interaction.ForwardRel.bind
+    (Simulation.Interaction.ForwardRel.ofRel hCond)
+  intro sourceResult targetResult hResult
+  rcases sourceResult with ⟨sourceAfter, sourceCond⟩
+  rcases targetResult with ⟨targetAfter, targetCond⟩
+  cases hResult.condition
+  cases sourceCond with
+  | false =>
+      apply Simulation.Interaction.ForwardRel.done
+      apply Simulation.Interaction.ExceptRel.ok
+      exact OpenResultRel.regular hCtx hResult.state
+  | true =>
+      have hCleanupFuel :
+          2 ≤ (targetFuel - 2) - bodyCode.length := by
+        omega
+      have hScoped :=
+        scopedBlock_generated
+          sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+          sourceFuel (targetFuel - 2) body bodyCode cleanup
+          hCtx hLayout hCleanup hCleanupFuel (hBody hResult.state)
+      exact forward_scoped_withContext hCtx hScoped
+
+/--
 Lexical block preservation is a thin statement wrapper around the shared
 scoped-child theorem.
 -/
@@ -3713,6 +3891,78 @@ theorem block_of_compile
       sourceFuel targetFuel body bodyCode cleanup
       hCtx hLayout hCleanup hCleanupFuel
       (hBody hBodyCompile)
+
+/--
+Compiler-facing conditional theorem. Generated condition code, child code,
+cleanup, and the unchanged final context are all recovered from the ordinary
+compiler result. The recursive premise is confined to the adjacent source
+body and supplies its local target-fuel bound.
+-/
+theorem if_of_compile
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx finalCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    (cond : Locals.Expr 1) (body : Locals.Block)
+    {stmts : List Expressions.Stmt}
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hOwned : Locals.Source.Block.SourceOwned body)
+    (hCompile :
+      Locals.Stmt.compile targetCtx (.if_ cond body) =
+        some (stmts, finalCtx))
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hCondScoped : Scope.ExprScoped targetCtx.layout cond)
+    (hCondSupported :
+      InteractionSemantics.Expr.OpenSupported cond)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target)
+    (hBody :
+      ∀ {bodyCode : List Expressions.Stmt}
+        {bodyCtx : Locals.Ctx},
+        Locals.Block.compileOpen targetCtx body =
+            some (bodyCode, bodyCtx) →
+          bodyCode.length + 4 ≤ targetFuel ∧
+          ∀ {sourceAfter : Locals.Source.State}
+            {targetAfter : Structured.RunState},
+            Frame.StateRel targetCtx.layout suffix returns
+                sourceAfter targetAfter →
+              Simulation.Interaction.ForwardRel
+                Block.FuelTruncated
+                (OpenOutcomeRel bodyCtx suffix returns)
+                (InteractionSemantics.Block.openRun
+                  sourceProgram sourceCtx sourceFuel body sourceAfter)
+                (Expressions.InteractionSemantics.Block.openRun
+                  targetProgram (targetFuel - 2)
+                    { stmts := bodyCode } targetAfter)) :
+    Simulation.Interaction.ForwardRel
+      Block.FuelTruncated
+      (OpenOutcomeRel finalCtx suffix returns)
+      (InteractionSemantics.Stmt.openRun
+        sourceProgram sourceCtx (sourceFuel + 1)
+          (.if_ cond body) source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := stmts } target) := by
+  obtain ⟨condCode, bodyCode, bodyCtx, lowerBody,
+    hCondCompile, hBodyCompile, hFinish, hCode, hFinal⟩ :=
+    Locals.Stmt.compile_if_components hCompile
+  obtain ⟨cleanup, hCleanup, hLowerBody⟩ :=
+    Locals.finishScoped_components hFinish
+  obtain ⟨hTargetFuel, hBodyForward⟩ := hBody hBodyCompile
+  have hLayout :=
+    Locals.Block.compileOpen_layout_extends_of_sourceOwned
+      hOwned hBodyCompile
+  subst finalCtx
+  subst stmts
+  subst lowerBody
+  exact
+    if_generated
+      sourceProgram targetProgram sourceCtx targetCtx bodyCtx
+      sourceFuel targetFuel cond body condCode bodyCode cleanup
+      hTargetFuel hCtx hCondScoped hCondSupported hCondCompile
+      hLayout hCleanup hInitial hBodyForward
 
 end Stmt.Forward
 

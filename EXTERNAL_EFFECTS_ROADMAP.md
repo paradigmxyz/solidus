@@ -801,6 +801,9 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Shared scoped-child outcome interface and preservation theorem;
       lexical blocks are thin wrappers, and `if`, `switch`, and loop bodies
       reuse the same regular-cleanup and abrupt-bypass proof.
+    - [x] Compiler-facing conditional preservation through the shared
+      condition and scoped-child interfaces, including both false and every
+      regular/abrupt/terminal true-branch outcome.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -865,6 +868,8 @@ Exit: every layer exposes one canonical open computation.
     - [x] Scoped child execution is factored independently of its enclosing
       control constructor, preventing duplicated cleanup reasoning across
       blocks, conditionals, switches, and loops.
+    - [x] Ordinary compiled `if` statements preserve ordered interactions and
+      mode-indexed outcomes without constructor-specific cleanup reasoning.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

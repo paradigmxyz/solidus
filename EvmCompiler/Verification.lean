@@ -188,6 +188,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openAssign_compileCode
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_assign_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_stmt_of_fuel
 #check EvmCompiler.Locals.Stmt.compile_brk_components
 #check EvmCompiler.Locals.Stmt.compile_cont_components
 #check EvmCompiler.Locals.Stmt.compile_leave_components
@@ -198,6 +200,7 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.OpenResultRel
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.ScopedResultRel.withContext
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.forward_scoped_withContext
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.open_of_regular
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_code_terminal
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_expr_of_compile
@@ -225,6 +228,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.Block.compileOpen_layout_extends_of_sourceOwned
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.TargetBlock.openRun_single_code_done
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.scopedBlock_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_generated
+#check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.if_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_generated
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.Forward.block_of_compile
 #check EvmCompiler.Simulation.ExternalKind.classifies_call

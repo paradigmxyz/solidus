@@ -31339,3 +31339,12 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   touched-Lean hole scan, axiom audit, and `git diff --check`. New theorems
   depend only on `[propext, Classical.choice, Quot.sound]`; architecture debt
   remains limited to the pre-existing oversized legacy modules.
+- 2026-06-17 14:39:35 PDT - proof/locals-if - added generic singleton target
+  statement execution, a reusable scoped-outcome context lift, and checked
+  generated plus compiler-facing `if` preservation. False branches retain the
+  restored condition frame; true branches reuse the shared scoped-child
+  theorem for all regular, abrupt, and terminal outcomes.
+- 2026-06-17 14:39:35 PDT - validation/locals-if - passed the focused
+  1,135-job Locals build, full verification root, architecture guard,
+  touched-Lean hole scan, axiom audit, and `git diff --check`. New conditional
+  theorems depend only on `[propext, Classical.choice, Quot.sound]`.
