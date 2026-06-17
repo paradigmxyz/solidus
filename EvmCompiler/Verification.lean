@@ -41,6 +41,7 @@ import EvmCompiler.Structured.EffectSemantics
 import EvmCompiler.Structured.InteractionSemantics
 import EvmCompiler.Structured.InteractionPreservation
 import EvmCompiler.Structured.InteractionControlPreservation
+import EvmCompiler.Structured.InteractionBoundaryPreservation
 import EvmCompiler.Structured.InteractionLeafPreservation
 import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.Structured.InteractionSwitchPreservation
@@ -53,6 +54,7 @@ import EvmCompiler.Structured.ObserverGeneratedBoundary
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
 import EvmCompiler.Structured.TypedCfgCompilerActive
 import EvmCompiler.Structured.TypedCfgCompilerEntry
+import EvmCompiler.Structured.TypedCfgPreservation.GeneratedBoundary
 import EvmCompiler.Structured.ObserverAdequacy
 import EvmCompiler.Structured.ObserverSequenceAdequacy
 import EvmCompiler.Structured.ObserverSwitchAdequacy
@@ -198,7 +200,12 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.of_stateRel
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationExtension.realize_length_lt
+#check EvmCompiler.Structured.TypedCfgPreservation.ActivationAncestor
 #check EvmCompiler.Structured.TypedCfgPreservation.ActivationFrameMatches.not_of_extension
+#check EvmCompiler.Structured.TypedCfgPreservation.LabelShape
+#check EvmCompiler.Structured.TypedCfgPreservation.LabelShape.procEntry
+#check EvmCompiler.Structured.InteractionBoundaryPreservation.OpenOutcome.BoundaryShapes
+#check EvmCompiler.Structured.InteractionBoundaryPreservation.OpenOutcome.StopPolicy.ActivationProtected.push
 #check EvmCompiler.Structured.InteractionSemantics.Code.openRun_returns
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.LabelBeforeSupply
 #check EvmCompiler.Structured.TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply

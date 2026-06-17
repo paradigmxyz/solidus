@@ -31034,3 +31034,21 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   changed-file hole scan, `git diff --check`, and axiom audit pass; canonical
   activation lemmas use only `propext`/`Quot.sound`, and the call theorem adds
   only `Classical.choice`.
+- 2026-06-17 10:55:23 PDT - architecture - moved ambient CFG `LabelShape`,
+  procedure entry/exit shape facts, fragment input-token depth, and activation
+  ancestry into pass-owned Structured-to-TypedCfg modules. Added the checked
+  `StopPolicy.ActivationProtected.push` theorem: composing a compiler
+  `stopJump` boundary preserves dynamic activation ownership when its
+  continuation shapes belong to the ambient CFG. Call entry/body-entry
+  openness is now required only at the concrete related callee activation, and
+  exit openness receives the already-derived procedure-exit frame fit. Focused
+  boundary/call builds pass. Oracle request
+  `resp_0b0a122bbc47e3ee006a32dcec01d081988b8c704e5293f589` failed with a
+  server timeout; retry `resp_094e0c3d171c1c7d006a32df62c6f4819abc6fa52bbb676aa1`
+  is pending.
+- 2026-06-17 10:57:20 PDT - audit - the second oracle request
+  `resp_094e0c3d171c1c7d006a32df62c6f4819abc6fa52bbb676aa1` also timed out
+  server-side, so no oracle advice was used. The local invariant checkpoint
+  passes the full 1,293-job verification root, architecture guard, changed-file
+  hole scan, `git diff --check`, and axiom audit; new public lemmas use only
+  `propext`, `Classical.choice`, and `Quot.sound`.

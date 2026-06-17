@@ -748,6 +748,9 @@ Exit: the shared core builds with no compiler layer changed.
       and token-selected return dispatch.
     - [x] Execution-indexed recursive procedure-body callback and source
       regular/leave/halt call-outcome composition.
+    - [x] Pass-owned dynamic activation ancestry, CFG label-shape ownership,
+      and stop-policy protection for recursive/self-recursive calls; observer
+      modules retain compatibility aliases only.
     - [ ] Instantiate the call callback in the mutual whole-statement/block
       owner.
   - [ ] One mutual whole-statement/block/program owner theorem.

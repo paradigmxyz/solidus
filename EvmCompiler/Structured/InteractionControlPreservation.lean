@@ -31,6 +31,45 @@ def continuationMatches?
           returns tokens shape state
   | _, _ => false
 
+theorem continuationMatches?_eq_true_iff
+    {returns : List ReturnDest} {tokens : List Word}
+    {expectedLabel : Option Assembly.Label}
+    {expectedShape : Option TypedCfg.Shape}
+    {label : Assembly.Label} {state : EVMState} :
+    continuationMatches? returns tokens expectedLabel expectedShape
+        label state = true ↔
+      ∃ shape,
+        expectedLabel = some label ∧
+          expectedShape = some shape ∧
+            TypedCfgPreservation.ActivationFrameMatches
+              returns tokens shape state := by
+  unfold continuationMatches?
+  cases expectedLabel with
+  | none =>
+      simp
+  | some expected =>
+      cases expectedShape with
+      | none =>
+          simp
+      | some shape =>
+          rw [Bool.and_eq_true]
+          rw [
+            TypedCfgPreservation.activationFrameMatches?_eq_true_iff]
+          constructor
+          · rintro ⟨hLabel, hFrame⟩
+            have hLabelEq : label = expected := by
+              simpa using hLabel
+            refine ⟨shape, ?_, rfl, hFrame⟩
+            simpa [hLabelEq]
+          · rintro ⟨actualShape, hLabel, hShape, hFrame⟩
+            have hLabelEq : expected = label :=
+              Option.some.inj hLabel
+            have hShapeEq : shape = actualShape :=
+              Option.some.inj hShape
+            subst expected
+            subst actualShape
+            exact ⟨by simp, hFrame⟩
+
 theorem continuationMatches?_eq_false_of_ne
     {returns : List ReturnDest} {tokens : List Word}
     {expectedLabel : Option Assembly.Label}

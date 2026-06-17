@@ -341,6 +341,18 @@ report_matches \
   EvmCompiler -g '*Observer*.lean'
 
 report_matches \
+  'Canonical Structured interaction boundaries must not import observer modules:' \
+  '^import EvmCompiler\.Structured\.Observer' \
+  EvmCompiler/Structured/InteractionBoundaryPreservation.lean \
+  EvmCompiler/Structured/TypedCfgPreservation/GeneratedBoundary.lean
+
+report_matches \
+  'Observer compatibility boundaries must not re-own canonical activation or CFG-shape relations:' \
+  '^[[:space:]]*(inductive[[:space:]]+(ActivationExtension|ActivationAncestor)|def[[:space:]]+LabelShape)' \
+  EvmCompiler/Structured/ObserverActivationBoundary.lean \
+  EvmCompiler/Structured/ObserverGeneratedBoundary.lean
+
+report_matches \
   'The allocation observer boundary must stop at allocated Expressions/Structured code:' \
   '^import EvmCompiler\.(TypedCfg|Assembly\.(Preservation|ObserverPreservation|StackShuffle|StackShufflePreservation)|Objects|Yul|Public)' \
   EvmCompiler/Functions/AllocationObserverRelation.lean \

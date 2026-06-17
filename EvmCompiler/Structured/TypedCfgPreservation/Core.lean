@@ -404,6 +404,61 @@ theorem realize_length_lt
 end ActivationExtension
 
 /--
+The owner activation is the current activation or one of its strict dynamic
+ancestors.
+-/
+inductive ActivationAncestor :
+    List ReturnDest → List Word → List ReturnDest → List Word → Prop where
+  | refl (returns : List ReturnDest) (tokens : List Word) :
+      ActivationAncestor returns tokens returns tokens
+  | extension
+      {ownerReturns currentReturns : List ReturnDest}
+      {ownerTokens currentTokens : List Word}
+      (hExtension :
+        ActivationExtension ownerReturns ownerTokens
+          currentReturns currentTokens) :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens
+
+namespace ActivationAncestor
+
+theorem push
+    {ownerReturns currentReturns childReturns : List ReturnDest}
+    {ownerTokens currentTokens childTokens : List Word}
+    (hOwner :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens)
+    (hChild :
+      ActivationExtension currentReturns currentTokens
+        childReturns childTokens) :
+    ActivationAncestor ownerReturns ownerTokens
+      childReturns childTokens := by
+  cases hOwner with
+  | refl =>
+      exact .extension hChild
+  | extension hExtension =>
+      exact .extension (hExtension.trans hChild)
+
+theorem extension_after
+    {ownerReturns currentReturns childReturns : List ReturnDest}
+    {ownerTokens currentTokens childTokens : List Word}
+    (hOwner :
+      ActivationAncestor ownerReturns ownerTokens
+        currentReturns currentTokens)
+    (hChild :
+      ActivationExtension currentReturns currentTokens
+        childReturns childTokens) :
+    ActivationExtension ownerReturns ownerTokens
+      childReturns childTokens := by
+  cases hOwner with
+  | refl =>
+      exact hChild
+  | extension hExtension =>
+      exact hExtension.trans hChild
+
+end ActivationAncestor
+
+/--
 A target continuation belongs to the expected dynamic Structured activation.
 
 Top-level caller shapes need no additional discriminator because emitted labels
@@ -2925,6 +2980,67 @@ structure ProcFragment
           [.relabel input] (.jump (ProcLabel.body proc.name)) =
         some adapter ∧
       adapter ∈ procBlocks)
+
+namespace ProcFragment
+
+theorem input_returnTokenDepth
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs : List Structured.Proc} {proc : Structured.Proc}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (fragment :
+      ProcFragment entryShapes allProcs proc procBlocks procCalls) :
+    fragment.input.returnTokenDepth? = some proc.argc := by
+  rcases fragment.route with hDirect | hAdapter
+  · rcases hDirect with ⟨_hEntry, hInput⟩
+    rw [hInput]
+    exact TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc
+  · rcases hAdapter with
+      ⟨_adapter, _hEntry, _hInput, hFrame,
+        _hCompile, _hMem⟩
+    exact
+      TypedCfgCompilerFacts.Shape.requireReturnTokenDepth?_eq_some_iff.mp
+        hFrame
+
+theorem entry_ne_exit
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs : List Structured.Proc} {proc : Structured.Proc}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (fragment :
+      ProcFragment entryShapes allProcs proc procBlocks procCalls) :
+    fragment.entry ≠ ProcLabel.exit proc.name := by
+  rcases fragment.route with hDirect | hAdapter
+  · rcases hDirect with ⟨hEntry, _hInput⟩
+    rw [hEntry]
+    intro hEq
+    have hString :
+        "proc:" ++ proc.name ++ ":entry" =
+          "proc:" ++ proc.name ++ ":exit" := by
+      injection hEq
+    have hList := congrArg String.toList hString
+    simp [ProcLabel.entry, ProcLabel.exit,
+      String.toList_append, List.append_assoc] at hList
+    exact
+      (by decide :
+        (":entry".toList : List Char) ≠ ":exit".toList) hList
+  · rcases hAdapter with
+      ⟨_adapter, hEntry, _hInput, _hFrame,
+        _hCompile, _hMem⟩
+    rw [hEntry]
+    intro hEq
+    have hString :
+        "proc:" ++ proc.name ++ ":body" =
+          "proc:" ++ proc.name ++ ":exit" := by
+      injection hEq
+    have hList := congrArg String.toList hString
+    simp [ProcLabel.body, ProcLabel.exit,
+      String.toList_append, List.append_assoc] at hList
+    exact
+      (by decide :
+        (":body".toList : List Char) ≠ ":exit".toList) hList
+
+end ProcFragment
 
 /--
 Successful recursive procedure lowering yields a fragment certificate for the

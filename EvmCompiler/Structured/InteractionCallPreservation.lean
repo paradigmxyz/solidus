@@ -821,11 +821,25 @@ theorem openRun_call_exec_under
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
     (hProcEntryNoStop :
-      ∀ targetState,
-        policy (ProcLabel.entry proc.name) targetState = false)
+      ∀ {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) →
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState →
+          policy (ProcLabel.entry proc.name) targetState = false)
     (hFragmentEntryNoStop :
-      ∀ targetState,
-        policy fragment.entry targetState = false)
+      ∀ {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) →
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState →
+          policy fragment.entry targetState = false)
     (hProcExitNoStop :
       ∀ {args callerStack : EvmYul.Stack Word}
           {bodyState : RunState} {targetState : EVMState},
@@ -833,6 +847,9 @@ theorem openRun_call_exec_under
             some (args, callerStack) →
           TypedCfgPreservation.StateRel bodyState
             (Structured.Stmt.callToken supply :: tokens) targetState →
+          TypedCfgCompiler.Shape.SourceFrameFits
+            (TypedCfgCompiler.Shape.procExit proc)
+            bodyState.evm.stack.length →
           bodyState.returns =
             (((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc).returns) →
@@ -1016,13 +1033,13 @@ theorem openRun_call_exec_under
                 InteractionControlPreservation.OpenOutcome.pushStopJump,
                 hStop])
             hTargetBodyExec
-            (hProcExitNoStop hSplit hBodyStateRel
+            (hProcExitNoStop hSplit hBodyStateRel hBodyFits
               (by simpa [callSource] using hBodyReturns))
             hDispatchExec
         obtain ⟨targetFuel, hTargetExec⟩ :=
           prepend_call_route (fragment := fragment) generated hCallStep'
-            (hProcEntryNoStop targetAtEntry)
-            (hFragmentEntryNoStop targetAtEntry)
+            (hProcEntryNoStop hSplit hCallStateRel')
+            (hFragmentEntryNoStop hSplit hCallStateRel')
             hBodyAndDispatch
         exact
           ⟨targetFuel, bodyRemaining, .jump regular targetFinal,
@@ -1128,13 +1145,13 @@ theorem openRun_call_exec_under
                   InteractionControlPreservation.OpenOutcome.pushStopJump,
                   hStop])
               hTargetBodyExec
-              (hProcExitNoStop hSplit hBodyStateRel
+              (hProcExitNoStop hSplit hBodyStateRel hBodyFits
                 (by simpa [callSource] using hBodyReturns))
               hDispatchExec
           obtain ⟨targetFuel, hTargetExec⟩ :=
             prepend_call_route (fragment := fragment) generated hCallStep'
-              (hProcEntryNoStop targetAtEntry)
-              (hFragmentEntryNoStop targetAtEntry)
+              (hProcEntryNoStop hSplit hCallStateRel')
+              (hFragmentEntryNoStop hSplit hCallStateRel')
               hBodyAndDispatch
           exact
             ⟨targetFuel, bodyRemaining, .jump regular targetFinal,
@@ -1186,8 +1203,8 @@ theorem openRun_call_exec_under
               hTargetBodyExec (hStops hWholeRel)
           obtain ⟨targetFuel, hTargetExec⟩ :=
             prepend_call_route (fragment := fragment) generated hCallStep'
-              (hProcEntryNoStop targetAtEntry)
-              (hFragmentEntryNoStop targetAtEntry)
+              (hProcEntryNoStop hSplit hCallStateRel')
+              (hFragmentEntryNoStop hSplit hCallStateRel')
               hTargetBodyOuter
           exact
             ⟨targetFuel, bodyRemaining, targetBodyOutcome,
@@ -1239,8 +1256,15 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
           InteractionControlPreservation.OpenOutcome.TargetStoppedBy
             policy targetOutcome)
     (hProcEntryNoStop :
-      ∀ targetState,
-        policy (ProcLabel.entry proc.name) targetState = false)
+      ∀ {args callerStack : EvmYul.Stack Word}
+          {targetState : EVMState},
+        Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+            some (args, callerStack) →
+          TypedCfgPreservation.StateRel
+            ((source.withEVM { source.evm with stack := args }).pushReturn
+              callerStack proc.retc)
+            (Structured.Stmt.callToken supply :: tokens) targetState →
+          policy (ProcLabel.entry proc.name) targetState = false)
     (hProcExitNoStop :
       ∀ {args callerStack : EvmYul.Stack Word}
           {bodyState : RunState} {targetState : EVMState},
@@ -1248,6 +1272,9 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
             some (args, callerStack) →
           TypedCfgPreservation.StateRel bodyState
             (Structured.Stmt.callToken supply :: tokens) targetState →
+          TypedCfgCompiler.Shape.SourceFrameFits
+            (TypedCfgCompiler.Shape.procExit proc)
+            bodyState.evm.stack.length →
           bodyState.returns =
             (((source.withEVM { source.evm with stack := args }).pushReturn
               callerStack proc.retc).returns) →
@@ -1257,8 +1284,15 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
           TypedCfgPreservation.Program.ProcFragment
             entryShapes sourceProgram.procs proc
             generated.procBlocks generated.procCalls),
-        ∀ targetState,
-          policy fragment.entry targetState = false)
+        ∀ {args callerStack : EvmYul.Stack Word}
+            {targetState : EVMState},
+          Structured.StackFrame.splitArgs? proc.argc source.evm.stack =
+              some (args, callerStack) →
+            TypedCfgPreservation.StateRel
+              ((source.withEVM { source.evm with stack := args }).pushReturn
+                callerStack proc.retc)
+              (Structured.Stmt.callToken supply :: tokens) targetState →
+            policy fragment.entry targetState = false)
     (hBody :
       ∀ (fragment :
           TypedCfgPreservation.Program.ProcFragment
@@ -1267,8 +1301,6 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
         TypedCfgPreservation.BlocksInProgram fragment.result cfg →
         TypedCfgPreservation.CallsInProgram
             fragment.result generated.calls →
-        (∀ targetState,
-          policy fragment.entry targetState = false) →
         ∀ {args callerStack : EvmYul.Stack Word},
           Structured.StackFrame.splitArgs?
               proc.argc source.evm.stack =
@@ -1300,8 +1332,7 @@ theorem openRun_call_exec_under_of_compileStmtFuel?
     openRun_call_exec_under generated fragment hLookup hProcs
       hCompile hBlocks hResultCalls hInputFits hProcWF hStops
       hProcEntryNoStop (hFragmentEntryNoStop fragment) hProcExitNoStop
-      (hBody fragment hFragmentBlocks hFragmentCalls
-        (hFragmentEntryNoStop fragment))
+      (hBody fragment hFragmentBlocks hFragmentCalls)
 
 end Call
 

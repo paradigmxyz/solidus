@@ -1,7 +1,7 @@
 import EvmCompiler.Structured.ObserverActivationBoundary
 import EvmCompiler.Structured.TypedCfgCompilerActive
-import EvmCompiler.Structured.TypedCfgCompilerEntry
 import EvmCompiler.Structured.TypedCfgCompilerFreshness
+import EvmCompiler.Structured.TypedCfgPreservation.GeneratedBoundary
 
 namespace EvmCompiler
 namespace Structured
@@ -11,14 +11,7 @@ namespace OutcomeSimulation
 abbrev Continuations :=
   TypedCfgPreservation.OutcomeSimulation.Continuations
 
-/--
-The unique CFG block at `label` expects `shape`.
--/
-def LabelShape (cfg : TypedCfg.Program)
-    (label : Assembly.Label) (shape : TypedCfg.Shape) : Prop :=
-  ∃ block,
-    cfg.findBlock? label = some block ∧
-      block.input = shape
+abbrev LabelShape := TypedCfgPreservation.LabelShape
 
 namespace LabelShape
 
@@ -27,23 +20,16 @@ theorem eq
     {left right : TypedCfg.Shape}
     (hLeft : LabelShape cfg label left)
     (hRight : LabelShape cfg label right) :
-    left = right := by
-  rcases hLeft with ⟨leftBlock, hLeftFind, hLeftInput⟩
-  rcases hRight with ⟨rightBlock, hRightFind, hRightInput⟩
-  have hBlock : leftBlock = rightBlock :=
-    Option.some.inj (hLeftFind.symm.trans hRightFind)
-  subst rightBlock
-  exact hLeftInput.symm.trans hRightInput
+    left = right :=
+  TypedCfgPreservation.LabelShape.eq hLeft hRight
 
 theorem of_hasEntry
     {cfg : TypedCfg.Program} {result : TypedCfgCompiler.Result}
     {entry : Assembly.Label} {input : TypedCfg.Shape}
     (hEntry : TypedCfgCompilerFacts.HasEntry result entry input)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
-    LabelShape cfg entry input := by
-  rcases hEntry with ⟨block, hMem, hLabel, hInput⟩
-  subst entry
-  exact ⟨block, hBlocks block hMem, hInput⟩
+    LabelShape cfg entry input :=
+  TypedCfgPreservation.LabelShape.of_hasEntry hEntry hBlocks
 
 theorem of_compileBlockFuel?
     {fuel : Nat} {block : Structured.Block}
@@ -55,9 +41,8 @@ theorem of_compileBlockFuel?
           supply entry input regular = some result)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
     LabelShape cfg entry input :=
-  of_hasEntry
-    (TypedCfgCompilerFacts.block_hasEntry hCompile)
-    hBlocks
+  TypedCfgPreservation.LabelShape.of_compileBlockFuel?
+    hCompile hBlocks
 
 theorem of_compileBlock?
     {block : Structured.Block}
@@ -68,9 +53,9 @@ theorem of_compileBlock?
       TypedCfgCompiler.compileBlock? block ctx
           supply entry input regular = some result)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
-    LabelShape cfg entry input := by
-  apply of_compileBlockFuel? (hBlocks := hBlocks)
-  simpa [TypedCfgCompiler.compileBlock?] using hCompile
+    LabelShape cfg entry input :=
+  TypedCfgPreservation.LabelShape.of_compileBlock?
+    hCompile hBlocks
 
 theorem of_compileStmtListFuel?
     {fuel : Nat} {stmts : List Structured.Stmt}
@@ -82,9 +67,8 @@ theorem of_compileStmtListFuel?
           supply entry input regular = some result)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
     LabelShape cfg entry input :=
-  of_hasEntry
-    (TypedCfgCompilerFacts.stmtList_hasEntry hCompile)
-    hBlocks
+  TypedCfgPreservation.LabelShape.of_compileStmtListFuel?
+    hCompile hBlocks
 
 theorem of_compileStmtFuel?
     {fuel : Nat} {stmt : Structured.Stmt}
@@ -96,9 +80,8 @@ theorem of_compileStmtFuel?
           supply entry input regular = some result)
     (hBlocks : TypedCfgPreservation.BlocksInProgram result cfg) :
     LabelShape cfg entry input :=
-  of_hasEntry
-    (TypedCfgCompilerFacts.stmt_hasEntry hCompile)
-    hBlocks
+  TypedCfgPreservation.LabelShape.of_compileStmtFuel?
+    hCompile hBlocks
 
 theorem procExit
     {program : Structured.Program}
@@ -111,10 +94,8 @@ theorem procExit
     (hLookup :
       Structured.ProcList.lookup? name program.procs = some proc) :
     LabelShape cfg (ProcLabel.exit proc.name)
-      (TypedCfgCompiler.Shape.procExit proc) := by
-  refine
-    ⟨TypedCfgCompiler.dispatchBlock proc generated.calls,
-      generated.dispatchBlock hLookup, rfl⟩
+      (TypedCfgCompiler.Shape.procExit proc) :=
+  TypedCfgPreservation.LabelShape.procExit generated hLookup
 
 theorem procEntry
     {program : Structured.Program}
@@ -127,42 +108,8 @@ theorem procEntry
     (hLookup :
       Structured.ProcList.lookup? name program.procs = some proc) :
     LabelShape cfg (ProcLabel.entry proc.name)
-      (TypedCfgCompiler.Shape.procEntry proc) := by
-  obtain ⟨fragment, hBlocks, _hCalls⟩ :=
-    generated.procFragment_of_lookup? hLookup
-  rcases fragment.route with hDirect | hAdapter
-  · rcases hDirect with ⟨hEntry, hInput⟩
-    simpa [hEntry, hInput] using
-      (of_compileBlockFuel?
-        fragment.compile hBlocks)
-  · rcases hAdapter with
-      ⟨adapter, _hEntry, _hInput, _hFrame,
-        hAdapterCompile, hAdapterMem⟩
-    have hMem : adapter ∈ cfg.blocks := by
-      have hBlocksEq :
-          cfg.blocks =
-            generated.main.blocks ++ generated.procBlocks ++
-              TypedCfgCompiler.dispatchBlocks program.procs
-                generated.calls ++
-              [{ label := ProcLabel.programEnd
-                 input :=
-                   generated.main.fallthrough?.getD
-                     TypedCfg.Shape.caller
-                 body := []
-                 output :=
-                   generated.main.fallthrough?.getD
-                     TypedCfg.Shape.caller
-                 term := .invalid }] :=
-        congrArg TypedCfg.Program.blocks generated.cfgEq
-      rw [hBlocksEq]
-      simp [hAdapterMem, List.append_assoc]
-    have hFind :=
-      TypedCfg.Program.findBlock?_eq_some_of_mem
-        generated.wellTyped.1 hMem
-    obtain ⟨hLabel, hInput⟩ :=
-      TypedCfgCompilerFacts.mkBlock?_label_input hAdapterCompile
-    refine ⟨adapter, ?_, hInput⟩
-    simpa [hLabel] using hFind
+      (TypedCfgCompiler.Shape.procEntry proc) :=
+  TypedCfgPreservation.LabelShape.procEntry generated hLookup
 
 end LabelShape
 
@@ -289,36 +236,8 @@ theorem entry_ne_exit
     (fragment :
       TypedCfgPreservation.Program.ProcFragment
         entryShapes allProcs proc procBlocks procCalls) :
-    fragment.entry ≠ ProcLabel.exit proc.name := by
-  rcases fragment.route with hDirect | hAdapter
-  · rcases hDirect with ⟨hEntry, _hInput⟩
-    rw [hEntry]
-    intro hEq
-    have hString :
-        "proc:" ++ proc.name ++ ":entry" =
-          "proc:" ++ proc.name ++ ":exit" := by
-      injection hEq
-    have hList := congrArg String.toList hString
-    simp [ProcLabel.entry, ProcLabel.exit,
-      String.toList_append, List.append_assoc] at hList
-    exact
-      (by decide :
-        (":entry".toList : List Char) ≠ ":exit".toList) hList
-  · rcases hAdapter with
-      ⟨_adapter, hEntry, _hInput, _hFrame,
-        _hCompile, _hMem⟩
-    rw [hEntry]
-    intro hEq
-    have hString :
-        "proc:" ++ proc.name ++ ":body" =
-          "proc:" ++ proc.name ++ ":exit" := by
-      injection hEq
-    have hList := congrArg String.toList hString
-    simp [ProcLabel.body, ProcLabel.exit,
-      String.toList_append, List.append_assoc] at hList
-    exact
-      (by decide :
-        (":body".toList : List Char) ≠ ":exit".toList) hList
+    fragment.entry ≠ ProcLabel.exit proc.name :=
+  TypedCfgPreservation.Program.ProcFragment.entry_ne_exit fragment
 
 end ProcFragment
 
@@ -465,25 +384,25 @@ theorem jumpAt
 
 end ActivationOwned
 
-/--
-The owner activation is the current activation or one of its strict dynamic
-ancestors.
--/
-inductive ActivationAncestor :
-    List Structured.ReturnDest → List Word →
-      List Structured.ReturnDest → List Word → Prop where
-  | refl (returns : List Structured.ReturnDest) (tokens : List Word) :
-      ActivationAncestor returns tokens returns tokens
-  | extension
-      {ownerReturns currentReturns : List Structured.ReturnDest}
-      {ownerTokens currentTokens : List Word}
-      (hExtension :
-        ActivationExtension ownerReturns ownerTokens
-          currentReturns currentTokens) :
-      ActivationAncestor ownerReturns ownerTokens
-        currentReturns currentTokens
+abbrev ActivationAncestor :=
+  TypedCfgPreservation.ActivationAncestor
 
 namespace ActivationAncestor
+
+theorem refl (returns : List Structured.ReturnDest)
+    (tokens : List Word) :
+    ActivationAncestor returns tokens returns tokens :=
+  TypedCfgPreservation.ActivationAncestor.refl returns tokens
+
+theorem extension
+    {ownerReturns currentReturns : List Structured.ReturnDest}
+    {ownerTokens currentTokens : List Word}
+    (hExtension :
+      ActivationExtension ownerReturns ownerTokens
+        currentReturns currentTokens) :
+    ActivationAncestor ownerReturns ownerTokens
+      currentReturns currentTokens :=
+  TypedCfgPreservation.ActivationAncestor.extension hExtension
 
 theorem push
     {ownerReturns currentReturns childReturns :
@@ -496,12 +415,8 @@ theorem push
       ActivationExtension currentReturns currentTokens
         childReturns childTokens) :
     ActivationAncestor ownerReturns ownerTokens
-      childReturns childTokens := by
-  cases hOwner with
-  | refl =>
-      exact .extension hChild
-  | extension hExtension =>
-      exact .extension (hExtension.trans hChild)
+      childReturns childTokens :=
+  TypedCfgPreservation.ActivationAncestor.push hOwner hChild
 
 theorem extension_after
     {ownerReturns currentReturns childReturns :
@@ -514,12 +429,8 @@ theorem extension_after
       ActivationExtension currentReturns currentTokens
         childReturns childTokens) :
     ActivationExtension ownerReturns ownerTokens
-      childReturns childTokens := by
-  cases hOwner with
-  | refl =>
-      exact hChild
-  | extension hExtension =>
-      exact hExtension.trans hChild
+      childReturns childTokens :=
+  TypedCfgPreservation.ActivationAncestor.extension_after hOwner hChild
 
 end ActivationAncestor
 
