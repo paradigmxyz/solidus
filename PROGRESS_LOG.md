@@ -31489,3 +31489,7 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   build, 1301-job verification root, architecture dependency check, touched
   hole scan, axiom audit, and `git diff --check` passed; public owner theorems
   use only `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 16:02:13 PDT - consolidation/functions-control-args - made
+  Functions argument evaluation monad-polymorphic over the canonical Locals
+  primitive interface; the ordinary `Except` API is now a transparent wrapper,
+  and the complete existing Functions effect-semantics module still checks.

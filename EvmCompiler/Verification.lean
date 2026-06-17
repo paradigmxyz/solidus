@@ -139,6 +139,7 @@ or audit-alias corridor.
 #check EvmCompiler.Functions.ObserverSafety.TerminalMemorySafe
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.primitiveSemantics
 #check EvmCompiler.Functions.Source.Effectful.Expr.eval_prim_ok_parts
+#check EvmCompiler.Functions.Source.Effectful.ArgList.Control.eval
 #check EvmCompiler.Functions.Source.Effectful.ArgList.eval_cons_ok_parts
 #check EvmCompiler.Functions.ObserverSemantics.primitiveSemantics_eval_nonObserver
 #check EvmCompiler.Functions.ObserverSafety.SafeSemantics.eval_outputs_length

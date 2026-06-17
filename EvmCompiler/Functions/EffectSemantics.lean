@@ -133,17 +133,17 @@ namespace Expr
 abbrev eval {σ : Type} {results : Nat} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) (expr : Functions.Expr results)
     (state : σ) : Except EVMException (σ × List Word) :=
-  Locals.Source.Effectful.Expr.eval model prim expr state
+  Locals.Source.Effectful.Expr.Control.eval model prim expr state
 
 abbrev evalOne {σ : Type} {results : Nat} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) (expr : Functions.Expr results)
     (state : σ) : Except EVMException (σ × Word) :=
-  Locals.Source.Effectful.Expr.evalOne model prim expr state
+  Locals.Source.Effectful.Expr.Control.evalOne model prim expr state
 
 abbrev evalCondition {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) (expr : Functions.Expr 1)
     (state : σ) : Except EVMException (σ × Bool) :=
-  Locals.Source.Effectful.Expr.evalCondition model prim expr state
+  Locals.Source.Effectful.Expr.Control.evalCondition model prim expr state
 
 theorem eval_var {σ : Type}
     (model : StateModel σ) (prim : PrimitiveSemantics σ)
@@ -295,18 +295,34 @@ theorem evalCondition_iszero_false_of_eval_singleton {σ : Type}
 
 end Expr
 
+attribute [simp] Expr.eval Expr.evalOne Expr.evalCondition
+
 namespace ArgList
+
+namespace Control
+
+def eval {M : Type → Type} [Monad M]
+    [MonadExceptOf EVMException M]
+    {σ : Type} (model : StateModel σ)
+    (prim : Locals.Source.Effectful.Control.PrimitiveSemantics M σ) :
+    List (Functions.Expr 1) → σ → M (σ × List Word)
+  | [], state => pure (state, [])
+  | arg :: rest, state => do
+      let (stateAfterArg, value) ←
+        Locals.Source.Effectful.Expr.Control.evalOne model prim arg state
+      let (stateAfterRest, values) ←
+        eval model prim rest stateAfterArg
+      pure (stateAfterRest, value :: values)
+
+end Control
+
+attribute [simp] Control.eval
 
 def eval {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) :
     List (Functions.Expr 1) → σ →
-      Except EVMException (σ × List Word)
-  | [], state => .ok (state, [])
-  | arg :: rest, state => do
-      let (stateAfterArg, value) ← Expr.evalOne model prim arg state
-      let (stateAfterRest, values) ←
-        eval model prim rest stateAfterArg
-      .ok (stateAfterRest, value :: values)
+      Except EVMException (σ × List Word) :=
+  Control.eval model prim
 
 theorem eval_length {σ : Type} (model : StateModel σ)
     (prim : PrimitiveSemantics σ) :
@@ -325,7 +341,7 @@ theorem eval_length {σ : Type} (model : StateModel σ)
       | ok argResult =>
           rcases argResult with ⟨stateAfterArg, value⟩
           simp [hArg] at hEval
-          cases hRest : eval model prim rest stateAfterArg with
+          cases hRest : Control.eval model prim rest stateAfterArg with
           | error err =>
               simp [hRest] at hEval
           | ok restResult =>
@@ -363,7 +379,7 @@ theorem eval_append
       | ok headResult =>
           rcases headResult with ⟨stateAfterHead, value⟩
           simp [hHead] at hLeft ⊢
-          cases hRest : eval model prim rest stateAfterHead with
+          cases hRest : Control.eval model prim rest stateAfterHead with
           | error err =>
               simp [hRest] at hLeft
           | ok restResult =>
@@ -372,7 +388,12 @@ theorem eval_append
               rcases hLeft with ⟨rfl, rfl⟩
               have hTail :=
                 eval_append model prim hRest hRight
-              simp [hTail]
+              have hTailControl :
+                  Control.eval model prim (rest ++ right) stateAfterHead =
+                    .ok (final, restValues ++ rightValues) := by
+                simpa [eval] using hTail
+              rw [hTailControl]
+              simp
 
 theorem eval_of_successRefines
     {σ : Type} {sourcePrim targetPrim : PrimitiveSemantics σ}
@@ -391,8 +412,8 @@ theorem eval_of_successRefines
           simp [hArg] at hEval
       | ok argResult =>
           rcases argResult with ⟨afterArg, value⟩
-          simp only [hArg, Bind.bind, Except.bind] at hEval
-          cases hRest : eval model sourcePrim rest afterArg with
+          simp [hArg] at hEval
+          cases hRest : Control.eval model sourcePrim rest afterArg with
           | error err =>
               simp [hRest] at hEval
           | ok restResult =>
@@ -407,7 +428,12 @@ theorem eval_of_successRefines
                   eval model targetPrim rest afterArg =
                     .ok (restFinal, restValues) :=
                 eval_of_successRefines model hRefines hRest
-              simpa [hArg', hRest'] using hEval
+              have hRestControl :
+                  Control.eval model targetPrim rest afterArg =
+                    .ok (restFinal, restValues) := by
+                simpa [eval] using hRest'
+              rcases hEval with ⟨rfl, rfl⟩
+              simp [hArg', hRestControl]
 
 end ArgList
 
