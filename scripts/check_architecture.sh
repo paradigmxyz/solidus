@@ -76,6 +76,13 @@ for opcode in "${external_opcodes[@]}"; do
       "$opcode" >&2
     failed=1
   fi
+  if ! rg -q \
+      "^#check EvmCompiler\\.TypedCfg\\.InteractionPreservation\\.Instr\\.${opcode}_lowerAt_openRunNResult_eq$" \
+      EvmCompiler/Verification.lean; then
+    printf 'Verification root is missing TypedCfg open preservation for %s.\n\n' \
+      "$opcode" >&2
+    failed=1
+  fi
 done
 
 report_matches \
@@ -520,6 +527,28 @@ report_matches \
   'TypedCfg observer preservation must remain owned by the adjacent Assembly boundary:' \
   '^import EvmCompiler\.(Structured|Expressions|Locals|Functions|Objects|Yul|Public)' \
   EvmCompiler/TypedCfg/ObserverPreservation.lean
+
+if ! rg -q '^import EvmCompiler\.TypedCfg\.Control$' \
+    EvmCompiler/TypedCfg/InteractionSemantics.lean ||
+    ! rg -q 'Control\.Block\.runBody' \
+      EvmCompiler/TypedCfg/InteractionSemantics.lean ||
+    ! rg -q 'Control\.Program\.runN' \
+      EvmCompiler/TypedCfg/InteractionSemantics.lean; then
+  printf '%s\n\n' \
+    'TypedCfg open execution must specialize the shared control interpreter.' \
+    >&2
+  failed=1
+fi
+
+report_matches \
+  'TypedCfg open semantics must not define a second recursive control interpreter:' \
+  '^[[:space:]]*\|[[:space:]]*(fuel[[:space:]]*\+[[:space:]]*1|instr[[:space:]]*::[[:space:]]*rest)' \
+  EvmCompiler/TypedCfg/InteractionSemantics.lean
+
+report_matches \
+  'TypedCfg open preservation must remain owned by the adjacent Assembly boundary:' \
+  '^import EvmCompiler\.(Structured|Expressions|Locals|Functions|Objects|Yul|Public)' \
+  EvmCompiler/TypedCfg/InteractionPreservation.lean
 
 if ! rg -q '^import EvmCompiler\.Structured\.EffectSemantics$' \
     EvmCompiler/Structured/ObserverSemantics.lean ||

@@ -55,6 +55,7 @@ import EvmCompiler.Structured.ObserverGeneratedAdequacy
 import EvmCompiler.Structured.ObserverProgramAdequacy
 import EvmCompiler.TypedCfg.Preservation
 import EvmCompiler.TypedCfg.ObserverPreservation
+import EvmCompiler.TypedCfg.InteractionPreservation
 import EvmCompiler.Yul.EffectSemantics
 import EvmCompiler.Yul.EffectSemanticsFuel
 import EvmCompiler.Yul.EffectSemanticsOwner
@@ -166,6 +167,13 @@ or audit-alias corridor.
 #check EvmCompiler.Assembly.InteractionPreservation.source_openRunNResult_rel_compiled
 #check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_block_rel
 #check EvmCompiler.Assembly.InteractionPreservation.compile_openRunNResult_target_executes
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.call_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.callcode_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.delegatecall_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.staticcall_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Instr.create2_lowerAt_openRunNResult_eq
+#check EvmCompiler.TypedCfg.InteractionPreservation.Block.lowerBodyFrom?_source_openRunNResult
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode

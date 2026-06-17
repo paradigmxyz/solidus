@@ -1,21 +1,24 @@
-import EvmCompiler.TypedCfg.Semantics
+import EvmCompiler.TypedCfg.Control
 
 namespace EvmCompiler
 namespace TypedCfg
 namespace EffectSemantics
 
 /-!
-One parameterized TypedCfg control interpreter.
+Compatibility API for post-instruction effects.
 
-The ordinary TypedCfg instruction and terminator semantics remain authoritative.
-An effect handler runs only after a successful instruction. Observer replay is
-therefore a specialization of this control recursion, not a second interpreter.
+The recursive control flow lives in `TypedCfg.Control`. This module only turns
+the historical `afterInstr` handler into a `StateT` instruction step. Observer
+replay therefore remains source-compatible without owning another interpreter.
 -/
 
 structure Handler (ε : Type) where
   afterInstr :
     TypedCfg.Instr → EVMState → ε →
       Except EVMException (EVMState × ε)
+
+abbrev EffectM (ε : Type) :=
+  StateT ε (Except EVMException)
 
 namespace Instr
 
@@ -26,6 +29,11 @@ def runState {ε : Type} (handler : Handler ε)
   let final ← TypedCfg.Instr.runState instr shape state
   handler.afterInstr instr final effect
 
+def runStateM {ε : Type} (handler : Handler ε)
+    (instr : TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) : EffectM ε EVMState :=
+  fun effect => runState handler instr shape state effect
+
 def runAt {ε : Type} (handler : Handler ε)
     (instr : TypedCfg.Instr) (shape : Shape)
     (state : EVMState) (effect : ε) :
@@ -35,28 +43,59 @@ def runAt {ε : Type} (handler : Handler ε)
   let (state', effect') ← runState handler instr shape state effect
   .ok ((state', output), effect')
 
+theorem control_runAt_eq {ε : Type} (handler : Handler ε)
+    (instr : TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (effect : ε) :
+    Control.Instr.runAt
+        (runStateM handler) instr shape state effect =
+      runAt handler instr shape state effect := by
+  unfold Control.Instr.runAt runStateM runAt
+  simp only [StateT.instMonad, StateT.bind,
+    StateT.instMonadExceptOf]
+  cases hType : instr.type? shape with
+  | none =>
+      simp [hType]
+      rfl
+  | some output =>
+      simp [hType, StateT.pure]
+
 end Instr
 
 namespace Block
 
-def runBody {ε : Type} (handler : Handler ε) :
-    List TypedCfg.Instr → Shape → EVMState → ε →
-      Except EVMException ((EVMState × Shape) × ε)
-  | [], shape, state, effect => .ok ((state, shape), effect)
-  | instr :: rest, shape, state, effect => do
-      let ((state', shape'), effect') ←
-        Instr.runAt handler instr shape state effect
-      runBody handler rest shape' state' effect'
+def runBody {ε : Type} (handler : Handler ε)
+    (body : List TypedCfg.Instr) (shape : Shape)
+    (state : EVMState) (effect : ε) :
+    Except EVMException ((EVMState × Shape) × ε) :=
+  (Control.Block.runBody
+    (Instr.runStateM handler) body shape state).run effect
+
+@[simp] theorem runBody_cons {ε : Type} (handler : Handler ε)
+    (instr : TypedCfg.Instr) (rest : List TypedCfg.Instr)
+    (shape : Shape) (state : EVMState) (effect : ε) :
+    runBody handler (instr :: rest) shape state effect =
+      (do
+        let ((state', shape'), effect') ←
+          Instr.runAt handler instr shape state effect
+        runBody handler rest shape' state' effect') := by
+  change
+    Control.Block.runBody
+        (Instr.runStateM handler) (instr :: rest)
+        shape state effect =
+      (do
+        let ((state', shape'), effect') ←
+          Instr.runAt handler instr shape state effect
+        Control.Block.runBody
+          (Instr.runStateM handler) rest shape' state' effect')
+  rw [Control.Block.runBody]
+  simp only [StateT.instMonad, StateT.bind]
+  rw [Instr.control_runAt_eq]
 
 def run {ε : Type} (handler : Handler ε)
     (block : TypedCfg.Block) (state : EVMState) (effect : ε) :
-    Except EVMException (TypedCfg.Outcome × ε) := do
-  let ((state', output), effect') ←
-    runBody handler block.body block.input state effect
-  if output = block.output then
-    .ok (TypedCfg.Block.runTerm block.output block.term state', effect')
-  else
-    .error .InvalidInstruction
+    Except EVMException (TypedCfg.Outcome × ε) :=
+  (Control.Block.run
+    (Instr.runStateM handler) block state).run effect
 
 end Block
 
@@ -66,27 +105,15 @@ def step {ε : Type} (handler : Handler ε)
     (program : TypedCfg.Program) (label : Label)
     (state : EVMState) (effect : ε) :
     Except EVMException (TypedCfg.Outcome × ε) :=
-  match program.findBlock? label with
-  | none => .ok (.invalid state, effect)
-  | some block => Block.run handler block state effect
+  (Control.Program.step
+    (Instr.runStateM handler) program label state).run effect
 
 def runN {ε : Type} (handler : Handler ε)
-    (program : TypedCfg.Program) :
-    Nat → Label → EVMState → ε →
-      Except EVMException (TypedCfg.Outcome × ε)
-  | 0, label, state, effect => .ok (.jump label state, effect)
-  | fuel + 1, label, state, effect =>
-      match step handler program label state effect with
-      | .error err => .error err
-      | .ok (outcome, effect') =>
-          match outcome with
-          | .jump next state' =>
-              runN handler program fuel next state' effect'
-          | .fallthrough state' => .ok (.fallthrough state', effect')
-          | .returnDispatch state' =>
-              .ok (.returnDispatch state', effect')
-          | .halt kind state' => .ok (.halt kind state', effect')
-          | .invalid state' => .ok (.invalid state', effect')
+    (program : TypedCfg.Program) (fuel : Nat) (label : Label)
+    (state : EVMState) (effect : ε) :
+    Except EVMException (TypedCfg.Outcome × ε) :=
+  (Control.Program.runN
+    (Instr.runStateM handler) program fuel label state).run effect
 
 @[simp] theorem runN_zero {ε : Type} (handler : Handler ε)
     (program : TypedCfg.Program) (label : Label)
@@ -111,7 +138,17 @@ theorem runN_succ {ε : Type} (handler : Handler ε)
           | .halt kind state' =>
               .ok (.halt kind state', effect')
           | .invalid state' =>
-              .ok (.invalid state', effect') := rfl
+              .ok (.invalid state', effect') := by
+  unfold runN step
+  rw [Control.Program.runN_succ]
+  cases hStep :
+      (Control.Program.step
+        (Instr.runStateM handler) program label state).run effect with
+  | error err =>
+      simp [hStep]
+  | ok result =>
+      rcases result with ⟨outcome, effect'⟩
+      cases outcome <;> simp [hStep, runN]
 
 /--
 Successful finite execution from an effectful CFG entry.

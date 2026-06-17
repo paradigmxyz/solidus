@@ -7,6 +7,133 @@ namespace InteractionPreservation
 
 open InteractionSemantics
 
+namespace EVMState
+
+@[simp] theorem finishCall_pc
+    (state : EVMState) (rest : EvmYul.Stack Word)
+    (callLocal : Simulation.CallLocal)
+    (response : Simulation.CallResponse) :
+    (InteractionSemantics.EVMState.finishCall
+      state rest callLocal response).pc =
+        state.pc + EvmYul.UInt256.ofNat 1 := by
+  simp [InteractionSemantics.EVMState.finishCall,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC]
+
+@[simp] theorem finishCreate_pc
+    (state : EVMState) (rest : EvmYul.Stack Word)
+    (createLocal : Simulation.CreateLocal)
+    (response : Simulation.CreateResponse) :
+    (InteractionSemantics.EVMState.finishCreate
+      state rest createLocal response).pc =
+        state.pc + EvmYul.UInt256.ofNat 1 := by
+  simp [InteractionSemantics.EVMState.finishCreate,
+    InteractionSemantics.EVMState.installWorld,
+    EvmYul.EVM.State.incrPC]
+
+end EVMState
+
+namespace PrimOp
+
+def AdvancesPC (state : EVMState) :
+    Except EVMException EVMState → Prop
+  | .error _ => True
+  | .ok final =>
+      final.pc = state.pc + EvmYul.UInt256.ofNat 1
+
+theorem resourceStep_advancesPC
+    (kind : Simulation.ResourceQuery) (state : EVMState) :
+    Simulation.Interaction.AllDone (AdvancesPC state)
+      (InteractionSemantics.PrimOp.resourceStep kind state) := by
+  apply Simulation.Interaction.AllDone.request
+  intro value
+  apply Simulation.Interaction.AllDone.done
+  simp [AdvancesPC,
+    InteractionSemantics.PrimOp.resourceStep,
+    EvmYul.EVM.State.replaceStackAndIncrPC,
+    EvmYul.EVM.State.incrPC]
+
+theorem callStep_advancesPC
+    (kind : Simulation.CallKind) (state : EVMState) :
+    Simulation.Interaction.AllDone (AdvancesPC state)
+      (InteractionSemantics.PrimOp.callStep kind state) := by
+  unfold InteractionSemantics.PrimOp.callStep
+  cases hOperands : kind.evmOperands? state.stack with
+  | none =>
+      exact .done trivial
+  | some result =>
+      rcases result with ⟨rest, operands⟩
+      simp only [hOperands]
+      split
+      · apply Simulation.Interaction.AllDone.request
+        intro response
+        exact .done (EVMState.finishCall_pc _ _ _ _)
+      · exact .done trivial
+
+theorem createStep_advancesPC
+    (kind : Simulation.CreateKind) (state : EVMState) :
+    Simulation.Interaction.AllDone (AdvancesPC state)
+      (InteractionSemantics.PrimOp.createStep kind state) := by
+  unfold InteractionSemantics.PrimOp.createStep
+  cases hOperands : kind.evmOperands? state.stack with
+  | none =>
+      exact .done trivial
+  | some result =>
+      rcases result with ⟨rest, operands⟩
+      simp only [hOperands]
+      split
+      · apply Simulation.Interaction.AllDone.request
+        intro response
+        exact .done (EVMState.finishCreate_pc _ _ _ _)
+      · exact .done trivial
+
+/--
+Every successful branch of an open, well-typed Assembly primitive advances
+the program counter by its one-byte instruction width. The theorem quantifies
+over every resource answer and every external-world response.
+-/
+theorem openStep_advancesPC
+    {op : Assembly.PrimOp} {input output : Nat}
+    {state : EVMState}
+    (hArity : op.stackArity? = some (input, output)) :
+    Simulation.Interaction.AllDone (AdvancesPC state)
+      (InteractionSemantics.PrimOp.openStep op state) := by
+  cases hExternal :
+      Simulation.ExternalKind.ofEVMOperation? op.toEVM with
+  | some external =>
+      cases external with
+      | call kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.callStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          exact callStep_advancesPC kind state
+      | create kind =>
+          rw [show
+            InteractionSemantics.PrimOp.openStep op state =
+              InteractionSemantics.PrimOp.createStep kind state by
+                simp [InteractionSemantics.PrimOp.openStep, hExternal]]
+          exact createStep_advancesPC kind state
+  | none =>
+      by_cases hGas : op = .gas
+      · subst op
+        exact resourceStep_advancesPC .gas state
+      · by_cases hMsize : op = .msize
+        · subst op
+          exact resourceStep_advancesPC .msize state
+        · rw [InteractionSemantics.PrimOp.openStep_closed
+            hExternal hGas hMsize]
+          cases hRun : op.step state with
+          | error err =>
+              exact .done trivial
+          | ok final =>
+              exact
+                .done
+                  (Assembly.PrimOp.step_pc_of_stackArity
+                    hArity hRun)
+
+end PrimOp
+
 theorem openRunList_single (instr : TargetInstr) (state : EVMState) :
     InteractionSemantics.Target.openRunList [instr] state =
       InteractionSemantics.Target.openStepInstr instr state := by

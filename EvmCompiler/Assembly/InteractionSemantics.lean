@@ -289,6 +289,22 @@ def openRunNResult (program : Program) (fuel : Nat)
     (state : EVMState) : OpenStepResult :=
   Assembly.Control.runNResultWith (openStepResult program) fuel state
 
+theorem openRunNResult_add
+    (program : Program) (first second : Nat)
+    (state : EVMState) :
+    openRunNResult program (first + second) state =
+      (do
+        let result ← openRunNResult program first state
+        match result with
+        | .running mid =>
+            openRunNResult program second mid
+        | .halted halt =>
+            pure (.halted halt)) := by
+  exact
+    Control.openRunNResultWith_add
+      (Assembly.Source.stepResultWith (openStepAtResult program) program)
+      first second state
+
 /--
 The primitive case of the Assembly-to-resolved-instruction boundary is exact:
 both sides expose the same query and use the same continuation for every

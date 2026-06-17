@@ -206,15 +206,9 @@ theorem runBody_eq_effectSemantics
         let ((state', shape'), trace') ←
           Instr.runAt instr shape state trace
         runBody rest shape' state' trace') := by
-  change
-    (do
-      let ((state', shape'), trace') ←
-        EffectSemantics.Instr.runAt
-          Instr.handler instr shape state trace
-      EffectSemantics.Block.runBody
-        Instr.handler rest shape' state' trace') = _
+  unfold runBody
+  rw [EffectSemantics.Block.runBody_cons]
   rw [← Instr.runAt_eq_effectSemantics]
-  simp only [runBody_eq_effectSemantics]
 
 theorem runBody_of_forall_observer?_eq_none
     {body : List TypedCfg.Instr} {shape : Shape}
@@ -258,7 +252,24 @@ theorem run_eq_effectSemantics
     (block : TypedCfg.Block) (state : EVMState) (trace : Trace) :
     run block state trace =
       EffectSemantics.Block.run Instr.handler block state trace := by
-  rfl
+  simp only [run, EffectSemantics.Block.run, Control.Block.run,
+    runBody, EffectSemantics.Block.runBody]
+  simp only [StateT.run, StateT.instMonad, StateT.bind,
+    StateT.instMonadExceptOf]
+  cases hRun :
+      Control.Block.runBody
+        (EffectSemantics.Instr.runStateM Instr.handler)
+        block.body block.input state trace with
+  | error err =>
+      rfl
+  | ok result =>
+      rcases result with ⟨pair, trace'⟩
+      rcases pair with ⟨state', output⟩
+      by_cases hOutput : output = block.output
+      · simp [hOutput]
+        rfl
+      · simp [hOutput]
+        rfl
 
 end Block
 
@@ -277,7 +288,13 @@ theorem step_eq_effectSemantics
     step program label state trace =
       EffectSemantics.Program.step Instr.handler
         program label state trace := by
-  rfl
+  unfold step EffectSemantics.Program.step Control.Program.step
+  cases hFind : program.findBlock? label with
+  | none =>
+      simp [hFind]
+  | some block =>
+      simp only [hFind]
+      exact Block.run_eq_effectSemantics block state trace
 
 def runN (program : TypedCfg.Program) :
     Nat → Label → EVMState → Trace →

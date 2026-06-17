@@ -589,6 +589,122 @@ instance {Error : Type u1} : MonadExceptOf Error (Interaction Error) where
   throw := error
   tryCatch := tryCatch
 
+/--
+A property of every terminal leaf of an open interaction tree.
+
+Unlike a concrete execution transcript, `AllDone` quantifies over every
+possible answer at every request. Pass proofs use it for branch-independent
+invariants such as program-counter advancement.
+-/
+inductive AllDone
+    {Error : Type u1} {Result : Type v1}
+    (property : Except Error Result → Prop) :
+    Interaction Error Result → Prop where
+  | done {outcome} :
+      property outcome →
+      AllDone property (.done outcome)
+  | request {query : Query}
+      {resume : Answer query → Interaction Error Result} :
+      (∀ answer, AllDone property (resume answer)) →
+      AllDone property (.request query resume)
+
+namespace AllDone
+
+theorem mono
+    {Error : Type u1} {Result : Type v1}
+    {left right : Except Error Result → Prop}
+    {interaction : Interaction Error Result}
+    (hInteraction : AllDone left interaction)
+    (hProperty : ∀ outcome, left outcome → right outcome) :
+    AllDone right interaction := by
+  induction hInteraction with
+  | done hDone =>
+      exact .done (hProperty _ hDone)
+  | request hResume ih =>
+      exact .request ih
+
+theorem bind
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {sourceProperty : Except Error Source → Prop}
+    {targetProperty : Except Error Target → Prop}
+    {interaction : Interaction Error Source}
+    {next : Source → Interaction Error Target}
+    (hInteraction : AllDone sourceProperty interaction)
+    (hError :
+      ∀ err, sourceProperty (.error err) →
+        targetProperty (.error err))
+    (hNext :
+      ∀ value, sourceProperty (.ok value) →
+        AllDone targetProperty (next value)) :
+    AllDone targetProperty (Interaction.bind interaction next) := by
+  induction hInteraction with
+  | @done outcome hDone =>
+      cases outcome with
+      | error err =>
+          exact .done (hError err hDone)
+      | ok value =>
+          exact hNext value hDone
+  | request hResume ih =>
+      exact .request ih
+
+theorem map
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {sourceProperty : Except Error Source → Prop}
+    {targetProperty : Except Error Target → Prop}
+    {interaction : Interaction Error Source}
+    (f : Source → Target)
+    (hInteraction : AllDone sourceProperty interaction)
+    (hError :
+      ∀ err, sourceProperty (.error err) →
+        targetProperty (.error err))
+    (hValue :
+      ∀ value, sourceProperty (.ok value) →
+        targetProperty (.ok (f value))) :
+    AllDone targetProperty (Interaction.map f interaction) := by
+  exact
+    bind hInteraction hError fun value hSource =>
+      .done (hValue value hSource)
+
+/--
+Two continuations are interchangeable when they agree at every successful
+leaf reachable from the first interaction.
+-/
+theorem bind_congr
+    {Error : Type u1} {Source : Type v1} {Target : Type w1}
+    {property : Except Error Source → Prop}
+    {interaction : Interaction Error Source}
+    {left right : Source → Interaction Error Target}
+    (hInteraction : AllDone property interaction)
+    (hNext :
+      ∀ value, property (.ok value) →
+        left value = right value) :
+    Interaction.bind interaction left =
+      Interaction.bind interaction right := by
+  induction interaction generalizing left right with
+  | done outcome =>
+      cases hInteraction with
+      | done hDone =>
+        cases outcome with
+        | error err =>
+            rfl
+        | ok value =>
+            exact hNext value hDone
+  | request query resume ih =>
+      cases hInteraction with
+      | request hResume =>
+        change
+          Interaction.request query
+              (fun answer =>
+                Interaction.bind (resume answer) left) =
+            Interaction.request query
+              (fun answer =>
+                Interaction.bind (resume answer) right)
+        congr
+        funext answer
+        exact ih answer (hResume answer) hNext
+
+end AllDone
+
 @[simp] theorem bind_done_ok
     {Error : Type u1} {Source : Type v1} {Target : Type w1}
     (value : Source) (next : Source → Interaction Error Target) :

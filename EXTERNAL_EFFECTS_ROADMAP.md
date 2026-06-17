@@ -726,6 +726,12 @@ Exit: the shared core builds with no compiler layer changed.
     bytecode instruction-count execution.
   - [ ] Migrate the legacy resource-observer runners onto the common kernel.
 - [ ] TypedCfg.
+  - [x] One parameterized control kernel shared by ordinary, resource-observer,
+    and open interaction semantics.
+  - [x] Exact open preservation for every instruction and recursively composed
+    instruction-list body.
+  - [ ] Assembly-owned control-transfer runner and checked terminator, block,
+    and program theorems.
 - [ ] Structured.
 - [ ] Locals/Expressions.
 - [ ] Functions.
@@ -748,6 +754,9 @@ Exit: every layer exposes one canonical open computation.
   - [x] Whole-program emitted-block open execution preservation.
   - [x] Fetched resolved-target and encoded-bytecode open execution bridge.
 - [ ] TypedCfg -> Assembly.
+  - [x] Every lowered instruction, including all six external opcodes.
+  - [x] Arbitrary lowered instruction-list bodies.
+  - [ ] Terminators, blocks, and whole-program execution.
 - [ ] Structured -> TypedCfg.
 - [ ] Locals/Expressions -> Structured.
 - [ ] Functions -> allocated Locals/Expressions.
