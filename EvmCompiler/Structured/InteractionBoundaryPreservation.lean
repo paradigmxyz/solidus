@@ -563,6 +563,29 @@ theorem mono
       cfg returns tokens policy next regular :=
   ⟨hBoundary.ownership, hBoundary.fresh.mono hSupply⟩
 
+/--
+Change the distinguished regular continuation while retaining the same
+activation and supply. The previous regular label predates every generated
+label in the fragment, so it cannot be the generated label under inspection.
+-/
+theorem rebase_regular
+    {cfg : TypedCfg.Program}
+    {returns : List ReturnDest} {tokens : List Word}
+    {policy : StopPolicy}
+    {supply : LabelSupply} {oldRegular newRegular : Assembly.Label}
+    (hBoundary :
+      StopPolicy.RecursiveBoundary
+        cfg returns tokens policy supply oldRegular)
+    (hOldBefore :
+      TypedCfgCompilerFacts.LabelBeforeSupply oldRegular supply) :
+    StopPolicy.RecursiveBoundary
+      cfg returns tokens policy supply newRegular := by
+  refine ⟨hBoundary.ownership, ?_⟩
+  intro scope tag target hScope _hNewNe hStopped
+  exact
+    hBoundary.fresh scope tag target hScope
+      (hOldBefore.generated_ne hScope) hStopped
+
 theorem push
     {cfg : TypedCfg.Program}
     {returns : List ReturnDest} {tokens : List Word}
@@ -593,21 +616,22 @@ theorem push_child
     {result : TypedCfgCompiler.Result}
     {ctx : TypedCfgCompiler.Context}
     {boundaryRegular regular : Assembly.Label}
-    {supply : LabelSupply}
+    {parentSupply childSupply : LabelSupply}
     (hBoundary :
       StopPolicy.RecursiveBoundary
-        cfg ancestorReturns ancestorTokens outer supply boundaryRegular)
+        cfg ancestorReturns ancestorTokens outer
+          parentSupply boundaryRegular)
     (hExtension :
       TypedCfgPreservation.ActivationExtension
         ancestorReturns ancestorTokens childReturns childTokens)
     (hShapes : BoundaryShapes cfg result ctx regular)
     (hBefore :
       TypedCfgCompilerFacts.ContinuationLabelsBeforeSupply
-        ctx boundaryRegular supply) :
+        ctx boundaryRegular childSupply) :
     StopPolicy.RecursiveBoundary cfg childReturns childTokens
       (InteractionControlPreservation.OpenOutcome.pushStopJump
         result ctx regular childReturns childTokens outer)
-      supply regular :=
+      childSupply regular :=
   ⟨(hBoundary.ownership.extend hExtension).push hShapes,
     StopPolicy.ActivationFreshExcept.push_child
       hBoundary.ownership hExtension hBefore⟩

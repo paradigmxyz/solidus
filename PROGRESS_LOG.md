@@ -31074,3 +31074,19 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check`, and focused axiom audit. New boundary/control theorems
   depend only on `propext`, `Classical.choice`, and `Quot.sound`; the existing
   >5K-line architecture debt list is unchanged.
+- 2026-06-17 11:22:03 PDT - compaction-resume - Resumed the active horizontal
+  CALL/CREATE proof from checkpoint `7b29ae895`; the immediate obligation is
+  completing the execution-indexed Structured statement/block owner using the
+  activation-sensitive recursive boundary without introducing a cross-pass
+  proof corridor.
+- 2026-06-17 11:28:42 PDT - proof/structured-owner-base - Added the pass-owned
+  `FragmentContract` and fuel-indexed `BlockOwnerAt` interface, then checked
+  execution-indexed owner theorems for Structured code, conditional, break,
+  continue, leave, and terminal statements. Conditional decomposition now
+  passes compiler-owned block and call-site ownership plus the actual related
+  body frame fit to its adjacent recursive owner.
+- 2026-06-17 11:28:42 PDT - verification - The Structured owner-base
+  checkpoint passes the focused owner build, full 1,294-job verification root,
+  architecture dependency/single-owner guard, open-effects axiom smoke,
+  changed-file forbidden-marker scan, and `git diff --check`. New owner
+  theorems depend only on `propext`, `Classical.choice`, and `Quot.sound`.

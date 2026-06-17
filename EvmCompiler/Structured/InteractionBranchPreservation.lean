@@ -578,6 +578,7 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
     {result : TypedCfgCompiler.Result} {cfg : TypedCfg.Program}
     {sourceProgram : Structured.Program}
     {source : RunState} {tokens : List Word}
+    {generatedCalls : List TypedCfgCompiler.DispatchSite}
     {policy :
       InteractionControlPreservation.OpenOutcome.StopPolicy}
     (hCompile :
@@ -586,6 +587,8 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
         some result)
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
+    (hResultCalls :
+      TypedCfgPreservation.CallsInProgram result generatedCalls)
     (hFits :
       TypedCfgCompiler.Shape.SourceFrameFits
         input source.evm.stack.length)
@@ -612,7 +615,11 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
             { output with slots := output.slots.tail } regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
+        TypedCfgPreservation.CallsInProgram bodyResult generatedCalls →
         afterCond.returns = source.returns →
+        TypedCfgCompiler.Shape.SourceFrameFits
+            { output with slots := output.slots.tail }
+            afterCond.evm.stack.length →
         bodyResult.requireFallthrough?
             { output with slots := output.slots.tail } =
           some () →
@@ -645,6 +652,12 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
       TypedCfgPreservation.BlocksInProgram bodyResult cfg := by
     intro block hMem
     apply hBlocks block
+    simp [hResult, hMem]
+  have hBodyCalls :
+      TypedCfgPreservation.CallsInProgram
+        bodyResult generatedCalls := by
+    intro site hMem
+    apply hResultCalls site
     simp [hResult, hMem]
   let generated : TypedCfg.Block :=
     { label := entry
@@ -764,7 +777,8 @@ theorem openRun_if_exec_under_of_compileStmtFuel?
                     (output := output)
                     (bodyResult := bodyResult)
                     (afterCond := afterCond)
-                    hBodyCompile hBodyBlocks hReturnsEq
+                    hBodyCompile hBodyBlocks hBodyCalls hReturnsEq
+                    hAfterCondFits
                     hBodyRequire hFallthrough
                 obtain
                     ⟨bodyFuel, bodyRemaining, targetFinal,

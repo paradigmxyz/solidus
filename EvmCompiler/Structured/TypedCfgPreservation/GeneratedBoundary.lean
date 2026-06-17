@@ -240,6 +240,61 @@ theorem blockFallthrough
 
 end ActivationInput
 
+namespace SourceFrameFits
+
+theorem of_returnTokenDepth_eq_stackLength
+    {shape : TypedCfg.Shape} {stackLength depth : Nat}
+    (hDepth : shape.returnTokenDepth? = some depth)
+    (hLength : stackLength = depth) :
+    TypedCfgCompiler.Shape.SourceFrameFits shape stackLength := by
+  constructor
+  · rw [
+      TypedCfgCompilerFacts.Shape.sourceLength_eq_of_returnTokenDepth?_eq_some
+        hDepth,
+      hLength]
+  · intro actualDepth hActualDepth
+    have hDepthEq : actualDepth = depth :=
+      Option.some.inj (hActualDepth.symm.trans hDepth)
+    omega
+
+theorem procEntry_of_splitArgs
+    {proc : Structured.Proc}
+    {stack args callerStack : EvmYul.Stack Word}
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc stack =
+        some (args, callerStack)) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      (TypedCfgCompiler.Shape.procEntry proc) args.length := by
+  apply of_returnTokenDepth_eq_stackLength
+  · exact TypedCfgCompilerFacts.Call.returnTokenDepth?_procEntry proc
+  · exact
+      (TypedCfgPreservation.CallStack.splitArgs?_eq_some hSplit).1
+
+end SourceFrameFits
+
+namespace Program.ProcFragment
+
+theorem input_sourceFrameFits_of_splitArgs
+    {entryShapes : TypedCfgCompiler.ProcEntryShapes}
+    {allProcs : List Structured.Proc} {proc : Structured.Proc}
+    {procBlocks : List TypedCfg.Block}
+    {procCalls : List TypedCfgCompiler.DispatchSite}
+    (fragment :
+      Program.ProcFragment
+        entryShapes allProcs proc procBlocks procCalls)
+    {stack args callerStack : EvmYul.Stack Word}
+    (hSplit :
+      Structured.StackFrame.splitArgs? proc.argc stack =
+        some (args, callerStack)) :
+    TypedCfgCompiler.Shape.SourceFrameFits
+      fragment.input args.length := by
+  apply SourceFrameFits.of_returnTokenDepth_eq_stackLength
+  · exact fragment.input_returnTokenDepth
+  · exact
+      (TypedCfgPreservation.CallStack.splitArgs?_eq_some hSplit).1
+
+end Program.ProcFragment
+
 end TypedCfgPreservation
 end Structured
 end EvmCompiler

@@ -2155,8 +2155,10 @@ theorem sequence
         (pushStopJump headResult ctx middle
           source.returns tokens policy))
     (hMiddleNoStop :
-      ∀ targetMiddle,
-        policy middle targetMiddle = false)
+      ∀ {middleSource : RunState} {targetMiddle : EVMState},
+        Rel headResult ctx middle source.returns tokens
+            (.regular middleSource) (.jump middle targetMiddle) →
+          policy middle targetMiddle = false)
     (hNonregularStops :
       ∀ {middleSource : RunState} {headMode : Structured.Mode}
           {targetOutcome : TypedCfg.Outcome},
@@ -2257,7 +2259,7 @@ theorem sequence
           simpa [
             TypedCfg.InteractionSemantics.Program.continueOpenRunNResultWithRefinedStop,
             TypedCfg.InteractionSemantics.Program.afterOpenStepResultWithStop,
-            hMiddleNoStop targetMiddle] using hTargetTailPadded
+            hMiddleNoStop hHeadRel] using hTargetTailPadded
         have hCombined :
             Simulation.Interaction.Executes
               (Simulation.Interaction.bind
@@ -3913,9 +3915,25 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
     (hBlocks :
       TypedCfgPreservation.BlocksInProgram result cfg)
     (hMiddleNoStop :
-      ∀ targetMiddle,
-        policy (TypedCfgCompiler.restLabel supply) targetMiddle =
-          false)
+      ∀ {headResult tailResult : TypedCfgCompiler.Result}
+          {tailInput : TypedCfg.Shape}
+          {middleSource : RunState} {targetMiddle : EVMState},
+        TypedCfgCompiler.compileStmtFuel? compilerFuel stmt ctx supply
+            entry input (TypedCfgCompiler.restLabel supply) =
+          some headResult →
+        headResult.fallthrough? = some tailInput →
+        TypedCfgCompiler.compileStmtListFuel? compilerFuel rest ctx
+            headResult.next (TypedCfgCompiler.restLabel supply)
+            tailInput regular =
+          some tailResult →
+        TypedCfgPreservation.BlocksInProgram tailResult cfg →
+        OpenOutcome.Rel headResult ctx
+            (TypedCfgCompiler.restLabel supply)
+            source.returns tokens
+            (.regular middleSource)
+            (.jump (TypedCfgCompiler.restLabel supply) targetMiddle) →
+          policy (TypedCfgCompiler.restLabel supply) targetMiddle =
+            false)
     (hNonregularStops :
       OpenOutcome.StopPolicy.StopsNonregular
         policy ctx source.returns tokens)
@@ -3998,7 +4016,10 @@ theorem openRun_cons_exec_under_of_compileStmtListFuel?
     have hHead :=
       hHeadWithTail hHeadCompile hHeadBlocks hFallthrough
     have hComposed :=
-      OpenOutcome.ExecPreservesUnder.sequence hHead hMiddleNoStop
+      OpenOutcome.ExecPreservesUnder.sequence hHead
+        (fun hRel =>
+          hMiddleNoStop hHeadCompile hFallthrough
+            hTailCompile hTailBlocks hRel)
         (fun hMode hRel => hNonregularStops hMode hRel)
         (fun middleSource hReturns =>
           hTail hHeadCompile hFallthrough hTailCompile

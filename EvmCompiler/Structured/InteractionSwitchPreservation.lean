@@ -2430,12 +2430,16 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
         {bodyInput : TypedCfg.Shape}
         {body : Structured.Block}
         {bodyResult : TypedCfgCompiler.Result}
-        {afterPop : RunState},
+        {afterPop : RunState} {value : Word},
+        Structured.Switch.select value cases defaultBody =
+          some body →
         TypedCfgCompiler.compileBlockFuel? bodyCompilerFuel body ctx
             bodySupply bodyEntry bodyInput regular =
           some bodyResult →
         TypedCfgPreservation.BlocksInProgram bodyResult cfg →
         afterPop.returns = source.returns →
+        TypedCfgCompiler.Shape.SourceFrameFits
+          bodyInput afterPop.evm.stack.length →
         bodyResult.requireFallthrough? bodyInput = some () →
         result.fallthrough? = some bodyInput →
         InteractionControlPreservation.OpenOutcome.ExecPreservesUnder
@@ -2816,8 +2820,9 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                         bodyResult hBodyCompile hBodyBlocks
                         hBodyRequire hResultFallthrough
                       exact
-                        hBody hBodyCompile hBodyBlocks (by
+                        hBody hSelect hBodyCompile hBodyBlocks (by
                             simpa [RunState.withEVM] using hReturnsEq)
+                          hBodyFits
                           hBodyRequire hResultFallthrough
                     have hDefaultRoute
                         (hDefaultSelected :
@@ -2882,9 +2887,10 @@ theorem openRun_switch_exec_under_of_compileStmtFuel?
                                 hTargetRel hBodyFits)
                           (fun hBodyCompile hBodyBlocks hBodyRequire
                               hResultFallthrough =>
-                            hBody hBodyCompile hBodyBlocks (by
+                            hBody hSelect hBodyCompile hBodyBlocks (by
                                 simpa [RunState.withEVM] using
                                   hReturnsEq)
+                              hBodyFits
                               hBodyRequire hResultFallthrough)
                     have hCasesSome :=
                       Switch.openRun_cases_some_exec_under_of_compileCasesFuel?

@@ -47,6 +47,7 @@ import EvmCompiler.Structured.InteractionBranchPreservation
 import EvmCompiler.Structured.InteractionSwitchPreservation
 import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
+import EvmCompiler.Structured.InteractionOwnerPreservation
 import EvmCompiler.Structured.ObserverSemantics
 import EvmCompiler.Structured.ObserverPreservation
 import EvmCompiler.Structured.ObserverActivationBoundary
@@ -292,6 +293,10 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openStep_dispatch
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under
 #check EvmCompiler.Structured.InteractionCallPreservation.Call.openRun_call_exec_under_of_compileStmtFuel?
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.FragmentContract
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.BlockOwnerAt
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.code_exec
+#check EvmCompiler.Structured.InteractionOwnerPreservation.OpenOutcome.Stmt.if_exec
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_op_arg
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_call
 #check EvmCompiler.Assembly.TargetInstr.ofDecoded?_callcode
