@@ -31144,3 +31144,23 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   `git diff --check`. The new recursive expression theorems depend only on
   `propext`, `Classical.choice`, and `Quot.sound`; architecture reports only
   the pre-existing soft module-size debt.
+- 2026-06-17 13:01:34 PDT - proof/compaction-resume - Resumed the horizontal
+  CALL/CREATE proof from checkpoint `fc2230ad0`; the next adjacent owner is
+  canonical Expressions open semantics and transparent
+  Expressions-to-Structured preservation before Locals control composition.
+- 2026-06-17 13:11:42 PDT - architecture/expressions-open-kernel - Replaced
+  the independent ordinary-only Expressions recursion with one
+  monad-polymorphic interpreter over Expressions syntax. Ordinary execution
+  and universal open execution are thin specializations; canonical semantics
+  does not call `compile` or `toStructured`.
+- 2026-06-17 13:11:42 PDT - proof/expressions-to-structured - Proved exact
+  open interaction-tree equality for recursive expressions, conditions,
+  blocks, statements, loops, internal procedure calls, program states, and
+  whole programs under the transparent Expressions-to-Structured lowering.
+  The fuel-founded owner requires no call oracle or generated evidence.
+- 2026-06-17 13:11:42 PDT - verification/expressions-to-structured - The
+  focused boundary build, full proof-layer gate, architecture dependency and
+  no-lowering-in-semantics guard, hole/forbidden-marker scan, axiom smoke, and
+  `git diff --check` pass. New public theorems depend only on `propext`,
+  `Classical.choice`, and `Quot.sound`; only pre-existing module-size debt
+  remains.

@@ -769,7 +769,7 @@ Exit: the shared core builds with no compiler layer changed.
     target runtime control, and ordered open effects.
   - [ ] Recursive Locals statement, block, loop, call, and program
     preservation.
-  - [ ] Canonical Expressions open semantics and transparent
+  - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
 - [ ] Yul.
@@ -810,6 +810,8 @@ Exit: every layer exposes one canonical open computation.
 - [ ] Locals/Expressions -> Structured.
   - [x] Adjacent primitive leaf over the shared ordered interaction tree.
   - [x] Recursive compiler-owned Locals expression composition.
+  - [x] Transparent whole-program Expressions-to-Structured open
+    preservation, including loops and internal calls.
   - [ ] Recursive compiler-owned statement and control composition.
 - [ ] Functions -> allocated Locals/Expressions.
 - [ ] Yul -> Functions.

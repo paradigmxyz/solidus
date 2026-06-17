@@ -8,6 +8,7 @@ import EvmCompiler.Core.MemoryContract
 import EvmCompiler.Assembly.InteractionSemantics
 import EvmCompiler.Assembly.InteractionPreservation
 import EvmCompiler.Assembly.InteractionBytecode
+import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Expressions.ObserverPreservation
 import EvmCompiler.Functions.AllocationLowering
 import EvmCompiler.Functions.AllocationObserverRelation
@@ -201,6 +202,13 @@ or audit-alias corridor.
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
 #check EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#check EvmCompiler.Expressions.InteractionPreservation.Expr.openRun_compile
+#check EvmCompiler.Expressions.InteractionPreservation.ExprSeq.openRun_compile
+#check EvmCompiler.Expressions.InteractionPreservation.Block.openRun_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Stmt.openRun_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Stmt.openRunForLoop_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Program.openRunState_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Program.openRun_toStructured
 #check EvmCompiler.Locals.Source.Effectful.Control.PrimitiveSemantics
 #check EvmCompiler.Locals.Source.Effectful.Control.Program.runState
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call

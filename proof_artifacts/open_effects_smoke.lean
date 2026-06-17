@@ -6,6 +6,7 @@ import EvmCompiler.Structured.InteractionSwitchPreservation
 import EvmCompiler.Structured.InteractionLoopPreservation
 import EvmCompiler.Structured.InteractionCallPreservation
 import EvmCompiler.Structured.InteractionOwnerPreservation
+import EvmCompiler.Expressions.InteractionPreservation
 import EvmCompiler.Locals.InteractionPreservation
 import EvmCompiler.TypedCfg.InteractionPreservation
 
@@ -42,6 +43,13 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #check EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #check EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
 #check EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#check EvmCompiler.Expressions.InteractionPreservation.Expr.openRun_compile
+#check EvmCompiler.Expressions.InteractionPreservation.ExprSeq.openRun_compile
+#check EvmCompiler.Expressions.InteractionPreservation.Block.openRun_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Stmt.openRun_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Stmt.openRunForLoop_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Program.openRunState_toStructured
+#check EvmCompiler.Expressions.InteractionPreservation.Program.openRun_toStructured
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_callcode
 #check EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_delegatecall
@@ -149,6 +157,13 @@ import EvmCompiler.TypedCfg.InteractionPreservation
 #print axioms EvmCompiler.Structured.InteractionPreservation.BasicInstr.openRunAt_toCfg
 #print axioms EvmCompiler.Structured.InteractionPreservation.Code.openRun_toCfg
 #print axioms EvmCompiler.Structured.InteractionPrimitivePreservation.BasicOp.openStepEVM_append_stack_rel
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Expr.openRun_compile
+#print axioms EvmCompiler.Expressions.InteractionPreservation.ExprSeq.openRun_compile
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Block.openRun_toStructured
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Stmt.openRun_toStructured
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Stmt.openRunForLoop_toStructured
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Program.openRunState_toStructured
+#print axioms EvmCompiler.Expressions.InteractionPreservation.Program.openRun_toStructured
 #print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_call
 #print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_callcode
 #print axioms EvmCompiler.Locals.InteractionSemantics.Primitive.openEval_delegatecall

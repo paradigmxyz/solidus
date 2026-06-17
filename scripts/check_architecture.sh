@@ -976,6 +976,12 @@ report_matches \
   EvmCompiler/Yul.lean
 
 report_matches \
+  'Canonical Expressions semantics must interpret Expressions syntax directly, not compile through Structured:' \
+  '\b(toStructured|compile)\b' \
+  EvmCompiler/Expressions/EffectSemantics.lean \
+  EvmCompiler/Expressions/InteractionSemantics.lean
+
+report_matches \
   'The stable compiler spine must not import direct Structured emission or its preservation corridor:' \
   '^import EvmCompiler\.(Structured\.(Compiler|Preservation|TypedContinuations|TypedCfgBridge)|Expressions\.Preservation|Locals\.Preservation)' \
   EvmCompiler/Structured.lean \
@@ -1008,6 +1014,9 @@ report_matches \
   EvmCompiler/Structured/InteractionLeafPreservation.lean \
   EvmCompiler/Structured/InteractionBranchPreservation.lean \
   EvmCompiler/Structured/InteractionSwitchPreservation.lean \
+  EvmCompiler/Expressions/EffectSemantics.lean \
+  EvmCompiler/Expressions/InteractionSemantics.lean \
+  EvmCompiler/Expressions/InteractionPreservation.lean \
   EvmCompiler/Locals/Allocation.lean \
   EvmCompiler/Locals/EffectSemantics.lean \
   EvmCompiler/Locals/InteractionSemantics.lean \
