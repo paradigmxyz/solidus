@@ -788,6 +788,8 @@ Exit: the shared core builds with no compiler layer changed.
     - [x] Terminal frame theorem plus compiler-facing plain and
       argument-bearing terminal preservation; bare source-owned terminals are
       restricted to zero-argument halt kinds.
+    - [x] Fuel-truncated forward interface and checked empty-block base case
+      for recursive source-owned block composition.
   - [x] Canonical Expressions open semantics and transparent
     Expressions-to-Structured preservation.
 - [ ] Functions.
@@ -843,6 +845,8 @@ Exit: every layer exposes one canonical open computation.
       decomposition facts and the shared mode-indexed outcome relation.
     - [x] Plain and argument-bearing terminals composed through the same
       outcome relation, with arbitrary caller stack suffixes protected.
+    - [x] Recursive `ForwardRel` base case distinguishes source fuel
+      truncation from checked terminal outcomes.
 - [ ] Functions -> allocated Locals/Expressions.
   - [ ] Own the emitted internal-call and stack-protocol constructs rather
     than extending stack-free Locals with an operand stack.

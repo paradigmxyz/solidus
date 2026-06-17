@@ -2876,6 +2876,61 @@ theorem openRun_terminal_of_compile
 
 end Stmt
 
+namespace Block
+
+def FuelTruncated (error : EVMException) : Prop :=
+  error = .InvalidInstruction
+
+/--
+The empty source block is the base case of fuel-indexed forward preservation.
+Zero source fuel is recorded as truncation; any positive source/target budgets
+produce the same regular frame.
+-/
+theorem openRun_empty
+    (sourceProgram : Locals.Program)
+    (targetProgram : Expressions.Program)
+    (sourceCtx : Locals.Source.Ctx) (targetCtx : Locals.Ctx)
+    (sourceFuel targetFuel : Nat)
+    {suffix : List Word}
+    {returns : List Structured.ReturnDest}
+    {source : Locals.Source.State}
+    {target : Structured.RunState}
+    (hTargetFuel : 1 ≤ targetFuel)
+    (hCtx : Frame.CtxRel sourceCtx targetCtx)
+    (hInitial :
+      Frame.StateRel targetCtx.layout suffix returns source target) :
+    Simulation.Interaction.ForwardRel
+      FuelTruncated
+      (Stmt.OpenOutcomeRel targetCtx targetCtx suffix returns)
+      (InteractionSemantics.Block.openRun
+        sourceProgram sourceCtx sourceFuel { stmts := [] } source)
+      (Expressions.InteractionSemantics.Block.openRun
+        targetProgram targetFuel { stmts := [] } target) := by
+  cases sourceFuel with
+  | zero =>
+      unfold InteractionSemantics.Block.openRun
+        InteractionSemantics.stateModel
+        Locals.Source.Effectful.Ordinary.stateModel
+      simp only [Locals.Source.Effectful.Control.Block.runOpen]
+      apply Simulation.Interaction.ForwardRel.truncated
+      rfl
+  | succ sourceFuel =>
+      cases targetFuel with
+      | zero =>
+          omega
+      | succ targetFuel =>
+          unfold InteractionSemantics.Block.openRun
+            Expressions.InteractionSemantics.Block.openRun
+            InteractionSemantics.stateModel
+            Locals.Source.Effectful.Ordinary.stateModel
+          simp only [Locals.Source.Effectful.Control.Block.runOpen,
+            Expressions.EffectSemantics.Control.Block.run]
+          apply Simulation.Interaction.ForwardRel.done
+          apply Simulation.Interaction.ExceptRel.ok
+          exact Stmt.OpenResultRel.regular hCtx hInitial
+
+end Block
+
 end InteractionPreservation
 end Locals
 end EvmCompiler

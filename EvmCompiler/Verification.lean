@@ -204,6 +204,8 @@ or audit-alias corridor.
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_leave_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_terminal_of_compile
 #check EvmCompiler.Locals.InteractionPreservation.Stmt.openRun_terminalArgs_of_compile
+#check EvmCompiler.Locals.InteractionPreservation.Block.FuelTruncated
+#check EvmCompiler.Locals.InteractionPreservation.Block.openRun_empty
 #check EvmCompiler.Simulation.ExternalKind.classifies_call
 #check EvmCompiler.Simulation.ExternalKind.classifies_callcode
 #check EvmCompiler.Simulation.ExternalKind.classifies_delegatecall

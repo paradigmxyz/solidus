@@ -31276,3 +31276,16 @@ Resumed from checked recursive Yul list backward adequacy; current frontier is t
   Locals builds, the full verification root, architecture checks, touched-Lean
   hole scan, axiom audit, and `git diff --check`; all new terminal theorems
   depend only on `[propext, Classical.choice, Quot.sound]`.
+- 2026-06-17 14:08:12 PDT - oracle - requested hostile critique of the Locals
+  recursive fuel invariant in conversation
+  `resp_04f5d87c66531523006a330c9518708198a6b2ea43ffb5a792`; request failed
+  with `insufficient_quota`, so no oracle claims were used.
+- 2026-06-17 14:09:10 PDT - proof/locals-recursive-base - introduced the
+  Locals-owned `FuelTruncated` forward interface and proved the checked empty
+  source-block base case against any positive target fuel. This isolates fuel
+  exhaustion before sequence, scoped-block, conditional, and loop recursion.
+- 2026-06-17 14:09:54 PDT - validation/locals-recursive-base - passed the
+  focused Locals build, full verification root, architecture checks,
+  touched-Lean hole scan, axiom audit, and `git diff --check`;
+  `Block.openRun_empty` depends only on
+  `[propext, Classical.choice, Quot.sound]`.
